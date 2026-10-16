@@ -70,8 +70,71 @@ struct ToolOutcome
         return first.endsWithChar ('.') || first.endsWithChar ('?') ? first : first + ".";
     }
 
+    /** ---- SEAN'S #10 (16 Oct 2026): THE SAME SPLIT ON THE SUCCESS PATH --------------------------
+        He read this, in a step's details, in Logic: "Report it as ADDED, with its settings not
+        confirmed. Do NOT call the add itself 'not applied', and do NOT state any figure". Item 3
+        gave FAILURES two audiences (errorMessage / userMessage) and the fault came back through the
+        door it did not cover: `landedLine` is one string read by the model AND painted on the row.
+
+        The clean half is the sentences addressed to a person; the model's half is every sentence
+        addressed to IT. The split is named here, in one place, so a call site cannot write a
+        two-audience string without a filter standing behind it (userHalfOfLanded below).            */
+    juce::String landedForUser;          // optional: the row's words when landedLine also talks to the model
+
+    /** The landed line a person reads. Explicit when the call site wrote one; otherwise every
+        sentence addressed to the model is dropped and the log says it happened. */
+    juce::String landedForTheUser() const
+    {
+        if (landedForUser.isNotEmpty()) return landedForUser;
+        return userHalfOfLanded (landedLine);
+    }
+
+    /** Drops the sentences written FOR THE MODEL out of a landed line. The markers are the
+        imperative openings our own strings use - "Report ...", "Do NOT ...", "do not name ..." -
+        and the test is deliberately narrow: a sentence is only dropped when it OPENS with one, so a
+        figure or a plugin name can never be filtered away by accident. Public and static so the
+        guard can hold it against both directions (a model sentence dropped, a user sentence kept). */
+    static juce::String userHalfOfLanded (const juce::String& line)
+    {
+        if (line.isEmpty()) return line;
+        static const char* modelOpeners[] = {
+            "report ", "do not ", "do nots", "don't ", "never ", "say ", "tell the user", "call ",
+            "repeat ", "use the ", "you were not given", "and do not ", "and do nots", "do NOT "
+        };
+        juce::StringArray kept;
+        // Split on sentence ends only; a decimal point ("-14.00") is not a sentence end because the
+        // next character is a digit. Walked rather than tokenised for exactly that reason.
+        int start = 0;
+        const int n = line.length();
+        for (int i = 0; i < n; ++i)
+        {
+            const auto c = line[i];
+            const bool end = (c == '.' || c == '!' || c == '?')
+                          && (i + 1 >= n || line[i + 1] == ' ' || line[i + 1] == '\n');
+            if (! end && i + 1 < n) continue;
+            auto sentence = line.substring (start, juce::jmin (n, i + 1)).trim();
+            start = i + 1;
+            if (sentence.isEmpty()) continue;
+            const auto low = sentence.toLowerCase();
+            bool forModel = false;
+            for (const char* m : modelOpeners)
+                if (low.startsWith (juce::String (m).toLowerCase())) { forModel = true; break; }
+            if (forModel) continue;
+            kept.add (sentence);
+        }
+        auto out = kept.joinIntoString (" ").trim();
+        return out.isNotEmpty() ? out : line;    // never blank a row: if every sentence looked like
+                                                 // the model's, the line was not ours to split.
+    }
+
     static ToolOutcome success (juce::var result, const juce::String& undoToken = {}, const juce::String& landedLine = {})
     { ToolOutcome o; o.ok = true; o.result = std::move (result); o.undoToken = undoToken; o.landedLine = landedLine; return o; }
+    /** A success with both audiences written for deliberately: `landedLine` to the model, `userLine`
+        to the person. The pair `failureFor` already is, for the other half of a step's life. */
+    static ToolOutcome successFor (juce::var result, const juce::String& undoToken,
+                                   const juce::String& landedLine, const juce::String& userLine)
+    { ToolOutcome o; o.ok = true; o.result = std::move (result); o.undoToken = undoToken;
+      o.landedLine = landedLine; o.landedForUser = userLine; return o; }
     static ToolOutcome failure (const juce::String& code, const juce::String& message)
     { ToolOutcome o; o.ok = false; o.errorCode = code; o.errorMessage = message; return o; }
     /** A failure with both audiences written for deliberately: `message` to the model, `userLine` to the

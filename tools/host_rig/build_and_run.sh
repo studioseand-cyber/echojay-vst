@@ -247,6 +247,86 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-tpown-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_tpo", "name": "do", "approval": "free",
+            "summary": "add a real third-party plugin to THIS rack, with a setting",
+            "args": { "op": "add", "name": "__TP_NAME__", "after": 0,
+                      "settings_structured": { "controls": { "__TP_CONTROL__": "__TP_VALUE__" } } } },
+          { "event": "await", "ids": ["tc_tpo"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it to this rack, with the setting you asked for." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-nochoice-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_nc", "name": "talk", "approval": "free",
+            "summary": "ask",
+            "args": { "ask": { "question": "Which transient shaper should I use on the kick?",
+                               "allowFreeText": false } } },
+          { "event": "await", "ids": ["tc_nc"] } ],
+        [ { "event": "round", "round": 2, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_nc2", "name": "do", "approval": "free",
+            "summary": "pre-gain 3 dB", "args": { "op": "set_pre_gain", "db": 3 } },
+          { "event": "await", "ids": ["tc_nc2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 2,
+            "summary": "Took your answer and set the pre-gain to 3 dB." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-newinstr-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_ni", "name": "talk", "approval": "free",
+            "summary": "ask",
+            "args": { "text": "That will not work on a retry.",
+                      "ask": { "question": "What now?",
+                               "choices": [ { "label": "Stop here" }, { "label": "Try once more" } ],
+                               "allowFreeText": false } } },
+          { "event": "await", "ids": ["tc_ni"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "Stopped." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-readonly-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_ro1", "name": "look", "approval": "free",
+            "summary": "read the rack", "args": { "what": "rack" } },
+          { "event": "tool_call", "id": "tc_ro2", "name": "look", "approval": "free",
+            "summary": "read the channel", "args": { "what": "channel" } },
+          { "event": "await", "ids": ["tc_ro1", "tc_ro2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Had a look and changed nothing." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-oneline-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_one", "name": "do", "approval": "ask_first",
+            "summary": "pre-gain 5 dB", "args": { "op": "set_pre_gain", "db": 5 } },
+          { "event": "await", "ids": ["tc_one"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "Pre-gain at 5 dB." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-nomap-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_nm", "name": "do", "approval": "free",
+            "summary": "add a plugin this build has no map for, with a setting",
+            "args": { "op": "add", "name": "Vertigo VSM-3",
+                      "settings_structured": { "controls": { "Drive": 4.0 } } } },
+          { "event": "await", "ids": ["tc_nm"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added Vertigo VSM-3. Settings not confirmed." } ]
+      ]
+    },
+    {
       "goalContains": "rig-setfail-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
@@ -330,6 +410,20 @@ if r.returncode:
     print(r.stderr[-6000:]); sys.exit(1)
 PYEOF
 if [ $? -ne 0 ]; then echo "REFUSED: the rig did not compile"; exit 2; fi
+
+# ---- LINKS IN THEIR OWN PROCESSES (Sean, 16 Oct 2026) -----------------------
+# tools/link_host is one Link in one process. The rig launches two of them itself
+# (so it can wait for them and talk to them), and finds the binary beside its own -
+# which is why it is built into the same scratch directory.
+#
+# EJ_RIG_HOOK is exported above and INHERITED by those processes, which is the point:
+# with it set a Link is refused a plugin scan (the iLok rule, both doors), so it finds
+# its plugins in the catalogue the rig writes into this run's isolated root.
+if bash "$ROOT/tools/link_host/build.sh" "$SCRATCH/link_host" >/dev/null 2>&1; then
+  echo "link_host built -> $SCRATCH/link_host (two out-of-process Links will be launched)"
+else
+  echo "NOTE: link_host did not build; the out-of-process Link scenarios will SKIP loudly."
+fi
 
 "$SCRATCH/host_rig" "$V2_COMP" "$LINK_COMP" "$PORT" "$V2_VST3"
 RC=$?

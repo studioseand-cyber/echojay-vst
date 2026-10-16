@@ -104,6 +104,23 @@ LinkProcessor::LinkProcessor()
                         + f.getFileName()).toRawUTF8());
     };
 
+    // ---- SEAN'S #9 (16 Oct 2026): THE LINK'S SUGGESTED SETTINGS AFTER A DIAL --------------------
+    //
+    // "the Link's Suggested Settings for it says 'No suggested settings for this plugin'" - after an
+    // agent add that dialled Renaissance Axx's threshold correctly. ChainHost DOES write the slot's
+    // text when a dial lands ("Applied automatically\nthreshold -20 dB") and raises
+    // onSlotSettingsChanged to say so. The main plugin's editor has listened to that since the dial
+    // work shipped; THIS PROCESS NEVER SET THE HOOK AT ALL, so the Link's own display model kept
+    // whatever it had when the slot was created - which for an agent add is nothing.
+    //
+    // resyncChainModelFromHost + notifyChainModel, the same pair every other Link edit road ends
+    // with, so the card, the sidecar and a reopened window all read the one text the host wrote.
+    chainHost.onSlotSettingsChanged = [this]
+    {
+        resyncChainModelFromHost();
+        notifyChainModel();
+    };
+
     chainHost.onChainChanged = [this]
     {
         updateChainLatency();
@@ -198,6 +215,11 @@ LinkProcessor::~LinkProcessor()
     // closes (ring_leak_guard, 4 crashes in 20 runs, updateShmState reached from the message queue).
     aliveToken_.reset();
     stopTimer();
+    // The hooks this object owns on its own chainHost, dropped before any member goes: chainHost
+    // outlives nothing here, but a callback that reaches a half-destroyed LinkProcessor is the same
+    // class of fault aliveToken_ above closes, and it costs two lines to make it impossible.
+    chainHost.onSlotSettingsChanged = nullptr;
+    chainHost.onChainChanged = nullptr;
     // Audio thread guaranteed stopped before destructor
     releaseRegistrySlot();
     // CLEAN-EXIT HYGIENE (25 Aug 2026): the uid is per-launch, so this

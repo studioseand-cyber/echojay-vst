@@ -101,6 +101,13 @@ public:
 
     /** The run's key and session, so a reopened window can find the row it owns. */
     juce::String runKey() const { return runKey_; }
+    /** THE KEY, MINTED HERE IF IT DOES NOT EXIST YET (Sean's #11, 16 Oct 2026). This object is the
+        one author of the run's RECORD, and the editor's row is a mirror of it - but a run started in
+        a LIVE window had the editor mint a key of its own first and push a second chat-history entry,
+        so one run left two records: the row, and a plain bubble carrying the closing sentence. "The
+        closing shows twice: as a separate chat bubble AND inside the run message." One key, from
+        here, whoever asks first. */
+    juce::String ensureRunKey();
     juce::String sessionId() const { return client_ != nullptr ? client_->sessionId() : juce::String(); }
     /** Whether a build is waiting for a window right now - published to the rig. */
     bool buildParked() const noexcept { return parkedBuild_ != nullptr; }

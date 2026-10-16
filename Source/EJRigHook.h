@@ -120,6 +120,13 @@ struct Command
     int seq = 0;
     juce::String name;
     juce::var args;
+    /** ---- WHICH INSTANCE THIS IS FOR (16 Oct 2026, the matrix's T3) ---------------------------
+        One command file, and from today TWO V2 editors can be open at once - the AU and the VST3 -
+        which is how the matrix produces the rack-selection lock ("this rack is selected on X -
+        deselect there to edit here"). Without addressing, both would obey every command and the
+        lock could never be made to happen. `for` is the wrapper name ("AU" or "VST3"); absent means
+        every instance, which is what every row written before today sends. */
+    juce::String forWrapper;
 
     juce::String str (const char* key) const { return args.getProperty (key, juce::var()).toString(); }
     bool flag (const char* key) const
@@ -151,8 +158,23 @@ inline Command poll (int lastSeq)
     c.seq  = (int) v.getProperty ("seq", 0);
     c.name = v.getProperty ("cmd", juce::var()).toString().trim();
     c.args = v.getProperty ("args", juce::var());
+    c.forWrapper = v.getProperty ("for", juce::var()).toString().trim();
     if (c.seq <= lastSeq || c.name.isEmpty()) return {};
     return c;
+}
+
+/** Whether a command addressed to `forWrapper` is this instance's to run. An unaddressed
+    command belongs to everyone (and in a one-editor run, which is every run before today,
+    that is every command). The comparison is loose on purpose: JUCE spells the wrapper
+    "AudioUnit" and "VST3", and the rig says "AU" and "VST3". */
+inline bool addressedTo (const Command& c, const juce::String& myWrapper)
+{
+    if (c.forWrapper.isEmpty()) return true;
+    const auto want = c.forWrapper.toLowerCase(), mine = myWrapper.toLowerCase();
+    if (want == mine) return true;
+    if (want == "au" && mine.startsWith ("audiounit")) return true;
+    if (want == "audiounit" && mine == "au") return true;
+    return false;
 }
 
 /** Say what happened, so the rig waits on a fact rather than on a sleep. A rig

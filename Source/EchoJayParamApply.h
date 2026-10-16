@@ -61,6 +61,12 @@ struct ApplyResult
     // write, whether that display was compared and matched, and whether the
     // write was REVERTED because it landed wrong.
     juce::String landedText;
+    /** THE UNIT THE DISPLAY WAS READ IN (16 Oct 2026, Sean's #9). A `params` semantic carries its unit
+        in its key ("threshold_db"); a NAMED CONTROL does not - it carries it on the map entry - so a
+        reader downstream had to re-derive it from the semantic and got nothing. typedReadbackMatch
+        already took that override; the landed value ChainHost records for the agent's read-back did
+        not, and "1.2 kHz" parsed unitless reads 1.2. Set on every road, so no second derivation. */
+    juce::String unit;
     bool         displayVerified  = false; // display text compared and matched
     bool         readbackMismatch = false; // landed wrong; value restored
     // SETTLED READ-BACK (21 Sep 2026 ruling). A plugin whose reads are one write behind until the message loop runs (WaveShell)
@@ -692,6 +698,13 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     ApplyResult r; r.semantic = semantic;
     r.anchorsUnverified = anchorsUnverified;
     r.requestedValue = value;
+    // THE UNIT, ONCE, AT THE TOP: every early return carries it too (Sean's #9, 16 Oct 2026). A named
+    // control's unit lives on the map entry and nowhere else, and the agent's read-back parses the
+    // landed display with it.
+    {
+        const auto u = mapEntry.getProperty ("unit", "").toString();
+        r.unit = u.isNotEmpty() ? u : semanticUnit (semantic);
+    }
     juce::String how;
     const int index = resolveParamIndex (plugin, mapEntry, semantic, how);   // 21 Sep 2026: by NAME; the stored index is a hint
     r.index = index;

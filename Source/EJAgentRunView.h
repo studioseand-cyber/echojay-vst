@@ -94,6 +94,17 @@ struct RunView
     bool showGotIt = false;
     bool showRetry = false;
     bool onePlanLine = false;   // item 2: one line means ONE apply, named "Apply"
+    /** TRUE when the steps are collapsed but a FAILED line is still shown: Sean's #13 asked for Hide
+        steps to work on a failed run, and 11b's rule says a failure must not be folded away. Both. */
+    bool failuresOnly = false;
+    /** How many steps the run has, for the control's label when NOTHING was changed (Sean's #18). */
+    int  stepCount = 0;
+    /** The closing sentence as the server wrote it, kept when an undo has replaced it (Sean's #14) -
+        so the record still holds what the run said it had done, and only the DISPLAY moves on. */
+    juce::String closingBeforeUndo;
+    /** The line under an ask with nothing to tap: "Type your answer below." Never invented choices -
+        the plugin cannot know what B meant to offer - but never a dead end either (16 Oct 2026). */
+    juce::String askTypeHint;
     int  changeCount = 0;       // how many steps landed (the "N changes" button)
     std::vector<RunStep> steps;
 
@@ -169,7 +180,13 @@ inline juce::String rightWordFor (const EJAgentClient::Step& s, bool askPendingH
         case St::Pending:          return {};
         case St::AwaitingApproval: return {};                 // the buttons live there
         case St::Running:          return "working";
-        case St::Done:             return s.autoApplied ? "auto-applied" : "applied";
+        // ---- ONLY A `do` APPLIES ANYTHING (Sean's #5, 16 Oct 2026) ------------------------------
+        // "a stray green 'applied' label on the right of the run's status lines." It was not stray:
+        // every finished step said "applied", including a look and a check - lines that read the
+        // state and changed nothing. A read that claims to have applied something is the same class
+        // of lie as a figure nobody can see. The green tick already says the step finished, so a
+        // read gets no word at all, and "applied" means what it says.
+        case St::Done:             return s.isDo() ? (s.autoApplied ? "auto-applied" : "applied") : juce::String();
         case St::Failed:           return "not applied";
         case St::Declined:         return "skipped";
         case St::NotRun:           return "not applied";
@@ -204,19 +221,45 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     // from the other side. A failed line keeps the steps open; everything else collapses.
     bool anyFailed = false;
     for (const auto& st : c.steps()) if (st.status == St::Failed) anyFailed = true;
-    v.stepsOpen  = stepsOpen || ! v.finished || anyFailed;
+    // ---- SEAN'S #13 (16 Oct 2026): HIDE STEPS WORKS ON A FAILED RUN TOO ------------------------
+    // The rule above was written as "a failed run never collapses", which made the control a
+    // no-op on exactly the runs he was pressing it on - a button that does nothing is item 2's
+    // complaint, and his #13 named it. The rule it was protecting still holds: a failure must not
+    // be folded away. So the press is HONOURED and the collapse keeps the failed lines on screen -
+    // failuresOnly - rather than refusing to collapse at all.
+    v.failuresOnly = ! stepsOpen && v.finished && anyFailed;
+    v.stepsOpen  = stepsOpen || ! v.finished;
     v.closing    = v.finished ? (c.state() == S::Failed ? c.errorMessage() : c.doneSummary()) : juce::String();
     v.showStop   = v.running;
     v.showUndoAll = v.finished && c.canUndoAll();
     v.showRetry   = c.state() == S::Failed && c.errorRetryable();
     v.showGotIt   = c.state() == S::Listening;
     v.onePlanLine = c.planLines().size() <= 1;
-    v.showApplyAll = c.state() == S::AwaitingApproval;
+    // ---- SEAN'S #4 (16 Oct 2026): ONE WAITING LINE HAS ONE PAIR OF BUTTONS ---------------------
+    // "One pending line: show only the line's buttons. Two or more: add Apply all / Skip all under
+    // the list, as in the mockup." The line's own Apply is the primary control (item 2's fix), so
+    // a second Apply under it was two doors onto one decision - and the user had to guess whether
+    // they differed. The footer pair returns the moment there is more than one decision to make.
+    // The ONE exception, deliberate: an approval state with no line showing buttons at all would
+    // have no road out, so the footer stays as the fallback rather than leaving a run stuck.
+    int waitingLines = 0;
+    for (const auto& st : c.steps())
+        if (st.status == St::AwaitingApproval && c.state() == S::AwaitingApproval) ++waitingLines;
+    v.showApplyAll = c.state() == S::AwaitingApproval && waitingLines != 1;
 
     if (c.askPending())
     {
         const auto ask = c.pendingAsk();
         v.askQuestion = ask.question;
+        // ---- SEAN'S BLOCKER, 16 Oct 2026: AN ASK IS NEVER A DEAD END -------------------------------
+        // The 09:19 ask arrived with no choices at all. The row showed the question and a faint
+        // "your answer?" and there was nothing to press; typing was refused. The choices cannot be
+        // invented here - only B knows what it meant to offer - but the road that IS open is named,
+        // so the user can always answer: the composer takes it (EJAgentClient::interceptTyped).
+        if (ask.labels.isEmpty())
+            v.askTypeHint = "Type your answer in the box below and press Enter.";
+        else if (ask.allowFreeText)
+            v.askTypeHint = "Tap one, or type your own answer.";
     }
     if (c.playback().active)
     {
@@ -266,9 +309,38 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         v.steps.push_back (std::move (r));
         v.askQuestion.clear();        // the row IS the question; two copies would be two authorities
     }
-    // Undone steps are no longer changes to undo. Counting them would make "3 changes" outlive the undo.
+    // ---- SEAN'S #18 (16 Oct 2026): A READ IS NOT A CHANGE --------------------------------------
+    // *"A read-only run (a GR question) shows '4 changes'. Read-only steps aren't changes: show
+    // 'N steps', or no count if nothing changed."* Undone steps are not changes either - counting
+    // them would make "3 changes" outlive the undo - and nor is a look, a check or a question. The
+    // count is the number of `do` steps that landed and have not been put back; `stepCount` is what
+    // the control falls back to naming when that is zero.
     v.changeCount = 0;
-    for (const auto& s : v.steps) if (s.status == (int) St::Done) ++v.changeCount;
+    v.stepCount   = (int) v.steps.size();
+    int i2 = -1;
+    for (const auto& s : v.steps)
+    {
+        ++i2;
+        if (s.status != (int) St::Done) continue;
+        const bool wasDo = i2 < (int) c.steps().size() && c.steps()[(size_t) i2].isDo();
+        if (wasDo) ++v.changeCount;
+    }
+    // ---- SEAN'S #14 (16 Oct 2026): AFTER AN UNDO, THE CLOSING CANNOT STILL CLAIM THE CHANGE ----
+    // *"after 'Everything the agent changed has been undone' the run still shows 'Pre gain on the Mix
+    // Bus is set to 0 dB', a stale sentence."* The closing is the server's done summary, written
+    // before the undo existed; once every change has been put back it describes a state that is no
+    // longer true. The sentence is REPLACED rather than edited, because nothing here can know what
+    // the state is now - only that what the closing says about it has been undone.
+    {
+        bool anyUndone = false;
+        for (const auto& s : v.steps) if (s.status == (int) St::Undone) anyUndone = true;
+        if (anyUndone && v.changeCount == 0 && v.closing.isNotEmpty())
+        {
+            v.closingBeforeUndo = v.closing;
+            v.closing = "Everything this run changed has been undone, so what it said above no longer "
+                        "describes the rack.";
+        }
+    }
     return v;
 }
 
@@ -284,6 +356,8 @@ inline juce::var toJson (const RunView& v)
     o->setProperty ("mode",      v.modeBadge);
     o->setProperty ("notice",    v.notice);
     o->setProperty ("ask",       v.askQuestion);
+    if (v.askTypeHint.isNotEmpty()) o->setProperty ("askHint", v.askTypeHint);
+    if (v.failuresOnly)             o->setProperty ("failuresOnly", true);
     o->setProperty ("running",   v.running);
     o->setProperty ("finished",  v.finished);
     o->setProperty ("stepsOpen", v.stepsOpen);
@@ -294,6 +368,8 @@ inline juce::var toJson (const RunView& v)
     o->setProperty ("retry",     v.showRetry);
     o->setProperty ("onePlanLine", v.onePlanLine);
     o->setProperty ("changes",   v.changeCount);
+    if (v.stepCount > 0)                  o->setProperty ("stepCount", v.stepCount);
+    if (v.closingBeforeUndo.isNotEmpty()) o->setProperty ("closingBeforeUndo", v.closingBeforeUndo);
     o->setProperty ("state",     v.state);
     if (v.playbackActive)
     {
@@ -338,6 +414,8 @@ inline RunView fromJson (const juce::var& v)
     r.modeBadge  = o->getProperty ("mode").toString();
     r.notice     = o->getProperty ("notice").toString();
     r.askQuestion= o->getProperty ("ask").toString();
+    r.askTypeHint= o->getProperty ("askHint").toString();
+    r.failuresOnly = (bool) o->getProperty ("failuresOnly");
     r.running    = (bool) o->getProperty ("running");
     r.finished   = (bool) o->getProperty ("finished");
     r.stepsOpen  = o->hasProperty ("stepsOpen") ? (bool) o->getProperty ("stepsOpen") : true;
@@ -348,6 +426,8 @@ inline RunView fromJson (const juce::var& v)
     r.showRetry  = (bool) o->getProperty ("retry");
     r.onePlanLine= (bool) o->getProperty ("onePlanLine");
     r.changeCount= (int)  o->getProperty ("changes");
+    r.stepCount  = (int)  o->getProperty ("stepCount");
+    r.closingBeforeUndo = o->getProperty ("closingBeforeUndo").toString();
     r.state      = (int)  o->getProperty ("state");
     if (o->hasProperty ("playbackLine"))
     {
@@ -404,7 +484,13 @@ struct RunRects
     int totalHeight = 0;
     juce::Rectangle<int> header, statusText, modeBadge, closing, changesBtn;
     juce::Rectangle<int> notice, askQuestion, playbackRing, playbackLine;
-    std::vector<RowRects> rows;             // one per step, in order (empty when collapsed)
+    std::vector<RowRects> rows;             // one per LAID row, in order (empty when fully collapsed)
+    /** Which step each laid row belongs to. The rows were one-to-one with the steps until the
+        failures-only collapse (Sean's #13) laid a SUBSET, at which point an index into one was no
+        longer an index into the other - the class of fault that moved Details onto the wrong line
+        on 13 Oct. Every reader goes through this map. */
+    std::vector<int>      rowStep;
+    juce::Rectangle<int>  askHint;
     std::vector<RunZone>  zones;
 };
 
@@ -445,13 +531,17 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
     }
 
     // ---- the steps ------------------------------------------------------------------
-    if (v.stepsOpen)
+    if (v.stepsOpen || v.failuresOnly)
     {
         std::vector<RowSpec> specs;
         std::vector<int> kinds;                  // 0 none, 1 right word, 2 Apply/Skip, 3 Details, 4 Undo
         specs.reserve (v.steps.size());
-        for (const auto& s : v.steps)
+        for (size_t si = 0; si < v.steps.size(); ++si)
         {
+            const auto& s = v.steps[si];
+            // the collapsed-with-a-failure state shows the failed lines and nothing else
+            if (! v.stepsOpen && s.status != (int) EJAgentClient::Step::Status::Failed) continue;
+            L.rowStep.push_back ((int) si);
             RowSpec r;
             r.label  = s.label;
             r.detail = s.detail;
@@ -473,30 +563,33 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
         {
             y += layoutRows (specs, x0, y, width, L.rows);
             // the chips of a question row sit UNDER that row, indented past the glyph column
-            for (size_t i = 0; i < L.rows.size() && i < v.steps.size(); ++i)
+            for (size_t i = 0; i < L.rows.size() && i < L.rowStep.size(); ++i)
             {
                 const int kind = kinds[i];
+                const int si   = L.rowStep[i];
                 const auto& rr = L.rows[i];
                 if (kind == 2)
                 {
                     const int bw = lineBtnW;
                     L.zones.push_back ({ { rr.button.getX(), rr.button.getY(), bw, rr.button.getHeight() },
-                                         RunHit::ApplyLine, (int) i, {} });
+                                         RunHit::ApplyLine, si, {} });
                     L.zones.push_back ({ { rr.button.getX() + bw + Metrics::btnGap, rr.button.getY(), bw, rr.button.getHeight() },
-                                         RunHit::SkipLine, (int) i, {} });
+                                         RunHit::SkipLine, si, {} });
                 }
-                else if (kind == 3) L.zones.push_back ({ rr.button, RunHit::Details, (int) i, {} });
-                else if (kind == 4) L.zones.push_back ({ rr.button, RunHit::Undo,    (int) i, {} });
+                else if (kind == 3) L.zones.push_back ({ rr.button, RunHit::Details, si, {} });
+                else if (kind == 4) L.zones.push_back ({ rr.button, RunHit::Undo,    si, {} });
             }
             // chips: laid after the rows so their y is below everything the rows claimed
-            for (size_t i = 0; i < v.steps.size(); ++i)
+            for (size_t i = 0; i < L.rowStep.size(); ++i)
             {
-                if (v.steps[i].chips.isEmpty() || ! v.steps[i].answered.isEmpty()) continue;
+                const int si = L.rowStep[i];
+                const auto& st = v.steps[(size_t) si];
+                if (st.chips.isEmpty() || ! st.answered.isEmpty()) continue;
                 const int cx = x0 + Metrics::glyphW + Metrics::glyphGap;
                 std::vector<juce::Rectangle<int>> chipRects;
-                const int h = layoutChips (v.steps[i].chips, cx, y, juce::jmax (1, width - (cx - x0)), chipRects);
+                const int h = layoutChips (st.chips, cx, y, juce::jmax (1, width - (cx - x0)), chipRects);
                 for (size_t k = 0; k < chipRects.size(); ++k)
-                    L.zones.push_back ({ chipRects[k], RunHit::Chip, (int) i, v.steps[i].chips[(int) k] });
+                    L.zones.push_back ({ chipRects[k], RunHit::Chip, si, st.chips[(int) k] });
                 y += h;
             }
             y += gap;
@@ -507,6 +600,12 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
     {
         const int h = wrappedTextHeight (v.askQuestion, bodyFont(), width);
         L.askQuestion = { x0, y, width, h };
+        y += h + gap;
+    }
+    if (v.askTypeHint.isNotEmpty())
+    {
+        const int h = wrappedTextHeight (v.askTypeHint, detailFont(), width);
+        L.askHint = { x0, y, width, h };
         y += h + gap;
     }
 
@@ -530,10 +629,20 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
     // ---- the row's own controls ------------------------------------------------------
     juce::StringArray footer;
     std::vector<RunHit> footerKinds;
-    if (v.finished && v.changeCount > 0)
+    // ---- THE COLLAPSE CONTROL (Sean's #2 and #13) ---------------------------------------------
+    // It was gated on changeCount > 0, so a run that failed or was stopped without landing anything
+    // had no control at all - and a run that HAD landed something but failed a line had one that
+    // could not act (the view forced the steps open). Both were "the button does nothing". Now:
+    // any finished run with steps can be collapsed, and the label says what pressing it will do.
+    if (v.finished && ! v.steps.empty())
     {
-        const auto label = juce::String (v.changeCount) + (v.changeCount == 1 ? " change" : " changes");
-        const int w = juce::jmax (Metrics::chipMinW, chipFont().getStringWidth (label) + 30);
+        // "N changes" when it changed something; "N steps" when it only read (Sean's #18).
+        const auto label = v.changeCount > 0
+                               ? juce::String (v.changeCount) + (v.changeCount == 1 ? " change" : " changes")
+                               : v.stepCount > 0
+                                     ? juce::String (v.stepCount) + (v.stepCount == 1 ? " step" : " steps")
+                                     : juce::String ("Show steps");
+        const int w = juce::jmax (Metrics::chipMinW, chipFont().getStringWidth (juce::String ("Hide steps")) + 30);
         L.changesBtn = { x0, y, w, changesH };
         L.zones.push_back ({ L.changesBtn, RunHit::ToggleSteps, -1, v.stepsOpen ? "Hide steps" : label });
     }

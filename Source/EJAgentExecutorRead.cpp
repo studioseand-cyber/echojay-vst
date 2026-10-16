@@ -551,6 +551,34 @@ juce::var ExecutorRead::startContext()
     if (! lvv.isVoid()) o->setProperty ("levelling", lvv);
     juce::Array<juce::var> caps; caps.add ("look"); caps.add ("check"); caps.add ("wait_for_playback"); caps.add ("checkpoint");
     o->setProperty ("capabilities", juce::var (caps));
+    // ---- SEAN'S #8 (16 Oct 2026): WHAT CANNOT BE DONE, SAID BEFORE IT IS TRIED ------------------
+    //
+    // *"check(gr) on a Link: the agent called it twice, failed twice ('cannot be read from a Link
+    // yet'), then said a retry won't work while offering 'Try once more' and asking 'What now?'.
+    // Expose 'GR not readable on a Link' as a capability so the agent never calls it there."*
+    //
+    // The refusal already carries retryable:false and a hint (item 8, 13 Oct), which is the right
+    // answer to a call that has happened. This is the answer BEFORE it happens: the start context
+    // states the limit, keyed to THIS turn's target, so a plan that would have measured a Link's
+    // gain reduction is never made. `cannot` is a list so the next limit of this kind has a home,
+    // and FOR_B §10 asks B to read it. Said whether or not the target is a Link, because the model
+    // can address another channel mid-turn.
+    {
+        juce::Array<juce::var> cannot;
+        auto* gr = new juce::DynamicObject();
+        gr->setProperty ("what", "gr");
+        gr->setProperty ("where", "link");
+        gr->setProperty ("why", "gain reduction is not published by a Link yet - only the rack this "
+                                "EchoJay window has open can be measured");
+        gr->setProperty ("retryable", false);
+        gr->setProperty ("instead", "work from what look(rack) reports, or ask the user to open that "
+                                    "track's own EchoJay window");
+        cannot.add (juce::var (gr));
+        o->setProperty ("cannot", juce::var (cannot));
+        // The same fact in the flat form, for a reader that does not walk `cannot`.
+        o->setProperty ("grReadableOnLink", false);
+        o->setProperty ("targetIsLink", target_.isNotEmpty());
+    }
     o->setProperty ("agentMode", true);
     if (src_.projectName && src_.projectName().isNotEmpty()) o->setProperty ("project", src_.projectName());
     return fitUnder8K (juce::var (o));
@@ -705,7 +733,18 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // no number." An EchoJay device reports its own reduction; a third party must have passed the
         // EJ Maps sweep, which is what the server gates a comp profile on. Everything else gets a
         // refusal with no figure in it - not a guess, and not a zero that reads like a measurement.
-        if (s.pictureValid && s.grKnown && ! s.grCertified)
+        // ---- SEAN'S #19 (16 Oct 2026): NOT CERTIFIED IS ANSWERED FIRST, AND IS NOT "SILENCE" ----
+        //
+        // *"check(gr) on an uncertified third-party (Renaissance Axx, own rack, audio playing, Axx
+        // showing 15.5 dB attenuation) returned 'No audio has been heard for gain reduction on slot 1
+        // yet, the channel may be silent or muted'. False reason."*
+        //
+        // The gate below required grKnown - a READING - before it would say "not certified". An
+        // uncertified third party has no reading by construction, so it never reached this branch and
+        // fell through to the not-playing answer, which invented a reason that was not true and sent
+        // the user looking for a muted channel. Certification is a property of the PLUGIN, not of
+        // whether audio has been heard, so it is decided here, before any listening question.
+        if (! s.grCertified)
         {
             done (ToolOutcome::failureFor ("not_certified",
                         "gain reduction is not readable for \"" + s.name + "\": it is not an EchoJay device "
@@ -717,6 +756,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
                         "measured, so any figure would be a guess."));
             return;
         }
+        // A CERTIFIED slot with no reading yet IS the not-playing case, and that answer is true of it.
         if (! s.pictureValid || ! s.grKnown) { done (notPlaying ("gain reduction on slot " + juce::String (slotArg))); return; }
         // ---- SEAN'S CHECKS 2 AND 3 (15 Oct 2026): THE WINDOW, NOT THE INSTANT -------------------
         //
@@ -737,31 +777,56 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             // "the absolute-max peak (8 dB) is a single transient instant nobody can see on the meter;
             // I see 2-4, hitting 5. Report 'loudest hits' as the 95th percentile of active blocks
             // instead, keep the true max internal for spike warnings only."
+            // ---- SEAN'S #17 (16 Oct 2026): THE INSTANT MAX IS NOT PUBLISHED AT ALL --------------
+            //
+            // *"'loudest hits' never arrives. The agent said 'The peak reading still isn't coming
+            // through' and gave only the typical (about 3 dB), then quoted 'the instant hitting up to
+            // 6 dB', which was meant to stay internal. Fix the loudest-hits figure (95th percentile)
+            // and never expose the instant max."*
+            //
+            // Two faults, one cause: the payload carried FIVE figures and told the model in prose
+            // which two to use. The instant (grNowDb) and the single deepest transient
+            // (grSpikeMaxDb) were there to be quoted, and were quoted; meanwhile the field a prompt
+            // written against the old contract looks for - "peak" - was the name I had taken away
+            // from the thing it used to mean.
+            //
+            // So: the instant and the transient are GONE from the result - a figure that must not be
+            // quoted has no business being sent - and `grPeakDb`/`peakDb` now ALIAS the loudest hits,
+            // so a reader asking for "the peak" gets the 95th percentile rather than a transient.
+            // There is also one ready-made SENTENCE, because the surest way to stop a figure being
+            // misdescribed is to hand over the words with it.
             o->setProperty ("grLoudestDb", r1 (s.grLoudestDb));   // 95th percentile - THE figure
+            o->setProperty ("grPeakDb",    r1 (s.grLoudestDb));   // the old name, now the right figure
+            o->setProperty ("peakDb",      r1 (s.grLoudestDb));
             o->setProperty ("grHeldDb",    r1 (s.grHeldDb));      // what the tile and the meter show
             o->setProperty ("grTypicalDb", r1 (s.grTypicalDb));   // median - where the needle sits
-            o->setProperty ("grNowDb",     r1 (s.grDb));          // this instant only
-            o->setProperty ("grSpikeMaxDb", r1 (s.grPeakDb));     // one transient; a WARNING, not a reading
             o->setProperty ("grWindowFrames", s.grWindowFrames);
             o->setProperty ("measured", "over the whole listen window, only while audio was playing");
-            o->setProperty ("note", "Report grLoudestDb as the loudest hits and grTypicalDb as the typical "
-                                    "amount. grLoudestDb is the 95th percentile of the blocks with audio - "
-                                    "what a person actually sees on a meter. grSpikeMaxDb is the single "
-                                    "deepest instant in the whole window: use it ONLY to warn about spikes, "
-                                    "never as what the compressor is doing. grNowDb is this instant alone "
-                                    "and must not be quoted at all.");
+            o->setProperty ("sentence", "The loudest hits are about " + juce::String (r1 (s.grLoudestDb), 1)
+                                        + " dB of gain reduction and the typical amount is about "
+                                        + juce::String (r1 (s.grTypicalDb), 1) + " dB.");
+            o->setProperty ("note", "Quote the `sentence` field, or build from grLoudestDb (the loudest "
+                                    "hits: the 95th percentile of the blocks with audio, which is what a "
+                                    "person sees on the meter) and grTypicalDb (the typical amount). There "
+                                    "is deliberately no instantaneous or single-transient figure in this "
+                                    "result: those are not measurements of what the compressor is doing "
+                                    "and must not be reported.");
         }
         else
         {
             // NOTHING WAS MEASURED, which is not 0 dB of reduction. Saying so is the whole point: a
             // window with no frames is the absence of a reading, and the default has to be the safe
             // answer rather than the convenient one.
-            o->setProperty ("grNowDb", r1 (s.grDb));
+            // SEAN'S #17: not even here. The instantaneous figure was the one thing this branch had
+            // to offer and it is precisely the figure he has twice seen quoted as a measurement.
             o->setProperty ("measured", "nothing yet - no audio has been through this slot since the "
                                         "listen window began");
-            o->setProperty ("note", "there is no peak or typical figure to give. Ask for a listen with "
-                                    "audio playing before quoting a gain reduction; grNowDb is one "
-                                    "instant and must not be reported as what the compressor is doing.");
+            o->setProperty ("listenFirst", true);
+            o->setProperty ("sentence", "I have not heard anything through this compressor yet, so I "
+                                        "cannot say how much it is doing.");
+            o->setProperty ("note", "There is no figure to give. Run wait_for_playback with audio playing "
+                                    "and ask again: a gain reduction is measured over a listen window, so "
+                                    "the listen comes FIRST and the check after it.");
         }
         setLevel (o, "inLufs", s.inLufs); setLevel (o, "outLufs", s.outLufs);
         done (ToolOutcome::success (juce::var (o)));

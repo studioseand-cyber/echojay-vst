@@ -244,16 +244,73 @@ void EJAgentClient::dismiss()
     changed();
 }
 
+/** The choice a typed answer MEANS, or "" when it means none of them. Exact first
+    (trimmed, case-insensitive), then an unambiguous prefix, then an unambiguous
+    containment - so "MTransient" answers "MTransient (free)" and "mt" does not
+    answer anything when two choices begin with it. */
+juce::String EJAgentClient::matchTypedToChoice (const juce::String& typedIn) const
+{
+    const auto t = typedIn.trim();
+    if (t.isEmpty()) return {};
+    for (const auto& l : pendingAsk_.labels) if (l.trim().equalsIgnoreCase (t)) return l;
+    juce::String hit; int hits = 0;
+    for (const auto& l : pendingAsk_.labels)
+        if (l.trim().startsWithIgnoreCase (t)) { hit = l; ++hits; }
+    if (hits == 1) return hit;
+    hit.clear(); hits = 0;
+    for (const auto& l : pendingAsk_.labels)
+        if (l.containsIgnoreCase (t)) { hit = l; ++hits; }
+    return hits == 1 ? hit : juce::String();
+}
+
 bool EJAgentClient::interceptTyped (const juce::String& typed)
 {
     if (askPending())
     {
-        if (! pendingAsk_.allowFreeText)
+        // ---- SEAN'S BLOCKER, 16 Oct 2026: A TYPED ANSWER IS NEVER DROPPED --------------------------
+        //
+        // "an ask always shows its choices AND accepts a typed answer; a typed reply must never be
+        // silently dropped." The 09:19 run was a dead end: B sent an ask with NO choices and
+        // allowFreeText false, so this function answered "Tap one of the choices to answer" about
+        // choices that did not exist, and the run hung until Stop. Three roads out, in order:
+        //
+        //   1. the text NAMES one of the choices -> answer it as a TAP, which is the shape the server
+        //      asked for ("MTransient" for a choice labelled "MTransient");
+        //   2. free text is allowed (and talkAskOf now forces it on when there is nothing to tap)
+        //      -> answer as typed;
+        //   3. the server said tap-only and the text matches nothing -> STILL answer, as typed, and
+        //      log that the server will be getting free text it said it did not want. Sean's rule is
+        //      explicit, and a hung run is worse than an answer the server has to parse.
+        const auto asTap = matchTypedToChoice (typed);
+        if (asTap.isNotEmpty())
         {
-            refusedTypedLine_ = "Tap one of the choices to answer.";   // contract 2.4: allowFreeText false
-            log ("typed answer refused (allowFreeText false): \"" + typed + "\"");
-            changed();
+            log ("typed answer \"" + typed.trim() + "\" matched the choice \"" + asTap + "\" - answering as a tap");
+            answerAsk (asTap, false);
             return true;
+        }
+        // ---- SEAN'S #21 (16 Oct 2026): A NEW INSTRUCTION IS NOT AN ANSWER ---------------------------
+        //
+        // *"A new request typed while a run waits on an ask got merged into that run ('Add Pro-C 2'
+        // continued the previous GR run, with its check-gr steps). A new instruction closes the
+        // waiting run (marked stopped) and starts a new run."*
+        //
+        // The two rules meet here, and they do not conflict once the question is asked properly:
+        //
+        //   there ARE choices on screen and the text matches none of them  -> it is a new instruction.
+        //        The run is STOPPED (so the transcript says so) and this returns false, which sends the
+        //        text down the ordinary road and starts a run of its own.
+        //   there are NO choices at all                                    -> typing is the only way to
+        //        answer, so the text IS the answer (Sean's blocker, same morning).
+        //
+        // Either way the words are acted on. Nothing is dropped, which is the rule both of his
+        // instructions share.
+        if (! pendingAsk_.labels.isEmpty())
+        {
+            log ("typed text \"" + typed.trim() + "\" matches none of the " + juce::String (pendingAsk_.labels.size())
+                 + " choice(s) on screen - taking it as a NEW INSTRUCTION: this run is stopped and the "
+                   "text starts its own (Sean's #21)");
+            stop();
+            return false;
         }
         answerAsk (typed.trim(), true);
         return true;
@@ -701,7 +758,18 @@ void EJAgentClient::runStep (Step& s)
             if (text.isNotEmpty() && ! ask.question.startsWith (text)) pendingAsk_.question = (text + "\n" + ask.question).trim();
             pendingAskId_ = id;
             setState (State::AwaitingAsk);
-            log ("ask card: \"" + pendingAsk_.question + "\" choices=" + pendingAsk_.labels.joinIntoString ("|"));
+            log ("ask card: \"" + pendingAsk_.question + "\" choices=" + pendingAsk_.labels.joinIntoString ("|")
+                 + "  freeText=" + juce::String (pendingAsk_.allowFreeText ? "y" : "n")
+                 + (pendingAsk_.choiceKey.isNotEmpty() ? "  key=" + pendingAsk_.choiceKey : juce::String())
+                 + (pendingAsk_.labelKey.isNotEmpty()  ? "  labelKey=" + pendingAsk_.labelKey : juce::String()));
+            if (pendingAsk_.labels.isEmpty())
+                // THE EVIDENCE FOR B, not a guess about B: the ask object exactly as it arrived, so
+                // tomorrow's answer is "the choices were under <key>" or "there were none".
+                log ("ask card has NOTHING TO TAP - the ask object as it arrived: "
+                     + juce::JSON::toString (call.args.getDynamicObject() != nullptr
+                                                 ? call.args.getDynamicObject()->getProperty ("ask") : juce::var(), true)
+                     + (pendingAsk_.freeTextForced ? "  [allowFreeText was false and has been overridden: typing is the only road out]"
+                                                   : juce::String()));
             changed();
             return;                       // completes in answerAsk
         }
@@ -728,9 +796,17 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
     if (o.ok)
     {
         s->status = Step::Status::Done;
-        s->detail = o.landedLine;
+        // ---- SEAN'S #10 (16 Oct 2026): THE ROW IS NOT WHERE THE MODEL IS ADDRESSED ------------------
+        // "Internal model instructions leak into the step details." They did, through the SUCCESS door:
+        // item 3 split the failure path on 13 Oct and left this line reading the model's string whole.
+        // The user half on the row, the whole string behind Details and in the result the model gets.
+        s->detail      = o.landedForTheUser();
+        s->modelDetail = o.landedLine != s->detail ? o.landedLine : juce::String();
         s->undoToken = o.undoToken;
         s->result = o.result;
+        if (s->modelDetail.isNotEmpty())
+            log ("step " + id + " landed line split: the row shows \"" + s->detail
+                 + "\" and the model's sentences stay off it");
         log ("step " + id + " DONE" + (o.undoToken.isNotEmpty() ? " undo=" + o.undoToken : juce::String()) + (o.landedLine.isNotEmpty() ? " \"" + o.landedLine + "\"" : juce::String()));
     }
     else

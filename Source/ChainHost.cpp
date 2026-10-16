@@ -3431,10 +3431,16 @@ juce::String ChainHost::slotPictureBadge(int i) const
     //
     // AND NO ESTIMATES, EVER: a figure appears only for a certified slot - an EchoJay device, or a
     // third party whose map passed the EJ Maps sweep. Everything else shows nothing at all.
+    // ---- SEAN'S #16 (16 Oct 2026): IT HAS TO FIT ----------------------------------------------
+    // *"The caption is also truncated ('WORK...'): fit it or drop the word."* "GR 10.9 WORKING" is
+    // 15 characters in a 118 px row at 6.5 pt and never could. The GR FIGURE IS THE STRONGER FACT -
+    // a number only appears when the device is reducing something, so "WORKING" beside it says
+    // nothing the figure has not already said - and it is the word that goes. HOT stays: it is four
+    // characters and it is a warning.
     juce::String t;
     if (p.grKnown && p.grCertified) t = "GR " + juce::String(p.grHeldDb, 1);
     if (p.hot())     t += t.isEmpty() ? juce::String("HOT") : juce::String(" HOT");
-    if (p.working()) t += t.isEmpty() ? juce::String("WORKING") : juce::String(" WORKING");
+    if (p.working() && t.isEmpty()) t = "WORKING";
     return t;
 }
 juce::StringArray ChainHost::listenCardLines() const
@@ -4266,13 +4272,16 @@ ChainHost::applyStructuredSettings (int slotIndex,
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
                          r.staleDisplayKept, r.requestedValue, r.outOfRange,
-                         r.index, r.anchorsUnverified, r.beforeText });
+                         r.index, r.anchorsUnverified, r.beforeText, r.unit });
     int pending = 0; for (const auto& r : results) if (r.pendingSettle) ++pending;
     if (pending > 0)
     {
         EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex + 1) + " (\"" + slot.desc.name + "\"): " + juce::String(pending)
                        + " write(s) mismatched on the immediate read - verifying after a message-loop settle (bound " + juce::String(kSettleBoundMs) + " ms)").toRawUTF8());
         SettleJob job; job.slot = slotIndex; job.map = map; job.results = results; job.t0 = juce::Time::currentTimeMillis();
+        // THE PLUGIN'S OWN IDENTITY, so a reorder between now and the settle cannot point this job at
+        // another plugin (Sean's #9, 16 Oct 2026).
+        if (slot.node != nullptr) job.node = slot.node->nodeID;
         settleJobs_.push_back (std::move (job));
         scheduleSettleTick (0);   // the next message-loop tick, never this one
     }
@@ -4296,7 +4305,25 @@ void ChainHost::settleTick()
     {
         auto& job = *it; ++job.ticks;
         juce::AudioPluginInstance* instance = nullptr;
-        if (job.slot >= 0 && job.slot < (int) slots_.size() && slots_[(size_t) job.slot].node != nullptr)
+        // BY NODE ID FIRST: the index this job was created with may have moved under it (an add
+        // reorders the rack), and verifying against whatever sits at the old index both misreports
+        // this write and can REVERT a value on an unrelated plugin.
+        if (job.node.uid != 0)
+        {
+            for (size_t i = 0; i < slots_.size(); ++i)
+                if (slots_[i].node != nullptr && slots_[i].node->nodeID == job.node)
+                {
+                    if ((int) i != job.slot)
+                        EchoJay_NSLog(("EJParamApply: the settle job for \"" + slots_[i].desc.name
+                                       + "\" moved from slot " + juce::String(job.slot + 1) + " to slot "
+                                       + juce::String((int) i + 1) + " while it waited - following the "
+                                       "plugin, not the index (Sean's #9)").toRawUTF8());
+                    job.slot = (int) i;
+                    instance = dynamic_cast<juce::AudioPluginInstance*> (slots_[i].node->getProcessor());
+                    break;
+                }
+        }
+        else if (job.slot >= 0 && job.slot < (int) slots_.size() && slots_[(size_t) job.slot].node != nullptr)
             instance = dynamic_cast<juce::AudioPluginInstance*> (slots_[(size_t) job.slot].node->getProcessor());
         if (instance == nullptr) { it = settleJobs_.erase (it); continue; }   // the slot went away: nothing to verify or restore
         const bool finalAttempt = (now - job.t0) >= kSettleBoundMs;
@@ -4308,7 +4335,7 @@ void ChainHost::settleTick()
             report.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                                 r.landedText, r.displayVerified, r.readbackMismatch,
                                 r.staleDisplayKept, r.requestedValue, r.outOfRange,
-                                r.index, r.anchorsUnverified, r.beforeText });
+                                r.index, r.anchorsUnverified, r.beforeText, r.unit });
         int reverted = 0; for (const auto& r : job.results) if (r.readbackMismatch) ++reverted;
         EchoJay_NSLog(("EJParamApply: slot " + juce::String(job.slot + 1) + " settled after " + juce::String((int) (now - job.t0)) + " ms / "
                        + juce::String(job.ticks) + " tick(s): " + juce::String((int) report.size()) + " result(s), " + juce::String(reverted) + " reverted").toRawUTF8());
@@ -6320,7 +6347,32 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
             // values in controls["Name"], so the flat lookup returned void
             // and the card printed bare repeated labels ("freq Hz, gain dB,
             // freq Hz, gain dB") - no values, no record of what happened.
+            // ---- SEAN'S #20 (16 Oct 2026): THE CARD SHOWS WHAT LANDED, OR SAYS IT DID NOT ---------
+            //
+            // *"the step says 'the settings did NOT take: the threshold and attack', but the slot's
+            // Suggested Settings says 'Applied automatically: Threshold -18, Ratio 4:1, Attack 10...'.
+            // One of them is lying."* The agent's read-back was the wrong one (it was reading another
+            // slot - his #9), and the log settles it: Pro-C 3 reported "-18.00 dB", "4.00:1",
+            // "9.911 ms" from its own display. But the card was only accidentally right, because this
+            // line composes it from the value that was ASKED FOR.
+            //
+            // So the card reads the LANDED display when the plugin gave one - the plugin's own words,
+            // which is the only thing that can honestly be called applied - and falls back to the
+            // request with "(sent, not confirmed)" on it when it did not. His standing rule, in the
+            // one place that was still quietly breaking it: no figure may be presented as a reading
+            // unless something read it.
             auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);
+            if (r.landedText.trim().isNotEmpty())
+            {
+                float lv = 0.0f; bool negInf = false;
+                const auto unit = r.unit.isNotEmpty() ? r.unit : echojay::semanticUnit (r.semantic);
+                if (echojay::parseDisplayForUnit (r.landedText, unit, lv, negInf) && ! negInf)
+                    line = echojay::formatSemanticSetting (r.semantic, juce::var ((double) lv));
+                else
+                    line = echojay::semanticLabel (r.semantic) + " " + r.landedText.trim();
+            }
+            else if (! r.displayVerified)
+                line += " (sent, not confirmed)";
             // A successful write shows NOTHING extra (9 Aug 2026, Sean's
             // call): silence is the signal that it worked, like everything
             // else in the app. The old "(unverified)" suffix surfaced an
@@ -6342,7 +6394,12 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
             if (r.landedText.isNotEmpty())
             {
                 float landed = 0.0f; bool negInf = false;
-                const auto unit = echojay::semanticUnit (r.semantic);
+                // THE UNIT THE WRITE USED, not one re-derived from a control NAME (Sean's #9, 16 Oct
+                // 2026). semanticUnit("Threshold") is "" - a named control's unit is on the map entry -
+                // and an unparseable landed value wrote nothing at all, so the agent's read-back on a
+                // Link reported "this build cannot read that plugin's values back" about a control it
+                // had just dialled correctly. r.unit is what applyOne actually parsed with.
+                const auto unit = r.unit.isNotEmpty() ? r.unit : echojay::semanticUnit (r.semantic);
                 if (echojay::parseDisplayForUnit (r.landedText, unit, landed, negInf))
                 {
                     // THE KEY IS SANITISED, because on this path it is a CONTROL NAME, not a semantic -

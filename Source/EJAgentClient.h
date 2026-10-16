@@ -129,6 +129,9 @@ public:
     bool askPending() const noexcept { return state_ == State::AwaitingAsk; }
     echojay::agent::TalkAsk pendingAsk() const { return pendingAsk_; }
     void answerAsk (const juce::String& choice, bool typed = false);
+    /** Which offered choice a typed answer means, or "" for none. Public because the
+        rig asserts on it directly and because the composer's hint reads it. */
+    juce::String matchTypedToChoice (const juce::String& typed) const;
 
     // ---- playback ------------------------------------------------------------
     const Playback& playback() const noexcept { return playback_; }

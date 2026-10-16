@@ -1854,7 +1854,14 @@ public:
                          // boundary that once dropped `index`, and for the same
                          // reason: the move log needs it and nothing downstream
                          // can re-derive it once the value has been written.
-                         juce::String beforeText; };
+                         juce::String beforeText;
+                         /** THE UNIT THE DISPLAY WAS PARSED IN (16 Oct 2026, Sean's #9). A named control
+                             carries its unit on the map entry and nowhere else, so a reader that
+                             re-derived it from the semantic got "" for "Threshold" - and the landed
+                             figure the agent reads back was then never recorded at all. Last in the
+                             struct and defaulted, so every brace initialiser already written still
+                             compiles and simply leaves it empty. */
+                         juce::String unit; };
     /** 21t-g item 2: THE CALIBRATION LOOP'S WRITE, for the threshold actuator.
         Writes every named control on that slot to the SAME value, through the same map + applySettings path a
         dialled setting takes - so a threshold the loop moves lands with the same guarantees (fp-keyed map, the
@@ -2960,7 +2967,28 @@ private:
     // the end rather than once per op.
     // SETTLED READ-BACK (21 Sep 2026 ruling): results whose immediate read mismatched are re-read on a later message-loop tick
     // (one tick minimum, bounded at 250 ms) and only then reverted; the ledger is re-recorded from the settled results.
-    struct SettleJob { int slot = -1; juce::var map; juce::Array<echojay::ApplyResult> results; juce::int64 t0 = 0; int ticks = 0; };
+    /** ---- THE SETTLE JOB FOLLOWS THE PLUGIN, NOT THE INDEX (16 Oct 2026, Sean's #9) -------------
+        It held `slot` alone, and an ADD reorders: loadPluginAsync appends, then walkSlotTo moves the
+        new slot to its asked-for position and every index at or after it shifts. Sean's 09:40 log is
+        the proof, in two lines - the settle was scheduled for slot 5 ("Renaissance Axx (s)") and
+        verified against slot 5 ("Vertigo VSM-3"), reverting a write on a plugin nobody had touched:
+
+            EJParamApply: slot 5 settled after 271 ms / 9 tick(s): 1 result(s), 1 reverted
+            EJParamApply: slot 5 ("Vertigo VSM-3"), 1 result(s)
+
+        The NodeID is the graph's own identity for the instance and survives any reorder, so the job
+        re-finds its slot every tick; a node that is gone drops the job, which is the honest outcome
+        (there is nothing left to verify or restore). `slot` stays as the LAST KNOWN index, for the
+        log only. This is the same rule as fix 6's "an alive flag, not an address".                  */
+    struct SettleJob
+    {
+        int slot = -1;
+        juce::AudioProcessorGraph::NodeID node {};
+        juce::var map;
+        juce::Array<echojay::ApplyResult> results;
+        juce::int64 t0 = 0;
+        int ticks = 0;
+    };
     std::vector<SettleJob> settleJobs_;
     std::shared_ptr<std::atomic<bool>> settleAlive_ = std::make_shared<std::atomic<bool>> (true);
     void scheduleSettleTick(int delayMs);

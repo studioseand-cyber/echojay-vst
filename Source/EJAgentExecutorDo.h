@@ -189,6 +189,11 @@ private:
             other without parsing, and parsing a sentence back into its parts is how the raw ids got into
             a sentence in the first place. */
         juce::StringArray matchedIds, missedIds;
+        /** SEAN'S #6 (16 Oct 2026): the SAME figures, as a person reads them - "threshold -14 dB,
+            ratio 4:1". `matched` keeps the slot-and-id form the model is given; this is the row's. */
+        juce::StringArray matchedPlain, missedPlain;
+        /** The plugin the figures belong to, so the row can say "Compressor: threshold -14 dB". */
+        juce::String slotName;
         int askedCount = 0;
         bool anythingAsked() const { return askedCount > 0; }
     };

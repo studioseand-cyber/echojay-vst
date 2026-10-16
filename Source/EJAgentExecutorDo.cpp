@@ -524,7 +524,13 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     // The asked values live either under "params" or (since fix 1(a)) flat at the top level.
     juce::DynamicObject* asked = root;
     if (root != nullptr)
-        if (auto* p = root->getProperty ("params").getDynamicObject()) asked = p;
+    {
+        // BOTH SHAPES, as checkSlotValues does (16 Oct 2026). A third party is dialled through
+        // `controls`, keyed by the plugin's own control name, and reading only `params` meant a `set`
+        // on one could never be confirmed - the same hole the add path had.
+        if (auto* p = root->getProperty ("params").getDynamicObject())        asked = p;
+        else if (auto* c = root->getProperty ("controls").getDynamicObject()) asked = c;
+    }
     bool haveSlot = false;
     const int slot1 = argInt (call, "slot", haveSlot);
 
@@ -539,7 +545,7 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         return;
     }
 
-    juce::StringArray matched, missed, unreadable;
+    juce::StringArray matched, missed, unreadable, matchedPlain, missedPlain;
     for (auto& kv : asked->getProperties())
     {
         const auto id = kv.name.toString();
@@ -549,8 +555,17 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         double got = 0.0;
         if (! src_.slotParam (applyTo, slot1, id, got)) { unreadable.add (id); continue; }
         const double tol = juce::jmax (0.05, std::abs (wanted) * 0.02);
-        if (std::abs (got - wanted) <= tol) matched.add (id + " " + juce::String (got, 2));
-        else missed.add (id + " is " + juce::String (got, 2) + " (asked " + juce::String (wanted, 2) + ")");
+        if (std::abs (got - wanted) <= tol)
+        {
+            matched.add (id + " " + juce::String (got, 2));
+            matchedPlain.add (echojay::params::plainValuePhrase (id, got));   // Sean's #6
+        }
+        else
+        {
+            missed.add (id + " is " + juce::String (got, 2) + " (asked " + juce::String (wanted, 2) + ")");
+            missedPlain.add (echojay::params::plainValuePhrase (id, got)
+                             + " (asked " + echojay::params::plainValuePhrase (id, wanted) + ")");
+        }
     }
 
     auto* r = new juce::DynamicObject();
@@ -566,7 +581,10 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         const juce::String why = "the values did not take: " + missed.joinIntoString ("; ")
                                + (matched.isEmpty() ? juce::String()
                                                     : ". What did land: " + matched.joinIntoString (", "));
-        auto o = ToolOutcome::failure ("not_applied", why);
+        auto o = ToolOutcome::failureFor ("not_applied", why,
+                                          "The values did not take: " + missedPlain.joinIntoString (", ")
+                                          + (matchedPlain.isEmpty() ? juce::String()
+                                                                    : ". What did land: " + matchedPlain.joinIntoString (", ")));
         o.result = juce::var (r);
         done (o);
         return;
@@ -581,8 +599,9 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         return;
     }
     r->setProperty ("confirmed", true);
-    done (ToolOutcome::success (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
-                                "read back: " + matched.joinIntoString (", ")));
+    done (ToolOutcome::successFor (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
+                                   "read back: " + matched.joinIntoString (", "),
+                                   "read back " + matchedPlain.joinIntoString (", ")));   // Sean's #6
 }
 
 
@@ -616,6 +635,15 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
     SettingsCheck out;
     auto* root = settingsStructured.getDynamicObject();
     if (root == nullptr || slot1 < 1) return out;
+    // WHOSE KNOBS THESE ARE (Sean's #6): the row reads "Compressor: threshold -14 dB", so the line
+    // needs the plugin's name. Read from the rack, which is the only place it exists.
+    {
+        const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                               : (src_.ownRack  ? src_.ownRack()          : RackRead());
+        if (rack.valid)
+            for (const auto& sl : rack.slots)
+                if (sl.n == slot1) { out.slotName = sl.name; break; }
+    }
     // ---- BOTH SHAPES, BECAUSE A THIRD PARTY USES THE OTHER ONE (16 Oct 2026) -------------------
     // This read `params` (and the flat form) only. A THIRD-PARTY slot is dialled through `controls`,
     // keyed by the plugin's own control name - the shape the contract names and the shape Sean's four
@@ -641,12 +669,16 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
         {
             out.matched.add ("slot " + juce::String (slot1) + " " + id + " " + juce::String (got, 2));
             out.matchedIds.add (id);
+            // SEAN'S #6: the same fact, in words. The model keeps the line above.
+            out.matchedPlain.add (echojay::params::plainValuePhrase (id, got));
         }
         else
         {
             out.missed.add ("slot " + juce::String (slot1) + " " + id + " is " + juce::String (got, 2)
                             + " (asked " + juce::String (wanted, 2) + ")");
             out.missedIds.add (id);
+            out.missedPlain.add (echojay::params::plainValuePhrase (id, got)
+                                 + " (asked " + echojay::params::plainValuePhrase (id, wanted) + ")");
         }
     }
     return out;
@@ -655,11 +687,17 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
 void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
                                   int slotsOnRack, juce::String landedSentence, Done done)
 {
-    const auto finish = [this, opName, done] (juce::var result, const juce::String& line)
+    // TWO AUDIENCES, ONE CALL (Sean's #10, 16 Oct 2026). `userLine` is the row's words; `modelLine`
+    // is what the model is told, which may carry ids and instructions. Passing only one is the old
+    // behaviour and means "this sentence is fit for both", which is true of the short ones.
+    const auto finish = [this, opName, done] (juce::var result, const juce::String& userLine,
+                                              const juce::String& modelLine = {})
     {
-        done (ToolOutcome::success (std::move (result),
-                                    /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
-                                    line));
+        const auto token = opName + ":" + juce::String (juce::Time::currentTimeMillis());
+        if (modelLine.isEmpty())
+            done (ToolOutcome::success (std::move (result), token, userLine));
+        else
+            done (ToolOutcome::successFor (std::move (result), token, modelLine, userLine));
     };
 
     // ---- which slots carry asked values, and where they landed ------------------------------------
@@ -684,8 +722,53 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         {
             bool haveSlot = false;
             int slot1 = argInt (call, "slot", haveSlot);
-            // AN ADD WITHOUT A POSITION LANDS AT THE END, which is what the read-back just counted.
-            if (opName == "add" && (! haveSlot || slot1 < 1)) slot1 = juce::jmax (1, slotsOnRack);
+            // ---- SEAN'S #9 (16 Oct 2026): READ BACK THE SLOT IT LANDED IN, NOT THE LAST ONE --------
+            //
+            // His case: "Add Renaissance Axx to the kick with threshold at -20 dB" on a Link. The dial
+            // worked - the plugin shows Thresh -20.0 - and the read-back still said "this build cannot
+            // read that plugin's values back". It was reading the WRONG SLOT: an `add` carries `after`,
+            // not `slot`, and the server placed this one at the FRONT ("before the EchoJay EQ"), while
+            // this line assumed the end of the rack. The slot it read held a different plugin, which
+            // has no control called Threshold, so every value came back "unreadable".
+            //
+            // BY NAME FIRST, because that is the only thing that cannot drift: the rack is read and the
+            // slot holding the plugin this op just added is the slot to confirm. `after` is the
+            // fallback (after + 1, the contract's placement), and the end of the rack the last resort.
+            if (opName == "add" && (! haveSlot || slot1 < 1))
+            {
+                slot1 = juce::jmax (1, slotsOnRack);
+                const auto wantName = argString (call, "name").trim();
+                bool byAfter = false;
+                const int after = argInt (call, "after", byAfter);
+                if (byAfter && after >= 0) slot1 = after + 1;
+                if (wantName.isNotEmpty())
+                {
+                    const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                                           : (src_.ownRack  ? src_.ownRack()          : RackRead());
+                    if (rack.valid)
+                    {
+                        std::vector<int> hits;
+                        for (const auto& sl : rack.slots)
+                            if (echojay::agent::namesMatchLoosely (sl.name, wantName)) hits.push_back (sl.n);
+                        // ONE match is the answer. Several means the rack holds two of the same plugin,
+                        // and then the placement decides between them rather than a guess: the one at
+                        // `after + 1` if that is one of them, else the last - which is where an add with
+                        // no placement goes.
+                        if (hits.size() == 1) slot1 = hits.front();
+                        else if (hits.size() > 1)
+                        {
+                            int chosen = hits.back();
+                            if (byAfter) for (int h : hits) if (h == after + 1) chosen = h;
+                            slot1 = chosen;
+                        }
+                        EchoJay_NSLog (("EJAgent: add read-back targets slot " + juce::String (slot1)
+                                        + " for \"" + wantName + "\" (" + juce::String ((int) hits.size())
+                                        + " slot(s) match by name, after="
+                                        + (byAfter ? juce::String (after) : juce::String ("-"))
+                                        + ", rack has " + juce::String ((int) rack.slots.size()) + ")").toRawUTF8());
+                    }
+                }
+            }
             // ANY OTHER OP WITHOUT A SLOT IS NOT GUESSED AT. Defaulting to slot 1 would compare the
             // wrong slot's values and report an honest apply as "not applied" - a false negative inside
             // the one check whose whole purpose is not to say things that are not so. No slot, no
@@ -710,6 +793,9 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         all.unreadable.addArray (c.unreadable);
         all.matchedIds.addArray (c.matchedIds);
         all.missedIds.addArray (c.missedIds);
+        all.matchedPlain.addArray (c.matchedPlain);
+        all.missedPlain.addArray (c.missedPlain);
+        if (all.slotName.isEmpty()) all.slotName = c.slotName;
     }
     if (all.askedCount == 0) { finish (juce::var (new juce::DynamicObject()), landedSentence); return; }
 
@@ -740,6 +826,13 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         finish (juce::var (r),
                 // Same rule: the add landed, the SETTINGS did not. Lead with the part that is true.
                 "Added it, but the settings did NOT take: " + askedPlain
+                + (all.missedPlain.isEmpty() ? juce::String()
+                                             : " - " + all.missedPlain.joinIntoString (", "))
+                + (all.matchedPlain.isEmpty() ? juce::String()
+                                              : ". What did land: " + all.matchedPlain.joinIntoString (", ")),
+                // ...and the model's half, which carries the instruction and the ids (Sean's #10: it is
+                // NOT shown on the row).
+                "Added it, but the settings did NOT take: " + all.missed.joinIntoString ("; ")
                 + (all.matched.isEmpty() ? juce::String()
                                          : ". What did land: " + all.matched.joinIntoString (", "))
                 + ". Report the plugin as added with its settings NOT applied, and do not name any value "
@@ -757,6 +850,13 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
                 // SEAN'S #5 (16 Oct 2026): "Never 'Not applied: add X' when X was added: say 'Added X.
                 // Settings not confirmed.'" The sentence LEADS with what landed, so no renderer and no
                 // closing text can turn a successful add into a failure.
+                //
+                // SEAN'S #10: the instruction that used to finish this sentence - "Report it as ADDED
+                // ... do NOT state any figure" - is addressed to the MODEL and he read it in his step
+                // details. It now travels on the model's line only.
+                "Added it. Settings not confirmed: this build cannot read that plugin's values back"
+                + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
+                + ", so there is no evidence they were applied.",
                 "Added it. Settings not confirmed: this build cannot read that plugin's values back"
                 + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
                 + ", so there is no evidence they were applied. Report it as ADDED, with its settings "
@@ -766,13 +866,18 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     }
     r->setProperty ("settings_state", all.unreadable.isEmpty() ? "applied" : "partly_confirmed");
     r->setProperty ("settings_confirmed", all.unreadable.isEmpty());
+    // ---- SEAN'S #6 (16 Oct 2026): THE ROW READS AS WORDS, THE RESULT KEEPS THE IDS --------------
+    // What he saw: "slot 2 threshold_db -14.00, slot 2 ratio 4.00". What he asked for: "Compressor:
+    // threshold -14 dB, ratio 4:1". Same figures, same order, one audience each - the model's copy
+    // travels on the result object (settings_applied), untouched.
+    const auto plainFigures = (all.slotName.isNotEmpty() ? all.slotName + ": " : juce::String())
+                            + all.matchedPlain.joinIntoString (", ");
     finish (juce::var (r),
-            // PLAIN NAMES AND THE FIGURES. The figures are the evidence and must stay; the NAMES are a
-            // sentence addressed to a person, so they read as words. The raw ids are in the result object
-            // for the model (settings_applied), which is the split Sean's ruling turns on.
-            landedSentence + "; read back " + landedPlain + " - " + all.matched.joinIntoString (", ")
+            landedSentence + "; read back " + plainFigures
             + (unreadablePlain.isEmpty() ? juce::String()
-                                         : ". Not readable, so not confirmed: " + unreadablePlain));
+                                         : ". Not readable, so not confirmed: " + unreadablePlain),
+            // the MODEL's half: the ids and the slot numbers it needs to retry or explain
+            "read back " + landedPlain + " - " + all.matched.joinIntoString (", "));
 }
 
 // ---- ITEM 1 (14 Oct 2026): ONE CROSS-CHANNEL GATE ----------------------------------------------------

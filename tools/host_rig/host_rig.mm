@@ -34,6 +34,8 @@
 // SEAN'S RULE 1 (16 Oct 2026): a REAL third-party plugin, dialled through a REAL map. The fingerprint and
 // the display parse have to be the plugin's own arithmetic, not a re-implementation of it in the rig - a
 // rig that computed its own fp would pass a map the product could never have matched.
+#include "EJPaceCheck.h"
+#include "viz/EedGrMeter.h"   // E7: the meter's label geometry is a pure function, so a row can hold it   // the standing rule: this rig never loads a licence-bound bundle
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
 // SEAN'S #7: the interrupted sentences live in ONE predicate (EchoJayAPI::looksInterrupted), and the legs
@@ -73,7 +75,20 @@ static void leg (const char* name) { std::printf ("== %s ==\n", name); std::fflu
 //  idiom - no install, so the rig tests the BUILT bundle and never the one
 //  Sean has in Logic)
 // ============================================================================
-static bool registerAU (const juce::File& component, juce::String& identOut)
+/** ---- A SHELL CARRIES MANY PLUGINS (16 Oct 2026) ----------------------------------------------
+    WaveShell1-AU is ONE component bundle holding hundreds of AudioComponents, one per Waves plugin,
+    each with its own type/subtype/manufacturer. The first cut of this registered and returned
+    AudioComponents[0] only, so asking for Renaissance Axx got whichever plugin happened to be first
+    and the row skipped with *"carries 1 plugin(s) and none of them is named like Renaissance Axx"*.
+    `wantName` registers and returns the one whose Info.plist `name` matches; empty keeps the old
+    behaviour (entry 0), which is right for a single-plugin bundle.
+
+    STILL NOT A SCAN: one named bundle, its own plist, and AudioComponentRegister for the entries it
+    declares. Nothing is instantiated here and no other plugin on the machine is touched. */
+static bool registerAU (const juce::File& component, juce::String& identOut,
+                        const juce::String& wantName = {});
+static bool registerAU (const juce::File& component, juce::String& identOut,
+                        const juce::String& wantName)
 {
     auto* url = CFURLCreateWithFileSystemPath (nullptr, component.getFullPathName().toCFString(),
                                                kCFURLPOSIXPathStyle, true);
@@ -81,7 +96,36 @@ static bool registerAU (const juce::File& component, juce::String& identOut)
     if (bundle == nullptr) { std::printf ("  AU: CFBundleCreate failed for %s\n", component.getFullPathName().toRawUTF8()); return false; }
     auto* comps = (CFArrayRef) CFBundleGetValueForInfoDictionaryKey (bundle, CFSTR ("AudioComponents"));
     if (comps == nullptr || CFArrayGetCount (comps) == 0) { std::printf ("  AU: no AudioComponents\n"); return false; }
-    auto* d = (CFDictionaryRef) CFArrayGetValueAtIndex (comps, 0);
+    // Which entry: the one whose `name` contains wantName (a shell), else the first (a plain plugin).
+    // A Waves plist name reads "Waves: Renaissance Axx Stereo", so the match is a contains, and the
+    // SHORTEST matching name wins - "Renaissance Axx" must not resolve to "Renaissance Axx Mono" when
+    // both are there and the stereo one is what a stereo rack wants. Mono is preferred only if it is
+    // the one thing offered.
+    CFIndex chosen = 0;
+    if (wantName.isNotEmpty())
+    {
+        CFIndex best = -1; int bestLen = 1 << 30;
+        for (CFIndex i = 0; i < CFArrayGetCount (comps); ++i)
+        {
+            auto* di = (CFDictionaryRef) CFArrayGetValueAtIndex (comps, i);
+            auto* nv = (CFStringRef) CFDictionaryGetValue (di, CFSTR ("name"));
+            if (nv == nullptr) continue;
+            const auto nm = juce::String::fromCFString (nv);
+            if (! nm.containsIgnoreCase (wantName)) continue;
+            if (nm.containsIgnoreCase ("mono") && bestLen < (1 << 30)) continue;
+            if (nm.length() < bestLen) { bestLen = nm.length(); best = i; }
+        }
+        if (best < 0)
+        {
+            std::printf ("  AU: %s declares %d component(s) and none is named like \"%s\"\n",
+                         component.getFileName().toRawUTF8(), (int) CFArrayGetCount (comps),
+                         wantName.toRawUTF8());
+            CFRelease (bundle);
+            return false;
+        }
+        chosen = best;
+    }
+    auto* d = (CFDictionaryRef) CFArrayGetValueAtIndex (comps, chosen);
     auto str = [&] (const char* k) { return juce::String::fromCFString ((CFStringRef) CFDictionaryGetValue (d, juce::String (k).toCFString())); };
     auto code = [&] (const char* k) { auto s = str (k); return (OSType) ((s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3]); };
     int version = 0;
@@ -132,25 +176,103 @@ struct ThirdPartyPrep
 static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, const juce::File& mapsFile)
 {
     ThirdPartyPrep p;
-    const char* envComp = ::getenv ("EJ_RIG_THIRDPARTY");
-    const juce::File comp { envComp != nullptr && *envComp != 0
-                              ? juce::String (envComp)
-                              : juce::String ("/Library/Audio/Plug-Ins/Components/MTransient.component") };
+    // ---- WHICH THIRD PARTY (Sean, 16 Oct 2026) ----------------------------------------------------
+    //
+    // *"Prove it with a rig row using a real installed plugin with a correct map, e.g. Renaissance Axx
+    // or another plugin on this Mac, not MTransient (its map is wrong, B is fixing it)."* And, later
+    // the same morning: *"use Renaissance Axx (which I can see landed at -20.0) as the proof case for
+    // the read-back fix."*
+    //
+    // So the default is Renaissance Axx, whose THRESHOLD he watched land at -20.0 in Logic, and
+    // MTransient is the fallback for a machine that does not have Waves. The map this rig serves is
+    // sampled from the plugin itself either way, so "a correct map" is true by construction here -
+    // what changed is that the plugin is one he can check by eye.
+    //
+    // A SHELL HOLDS MANY PLUGINS. WaveShell is one component carrying hundreds of types, so the type
+    // is chosen BY NAME rather than by taking found[0] - which, on a shell, is whichever plugin
+    // happens to be first and is not the one anybody asked about.
+    struct Candidate { const char* path; const char* wantName; const char* param; const char* semantic; };
+    static const Candidate kCandidates[] = {
+        { "/Library/Audio/Plug-Ins/Components/WaveShell1-AU 15.0.component", "Renaissance Axx", "Threshold", "threshold_db" },
+        { "/Library/Audio/Plug-Ins/Components/WaveShell1-AU 14.0.component", "Renaissance Axx", "Threshold", "threshold_db" },
+        { "/Library/Audio/Plug-Ins/Components/MTransient.component",         "MTransient",      "Attack",    "attack_db" },
+    };
+    const char* envComp  = ::getenv ("EJ_RIG_THIRDPARTY");
+    const char* envName  = ::getenv ("EJ_RIG_TP_NAME");
+    juce::File comp;
+    juce::String wantName, wantParam, wantSemantic;
+    if (envComp != nullptr && *envComp != 0)
+    {
+        comp = juce::File (juce::String (envComp));
+        wantName = envName != nullptr ? juce::String (envName) : juce::String();
+    }
+    else
+    {
+        juce::StringArray tried;
+        for (const auto& c : kCandidates)
+        {
+            const juce::File f { juce::String (c.path) };
+            tried.add (f.getFileName());
+            if (! f.exists()) continue;
+            comp = f; wantName = c.wantName; wantParam = c.param; wantSemantic = c.semantic;
+            break;
+        }
+        if (comp == juce::File())
+        {
+            p.why = "none of the third-party plugins this rig knows how to use is installed (tried "
+                  + tried.joinIntoString (", ") + ") - EJ_RIG_THIRDPARTY=<path> and EJ_RIG_TP_NAME=<name> "
+                    "name another";
+            return p;
+        }
+    }
     if (! comp.exists())
     {
         p.why = "there is no third-party plugin at " + comp.getFullPathName()
-              + " - MTransient is the one Sean named (it is free); EJ_RIG_THIRDPARTY=<path> names another";
+              + " - EJ_RIG_THIRDPARTY=<path> names another";
         return p;
     }
+    // ---- NEVER A LICENCE-BOUND BUNDLE (Sean's standing rule, and it bites here) -------------------
+    // MTransient - the plugin the rig used until this morning - carries __Pace_Eden.bundle, so it IS
+    // licence-bound: loading it in an unsigned host is exactly what put a security prompt on his
+    // desktop on 2 Oct. Renaissance Axx, Vertigo VSM-3 and Pro-C 3 are not wrapped, which is why the
+    // candidate list leads with them. A named override is refused too, loudly: the rule is the rule.
+    if (echojay::isPaceWrapped (comp))
+    {
+        p.why = comp.getFileName() + " is PACE-wrapped (licence-bound), and this rig never loads one - "
+                "the standing rule, because an unsigned host loading one can raise a security prompt. "
+                "The matrix's P3 case (a plugin with a wrong map) therefore belongs on the Logic "
+                "smoke-test list, not here.";
+        return p;
+    }
+    if (wantParam.isNotEmpty() && ::getenv ("EJ_RIG_TP_PARAM") == nullptr)
+        ::setenv ("EJ_RIG_TP_PARAM", wantParam.toRawUTF8(), 0);
+    if (wantSemantic.isNotEmpty()) p.semantic = wantSemantic;
     // ONE COMPONENT, BY PATH. Never a scan: a full AU scan triggers the licence prompts on this Mac and
     // has crashed it (the standing rule), and this needs exactly one binary.
     juce::String ident;
-    if (! registerAU (comp, ident)) { p.why = "could not register " + comp.getFileName() + " in-process"; return p; }
+    if (! registerAU (comp, ident, wantName))
+    { p.why = "could not register " + (wantName.isNotEmpty() ? wantName + " out of " : juce::String())
+            + comp.getFileName() + " in-process"; return p; }
     juce::OwnedArray<juce::PluginDescription> found;
     for (auto* f : fm.getFormats())
         if (f->getName() == "AudioUnit") f->findAllTypesForFile (found, ident);
     if (found.isEmpty()) { p.why = "no AU types for " + ident; return p; }
-    const auto desc = *found[0];
+    // BY NAME on a shell; found[0] only when nothing was asked for.
+    const juce::PluginDescription* chosen = found[0];
+    if (wantName.isNotEmpty())
+    {
+        const juce::PluginDescription* hit = nullptr;
+        for (auto* d : found)
+            if (d != nullptr && d->name.containsIgnoreCase (wantName)) { hit = d; break; }
+        if (hit == nullptr)
+        {
+            p.why = comp.getFileName() + " carries " + juce::String (found.size())
+                  + " plugin(s) and none of them is named like \"" + wantName + "\"";
+            return p;
+        }
+        chosen = hit;
+    }
+    const auto desc = *chosen;
     p.name = desc.name;
 
     juce::String err;
@@ -167,26 +289,29 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
     // The control to dial. Sean's own case is MTransient's ATTACK, which reads in dB and was still 0.00
     // after the agent said it had pushed it up 6 dB.
     const char* envParam = ::getenv ("EJ_RIG_TP_PARAM");
-    const juce::String wantName = envParam != nullptr && *envParam != 0 ? juce::String (envParam) : "Attack";
+    // The candidate's own control name (set above) unless the environment names another.
+    const juce::String wantCtrl = envParam != nullptr && *envParam != 0 ? juce::String (envParam)
+                                : wantParam.isNotEmpty()                ? wantParam
+                                                                        : juce::String ("Attack");
     for (int i = 0; i < params.size(); ++i)
     {
         if (params[i] == nullptr || ! params[i]->isAutomatable()) continue;
         const auto n = params[i]->getName (echojay::kParamNameQueryLen);
-        if (n.equalsIgnoreCase (wantName)) { p.paramIndex = i; p.paramName = n; break; }
+        if (n.equalsIgnoreCase (wantCtrl)) { p.paramIndex = i; p.paramName = n; break; }
     }
     if (p.paramIndex < 0)
         for (int i = 0; i < params.size(); ++i)
         {
             if (params[i] == nullptr || ! params[i]->isAutomatable()) continue;
             const auto n = params[i]->getName (echojay::kParamNameQueryLen);
-            if (n.containsIgnoreCase (wantName)) { p.paramIndex = i; p.paramName = n; break; }
+            if (n.containsIgnoreCase (wantCtrl)) { p.paramIndex = i; p.paramName = n; break; }
         }
     if (p.paramIndex < 0)
     {
         juce::StringArray some;
         for (int i = 0; i < juce::jmin (12, params.size()); ++i)
             if (params[i] != nullptr) some.add (params[i]->getName (echojay::kParamNameQueryLen));
-        p.why = p.name + " has no automatable control named like \"" + wantName + "\" (first few: "
+        p.why = p.name + " has no automatable control named like \"" + wantCtrl + "\" (first few: "
               + some.joinIntoString (", ") + ")";
         return p;
     }
@@ -354,6 +479,49 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                 }
         entries.setAttribute ("scannedAt", juce::String (juce::Time::currentTimeMillis()));
         if (auto* child = desc.createXml().release()) entries.addChildElement (child);
+        // ---- THE MATRIX'S PLUGIN SET, so a LINK can resolve them without scanning ----------------
+        //
+        // A Link in its own process starts with whatever catalogue the shared root holds, and with
+        // EJ_RIG_HOOK=1 it is REFUSED a scan (ChainHost::startScan and PluginScanner::startScan both
+        // check it, by Sean's iLok rule). So the names the matrix's T2-T4 targets need have to be in
+        // the catalogue before those processes start - written here, from one targeted enumeration per
+        // component, never a scan.
+        //
+        // PACE-wrapped bundles are skipped with a line saying so, for the same reason as above.
+        {
+            struct Want { const char* path; const char* name; };
+            static const Want kSet[] = {
+                { "/Library/Audio/Plug-Ins/Components/WaveShell1-AU 15.0.component", "Renaissance Axx" },
+                { "/Library/Audio/Plug-Ins/Components/Vertigo VSM-3.component",      "Vertigo VSM-3" },
+                { "/Library/Audio/Plug-Ins/Components/FabFilter Pro-C 3.component",  "Pro-C 3" },
+            };
+            juce::StringArray added, refused;
+            for (const auto& w : kSet)
+            {
+                const juce::File f { juce::String (w.path) };
+                if (! f.exists()) { refused.add (juce::String (w.name) + " (not installed)"); continue; }
+                if (echojay::isPaceWrapped (f)) { refused.add (juce::String (w.name) + " (PACE-wrapped)"); continue; }
+                juce::String id2;
+                if (! registerAU (f, id2, juce::String (w.name)))
+                { refused.add (juce::String (w.name) + " (would not register)"); continue; }
+                juce::OwnedArray<juce::PluginDescription> types;
+                for (auto* fmt : fm.getFormats())
+                    if (fmt->getName() == "AudioUnit") fmt->findAllTypesForFile (types, id2);
+                for (auto* d : types)
+                {
+                    if (d == nullptr || ! d->name.containsIgnoreCase (juce::String (w.name))) continue;
+                    if (d->name == desc.name) break;                 // already the one above
+                    if (auto* child = d->createXml().release()) entries.addChildElement (child);
+                    kl.addType (*d);
+                    added.add (d->name);
+                    break;
+                }
+            }
+            if (auto xml = kl.createXml()) listFile.replaceWithText (xml->toString());
+            std::printf ("  catalogue: the matrix's plugin set - added [%s]%s\n",
+                         added.joinIntoString (", ").toRawUTF8(),
+                         refused.isEmpty() ? "" : (", refused [" + refused.joinIntoString (", ") + "]").toRawUTF8());
+        }
         entriesFile.replaceWithText (entries.toString());
         std::printf ("  catalogue: kept %d existing entr(ies) and added %s\n", kept, desc.name.toRawUTF8());
     }
@@ -461,12 +629,21 @@ struct Rig
         asserts on a fact the plugin stated, not on a guess about how long it
         takes. Returns the ack, or an invalid var on timeout. */
     juce::var send (const juce::String& cmd, juce::var args, int timeoutMs = 8000)
+    { return sendTo ({}, cmd, std::move (args), timeoutMs); }
+
+    /** THE SAME COMMAND, ADDRESSED TO ONE INSTANCE (16 Oct 2026). With two V2 editors open - which
+        is how the matrix produces the rack-selection lock - an unaddressed command is obeyed by
+        both. `wrapper` is "AU" or "VST3"; empty means every instance, which is what every row
+        written before today sends. */
+    juce::var sendTo (const juce::String& wrapper, const juce::String& cmd, juce::var args,
+                      int timeoutMs = 8000)
     {
         ++seq;
         auto* o = new juce::DynamicObject();
         o->setProperty ("seq", seq);
         o->setProperty ("cmd", cmd);
         o->setProperty ("args", args);
+        if (wrapper.isNotEmpty()) o->setProperty ("for", wrapper);
         echojay::rig::ackFile().deleteFile();
         echojay::rig::cmdFile().replaceWithText (juce::JSON::toString (juce::var (o), true));
 
@@ -929,6 +1106,212 @@ static juce::var args1 (const char* k, const juce::var& v)
 {
     auto* o = new juce::DynamicObject(); o->setProperty (k, v); return juce::var (o);
 }
+
+// ============================================================================
+//  THE SCENARIO MATRIX (docs/AGENT_SCENARIO_MATRIX.md), Sean's 16 Oct change of
+//  approach: *"Build the scenario runner first ... assertions on what the editor
+//  draws, evidence PNGs per scenario ... Run the full matrix and write
+//  MATRIX_REPORT with an owner per failure."*
+//
+//  ONE RUNNER, NOT A SECOND ONE. This rig already loads the real bundles, opens
+//  and closes real editors, drives them through the user's own channel and
+//  speaks to a mock or a live server. A separate matrix runner would be a second
+//  road to the same place, which is the fault this codebase has paid for twice
+//  (two build paths, two transcript writers). So the matrix lives here: a
+//  scenario is a row with an ID from the matrix, an OWNER for its failure, and
+//  EVIDENCE on disk.
+//
+//  EVIDENCE IS A PNG OF THE EDITOR plus the text it drew. The rig holds the
+//  editor as a component, so the snapshot is of the real thing - not a
+//  description of it, which is the blind spot the matrix was written to close.
+// ============================================================================
+struct Scen
+{
+    juce::String id, title, owner, detail, evidence;
+    bool pass = false, skipped = false;
+};
+static std::vector<Scen> gScenarios;
+static juce::File gEvidenceDir;
+
+/** <repo>/docs/review/<date>/ - created on first use. The repo, deliberately, not the
+    isolated state root: the evidence outlives the run and Sean reads it. */
+static juce::File evidenceRoot()
+{
+    if (gEvidenceDir != juce::File())  return gEvidenceDir;
+    const auto day = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    gEvidenceDir = juce::File::getCurrentWorkingDirectory().getChildFile ("docs")
+                       .getChildFile ("review").getChildFile (day);
+    gEvidenceDir.createDirectory();
+    return gEvidenceDir;
+}
+
+/** A PNG of what the editor is drawing, plus a .txt of every string it drew.
+    Returns the PNG's path relative to the repo, or "" when there was no editor
+    to photograph (which is itself worth recording rather than hiding). */
+static juce::String captureEvidence (const juce::String& scenarioId, juce::Component* editor,
+                                     const juce::var& state)
+{
+    const auto dir = evidenceRoot().getChildFile (scenarioId);
+    dir.createDirectory();
+    juce::String rel;
+    if (editor != nullptr && editor->getWidth() > 0 && editor->getHeight() > 0)
+    {
+        const auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        const auto png = dir.getChildFile ("editor.png");
+        png.deleteFile();
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (png.createOutputStream()))
+        {
+            juce::PNGImageFormat fmt;
+            if (fmt.writeImageToStream (img, *out)) rel = "docs/review/" + dir.getParentDirectory().getFileName()
+                                                        + "/" + scenarioId + "/editor.png";
+        }
+    }
+    // THE DRAWN TEXT, beside the picture: a PNG cannot be grepped and an assertion
+    // needs the strings. Both, every time, from the one state read.
+    juce::StringArray lines;
+    lines.add ("scenario " + scenarioId);
+    lines.add ("captured " + juce::Time::getCurrentTime().toISO8601 (true));
+    if (auto* arr = state.getProperty ("onScreen", juce::var()).getArray())
+        for (const auto& m : *arr)
+            lines.add ("  [" + m.getProperty ("role", juce::var()).toString() + "] "
+                       + m.getProperty ("text", juce::var()).toString());
+    const auto arow = state.getProperty ("agentRow", juce::var());
+    if ((bool) arow.getProperty ("present", false))
+    {
+        lines.add ("  run row: status=" + arow.getProperty ("status", juce::var()).toString()
+                   + " changes=" + arow.getProperty ("changes", juce::var()).toString()
+                   + " steps=" + arow.getProperty ("stepCount", juce::var()).toString()
+                   + " zones=[" + arow.getProperty ("zones", juce::var()).toString() + "]");
+        lines.add ("  opening: " + arow.getProperty ("opening", juce::var()).toString());
+        lines.add ("  closing: " + arow.getProperty ("closing", juce::var()).toString());
+        if (auto* sarr = arow.getProperty ("steps", juce::var()).getArray())
+            for (const auto& sv : *sarr)
+                lines.add ("    step \"" + sv.getProperty ("label", juce::var()).toString()
+                           + "\" [" + sv.getProperty ("status", juce::var()).toString() + "] right=\""
+                           + sv.getProperty ("right", juce::var()).toString() + "\" detail=\""
+                           + sv.getProperty ("detail", juce::var()).toString() + "\" chips=["
+                           + sv.getProperty ("chips", juce::var()).toString() + "]");
+    }
+    dir.getChildFile ("drawn.txt").replaceWithText (lines.joinIntoString ("\n") + "\n");
+    return rel;
+}
+
+/** ---- I4's DENY-LIST, over every string the window drew (the matrix's invariant) ----------------
+    "No raw parameter IDs, no text addressed to the model, no internal tags, no raw provider errors."
+    Run on EVERY scenario rather than in a row of its own, which is what makes it an invariant. */
+static juce::StringArray wordingOffences (const juce::var& state)
+{
+    static const char* kBanned[] = {
+        "band1.", "band2.", "_db ", "_hz ", "_ms ", "threshold_db", "attack_db", "gain_db",
+        "[interrupted]", "Report it as", "Report the plugin", "Do NOT", "do not name any value",
+        "must not be quoted", "repeat this same call", "you were not given", "settings_structured",
+        "null", "undefined", "Traceback", "HTTP 5"
+    };
+    juce::StringArray out;
+    auto scan = [&out] (const juce::String& where, const juce::String& text)
+    {
+        if (text.isEmpty()) return;
+        for (const char* b : kBanned)
+            if (text.contains (b))
+                out.add (where + ": \"" + b + "\" in \"" + text.substring (0, 90) + "\"");
+    };
+    if (auto* arr = state.getProperty ("onScreen", juce::var()).getArray())
+        for (const auto& m : *arr) scan ("a message", m.getProperty ("text", juce::var()).toString());
+    const auto arow = state.getProperty ("agentRow", juce::var());
+    scan ("the closing", arow.getProperty ("closing", juce::var()).toString());
+    scan ("the opening", arow.getProperty ("opening", juce::var()).toString());
+    if (auto* sarr = arow.getProperty ("steps", juce::var()).getArray())
+        for (const auto& sv : *sarr)
+        {
+            scan ("a step line",   sv.getProperty ("label", juce::var()).toString());
+            scan ("a step detail", sv.getProperty ("detail", juce::var()).toString());
+        }
+    return out;
+}
+
+/** A MATRIX SCENARIO. Records it, prints it in the same shape as a row, captures the
+    evidence, and applies invariant I4 to whatever was on screen - so a scenario that
+    passes its own assertion but drew a raw id still fails, which is what an invariant is. */
+static void scen (const char* id, const char* title, bool pass, const juce::String& detail,
+                  const char* owner, juce::Component* editor, const juce::var& state,
+                  const AgentOutcome* r = nullptr)
+{
+    Scen sc; sc.id = id; sc.title = title; sc.owner = owner; sc.detail = detail;
+    if (r != nullptr && ! r->ran())
+    {
+        sc.detail += "  <- NO TURN RAN (" + r->whyNotRan() + ")";
+        pass = false;
+    }
+    const auto offences = wordingOffences (state);
+    if (! offences.isEmpty())
+    {
+        pass = false;
+        sc.detail += "  <- I4 (clean wording) FAILED: " + offences.joinIntoString ("; ");
+    }
+    sc.pass = pass;
+    sc.evidence = captureEvidence (id, editor, state);
+    gScenarios.push_back (sc);
+    if (pass) ++passes; else ++failures;
+    std::printf ("  SCEN %-5s %-4s  %s\n        %s%s\n", id, pass ? "PASS" : "FAIL", title,
+                 sc.detail.toRawUTF8(),
+                 sc.evidence.isEmpty() ? "" : ("\n        evidence: " + sc.evidence).toRawUTF8());
+    std::fflush (stdout);
+}
+
+static void scenSkip (const char* id, const char* title, const juce::String& why, const char* owner)
+{
+    Scen sc; sc.id = id; sc.title = title; sc.owner = owner; sc.detail = why; sc.skipped = true;
+    gScenarios.push_back (sc);
+    ++skips;
+    std::printf ("  SCEN %-5s SKIP  %s\n        %s\n", id, title, why.toRawUTF8());
+    std::fflush (stdout);
+}
+
+/** MATRIX_REPORT_<date>.md - one row per scenario, pass/fail/skip, owner, evidence.
+    Written every run, even a red one: the report IS the artefact Sean asked for. */
+static void writeMatrixReport (const juce::String& buildName, const juce::String& mode)
+{
+    if (gScenarios.empty()) return;
+    const auto day = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    const auto f = juce::File::getCurrentWorkingDirectory().getChildFile ("docs")
+                       .getChildFile ("MATRIX_REPORT_" + day + ".md");
+    int pass = 0, fail = 0, skip = 0;
+    for (const auto& s : gScenarios) { if (s.skipped) ++skip; else if (s.pass) ++pass; else ++fail; }
+    juce::StringArray out;
+    out.add ("# Matrix report - " + day + " (" + mode + ")");
+    out.add ("");
+    out.add ("Build under test: **" + buildName + "**.  Runner: `tools/host_rig` driving the real bundles, "
+             "real plugins and real editors; evidence under `docs/review/" + day + "/<scenario>/`.");
+    out.add ("");
+    out.add ("**" + juce::String (pass) + " passed, " + juce::String (fail) + " failed, "
+             + juce::String (skip) + " skipped.** A skip is never a pass (matrix rule 9).");
+    out.add ("");
+    out.add ("| Scenario | Result | Owner | What happened | Evidence |");
+    out.add ("|---|---|---|---|---|");
+    for (const auto& s : gScenarios)
+    {
+        auto d = s.detail.replace ("|", "\\|").replace ("\n", " ");
+        if (d.length() > 420) d = d.substring (0, 417) + "...";
+        out.add ("| **" + s.id + "** " + s.title + " | "
+                 + (s.skipped ? "SKIP" : s.pass ? "pass" : "**FAIL**") + " | "
+                 + (s.skipped || s.pass ? juce::String ("-") : s.owner) + " | " + d + " | "
+                 + (s.evidence.isEmpty() ? juce::String ("-") : "`" + s.evidence + "`") + " |");
+    }
+    out.add ("");
+    out.add ("## Failures by owner");
+    for (const char* who : { "A", "B", "Sean" })
+    {
+        juce::StringArray mine;
+        for (const auto& s : gScenarios)
+            if (! s.pass && ! s.skipped && s.owner == juce::String (who)) mine.add (s.id + " " + s.title);
+        out.add ("");
+        out.add ("**" + juce::String (who) + "**: " + (mine.isEmpty() ? juce::String ("nothing")
+                                                                     : juce::String (mine.size()) + " - "
+                                                                       + mine.joinIntoString ("; ")));
+    }
+    f.replaceWithText (out.joinIntoString ("\n") + "\n");
+    std::printf ("  matrix report -> %s\n", f.getFullPathName().toRawUTF8());
+}
 static juce::String transcriptRoles (const juce::var& st)
 {
     juce::StringArray r;
@@ -1075,6 +1458,120 @@ int main (int argc, char* argv[])
                      "-> asking %.2f dB\n",
                      tp.name.toRawUTF8(), tp.paramCount, tp.fp.substring (0, 12).toRawUTF8(),
                      tp.paramName.toRawUTF8(), tp.paramIndex, tp.anchorCount, tp.defaultValue, tp.askValue);
+
+    // =====================================================================================
+    //  LINKS IN THEIR OWN PROCESSES (Sean, 16 Oct 2026, before the matrix)
+    //
+    //  *"Run each Link in its own process if at all possible, the way Logic hosts AUs
+    //   out-of-process (AUHostingService), so channel timing between V2 and Link matches Logic."*
+    //
+    //  Two tools/link_host processes, each hosting one real Link and holding REAL third-party
+    //  plugins, sharing this run's isolated state root - which is how two Logic instances find
+    //  each other. They are launched AFTER the catalogue above is written, because with
+    //  EJ_RIG_HOOK=1 a Link is refused a plugin scan (the iLok rule) and must find its plugins in
+    //  the cache the root already has.
+    //
+    //  WHAT THIS DOES NOT REPRODUCE, stated here as well as in docs/RIG_LINK_CAPABILITY.md: Logic
+    //  renders out-of-process AUs from ONE audio graph, so its V2 block and Link block belong to
+    //  the same render pass. These processes pump their own blocks on their own clocks, so anything
+    //  that needs the two racks to see the same audio instant is NOT faithful here and runs on the
+    //  in-process Links below instead.
+    struct LinkProc
+    {
+        juce::String label;
+        std::unique_ptr<juce::ChildProcess> proc;
+        juce::String uid;
+        int seq = 0;
+        juce::File stateFile, cmdFile, ackFile;
+        bool up() const { return uid.isNotEmpty(); }
+        juce::var state() const { return juce::JSON::parse (stateFile.loadFileAsString()); }
+        /** A command to this Link's own host, acknowledged by seq - the same shape as every other
+            command channel in this tree, for the same reason (it crosses a process boundary). */
+        juce::var send (const juce::String& cmd, const juce::String& names = {}, int timeoutMs = 15000)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("seq", ++seq);
+            o->setProperty ("cmd", cmd);
+            if (names.isNotEmpty()) o->setProperty ("names", names);
+            ackFile.deleteFile();
+            cmdFile.replaceWithText (juce::JSON::toString (juce::var (o), true));
+            const auto deadline = juce::Time::currentTimeMillis() + timeoutMs;
+            while (juce::Time::currentTimeMillis() < deadline)
+            {
+                Rig::pump (120);
+                if (! ackFile.existsAsFile()) continue;
+                const auto v = juce::JSON::parse (ackFile.loadFileAsString());
+                if ((int) v.getProperty ("seq", -1) == seq) return v;
+            }
+            return {};
+        }
+    };
+    std::vector<std::unique_ptr<LinkProc>> linkProcs;
+    juce::String linkProcWhy;
+    {
+        const char* envHost = ::getenv ("EJ_LINK_HOST");
+        juce::File hostBin { envHost != nullptr && *envHost != 0 ? juce::String (envHost)
+                                                                : juce::String() };
+        if (hostBin == juce::File())
+            hostBin = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                          .getSiblingFile ("link_host");
+        if (! hostBin.existsAsFile())
+            linkProcWhy = "tools/link_host is not built at " + hostBin.getFullPathName()
+                        + " (bash tools/link_host/build.sh), so the out-of-process Link scenarios "
+                          "cannot run. They are SKIPPED, never passed.";
+        else
+        {
+            struct Want { const char* label; const char* plugins; };
+            static const Want kWant[] = {
+                { "Kick",  "Renaissance Axx,Vertigo VSM-3" },
+                { "Vocal", "Renaissance Axx" },
+            };
+            for (const auto& w : kWant)
+            {
+                auto lp = std::make_unique<LinkProc>();
+                lp->label     = w.label;
+                lp->stateFile = echojay::userStateHome().getChildFile ("rig")
+                                    .getChildFile ("linkhost-" + lp->label + ".json");
+                lp->cmdFile   = echojay::userStateHome().getChildFile ("rig")
+                                    .getChildFile ("linkhost-" + lp->label + "-cmd.json");
+                lp->ackFile   = echojay::userStateHome().getChildFile ("rig")
+                                    .getChildFile ("linkhost-" + lp->label + "-ack.json");
+                juce::StringArray argv;
+                argv.add (hostBin.getFullPathName());
+                argv.add (linkComp.getFullPathName());
+                argv.add (lp->label);
+                argv.add ("--prebuild");
+                argv.add (w.plugins);
+                lp->proc = std::make_unique<juce::ChildProcess>();
+                if (! lp->proc->start (argv))
+                {
+                    linkProcWhy = "link_host would not start for \"" + lp->label + "\"";
+                    continue;
+                }
+                linkProcs.push_back (std::move (lp));
+            }
+            // Wait for each one to be a LINK: a uid of its own, and its prebuilt rack published.
+            const auto deadline = juce::Time::currentTimeMillis() + 40000;
+            for (auto& lp : linkProcs)
+            {
+                while (juce::Time::currentTimeMillis() < deadline)
+                {
+                    Rig::pump (250);
+                    const auto st = lp->state();
+                    lp->uid = st.getProperty ("uid", juce::var()).toString();
+                    if (lp->uid.isNotEmpty() && (int) st.getProperty ("slotCount", 0) > 0) break;
+                }
+                const auto st = lp->state();
+                std::printf ("  link_host \"%s\": uid=%s  slots=%d [%s]  pid=%s\n",
+                             lp->label.toRawUTF8(),
+                             lp->uid.isEmpty() ? "(none yet)" : lp->uid.toRawUTF8(),
+                             (int) st.getProperty ("slotCount", 0),
+                             st.getProperty ("slots", juce::var()).toString().toRawUTF8(),
+                             st.getProperty ("pid", juce::var()).toString().toRawUTF8());
+            }
+        }
+        if (linkProcWhy.isNotEmpty()) std::printf ("  (out-of-process Links: %s)\n", linkProcWhy.toRawUTF8());
+    }
 
     leg ("R0: the built bundles load in one host process");
     Track v2; v2.name = "Mix Bus (V2)";
@@ -1447,6 +1944,60 @@ int main (int argc, char* argv[])
                          "row=\"" + onScreenRow.substring (0, 80) + "\" chips=[" + chips + "] altLabel=\""
                          + altLbl + "\" altPrompt=\"" + altAsk.substring (0, 50) + "\" pressed-and-resent="
                          + juce::String (resent ? 1 : 0));
+
+                    // ---- I2: THE INTERRUPTED LINE IS WRITTEN ONCE (Sean's test 9b, 16 Oct 2026) ---
+                    //
+                    // RED ON 16a: *"'You closed the window before the answer came back.' appears
+                    // twice."* Both writers were doing their job - the processor's keep-rule puts the
+                    // row in chatHistory (so the model's history has it and a reload shows it) and
+                    // parks it as an orphan carrying the Retry prompt - and the reopened window drew
+                    // the history row, then the drain appended the same sentence again.
+                    {
+                        const auto st2 = rig.freshState();
+                        int copies = 0;
+                        if (auto* arr = st2.getProperty ("onScreen", juce::var()).getArray())
+                            for (const auto& m : *arr)
+                                if (EchoJayAPI::looksInterrupted (m.getProperty ("text", juce::var()).toString()))
+                                    ++copies;
+                        scen ("F1", "close mid-reply, reopen: the interrupted line is drawn exactly once",
+                              copies == 1,
+                              juce::String (copies) + " copy(ies) of it in the window's own message list  "
+                              "(RED on 16a: the history row and the orphan drain each wrote it)",
+                              "A", v2v.editor.get(), st2);
+                    }
+
+                    // ---- I3: THE TRANSCRIPT IS STILL IN ORDER (Sean's test 9a) --------------------
+                    //
+                    // RED ON 16a: *"my question was inserted ABOVE the previous exchange (above 'Add
+                    // Renaissance Axx...' and its reply) instead of at the bottom, so the chat order is
+                    // wrong after a close and reopen."* A reload rebuilds the transcript from the
+                    // workspace store and APPENDED whatever the processor was holding that the store had
+                    // not caught up with - so an agent run the store has never seen landed under the
+                    // question typed after it.
+                    //
+                    // THE ORDER IS THE ASSERTION: the question this leg sent must come after everything
+                    // that was on screen before it, and its own answer after that.
+                    {
+                        const auto st3 = rig.freshState();
+                        int askedAt = -1, interruptedAt = -1, i = 0;
+                        if (auto* arr = st3.getProperty ("onScreen", juce::var()).getArray())
+                            for (const auto& m : *arr)
+                            {
+                                const auto txt = m.getProperty ("text", juce::var()).toString();
+                                if (m.getProperty ("role", juce::var()).toString() == "user"
+                                    && txt.containsIgnoreCase ("how does this kick sound"))
+                                    askedAt = i;
+                                if (EchoJayAPI::looksInterrupted (txt)) interruptedAt = i;
+                                ++i;
+                            }
+                        scen ("F2", "after a close and reopen the transcript is still in order",
+                              askedAt >= 0 && interruptedAt > askedAt,
+                              "the question is at row " + juce::String (askedAt) + " and its answer at row "
+                              + juce::String (interruptedAt) + " of " + juce::String (i)
+                              + "  (RED on 16a: the reload appended the rows the store had not caught up "
+                              "with, which put an earlier exchange UNDER a later question)",
+                              "A", v2v.editor.get(), st3);
+                    }
                 }
             }
             // (b) THE SOCKET DIES after the window has gone - C11's original subject, now with a real close.
@@ -2571,16 +3122,16 @@ int main (int argc, char* argv[])
             const bool arrived  = after > before && names.containsIgnoreCase (tp.name);
             const bool dialled  = haveReadBack && std::abs (readBack - tp.askValue) <= 1.0;
             const bool moved    = haveReadBack && std::abs (readBack - tp.defaultValue) >= 0.5;
-            row ("T1", arrived && dialled && moved,
-                 "a REAL third-party plugin (" + tp.name + ") added with settings on a Link is actually "
-                 "DIALLED, and its knob is read back from the plugin itself  (RED on 15c: the mock served "
-                 "no maps, a Link had no road to ask for one - fetch_wired=n - and the Link read-back "
-                 "parsed its numbers out of an echo of the request)",
-                 "slots " + juce::String (before) + " -> " + juce::String (after) + " [" + names + "], "
-                 + tp.paramName + " asked " + juce::String (tp.askValue, 2) + " dB, plugin now reads "
-                 + (haveReadBack ? juce::String (readBack, 2) + " dB" : juce::String ("NOTHING READ BACK"))
-                 + " (default was " + juce::String (tp.defaultValue, 2) + " dB); landed=\""
-                 + landed.substring (0, 120) + "\"", &r);
+            scen ("A4", "a Link, third party with a good map, add with settings: dialled and read back",
+                  arrived && dialled && moved,
+                  "slots " + juce::String (before) + " -> " + juce::String (after) + " [" + names + "], "
+                  + tp.paramName + " asked " + juce::String (tp.askValue, 2) + " dB, plugin now reads "
+                  + (haveReadBack ? juce::String (readBack, 2) + " dB" : juce::String ("NOTHING READ BACK"))
+                  + " (default was " + juce::String (tp.defaultValue, 2) + " dB); landed=\""
+                  + landed.substring (0, 120) + "\"  (RED on 15c: the mock served no maps, a Link had no "
+                  "road to ask for one - fetch_wired=n - and the Link read-back parsed its numbers out of "
+                  "an echo of the request)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
             // THE FINGERPRINT, as its own check: the mock may have served the map through its __any__
             // fallback, which would mean the rig's fp arithmetic and the plugin's disagree. That is worth
             // knowing and is NOT what T1 is about, so it is a check beside the row rather than inside it.
@@ -2591,6 +3142,581 @@ int main (int argc, char* argv[])
                        "fp " + tp.fp.substring (0, 16) + "... (if the mock's log says \"__any__ fallback\" "
                        "for this run, the plugin computed a DIFFERENT fp and T1 passed on the fallback)");
             }
+        }
+
+        // =====================================================================================
+        //  SEAN'S MORNING RECHECK OF ship_2026-10-16a (16 Oct 2026): THE ROWS FOR WHAT HE FOUND
+        //  IN LOGIC. Each one runs RED on 16a for the reason printed in it.
+        // =====================================================================================
+
+        // ---- T2: THE OWN RACK'S THIRD-PARTY READ-BACK CONFIRMS WHAT THE PLUGIN SHOWS -----------------
+        //
+        // RED ON 16a: *"Add Renaissance Axx with threshold at -20 dB. The plugin shows Thresh -20.0 ...
+        // but the closing says 'Settings not confirmed'."* The add carries `after`, so the plugin lands
+        // where the server asked; the read-back assumed the END of the rack and read another slot's
+        // values. His 09:40 log has the same fault twice - the settled read-back verified "slot 5
+        // (Vertigo VSM-3)" for a write made to slot 5 (Renaissance Axx) and REVERTED it.
+        //
+        // The script adds with `after: 0` deliberately: the plugin goes to the FRONT, so a read-back
+        // that targets the last slot cannot pass this row by luck.
+        if (tp.ok)
+        {
+            rig.send (echojay::rig::cmd::workOn,    args1 ("uid", ""), 8000);
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            const auto r = askAgent (rig, "rig-tpown-marker: add " + tp.name + " to this rack and set its "
+                                          + tp.paramName, 120000);
+            const auto st = rig.freshState();
+            // what the STEP said (captured while the steps existed) and what the closing said
+            const auto words   = r.stepWords + " " + r.text;
+            const bool claimsUnreadable = words.containsIgnoreCase ("cannot read that plugin's values")
+                                       || words.containsIgnoreCase ("not confirmed");
+            const bool namesFigure = words.contains (juce::String (tp.askValue, 1))
+                                  || words.contains (juce::String (tp.askValue, 2))
+                                  || words.contains (juce::String ((int) tp.askValue));
+            // ...and the plugin itself, through the same door the agent reads: the slot's own figure.
+            juce::String ownLanded;
+            if (auto* arr = st.getProperty ("chainSlots", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                    if (sv.getProperty ("name", juce::var()).toString().containsIgnoreCase (tp.name))
+                        ownLanded = sv.getProperty ("landed", juce::var()).toString();
+            scen ("A3", "own rack, third party with a good map, add with settings: dialled AND confirmed",
+                  r.ran() && ! claimsUnreadable && namesFigure,
+                  juce::String ("asked ") + juce::String (tp.askValue, 2) + " for \"" + tp.paramName
+                  + "\"; the run said: \"" + words.substring (0, 160) + "\"; the slot's own landed field: \""
+                  + ownLanded.substring (0, 80) + "\"  (RED on 16a: an add carries `after`, so it lands "
+                  "where the server asked, and the read-back read the LAST slot - another plugin - and "
+                  "reported \"settings not confirmed\" about a value the plugin was showing correctly)",
+                  "A", v2.editor.get(), st, &r);
+        }
+        else
+            scenSkip ("A3", "own rack, third party with a good map: dialled AND confirmed", tp.why, "A");
+
+        // ---- A1 / A2: AN ASK IS NEVER A DEAD END -----------------------------------------------------
+        //
+        // RED ON 16a, and Sean called it a blocker: *"an agent ask is a dead end in the new layout. It
+        // says 'Tap one of the choices to answer' but shows no choices, and when I type 'MTransient' and
+        // press Enter, the text vanishes and nothing happens. The run is stuck until I press Stop."*
+        //
+        // His 09:19 log is the shape of it, exactly: `ask card: "Which transient shaper should I use on
+        // the kick?" choices=` followed by `typed answer refused (allowFreeText false)`. The script
+        // reproduces that payload - no choices, allowFreeText false - which is the one combination that
+        // can leave a run with no road out.
+        {
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
+            // ANSWERED BY TYPING, which is the user's own road and the only one this ask offers.
+            const auto r = askAgent (rig, "rig-nochoice-marker: which shaper?", 90000, true, "MTransient");
+            const auto st = rig.freshState();
+            const auto arow = st.getProperty ("agentRow", juce::var());
+            const auto zones = arow.getProperty ("zones", juce::var()).toString();
+            juce::String answered, hint;
+            if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    const auto a = sv.getProperty ("answered", juce::var()).toString();
+                    if (a.isNotEmpty()) answered = a;
+                }
+            hint = arow.getProperty ("askHint", juce::var()).toString();
+            const double pg = (double) st.getProperty ("preGainDb", juce::var());
+            // A1: the window TOLD the user how to answer. It cannot show chips that were never sent -
+            // only B can send those - so what it must do instead is name the road that IS open.
+            scen ("B1", "an ask is answerable: chips when there are chips, and a named road when there are not",
+                  hint.isNotEmpty(),
+                  "askHint=\"" + hint + "\"  zones=[" + zones.substring (0, 120) + "]  (RED on 16a: the row "
+                  "showed the question and a faint \"your answer?\" with nothing to press, and typing was "
+                  "refused with \"Tap one of the choices\" about choices that did not exist)",
+                  "A", v2.editor.get(), st, &r);
+            // A2: and the typed answer REACHED the run, rather than vanishing.
+            scen ("B3", "a typed answer lands in the waiting ask and the run carries on",
+                  r.ran() && answered.isNotEmpty() && std::abs (pg - 3.0) < 0.2,
+                  "the row recorded " + (answered.isEmpty() ? juce::String ("NOTHING")
+                                                            : "\"" + answered + "\"")
+                  + " and the run went on to set the pre-gain to " + juce::String (pg, 2) + " dB  (RED on "
+                  "16a: interceptTyped refused it because the server sent allowFreeText false, so the text "
+                  "vanished and the run sat in awaiting_ask until Stop)",
+                  "A", v2.editor.get(), st, &r);
+        }
+
+        // ---- A3: A NEW INSTRUCTION CLOSES A WAITING RUN AND STARTS ITS OWN ---------------------------
+        //
+        // RED ON 16a: *"A new request typed while a run waits on an ask got merged into that run ('Add
+        // Pro-C 2' continued the previous GR run, with its check-gr steps). A new instruction closes the
+        // waiting run (marked stopped) and starts a new run."*
+        {
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            // Leave the question UNANSWERED (answerAsks = false): the row's whole subject is what
+            // happens when the user types something else instead.
+            const auto r = askAgent (rig, "rig-newinstr-marker: check the gr", 60000, false);
+            const auto before = rig.freshState().getProperty ("agentRow", juce::var());
+            const auto sidBefore  = before.getProperty ("sessionId", juce::var()).toString();
+            const int  rowsBefore = (int) before.getProperty ("rows", juce::var());
+            // ...and now a NEW instruction, typed into the composer while the choices are on screen.
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", "rig-row-marker: set the pre-gain"), 15000);
+            juce::String sidAfter, statusAfter;
+            int rowsAfter = rowsBefore;
+            rig.until ([&] (const juce::var& stv)
+            {
+                const auto a = stv.getProperty ("agentRow", juce::var());
+                sidAfter    = a.getProperty ("sessionId", juce::var()).toString();
+                rowsAfter   = (int) a.getProperty ("rows", juce::var());
+                statusAfter = a.getProperty ("status", juce::var()).toString();
+                return rowsAfter > rowsBefore || (sidAfter.isNotEmpty() && sidAfter != sidBefore);
+            }, 30000);
+            scen ("B4", "a new instruction typed while an ask waits closes that run and starts its own",
+                  r.sawAsk && (rowsAfter > rowsBefore || sidAfter != sidBefore),
+                  "rows " + juce::String (rowsBefore) + " -> " + juce::String (rowsAfter)
+                  + ", session \"" + sidBefore.substring (0, 12) + "\" -> \"" + sidAfter.substring (0, 12)
+                  + "\", status now \"" + statusAfter + "\"  (RED on 16a: the text was answered INTO the "
+                  "waiting run, so a request to add a plugin arrived as the answer to \"What now?\" and "
+                  "carried the old run's steps with it)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+        }
+
+        // ---- G13: A READ-ONLY RUN HAS NO CHANGES TO COUNT --------------------------------------------
+        //
+        // RED ON 16a: *"A read-only run (a GR question) shows '4 changes'. Read-only steps aren't
+        // changes: show 'N steps', or no count if nothing changed."*
+        {
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            const auto r = askAgent (rig, "rig-readonly-marker: what is on this rack?", 90000);
+            const auto arow = rig.freshState().getProperty ("agentRow", juce::var());
+            const int changes = (int) arow.getProperty ("changes", juce::var());
+            const auto zones  = arow.getProperty ("zones", juce::var()).toString();
+            const bool saysSteps   = zones.containsIgnoreCase ("step");
+            const bool saysChanges = zones.containsIgnoreCase ("change");
+            scen ("E8", "a read-only run reports steps, not changes",
+                  r.ran() && changes == 0 && saysSteps && ! saysChanges,
+                  "changes=" + juce::String (changes) + "  the control's label is in zones=["
+                  + zones.substring (0, 140) + "]  (RED on 16a: every finished step counted as a change, "
+                  "so a GR question said \"4 changes\")",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+        }
+
+        // ---- M2: NO STEP DETAIL IS ADDRESSED TO THE MODEL --------------------------------------------
+        //
+        // RED ON 16a, twice in one morning: *"Internal model instructions leak into the step details:
+        // 'Report it as ADDED, with its settings not confirmed. Do NOT call the add itself not
+        // applied...'"* and again two hours later. Item 3 (13 Oct) split the FAILURE path's two
+        // audiences and left the SUCCESS path - `landedLine` - read by the model and painted on the row.
+        //
+        // ON EVERY STEP OF EVERY ROW IN THIS RUN, not on one scripted case: the phrases are ours, so a
+        // sweep is cheap and it catches the next one to be written as well as the two he found.
+        {
+            static const char* kModelPhrases[] = {
+                "Report it as", "Report the plugin", "Do NOT", "do not name any value",
+                "and do not name", "must not be quoted", "repeat this same call", "you were not given"
+            };
+            juce::StringArray offenders;
+            const auto arow = rig.freshState().getProperty ("agentRow", juce::var());
+            if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    const auto d = sv.getProperty ("detail", juce::var()).toString();
+                    for (const char* ph : kModelPhrases)
+                        if (d.contains (ph)) offenders.add ("\"" + d.substring (0, 90) + "\"");
+                }
+            scen ("I4", "clean wording: no step detail is addressed to the model",
+                  offenders.isEmpty(),
+                  offenders.isEmpty() ? juce::String ("every step detail on screen reads as a sentence to a "
+                                                      "person")
+                                      : juce::String ("leaked: ") + offenders.joinIntoString ("; "),
+                  "A", v2.editor.get(), arow.isVoid() ? rig.freshState() : rig.freshState());
+        }
+
+        // =====================================================================================
+        //  THE MATRIX'S LINK TARGETS, ON LINKS IN THEIR OWN PROCESSES (T2, T3, T4)
+        //
+        //  Sean, 16 Oct: *"Every Link scenario in the matrix (targets T2-T4) must run on this
+        //  setup."* These scenarios address a Link that is a SEPARATE PROCESS holding REAL
+        //  third-party plugins, so the V2 cannot see inside it - which is the condition under which
+        //  three of this week's faults were invisible.
+        // =====================================================================================
+        if (linkProcs.empty() || ! linkProcs.front()->up())
+        {
+            const auto why = linkProcWhy.isNotEmpty() ? linkProcWhy
+                                                      : juce::String ("no out-of-process Link registered "
+                                                        "within its bound - see the link_host lines above");
+            scenSkip ("A4b", "T2: add with settings to a Link in its own process", why, "A");
+            scenSkip ("G1",  "T2: the main rack strip follows a Link's change with no manual switch", why, "A");
+            scenSkip ("E5",  "T2: no GR figure on a Link's slot in the mirror", why, "A");
+            scenSkip ("T3",  "T3: a Link selected in another instance refuses the edit, in words", why, "A");
+        }
+        else
+        {
+            auto& kick = *linkProcs.front();
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", kick.uid), 8000);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", kick.uid), 8000);
+            Rig::pump (1200);
+
+            // ---- G1: THE MAIN RACK STRIP FOLLOWS A LINK'S OWN RACK (I7) --------------------------
+            // The Link already holds its prebuilt plugins, put there by its OWN process, so this is
+            // the purest form of Sean's #12: the V2 has never seen those slots and must show them.
+            {
+                const auto st = rig.freshState();
+                const auto lr = linkRowOf (st, kick.uid);
+                const int drawnSlots = (int) st.getProperty ("chainView", juce::var())
+                                                 .getProperty ("count", -1);
+                const int realSlots  = (int) kick.state().getProperty ("slotCount", -1);
+                const auto drawnNames = st.getProperty ("chainView", juce::var())
+                                            .getProperty ("slots", juce::var()).toString();
+                scen ("G1", "T2: the main rack strip shows the Link's real rack with no manual switch",
+                      realSlots > 0 && drawnSlots == realSlots,
+                      "the Link's own process holds " + juce::String (realSlots) + " slot(s) ["
+                      + kick.state().getProperty ("slots", juce::var()).toString() + "]; the V2's strip "
+                      "draws " + juce::String (drawnSlots) + " [" + drawnNames + "]  (sidecar revision "
+                      + lr.getProperty ("revision", juce::var()).toString() + ")",
+                      "A", v2.editor.get(), st);
+
+                // ---- E5: AND NO GR FIGURE ON ANY OF THEM (Sean's #7 morning) --------------------
+                juce::String badges;
+                if (auto* arr = st.getProperty ("chainView", juce::var())
+                                    .getProperty ("slotBadges", juce::var()).getArray())
+                    for (const auto& b : *arr) badges << b.toString() << "|";
+                scen ("E5", "T2: a Link's slot shows no GR figure until Link meters ship",
+                      ! badges.containsIgnoreCase ("GR "),
+                      "the badges drawn on the Link's slots: [" + badges + "]  (RED on 16a: the mirror's "
+                      "own instances do not process audio, so their reduction read 0.0 and was drawn as "
+                      "\"GR 0.0\")",
+                      "A", v2.editor.get(), st);
+            }
+
+            // ---- A4b: ADD WITH SETTINGS, ACROSS THE PROCESS BOUNDARY ----------------------------
+            if (tp.ok)
+            {
+                const int before = (int) kick.state().getProperty ("slotCount", -1);
+                const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
+                                              + tp.paramName, 120000);
+                int after = before; juce::String landed, names;
+                rig.until ([&] (const juce::var&)
+                {
+                    const auto st = kick.state();
+                    after  = (int) st.getProperty ("slotCount", -1);
+                    names  = st.getProperty ("slots",  juce::var()).toString();
+                    landed = st.getProperty ("landed", juce::var()).toString();
+                    return after > before && landed.contains (tp.paramName);
+                }, 30000);
+                double readBack = 0.0; bool haveReadBack = false;
+                for (const auto& part : juce::StringArray::fromTokens (landed, "|", ""))
+                {
+                    auto body = part.trim();
+                    if (body.contains ("{")) body = body.fromFirstOccurrenceOf ("{", false, false)
+                                                        .upToLastOccurrenceOf ("}", false, false);
+                    for (const auto& pair : juce::StringArray::fromTokens (body, ";", ""))
+                    {
+                        const auto id = pair.upToFirstOccurrenceOf ("=", false, false).trim();
+                        if (id != tp.paramName) continue;
+                        readBack = pair.fromFirstOccurrenceOf ("=", false, false).trim().getDoubleValue();
+                        haveReadBack = true;
+                    }
+                }
+                scen ("A4b", "T2: add with settings to a Link in its OWN PROCESS, dialled and read back",
+                      after > before && names.containsIgnoreCase (tp.name)
+                      && haveReadBack && std::abs (readBack - tp.askValue) <= 1.0,
+                      "slots " + juce::String (before) + " -> " + juce::String (after) + " [" + names
+                      + "], " + tp.paramName + " asked " + juce::String (tp.askValue, 2)
+                      + ", the plugin in the other process now shows "
+                      + (haveReadBack ? juce::String (readBack, 2) : juce::String ("NOTHING READ BACK"))
+                      + "  (this is the channel with no shared memory to fall back on)",
+                      "A", v2.editor.get(), rig.freshState(), &r);
+            }
+            else
+                scenSkip ("A4b", "T2: add with settings to a Link in its own process", tp.why, "A");
+
+            // ---- T3: THE RACK-SELECTION LOCK, IN WORDS ------------------------------------------
+            //
+            // *"The rack-selection lock: a Link selected in another instance's rack ('deselect there
+            // to edit here')."* The SECOND V2 (the VST3 one) selects the same Link, which takes the
+            // lock; the AU V2 then tries to edit it and must refuse with the sentence a person reads.
+            // Both V2s are real instances of the shipping plugin, which is what makes this the real
+            // contention rather than a simulated one.
+            if (v2v.plugin == nullptr)
+                scenSkip ("T3", "T3: a Link selected in another instance refuses the edit, in words",
+                          "the VST3 V2 did not load, so there is no second instance to hold the lock", "A");
+            else
+            {
+                v2v.openEditor();
+                Rig::pump (1500);
+                // The second instance selects the Link's rack: that is what takes the lock.
+                rig.sendTo ("VST3", echojay::rig::cmd::selectLink, args1 ("uid", kick.uid), 8000);
+                Rig::pump (2500);
+                const auto r = askAgent (rig, "rig-linkadd-marker: add a compressor to the kick", 90000);
+                const auto st = rig.freshState();
+                const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
+                const bool refusedInWords = words.containsIgnoreCase ("deselect")
+                                         || words.containsIgnoreCase ("selected on")
+                                         || words.containsIgnoreCase ("locked by");
+                scen ("T3", "T3: a Link held by another instance refuses the edit in words a person reads",
+                      refusedInWords,
+                      "what the run said: \"" + words.substring (0, 200) + "\"  (the second V2 holds the "
+                      "rack lock on " + kick.uid + "; the refusal must name it, never fail silently)",
+                      "A", v2.editor.get(), st, &r);
+                rig.sendTo ("VST3", echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                v2v.closeEditor();
+                Rig::pump (1200);
+            }
+
+            // ---- LINK WINDOW OPEN vs CLOSED ----------------------------------------------------
+            {
+                const auto ack = kick.send ("open_editor");
+                const bool opened = (bool) ack.getProperty ("state", juce::var())
+                                               .getProperty ("editorOpen", false);
+                const auto before = (int) kick.state().getProperty ("slotCount", -1);
+                const auto r = askAgent (rig, "rig-linkadd-marker: add a compressor to the kick", 90000);
+                int after = before;
+                rig.until ([&] (const juce::var&)
+                { after = (int) kick.state().getProperty ("slotCount", -1); return after > before; }, 25000);
+                scen ("T2w", "T2: an edit lands on a Link whose OWN window is open",
+                      opened && after > before,
+                      "the Link's editor was " + juce::String (opened ? "open" : "NOT open (it refused)")
+                      + " and its rack went " + juce::String (before) + " -> " + juce::String (after)
+                      + " slot(s)  (a republish that only happens with a window open would show here)",
+                      "A", v2.editor.get(), rig.freshState(), &r);
+                kick.send ("close_editor");
+            }
+        }
+
+        // =====================================================================================
+        //  THE MATRIX'S REMAINING STARRED SCENARIOS, on the own rack (T1)
+        //  Every one of these ran RED on ship_2026-10-16a; the reason is printed in each.
+        // =====================================================================================
+
+        // ---- C1: THE CLOSING OF AN ADD THAT COULD NOT BE CONFIRMED (Sean's #4, #5) -------------------
+        {
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            const auto r = askAgent (rig, "rig-nomap-marker: add that compressor", 90000);
+            const auto st = rig.freshState();
+            const auto words = r.stepWords + " " + r.text;
+            const bool addedFirst = words.containsIgnoreCase ("Added")
+                                 && ! words.containsIgnoreCase ("Not applied: add")
+                                 && ! words.containsIgnoreCase ("running on default");
+            const bool noFigure  = ! words.contains ("4.0") && ! words.contains ("4.00");
+            scen ("C1", "an add nothing could confirm says \"Added X. Settings not confirmed.\" and no figure",
+                  r.ran() && addedFirst && noFigure,
+                  "the run said: \"" + words.substring (0, 180) + "\"  (RED on 15c/16a: \"Not applied: add "
+                  "X\" over a plugin that WAS added, and an invented \"running on default values\")",
+                  "A", v2.editor.get(), st, &r);
+        }
+
+        // ---- G4 / I6: ONE WAITING LINE, ONE PAIR OF BUTTONS (Sean's #4 morning) ---------------------
+        {
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
+            // DELIBERATELY NOT ANSWERED: the subject is what is DRAWN while it waits.
+            const auto r = askAgent (rig, "rig-oneline-marker: nudge the pre-gain", 40000, false);
+            juce::var arow;
+            juce::String zones;
+            rig.until ([&] (const juce::var& stv)
+            {
+                arow  = stv.getProperty ("agentRow", juce::var());
+                zones = arow.getProperty ("zones", juce::var()).toString();
+                return zones.containsIgnoreCase ("Apply") || zones.contains ("1:");
+            }, 25000);
+            const auto st = rig.freshState();
+            arow  = st.getProperty ("agentRow", juce::var());
+            zones = arow.getProperty ("zones", juce::var()).toString();
+            // kind 1 = ApplyLine, 5 = ApplyAll (RunHit's order); the labels ride on the zone string.
+            const bool hasLineApply = zones.contains ("1:") || zones.contains (",1") || zones.startsWith ("1");
+            const bool hasApplyAll  = zones.containsIgnoreCase ("Apply all")
+                                   || zones.containsIgnoreCase ("Skip all");
+            scen ("G4", "one waiting line draws only that line's buttons, no second Apply",
+                  hasLineApply && ! hasApplyAll,
+                  "zones=[" + zones + "]  (RED on 16a: the line's Apply AND the run's Apply/Skip all were "
+                  "both drawn for a single pending step, so one decision had two doors)",
+                  "A", v2.editor.get(), st, &r);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        }
+
+        // ---- G5: NO STRAY "applied" BESIDE A LINE THAT APPLIED NOTHING (Sean's #5 morning) ----------
+        {
+            const auto r = askAgent (rig, "rig-readonly-marker: what is on this rack?", 60000);
+            const auto st = rig.freshState();
+            juce::StringArray stray;
+            if (auto* arr = st.getProperty ("agentRow", juce::var()).getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    const auto label = sv.getProperty ("label", juce::var()).toString();
+                    const auto right = sv.getProperty ("right", juce::var()).toString();
+                    const bool reads = label.containsIgnoreCase ("read") || label.containsIgnoreCase ("look")
+                                    || label.containsIgnoreCase ("check");
+                    if (reads && right.containsIgnoreCase ("applied")) stray.add (label + " -> \"" + right + "\"");
+                }
+            scen ("G5", "a line that only read something never says \"applied\"",
+                  stray.isEmpty(),
+                  stray.isEmpty() ? juce::String ("every status word belongs to the step it is on")
+                                  : "stray: " + stray.joinIntoString ("; ")
+                                    + "  (RED on 16a: every finished step said \"applied\", including a "
+                                      "look and a check)",
+                  "A", v2.editor.get(), st, &r);
+        }
+
+        // ---- E1 / E2 / G6 / G7: THE GR RUN, AND THE BUBBLES AROUND IT -------------------------------
+        {
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            const auto r = askAgent (rig, "rig-gr-marker: how much is it doing?", 120000);
+            const auto st = rig.freshState();
+
+            // G6: the build's own result bubble must not ride beside the run (Sean's #3 morning)
+            int chainBuilt = 0, closingCopies = 0;
+            const auto closing = st.getProperty ("agentRow", juce::var())
+                                     .getProperty ("closing", juce::var()).toString().trim();
+            if (auto* arr = st.getProperty ("onScreen", juce::var()).getArray())
+                for (const auto& m : *arr)
+                {
+                    const auto t = m.getProperty ("text", juce::var()).toString();
+                    if (t.contains ("Chain built -")) ++chainBuilt;
+                    if (closing.isNotEmpty() && t.contains (closing)) ++closingCopies;
+                }
+            scen ("G6", "no separate \"Chain built - N plugins loaded.\" bubble beside a run",
+                  chainBuilt == 0,
+                  juce::String (chainBuilt) + " such bubble(s) on screen  (RED on 16a: the build road's own "
+                  "result bubble appeared next to the run message, twice)",
+                  "A", v2.editor.get(), st, &r);
+            scen ("G7", "the closing sentence appears only inside the run message",
+                  closingCopies <= 1,
+                  juce::String (closingCopies) + " copy(ies) of the closing in the message list  (RED on "
+                  "16a: the editor and EJAgentHome each opened a record for one run, so the closing was "
+                  "written to a second row that drew as a plain bubble)",
+                  "A", v2.editor.get(), st, &r);
+
+            // E2: the tile's figure IS the device's own held value
+            double badgeGr = -1.0, devHeld = -1.0; juce::String badge;
+            if (auto* arr = st.getProperty ("ownRack", juce::var()).getProperty ("slots", juce::var()).getArray())
+                for (const auto& sl : *arr)
+                    if ((bool) sl.getProperty ("devReportsGr", false))
+                    {
+                        badge   = sl.getProperty ("badge", juce::var()).toString();
+                        devHeld = (double) sl.getProperty ("grHeldDb", juce::var());
+                        if (badge.containsIgnoreCase ("GR "))
+                            badgeGr = badge.fromFirstOccurrenceOf ("GR ", false, true)
+                                           .upToFirstOccurrenceOf (" ", false, false).getDoubleValue();
+                        break;
+                    }
+            const bool fits = ! badge.contains ("...") && badge.length() <= 14;
+            scen ("E2", "the tile's GR figure is the device's own held value, and the caption fits",
+                  badgeGr >= 0.0 && std::abs (badgeGr - devHeld) <= 0.15 && fits,
+                  "the tile draws \"" + badge + "\" (" + juce::String (badgeGr, 2)
+                  + ") and the device's own hold reads " + juce::String (devHeld, 2)
+                  + "  (RED on 16a: the badge only reached the panel on a STRUCTURAL rebuild, so it froze "
+                  "- \"GR 10.9 WORK...\" while the meter read 4.4, 3.8, 8.8)",
+                  "A", v2.editor.get(), st, &r);
+
+            // E1: what the run SAID about it - loudest hits and typical, and never an instant
+            const auto grWords = r.stepWords + " " + r.text;
+            scen ("E1", "a GR answer gives loudest hits and typical, and never an instant figure",
+                  r.ran() && ! grWords.containsIgnoreCase ("grNowDb")
+                          && ! grWords.containsIgnoreCase ("instant"),
+                  "the run said: \"" + grWords.substring (0, 200) + "\"  (RED on 16a: \"loudest hits\" never "
+                  "arrived and the model quoted \"the instant hitting up to 6 dB\", which the result should "
+                  "never have carried)",
+                  "A", v2.editor.get(), st, &r);
+        }
+
+        // ---- E3: AN UNCERTIFIED PLUGIN IS SAID TO BE UNCERTIFIED, NOT SILENT (Sean's #19) -----------
+        if (tp.ok)
+        {
+            // The third party is on this rack from scenario A3 above, and it is NOT certified for GR.
+            const auto r = askAgent (rig, "rig-gr-marker: how much is the other one doing?", 90000);
+            const auto st = rig.freshState();
+            const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
+            const bool saysSilence = words.containsIgnoreCase ("no audio has been heard")
+                                  || words.containsIgnoreCase ("silent or muted");
+            scen ("E3", "check(gr) on an uncertified plugin says so at once, and never blames silence",
+                  r.ran() && ! saysSilence,
+                  "the run said: \"" + words.substring (0, 200) + "\"  (RED on 16a: with audio playing and "
+                  "Renaissance Axx showing 15.5 dB of attenuation, the answer was \"No audio has been heard "
+                  "for gain reduction on slot 1 yet\" - a reason that was not true)",
+                  "A", v2.editor.get(), st, &r);
+        }
+        else
+            scenSkip ("E3", "check(gr) on an uncertified plugin says so at once", tp.why, "A");
+
+        // ---- E7: THE GR METER'S TWO LABELS CANNOT OVERLAP (Sean's #15) ------------------------------
+        //
+        // A GEOMETRY ASSERTION, not a screenshot: the layout is one pure function now
+        // (GrMeter::labelBoxes), so this holds it to its contract in both directions - the held
+        // figure's box and the live value's box must not intersect when both are drawn, and the live
+        // value must have the whole track when the held figure is not.
+        {
+            const juce::Rectangle<float> track { 0.0f, 0.0f, 160.0f, 22.0f };
+            const auto both = echojay::device::GrMeter::labelBoxes (track, false, true);
+            const auto one  = echojay::device::GrMeter::labelBoxes (track, false, false);
+            const bool apart = ! both.held.isEmpty() && ! both.live.intersects (both.held);
+            const bool whole = one.held.isEmpty() && one.live.getWidth() > both.live.getWidth();
+            scen ("E7", "the GR meter's held figure and live value never share a pixel",
+                  apart && whole,
+                  "with a hold: live=" + both.live.toString() + " held=" + both.held.toString()
+                  + "; without: live=" + one.live.toString()
+                  + "  (RED on 16a: both were drawn centred-right in the same track, so \"-4.4 dB\" was "
+                  "printed over \"dB\")",
+                  "A", v2.editor.get(), rig.freshState());
+        }
+
+        // ---- C5: AFTER AN UNDO, THE CLOSING DESCRIBES THE UNDONE STATE (Sean's #14) -----------------
+        {
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
+            const auto r = askAgent (rig, "rig-undo-marker: put the pre-gain up", 90000);
+            Rig::pump (600);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "undo_all"), 12000);
+            Rig::pump (1500);
+            const auto st = rig.freshState();
+            const auto arow = st.getProperty ("agentRow", juce::var());
+            const auto closing = arow.getProperty ("closing", juce::var()).toString();
+            const int changes = (int) arow.getProperty ("changes", juce::var());
+            const bool stale = closing.containsIgnoreCase ("is set to")
+                            || closing.containsIgnoreCase ("set the pre-gain");
+            scen ("C5", "after Undo all the closing no longer claims the change",
+                  changes == 0 && ! stale,
+                  "changes=" + juce::String (changes) + " closing=\"" + closing.substring (0, 140)
+                  + "\"  (RED on 16a: after \"Everything the agent changed has been undone\" the run still "
+                  "read \"Pre gain on the Mix Bus is set to 0 dB\")",
+                  "A", v2.editor.get(), st, &r);
+        }
+
+        // ---- B5: HIDE STEPS WORKS ON A STOPPED OR FAILED RUN (Sean's #2, #13) -----------------------
+        {
+            const auto r = askAgent (rig, "rig-setfail-marker: add something that is not there", 90000);
+            const auto before = rig.freshState().getProperty ("agentRow", juce::var());
+            const bool openBefore = (bool) before.getProperty ("stepsOpen", false);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "changes"), 10000);
+            Rig::pump (900);
+            const auto after = rig.freshState().getProperty ("agentRow", juce::var());
+            const bool openAfter   = (bool) after.getProperty ("stepsOpen", false);
+            const bool failsShown  = (bool) after.getProperty ("failuresOnly", false);
+            scen ("B5", "Hide steps works on a run with a failed line, and the failure stays visible",
+                  openBefore && ! openAfter && failsShown,
+                  "stepsOpen " + juce::String (openBefore ? "y" : "n") + " -> "
+                  + juce::String (openAfter ? "y" : "n") + ", failuresOnly="
+                  + juce::String (failsShown ? "y" : "n")
+                  + "  (RED on 16a: the view forced the steps open on any run with a failure, so the "
+                  "control was drawn and did nothing)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+        }
+
+        // ---- A12 / I9: PLAIN STEP DETAILS, AND SUGGESTED SETTINGS THAT TELL THE TRUTH ---------------
+        {
+            const auto r = askAgent (rig, "rig-eqband-marker: two bells on the EQ", 90000);
+            const auto st = rig.freshState();
+            juce::String details, settings;
+            if (auto* arr = st.getProperty ("agentRow", juce::var()).getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr) details << sv.getProperty ("detail", juce::var()).toString() << " ";
+            if (auto* arr = st.getProperty ("ownRack", juce::var()).getProperty ("slots", juce::var()).getArray())
+                for (const auto& sl : *arr)
+                    if (sl.getProperty ("name", juce::var()).toString().containsIgnoreCase ("EQ"))
+                        settings = sl.getProperty ("settings", juce::var()).toString();
+            const bool plain = ! details.contains ("band1.") && ! details.contains ("_hz")
+                            && ! details.contains ("_db");
+            scen ("A12", "step details read as words, not as parameter ids",
+                  r.ran() && plain,
+                  "the details said: \"" + details.substring (0, 200) + "\"  (RED on 16a: \"slot 2 "
+                  "threshold_db -14.00, slot 2 ratio 4.00\")",
+                  "A", v2.editor.get(), st, &r);
+            scen ("I9", "Suggested Settings shows what landed, or says it is not confirmed",
+                  settings.isNotEmpty()
+                  && (settings.containsIgnoreCase ("band") || settings.containsIgnoreCase ("not confirmed")),
+                  "the EQ's card reads: \"" + settings.substring (0, 160) + "\"  (RED on 16a: the card was "
+                  "composed from the value that was ASKED for, so it could read \"Applied automatically\" "
+                  "over settings the read-back said had not taken)",
+                  "A", v2.editor.get(), st, &r);
         }
 
         // ---- D1: EVERY MESSAGE IS RENDERED EXACTLY ONCE ----------------------------------------------
@@ -3397,6 +4523,16 @@ int main (int argc, char* argv[])
                  + (r.failDetail.isNotEmpty() ? ", user line: " + r.failDetail.substring (0, 120) : ""), &r);
         }
     }
+
+    // ---- THE MATRIX REPORT, written before anything is torn down -----------
+    // Written on a red run too: the report IS the artefact (matrix section 7).
+    // The folder the bundle under test came out of - "ship_2026-10-16a", or "AU" when it is a build
+    // tree, in which case the two levels above name the build. Said plainly rather than guessed at.
+    writeMatrixReport (v2Comp.getParentDirectory().getFileName() == "AU"
+                           ? v2Comp.getParentDirectory().getParentDirectory()
+                                   .getParentDirectory().getFileName()
+                           : v2Comp.getParentDirectory().getFileName(),
+                       liveServerConfigured() ? "live pass" : "mock pass");
 
     // ---- teardown in the host's own order ---------------------------------
     v2.closeEditor();

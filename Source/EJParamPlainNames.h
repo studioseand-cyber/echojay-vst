@@ -100,6 +100,57 @@ inline juce::String plainGroup (const juce::String& groupIn, int* numberOut = nu
     return stem + " " + num;
 }
 
+/** ---- SEAN'S #6 (16 Oct 2026): A VALUE, IN WORDS AND ITS OWN UNIT -----------------------------
+    *"Step details are raw text ('slot 2 threshold_db -14.00, slot 2 ratio 4.00...'). Plain words:
+    'Compressor: threshold -14 dB, ratio 4:1, attack 15 ms...'."*
+
+    The id names the parameter and its suffix names the unit, so both are already here; what was
+    missing was anything that put them together for a reader. The number is printed as short as it
+    can be without losing anything - 4 not 4.00, 14.5 not 14.50 - because the trailing zeros were
+    half of what made the line look like a dump.
+
+    A control NAME (a third party's "Threshold", which carries no suffix) keeps its own name and
+    takes its unit from the caller, who has the map entry. */
+inline juce::String plainNumber (double v)
+{
+    auto t = juce::String (v, 2);
+    if (t.containsChar ('.')) t = t.trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+    return t.isEmpty() || t == "-0" ? juce::String ("0") : t;
+}
+
+inline juce::String plainValuePhrase (const juce::String& idIn, double value,
+                                      const juce::String& unitHint = {})
+{
+    const auto id   = idIn.trim();
+    const auto leaf = id.contains (".") ? id.fromLastOccurrenceOf (".", false, false) : id;
+    const auto low  = leaf.toLowerCase();
+    // the name: the table's word for a known id, the control's own name otherwise
+    juce::String name = plainLeaf (leaf);
+    if (id.contains (".")) name = plainGroup (id.upToLastOccurrenceOf (".", false, false)) + " " + name;
+
+    juce::String unit = unitHint.trim().toLowerCase();
+    if (unit.isEmpty())
+    {
+        if (low == "ratio")            unit = "ratio";
+        else if (low.endsWith ("_db")) unit = "db";
+        else if (low.endsWith ("_ms")) unit = "ms";
+        else if (low.endsWith ("_hz")) unit = "hz";
+        else if (low.endsWith ("_pct")) unit = "pct";
+        else if (low.endsWith ("_s"))  unit = "s";
+        else if (low == "q")           unit = "q";
+    }
+    juce::String figure;
+    if (unit == "ratio")      figure = plainNumber (value) + ":1";
+    else if (unit == "db")    figure = plainNumber (value) + " dB";
+    else if (unit == "ms")    figure = plainNumber (value) + " ms";
+    else if (unit == "s")     figure = plainNumber (value) + " s";
+    else if (unit == "pct")   figure = plainNumber (value) + "%";
+    else if (unit == "hz")    figure = value >= 1000.0 ? plainNumber (value / 1000.0) + " kHz"
+                                                       : plainNumber (value) + " Hz";
+    else                      figure = plainNumber (value);
+    return (name + " " + figure).trim();
+}
+
 /** THE SENTENCE. A list of ids becomes the phrase Sean asked for.
 
     band1.freq_hz, band1.gain_db, band1.q, band2.freq_hz, band2.gain_db, band2.q

@@ -2120,6 +2120,22 @@ private:
     // Amendment 3 (17 Sep 2026): the one chain-built bubble composer (own rack + SESSION build).
     struct BuildBubble { juce::String text, altPrompt, altLabel; bool dialWarning = false; };
     BuildBubble composeBuildBubble(ChainHost& ch, const juce::String& chainJson);
+    /** ---- SEAN'S #3 (16 Oct 2026): THE OLD-STYLE BUILD BUBBLE DOES NOT RIDE ALONG ----------------
+        *"A separate 'Chain built - 2 plugins loaded.' bubble appears next to the run message (seen
+        twice). Old-style message leaking into the new layout."* It is the BUILD ROAD's own result
+        bubble - the same one a user's Build press produces, which is why the agent gets it: the
+        agent deliberately takes the user's road. With the run rendering as a message, the run's own
+        step line already says the build landed, so the bubble is a second telling.
+
+        A COUNT, NOT A BOOLEAN, and consumed by the bubble it suppresses: an agent build raises it,
+        the next bubble to be composed takes it away. A user's own Build press never sees it, and if
+        a build somehow produced no bubble at all the count expires with the turn (clearAgentBuildBubbleSuppression).
+        ONLY the clean sentence is suppressed: a bubble that carries a FAILURE or a hand-dial note is
+        still shown, because the row does not carry those words and 11b's rule is that a failure is
+        never folded away.                                                                          */
+    int  agentBuildBubbleSuppress_ = 0;
+    bool suppressAgentBuildBubble (const BuildBubble& b);
+    void clearAgentBuildBubbleSuppression() { agentBuildBubbleSuppress_ = 0; }
     // 20 Sep 2026 (capture width observation): the ONE wording for a capture's stereo figure. A window whose left and right
     // were the same signal (width < 0.5 %, correlation > 0.995) is a MONO INPUT, not a "narrow" image - Sean's mix-bus
     // capture read 0.0 % / 1.0 because the plugin received identical channels for the whole window (609,280 samples, 7 differ).
@@ -3111,7 +3127,9 @@ private:
                     const int rowY = R.captionRow.getY(), rowH = R.captionRow.getHeight();
                     const bool haveBadge = rowH > 0 && pictureBadge.isNotEmpty() && ! bypassed;
                     const bool haveTrim  = rowH > 0 && trimText.isNotEmpty() && ! bypassed;
-                    const int badgeW = haveBadge ? juce::jmin (getWidth() - 4, 46) : 0;
+                    // 56, not 46 (Sean's #16): "GR 10.9 HOT" needs it, and the badge is the figure
+                    // he compares against the meter - a truncated one is no use to him.
+                    const int badgeW = haveBadge ? juce::jmin (getWidth() - 4, 56) : 0;
                     if (haveTrim)
                     {   // 21m ruling 2: the unity trim under the knob, the SAME text the card line shows
                         g.setColour(Card::nameOn.withAlpha(0.8f));

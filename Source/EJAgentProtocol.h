@@ -325,7 +325,28 @@ struct TalkAsk
     juce::StringArray labels, details, intents;
     bool allowFreeText = true;
     bool present = false;
+    /** TRUE when the server sent no choices AND allowFreeText false - an ask nobody could answer.
+        The plugin takes typing anyway and this records that it had to (FOR_B, 16 Oct 2026). */
+    bool freeTextForced = false;
+    /** Which key the choices arrived under, and which key carried a label - "" when none did.
+        Evidence for B rather than a guess about B. */
+    juce::String choiceKey, labelKey;
 };
+/** The label of one choice. B's contract says `label`; a choice that arrived
+    under another name was dropped silently, and a dropped choice is an ask with
+    nothing to tap (16 Oct 2026, Sean's blocker). Read the alternatives too, and
+    SAY which key answered so the log names the shape rather than the symptom. */
+inline juce::String choiceLabelOf (juce::DynamicObject& co, juce::String& keyUsed)
+{
+    for (const char* k : { "label", "name", "title", "text", "value", "plugin", "option" })
+        if (co.hasProperty (k))
+        {
+            const auto v = co.getProperty (k).toString().trim();
+            if (v.isNotEmpty()) { keyUsed = k; return v; }
+        }
+    return {};
+}
+
 inline TalkAsk talkAskOf (const ToolCall& c)
 {
     TalkAsk a;
@@ -338,21 +359,73 @@ inline TalkAsk talkAskOf (const ToolCall& c)
     a.present  = true;
     a.question = ao->getProperty ("question").toString().trim();
     if (ao->hasProperty ("allowFreeText")) a.allowFreeText = (bool) ao->getProperty ("allowFreeText");
-    if (auto* ch = ao->getProperty ("choices").getArray())
+    // ---- THE CHOICES, UNDER ANY OF THEIR NAMES (16 Oct 2026) -----------------------------------
+    // "an ask always shows its choices AND accepts a typed answer" (Sean, 16 Oct). The 09:19 ask
+    // logged `choices=` empty with allowFreeText false - a dead end. Whether B sent nothing or sent
+    // it under another key, the plugin reads every plausible key before it concludes there are none.
+    juce::String arrayKey, labelKey;
+    const juce::Array<juce::var>* ch = nullptr;
+    for (const char* k : { "choices", "options", "answers", "buttons", "chips" })
+        if (auto* arr = ao->getProperty (k).getArray()) { ch = arr; arrayKey = k; break; }
+    if (ch != nullptr)
         for (auto& cv : *ch)
         {
             juce::String label, detail, intent;
-            if (cv.isString()) label = cv.toString().trim();
+            if (cv.isString()) { label = cv.toString().trim(); labelKey = "(bare string)"; }
             else if (auto* co = cv.getDynamicObject())
             {
-                label  = co->getProperty ("label").toString().trim();
+                label  = choiceLabelOf (*co, labelKey);
                 detail = co->getProperty ("detail").toString().trim();
                 intent = co->getProperty ("intent").toString().trim();
             }
             if (label.isEmpty()) continue;
             a.labels.add (label); a.details.add (detail); a.intents.add (intent);
         }
+    a.choiceKey = arrayKey;
+    a.labelKey  = labelKey;
+    // ---- AN ASK WITH NO CHOICES ALWAYS TAKES TYPING ---------------------------------------------
+    // allowFreeText=false means "tap, do not type". With nothing to tap it means "you cannot
+    // answer", which is not a state the server is allowed to put the user in: the run hung until
+    // Sean pressed Stop. The flag is overridden here, at the parse, so every reader downstream
+    // (the composer, the row, the rig) sees one truth.
+    if (a.labels.isEmpty() && ! a.allowFreeText)
+    {
+        a.allowFreeText  = true;
+        a.freeTextForced = true;
+    }
     return a;
+}
+
+/** WHETHER TWO PLUGIN NAMES ARE THE SAME PLUGIN (16 Oct 2026, Sean's #9).
+    A rack slot's name is the plugin's REGISTRATION name and the model asks by the name a person
+    uses: "Renaissance Axx" against "Renaissance Axx (s)" (Waves' stereo variant, which the scan
+    renames to - EJScan logs it as [feed-variant]), "MTransient" against "MTransient (m)". So the
+    comparison drops case, spaces, punctuation and a trailing one-or-two-letter variant tag in
+    brackets, and then requires one to CONTAIN the other - never a fuzzy score, because the only use
+    is deciding which slot a read-back belongs to and a wrong answer there reports a value from
+    another plugin. */
+inline juce::String flattenPluginName (const juce::String& raw)
+{
+    auto t = raw.trim();
+    // a trailing variant tag: "(s)", "(m)", "(mono)", "(stereo)" - the scan's own suffixes
+    if (t.endsWithChar (')'))
+    {
+        const int open = t.lastIndexOfChar ('(');
+        if (open > 0)
+        {
+            const auto tag = t.substring (open + 1, t.length() - 1).trim().toLowerCase();
+            if (tag.length() <= 6 && (tag == "s" || tag == "m" || tag == "mono" || tag == "stereo"
+                                      || tag == "st" || tag == "5.1"))
+                t = t.substring (0, open).trim();
+        }
+    }
+    return t.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz0123456789");
+}
+inline bool namesMatchLoosely (const juce::String& a, const juce::String& b)
+{
+    const auto x = flattenPluginName (a), y = flattenPluginName (b);
+    if (x.isEmpty() || y.isEmpty()) return false;
+    return x == y || x.contains (y) || y.contains (x);
 }
 
 // The ask's answer: {tapped:"<label>"} for a chip, {typed:"<text>"} for free text (contract 2.4).

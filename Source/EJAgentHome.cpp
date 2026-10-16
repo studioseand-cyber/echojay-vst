@@ -468,6 +468,29 @@ juce::Array<juce::var> EJAgentHome::takeParkedLines()
     return out;
 }
 
+juce::String EJAgentHome::ensureRunKey()
+{
+    using namespace echojay::agentui;
+    if (client_ == nullptr) return runKey_;
+    const auto sid = client_->sessionId();
+    // The same new-run test writeSnapshot makes, so the two cannot disagree about whether this is a
+    // new run: a sessionId that moved means the previous row is finished with.
+    if (sid.isNotEmpty() && lastSession_.isNotEmpty() && sid != lastSession_) runKey_.clear();
+    if (runKey_.isEmpty())
+    {
+        runKey_ = juce::Uuid().toDashedString();
+        RunView seed; seed.runKey = runKey_;
+        EchoJayProcessor::ChatEntry ce;
+        ce.role = "assistant";
+        ce.agentJson = juce::JSON::toString (toJson (seed), true);
+        proc_.chatHistory.push_back (std::move (ce));
+        EchoJay_NSLog (("EJAgentHome: opened the run's record, key=" + runKey_
+                        + " (asked for by the window's row - one record, one run)").toRawUTF8());
+    }
+    if (sid.isNotEmpty()) lastSession_ = sid;
+    return runKey_;
+}
+
 void EJAgentHome::writeSnapshot()
 {
     using namespace echojay::agentui;

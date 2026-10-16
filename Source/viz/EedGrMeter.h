@@ -184,6 +184,13 @@ public:
 
                 // THE NUMBER BESIDE THE TICK (Sean, 15 Oct 2026): a held line with no figure cannot
                 // be compared with what check(gr) reports, which is the whole reason for the hold.
+                //
+                // ---- SEAN'S #15 (16 Oct 2026): AND IT MUST NOT SIT ON TOP OF THE LIVE FIGURE -----
+                // *"the held figure overlaps another label ('-4.4 dB' drawn over 'dB')."* Both were
+                // drawn centred-right in the same track: the live value at the right edge and the
+                // held figure in the last 30 px of it. On a horizontal meter the held figure now owns
+                // the right end and the live value is drawn to the LEFT of it (see heldFigureW_
+                // below, which the live-value block reads), so the two cannot share a pixel.
                 if (showHeldFigure_)
                 {
                     g.setColour (C::amber.brighter (0.4f));
@@ -193,8 +200,8 @@ public:
                         g.drawText (txt, track.getX(), (int) (track.getY() + track.getHeight() * pt) - 11,
                                     (int) track.getWidth(), 10, juce::Justification::centred, false);
                     else
-                        g.drawText (txt, (int) track.getRight() - 30, (int) track.getY(),
-                                    28, (int) track.getHeight(), juce::Justification::centredRight, false);
+                        g.drawText (txt, labelBoxes (track, false, true).held.toNearestInt(),
+                                    juce::Justification::centredRight, false);
                 }
             }
         }
@@ -210,10 +217,15 @@ public:
         // decoration; a compressor's whole job is expressed in this one figure.
         if (! dimmed_ && value_ > 0.05f && track.getWidth() > 40.0f)
         {
+            // The held figure owns the right end of a horizontal track (Sean's #15), so the live
+            // value is drawn clear of it. The reserve is taken only when the held figure is actually
+            // being drawn - a meter with no hold still uses the whole track.
+            const auto valueBox = labelBoxes (track, vertical_,
+                                              showHeldFigure_ && peak_ > 0.05f).live;
             g.setColour (C::text);
             g.setFont (uiFont (9.0f, true));
             g.drawText ("-" + juce::String (value_, 1) + " dB",
-                        track.reduced (4.0f, 0.0f),
+                        valueBox,
                         vertical_ ? juce::Justification::centredTop
                                   : juce::Justification::centredRight);
         }
@@ -236,6 +248,28 @@ private:
         repaint();
     }
 
+    /** The right-hand band a horizontal meter keeps for the HELD figure, so the live value cannot
+        be drawn over it (Sean's #15, 16 Oct 2026). Wide enough for "12.5" at 9 pt bold plus a gap. */
+    static constexpr int heldFigureW_ = 32;
+public:
+    /** ---- THE TWO LABEL BOXES, AS A PURE FUNCTION (Sean's #15, 16 Oct 2026) ---------------------
+        *"the held figure overlaps another label ('-4.4 dB' drawn over 'dB'). Fix the layout, add a
+        rig row for it."* The overlap was two drawText calls reasoning separately about one track, so
+        the fix is one function that both of them (and a guard) read: whatever it returns cannot
+        overlap, and a test can hold it to that without a window, a device or an audio thread.
+        `heldShown` is false on a meter with no hold, where the live value owns the whole track. */
+    struct LabelBoxes { juce::Rectangle<float> live, held; };
+    static LabelBoxes labelBoxes (juce::Rectangle<float> track, bool vertical, bool heldShown)
+    {
+        LabelBoxes b;
+        b.live = track.reduced (4.0f, 0.0f);
+        if (vertical || ! heldShown) return b;                 // vertical draws the held figure on the bar
+        b.held = { track.getRight() - (float) heldFigureW_, track.getY(),
+                   (float) heldFigureW_ - 2.0f, track.getHeight() };
+        b.live = b.live.withWidth (juce::jmax (20.0f, b.live.getWidth() - (float) heldFigureW_));
+        return b;
+    }
+private:
     float        maxDb_ = 24.0f;
     float        value_ = 0.0f, peak_ = 0.0f;
     int          peakHoldFrames_ = 0;

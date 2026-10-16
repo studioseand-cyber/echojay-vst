@@ -3087,6 +3087,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // replaceConfirmed = TRUE, deliberately: a build replaces the rack, and loadChainFromJson
             // would otherwise raise its own replace ask - a second question about a build the user has
             // already approved on the plan card, which is item 2's complaint arriving by another door.
+            // SEAN'S #3 (16 Oct 2026): the run's row already reports this build, so the build road's
+            // own result bubble is a second telling of it. Raised here, where we know the build is the
+            // AGENT'S; a user's Build press never passes this way.
+            if (agentRowRendererOn()) ++agentBuildBubbleSuppress_;
             if (uid.isEmpty()) loadChainFromJson (chainJson, /*replaceConfirmed*/ true);
             else               sendChainToLink (uid, chainJson);
         });
@@ -12678,18 +12682,34 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
         // NARROW ON PURPOSE. An empty mirror over a NON-EMPTY sidecar is the one disagreement the
         // 11 Oct ruling says cannot legitimately exist, so only that case falls through. A borrow where
         // the user has genuinely removed every slot leaves both empty and still reads 0, which is true.
-        if (v.slots.empty())
+        // ---- SEAN'S #12 (16 Oct 2026): A STALE MIRROR IS NOT AN EMPTY ONE, EITHER ----------------
+        //
+        // The narrow version of this fix (above) only caught an EMPTY mirror, because that was the
+        // shape of the first report. It came back the same morning in the other shape: *"stale rack
+        // again after a single add on a Link (Link has 3 slots, the main rack didn't update). It
+        // worked after a two-slot build, so the fix covers build but not add."* A build replaces the
+        // whole mirror; an add lands on the LINK and leaves the mirror holding its old, NON-empty
+        // list - which this line then preferred, exactly as it preferred the empty one.
+        //
+        // THE RULE IS THE 11 OCT RULING, applied once instead of case by case: the Link is the one
+        // publisher of its own rack, so where the mirror and the rack's own sidecar DISAGREE, the
+        // sidecar is what the user is shown. The mirror still owns the editing semantics - the
+        // plugins are here, bypass and wet act on them - and a borrow republishes the sidecar after
+        // every edit, so a disagreement is the Link having moved, not a race this read can lose.
         {
             auto it = processorRef.linkRackCache.find (uid);
-            if (it != processorRef.linkRackCache.end() && it->second.valid
-                && ! it->second.rack.slots.empty())
+            const bool haveSidecar = it != processorRef.linkRackCache.end() && it->second.valid;
+            if (haveSidecar && it->second.rack.slots.size() != v.slots.size())
             {
+                const auto mirrorCount = (int) v.slots.size();
+                v.slots.clear();
                 for (const auto& rs : it->second.rack.slots) v.slots.push_back (slotInfoFromSidecar (rs));
                 v.revision = it->second.rack.revision;
-                EchoJay_NSLog (("EJBorrow: the borrowed mirror of " + uid + " is EMPTY while its own "
-                                "sidecar holds " + juce::String ((int) v.slots.size()) + " slot(s) - "
-                                "rendering the rack's own description, not the mirror's emptiness "
-                                "(Sean's #3, 16 Oct)").toRawUTF8());
+                EchoJay_NSLog (("EJBorrow: the borrowed mirror of " + uid + " holds "
+                                + juce::String (mirrorCount) + " slot(s) while the rack's own sidecar "
+                                "holds " + juce::String ((int) v.slots.size()) + " - rendering the "
+                                "rack's own description, because the Link is the one publisher of it "
+                                "(Sean's #3 and #12, 16 Oct)").toRawUTF8());
             }
         }
         return v;
@@ -12854,6 +12874,23 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             auto& k = chainListPanel.blocks[i]->wetKnob;
             if (! k.isMouseButtonDown()) k.setValue(v.slots[i].wet, false);
             if (i < chainListPanel.slotInfos.size()) chainListPanel.slotInfos[i].wet = v.slots[i].wet;
+            // ---- SEAN'S #16 (16 Oct 2026): THE TILE'S GR IS A VALUE, SO IT MOVES LIKE ONE --------
+            //
+            // *"the tile is stuck at 'GR 10.9 WORK...' while the meter reads 4.4 / 3.8 / 8.8 across
+            // three moments."* Both read the device's 2 s hold, so the figures were right; what was
+            // wrong is that the badge only ever reached the panel through rebuild(), and a rebuild
+            // happens on a STRUCTURAL change. The tile therefore showed whatever the hold said at the
+            // last add, remove or bypass - frozen, sometimes for minutes. Pushed here, with the wet
+            // values, above the signature early-return, for exactly the reason stated there: a value
+            // must not need a rebuild to be seen.
+            //
+            // A LINK's slot is left blank by the rebuild (item 7) and must stay blank here too.
+            if (chainViewUid().isEmpty())
+            {
+                chainListPanel.blocks[i]->pictureBadge = v.slots[i].pictureBadge;
+                if (i < chainListPanel.slotInfos.size())
+                    chainListPanel.slotInfos[i].pictureBadge = v.slots[i].pictureBadge;
+            }
         }
         if (! chainListPanel.masterKnob.isMouseButtonDown())
         {
@@ -12945,7 +12982,25 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // header (the three-rows-under-RACK:-VOCAL defect, 21 Aug 2026). The
     // gate asserts this call site is unique; do not add another. Local
     // mutations stay at their sites and request a render here instead.
-    chainListPanel.rebuild(noData ? std::vector<ChainHost::SlotInfo>{} : v.slots,
+    // ---- SEAN'S #7 (16 Oct 2026): NO GR FIGURE ON A LINK'S SLOT UNTIL ITEM 9 -------------------
+    //
+    // *"The Link compressor's tile shows 'GR 0.0' while it is really compressing in the Link. Under
+    // my no-wrong-numbers rule, a Link slot shows no GR until item 9."*
+    //
+    // Where the 0.0 came from: on a BORROWED rack the tile reads the mirror host's own picture, and
+    // since 11 Oct the mirror's instances do not process audio - the Link does, in its own place -
+    // so their gain reduction is honestly 0.0 and dishonestly presented as a reading. The Link's own
+    // per-slot GR is item 9, which is queued; until it crosses, the tile says NOTHING here. The HOT
+    // and WORKING flags go with it, for the same reason: they are derived from the same silence.
+    auto viewSlots = v.slots;
+    if (chainViewUid().isNotEmpty())
+        for (auto& sl : viewSlots)
+            if (sl.pictureBadge.isNotEmpty())
+            {
+                sl.pictureBadge.clear();
+                sl.pictureText.clear();
+            }
+    chainListPanel.rebuild(noData ? std::vector<ChainHost::SlotInfo>{} : viewSlots,
                            noData ? -1 : chainSelectedSlot_);
     if (! noData)
     {
@@ -18991,9 +19046,15 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         // The rows the processor holds and the store does not are kept, in order, after the store's. Matched
         // on role+content, which is what a duplicate would be; a row the store already has is not added
         // twice. It cannot lose words: the worst case is a row kept that the store would have had anyway.
-        std::vector<std::pair<juce::String, juce::String>> held;
+        // THE AGENT'S SNAPSHOT RIDES WITH THE ROW (16 Oct 2026). `held` carried role+content only, so an
+        // agent run the store has not caught up with came back as PLAIN PROSE - its opening and closing
+        // as a bubble - instead of as the run's own row. A run is one message; it has to still be one
+        // message after a reload.
+        struct HeldRow { juce::String role, content, agentJson; };
+        std::vector<HeldRow> held;
         for (const auto& m : processorRef.chatHistory)
-            if (m.content.isNotEmpty()) held.emplace_back (m.role, m.content);
+            if (m.content.isNotEmpty() || m.agentJson.isNotEmpty())
+                held.push_back ({ m.role, m.content, m.agentJson });
 
         chatMessages.clear();
         processorRef.chatHistory.clear();
@@ -19153,28 +19214,100 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         }
 
         // ---- 14 OCT 2026: PUT BACK WHAT THE STORE DID NOT HAVE (see `held` above) ----------------------
+        //
+        // ---- SEAN'S TEST 9, 16 OCT 2026: AND PUT IT BACK WHERE IT BELONGS -----------------------------
+        //
+        // *"my question was inserted ABOVE the previous exchange instead of at the bottom, so the chat
+        // order is wrong after a close and reopen."*
+        //
+        // The first cut APPENDED the held rows after every store row, which is only right when the
+        // store is behind at the END. His case is the other one: the agent run's rows live on the
+        // processor and the workspace store has never seen them, while the question he typed next IS
+        // in the store - so appending put the older exchange under the newer question.
+        //
+        // A MERGE, NOT AN APPEND. `held` is the processor's own order, which is chronological, and the
+        // store's rows are (normally) a subsequence of it. Walking the store and emitting the held
+        // rows that come BEFORE each match puts every row back in the order it happened. A held row
+        // that the store carries LATER is left for its own turn rather than emitted early, so nothing
+        // is duplicated; anything still unmatched at the end is newer than every store row and goes
+        // last, which is where the first cut put it and where it does belong.
         {
-            int kept = 0;
-            for (const auto& h : held)
+            const auto storeRows = chatMessages;          // only the store's rows, in store order
+            std::vector<ChatMsg> merged;
+            merged.reserve (storeRows.size() + held.size());
+            size_t h = 0;
+            int inserted = 0;
+            for (size_t si = 0; si < storeRows.size(); ++si)
             {
-                bool inStore = false;
-                for (const auto& m : processorRef.chatHistory)
-                    if (m.role == h.first && m.content == h.second) { inStore = true; break; }
-                if (inStore) continue;
-                ChatMsg cm;
-                cm.role = h.first; cm.content = h.second;
-                chatMessages.push_back (cm);
-                processorRef.chatRoles.add (h.first);
-                processorRef.chatContents.add (h.second);
-                EchoJayProcessor::ChatEntry ce;
-                ce.role = h.first; ce.content = h.second;
-                processorRef.chatHistory.push_back (ce);
-                ++kept;
+                const auto& sr = storeRows[si];
+                size_t found = held.size();
+                for (size_t k = h; k < held.size(); ++k)
+                    if (held[k].role == sr.role && held[k].content == sr.content
+                        && (held[k].agentJson.isEmpty() || held[k].agentJson == sr.agentData)) { found = k; break; }
+                if (found < held.size())
+                {
+                    for (size_t k = h; k < found; ++k)
+                    {
+                        // Only if no LATER store row is this same row: a held row the store does carry
+                        // further down is that row's own business, not this one's.
+                        bool laterInStore = false;
+                        for (size_t sj = si + 1; sj < storeRows.size() && ! laterInStore; ++sj)
+                            if (storeRows[sj].role == held[k].role && storeRows[sj].content == held[k].content)
+                                laterInStore = true;
+                        if (laterInStore) continue;
+                        ChatMsg cm; cm.role = held[k].role; cm.content = held[k].content;
+                        cm.agentData = held[k].agentJson;
+                        if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
+                        merged.push_back (cm); ++inserted;
+                    }
+                    h = found + 1;
+                }
+                merged.push_back (sr);
             }
-            if (kept > 0)
-                EchoJay_NSLog (("EJStores: kept " + juce::String (kept) + " row(s) the workspace store has not "
-                                "caught up with - a reload must not throw away what the processor is holding "
-                                "(14 Oct 2026)").toRawUTF8());
+            for (size_t k = h; k < held.size(); ++k)
+            {
+                bool anywhereInStore = false;
+                for (const auto& sr : storeRows)
+                    if (sr.role == held[k].role && sr.content == held[k].content) { anywhereInStore = true; break; }
+                if (anywhereInStore) continue;
+                ChatMsg cm; cm.role = held[k].role; cm.content = held[k].content;
+                cm.agentData = held[k].agentJson;
+                if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
+                merged.push_back (cm); ++inserted;
+            }
+            if (inserted > 0)
+            {
+                chatMessages = merged;
+                // The three model containers are rebuilt in the SAME order, because the model's view of
+                // the conversation and the user's must not differ - a reply composed from a history in
+                // one order and read in another is the fault this merge exists to remove.
+                processorRef.chatHistory.clear();
+                processorRef.chatRoles.clear();
+                processorRef.chatContents.clear();
+                for (const auto& m : chatMessages)
+                {
+                    if (m.content.isEmpty() && m.agentData.isEmpty()) continue;
+                    processorRef.chatRoles.add (m.role);
+                    processorRef.chatContents.add (m.content);
+                    EchoJayProcessor::ChatEntry ce;
+                    ce.role = m.role; ce.content = m.content; ce.agentJson = m.agentData;
+                    if (m.hasWaveform)
+                    {
+                        ce.hasWaveform     = true;
+                        ce.durationSeconds = m.durationSeconds;
+                        ce.lufs            = m.lufs;
+                        ce.wavFilename     = m.wavFilename;
+                        ce.wavFilePath     = m.wavFilePath;
+                        for (auto& pt : m.waveform)
+                            ce.waveform.push_back (std::max (std::abs (pt.maxVal), std::abs (pt.minVal)));
+                    }
+                    processorRef.chatHistory.push_back (ce);
+                }
+                EchoJay_NSLog (("EJStores: merged " + juce::String (inserted) + " row(s) the workspace store has "
+                                "not caught up with back into their own place in the transcript - a reload must "
+                                "neither throw away what the processor is holding nor reorder it (14 Oct 2026; "
+                                "the ORDER is Sean's test 9, 16 Oct)").toRawUTF8());
+            }
         }
 
         juce::String title = ch.title.isEmpty() ? "Untitled" : ch.title;
@@ -29001,10 +29134,30 @@ void EchoJayEditor::finishSessionBuild(const juce::String& linkUid, const juce::
         if (sb.slot >= 0 && sb.slot < (int) pS.borrowSlotRecords_.size())    pS.borrowSlotRecords_[(size_t) sb.slot].name = sb.to;
     }
     const auto b = composeBuildBubble(*bhS, chainJson);
-    appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
+    if (! suppressAgentBuildBubble (b))
+        appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
     bhS->logDialSummary(juce::String("SESSION build (borrowed host) complete, dial ")
                         + (settled ? "settled" : "NOT settled after the 4 s bound"));
     if (! subs.empty()) refreshChainPanelForView(true);
+}
+
+/** TRUE when this build's result bubble belongs to an agent run that is already reporting it.
+    Only the CLEAN sentence is taken: anything with a failure, a hand-dial note or a warning in it
+    says something the row does not, and is shown. */
+bool EchoJayEditor::suppressAgentBuildBubble (const BuildBubble& b)
+{
+    if (agentBuildBubbleSuppress_ <= 0 || ! agentRowRendererOn()) return false;
+    --agentBuildBubbleSuppress_;
+    const bool clean = ! b.dialWarning && b.altPrompt.isEmpty()
+                    && ! b.text.containsIgnoreCase ("except")
+                    && ! b.text.containsIgnoreCase ("hand-dial")
+                    && ! b.text.containsIgnoreCase ("failed")
+                    && ! b.text.containsIgnoreCase ("not applied")
+                    && ! b.text.containsIgnoreCase ("waiting");
+    EchoJay_NSLog (("EJAgentRow: the build's own result bubble (\"" + b.text.substring (0, 60)
+                    + "...\") " + (clean ? "is NOT shown - the run's row reports this build (Sean's #3)"
+                                          : "IS shown: it carries something the row does not say")).toRawUTF8());
+    return clean;
 }
 
 std::map<juce::String, juce::String> EchoJayEditor::roleByNameFor(const juce::String& chainJson)
@@ -29232,7 +29385,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     ch.substituteNoMapSlots(roleByNameFor(chainJson));
     const auto b = composeBuildBubble(ch, chainJson);
     clearStageStatus();   // the bubble replaces the load/dial-window label
-    appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
+    if (! suppressAgentBuildBubble (b))
+        appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
     // ---- LEVELLING V2 (10 Oct 2026): THE BUILD'S LEVELLING INTENT -> THE RACK RECORD -----------------
     // The Level slot carried `target_lufs` and `option` in its params and is gone, so the intent needs a door of
     // its own. It is the rack record, written here from the block just before the arm reads it.
@@ -32162,7 +32316,25 @@ void EchoJayEditor::syncAgentRunMessage()
     }
     if (msg == nullptr)
     {
-        agentRunKey_ = juce::Uuid().toDashedString();
+        // ---- SEAN'S #11 (16 Oct 2026): ONE RUN, ONE RECORD ----------------------------------------
+        //
+        // *"The closing shows twice: as a separate chat bubble AND inside the run message."* Two
+        // records existed for one run, each with its own key, and the log said so plainly:
+        //
+        //     EJAgentRow:  opened run row #2        key=c91e2663-...
+        //     EJAgentHome: opened the run's record  key=4b8e1692-...
+        //
+        // EJAgentHome is documented as the one author of the record and the row as its mirror; this
+        // line minted a SECOND key and pushed a SECOND chat-history entry, so when the closing
+        // sentence was written to the home's record - whose content was empty - that entry rendered
+        // as a plain assistant bubble beside the row that already carried the closing.
+        //
+        // The key now comes from the home, and an entry that already exists under it is ADOPTED
+        // rather than duplicated. A row with no home (a build with the agent not constructed) still
+        // mints its own, which is what the fallback is for.
+        auto* home = processorRef.agentHomeIfBuilt();
+        agentRunKey_ = home != nullptr ? home->ensureRunKey() : juce::String();
+        if (agentRunKey_.isEmpty()) agentRunKey_ = juce::Uuid().toDashedString();
         RunView seed;
         seed.runKey = agentRunKey_;
         ChatMsg cm;
@@ -32170,10 +32342,21 @@ void EchoJayEditor::syncAgentRunMessage()
         cm.agentRunId = ++agentRunIdSeq_;
         cm.agentData  = juce::JSON::toString (toJson (seed), true);
         agentRunMsgId_ = cm.agentRunId;
+        bool haveRecord = false;
+        for (auto& e : processorRef.chatHistory)
+            if (e.agentJson.isNotEmpty()
+                && fromJson (juce::JSON::parse (e.agentJson)).runKey == agentRunKey_)
+            { haveRecord = true; cm.agentData = e.agentJson; cm.content = e.content; break; }
         chatMessages.push_back (cm);
-        // the processor's copy is born WITH the key, so the two can be matched from the first tick
-        EchoJayProcessor::ChatEntry ce; ce.role = "assistant"; ce.agentJson = cm.agentData;
-        processorRef.chatHistory.push_back (std::move (ce));
+        if (! haveRecord)
+        {
+            // the processor's copy is born WITH the key, so the two can be matched from the first tick
+            EchoJayProcessor::ChatEntry ce; ce.role = "assistant"; ce.agentJson = cm.agentData;
+            processorRef.chatHistory.push_back (std::move (ce));
+        }
+        else
+            EchoJay_NSLog (("EJAgentRow: adopted the run's existing record (key " + agentRunKey_
+                            + ") instead of opening a second one - Sean's #11").toRawUTF8());
         msg = agentRunMessage();
         if (msg == nullptr) return;                 // cannot happen; never dereference on hope
         agentRowLastH_ = -1;
@@ -32399,10 +32582,12 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
         drawWrapped (g, v.notice, detailFont(), C::amber, L.notice);
 
     // ---- the steps -------------------------------------------------------------------------
-    for (size_t i = 0; i < L.rows.size() && i < v.steps.size(); ++i)
+    // Through L.rowStep, never through i: the failures-only collapse (Sean's #13) lays a subset of
+    // the steps, and the row at index 0 is then step 4. One map, read by paint and by hit testing.
+    for (size_t i = 0; i < L.rows.size() && i < L.rowStep.size(); ++i)
     {
         const auto& rr = L.rows[i];
-        const auto& st = v.steps[i];
+        const auto& st = v.steps[(size_t) L.rowStep[i]];
         drawRunGlyph (g, rr.glyph, st.status, agentRunPhase_, C::text3, C::amber,
                       juce::Colour (0xff7FE3F2), C::green, C::red);
         // Skipped, undone and stopped rows are dimmed; undone rows are struck through (the mockup).
@@ -32459,9 +32644,11 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
             case RunHit::GotIt:     primary = true; break;
             case RunHit::Retry:     primary = true; break;
             case RunHit::ToggleSteps:
+                // THE LAYOUT'S OWN WORD, not a second derivation of it: it already decided between
+                // "N changes", "N steps" (Sean's #18) and "Show steps", and two authors for one
+                // label is how the count and the caption drifted apart in the first place.
                 label = v.stepsOpen ? juce::String::fromUTF8 ("Hide steps \xe2\x96\xbe")
-                                    : (juce::String (v.changeCount) + (v.changeCount == 1 ? " change " : " changes ")
-                                       + juce::String::fromUTF8 ("\xe2\x96\xb8"));
+                                    : (z.label + " " + juce::String::fromUTF8 ("\xe2\x96\xb8"));
                 break;
             default: break;
         }
@@ -32478,6 +32665,9 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
 
     if (! L.askQuestion.isEmpty())
         drawWrapped (g, v.askQuestion, bodyFont(), C::text, L.askQuestion);
+    // the road out of an ask with nothing to tap (Sean's blocker, 16 Oct 2026)
+    if (! L.askHint.isEmpty())
+        drawWrapped (g, v.askTypeHint, detailFont(), C::amber, L.askHint);
 
     if (! L.playbackRing.isEmpty())
     {
@@ -32561,6 +32751,11 @@ juce::var EchoJayEditor::rigAgentRowState() const
     o->setProperty ("mode", v.modeBadge);
     o->setProperty ("stepsOpen", v.stepsOpen);
     o->setProperty ("changes", v.changeCount);
+    // Sean's #18 and his blocker, both asserted on by name rather than inferred from the zone list.
+    o->setProperty ("stepCount", v.stepCount);
+    o->setProperty ("askHint", v.askTypeHint);
+    o->setProperty ("askQuestion", v.askQuestion);
+    o->setProperty ("failuresOnly", v.failuresOnly);
     o->setProperty ("finished", v.finished);
     o->setProperty ("undoAll", v.showUndoAll);
     o->setProperty ("stop", v.showStop);
@@ -32685,18 +32880,47 @@ void EchoJayEditor::drainOrphanedChatTurns()
             // This adds the DISPLAY row the hook cannot add, because the hook runs where there is no editor.
             if (intoChat == currentChatId)
             {
-                ChatMsg cm; cm.role = "assistant"; cm.content = reply;
-                // SEAN'S #7: a Retry pill on an interrupted row, resending the original question. The
-                // same mechanism a build failure's "Find replacements" uses - editAltBtns' onClick
-                // calls sendChatMessage(prompt, label) - so this is a wire-up, not a new control.
                 const auto retry = o->getProperty ("retry").toString();
-                if (retry.isNotEmpty() && EchoJayAPI::looksInterrupted (reply))
+                const bool wantRetry = retry.isNotEmpty() && EchoJayAPI::looksInterrupted (reply);
+                // ---- SEAN'S TEST 9(b), 16 OCT 2026: THE INTERRUPTED LINE RENDERS ONCE ----------------
+                //
+                // *"'You closed the window before the answer came back.' appears twice."* Two writers
+                // again, and this time they were both right to write: the processor's keep-rule puts
+                // the row in chatHistory (so the model's history has it and a reload shows it) AND
+                // parks it as an orphan carrying the Retry prompt (so the next window can offer the
+                // pill). When the window reopens AFTER the turn was finalised, the restore draws the
+                // history row and this drain then appended a second display row saying the same thing.
+                //
+                // The row that is already on screen is ADOPTED - it gets the Retry pill it was missing,
+                // which is the only thing the orphan entry carried that the history row did not.
+                ChatMsg* already = nullptr;
+                for (auto it2 = chatMessages.rbegin(); it2 != chatMessages.rend(); ++it2)
+                    if (it2->role == "assistant" && it2->content == reply) { already = &(*it2); break; }
+                if (already != nullptr)
                 {
-                    cm.editAltPrompt = retry;
-                    cm.editAltLabel  = "Retry";
+                    if (wantRetry && already->editAltPrompt.isEmpty())
+                    {
+                        already->editAltPrompt = retry;
+                        already->editAltLabel  = "Retry";
+                        shown = true;
+                    }
+                    EchoJay_NSLog ("EJChat: the interrupted row was already on screen - the Retry pill was "
+                                   "added to it rather than writing the sentence a second time (Sean's test 9b)");
                 }
-                chatMessages.push_back (cm);
-                shown = true;
+                else
+                {
+                    ChatMsg cm; cm.role = "assistant"; cm.content = reply;
+                    // SEAN'S #7: a Retry pill on an interrupted row, resending the original question. The
+                    // same mechanism a build failure's "Find replacements" uses - editAltBtns' onClick
+                    // calls sendChatMessage(prompt, label) - so this is a wire-up, not a new control.
+                    if (wantRetry)
+                    {
+                        cm.editAltPrompt = retry;
+                        cm.editAltLabel  = "Retry";
+                    }
+                    chatMessages.push_back (cm);
+                    shown = true;
+                }
             }
             EchoJay_NSLog (("EJChat: persisted a turn that finished while the window was shut ("
                             + juce::String (reply.length()) + "b, chat " + intoChat + ")"
@@ -36307,6 +36531,15 @@ void EchoJayEditor::serviceRigHook()
     const auto c = echojay::rig::poll (processorRef.rigLastSeq());
     if (c.seq == 0) return;
     processorRef.setRigLastSeq (c.seq);
+    // ---- NOT EVERY COMMAND IS THIS INSTANCE'S (16 Oct 2026, the matrix's T3) --------------------
+    // Two V2 editors can be open at once now - the AU and the VST3 - which is how the rack-selection
+    // lock is produced at all. A command may name the instance it is for; one that does not belongs
+    // to every instance, which is what every row written before today sends. The seq is consumed
+    // either way, so the other instance's command is never run twice here, and NO ACK is written:
+    // the rig is waiting for the addressed instance's answer, not for this one's silence.
+    if (! echojay::rig::addressedTo (c, juce::String (juce::AudioProcessor::getWrapperTypeDescription (
+                                                          processorRef.wrapperType))))
+        return;
 
     bool ok = true;
     juce::String note;
@@ -36585,6 +36818,31 @@ void EchoJayEditor::publishRigState()
             shown.add (juce::var (r));
         }
         o->setProperty ("onScreen", juce::var (shown));
+    }
+
+    // ---- WHAT THE RACK STRIP IS ACTUALLY DRAWING (16 Oct 2026, the matrix's I7 and E5) ---------
+    //
+    // The matrix's third blind spot: *"It asserted internal state, not what the window actually
+    // draws."* `ownRack` and `links` below are both READINGS OF THE TRUTH; neither of them is the
+    // strip. This is the strip: the blocks the panel is holding, in order, with the badge each tile
+    // is painting - which is what Sean compares against his meter.
+    {
+        auto* cv = new juce::DynamicObject();
+        cv->setProperty ("uid", chainViewUid());
+        cv->setProperty ("count", (int) chainListPanel.blocks.size());
+        juce::StringArray names, badges;
+        for (const auto& b : chainListPanel.blocks)
+        {
+            if (b == nullptr) continue;
+            names.add (b->name);
+            badges.add (b->pictureBadge);
+        }
+        cv->setProperty ("slots", names.joinIntoString (", "));
+        juce::Array<juce::var> badgeArr;
+        for (const auto& b : badges) badgeArr.add (b);
+        cv->setProperty ("slotBadges", juce::var (badgeArr));
+        cv->setProperty ("status", chainListPanel.statusText);
+        o->setProperty ("chainView", juce::var (cv));
     }
 
     // ---- which rack this window is working on, and what the agent was told it is
