@@ -96,6 +96,8 @@
 #include "EjmapPhaseB.h"
 #include "EjmapDrafts.h"
 #include "EjmapRunAll.h"
+#include "EjmapTrustRun.h"    // 16 Oct: the trust levels, v1 certification of the other categories
+#include "EjmapSelfGuardRun.h" // 16 Oct: the guard
 #include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
 #include "../../au_instantiate_probe/probe_noise.h"      // standalone: the --sweep signal=noise generator, pinned here
 
@@ -9956,6 +9958,164 @@ int main (int, char**)
     testLoopOutcomes();
     testCategoriesMerge();
 
+    // WZ-TRUST-1 THE ROLE RULE (Kathy's ruling, 16 Oct): name + unit identifies a standard role; the wrong unit, or two candidates for
+    // one role, does not (it still needs measurement or a human check); a control measurement refuted is never claimed by its name
+    {
+        using namespace ejmap::trust;
+        auto ctl = [] (const char* name, const char* unit, double lo, double hi, bool identity = false) {
+            auto* o = new juce::DynamicObject(); o->setProperty ("name", name); o->setProperty ("kind", "anchored"); o->setProperty ("unit", unit == nullptr ? juce::var() : juce::var (unit));
+            juce::Array<juce::var> a; for (int k = 0; k <= 4; ++k) { juce::Array<juce::var> pt; pt.add (lo + (hi - lo) * k / 4.0); pt.add (k / 4.0); a.add (juce::var (pt)); } o->setProperty ("anchors", juce::var (a));
+            if (identity) o->setProperty ("identity_display", true); return juce::var (o); };
+        auto modeCtl = [] (const char* name, juce::StringArray labels) { auto* o = new juce::DynamicObject(); o->setProperty ("name", name); o->setProperty ("kind", "mode");
+            auto* lo = new juce::DynamicObject(); for (int k = 0; k < labels.size(); ++k) lo->setProperty (labels[k], k / (double) juce::jmax (1, labels.size() - 1)); o->setProperty ("labels", juce::var (lo)); return juce::var (o); };
+        auto roleIs = [] (const juce::var& c, const char* role) { const auto h = roleOf (c); return h.role == role && h.unitOk; };
+        auto mapOf = [] (const char* cat, std::initializer_list<juce::var> cs) { auto* co = new juce::DynamicObject(); for (const auto& c : cs) co->setProperty (c.getProperty ("name", "").toString(), c);
+            auto* m = new juce::DynamicObject(); m->setProperty ("category", cat); m->setProperty ("controls", juce::var (co)); return juce::var (m); };
+        const bool table = roleIs (ctl ("Threshold", "db", -60, 0), "threshold") && roleIs (ctl ("Ratio", nullptr, 1, 20), "ratio") && roleIs (ctl ("Attack", "ms", 0.1, 300), "attack")
+            && roleIs (ctl ("Release", "s", 0.05, 5), "release") && roleIs (ctl ("Makeup", "db", 0, 24), "makeup") && roleIs (ctl ("Output Gain", "db", -24, 24), "output")
+            && roleIs (ctl ("Gain", "db", -24, 24), "gain") && roleIs (ctl ("Band 2 Freq", "hz", 20, 20000), "freq") && roleIs (ctl ("Band 2 Q", nullptr, 0.3, 10), "q")
+            && roleIs (ctl ("Mix", "pct", 0, 100), "mix") && roleIs (ctl ("Dry/Wet", "pct", 0, 100), "mix") && roleIs (ctl ("Delay Time", "ms", 1, 2000), "delay_time")
+            && roleIs (modeCtl ("Time", { "1/4", "1/8", "1/16" }), "delay_time") && roleIs (ctl ("Decay", "s", 0.1, 20), "decay") && roleIs (ctl ("Pre-Delay", "ms", 0, 250), "predelay")
+            && roleIs (ctl ("Drive", "pct", 0, 100), "drive") && roleIs (ctl ("Saturation", "pct", 0, 100), "drive") && roleIs (ctl ("Ceiling", "db", -12, 0), "ceiling")
+            && roleIs (modeCtl ("LF Freq", { "30 Hz", "60 Hz", "100 Hz" }), "freq");
+        const bool wrongUnit = ! roleOf (ctl ("Threshold", nullptr, 0, 1, true)).unitOk && ! roleOf (ctl ("Attack", "pct", 0, 100)).unitOk && ! roleOf (ctl ("Mix", "db", -60, 0)).unitOk;
+        const auto comp = mapOf ("compressor", { ctl ("Threshold", "db", -60, 0), ctl ("Ratio", nullptr, 1, 20) });
+        const auto twoThresholds = mapOf ("compressor", { ctl ("Comp Threshold", "db", -60, 0), ctl ("Gate Threshold", "db", -80, 0) });
+        const auto eq = mapOf ("eq", { ctl ("Band 2 Freq", "hz", 20, 20000), ctl ("Band 2 Gain", "db", -18, 18), ctl ("Band 3 Freq", "hz", 20, 20000) });
+        const auto eqUnpaired = mapOf ("eq", { ctl ("Band 2 Freq", "hz", 20, 20000), ctl ("Band 3 Gain", "db", -18, 18) });
+        Measured refuted; refuted.dropped.insert ("Threshold");
+        check (table && wrongUnit && meetNeed ("threshold", rolesOf (comp)) == juce::StringArray { "Threshold" } && meetNeed ("threshold", rolesOf (twoThresholds)).isEmpty()
+               && meetNeed ("freq+gain", rolesOf (eq)) == juce::StringArray { "Band 2 Freq", "Band 2 Gain" } && meetNeed ("freq+gain", rolesOf (eqUnpaired)).isEmpty()
+               && meetNeed ("threshold", rolesOf (comp, refuted)).isEmpty() && needsFor ("pitch") == juce::StringArray { "__never__" },
+               "wizard WZ-TRUST-1: name + unit identifies Threshold dB, Ratio x:1, Attack / Release ms-s, Makeup / Output / Gain dB, EQ Freq Hz / Gain dB / Q, Mix %, Delay Time ms or note, Decay s, Pre-delay ms, Drive %, Ceiling dB; the wrong unit, two candidates or a refuted control does not");
+    }
+    // WZ-TRUST-4 SECTIONS, NOTE VALUES AND THE HUMAN CHECK (Kathy's rulings, 16 Oct): a role word under a section prefix (Comp / Gate /
+    // Exp / EQ / Band N / LF..HF / De-ess) is identified within that section - a compressor dials Comp's threshold beside Gate's, a gate
+    // dials Gate's; two in one section or an unknown prefix stay ambiguous. Note values (1/4, 1/8D, 1/16T) are a delay time, by "Note" /
+    // "Sync" too. A human yes identifies the control for that role; a no refutes it. The review list says when a yes alone maps the map
+    {
+        using namespace ejmap::trust;
+        auto J = [] (const char* x) { return juce::JSON::parse (x); };
+        const auto strip = J (R"({"category":"channel_strip","controls":{"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Gate Threshold":{"name":"Gate Threshold","kind":"anchored","unit":"db","anchors":[[-80,0],[0,1]]}}})");
+        auto gateMap = juce::JSON::parse (juce::JSON::toString (strip)); gateMap.getDynamicObject()->setProperty ("category", "gate");   // a copy of its own: a var copy shares the object
+        auto compMap = juce::JSON::parse (juce::JSON::toString (strip)); compMap.getDynamicObject()->setProperty ("category", "compressor");
+        const auto twoInComp = J (R"({"category":"compressor","controls":{"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Comp Thresh":{"name":"Comp Thresh","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto numbered = J (R"({"category":"compressor","controls":{"Threshold 1":{"name":"Threshold 1","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Threshold 2":{"name":"Threshold 2","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto deess = J (R"({"category":"de-esser","controls":{"De-Ess Threshold":{"name":"De-Ess Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto unknownPrefix = J (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Sidechain Threshold":{"name":"Sidechain Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto sameSection = J (R"({"category":"compressor","controls":{"Comp Threshold":{"name":"Comp Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},"Compressor Threshold":{"name":"Compressor Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto sync = J (R"({"category":"delay","controls":{"Sync":{"name":"Sync","kind":"mode","labels":{"1/4":0,"1/8D":0.5,"1/16T":1}}}})");
+        const auto need = [] (const juce::var& m) { return meetNeed (needsFor (m.getProperty ("category", "").toString())[0], rolesOf (m), m.getProperty ("category", "").toString()); };
+        const bool sections = need (strip) == juce::StringArray { "Comp Threshold" } && need (compMap) == juce::StringArray { "Comp Threshold" } && need (gateMap) == juce::StringArray { "Gate Threshold" }
+                              && need (twoInComp).isEmpty() && need (numbered).isEmpty() && need (unknownPrefix).isEmpty() && need (sameSection).isEmpty() && need (deess) == juce::StringArray { "De-Ess Threshold" }
+                              && knownSection ("band 2") == "band 2" && knownSection ("band") == "?" && knownSection ("lf") == "lf" && knownSection ("character") == "?" && knownSection ("") == "";
+        const bool notes = roleOf (sync.getProperty ("controls", {}).getProperty ("Sync", {})).role == "delay_time" && roleOf (sync.getProperty ("controls", {}).getProperty ("Sync", {})).unitOk
+                           && need (sync) == juce::StringArray { "Sync" };
+        // the human check: a unitless "Threshold" (not identified) becomes the dial target on a yes, and is refuted on a no
+        const auto noUnit = J (R"({"fp":"F1","category":"compressor","identity":{"name":"P"},"controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":null,"anchors":[[-60,0],[0,1]]}}})");
+        std::map<juce::String, ControlReadback> rb; rb["Threshold"].judged = 3;
+        const auto items = ejmap::trustrun::reviewItems (noUnit, {}, rb);
+        const auto yes = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", true } }), no = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", false } });
+        check (sections && notes && items.size() == 1 && (bool) items[0].getProperty ("yes_makes_mapped", false) && items[0].getProperty ("suggested_role", "").toString() == "threshold"
+               && levelFor (noUnit, false, "", rb).level == "unsure" && levelFor (noUnit, false, "", rb, yes).level == "mapped" && levelFor (noUnit, false, "", rb, no).level == "unsure"
+               && ejmap::trustrun::reviewItems (noUnit, no, rb).isEmpty() && ! (bool) ejmap::trustrun::reviewItems (noUnit, {}, {})[0].getProperty ("yes_makes_mapped", true),
+               "wizard WZ-TRUST-4: Comp / Gate / De-ess sections each own their threshold, two in one section or an unknown prefix stay ambiguous; note values are a delay time; a human yes maps, a no refutes and leaves the list");
+    }
+    // WZ-TRUST-5 WHAT IS HELD: a cert outcome or a wizard skip in a held state - licence, hardware, silent, crashed, demo, refused, review,
+    // MULTIBAND (16 Oct: profiling not built, so a band threshold is not a compressor's dial) - and never the old "never processes" filing
+    {
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_held_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".json");
+        f.replaceWithText (R"J([{"product":"C4 (m)","state":"multiband"},{"product":"UAD 1176","state":"needs_licence","why":"a window"},{"product":"H-EQ (m)","state":"needs_licence","why":"licence suspected: never processes - x"},{"product":"API-2500 (m)","state":"exported"}])J");
+        const auto held = ejmap::trustrun::loadHeld ({ f.getFullPathName() }, juce::File());
+        f.deleteFile();
+        check (held.count ("c4 (m)") && held.count ("uad 1176") && ! held.count ("h-eq (m)") && ! held.count ("api-2500 (m)"),
+               "wizard WZ-TRUST-5: multiband and licence outcomes are held; the old 'never processes' filing and an exported row are not");
+    }
+    // WZ-TRUST-2 THE READ-BACK JUDGE: a reading (norm written, display read) against the map's anchors - within one display step or 0.5% of
+    // the span (capped at 1%); a control is read back on 2+ judged readings and no failure; the credit reads fixtures' displayAt and Phase B
+    // positions under the control that owns them (an EQ band's gain_map -> gain_control); a stepped control must show its label
+    {
+        using namespace ejmap::trust;
+        const std::vector<Anchor> a { { -24.0, 0.0 }, { 24.0, 1.0 } };
+        const auto ok1 = judgeObservation (a, 0.5, "0.0 dB"), off = judgeObservation (a, 0.5, "3.0 dB"), step = judgeObservation (a, 0.75, "12 dB"), minus = judgeObservation (a, 0.25, juce::String::fromUTF8 ("\xe2\x88\x92" "12.0\xe2\x80\xaf" "dB")), words = judgeObservation (a, 0.5, "Off");
+        const auto hz = judgeObservation ({ { 20.0, 0.0 }, { 20000.0, 1.0 } }, 0.5, "10.0 kHz");
+        const auto t = readbackTargets (a);
+        ControlReadback two, one, bad; addReading (two, ok1, "cert"); addReading (two, step, "cert"); addReading (one, ok1, "cert"); addReading (bad, ok1, "cert"); addReading (bad, off, "cert");
+        auto mapJ = juce::JSON::parse (R"({"category":"eq","controls":{"Band 1 Gain":{"name":"Band 1 Gain","kind":"anchored","unit":"db","anchors":[[-12,0],[12,1]]},"Band 1 Freq":{"name":"Band 1 Freq","kind":"anchored","unit":"hz","anchors":[[20,0],[20000,1]]},"Shape":{"name":"Shape","kind":"mode","labels":{"Bell":0,"Shelf":1}},"Curve":{"name":"Curve","kind":"mode","labels":{"A":0,"B":1}}}})");
+        const auto fixture = juce::JSON::parse (R"({"product":"X","controls":[{"name":"Band 1 Freq","displayAt":{"0.000":"20 Hz","0.500":"10.0 kHz","1.000":"20.0 kHz"}},{"name":"Shape","displayAt":{"0.000":"Bell","1.000":"Shelf"}},{"name":"Curve","displayAt":{"0.000":"A","1.000":"A"}}]})");
+        const auto record = juce::JSON::parse (R"({"product":"X","bands":[{"gain_control":"Band 1 Gain","gain_map":[{"norm":0.25,"display":"-6.0 dB","gain_db":-6.1},{"norm":0.75,"display":"+6.0 dB","gain_db":6.0}]}]})");
+        const auto credit = creditMap (mapJ, { { "cert", readingsOfRecord (fixture) }, { "cert", readingsOfRecord (record) } });
+        auto pr = [&] (const char* n) { const auto it = credit.find (n); return it != credit.end() && it->second.proven(); };
+        const auto near = judgeObservation (a, 0.5, "0.5 dB");   // 0.5 dB off a 48 dB span: over 0.5% (0.24), a failure
+        check (ok1.pass && ! off.pass && off.judged && ! near.pass && near.judged && step.pass && minus.pass && ! words.judged && hz.pass && t.size() == 3 && std::abs (t[1].norm - 0.5) < 1e-9 && std::abs (t[0].value + 12.0) < 1e-9
+               && two.proven() && ! one.proven() && ! bad.proven() && bad.failed == 1 && pr ("Band 1 Freq") && pr ("Band 1 Gain") && pr ("Shape") && ! pr ("Curve") && credit.at ("Curve").failed == 1,
+               "wizard WZ-TRUST-2: a reading passes within one display step, fails off it, needs a number; read back = 2+ readings, no failure; the credit reads fixtures and Phase B positions by their control");
+    }
+    // WZ-TRUST-3 THE LEVEL: certified wins; held is unsure whatever else; mapped needs the dial target identified AND read back
+    {
+        using namespace ejmap::trust;
+        const auto m = juce::JSON::parse (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        std::map<juce::String, ControlReadback> rb; rb["Threshold"].judged = 3;
+        std::map<juce::String, ControlReadback> rbFail; rbFail["Threshold"].judged = 3; rbFail["Threshold"].failed = 1; rbFail["Threshold"].worst = "off";
+        const auto c = levelFor (m, true, "", {}), h = levelFor (m, false, "needs_licence", rb), ok = levelFor (m, false, "", rb), none = levelFor (m, false, "", {}), failed = levelFor (m, false, "", rbFail);
+        check (c.level == "certified" && h.level == "unsure" && h.why.startsWith ("held") && ok.level == "mapped" && ok.dialable == juce::StringArray { "Threshold" }
+               && none.level == "unsure" && none.why.contains ("no read-back yet") && failed.level == "unsure" && failed.why.contains ("read-back failed"),
+               "wizard WZ-TRUST-3: certified > mapped (identified + read back) > unsure; held is unsure; no read-back or a failed one is unsure, said");
+    }
+    // WZ-CERTV1-1 v1 CERTIFICATION, THE MEASURABLE PARTS (Kathy, 16 Oct): each category's rule over a draft that passes and one that fails
+    {
+        using namespace ejmap::certv1;
+        auto J = [] (const char* s) { return juce::JSON::parse (s); };
+        const auto eqOk = judge ("eq", J (R"({"plugin":{"name":"E"},"bands":[{"name":"B1","verdict":"measured","gain_control":"G","freq_control":"F","gain_map":[{"norm":0,"display":"-12.0 dB","gain_db":-11.6},{"norm":0.5,"display":"0.0 dB","gain_db":0.0},{"norm":1,"display":"+12.0 dB","gain_db":12.4}],"freq_map":[{"norm":0,"display":"100 Hz","centre_hz":104},{"norm":0.5,"display":"1.0 k","centre_hz":980},{"norm":1,"display":"10.0 kHz","centre_hz":10300}]},{"name":"B2","verdict":"measured","gain_control":"G2","freq_control":"F2","gain_map":[{"norm":0,"display":"-12.0 dB","gain_db":-9.4},{"norm":0.5,"display":"0.0 dB","gain_db":0},{"norm":1,"display":"+12.0 dB","gain_db":12}]}]})"));
+        const auto eqFreqOff = judge ("eq", J (R"({"bands":[{"name":"B1","verdict":"measured","gain_control":"G","freq_control":"F","gain_map":[{"norm":0,"display":"-12 dB","gain_db":-12},{"norm":0.5,"display":"0 dB","gain_db":0},{"norm":1,"display":"12 dB","gain_db":12}],"freq_map":[{"norm":0,"display":"100 Hz","centre_hz":130},{"norm":0.5,"display":"1 kHz","centre_hz":1000},{"norm":1,"display":"10 kHz","centre_hz":10000}]}]})"));
+        const auto limOk = judge ("limiter", J (R"({"ceiling":{"holds_true_peak":true,"worst_true_overshoot_db":0.02,"driven_positions":3,"acceptance":[]}})"));
+        const auto limOver = judge ("limiter", J (R"({"ceiling":{"holds_true_peak":true,"worst_true_overshoot_db":0.25,"driven_positions":3}})"));
+        const auto dly = judge ("delay", J (R"({"time":{"map":[{"norm":0,"display":"10 ms","time_ms":10.2},{"norm":0.5,"display":"500 ms","time_ms":505},{"norm":1,"display":"1.00 s","time_ms":1004}]},"acceptance":[{"ran":true,"pass":true}]})"));
+        const auto dlyPct = judge ("delay", J (R"({"time":{"map":[{"norm":0,"display":"10%","time_ms":10},{"norm":0.5,"display":"50%","time_ms":500},{"norm":1,"display":"100%","time_ms":1000}]}})"));
+        const auto rev = judge ("reverb", J (R"({"decay":{"map":[{"norm":0,"rt60_s":0.4},{"norm":0.5,"rt60_s":1.9},{"norm":1,"rt60_s":5.2}]},"predelay":{"map":[{"norm":0,"display":"10 ms","relative_ms":0},{"norm":0.5,"display":"60 ms","relative_ms":50.5},{"norm":1,"display":"110 ms","relative_ms":99}]},"acceptance":[{"ran":true,"pass":true}]})"));
+        const auto revNoAcc = judge ("reverb", J (R"({"decay":{"map":[{"norm":0,"rt60_s":0.4},{"norm":0.5,"rt60_s":1.9},{"norm":1,"rt60_s":5.2}]},"acceptance":[]})"));
+        const auto sat = judge ("saturation", J (R"({"drive":{"levels":{"-12":[{"norm":0,"thd_db":-60},{"norm":0.5,"thd_db":-40},{"norm":1,"thd_db":-20}]}},"acceptance":[{"ran":true,"pass":true}]})"));
+        const auto satFlat = judge ("saturation", J (R"({"drive":{"levels":{"-12":[{"norm":0,"thd_db":-60},{"norm":0.5,"thd_db":-58},{"norm":1,"thd_db":-57}]}},"acceptance":[{"ran":true,"pass":true}]})"));
+        const auto gate = judge ("gate", J (R"({"threshold":{"map":[{"norm":0,"display":"","open_level_dbfs_peak":-60}]},"acceptance":[{"ran":true,"pass":true},{"ran":true,"pass":true}]})"));
+        const auto gateOff = judge ("gate", J (R"({"threshold":{"map":[{"norm":0,"display":"-60 dB","open_level_dbfs_peak":-57},{"norm":0.5,"display":"-30 dB","open_level_dbfs_peak":-30},{"norm":1,"display":"0 dB","open_level_dbfs_peak":0}]},"acceptance":[{"ran":true,"pass":true}]})"));
+        check (eqOk.pass && eqOk.certifiedParts().contains ("B1 gain") && ! eqOk.certifiedParts().contains ("B2 gain") && ! eqFreqOff.pass
+               && limOk.pass && ! limOver.pass && dly.pass && ! dlyPct.pass && dlyPct.parts[0].state == "not_tested" && rev.pass && ! revNoAcc.pass && sat.pass && ! satFlat.pass && gate.pass && ! gateOff.pass,
+               "wizard WZ-CERTV1-1: EQ gain 1 dB / freq 1/6 oct (a failing band left out), limiter true peak 0.1 dB, delay time in ms / s only, reverb decay + pre-delay + an acceptance run, saturation THD rising 6 dB, gate open level 1.5 dB or its acceptance");
+    }
+    // WZ-SWEEP-RB-1 THE SWEEP'S READ-BACK: in the submit's one load, each anchored control written at its three targets, judged, put back
+    // before the next; mode controls at two labels; the result rides on the control and is emitted with the map
+    {
+        ejmap::NamedControl nc; nc.name = "Threshold"; nc.indices.add (3); nc.readback.checked = 3; nc.readback.source = "sweep";
+        ejmap::NamedControl bare; bare.name = "Mix"; bare.indices.add (4);
+        const auto v = nc.toVar(), vb = bare.toVar();
+        const auto mc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/MainComponent.h").loadFileAsString();
+        const auto blk = mc.fromFirstOccurrenceOf ("// THE PER-CONTROL READ-BACK (Kathy, 16 Oct", false, false).upToFirstOccurrenceOf ("if (stateBefore.getSize() > 0)", false, false);
+        check ((bool) v.getProperty ("readback", {}).getProperty ("pass", false) && v.getProperty ("readback", {}).getProperty ("source", "").toString() == "sweep" && ! vb.hasProperty ("readback")
+               && blk.contains ("for (const auto& t : trust::readbackTargets (a))") && blk.contains ("trust::judgeObservation (a, prm->getValue(), prm->getCurrentValueAsText())")
+               && blk.contains ("prm->setValueNotifyingHost (original); pump();") && blk.contains ("c.readback.source = \"sweep\"") && mc.indexOf ("// THE PER-CONTROL READ-BACK") < mc.indexOf ("p.controls.add (c);"),
+               "wizard WZ-SWEEP-RB-1: the sweep reads back every anchored control at 3 targets (mode at 2 labels) in its one load, restores each, and the map carries the result");
+    }
+    // WZ-GUARD-1 THE GUARD ON MY OWN LOADS (Kathy, 16 Oct): before any load the developer runs (tests, sound checks, proofs), licence-bound
+    // plugins are dropped - UAD, APB, Soundtoys, Kilohearts, SSL, anything that showed a licence window here, anything PACE / iLok; the rest
+    // kept. The seed memory carries the window plugins seen on this Mac; the sound check resolves its list only through the guard
+    {
+        using namespace ejmap::selfguard;
+        Memory mem; mem.products.insert ("bloom"); mem.ids.insert ("audiounit|547d5677|2.5.71");
+        auto drops = [&] (const char* n, const char* v, const char* id = "AudioUnit|1|1", bool pace = false) { return judge (n, v, id, pace, "PACE-wrapped (x.component)", mem); };
+        const auto seed = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/self_guard_windows.json").loadFileAsString());
+        Memory sm; addMemoryFrom (sm, seed);
+        const auto main = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        check (drops ("UAD 1176LN", "Universal Audio").drop && drops ("UADx 1176", "Universal Audio").drop && drops ("APB Royal Mu", "McDSP").drop
+               && drops ("EchoBoy", "Soundtoys").why == "Soundtoys" && drops ("kHs Filter", "Kilohearts").drop && drops ("kHs Haas", "").drop
+               && drops ("SSL 4K B", "Solid State Logic").why == "SSL" && drops ("SSL Fusion HF Compressor", "SSL").drop
+               && drops ("bloom", "Oeksound").why.contains ("licence window") && drops ("Weiss Deess", "Softube", "AudioUnit|547D5677|2.5.71").drop
+               && drops ("MTurboComp", "MeldaProduction", "AudioUnit|2|1", true).why.startsWith ("PACE / iLok")
+               && ! drops ("CLA-76 (m)", "Waves").drop && ! drops ("RChannel (m)", "Waves").drop && ! drops ("elysia mpressor", "Plugin Alliance").drop
+               && sm.products.count ("ssl 4k b") && sm.products.count ("bloom") && sm.products.count ("h3000 factory") && sm.products.size() >= 200
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSelfGuardRun.h").loadFileAsString().contains ("const auto v = selfguard::judge (r.desc.name, r.desc.manufacturerName,")
+               && main.contains ("const auto kept = ejmap::cert::guardedPlugins (ns, false, \"GUARD\", &dropped);"),
+               "wizard WZ-GUARD-1: my own loads drop UAD / APB / Soundtoys / kHs / SSL / a remembered window / PACE and keep Waves and the rest; the list step judges every name before a load (cert branch)");
+    }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
 }

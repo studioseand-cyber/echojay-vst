@@ -21,6 +21,8 @@
 #include "EjmapMarks.h"
 #include "EjmapCertDriver.h"
 #include "EjmapTunerProfile.h"
+#include "EjmapTrustRun.h"   // 16 Oct: --cert-v1, --trust-levels
+#include "EjmapSelfGuardRun.h"   // 16 Oct: --self-guard (the guard on the developer's own loads)
 
 #include <map>
 #include <csignal>
@@ -844,6 +846,31 @@ namespace
             }
             // --run-all [--until HH:MM] [--only <product>]... [--steps a,b] [--skip a,b] [--dry-run] [--out <cert>] [--probe <p>] [--ejmap-ledger <d>]
             // [--assume-uad-device]: Sean's whole sequence, resumable (8 Oct stretch S1; EjmapRunAll.h)
+            if (a == "--cert-v1")   // 16 Oct (Kathy): v1 certification of the measurable parts, over the drafts on disk - nothing loaded
+            {
+                juce::File cert, outF; for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--cert") cert = cwdFile (v); else if (k == "--out") outF = cwdFile (v); }
+                if (! cert.isDirectory()) { std::cerr << "usage: ejmap --cert-v1 --cert <cert folder> [--out <file.json>]" << std::endl; return 2; }
+                return ejmap::trustrun::runCertV1 (cert, outF);
+            }
+            if (a == "--trust-levels")   // 16 Oct (Kathy): read-back credit from the measuring runs, the role rule, the level per map - nothing loaded
+            {
+                juce::File maps, outD, list, quarantine, human; juce::StringArray certs, wizards, helds;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--maps") maps = cwdFile (v); else if (k == "--out") outD = cwdFile (v); else if (k == "--cert") certs.add (cwdFile (v).getFullPathName());
+                    else if (k == "--wizard") wizards.add (cwdFile (v).getFullPathName()); else if (k == "--certified") list = cwdFile (v); else if (k == "--held") helds.add (cwdFile (v).getFullPathName());
+                    else if (k == "--quarantine") quarantine = cwdFile (v); else if (k == "--human") human = cwdFile (v); }
+                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD, human);
+            }
+            if (a == "--self-guard")   // 16 Oct (Kathy): the guard alone, for scripts - prints KEEP / DROP per name, loads nothing; exit 3 if anything dropped
+            {
+                juce::File names; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--names") names = cwdFile (argAt (argc, argv, j + 1));
+                if (! names.existsAsFile()) { std::cerr << "usage: ejmap --self-guard --names <file>" << std::endl; return 2; }
+                juce::StringArray ns; ns.addLines (names.loadFileAsString()); ns.trim(); ns.removeEmptyStrings(); ns.removeDuplicates (false);
+                juce::StringArray dropped; const auto kept = ejmap::cert::guardedPlugins (ns, false, "GUARD", &dropped);
+                for (const auto& d : kept) std::cout << "KEEP\t" << d.name << std::endl;
+                for (const auto& d : dropped) std::cout << "DROP\t" << d << std::endl;
+                return dropped.isEmpty() ? 0 : 3;
+            }
             if (a == "--run-all")
             {
                 ejmap::cert::RunAllOptions ro;
