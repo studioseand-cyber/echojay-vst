@@ -22,6 +22,8 @@
   #include <sys/mman.h>
 #include <signal.h>   // kill(pid, 0): publisher liveness (reaper)
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
+#include <atomic>
+extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm - the log both plugins link
   #include <sys/stat.h>
   #include <fcntl.h>
   #include <unistd.h>
@@ -463,9 +465,28 @@ inline bool casStrong(uint32_t* p, uint32_t expected, uint32_t desired)
 /// falls back to $TMPDIR/echojay_link/ if that fails.
 /// Returns the path with a trailing slash, or "" on total failure.
 /// errno_out: 0 = success, otherwise the errno from the failing mkdir/stat.
+/** ---- THE WRITABILITY PROBE IS PER PROCESS (16 Oct 2026) --------------------------------------
+    FOUND BY THE OUT-OF-PROCESS RIG ON ITS FIRST RUN, and it is a real one. Two EchoJay instances
+    starting at the same moment - which is what happens when Logic loads a project with several
+    Links - both probed this directory by writing and then DELETING a file called ".probe". One
+    process's delete landed between the other's open and write, its probe "failed", and it quietly
+    took the TMPDIR fallback. The two ends of the channel were then in DIFFERENT DIRECTORIES, each
+    with its own registry: the Link had registered, was passing audio and was publishing its rack,
+    and the V2 could not see it at all.
+
+    The evidence, from the rig's own run: `rack-45d483f290.json` in `$TMPDIR/echojay_link/` while the
+    V2 and the other Link were in `<state home>/Library/Application Support/EchoJay/link/`.
+
+    THREE CHANGES, smallest first:
+      1. the probe file carries the PID and a counter, so no two processes share its name;
+      2. a failed probe on a directory that EXISTS is retried once - a transient failure is not an
+         unwritable directory, and treating it as one is what cost the split;
+      3. taking the fallback is LOGGED, loudly, with the reason. A channel that silently moves is
+         indistinguishable from a Link that never registered, which is exactly how this hid. */
 inline juce::String resolveDir(int& errno_out)
 {
     errno_out = 0;
+    static std::atomic<int> probeCounter { 0 };
     // Helper: try to create a directory and verify it's writable
     auto tryDir = [&](const juce::File& d) -> bool {
         if (!d.exists())
@@ -473,11 +494,19 @@ inline juce::String resolveDir(int& errno_out)
             const juce::Result r = d.createDirectory();
             if (r.failed()) { errno_out = EACCES; return false; }
         }
-        // Quick write-access probe
-        const juce::File probe = d.getChildFile(".probe");
-        if (!probe.replaceWithText("ok")) { errno_out = EACCES; return false; }
-        probe.deleteFile();
-        return true;
+        const bool existed = d.isDirectory();
+        for (int attempt = 0; attempt < 2; ++attempt)
+        {
+            // PER PROCESS AND PER CALL: ".probe-<pid>-<n>". Never a shared name.
+            const juce::File probe = d.getChildFile(".probe-" + juce::String((int) ::getpid())
+                                                    + "-" + juce::String(probeCounter.fetch_add(1)));
+            if (probe.replaceWithText("ok")) { probe.deleteFile(); return true; }
+            probe.deleteFile();
+            if (!existed) break;          // it is not there and cannot be made: no point retrying
+            juce::Thread::sleep(15);      // a transient failure, not a permission one
+        }
+        errno_out = EACCES;
+        return false;
     };
 
     // 1. Preferred: persistent across sessions
@@ -487,6 +516,11 @@ inline juce::String resolveDir(int& errno_out)
             .getChildFile("Application Support/EchoJay/link");
         if (tryDir(appSupport))
             return appSupport.getFullPathName() + "/";
+        EchoJay_NSLog(("EJLinkShm: the shared directory " + appSupport.getFullPathName()
+                       + " would not take a write probe (errno " + juce::String(errno_out)
+                       + ") - FALLING BACK to TMPDIR. Every instance that resolves differently is on "
+                         "a channel of its own and cannot see the others, so this line is the thing to "
+                         "read when a Link does not appear.").toRawUTF8());
     }
 #endif
 

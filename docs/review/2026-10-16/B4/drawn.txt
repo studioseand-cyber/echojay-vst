@@ -1,0 +1,9 @@
+scenario B4
+captured 2026-10-16T10:39:39.790+01:00
+  [assistant] Stopped.
+  [user] rig-newinstr-marker: check the gr
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps= zones=[4:Stop here,4:Try once more,7:Stop]
+  opening: 
+  closing: 
+    step "ask" [running] right="your answer?" detail="" chips=[Stop here, Try once more]

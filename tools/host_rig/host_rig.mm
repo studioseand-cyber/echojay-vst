@@ -104,7 +104,12 @@ static bool registerAU (const juce::File& component, juce::String& identOut,
     CFIndex chosen = 0;
     if (wantName.isNotEmpty())
     {
-        CFIndex best = -1; int bestLen = 1 << 30;
+        // THE STEREO VARIANT, on a stereo rack. The first cut took the SHORTEST matching name, which
+        // on Waves means "Renaissance Axx Mono" - and the product then refused it, correctly, by the
+        // 21m rule ("never a mono variant on a stereo rack"), so the rack stayed empty and the Link
+        // scenarios had nothing to run on. Scored rather than ordered: stereo wins, mono loses, and
+        // the shortest name breaks a tie (so "Renaissance Axx" beats "Renaissance Axx Live").
+        CFIndex best = -1; int bestScore = -1000, bestLen = 1 << 30;
         for (CFIndex i = 0; i < CFArrayGetCount (comps); ++i)
         {
             auto* di = (CFDictionaryRef) CFArrayGetValueAtIndex (comps, i);
@@ -112,8 +117,10 @@ static bool registerAU (const juce::File& component, juce::String& identOut,
             if (nv == nullptr) continue;
             const auto nm = juce::String::fromCFString (nv);
             if (! nm.containsIgnoreCase (wantName)) continue;
-            if (nm.containsIgnoreCase ("mono") && bestLen < (1 << 30)) continue;
-            if (nm.length() < bestLen) { bestLen = nm.length(); best = i; }
+            const int score = (nm.containsIgnoreCase ("stereo") ? 2 : 0)
+                            - (nm.containsIgnoreCase ("mono")   ? 2 : 0);
+            if (score > bestScore || (score == bestScore && nm.length() < bestLen))
+            { bestScore = score; bestLen = nm.length(); best = i; }
         }
         if (best < 0)
         {
@@ -892,7 +899,14 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
                               // that is about choosing a plugin says which one it means; everything else
                               // takes the default, because a bare "yes" is what a user types at a
                               // confirmation and nothing else should be put in their mouth.
-                              const juce::String& answerText = "yes")
+                              const juce::String& answerText = "yes",
+                              // ---- 16 Oct 2026: A ROW THAT WANTS TO SEE THE PLAN WAITING -------------
+                              // The helper presses Apply as a user would, which is right for almost every
+                              // row and WRONG for a row whose subject is what is DRAWN while a decision
+                              // waits: scenario G4 read the zones after its own press had finished the
+                              // run, found "1 change / Undo all" and passed over a run with no pending
+                              // line in it. A scenario that cannot go red proves nothing, so this exists.
+                              bool approve = true)
 {
     AgentOutcome out;
     // TURN THE AGENT ON WITHOUT CHOOSING THE MODE FOR THE ROW (15 Oct 2026). This used to send
@@ -956,6 +970,13 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
         // applied - L2 did, and with `pressed` already true the rig sat watching it until the bound expired.
         // A user presses Apply as often as the card asks; three is the same ceiling the questions use, so a
         // pair of plans cannot become a loop either.
+        if (out.state == "awaiting_approval" && ! approve)
+        {
+            // The row wants it LEFT waiting. Recorded, so a row cannot mistake "nobody pressed" for
+            // "nothing asked", and the loop stops rather than spinning out its bound.
+            out.sawApproval = true;
+            break;
+        }
         if (out.state == "awaiting_approval" && out.applies < 3)
         {
             rig.send (echojay::rig::cmd::press, args1 ("button", "apply"), 8000);
@@ -1132,6 +1153,10 @@ struct Scen
 };
 static std::vector<Scen> gScenarios;
 static juce::File gEvidenceDir;
+/** The rig itself, so captureEvidence can ask the PLUGIN for its own screenshot. A pointer rather
+    than a parameter because every scen() call site would otherwise have to carry it, and there is
+    exactly one rig in this process. Set in main before any scenario runs. */
+static Rig* gRigForEvidence = nullptr;
 
 /** <repo>/docs/review/<date>/ - created on first use. The repo, deliberately, not the
     isolated state root: the evidence outlives the run and Sean reads it. */
@@ -1154,10 +1179,29 @@ static juce::String captureEvidence (const juce::String& scenarioId, juce::Compo
     const auto dir = evidenceRoot().getChildFile (scenarioId);
     dir.createDirectory();
     juce::String rel;
-    if (editor != nullptr && editor->getWidth() > 0 && editor->getHeight() > 0)
+    // ---- THE PLUGIN TAKES ITS OWN PICTURE (16 Oct 2026) ----------------------------------------
+    // The first run's PNGs were 522x100 of white: an AU's editor is a native view that the host only
+    // WRAPS, so a snapshot taken out here captures the wrapper and nothing inside it. The plugin's
+    // own editor is a juce::Component, so it can photograph itself - and what lands in the file is
+    // then the chat, the run row and the rack strip as the user sees them.
+    const auto png = dir.getChildFile ("editor.png");
     {
+        // ONLY WHEN A WINDOW IS OPEN. With no editor there is nothing to photograph and the command
+        // would simply time out - eight seconds per scenario spent proving that, which is how a
+        // runner becomes something nobody runs.
+        if (gRigForEvidence != nullptr && editor != nullptr)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("path", png.getFullPathName());
+            gRigForEvidence->send (echojay::rig::cmd::screenshot, juce::var (o), 6000);
+        }
+    }
+    if (png.existsAsFile() && png.getSize() > 0)
+        rel = "docs/review/" + dir.getParentDirectory().getFileName() + "/" + scenarioId + "/editor.png";
+    else if (editor != nullptr && editor->getWidth() > 0 && editor->getHeight() > 0)
+    {
+        // The host-side fallback, kept for a window the plugin could not photograph (no editor open).
         const auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
-        const auto png = dir.getChildFile ("editor.png");
         png.deleteFile();
         if (auto out = std::unique_ptr<juce::FileOutputStream> (png.createOutputStream()))
         {
@@ -1215,8 +1259,15 @@ static juce::StringArray wordingOffences (const juce::var& state)
             if (text.contains (b))
                 out.add (where + ": \"" + b + "\" in \"" + text.substring (0, 90) + "\"");
     };
+    // ---- THIS SCENARIO'S OWN WORDS (16 Oct 2026) ----------------------------------------------
+    // The first cut scanned the WHOLE transcript, so one run's leak failed every scenario after it -
+    // E7, whose subject is a meter's geometry, went red for a parameter id in a message three runs
+    // earlier. The invariant is not weaker for being scoped: the run row below is the current run,
+    // and the last few messages are what this scenario put on screen. The earlier leak still fails
+    // the scenario that drew it, which is where it belongs.
     if (auto* arr = state.getProperty ("onScreen", juce::var()).getArray())
-        for (const auto& m : *arr) scan ("a message", m.getProperty ("text", juce::var()).toString());
+        for (int i = juce::jmax (0, arr->size() - 3); i < arr->size(); ++i)
+            scan ("a message", (*arr)[i].getProperty ("text", juce::var()).toString());
     const auto arow = state.getProperty ("agentRow", juce::var());
     scan ("the closing", arow.getProperty ("closing", juce::var()).toString());
     scan ("the opening", arow.getProperty ("opening", juce::var()).toString());
@@ -1650,6 +1701,7 @@ int main (int argc, char* argv[])
               "close a window - item 0b's legs stay blocked and this says so");
 
     Rig rig;
+    gRigForEvidence = &rig;   // so a scenario's PNG is taken by the plugin, not by this host
     leg ("R0b: can anything in THIS process reach the server?");
     {
         // ISOLATES THE QUESTION. Five passes could not tell whether the plugin was failing to send or the
@@ -3307,6 +3359,11 @@ int main (int argc, char* argv[])
                 "and do not name", "must not be quoted", "repeat this same call", "you were not given"
             };
             juce::StringArray offenders;
+            // ON THE RUN THAT CARRIED THE MODEL'S TEXT (16 Oct 2026). The first cut read whatever run
+            // happened to be on screen - a read-only one - and passed on 16a over a build whose add
+            // path leaked "Report it as ADDED ... Do NOT call the add itself not applied". The add
+            // that cannot be confirmed is the one that carries it, so this scenario runs one.
+            askAgent (rig, "rig-nomap-marker: add that compressor", 90000);
             const auto arow = rig.freshState().getProperty ("agentRow", juce::var());
             if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
                 for (const auto& sv : *arr)
@@ -3502,7 +3559,8 @@ int main (int argc, char* argv[])
         {
             rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
             // DELIBERATELY NOT ANSWERED: the subject is what is DRAWN while it waits.
-            const auto r = askAgent (rig, "rig-oneline-marker: nudge the pre-gain", 40000, false);
+            // answerAsks=false AND approve=false: the subject is the row as it waits.
+            const auto r = askAgent (rig, "rig-oneline-marker: nudge the pre-gain", 40000, false, "yes", false);
             juce::var arow;
             juce::String zones;
             rig.until ([&] (const juce::var& stv)
@@ -3747,13 +3805,17 @@ int main (int argc, char* argv[])
                     if (text.contains (mark)) ++userCopies;
                     if (closing.isNotEmpty() && text.contains (closing)) ++closingCopies;
                 }
-            row ("D1", userCopies == 1 && closingCopies <= 1,
-                 "each message in an agent run is drawn EXACTLY ONCE  (RED on 15c: two transcript "
-                 "writers were live at the same time - the panel's onTranscript and the run bridge's "
-                 "fallback - so Sean's message appeared twice and the closing up to four times)",
-                 "the user's marker appears " + juce::String (userCopies) + "x, the closing "
-                 + juce::String (closingCopies) + "x, in " + juce::String (roles.size())
-                 + " on-screen message(s) [" + roles.joinIntoString (",") + "]", &r);
+            // F4 in the matrix: *"scroll up after any run - still no duplicates"*. The scroll is a
+            // re-render, and `onScreen` IS what a re-render draws from, so reading it after the run
+            // has settled is the same assertion without pretending to move a scrollbar.
+            scen ("F4", "every message in a run is drawn exactly once, and still is on a re-render",
+                  userCopies == 1 && closingCopies <= 1,
+                  "the user's marker appears " + juce::String (userCopies) + "x, the closing "
+                  + juce::String (closingCopies) + "x, in " + juce::String (roles.size())
+                  + " on-screen message(s) [" + roles.joinIntoString (",") + "]  (RED on 15c: two "
+                  "transcript writers were live, so his message appeared twice and the closing up to "
+                  "four times)",
+                  "A", v2.editor.get(), st, &r);
         }
 
         // ---- R1b: THE MAIN RACK SHOWS A SLOT THE AGENT ADDED TO A LINK, WITHOUT SWITCHING RACKS ------
@@ -3841,17 +3903,18 @@ int main (int argc, char* argv[])
             const bool overChain = (bool) hint.getProperty ("overChainPanel", false);
             const auto after   = st.getProperty ("agentApprovalMode", juce::var()).toString();
             const auto text    = hint.getProperty ("text", juce::var()).toString();
-            row ("H1", shown && msLeft > 0.0 && ! overChain && after != before && text.isNotEmpty(),
-                 "clicking the Agent chip raises the mode hint above the composer, for about three "
-                 "seconds, and never over another panel  (RED on 15c: the guard was `if (! force)` and a "
-                 "real click is the force=true path, so the one gesture a user makes raised nothing)",
-                 "mode " + before + " -> " + after + ", hint shown=" + juce::String (shown ? 1 : 0)
-                 + " msLeft=" + juce::String (msLeft, 0) + " overChainPanel="
-                 + juce::String (overChain ? 1 : 0) + " composerVisible="
-                 + st.getProperty ("composerVisible", juce::var()).toString()
-                 + " onboardingUp=" + st.getProperty ("onboardingUp", juce::var()).toString()
-                 + " why=\"" + why + "\" text=\""
-                 + text.substring (0, 70) + "\"");
+            scen ("G3", "clicking the Agent chip raises the mode hint above the composer, briefly, "
+                         "and never over another panel",
+                  shown && msLeft > 0.0 && ! overChain && after != before && text.isNotEmpty(),
+                  "mode " + before + " -> " + after + ", hint shown=" + juce::String (shown ? 1 : 0)
+                  + " msLeft=" + juce::String (msLeft, 0) + " overChainPanel="
+                  + juce::String (overChain ? 1 : 0) + " composerVisible="
+                  + st.getProperty ("composerVisible", juce::var()).toString()
+                  + " onboardingUp=" + st.getProperty ("onboardingUp", juce::var()).toString()
+                  + " why=\"" + why + "\" text=\"" + text.substring (0, 70)
+                  + "\"  (RED on 15c: the guard was `if (! force)` and a real click is the force=true "
+                  "path, so the one gesture a user makes raised nothing)",
+                  "A", v2.editor.get(), st);
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);   // leave it where rows expect it
         }
 

@@ -111,6 +111,16 @@ namespace cmd
     // setPreGain is the KNOB'S OWN gesture, not the agent's op: fix 4 is about a HAND move being undoable,
     // so a row that used the agent op would prove the wrong thing. `press: undo` is the chain bar's Undo.
     inline constexpr const char* setPreGain   = "set_pre_gain";    // { db }  - as if dragged by hand
+    // ---- EVIDENCE (16 Oct 2026, the matrix's section 6) ------------------------------------------
+    // *"Evidence per scenario: a PNG of the editor's final state (chat + rack)."* The host cannot take
+    // it: an AU's editor is a native view the host wraps, so a snapshot taken out there is a blank
+    // rectangle (522x100 of white, which is what the first run produced). Taken from INSIDE, by the
+    // editor, on itself, it is the real window.
+    //
+    // It is the one command here that is not a thing a finger does - and it CHANGES NOTHING, which is
+    // the line that matters: it reads the component tree and writes a file the rig named. Gated by the
+    // same two locks as everything else, so it cannot exist in a shipped plugin.
+    inline constexpr const char* screenshot   = "screenshot";      // { path } - the editor, as it looks
     // press gains "undo" (fix 4) alongside apply / apply_all / skip_all / skip_line / details / stop.
 }
 

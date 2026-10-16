@@ -1,0 +1,6 @@
+scenario F1
+captured 2026-10-16T10:31:33.870+01:00
+  [user] rig-classifyhold-marker: how does this kick sound
+  [assistant] You closed the window before the answer came back.
+  [assistant] You closed the window before the answer came back.
+  [user] rig-classifyhold-marker: how does this kick sound

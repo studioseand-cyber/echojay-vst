@@ -1,0 +1,17 @@
+scenario C5
+captured 2026-10-16T10:41:18.387+01:00
+  [user] rig-gr-marker: how much is it doing?
+  [assistant] Read the gain reduction.
+  [assistant] Chain built - 1 plugin loaded.
+  [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
+  [user] rig-gr-marker: how much is the other one doing?
+  [assistant] Read the gain reduction.
+  [assistant] Chain built - 1 plugin loaded.
+  [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
+  [user] rig-undo-marker: put the pre-gain up
+  [assistant] Set the pre-gain to 3 dB, then undid it.
+  run row: status=Done changes=1 steps= zones=[11:1 change]
+  opening: Set the pre-gain to 3 dB, then undid it.
+  closing: Set the pre-gain to 3 dB, then undid it.
+    step "pre-gain 3 dB" [undone] right="undone" detail="undone" chips=[]
+    step "undo that" [done] right="applied" detail="Undone: pre-gain 3.0 dB." chips=[]

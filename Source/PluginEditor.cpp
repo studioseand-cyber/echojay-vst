@@ -19241,9 +19241,14 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             {
                 const auto& sr = storeRows[si];
                 size_t found = held.size();
+                // ON ROLE AND CONTENT ONLY. An earlier cut also required the agent snapshot to match,
+                // and that is a duplicate waiting to happen: the workspace store can hold the run's
+                // PROSE with no snapshot on it, which would then match nothing and leave the same run
+                // on screen twice - once as a plain bubble and once as its row. The snapshot is not
+                // part of the identity; it is something the processor's copy KNOWS and the store's does
+                // not, so it is carried over onto the matched row below.
                 for (size_t k = h; k < held.size(); ++k)
-                    if (held[k].role == sr.role && held[k].content == sr.content
-                        && (held[k].agentJson.isEmpty() || held[k].agentJson == sr.agentData)) { found = k; break; }
+                    if (held[k].role == sr.role && held[k].content == sr.content) { found = k; break; }
                 if (found < held.size())
                 {
                     for (size_t k = h; k < found; ++k)
@@ -19260,9 +19265,20 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                         if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
                         merged.push_back (cm); ++inserted;
                     }
+                }
+                auto keep = sr;
+                if (found < held.size())
+                {
+                    // the run's own snapshot, restored onto the row the store knew only as prose
+                    if (keep.agentData.isEmpty() && held[found].agentJson.isNotEmpty())
+                    {
+                        keep.agentData = held[found].agentJson;
+                        if (keep.agentRunId == 0) keep.agentRunId = ++agentRunIdSeq_;
+                        ++inserted;          // the transcript changed, so the rebuild below must run
+                    }
                     h = found + 1;
                 }
-                merged.push_back (sr);
+                merged.push_back (keep);
             }
             for (size_t k = h; k < held.size(); ++k)
             {
@@ -36768,6 +36784,35 @@ void EchoJayEditor::serviceRigHook()
     else if (c.name == echojay::rig::cmd::reportState)
     {
         note = "state written";
+    }
+    else if (c.name == echojay::rig::cmd::screenshot)
+    {
+        // THE EDITOR, FROM INSIDE IT. createComponentSnapshot walks this component's own tree, so what
+        // lands in the file is what the user is looking at - including the chat, the run row and the
+        // rack strip. A host-side snapshot of an AU cannot do this (the plugin's UI is a native view
+        // the host only wraps), which is why this command exists at all.
+        const auto path = c.str ("path").trim();
+        if (path.isEmpty() || getWidth() <= 0 || getHeight() <= 0)
+        {
+            ok = false;
+            note = path.isEmpty() ? "no path" : "the editor has no size yet";
+        }
+        else
+        {
+            juce::File f (path);
+            f.getParentDirectory().createDirectory();
+            f.deleteFile();
+            const auto img = createComponentSnapshot (getLocalBounds(), true, 1.0f);
+            if (auto out = std::unique_ptr<juce::FileOutputStream> (f.createOutputStream()))
+            {
+                juce::PNGImageFormat png;
+                ok = png.writeImageToStream (img, *out);
+                note = ok ? ("wrote " + juce::String (getWidth()) + "x" + juce::String (getHeight())
+                             + " to " + f.getFileName())
+                          : "the PNG would not encode";
+            }
+            else { ok = false; note = "could not open " + f.getFullPathName(); }
+        }
     }
     else { ok = false; note = "unknown command \"" + c.name + "\""; }
 

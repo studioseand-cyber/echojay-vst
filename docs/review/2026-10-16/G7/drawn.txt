@@ -1,0 +1,11 @@
+scenario G7
+captured 2026-10-16T10:41:14.753+01:00
+  [user] rig-gr-marker: how much is it doing?
+  [assistant] Read the gain reduction.
+  [assistant] Chain built - 1 plugin loaded.
+  [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
+  run row: status=Done changes=1 steps= zones=[12,3,11:Hide steps,8:Undo all]
+  opening: Read the gain reduction.
+  closing: Read the gain reduction.
+    step "build a compressor on this rack" [done] right="applied" detail="Added it. Settings not confirmed: this build cannot read that plugin's values back (the threshold and ratio), so there is no evidence they were applied. Report it as ADDED, with its settings not confirmed. Do NOT call the add itself 'not applied', and do NOT state any figure for the settings." chips=[]
+    step "gain reduction on slot 1" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]

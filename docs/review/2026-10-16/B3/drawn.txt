@@ -1,0 +1,8 @@
+scenario B3
+captured 2026-10-16T10:36:08.780+01:00
+  [user] rig-nochoice-marker: which shaper?
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps= zones=[7:Stop]
+  opening: 
+  closing: 
+    step "ask" [running] right="your answer?" detail="" chips=[]

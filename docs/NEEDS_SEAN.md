@@ -79,6 +79,34 @@ marked in the report rather than counted as a reproduction. Everything else star
 
 ---
 
+## What the new runner found on its FIRST run, before any scenario
+
+**Two EchoJay instances starting at the same moment can end up on two different channels, and neither
+can see the other.** This is a real defect in the shipping build, not a rig artefact, and it is exactly
+what the out-of-process Links were built to expose.
+
+`LinkShm::resolveDir()` decides where the shared directory is by writing a probe file and then deleting
+it. The probe was called `.probe` - **the same name in every process**. Two instances starting together
+raced: one process's delete landed between the other's open and write, the write "failed", and that
+instance quietly took the TMPDIR fallback instead. From then on it had its own registry and published its
+rack where nobody was looking.
+
+The proof, from the rig's own run: the Kick Link registered (`uid=45d483f290`, audio flowing, rack
+published) and the V2 never saw it, because its `rack-45d483f290.json` was in `$TMPDIR/echojay_link/`
+while the V2's was in `<state root>/Library/Application Support/EchoJay/link/`.
+
+**In Logic this is the "my Link doesn't show up" shape:** several EchoJay instances initialise at once
+when a project loads, and whichever loses the race disappears from the rack list. I have not seen it in
+your logs, but the window is milliseconds wide and nothing would have told us - which is the part I have
+also fixed.
+
+Fixed three ways: the probe is `.probe-<pid>-<n>` so no two processes share it; a failed probe on a
+directory that exists is retried once, because a transient failure is not an unwritable directory; and
+taking the fallback is now logged loudly with its reason, so a split channel reads as a line in the log
+rather than as a Link that never appeared.
+
+---
+
 ## Needs your eyes (nothing is blocked on these)
 
 These are the judgements a check cannot make. Each has its PNG under `docs/review/<date>/<scenario>/`.
