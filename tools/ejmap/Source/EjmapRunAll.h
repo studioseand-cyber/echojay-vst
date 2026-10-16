@@ -83,6 +83,9 @@ inline const std::vector<Step>& steps()
         { "limiter_comp_unfinished", "gaps", { "--phaseb-all", "--redo", "unfinished", "--category", "limitercomp" },   46200.0, "limiter_comp's timed-out rows under the candidate guard (serial sum of Sean's five at their own pace: L360 1.5 + 1.3, Spherix 3.7 + 5.3, MLimiterMB 1.0 h)" },
         { "nothing_nominated","selector", { "nothing_nominated" },                                  16200.0, "rows the lexicon nominated nothing for" },
         { "strips",           "redo",     { "strips" },                                             50400.0, "channel strips, every section drafted" },
+        // 16 Oct (Kathy, MULTIBAND BUILD): v1 multiband measuring on top of the multiband records - per-band tone checks, crossovers, make-up;
+        // resumable, licence-gated, stops between products at the run's hour
+        { "multiband_v1",     "plain",    { "--cert-multiband-v1" },                                3600.0,  "multiband v1: per-band tone checks (2/3/4 dB), crossovers vs display, per-band make-up (~3-5 min a unit)" },
         { "drafts",           "plain",    { "--phaseb-drafts" },                                    5.0,     "every draft from the records on disk", false, true } };
     return k;
 }
@@ -103,7 +106,8 @@ inline juce::StringArray argsFor (const Step& s, bool resume, const juce::String
     else for (const auto& x : s.args) a.add (x == "{cert}" ? certPath : x);
     const bool phaseb = a.contains ("--phaseb-all"), categorise = a.contains ("--categorise-propose");
     if (phaseb || categorise) for (const auto& p : only) { a.add ("--only"); a.add (p); }
-    if (phaseb || categorise || a.contains ("--cert-tonecheck-all") || a.contains ("--phaseb-drafts")) { a.add ("--out"); a.add (certPath); }
+    if (a.contains ("--cert-multiband-v1")) for (const auto& p : only) { a.add ("--only"); a.add (p); }
+    if (phaseb || categorise || a.contains ("--cert-tonecheck-all") || a.contains ("--phaseb-drafts") || a.contains ("--cert-multiband-v1")) { a.add ("--out"); a.add (certPath); }
     return a;
 }
 

@@ -317,3 +317,74 @@ Why the counts are low:
   - The admin version (route, store, import, formats) is in `tools/ejmap/review/admin_handover/` and on the Desktop as `ADMIN_REVIEW_HANDOVER`.
 - **Pins:** WZ-TRUST-4 (sections, notes, the human check), WZ-TRUST-5 (held); 10 mutants red. `tools/ejmap/review/test_review.cjs` covers the module and the route.
 
+## 8. Multiband v1, certified per band (16 Oct, Kathy: "MULTIBAND BUILD")
+
+Code:
+- the rule: `EjmapMultibandV1.h` (pure);
+- the measuring: `EjmapMultibandV1Run.h`, `ejmap --cert-multiband-v1 --out <cert> [--only <product>]` and the run-all step `multiband_v1`;
+- judged by `--cert-v1` / `--trust-levels` with the multiband draft and its v1 record matched by plugin_id.
+
+Pins WZ-MBV1-1 / -2.
+
+**A band passes** when all of these hold:
+
+| part | test | data |
+|---|---|---|
+| identity | a threshold control the measurement paired with the band | the Phase B record (pairing) |
+| range | gain reduction reaches 4 dB on the band's centre tone | the band ladder |
+| direction | gain reduction moves one way with the threshold (either way) | the band ladder |
+| threshold | the onset (GR 1 dB, the tone's RMS) tracks the dB display 1:1 within 3 dB, with a fixed reference allowed (Lindell MBC ≈ −21 dB, a dBu-style scale; C4 −5..−10 per band); one position alone within 3 dB outright | the ladder + the v1 grid (−54..−3 dBFS) |
+| gain | the setting predicted for 2 / 3 / 4 dB at −12 dBFS, measured within 0.5 dB on the band's centre tone | **new**: v1 tone check |
+| crossover | at the position the plugin opens with, the frequency where the two neighbouring bands' responses are **equal** (no crossover type assumed - Kathy, 16 Oct): each neighbour soloed (units with per-band solo), or each compressed alone with the others open and its cut scaled by its own depth (no solo); within 1/6 octave of the display; no crossover control = not applicable | **new**: v1 crossovers |
+
+- **Make-up:** offered beside a passing band only when its level step matches the dB display step within 0.5 dB (new, v1).
+- **Only passing bands are offered.** v1 never moves a crossover, ratio or per-band attack / release.
+- **Sections that wait for the listening session:** none. The multiband feel ("tame the low end gently") is the server's wording, not a measurement.
+
+### Results
+- **On existing data (Sean's cert 5, 17 multibands):** 13 units have bands passing every part a draft can judge. None is certified yet: the tone check and the crossovers need the v1 measuring.
+  - Drawmer 1973 fails threshold tracking (its display's gap to the real onset runs 18..29 dB).
+  - The Lindells, SSL G3 and Pro-MB have unpaired bands.
+  - DynOne3 has no bands identified.
+- **Smoke test on this Mac (C4 (m), Waves v12, guarded, scratch only): all 4 bands certify.**
+  - the tone check passes on every band (each ask within 0.3 dB), and the threshold tracks on all 4;
+  - **crossovers, solo method:** 92 / 4066 / 11067 Hz against displays of 92 / 4000 / 11071 Hz - all inside 1/6 octave;
+  - **isolated method, forced on the same unit** (EJ_MBV1_ISOLATED=1, a test switch): 93 / 3567 / 12051 Hz - also inside, but Mid sits at 0.165 octave, at the limit. The isolated method is the fallback for units with no solo (Drawmer 1973, SSL G3, OTT, DynOne3), and a result near the limit there deserves caution;
+  - the first method tried (a complementary-crossover target) read 0.12..0.28 octave high on the same unit - that assumption was the error, not C4;
+  - make-up: a −9 → +9 dB move measured 12.9..17.7 dB, so it is not offered;
+  - about 2.5 min a unit for the v1 step, after the 3 min multiband mode.
+
+### Profile format (`ej_multiband_profile/1`, v1; the v0 draft fields are kept)
+```json
+{ "plugin": { "name", "plugin_id", "version", "map_fp" },
+  "topology": "multiband_offset" | "multiband_global",
+  "bands": [ { "band": 2, "lo_hz": 106, "hi_hz": 3768, "centre_hz": 632,            // measured at the opening crossovers
+               "threshold_control": "Band 2 Thresh", "threshold_index": 21,
+               "in_at_gr": [ { "norm", "display", "gr_db_by_level": { "-30", "-24", "-18", "-12", "-6" } } ],
+               "threshold_reference_db": -9.5,                                         // display -> dB RMS onset
+               "certified_parts": [ "gain", "threshold", "crossover" ],
+               "makeup": { "control": "Band 2 Gain", "index": 22 } } ],              // only when offered
+  "crossovers": [ { "control", "display", "measured_hz" } ],                           // never written in v1
+  "neutral": [...], "never_touch": [crossovers, ratios, attack / release] }
+```
+Only certified bands appear in `bands`. `certified_parts` on the unit lists "band N" (and "band N make-up").
+
+### What the server reads (Sean)
+1. The `ej_multiband_profile/1` bands. For an ask on a frequency region, pick the band whose measured `lo_hz..hi_hz` covers it (centre inside the region).
+2. The threshold setting for g dB at the band's level: interpolate `in_at_gr` by level (the band's level from EchoJay) and by GR, then write that threshold alone.
+3. Keep the output steady: write make-up = +g on that band only when `makeup` is offered; otherwise leave it, and EchoJay reports the level change.
+4. Never write a crossover, ratio or attack / release in v1.
+5. Holds as for every category (licence, UAD, APB / hardware, demo, silent). Multiband is no longer a hold once a band certifies.
+
+### What EchoJay (A) asks and does
+- **The ask** is one band. "Control the low end by 3 dB" means the band covering about 20–250 Hz, 3 dB of gain reduction. Regions: low (20–250), low-mid (250–800), mid (800–3k), presence (3k–8k), air (8k–20k).
+- **A must send the track's level per region:** the pink-referenced macroBands meter is the candidate source, so the server can turn "3 dB" into a setting.
+- **The self-check** is per band: the slot's out-minus-in level in that region, before and after.
+- **The card:** "Low end: about 3 dB less - certified band" / "- mapped, not verified".
+
+### Questions for Sean and A
+1. **Sean:** for units with no solo, the isolated method is less precise (C4 forced: 0.165 octave at worst). Is 1/6 octave right for them, or should their crossover part stay "not tested" until a solo or a per-band output exists?
+2. **Sean:** are the region edges above right, and is one band per ask the contract (or may an ask span two)?
+3. **A:** can macroBands be sent per region with each request, and can EchoJay measure a slot per region for the self-check?
+4. **Both:** do multiband asks stop at 4 dB of gain reduction (the v1 range test), or go deeper?
+
