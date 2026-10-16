@@ -10338,11 +10338,31 @@ void testWizardCategories()
         const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
         check (soundcheck::silent (silentT) && ! soundcheck::dry (silentT) && soundcheck::dry (dryT) && ! soundcheck::silent (dryT) && ! soundcheck::dry (wetT) && ! soundcheck::silent (wetT)
                && ! soundcheck::silent (noInput) && ! soundcheck::dry (almostDry)
-               && c.size() == 3 && c[0].first == 0 && c[1].first == 2 && c[2].first == 4   // the switch first, then Output and Gain; Attack and the read-only Gain Reduction meter never
+               && c.size() == 2 && c[0].first == 2 && c[1].first == 4   // 16 Oct: plain level controls only - Output and Gain; the Power switch, Attack, Drive and the read-only meter never
+               && [] { const juce::String eq = "0\tLF On/Off\t\t2\t1\t1\t0\n1\tBand1 Gain\tdB\t2147483647\t0\t1\t0\n2\tEQ In\t\t2\t1\t1\t0\n3\tOutput Gain M On\t\t2\t1\t1\t0\n4\tHF Gain\tdB\t2147483647\t0\t1\t0\n";
+                       const juce::String neold = "0\tPower\t\t2\t1\t1\t0\n1\tInput\tdB\t2147483647\t0\t1\t0\n2\tOutput\tdB\t2147483647\t0\t1\t0\n";
+                       return ejmap::cert::soundcheck::candidates (eq).empty() && ejmap::cert::soundcheck::candidates (neold).size() == 2
+                              && ejmap::cert::soundcheck::candidates ("0\tOutput\t\t5\t1\t1\t0\n").empty()   // a stepped (discrete) Output is a selector, not a level fader
+                              && ejmap::cert::soundcheck::plainLevelControl ("Output Gain") && ejmap::cert::soundcheck::plainLevelControl ("Master Volume") && ! ejmap::cert::soundcheck::plainLevelControl ("Band1 Gain")
+                              && ! ejmap::cert::soundcheck::plainLevelControl ("Drive") && ! ejmap::cert::soundcheck::plainLevelControl ("Bypass") && ! ejmap::cert::soundcheck::plainLevelControl ("Output Gain M On"); }()
                && inertAll && w1.startsWith ("licence suspected: never processes") && ! moved && w2.startsWith ("it processes") && ! nothing
                && run.contains ("if (r.cleanExit() && soundcheck::dry (r.out))") && run.contains ("if (v.demo || v.window || v.silent || v.inert) demos.add (name);")
                && run.contains ("\"state\", v.window || v.silent || v.inert ? \"needs_licence\" : \"demo\"") && run.contains ("v.silent = (bool) c.getProperty (\"silent\", false); v.inert = (bool) c.getProperty (\"inert\", false);"),
-               "wizard WZ-SOUND-1: silence and never-processing caught in the demo check (needs_licence at once); anything that changes the signal measured; the switch, then Output / Gain tried");
+               "wizard WZ-SOUND-1: silence and never-processing caught in the demo check (needs_licence at once); anything that changes the signal measured; only plain level controls (Output / Gain) tried");
+    }
+    // WZ-CRASH-1 EVERY CRASH IS REPORTED (Kathy, 16 Oct: the night run's 5 probe crashes, receipt crashed_reported 0): the manifest's
+    // "crashed" carries the app's crashes (with their report) and every skipped row filed crashed, once each; the receipt counts that list
+    {
+        using namespace ejmap::cert;
+        auto row = [] (const char* product, const char* state) { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("plugin_id", "AudioUnit|1|1"); o->setProperty ("state", state); o->setProperty ("why", "probe crashed mid-trace"); return juce::var (o); };
+        juce::Array<juce::var> app; { auto* c = new juce::DynamicObject(); c->setProperty ("product", "Went Down"); c->setProperty ("crash_report", "crash_reports/a.txt"); app.add (juce::var (c)); }
+        const juce::Array<juce::var> skipped { row ("Went Down", "crashed"), row ("UAD CS-1", "crashed"), row ("AVOX SYBIL", "crashed"), row ("AVOX SYBIL", "crashed"), row ("H-EQ (m)", "needs_licence") };
+        const auto all = withProbeCrashes (app, skipped);
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (all.size() == 3 && all[0].getProperty ("crash_report", "").toString() == "crash_reports/a.txt" && all[1].getProperty ("product", "").toString() == "UAD CS-1"
+               && all[1].getProperty ("stage", "").toString() == "probe" && all[2].getProperty ("product", "").toString() == "AVOX SYBIL" && withProbeCrashes ({}, {}).isEmpty()
+               && run.contains ("M->setProperty (\"crashed\", withProbeCrashes (crashedList, skipped));"),
+               "wizard WZ-CRASH-1: the manifest reports every crash once - the app's with its report, each probe crash as stage probe (" + juce::String (all.size()) + " of 3)");
     }
     // WZ-REWARD-2 (Kathy, 15 Oct): needs_hardware and surround are out of BOTH totals - the qualify count counts "queued" only, and neither is ever
     // enqueued (the hardware check and the surround rule act before a row can be queued), so neither is in the run's queue (the finish total)
@@ -10743,6 +10763,35 @@ void testWizardCategories()
         check (v1.at ("MTurboComp").demo && ! v1.at ("elysia mpressor").demo && ! v1.at ("elysia mpressor").inert && ! v1.at ("elysia mpressor").silent
                && after1 == (mpDry ? 5 : 2) && calls == after1 && v2.at ("MTurboComp").demo && ! v2.at ("elysia mpressor").demo && ! v2.at ("elysia mpressor").inert,
                "wizard WZ-DEMO-2: the wizard's demo step files MTurboComp a demo, mpressor not; the measuring run reads demo_checks.json (no second render)");
+    }
+    // WZ-SOUND-2 ONLY A PLAIN LEVEL CONTROL PROVES "NEVER PROCESSES" (Kathy, 16 Oct: the 15 Oct night run filed 33 working plugins inert from
+    // their On/Off switches and band gains). Real --list-params lines (this Mac, 16 Oct) through the wizard's own demo step with a fake probe
+    // whose output is the input: RChannel (m) is tried on its Gain only - which moves it - and stays MEASURED; H-EQ (m) on Input / Output;
+    // CLA MixHub (m) has none ("Post:Output" is a section's) - no verdict, measured; NEOLD U17's Input / Output move nothing - still inert
+    {
+        auto trace = [] (double out) { juce::String t; for (int k = 0; k < 40; ++k) t << "bwin\tt_ms\t" << (4000 + 50 * k) << "\tseg\tloud\tin_db\t-21.000\tout_db\t" << juce::String (out, 3) << "\n"; return t; };
+        const std::map<juce::String, juce::String> lists {
+            { "RChannel (m)", "0\tEQ On/Off\t\t2\t1\t1\t0\n1\tBand1 Gain\tdB\t2147483647\t0\t1\t0\n2\tBand2 Gain\tdB\t2147483647\t0\t1\t0\n17\tBand1 On/Off\t\t2\t1\t1\t0\n18\tBand2 On/Off\t\t2\t1\t1\t0\n49\tGain\tdB\t2147483647\t0\t1\t0\n" },
+            { "H-EQ (m)", "0\tInput\tdB\t2147483647\t0\t1\t0\n1\tHP On/Off\t\t2\t1\t1\t0\n5\tLF On/Off\t\t2\t1\t1\t0\n6\tLF Shape\t\t2\t1\t1\t0\n10\tLF Gain\tdB\t2147483647\t0\t1\t0\n45\tOutput\tdB\t2147483647\t0\t1\t0\n" },
+            { "CLA MixHub (m)", "2\tPre:On/Off\t\t2\t1\t1\t0\n3\tPre:Line\t\t2147483647\t0\t1\t0\n5\tPre:Analog\t\t2\t1\t1\t0\n6\tPre:Noise\t\t2\t1\t1\t0\n17\tEq:LF Gain\tdb\t2147483647\t0\t1\t0\n71\tPost:Output\tdB\t2147483647\t0\t1\t0\n" },
+            { "NEOLD U17", "5\tExternal SC\t\t2\t1\t1\t0\n6\tInput\tdB\t2147483647\t0\t1\t0\n8\tMonitor\t\t2\t1\t1\t0\n12\tOutput\tdB\t2147483647\t0\t1\t0\n13\tPower\t\t2\t1\t1\t0\n" } };
+        const std::set<juce::String> works { "RChannel (m)", "H-EQ (m)" };   // processing runs: a level control moves the output
+        std::vector<juce::PluginDescription> ds; int u = 10; for (const auto& [n, l] : lists) { juce::PluginDescription d; d.name = n; d.uniqueId = ++u; d.version = "1.0"; ds.push_back (d); }
+        std::mutex mx; std::map<juce::String, juce::StringArray> tried;
+        auto fake = [&] (const juce::StringArray& a) { ejmap::cert::ChildResult r; r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0;
+            if (a.contains ("--list-params")) { r.out = lists.at (a[1]); return r; }
+            juce::String set; for (const auto& x : a) if (x.startsWith ("set=")) set = x;
+            if (set.isNotEmpty()) { std::lock_guard<std::mutex> g (mx); tried[a[1]].addIfNotAlreadyThere (set.fromFirstOccurrenceOf ("=", false, false).upToFirstOccurrenceOf (":", false, false)); }
+            r.out = trace (set.isNotEmpty() && works.count (a[1]) ? -27.0 : -21.0); return r; };
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_sound2_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        ejmap::cert::wizardStop() = 0;
+        const auto v = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
+        work.deleteRecursively();
+        check (! v.at ("RChannel (m)").inert && ! v.at ("H-EQ (m)").inert && ! v.at ("CLA MixHub (m)").inert && v.at ("NEOLD U17").inert
+               && tried["RChannel (m)"] == juce::StringArray { "49" } && tried["H-EQ (m)"] == juce::StringArray { "0", "45" } && tried["CLA MixHub (m)"].isEmpty()
+               && tried["NEOLD U17"] == juce::StringArray { "6", "12" } && v.at ("NEOLD U17").why.contains ("Input -> 0.0") && ! v.at ("NEOLD U17").why.contains ("Power"),
+               "wizard WZ-SOUND-2: RChannel (m) tried on Gain only and measured, H-EQ (m) on Input / Output, CLA MixHub (m) no verdict, NEOLD U17 still inert (RChannel tried: "
+                   + tried["RChannel (m)"].joinIntoString (",") + ")");
     }
     // WZ-DISK (beta item 2): the free-disk floor - 3 GB to start, 1 GB to keep going; the words say what it needs; the rehearsal override
     {

@@ -770,6 +770,15 @@ namespace
                 if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
                 return ejmap::cert::runStripSection (o);
             }
+            if (a == "--wizard-soundcheck")   // 16 Oct: the wizard's sound check alone, on the plugins named in --names, into --out only
+            {
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File names;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--names") names = cwdFile (v); else if (k == "--jobs") o.jobs = juce::jlimit (1, 8, v.getIntValue()); }
+                if (o.out == juce::File() || ! names.existsAsFile()) { std::cerr << "usage: ejmap --wizard-soundcheck --names <file> --out <folder> [--jobs N]" << std::endl; return 2; }
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                return ejmap::cert::runSoundCheckAlone (o, names);
+            }
             if (a == "--wizard")   // the user-side wizard (feat/ejmap-wizard): scan, look up (A/B/C), quick check, measure, bundle; upload stubbed
             {
                 ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION; w.opt.probeServe = true; w.opt.retryTimeoutsAlone = true;   // 15 Oct: a timeout is retried alone before it is filed   // the warm probe: the wizard's default (14 Oct)

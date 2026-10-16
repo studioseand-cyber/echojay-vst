@@ -164,7 +164,10 @@ What it says is true of the bundle as built:
   - APB stays needs_hardware at the scan. Pin WZ-UAD-1 (WZ-HW-1 now APB only).
 - **The sound check** (in the demo check at the start of measuring):
   - Tone in, digital silence out: needs_licence at once.
-  - Output identical to the input, and none of up to 3 controls the certification would try (switches first, then gain / output / drive, each to both ends) moves it: needs_licence at once ("never processes").
+  - Output identical to the input, and none of up to 3 PLAIN LEVEL controls moves it (each to both ends): needs_licence at once ("never processes").
+    - 16 Oct (the 15 Oct night run filed 33 working plugins "never processes" - H-EQ, LinEQ, REQ, RChannel, CLA MixHub...): only a continuous control whose whole name is level words (Output, Input, Gain, Trim, Volume, Makeup, Master, Level) can prove it. Switches (On/Off, Bypass, EQ In), band / section controls ("Band1 Gain", "LF Gain") and Drive never count - with flat gains they cannot change a steady tone, working or not.
+    - No plain level control: no verdict, the plugin is measured (the certification still judges).
+    - Safety proof, 16 Oct (ejmap --wizard-soundcheck, the wizard's own code): 293 distinct plugins - the 36 filed "never processes" last night, the 7 silent ones, and the 282 measured in the 15 Oct day run (licence-bound Soundtoys / kHs / SSL Fusion left out). 284 measure, 0 wrongly inert: of the 33 wrongly skipped, 32 now measure and SSL 4K B showed its iLok window (needs_licence by the window, never clicked). NEOLD U17 still inert; The God Particle, bx_opto Pedal, bx_yellowdrive and 4 more still silent. NEOLD U2A / V76U73 pass the sound check as before (their output is not the input) and stay the certification's catch. Pin WZ-SOUND-2.
   - Anything that changes the signal, or offers no control to try, is measured.
   - Measured: bx_opto Pedal 0.4 s (was 182 s), NEOLD U17 18 s (was 128 s); CLA-2A (m) measured as before. Pins WZ-SOUND-1, WZ-DEMO-2.
 - **The reward totals:** the qualify count is the "queued" rows only, and the finish total is the queued (phaseb) rows. needs_hardware and surround rows are filed before anything is queued, so they are in neither. Pin WZ-REWARD-2.

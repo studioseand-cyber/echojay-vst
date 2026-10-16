@@ -183,19 +183,30 @@ inline bool dry (const juce::String& trace)
     for (size_t i = 0; i < l.out.size(); ++i) if (std::abs (l.out[i] - l.in[i]) > kDrySameDb) return false;
     return true;
 }
-// the controls to try, from --list-params ("index name label numSteps isDiscrete automatable meta"): switches first, then gain words
+// THE CONTROLS THAT PROVE IT (16 Oct - the 15 Oct night run filed 33 working plugins "never processes": H-EQ, LinEQ, REQ, RChannel, CLA
+// MixHub ... - their band On/Off switches, Bypass, "EQ In" and band gains cannot change a flat 997 Hz tone, processing or not): only a
+// PLAIN LEVEL control - its whole name made of level words (Output, Input, Volume, Trim, Makeup, Master, Gain, Level), continuous - must
+// change the level of any tone. Switches, band / section controls ("Band1 Gain", "LF Gain", "Output Gain M On") never count. No such
+// control -> no verdict: the plugin is measured
+inline bool plainLevelControl (const juce::String& name)
+{
+    static const juce::StringArray kLevel { "output", "out", "input", "in", "volume", "vol", "trim", "makeup", "make-up", "master", "gain", "level", "db" };
+    static const juce::StringArray kMust { "output", "out", "input", "volume", "vol", "trim", "makeup", "make-up", "master", "gain", "level" };
+    auto t = juce::StringArray::fromTokens (name.toLowerCase().replaceCharacters ("()[]:/_-.", "         "), " ", ""); t.removeEmptyStrings();
+    if (t.isEmpty()) return false;
+    bool must = false; for (const auto& w : t) { if (! kLevel.contains (w)) return false; if (kMust.contains (w)) must = true; }
+    return must;
+}
 inline std::vector<std::pair<int, juce::String>> candidates (const juce::String& listOut)
 {
-    std::vector<std::pair<int, juce::String>> power, gain;
+    std::vector<std::pair<int, juce::String>> out;
     for (const auto& line : juce::StringArray::fromLines (listOut))
     {
         const auto f = juce::StringArray::fromTokens (line, "\t", "");
         if (f.size() < 6 || ! f[0].containsOnly ("0123456789") || f[0].isEmpty() || f[5] != "1") continue;   // automatable only
         const int idx = f[0].getIntValue(); const auto name = f[1]; const int steps = f[3].getIntValue();
-        if (steps == 2 && sweep::inertPowerName (name)) power.push_back ({ idx, name });
-        else if (steps != 2 && sweep::inertGainName (name)) gain.push_back ({ idx, name });
+        if (steps != 2 && f[4] != "1" && plainLevelControl (name)) out.push_back ({ idx, name });   // continuous plain level controls only
     }
-    std::vector<std::pair<int, juce::String>> out = power; for (const auto& g : gain) out.push_back (g);
     if (out.size() > 3) out.resize (3);
     return out;
 }
@@ -270,6 +281,43 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     pool (todo, demoJobs);
     cacheFile.replaceWithText (juce::JSON::toString (cache));
     return out;
+}
+
+// EVERY CRASH IS REPORTED (16 Oct - the 15 Oct night run: 5 plugins crashed the probe and the wizard moved on, the manifest's "crashed" held
+// only the crashes the APP went down with (none), so the receipt said crashed_reported 0): the app's crashes, each with its report, then
+// every skipped row filed "crashed" that is not already there - stage "probe", no report (the probe's own log stays on this Mac)
+inline juce::Array<juce::var> withProbeCrashes (juce::Array<juce::var> crashed, const juce::Array<juce::var>& skipped)
+{
+    juce::StringArray have; for (const auto& c : crashed) have.add (c.getProperty ("product", "").toString());
+    for (const auto& s : skipped)
+    {
+        const auto product = s.getProperty ("product", "").toString();
+        if (s.getProperty ("state", "").toString() != "crashed" || have.contains (product)) continue;
+        auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", s.getProperty ("plugin_id", {})); c->setProperty ("stage", "probe");
+        c->setProperty ("why", s.getProperty ("why", {})); c->setProperty ("crash_report", ""); c->setProperty ("report_found", false);
+        crashed.add (juce::var (c)); have.add (product);
+    }
+    return crashed;
+}
+
+// THE SOUND CHECK ALONE (16 Oct, Kathy's safety proof for the inert fix): the wizard's own demoCheckForWizard on the named plugins, into
+// <out> only (demo_checks.json + soundcheck.tsv: name, verdict, why). Nothing measured, nothing sent; the names come from a file, one per line
+inline int runSoundCheckAlone (const SweepOptions& opt, const juce::File& namesFile)
+{
+    installWizardStop(); opt.out.createDirectory();
+    juce::StringArray names; names.addLines (namesFile.loadFileAsString()); names.trim(); names.removeEmptyStrings(); names.removeDuplicates (false);
+    std::vector<juce::PluginDescription> ds; juce::StringArray found;
+    for (const auto& r : installedAudioUnits()) if (names.contains (r.desc.name) && ! found.contains (r.desc.name)) { ds.push_back (r.desc); found.add (r.desc.name); }
+    for (const auto& n : names) if (! found.contains (n)) std::cout << "SOUNDCHECK: not installed: " << n << std::endl;
+    const auto v = demoCheckForWizard (ds, opt.jobs, [&] (const juce::StringArray& a) { return runChild (a, opt.timeoutMs); }, opt.probe, opt.out.getChildFile ("demo_checks.json"),
+                                       [] (const juce::String& n, const wizard::DemoVerdict& d, double secs) { std::cout << "SOUNDCHECK: " << n << " (" << juce::String (secs, 1) << " s)" << (d.inert ? " INERT" : d.silent ? " SILENT" : "") << std::endl; });
+    juce::String tsv;
+    for (const auto& d : ds)
+    {   const auto it = v.find (d.name); if (it == v.end()) { tsv << d.name << "\tnot checked\t\n"; continue; }
+        const auto& x = it->second;
+        tsv << d.name << "\t" << (x.inert ? "inert" : x.silent ? "silent" : x.window ? "window" : x.demo ? "demo" : "measure") << "\t" << x.why << "\n"; }
+    opt.out.getChildFile ("soundcheck.tsv").replaceWithText (tsv);
+    return 0;
 }
 
 inline int runWizard (const WizardOptions& wo)
@@ -824,7 +872,7 @@ inline int runWizard (const WizardOptions& wo)
         }
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
-        M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", crashedList);
+        M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", withProbeCrashes (crashedList, skipped));
         M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList); M->setProperty ("held", heldList);
         {   // THE RUN (13 Oct, partial uploads): the run id, what this upload is (checkpoint / sent_early / finished), the run's queue and every
             // queued plugin's state now - the server merges by run id + plugin and decides the reward from the merged run, never from this
