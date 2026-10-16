@@ -7076,23 +7076,39 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     refreshCardFromLandedValues (slotIndex);
 }
 
-bool ChainHost::refreshCardFromLandedValues (int slotIndex)
+// The composition itself, shared with the sidecar's publisher (16 Oct 2026). The mirror showed
+// "Threshold 0" while the Link's own ledger said -30, and no log from that process reaches the
+// runner's file - so rather than diagnose it from the outside, the card is composed from the ledger
+// at BOTH places it can be read. One author for the words, and the mirror cannot contradict the
+// numbers it ships beside.
+juce::String ChainHost::cardTextFromLandedValues (const juce::String& ledger)
 {
-    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
-    auto& s = slots_[(size_t) slotIndex];
-    if (s.dialLandedValues.isEmpty()) return false;
+    if (ledger.trim().isEmpty()) return {};
     juce::StringArray phrases;
-    for (const auto& pair : juce::StringArray::fromTokens (s.dialLandedValues, ";", ""))
+    for (const auto& pair : juce::StringArray::fromTokens (ledger, ";", ""))
     {
         const auto id  = pair.upToFirstOccurrenceOf ("=", false, false).trim();
         const auto num = pair.fromFirstOccurrenceOf ("=", false, false).trim();
         if (id.isEmpty() || num.isEmpty()) continue;
         phrases.add (echojay::params::plainValuePhrase (id, num.getDoubleValue()));
     }
-    if (phrases.isEmpty()) return false;
+    if (phrases.isEmpty()) return {};
+    return "Applied automatically\n" + phrases.joinIntoString (", ");
+}
+
+bool ChainHost::refreshCardFromLandedValues (int slotIndex)
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    auto& s = slots_[(size_t) slotIndex];
+    if (s.dialLandedValues.isEmpty()) return false;
+    const auto composed = cardTextFromLandedValues (s.dialLandedValues);
+    if (composed.isEmpty()) return false;
+    juce::StringArray phrases;   // kept for the log line below
+    for (const auto& pair : juce::StringArray::fromTokens (s.dialLandedValues, ";", ""))
+        phrases.add (pair);
     // The caveat lines are kept: a written-but-unconfirmable display and an approximate mapping are
     // facts about the write, not about the number, and both still apply to the figure shown here.
-    juce::String text = "Applied automatically\n" + phrases.joinIntoString (", ");
+    juce::String text = composed;
     if (! s.dialUnconfirmed.isEmpty())
         text += "\n" + s.dialUnconfirmed.joinIntoString (", ")
               + ": written - display could not be confirmed on this bridged plugin";

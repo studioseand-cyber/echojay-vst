@@ -1926,6 +1926,10 @@ public:
         updated and the card was not, so the two disagreed - which is the thing this product is not
         allowed to do. Called wherever the ledger changes; returns true when it rewrote the card. */
     bool refreshCardFromLandedValues (int slotIndex);
+    /** The card's text, composed from a landed ledger ("Threshold=-30;Ratio=4") in plain words.
+        Static and public because TWO places need the same answer: the slot's own card, and the
+        sidecar a Link publishes for the main plugin's mirror. Empty ledger in, empty string out. */
+    static juce::String cardTextFromLandedValues (const juce::String& ledger);
     static void collapseFlatDuplicates(const juce::var& structured, std::vector<ApplyReport>& report, const juce::String& slotName);
 
     // ---- Auto-apply pipeline (the ONE apply path) ------------------------

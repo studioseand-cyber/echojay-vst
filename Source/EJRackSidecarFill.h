@@ -51,6 +51,15 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         // SEAN'S #1 (16 Oct 2026): the LANDED numbers, so the agent's read-back on a Link reads what the
         // plugin shows instead of parsing them back out of an echo of its own request.
         back.landedValues = s.landedValues;
+        // ---- AND THE CARD IS COMPOSED FROM THAT LEDGER, HERE (17 Oct 2026, Sean's step 4) -------
+        // The mirror showed "Threshold 0" beside a ledger that said -30, twice, on the Link road -
+        // and no log from a Link's process reaches the runner's file, so this is fixed at the
+        // boundary rather than diagnosed from outside it. Whatever wrote the slot's own card, the
+        // text that LEAVES here is composed from the numbers that leave with it, by the one
+        // function that composes them. Nothing to contradict.
+        if (const auto fromLedger = ChainHost::cardTextFromLandedValues (s.landedValues);
+            fromLedger.isNotEmpty())
+            back.settings = fromLedger.substring (0, 200);
         // 16 Oct 2026 (the joint live pass): whether this slot's dial has FINISHED, so the agent's
         // read-back on a Link can wait for the round trip instead of calling an unread value a
         // failed write.

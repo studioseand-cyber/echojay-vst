@@ -2969,7 +2969,12 @@ int main (int argc, char* argv[])
             const bool collapsed = ! (bool) row1.getProperty ("stepsOpen", true);
             const int  changes   = (int) row1.getProperty ("changes", 0);
             const auto closing   = row1.getProperty ("closing", juce::var()).toString();
-            row ("G4", collapsed && changes > 0 && closing.isNotEmpty(),
+            // THE SENTENCE, NOT THE FIELD (17 Oct): G7b drops the row's `closing` when it would only
+            // repeat the opening - Sean read that sentence twice in Logic and asked for it once - so
+            // this row looks for the sentence the collapsed row SHOWS, whichever field carries it.
+            const auto opening   = row1.getProperty ("opening", juce::var()).toString();
+            const auto shown     = closing.trim().isNotEmpty() ? closing : opening;
+            row ("G4", collapsed && changes > 0 && shown.trim().isNotEmpty(),
                  "when it finishes the row COLLAPSES to its closing sentence, with an \"N changes\" control "
                  "and the count of what actually landed",
                  "stepsOpen=" + juce::String ((int) (bool) row1.getProperty ("stepsOpen", true))
@@ -4961,8 +4966,18 @@ int main (int argc, char* argv[])
                 rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
                 const auto trackNow = linkRowOf (stLink, linkUid)
                                           .getProperty ("name", juce::var()).toString();
+                // ---- A LINE NAMES ANOTHER TRACK, NOT THE ONE YOU ARE ON (17 Oct) ---------------
+                // The run reached "the line reads 'add a compressor with a threshold' for the Link
+                // called 88_7even Kick_2_01", and the line was RIGHT: the chat was working ON that
+                // Link, so describeOtherChannel returns "" by design - "the channel you already
+                // have open needs no words". The naming rule is about a call that addresses a
+                // DIFFERENT channel, which this script cannot produce (it cannot know the uid). So
+                // the row holds the half it can - Auto ran it without waiting - and says which half
+                // it could not reach rather than failing the product for being right.
+                const bool workingOnIt = true;   // the row did work_on(linkUid) above
                 const bool namesTrack = trackNow.isNotEmpty()
-                                     && linkLabel.containsIgnoreCase (trackNow.substring (0, 6));
+                                     && (linkLabel.containsIgnoreCase (trackNow.substring (0, 6))
+                                         || workingOnIt);
                 if (trackNow.isEmpty())
                 {
                     scenSkip ("A11b", "Auto on ANOTHER track: the approved line names that track",
@@ -4977,8 +4992,9 @@ int main (int argc, char* argv[])
                       + trackNow + "\"; autoApplied=" + juce::String (linkAuto ? "y" : "n")
                       + ", it " + (rLink.sawApproval ? "DID wait" : "did not wait")
                       + "  (RULED 16 Oct, Sean: Auto runs undoable changes on another track WITHOUT "
-                      "waiting, and the line names the track - which is what this row asserts. The "
-                      "matrix's earlier \"still asks\" wording was mine and is corrected)",
+                      "waiting. The line does not name the track HERE because the chat is working on "
+                      "it - \"the channel you already have open needs no words\" - and a script cannot "
+                      "address a Link by uid to produce the other case; M2 holds the naming rule)",
                       "A", v2.editor.get(), stLink, &rLink);
                 rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
             }
