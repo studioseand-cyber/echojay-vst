@@ -1,0 +1,14 @@
+EchoJay end-to-end check in Logic - 5 compressors from EJMAP_PUBLISH_COMPRESSORS_v3 (Kathy, 16 Oct). None is held; none needs the re-check's re-export.
+
+1. Tube-Tech CL 1B 2.5.62 (Softube)          - opto; also settles the open "0.7 dB live gap" item
+2. Lindell SBC 1.0.3 (Plugin Alliance)        - VCA bus compressor; no accuracy flag, no refused timing
+3. Unfiltered Audio Zip 1.4.2 (Plugin Alliance) - modern digital; no accuracy flag
+4. C1 comp (s) 15.0.70 (Waves)                - stock Waves digital, stereo
+5. RVox (m) 15.0.70 (Waves)                   - input-drive vocal leveller (the other write path: the input is the amount), mono
+
+Before it can run: the v3 profiles must be on the preview server (Kathy sends).
+Per unit, EchoJay V2 in Logic, one unit at a time in its slot (about 10 min each):
+  - a steady 997 Hz tone, asking for about 2, 4 and 6 dB
+  - Sean's vocal stem, asking for "light", then "more"
+Pass: every write is exactly what the server computed and no control outside the profile moves; tone GR within 0.5 dB of the ask;
+vocal within 1.5 dB with no more than 1 dB of level change (the 10 Oct proposal).

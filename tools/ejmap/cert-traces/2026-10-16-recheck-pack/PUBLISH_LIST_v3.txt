@@ -1,0 +1,112 @@
+EJ MAP - PUBLISHED COMPRESSOR PROFILES v3 (16 Oct 2026). 47 profiles = READY_33 (v1's 29 + v2's 4) + 14 cleared from Sean's cert 5 (13 Oct, b287aef3); each with its tone-check sidecar; files copied unmodified.
+Rule (v1's): tone check spec v1.7 PASS within 0.5 dB at g 2, 4, 5 and 6 (a level above 6 dB may be nulled); frequency, material and combined records present; HOLD for a frequency flag, an output-level flag
+(make-up clamped, or output net of GR > 0.5 dB) or a combined miss at timing positions v1 writes. A material flag alone, or a combined miss from positions v1 refuses (|gr_shift| > 0.5 dB), is not a hold.
+
+FROM v1 (29):
+product | version | map_fp | g2 GR dB | g4 | g5 | g6 | deep levels passed / nulled | checked (build, date)
+API-2500 (m) | 15.0.70 | 1134612df39ef84f441c076c4a1fd60c2d66dfb0e5d90b983c0273222dbdd127 | 2.05 PASS | 3.94 PASS | 4.98 PASS | 5.97 PASS | 9 / 0 | 5ab8352b, 20261010
+API-2500 (s) | 15.0.70 | 7171997696074016db3112516293395d0c5e42a28d7e9c77889290c126bb4637 | 2.06 PASS | 3.96 PASS | 5.0 PASS | 6.0 PASS | 9 / 0 | 5ab8352b, 20261010
+Bettermaker Bus Compressor DSP | 1.0.0 | b1fa8de10439a89a945bef15b56618e390d26df3d2070c823fbeb2d2c0b37cd4 | 1.96 PASS | 4.0 PASS | 5.02 PASS | 5.97 PASS | 9 / 0 | 5ab8352b, 20261010
+bx_townhouse Buss Compressor | 1.8.1 | 7e8ca3f402d1bd41498381f6063aca8243fdd6af0ffd4995bb8fc068b1b9191b | 1.95 PASS | 3.94 PASS | 4.92 PASS | 5.89 PASS | 9 / 0 | 5ab8352b, 20261010
+C1 comp (m) | 15.0.70 | 6a0256a98cd3ceb43204a1d23557e0514c803e8e55ae50294b71d340227add25 | 1.98 PASS | 3.97 PASS | 4.96 PASS | 5.98 PASS | 9 / 0 | 5ab8352b, 20261010
+C1 comp (s) | 15.0.70 | 866a6e72f29c8975409510e64252e9922d39515ed6958d9db971a599f786ad3f | 1.98 PASS | 3.97 PASS | 4.96 PASS | 5.98 PASS | 9 / 0 | 5ab8352b, 20261010
+C1 comp-gate (m) | 15.0.70 | 94cba79e186ec7a6f03b5c3d351544ed2ee7a44ec7d2535df01ffe12d5b4e146 | 1.98 PASS | 3.98 PASS | 4.96 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+C1 comp-gate (s) | 15.0.70 | e93573e409a45da817d098a57e59c784ec5ce6ec4d4aeec40e8bce54055eaa7f | 1.98 PASS | 3.98 PASS | 4.96 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+C1 comp-sc (m) | 15.0.70 | 163b27da24910bf38e8cd60f19f080c3859259512f33452e9a996296c2eb681e | 1.98 PASS | 3.98 PASS | 4.96 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+C1 comp-sc (s) | 15.0.70 | 4cf81af8d2adcf46545df5dc0306db4b75b75af31b248b2ed6b7020c932b013d | 1.98 PASS | 3.98 PASS | 4.96 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+dbx-160 (m) | 15.0.70 | 8107664bf9d09798b19904f9f22a5c6e1342e632c3ed8e36b846cbb3218b2497 | 1.95 PASS | 3.99 PASS | 4.98 PASS | 6.02 PASS | 9 / 0 | 5ab8352b, 20261010
+DPR-402 (m) | 15.0.70 | 9cc313af220318658b0d4b7c53a0af5203ef9aae099f036f4a6b0519dff2f5af | 1.95 PASS | 3.97 PASS | 4.96 PASS | 5.88 PASS | 9 / 0 | 5ab8352b, 20261010
+kHs Compressor | 2.1.0 | 14124dc2c7241b5985c0b77e9c937c29d8d43698f0fca1443f5fd2cb272d79bb | 2.0 PASS | 3.99 PASS | 5.02 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+Lindell 254E | 1.2.2 | 1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76 | 2.14 PASS | 3.86 PASS | 4.54 PASS | 5.45 PASS | 9 / 0 | 5ab8352b, 20261010
+Lindell SBC | 1.0.3 | afdb3916a60b69fd8638f3c9a20080df2d91d4216912b2b7ef535c0b6de2282c | 1.99 PASS | 4.0 PASS | 4.98 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+MCompressor | 14.16.0 | dc3b7063bacafe0cb8c64b4ed27d8e60e8d9f85b10545347cec43d271413ce98 | 2.03 PASS | 4.0 PASS | 5.01 PASS | 6.01 PASS | 9 / 0 | 5ab8352b, 20261010
+Pro Audio DSP DSM V3 | 3.6.1 | d7278ea4086ae38ef11f28c81f58a4a713ed2f5bdd4aa66016e7a231fd11687b | 1.99 PASS | 4.01 PASS | 5.01 PASS | 5.98 PASS | 9 / 0 | 5ab8352b, 20261010
+RCompressor (m) | 15.0.70 | a8b060afb66738f33f3e67795f32fbb5815c699488d3620bf0b658097bc9ed5a | 1.95 PASS | 3.96 PASS | 4.94 PASS | 5.97 PASS | 9 / 0 | 5ab8352b, 20261010
+RCompressor (s) | 15.0.70 | 74dd328c8d1cf8b2bd5cac31de497384ea6e242e9f039c25553f4fd34daa8f37 | 1.95 PASS | 3.96 PASS | 4.94 PASS | 5.97 PASS | 9 / 0 | 5ab8352b, 20261010
+Shadow Hills Class A Mastering Comp | 1.4.1 | 8aadd5314c66a2bbdc95e6748ee42b0502db300b4f2455fc9944d28e9617bc44 | 2.29 PASS | 4.29 PASS | 5.29 PASS | 6.4 PASS | 9 / 0 | 5ab8352b, 20261010
+Shadow Hills Mastering Compressor | 1.5.1 | a85f13627e40018bd6629b26941b8ca5f4d0322b135aff4cbc024f5bdfbec62d | 1.86 PASS | 4.51 PASS | 4.51 PASS | 6.19 PASS | 9 / 0 | 5ab8352b, 20261010
+Solid Bus Comp | 1.4.5 | d8e076e415867f03616cfdfb3ad79d323b5d792b3d6836e5eac4e5fff61af2e1 | 1.98 PASS | 4.0 PASS | 4.98 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+SSL Native Bus Compressor 2 | 1.3.4 | 875f29df95f215a41f1041558b256411f19b34f1cd40ae4018b0b73cd0f783f4 | 1.93 PASS | 3.88 PASS | 4.87 PASS | 5.86 PASS | 9 / 0 | 5ab8352b, 20261010
+SSLComp (m) | 15.0.70 | 8248baff707348e80839e5727fda1d34b16bf15d0bd1a7c5cdb6099713384f23 | 1.97 PASS | 3.95 PASS | 4.98 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+SSLComp (s) | 15.0.70 | 311180119d7858879438dd441bbe3c78297caa3e49aa879abd0be449b2afca35 | 1.97 PASS | 3.95 PASS | 4.98 PASS | 5.99 PASS | 9 / 0 | 5ab8352b, 20261010
+TBTECH Cenozoix Compressor | 1.1.0 | 0fa93bf8c7d78cfbd680372385b6d07babb27b6186f92a9a3c731e3cf1a32014 | 2.02 PASS | 3.99 PASS | 4.98 PASS | 5.98 PASS | 9 / 0 | 5ab8352b, 20261010
+Tube-Tech CL 1B | 2.5.62 | ab70ea5337fe3b0637ccd409982989fb0815d65a8e0ec9bef2ef9c228dcb5561 | 2.0 PASS | 4.03 PASS | 5.01 PASS | 6.0 PASS | 9 / 0 | 5ab8352b, 20261010
+UnFairchild | 1.0.4 | a06d0f256c693c850062cad512cade3c8b0a992ebe5649756d9b50d36b924b45 | 2.22 PASS | 3.86 PASS | 5.3 PASS | 5.98 PASS | 9 / 0 | 5ab8352b, 20261010
+Unfiltered Audio Zip | 1.4.2 | 1a76addc9087ff1c2ff8a510aedf88b0580d0685789ad77a60aed3be763ca36b | 1.98 PASS | 3.99 PASS | 5.02 PASS | 6.02 PASS | 9 / 0 | 5ab8352b, 20261010
+
+FROM v2 (4):
+product | version | map_fp | g2 GR dB | g4 | g5 | g6 | deep levels passed / nulled | checked (build, date) | accuracy flags (not holds)
+dbx-160 (s) | 15.0.70 | bcc14e11e2c49665ec97a1ad23ceaf2523f5200a31970e8ad9322ac91707f79b | 1.95 PASS | 3.99 PASS | 4.98 PASS | 6.02 PASS | 9 / 0 | b287aef3, 20261012 | no flag
+Mixland Vac Attack | 1.0.1 | ff0867188e6ac6e2dc2256a923b8514978db52e4473aa04e73748de269ecf346 | 1.97 PASS | 3.96 PASS | 4.97 PASS | 5.99 PASS | 9 / 0 | b287aef3, 20261012 | material mix median miss +1.24 dB (material only: a model limit, not a hold under the v1 rule)
+VBC FG-Red | 1.3.5 | e9c66cd27c08619d8e1dc3768389e5f5a0a231d0dfa24d895d0e22de5ca1292b | 1.99 PASS | 4.01 PASS | 5.0 PASS | 5.99 PASS | 9 / 0 | b287aef3, 20261012 | material vocal median miss +1.83 dB (material only: not a hold under the v1 rule)
+DPR-402 (s) | 15.0.70 | 86924eb9f84d63ea881e7becb8408abd55e4bf5b441938e526cb7315bf6e89c1 | 1.91 PASS | 3.97 PASS | 4.97 PASS | 5.94 PASS | 9 / 0 | b287aef3, 20261012 | material mix +1.15 dB; combined GR +1.17 dB from attack '100 msec' (GR shift -2.27) and release '5 msec' (-1.27): timing positions v1 already refuses, as for DPR-402 (m); output net of GR +0.04 dB (no make-up flag)
+
+FROM cert 5 (14):
+product | version | map_fp | g2 GR dB | g4 | g5 | g6 | checked (build, date) | note
+bx_opto | 1.10.1 | a21e559b70943059fe7b9ff2cc7f6d9f94525fc6e9454c863a8c7e4e3cce90a9 | 1.98 PASS | 3.99 PASS | 5.0 PASS | 5.97 PASS | b287aef3, 20261012 | RE-EXPORT: replace with the re-check file (not_written)
+elysia alpha mix | 1.17.1 | cf86aa93352f9bd799f0ab5959a332bec663b056aff7623963fe906885953d60 | 2.01 PASS | 4.03 PASS | 5.02 PASS | 5.98 PASS | b287aef3, 20261012 | no hold flag
+MaxxVolume (m) | 15.0.70 | e63d901a5dc18ffc2930bb4e48b915cfb584d7c8b0ef958246c38aaf0fa6e659 | 1.99 PASS | 4.0 PASS | 5.01 PASS | 5.99 PASS | b287aef3, 20261012 | no hold flag
+MaxxVolume (s) | 15.0.70 | 7c72a8182798ee00ea33a577ae0bfd45ec9b9eaaebd7c8c25daed44aea2f4379 | 1.99 PASS | 4.0 PASS | 5.01 PASS | 5.99 PASS | b287aef3, 20261012 | no hold flag
+OneKnob Pressure (m) | 15.0.70 | 1de166f2dd53420830c27a0ea14f8c51baf17c0d0a19a6fbd14de0579c06c40a | 1.99 PASS | 4.0 PASS | 5.01 PASS | 6.0 PASS | b287aef3, 20261012 | no hold flag
+OneKnob Pressure (s) | 15.0.70 | 0e0e4457f5fce0e697d6aa2aa65ec1b609f9f7bfd291204d8de27eedaacf9742 | 1.99 PASS | 4.0 PASS | 5.01 PASS | 6.0 PASS | b287aef3, 20261012 | no hold flag
+Renaissance Axx (m) | 15.0.70 | e2584cae2e029ec53bee7e15f4a8a6948a22b34e804ab47cc9d39ae621c8aadb | 1.96 PASS | 4.03 PASS | 5.01 PASS | 5.99 PASS | b287aef3, 20261012 | no hold flag
+Renaissance Axx (s) | 15.0.70 | d3e1a18b845a904b3008775ea8d8f463dc3433ac57ce4fe240adfbee46ef1ff3 | 1.96 PASS | 4.03 PASS | 5.01 PASS | 5.99 PASS | b287aef3, 20261012 | no hold flag
+RVox (m) | 15.0.70 | 287881bbd2bb8564bc4d68125fbf8ee0be1ebfcb384417b3ca3691cb78758068 | 1.98 PASS | 3.97 PASS | 4.99 PASS | 6.0 PASS | b287aef3, 20261012 | no hold flag
+RVox (s) | 15.0.70 | 8c0d6a2417b6827aebcd3ed512a6687e4f1565afe3c271bd8d5502876a9d9501 | 1.98 PASS | 3.97 PASS | 4.99 PASS | 6.0 PASS | b287aef3, 20261012 | no hold flag
+SSL Native X-ValveComp v6 | 6.6.13 | b7112c21dfe45ca36322d18b1f0fa5c1d2b23fa4336a22f5b0d570bff186694d | 1.99 PASS | 4.01 PASS | 5.01 PASS | 6.04 PASS | b287aef3, 20261012 | no hold flag
+elysia alpha master | 1.17.1 | 989304492b719ad305cb2143be43985469a54d24ea491e28c63e52fe05d586a2 | 2.0 PASS | 4.1 PASS | 5.0 PASS | 5.99 PASS | b287aef3, 20261012 | combined miss +1.25 dB from refused timing positions (not a hold)
+Millennia TCL-2 | 1.11.1 | 14912b98210fc9ac14c16c5fec9977c1b82e84ff2d9d060aa807591995b03af5 | 2.0 PASS | 4.01 PASS | 5.0 PASS | 6.01 PASS | b287aef3, 20261012 | combined miss +1.02 dB from a refused attack position (not a hold); RE-EXPORT: replace with the re-check file (not_written)
+SSL Native X-Comp v6 | 6.6.7 | 27c1de2c4c08126877d9f09f0be1b8510d086e01f0f8e35ce583b823324c3566 | 2.02 PASS | 4.04 PASS | 5.02 PASS | 6.07 PASS | b287aef3, 20261012 | combined miss +4.50 dB from refused timing positions (not a hold)
+
+HELD - Kathy's 8 (16 Oct):
+- elysia mpressor: frequency: GR -1.52 dB at 100 Hz (until the server ships gr_by_hz)
+- Empirical Labs Mike-E Comp: output level +1.44 dB, Drive coupling (lifts with level_coupling: -0.09)
+- H-Comp (m): frequency: GR -1.79 dB at 100 Hz; output -3.83 dB unexplained
+- H-Comp (s): frequency: GR -1.79 dB at 100 Hz; output -3.83 dB unexplained
+- SSL LMC+: output level -6.70 dB (lifts with level_coupling)
+- U73b Compressor: output level -10.85 dB (lifts with level_coupling)
+- VComp (m): output level -16.6 dB (lifts when the server reads level_coupling at the pick)
+- VComp (s): output level -16.6 dB (lifts when the server reads level_coupling at the pick)
+
+HELD - 31 of the 46 re-check units (judged on cert 5; Sean's re-check tonight can only fix the missing levels / records):
+- Abbey Road RS124 (m): g 6 fails; a level at 2-6 dB nulled; output level: output miss net of GR -22.26 dB
+- Abbey Road RS124 (s): g 6 fails; a level at 2-6 dB nulled; output level: output miss net of GR -22.26 dB
+- Acme Opticom XLA-3: frequency_dependent (max move 1.18 dB); output level: output miss net of GR -16.62 dB
+- CLA-2A (m): frequency_dependent (max move 4.93 dB)
+- CLA-2A (s): frequency_dependent (max move 4.93 dB)
+- CLA-3A (m): frequency_dependent (max move 1.19 dB)
+- CLA-3A (s): frequency_dependent (max move 1.19 dB)
+- CLA-76 (m): output level: output miss net of GR -12.53 dB
+- CLA-76 (s): output level: output miss net of GR -12.53 dB
+- EMO-D5 (m): g 4 missing; g 5 missing; g 6 missing; no combined record
+- EMO-D5 (s): g 4 missing; g 5 missing; g 6 missing; no combined record
+- Kiive XTComp: output level: output miss net of GR -8.78 dB; combined GR miss +1.62 dB
+- Kramer PIE (m): g 5 fails; a level at 2-6 dB nulled; output level: output miss net of GR -0.60 dB
+- Kramer PIE (s): g 5 fails; a level at 2-6 dB nulled; output level: output miss net of GR -0.60 dB
+- Lindell 7X-500: frequency_dependent (max move 1.16 dB); output level: output miss net of GR -4.25 dB; combined GR miss -2.78 dB
+- MV2 (m): output level: target 4.0 gives 0.0; output level: output miss net of GR -10.19 dB
+- MV2 (s): output level: target 4.0 gives 0.0; output level: output miss net of GR -10.19 dB
+- Ozone 12 Vintage Compressor: output level: output miss net of GR +2.30 dB
+- PuigChild 660 (m): frequency_dependent (max move 1.89 dB)
+- PuigChild 670 (s): frequency_dependent (max move 1.89 dB)
+- Solid Dynamics: g 4 missing; g 5 missing; g 6 missing; no combined record
+- SSL Blitzer: output level: output miss net of GR -11.10 dB; combined GR miss +1.04 dB
+- Vertigo VSC-2: output level: output miss net of GR -4.98 dB; combined GR miss -0.95 dB
+- AMEK Mastering Compressor: g 2 fails; g 4 fails; g 5 fails; g 6 fails; a level at 2-6 dB nulled; no frequency record; no material record; no combined record
+- SPL IRON: g 2 fails; g 4 fails; g 5 fails; g 6 fails; a level at 2-6 dB nulled; output level: target 5.23 gives 6.1; output level: output miss net of GR -4.08 dB; combined GR miss +0.80 dB
+- Maag MAGNUM-K: g 2 fails; g 4 missing; g 5 missing; g 6 missing; no frequency record; no material record; no combined record
+- VBC FG-Grey: no frequency record; no material record; no combined record
+- VBC FG-MU: g 6 missing; no frequency record; no material record; no combined record
+- VBC Rack: no frequency record; no material record; no combined record
+- Auto-Tune Vocal Compressor: no combined record
+- MixWave DW Fearn VT-7: combined GR miss -0.71 dB at timing positions v1 does write (attack 100% -0.06, release 14% -0.09)
+
+ALSO NOT IN v3 (cert 5 outcomes):
+- 41 UAD compressor / Auto-Tune units: need the UAD-2 hardware; 4 McDSP APB units: need the APB hardware
+- 17 multiband compressors (C4, C6, Pro-MB, OTT, ...): multiband profiling not built yet
+- licence suspected / refused: the Melda dynamics (MDynamics, MTurboComp, ...), NEOLD U17 / U2A / V76U73, Pro-C 3, Low Control, bx_opto Pedal, bloom, Weiss Deess
+- needs review (flat or nonmonotonic sweep): kHs Dynamics, Purple Audio MC 77, Rubber Band Compressor V2, SSL Fusion HF Compressor; not swept: OneKnob Pumper (m/s)
+- surround: Spherix Compressor 10->10 / 12->12 (the profile is a stereo contract); the 5 limiter_comp rows (separate pass)
+
+RE-EXPORT NOTE: bx_opto, Millennia TCL-2 and Pro Audio DSP DSM V3 are re-exported by the current build without unnamed neutrals the server cannot write (not_written); swap in the re-check's files when Sean's run returns.
+Nothing has been sent. Kathy sends.
