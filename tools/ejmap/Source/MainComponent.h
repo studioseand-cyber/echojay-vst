@@ -32,6 +32,7 @@
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
 #include "EjmapSend.h"
+#include "EjmapTrust.h"   // 16 Oct: the per-control read-back in the sweep
 #include <sys/stat.h>
 #include <thread>
 #include <atomic>
@@ -11859,6 +11860,48 @@ private:
                 std::cout << "ASSIGN: lockstep: " << stamped << " twin(s) stamped, "
                           << verifiedFailed << " candidate pair(s) did not track 1:1 "
                           << "(discarded, nothing emitted)" << std::endl;
+        }
+
+        // THE PER-CONTROL READ-BACK (Kathy, 16 Oct, trust levels): in this same load, still inside the state-snapshot window, every
+        // anchored control with a real display is written at three values (25 / 50 / 75 % of its anchors, readbackTargets), its own
+        // display read back and judged against its anchors (judgeObservation), and put back where it was before the next control; a
+        // mode control is written at two of its labels and must show them. The result rides on the control (NamedControl::readback),
+        // so it is saved in the map and sent with it. The full state restore below follows, as before.
+        {
+            auto params = inst->getParameters();
+            auto pump = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (60); };
+            int checkedControls = 0, failedControls = 0;
+            for (auto& c : stampedControls)
+            {
+                const int ci = c.indices.size() == 1 ? c.indices[0] : -1;
+                if (ci < 0 || ! juce::isPositiveAndBelow (ci, params.size()) || c.duplicate || c.lockstepOf >= 0 || c.identityDisplay) continue;
+                auto* prm = params[ci]; const float original = prm->getValue();
+                if (c.kind == "anchored" && c.anchors.size() >= 2)
+                {
+                    std::vector<trust::Anchor> a; for (const auto& ap : c.anchors) a.push_back ({ ap.value, ap.normalised });
+                    std::sort (a.begin(), a.end(), [] (const trust::Anchor& x, const trust::Anchor& y) { return x.norm < y.norm; });
+                    for (const auto& t : trust::readbackTargets (a))
+                    {
+                        prm->setValueNotifyingHost ((float) t.norm); pump();
+                        const auto v = trust::judgeObservation (a, prm->getValue(), prm->getCurrentValueAsText());
+                        if (v.judged) { ++c.readback.checked; if (! v.pass) { ++c.readback.failed; c.readback.worst = v.why; } }
+                    }
+                }
+                else if (c.kind == "mode" && c.labels.size() >= 2)
+                {
+                    for (int li : { 0, c.labels.size() - 1 })
+                    {
+                        const auto& l = c.labels.getReference (li);
+                        prm->setValueNotifyingHost ((float) l.norm); pump();
+                        const auto shown = prm->getCurrentValueAsText().trim();
+                        ++c.readback.checked;
+                        if (! shown.equalsIgnoreCase (l.text.trim())) { ++c.readback.failed; c.readback.worst = "label '" + l.text + "' shows '" + shown + "'"; }
+                    }
+                }
+                prm->setValueNotifyingHost (original); pump();   // put back before the next control: one control moved at a time
+                if (c.readback.checked > 0) { c.readback.source = "sweep"; ++checkedControls; if (c.readback.failed > 0) ++failedControls; }
+            }
+            std::cout << "ASSIGN: read-back: " << checkedControls << " control(s) checked, " << failedControls << " failed (kept, marked)" << std::endl;
         }
 
         if (stateBefore.getSize() > 0)

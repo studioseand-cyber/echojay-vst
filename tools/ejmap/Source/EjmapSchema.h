@@ -374,6 +374,13 @@ struct NamedControl
     */
     juce::String tier;
 
+    /** THE READ-BACK (Kathy, 16 Oct, trust levels): readings judged against this control's own anchors - a norm written for a value,
+        the display read back (EjmapTrust.h judgeObservation). Written by the sweep's one-load read-back ("sweep") or credited from a
+        measuring run's readings ("cert", "wizard"). checked == 0: nothing was judged, and nothing is emitted.
+    */
+    struct Readback { int checked = 0, failed = 0; juce::String worst, source; };
+    Readback readback;
+
     juce::var toVar() const;
 };
 
@@ -676,6 +683,15 @@ inline juce::var NamedControl::toVar() const
     }
     if (tier == "primary" || tier == "hidden")
         o->setProperty ("tier", tier);
+    if (readback.checked > 0)
+    {
+        auto* rb = new juce::DynamicObject();
+        rb->setProperty ("checked", readback.checked); rb->setProperty ("failed", readback.failed);
+        rb->setProperty ("pass", readback.checked >= 2 && readback.failed == 0);
+        if (readback.worst.isNotEmpty()) rb->setProperty ("worst", readback.worst);
+        rb->setProperty ("source", readback.source);
+        o->setProperty ("readback", juce::var (rb));
+    }
     return juce::var (o);
 }
 

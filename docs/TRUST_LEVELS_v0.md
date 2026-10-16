@@ -184,3 +184,116 @@ Not auto-dialled. The AI may suggest a setting in words, naming the control, for
 **Kathy:**
 1. Is "mapped" allowed for every category from the start, or compressors and EQ first?
 2. Should an unsure plugin still get a written suggestion, or nothing at all?
+
+---
+
+## 6. Sorted, 16 Oct (Kathy: "SORT ALL THREE"). Built and pinned; nothing sent; no server change
+
+Code:
+- `EjmapTrust.h`: the role rule, the read-back judge and credit, and the level.
+- `EjmapCertV1.h`: the v1 rules.
+- `EjmapTrustRun.h`: `ejmap --trust-levels` and `ejmap --cert-v1`.
+- The sweep's read-back in `MainComponent.h submitMap`.
+
+Pins: WZ-TRUST-1/2/3, WZ-CERTV1-1, WZ-SWEEP-RB-1; 21 mutants red.
+
+### 6.1 Read-back
+- **From existing data (the credit).** Every display reading the measuring runs already took at a norm they wrote is judged against **this map's own anchors**. The tolerance is one display step or 0.5% of the span, capped at 1%.
+  - **Sources:** the certification fixtures (`controls[].displayAt`: every control at 3+ norms in one load), every Phase B record and draft position (`{norm, display}` under the control that owns it), and the cert profiles' amount curve.
+  - **Read back** = 2 or more judged readings and no failure. One failure is a failed read-back: said, and kept on the control.
+  - **Where it came from:** Sean's cert 5 and Kathy's 15 Oct night run. **9,270 controls** credited; 432 of them have a failed reading.
+- **The rest (the sweep).** The mapping sweep's submit, in its one load and inside its state snapshot:
+  - each anchored control is written at 25 / 50 / 75 % of its anchors, its own display read and judged, and the control put back before the next;
+  - mode controls are written at two labels.
+- **Saved and sent.** The result is saved on the control as `readback {checked, failed, pass, worst, source}` and goes in the map upload.
+- **Credited copies.** The credit does not write the map store, which is a standing rule. The credited copies are in `~/Desktop/EJMAP_TRUST_16oct/maps`.
+
+### 6.2 The role rule (Kathy's ruling, 16 Oct)
+Name + unit identifies the role:
+
+| role | name words | unit the display shows |
+|---|---|---|
+| threshold | threshold, thresh | dB |
+| ratio | ratio (a word start) | x:1 (a numeric ratio from 1) |
+| attack / release | attack, atk / release, recovery | ms or s |
+| makeup / output / gain | makeup / output, out gain, master gain / gain | dB |
+| EQ freq / gain / Q | freq, frequency / gain / Q, bandwidth | Hz (or labels in Hz) / dB / Q value |
+| mix | mix, dry/wet, wet | % |
+| delay time | delay time, time, delay | ms, s or a note value |
+| decay | decay, RT, RT60 | s (or ms) |
+| pre-delay | pre-delay, predelay | ms |
+| drive | drive, saturation | % |
+| ceiling | ceiling | dB |
+
+- **Not identified:**
+  - the wrong unit;
+  - two candidates for the role a dial needs (Comp Threshold + Gate Threshold);
+  - a control measurement refuted (`dropped`).
+- **Identified by measurement**, whatever the name says:
+  - a confirmed `roles_by_measurement`;
+  - a draft's chosen control where that part measured cleanly;
+  - a compressor profile's amount control.
+- **The dial targets per category:**
+  - compressor: threshold;
+  - limiter: ceiling or threshold;
+  - EQ: a band's freq + gain;
+  - de-esser: threshold or freq;
+  - gate: threshold;
+  - saturation: drive;
+  - amp sim: drive or gain;
+  - reverb: decay, mix or pre-delay;
+  - delay: time or mix;
+  - transient shaper: attack, release or mix;
+  - channel strip: threshold, or an EQ band;
+  - pitch: none (the tuner spec decides).
+
+### 6.3 v1 certification, the measurable parts (drafts on disk, nothing loaded): `ejmap --cert-v1`
+Rules are in `EjmapCertV1.h`'s header. A product is certified for the parts that pass; a failed part (an EQ band, a delay's mix) is never offered.
+
+| category | the test | drafts | pass | the "feel" that waits for the listening session |
+|---|---|---|---|---|
+| EQ | gain vs dB label within 1.0 dB (to ±12); freq vs Hz label within 1/6 oct; Q vs Q label within 25% | 149 | 9 | feel words (warmer, air, less boxy), default band per region |
+| limiter | holds BS.1770 true peak, overshoot ≤ 0.1 dB | 39 | 30 | none (the LUFS target is EchoJay's) |
+| delay | time vs ms / s label within max(1 ms, 2%); feedback rises; mix law ≤ 1 dB; no acceptance failure | 33 | 1 | slap / echo / ambience bands |
+| reverb | RT60 rises with decay; pre-delay within max(2 ms, 10%); an acceptance step ran and passed | 92 | 27 | room-size / brightness words |
+| saturation | THD rises with drive over ≥ 6 dB; an acceptance step ran and passed | 153 | 56 | subtle / warm / crunch / fuzz as THD bands |
+| gate | open level vs dB label within 1.5 dB, or the acceptance steps | 8 | 5 | tight / natural; bleed / hit levels from A |
+
+Why the counts are low:
+- The drafts were measured for coverage, not for these tests.
+  - 88 EQ drafts have no band that measured as static.
+  - Most delay "time" displays carry no time unit.
+  - 77 saturation drafts ran no acceptance step.
+- Measured misses (EQ gain off by more than 1 dB at ±12, a spring's reversed decay) are real.
+
+### 6.4 Today, before → after (the 1,123 maps on Kathy's Mac)
+- "Before" is section 1's count.
+- "After" uses the credit, the rule and v1.
+- `~/Desktop/EJMAP_TRUST_16oct/trust_levels.json` gives each map's level and why.
+
+| category | before C / M / U | after C / M / U | unsure because: held / role not identified / no read-back yet / read-back failed |
+|---|---|---|---|
+| eq | 0 / 2 / 226 | 12 / 37 / 179 | 85 / 78 / 2 / 14 |
+| compressor | 51 / 42 / 129 | 51 / 32 / 139 | 112 / 20 / 5 / 2 |
+| saturation | 0 / 6 / 146 | 40 / 33 / 79 | 43 / 28 / 8 / 0 |
+| channel_strip | 0 / 1 / 124 | 0 / 0 / 125 | 30 / 80 / 15 / 0 |
+| reverb | 0 / 1 / 113 | 33 / 21 / 60 | 22 / 28 / 7 / 3 |
+| amp_sim | 0 / 1 / 100 | 15 / 3 / 83 | 59 / 24 / 0 / 0 |
+| delay | 0 / 1 / 59 | 1 / 5 / 54 | 18 / 36 / 0 / 0 |
+| limiter | 0 / 3 / 43 | 25 / 4 / 17 | 7 / 7 / 0 / 3 |
+| de-esser | 0 / 0 / 29 | 0 / 2 / 27 | 4 / 5 / 18 / 0 |
+| transient_shaper | 0 / 2 / 21 | 0 / 0 / 23 | 4 / 17 / 2 / 0 |
+| gate | 0 / 0 / 8 | 4 / 0 / 4 | 0 / 2 / 0 / 2 |
+| pitch | 0 / 0 / 15 | 0 / 0 / 15 | 7 / 8 / 0 / 0 |
+| **total** | **51 / 59 / 1,013** | **181 / 137 / 805** | **391 / 333 / 57 / 24** |
+
+- Compressor "mapped" fell from 42 to 32. The old count took any held profile with a passing tone check. The new one needs the amount control itself read back against this Mac's map, and judged readings exist for 32 of them.
+- The 57 "no read-back yet" are what the sweep's new read-back adds when those plugins are next mapped (guard on).
+
+### 6.5 What Sean's server must read (no server change was made)
+1. `controls[].readback` on an uploaded map. The server stores `evidence` but never serves it; the per-control read-back must be kept on the control and served.
+2. The `trust` block (section 2), computed from the same rules. Or EJ Map's `trust_levels.json` can be the input until the server computes it.
+3. Readers for the v1 profiles of the other categories (`ej_eq_profile/1`, `ej_space_profile/1`, `ej_saturation_profile/1`, `ej_gate_profile/1`, the limiter ceiling block), with only `certified_parts` offered.
+4. `COMP_PROFILES` on, for the compressor publish set (v3).
+5. The hold states: the wizard upload's `skipped` and EJ Map's hand-over. Today none reaches the server.
+
