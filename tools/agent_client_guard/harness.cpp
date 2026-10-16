@@ -342,30 +342,17 @@ int main()
         check (r.result (0).getProperty ("result", {}).getProperty ("typed", {}).toString() == "the museq" && ! r.result (0).getProperty ("result", {}).hasProperty ("tapped"),
                "A3 ...as {typed:\"<text>\"}");
         check (r.transcript.back().first == "user" && r.transcript.back().second == "the museq", "A4 the answer is the user's turn in the transcript");
-        r.round (6);
-        r.tool (R"({"id":"tc_11","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
-        r.await ({ "tc_11" });
-        pumpMs (10);
-        const auto p2 = r.posts.size();
-        // ---- SEAN'S #21 (16 Oct 2026) MOVED THIS LEG, AND IT IS A BETTER ANSWER ------------------
-        // It used to assert that a typed reply under allowFreeText:false was REFUSED with a line and
-        // the run kept waiting. His ruling: *"A new request typed while a run waits on an ask got
-        // merged into that run. A new instruction closes the waiting run (marked stopped) and starts
-        // a new run."* So with chips on screen and the server asking for a tap, text that names no
-        // chip is a new instruction: interceptTyped RETURNS FALSE (the composer's own road takes it)
-        // and the run is STOPPED. Nothing is dropped - which is the half of his rule the old
-        // behaviour did keep, and the half this one keeps as well.
-        check (! r.client.interceptTyped ("maybe") && r.posts.size() == p2
-               && ! r.client.askPending()
-               && r.client.state() == EJAgentClient::State::Stopped,
-               "A5 allowFreeText:false + text that names no choice = a NEW INSTRUCTION: the run is "
-               "stopped and the text goes down the composer's own road (Sean's #21)");
         // A FRESH ASK FOR THE TAP LEGS. The run above was stopped by the new instruction - which is
         // the point of it - so the next two legs need a question of their own rather than asserting
         // against a client that has correctly finished.
         r.round (7);
-        r.tool (R"({"id":"tc_12","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
-        r.await ({ "tc_12" });
+        // ---- ITS OWN ID (16 Oct 2026) --------------------------------------------------------
+        // I added this ask this morning and gave it `tc_12`, which the playback leg below already
+        // owns. stepById returns the FIRST match, so the playback step's completion was dropped on
+        // `s->isFinal()` against THIS one: the wait worked, the row read right, and nothing was ever
+        // posted ("posts 8->8"). An id in this harness is a name, and two legs cannot share one.
+        r.tool (R"({"id":"tc_11b","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_11b" });
         pumpMs (10);
         const auto p3 = r.posts.size();
         r.client.answerAsk ("Perhaps");
@@ -382,45 +369,6 @@ int main()
                && r.logHas ("[soft cap]"),
                "A7 the soft cap is an ordinary ask with id tc_keep_going; a tap answers it like any other");
 
-        // ---- A8: AN ANSWER IS A NAME, AN INSTRUCTION IS A SENTENCE (16 Oct 2026) -----------------
-        //
-        // The chip-less ask, which the joint live pass showed the real server sending five times out
-        // of five (`{"question":"Pick a transient shaper...","choices":[],"allowFreeText":false}`).
-        // Sean's blocker says typing must answer it; his #21 says a new instruction must close the
-        // waiting run. Held in BOTH directions here, because a one-sided test of this would ship
-        // either a swallow or a run that cannot be answered:
-        //
-        //   "MTransient"               -> the ANSWER (a name, no leading verb)
-        //   "Set the pre-gain to 2 dB" -> a NEW INSTRUCTION (a verb-led sentence): run stopped,
-        //                                 interceptTyped returns false so the composer takes it.
-        check (! EJAgentClient::typedLooksLikeNewInstruction ("MTransient")
-               && ! EJAgentClient::typedLooksLikeNewInstruction ("the EchoJay Transient")
-               && ! EJAgentClient::typedLooksLikeNewInstruction ("elysia museq")
-               && ! EJAgentClient::typedLooksLikeNewInstruction ("Pro-C 3"),
-               "A8a a NAME is never read as an instruction (no leading verb, or too short to be a sentence)");
-        check (EJAgentClient::typedLooksLikeNewInstruction ("Set the pre-gain to 2 dB")
-               && EJAgentClient::typedLooksLikeNewInstruction ("Add Pro-C 2")
-               && EJAgentClient::typedLooksLikeNewInstruction ("remove the limiter please"),
-               "A8b a VERB-LED SENTENCE is always an instruction (Sean's #21, and the live pass's B4)");
-        r.round (7);
-        r.tool (R"({"id":"tc_nochip","name":"talk","args":{"ask":{"question":"Pick a transient shaper for the kick","choices":[],"allowFreeText":false}},"approval":"free"})");
-        r.await ({ "tc_nochip" });
-        pumpMs (10);
-        check (r.client.askPending() && r.client.pendingAsk().labels.isEmpty() && r.client.pendingAsk().allowFreeText,
-               "A8c a chip-less ask waits with free text FORCED on (the server said false; there is nothing to tap)");
-        const auto pN = r.posts.size();
-        check (! r.client.interceptTyped ("Set the pre-gain to 2 dB")
-               && r.posts.size() == pN && ! r.client.askPending()
-               && r.client.state() == EJAgentClient::State::Stopped,
-               "A8d ...and a verb-led sentence typed into it STOPS the run and goes down the composer's road");
-        r.round (7);
-        r.tool (R"({"id":"tc_nochip2","name":"talk","args":{"ask":{"question":"Pick a transient shaper for the kick","choices":[],"allowFreeText":false}},"approval":"free"})");
-        r.await ({ "tc_nochip2" });
-        pumpMs (10);
-        const auto pN2 = r.posts.size();
-        check (r.client.interceptTyped ("MTransient") && r.posts.size() == pN2 + 1
-               && r.result (0).getProperty ("result", {}).getProperty ("typed", {}).toString() == "MTransient",
-               "A8e ...while a NAME typed into the same question is the answer, as {typed:\"<text>\"}");
     }
     // ---- W: wait_for_playback NEVER hangs ------------------------------------------------------------------------------
     {
@@ -438,7 +386,9 @@ int main()
         check (r.posts.size() == postsBefore + 1 && (bool) r.result (0).getProperty ("result", {}).getProperty ("played", {}) == false
                && (int) r.result (0).getProperty ("result", {}).getProperty ("waited", {}) == 1
                && r.result (0).getProperty ("result", {}).getProperty ("sentence", {}).toString() == "Nothing played in 60 seconds - play the loudest section and ask me again.",
-               "W1b with no audio the wait TIMES OUT and returns {played:false, waited:<timeout>, sentence} - the contract's sentence verbatim");
+               "W1b with no audio the wait TIMES OUT and returns {played:false, waited:<timeout>, sentence} - the contract's sentence verbatim",
+               "posts " + juce::String ((int) postsBefore) + "->" + juce::String ((int) r.posts.size())
+               + " last=" + (r.posts.empty() ? juce::String ("-") : r.posts.back().first));
         check (r.step ("tc_12")->detail == "Nothing played in 60 seconds - play the loudest section and ask me again.", "W1c ...and the row says the same sentence", r.step ("tc_12")->detail);
         check (r.logHas ("playback wait ends (timeout)"), "W1d the log names the ending");
 
@@ -510,14 +460,44 @@ int main()
     }
     // ---- U: Undo ----------------------------------------------------------------------------------------------------------
     {
+        // ---- D17, RULED 16 OCT 2026 (Sean: "accept, Undo all on multi-step runs, per-step Undo
+        //      only where it's true") -------------------------------------------------------------
+        // The plugin-wide history COALESCES consecutive edits and the sink pops its top entry, so a
+        // per-step undo is only ever TRUE of a run with one undoable step. This run has more, so the
+        // step's own Undo is refused - no token sent, the row untouched - and "Undo all" is the road.
+        const auto tokensBefore = (int) r.ex.undoneTokens.size();
         r.client.undoStep ("tc_2");
         pumpMs (10);
-        check (r.ex.undoneTokens.size() == 1 && r.ex.undoneTokens[0] == "u1" && r.step ("tc_2")->status == EJAgentClient::Step::Status::Undone && r.step ("tc_2")->detail == "undone",
-               "U1 Undo on a step sends THAT step's token and the row reads undone");
+        check ((int) r.ex.undoneTokens.size() == tokensBefore
+               && r.step ("tc_2")->status != EJAgentClient::Step::Status::Undone
+               && r.logHas ("undoable steps and the plugin's history COALESCES"),
+               "U1 with SEVERAL undoable steps a step's own Undo is REFUSED and says why (D17)",
+               "tokens " + juce::String (tokensBefore) + "->" + juce::String ((int) r.ex.undoneTokens.size()));
         check (r.client.canUndoAll(), "U2 another landed do remains, so Undo all is still offered");
         r.client.undoAll();
         pumpMs (10);
         check (r.ex.undoneCheckpoint == "cp_7" && ! r.client.canUndoAll() && r.client.notice().contains ("undone"), "U3 Undo all sends the session's checkpoint; every landed row is undone; a notice says so");
+    }
+    // ---- U4/U5: D17's OTHER DIRECTION - one undoable step, and the button does what it says -------
+    {
+        r.client.dismiss();
+        r.client.start ("set the pre-gain to 5 dB", "chat_1");
+        r.round (1);
+        r.tool (R"({"id":"tc_u1","name":"do","args":{"op":"set_pre_gain","db":5},"approval":"free"})");
+        r.await ({ "tc_u1" });
+        pumpMs (20);
+        EJAgentClientTestAccess::feed (r.client, "done", R"({"reason":"complete","summary":"Pre-gain at 5 dB.","rounds":1,"costUsd":0.0})");
+        pumpMs (10);
+        check (r.step ("tc_u1") != nullptr && r.step ("tc_u1")->canUndo(),
+               "U4 a ONE-change run has exactly one undoable step");
+        const auto t2 = (int) r.ex.undoneTokens.size();
+        r.client.undoStep ("tc_u1");
+        pumpMs (20);
+        check ((int) r.ex.undoneTokens.size() == t2 + 1
+               && r.step ("tc_u1")->status == EJAgentClient::Step::Status::Undone
+               && r.step ("tc_u1")->detail == "undone",
+               "U5 ...and ITS own Undo sends that step's token and the row reads undone",
+               "tokens " + juce::String (t2) + "->" + juce::String ((int) r.ex.undoneTokens.size()));
     }
     // ---- E: errors, retry, done, dismiss -----------------------------------------------------------------------------------
     {
@@ -694,6 +674,94 @@ int main()
         bool confirmed = false;
         for (const auto& st : r.client.steps()) if (st.id == "d1") confirmed = argFlag (st.call, "confirm");
         check (! confirmed, "M5 a DECLINED line is not confirmed - the press is permission for what was pressed");
+    }
+
+    // ---- A5 LIVES LAST TOO, AND FOR THE SAME REASON (16 Oct 2026) -------------------------------
+    // This leg ENDS a run - that is what Sean's #21 asks for - and a stopped session posts no step
+    // results (contract 1, which S5 asserts). Sitting where it used to sit, it quietly finished the
+    // session that W1b then waited on: "posts 9->9", a timeout that had worked perfectly reported as
+    // a failure. Every leg that stops a run now runs last, each in a session of its own.
+    {
+        r.client.dismiss();
+        r.client.start ("louder?", "chat_1");
+        r.round (5);
+        pumpMs (10);
+        r.round (6);
+        r.tool (R"({"id":"tc_11","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_11" });
+        pumpMs (10);
+        const auto p2 = r.posts.size();
+        // ---- SEAN'S #21 (16 Oct 2026) MOVED THIS LEG, AND IT IS A BETTER ANSWER ------------------
+        // It used to assert that a typed reply under allowFreeText:false was REFUSED with a line and
+        // the run kept waiting. His ruling: *"A new request typed while a run waits on an ask got
+        // merged into that run. A new instruction closes the waiting run (marked stopped) and starts
+        // a new run."* So with chips on screen and the server asking for a tap, text that names no
+        // chip is a new instruction: interceptTyped RETURNS FALSE (the composer's own road takes it)
+        // and the run is STOPPED. Nothing is dropped - which is the half of his rule the old
+        // behaviour did keep, and the half this one keeps as well.
+        // THE STOP IS ITSELF A POST, and always has been (stop() -> postStop() -> /api/agent/stop).
+        // My first cut of this leg asserted the post count was unchanged, which was simply wrong
+        // about the build: it failed from this morning until the gate ran the whole suite tonight.
+        // What must be true is that NO STEP answered the ask and the last thing posted is the stop.
+        juce::ignoreUnused (p2);
+        check (! r.client.interceptTyped ("maybe") && r.posts.back().first == "/api/agent/stop"
+               && ! r.client.askPending()
+               && r.client.state() == EJAgentClient::State::Stopped,
+               "A5 allowFreeText:false + text that names no choice = a NEW INSTRUCTION: the run is "
+               "stopped and the text goes down the composer's own road (Sean's #21)");
+    }
+
+    // ---- A8 LIVES LAST, BECAUSE IT STOPS A RUN (16 Oct 2026) ------------------------------------
+    // When this block sat in the middle of the file the legs after it were testing the leftovers: W1b
+    // fed its frames into the stopped session and waited for a post that could never come, and
+    // "restoring" the session with dismiss + start cost S7 the landed step whose undo it asserts. A
+    // leg that ends a run belongs where nothing follows it, with a session of its own.
+    {
+        r.client.dismiss();
+        r.client.start ("add a transient shaper to the kick", "chat_1");
+        r.round (1);
+        pumpMs (10);
+        // ---- A8: AN ANSWER IS A NAME, AN INSTRUCTION IS A SENTENCE (16 Oct 2026) -----------------
+        //
+        // The chip-less ask, which the joint live pass showed the real server sending five times out
+        // of five (`{"question":"Pick a transient shaper...","choices":[],"allowFreeText":false}`).
+        // Sean's blocker says typing must answer it; his #21 says a new instruction must close the
+        // waiting run. Held in BOTH directions here, because a one-sided test of this would ship
+        // either a swallow or a run that cannot be answered:
+        //
+        //   "MTransient"               -> the ANSWER (a name, no leading verb)
+        //   "Set the pre-gain to 2 dB" -> a NEW INSTRUCTION (a verb-led sentence): run stopped,
+        //                                 interceptTyped returns false so the composer takes it.
+        check (! EJAgentClient::typedLooksLikeNewInstruction ("MTransient")
+               && ! EJAgentClient::typedLooksLikeNewInstruction ("the EchoJay Transient")
+               && ! EJAgentClient::typedLooksLikeNewInstruction ("elysia museq")
+               && ! EJAgentClient::typedLooksLikeNewInstruction ("Pro-C 3"),
+               "A8a a NAME is never read as an instruction (no leading verb, or too short to be a sentence)");
+        check (EJAgentClient::typedLooksLikeNewInstruction ("Set the pre-gain to 2 dB")
+               && EJAgentClient::typedLooksLikeNewInstruction ("Add Pro-C 2")
+               && EJAgentClient::typedLooksLikeNewInstruction ("remove the limiter please"),
+               "A8b a VERB-LED SENTENCE is always an instruction (Sean's #21, and the live pass's B4)");
+        r.round (7);
+        r.tool (R"({"id":"tc_nochip","name":"talk","args":{"ask":{"question":"Pick a transient shaper for the kick","choices":[],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_nochip" });
+        pumpMs (10);
+        check (r.client.askPending() && r.client.pendingAsk().labels.isEmpty() && r.client.pendingAsk().allowFreeText,
+               "A8c a chip-less ask waits with free text FORCED on (the server said false; there is nothing to tap)");
+        const auto pN = r.posts.size();
+        juce::ignoreUnused (pN);
+        check (! r.client.interceptTyped ("Set the pre-gain to 2 dB")
+               && r.posts.back().first == "/api/agent/stop" && ! r.client.askPending()
+               && r.client.state() == EJAgentClient::State::Stopped,
+               "A8d ...and a verb-led sentence typed into it STOPS the run and goes down the composer's road");
+        r.round (7);
+        r.tool (R"({"id":"tc_nochip2","name":"talk","args":{"ask":{"question":"Pick a transient shaper for the kick","choices":[],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_nochip2" });
+        pumpMs (10);
+        const auto pN2 = r.posts.size();
+        check (r.client.interceptTyped ("MTransient") && r.posts.size() == pN2 + 1
+               && r.result (0).getProperty ("result", {}).getProperty ("typed", {}).toString() == "MTransient",
+               "A8e ...while a NAME typed into the same question is the answer, as {typed:\"<text>\"}");
+
     }
 
     std::printf ("\n==== agent_client_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
