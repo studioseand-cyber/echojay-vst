@@ -99,6 +99,7 @@
 #include "EjmapTrustRun.h"    // 16 Oct: the trust levels, v1 certification of the other categories
 #include "EjmapMultibandV1.h"  // 16 Oct: multiband v1
 #include "EjmapSelfGuardRun.h" // 16 Oct: the guard
+#include "EjmapReadbackSweepRun.h" // 16 Oct: the read-back-only sweep
 #include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
 #include "../../au_instantiate_probe/probe_noise.h"      // standalone: the --sweep signal=noise generator, pinned here
 
@@ -10223,6 +10224,50 @@ int main (int, char**)
                && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSelfGuardRun.h").loadFileAsString().contains ("const auto v = selfguard::judge (r.desc.name, r.desc.manufacturerName,")
                && main.contains ("const auto kept = ejmap::cert::guardedPlugins (ns, false, \"GUARD\", &dropped);"),
                "wizard WZ-GUARD-1: my own loads drop UAD / APB / Soundtoys / kHs / SSL / a remembered window / PACE and keep Waves and the rest; the list step judges every name before a load (cert branch)");
+    }
+    // WZ-RBSWEEP-1 THE READ-BACK-ONLY SWEEP (Kathy, 16 Oct, overnight): anchored controls at readbackTargets, mode controls at two labels, one
+    // --text-at-norms-multi load; a reading is kept only where the write landed on the parameter carrying the map's name; the record is the
+    // shape --trust-levels reads, so a control read back right credits the map
+    {
+        using namespace ejmap::readback;
+        const auto map = juce::JSON::parse (R"J({"fp":"F","identity":{"name":"Ess","version":"1.0"},"controls":{
+            "Threshold":{"name":"Threshold","index":0,"kind":"anchored","anchors":[[-80,0],[0,1]]},
+            "Freq":{"name":"Freq","index":1,"kind":"anchored","anchors":[[1000,0],[10000,1]]},
+            "Mode":{"name":"Mode","index":2,"kind":"mode","labels":{"Wide":0.0,"Split":0.5,"Band":1.0}},
+            "Gone":{"name":"Gone","index":3,"kind":"anchored","anchors":[[0,0],[10,1]]},
+            "Bare":{"name":"Bare","index":4,"kind":"plain"}}})J");
+        const auto ws = plan (map);
+        const auto spec = specOf (ws);
+        const juce::String out = "textmulti\tproto\t1\tcontrols\t4\n"
+            "textat\tproto\t1\tindex\t0\tname\tThreshold\tpoints\t3\tinstantiated\t0.5\t-40.0\n"
+            "at\t0.250000\tlanded\tgetValue\t0.25\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t-60.0\n"
+            "at\t0.500000\tunlanded\tgetValue\t0.40\tconfirm_ms\t-1.0\tlanded_by\tnone\ttext\t-48.0\n"
+            "at\t0.750000\tlanded\tgetValue\t0.75\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t-20.0\n"
+            "restored\t0\t0.5\tlanded\n"
+            "textat\tproto\t1\tindex\t1\tname\tFreq\tpoints\t3\tinstantiated\t0\t1000\n"
+            "at\t0.250000\tlanded\tgetValue\t0.25\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t3250 Hz\n"
+            "textat\tproto\t1\tindex\t2\tname\tMode\tpoints\t2\tinstantiated\t0\tWide\n"
+            "at\t0.000000\tlanded\tgetValue\t0\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\tWide\n"
+            "at\t0.500000\tlanded\tgetValue\t0.5\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\tSplit\n"
+            "textat\tproto\t1\tindex\t3\tname\tOther\tpoints\t3\tinstantiated\t0\t0\n"
+            "at\t0.250000\tlanded\tgetValue\t0.25\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t2.5\n"
+            "done\n";
+        const auto rec = record (map, ws, parse (out), "1.0");
+        const auto* cs = rec.getProperty ("controls", {}).getArray();
+        const auto thr = cs != nullptr && cs->size() > 0 ? (*cs)[0] : juce::var();
+        const auto rs = ejmap::trust::readingsOfRecord (rec);
+        const auto rb = ejmap::trust::creditMap (map, { { "cert:x", rs } });
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString().fromFirstOccurrenceOf ("inline int runReadbackSweep", false, false);
+        const auto mainRb = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--readback-sweep\")", false, false).upToFirstOccurrenceOf ("if (a == \"--cert-v1\")", false, false);
+        check (ws.size() == 4 && spec == "0:0.250000,0.500000,0.750000;1:0.250000,0.500000,0.750000;2:0.000000,0.500000;3:0.250000,0.500000,0.750000"
+               && cs != nullptr && cs->size() == 3 && thr.getProperty ("displayAt", {}).getDynamicObject() != nullptr && thr.getProperty ("displayAt", {}).getDynamicObject()->getProperties().size() == 2
+               && (int) thr.getProperty ("unlanded", 0) == 1 && rec.getProperty ("not_read", {}).size() == 1 && rec.getProperty ("not_read", {})[0].getProperty ("name", "").toString() == "Gone"
+               && rb.count ("Threshold") && rb.at ("Threshold").proven() && rb.count ("Freq") && ! rb.at ("Freq").proven() && rb.count ("Mode") && rb.at ("Mode").proven() && ! rb.count ("Gone")
+               && run.indexOf ("guardedPlugins (names, false, \"READBACK\")") >= 0 && run.indexOf ("guardedPlugins (names, false, \"READBACK\")") < run.indexOf ("runProbeCall")
+               && run.indexOf ("if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say (\"READBACK: \" + desc.name + \" - \" + gate.stop); ++refused; continue; }") >= 0
+               && run.indexOf ("licenceGate (opt, desc)") < run.indexOf ("runProbeCall") && run.contains ("if (recFile.existsAsFile()) { ++skipped; continue; }")
+               && run.contains ("EJ_RUNALL_UNTIL_MS") && run.contains ("if (r.kind == ChildResult::Kind::uiShown)") && mainRb.contains ("if (o.out == juce::File() ||") && ! mainRb.contains ("Library/ejmap/cert"),
+               "wizard WZ-RBSWEEP-1: the read-back-only sweep plans 3 targets / 2 labels, keeps only landed writes on the map's own parameter, credits through --trust-levels; guard and licence gate before the load, resumable, no default --out");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
