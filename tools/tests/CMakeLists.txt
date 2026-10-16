@@ -258,6 +258,10 @@ ej_add_guard(near_map_guard           SOURCE tools/near_map_guard/harness.cpp   
 ej_add_guard(dial_wait_guard          SOURCE tools/dial_wait_guard/harness.cpp                LABEL fast SCRIBBLE)
 ej_add_guard(preflight_guard          SOURCE tools/preflight_guard/harness.cpp                LABEL plugins SCRIBBLE)
 ej_add_guard(checklist_reason_guard   SOURCE tools/checklist_reason_guard/harness.cpp         LABEL fast)
+# SEAN'S #5 (16 Oct 2026): parameter ids become words. EJParamPlainNames.h was given its own header so a
+# guard could drive it and then no guard was written - and tonight the renderer turned out to be fed the
+# WRONG LIST (sentences instead of ids), which is the exact failure its header predicted.
+ej_add_guard(plain_names_guard        SOURCE tools/plain_names_guard/harness.cpp              LABEL fast)
 ej_add_guard(scrollbar_contrast_guard SOURCE tools/scrollbar_contrast_guard/harness.cpp       LABEL fast)
 ej_add_guard(stream_reroute_guard     SOURCE tools/stream_reroute_guard/harness.cpp           LABEL fast)
 ej_add_guard(borrow_budget_guard      SOURCE tools/borrow_budget_guard/harness.cpp            LABEL fast)

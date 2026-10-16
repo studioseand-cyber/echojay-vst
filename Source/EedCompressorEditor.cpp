@@ -64,6 +64,17 @@ EedCompressorEditor::EedCompressorEditor (EedCompressorProcessor& p)
                              kDefaultW, kDefaultH),
       proc_ (p)
 {
+    // ---- SEAN'S RULING, 15 Oct 2026: A 2-SECOND HOLD WITH A FIGURE ON IT -------------------------
+    // *"add a 2-second peak-hold tick on the EchoJay Compressor GR meter so I can verify the figure
+    // by eye."* He had just found that check(gr)'s absolute max (8 dB) was a transient nobody could
+    // see while the meter read 2-4, hitting 5 - so the meter has to be readable against the figure
+    // the agent reports, and a one-second flicker with no number is not.
+    //
+    // ONLY THE COMPRESSOR asks for it: GrMeter is shared by the whole Dynamics cluster and the
+    // default is untouched, so the other five faces behave exactly as before.
+    meter().setPeakHoldMs (2000);
+    meter().setShowHeldFigure (true);
+
     // All three go through setParamValue, exactly as an AI move does, so a click
     // and a dialled param cannot end up meaning different things.
     bindChoiceBox (modeBox_, EedCompressorProcessor::kMode,

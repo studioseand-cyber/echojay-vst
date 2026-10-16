@@ -68,6 +68,96 @@ juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFil
 // mentally reconciled on every read.
 juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildFile("param_maps.json"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
+// ---- SEAN'S CHECK 5, PART 2 (15 Oct 2026): PLUGINS THAT WILL NOT LOAD ------------------------------
+//
+//  "Record plugins that fail to load (unlicensed / won't instantiate) in the inventory state you send B,
+//   so they're never offered again in a pick. Clear the mark if the plugin later loads fine."
+//
+//  WHY A FILE AND NOT sessionLoadFailed_. That list is in-process and session-scoped, deliberately - a
+//  load failure means "could not authorise right now", not "not owned". But the failure happened in the
+//  LINK's process and the inventory is built in the V2's, and the pick that offered kHs Transient Shaper
+//  was made a round after the Link had already found it would not instantiate. A list that cannot cross
+//  the process boundary cannot answer the question that was asked.
+//
+//  So: a file in the shared state root, written by whichever process saw the failure, cleared by
+//  whichever process later loads the plugin successfully. Still NOT a judgement about ownership - the
+//  mark comes off the moment the thing loads, which is why it is a mark and not a blacklist.
+static juce::String sessionLoadKey(const juce::String& name, const juce::String& format);   // defined below
+
+juce::File ChainHost::getLoadFailedFile() { return appSupportDir().getChildFile("plugin_load_failed.json"); }
+
+void ChainHost::recordLoadFailure(const juce::String& name, const juce::String& format,
+                                  const juce::String& why)
+{
+    if (name.trim().isEmpty()) return;
+    const auto f = getLoadFailedFile();
+    auto v = f.existsAsFile() ? juce::JSON::parse(f.loadFileAsString()) : juce::var();
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) { root = new juce::DynamicObject(); v = juce::var(root); root->setProperty("v", 1); }
+    auto failedV = root->getProperty("failed");
+    auto* failed = failedV.getDynamicObject();
+    if (failed == nullptr) { failed = new juce::DynamicObject(); root->setProperty("failed", juce::var(failed)); }
+    auto* e = new juce::DynamicObject();
+    e->setProperty("name", name);
+    e->setProperty("format", format);
+    e->setProperty("why", why);
+    e->setProperty("atMs", (double) juce::Time::currentTimeMillis());
+    failed->setProperty(sessionLoadKey(name, format), juce::var(e));
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText(juce::JSON::toString(v, true));
+    EchoJay_NSLog(("EJLoad: marked \"" + name + "\" (" + format + ") as a plugin that does not load here ("
+                   + why + ") - it will not be offered in a pick until it loads").toRawUTF8());
+}
+
+void ChainHost::clearLoadFailure(const juce::String& name, const juce::String& format)
+{
+    const auto f = getLoadFailedFile();
+    if (! f.existsAsFile()) return;
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) return;
+    auto* failed = root->getProperty("failed").getDynamicObject();
+    if (failed == nullptr) return;
+    const auto key = sessionLoadKey(name, format);
+    if (! failed->hasProperty(key)) return;
+    failed->removeProperty(key);
+    f.replaceWithText(juce::JSON::toString(v, true));
+    EchoJay_NSLog(("EJLoad: \"" + name + "\" loaded, so its does-not-load mark is cleared - the mark is a "
+                   "reading of now, never a judgement about ownership").toRawUTF8());
+}
+
+juce::StringArray ChainHost::loadFailedPluginNames()
+{
+    juce::StringArray out;
+    const auto f = getLoadFailedFile();
+    if (! f.existsAsFile()) return out;
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) return out;
+    if (auto* failed = root->getProperty("failed").getDynamicObject())
+        for (const auto& kv : failed->getProperties())
+            if (auto* e = kv.value.getDynamicObject())
+            {
+                const auto n = e->getProperty("name").toString().trim();
+                if (n.isNotEmpty()) out.addIfNotAlreadyThere(n);
+            }
+    return out;
+}
+
+juce::String ChainHost::loadFailureReasonFor(const juce::String& name)
+{
+    const auto f = getLoadFailedFile();
+    if (! f.existsAsFile()) return {};
+    auto v = juce::JSON::parse(f.loadFileAsString());
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) return {};
+    if (auto* failed = root->getProperty("failed").getDynamicObject())
+        for (const auto& kv : failed->getProperties())
+            if (auto* e = kv.value.getDynamicObject())
+                if (e->getProperty("name").toString().trim().equalsIgnoreCase(name.trim()))
+                    return e->getProperty("why").toString();
+    return {};
+}
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 juce::File ChainHost::getStateOversizeFile() { return appSupportDir().getChildFile("chain_state_oversize.txt"); }
 
@@ -1870,11 +1960,13 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.bypassed         = s.bypassed;
     info.intendedBypassed = s.intendedBypassed;
     info.settings         = s.settings;
+    info.landedValues     = s.dialLandedValues;   // SEAN'S #1: the numbers, read back, never the request
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
     info.preTrimDb        = s.preTrimDb;         // 21p item 3
     info.outGainDb        = getSlotOutGainDb(i);  // Build 2: the OUT the hold writes, read from the same control
-    info.pictureText      = slotPictureText(i);  // 21p item 2
+    info.pictureText      = slotPictureText(i);  // 21p item 2: the FULL line (Listen card, agent)
+    info.pictureBadge     = slotPictureBadge(i); // 15 Oct: the SHORT line the tile can actually fit
     info.trimDb           = 0.0f;                // 21t-m: the compare trim is deleted; the field stays 0
     info.keepLevel        = s.keepLevel;
     info.trimText         = {};                  // 21t-m: no compare trim, no trim text
@@ -2224,6 +2316,10 @@ struct EditSeqState
     juce::StringArray results;
     std::function<void(const juce::StringArray&, int, bool)> onDone;
     std::function<void(const juce::String&)> onProgress;   // 1d stage labels
+    /** SEAN'S RULING, 15 Oct 2026: true when this batch is a deliberate choice made in THIS instance
+        (the agent on the rack this window has open), false when it arrived from another instance. The
+        pre_gain op reads it; see ChainHost::applyChainEdits's declaration for why. */
+    bool deliberateLocalEdit = false;
 };
 } // namespace
 
@@ -2232,7 +2328,8 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                                 const juce::StringArray& baseSlots,
                                 std::function<void(const juce::StringArray&,
                                                    int, bool)> onDone,
-                                std::function<void(const juce::String&)> onProgress)
+                                std::function<void(const juce::String&)> onProgress,
+                                bool deliberateLocalEdit)
 {
     auto abort = [&onDone](const juce::String& why)
     { if (onDone) onDone(juce::StringArray{ why }, 0, true); };
@@ -2526,6 +2623,7 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
 
     auto st = std::make_shared<EditSeqState>();
     st->ops = std::move(ops);
+    st->deliberateLocalEdit = deliberateLocalEdit;
     // 21m undo: the whole batch is ONE step; the per-op mutations inside push nothing
     beginUndoBatch(juce::String(st->ops.size()) + " edit" + (st->ops.size() == 1 ? "" : "s"));
     st->onDone = [this, userDone = std::move(onDone)](const juce::StringArray& r, int applied, bool aborted)
@@ -2725,11 +2823,29 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     }
     if (op.op == "pre_gain")
     {
-        // userSet FALSE: this is a remote move, not a hand on the Link's own dial. The flag exists so the
-        // Link can tell an explicit choice from a default it may still revise, and a V2's op is the former
-        // for the V2 and not for this instance - so it is recorded as what it is.
-        setPreGainDb (op.dbValue, /*userSet*/ false);
+        // ---- SEAN'S RULING, 15 Oct 2026: WHOSE CHOICE IS THIS? -----------------------------------
+        //
+        // The original reasoning stands, and stands ONLY for a batch that arrived from elsewhere:
+        // "userSet FALSE: this is a remote move, not a hand on the Link's own dial. The flag exists so
+        // the Link can tell an explicit choice from a default it may still revise, and a V2's op is
+        // the former for the V2 and not for this instance - so it is recorded as what it is."
+        //
+        // What that missed is the case where the batch IS this instance's own choice: the agent acting
+        // on the user's instruction on the rack this window has open. Writing that as AUTO had two
+        // consequences the rig caught (U1): the level-match loop could override what the agent had
+        // just set, and undoing it restored the AUTO value instead of the hand-set figure the user had
+        // - his own -5.00 dB silently replaced by 0.00.
+        //
+        //   own rack, deliberate  -> user-set, so the loop leaves it alone and undo restores it
+        //   arrived from a Link   -> userSet FALSE, exactly as the paragraph above defends
+        const float pgWas     = getPreGainDb();
+        const bool  pgWasUser = isPreGainUserSet();
+        setPreGainDb (op.dbValue, /*userSet*/ st->deliberateLocalEdit);
         const float landed = getPreGainDb();
+        // U1 (16 Oct 2026): ON THE UNDO HISTORY, or `{op:"undo"}` reverses the user's previous move
+        // instead of this one and calls it a success because the history moved.
+        if (onPreGainUndo && ! undoSuppressed_)
+            onPreGainUndo (pgWas, pgWasUser, landed, isPreGainUserSet());
         EchoJay_NSLog(("EJEdit: pre_gain asked=" + juce::String(op.dbValue, 2)
                        + " landed=" + juce::String(landed, 2) + " dB").toRawUTF8());
         finishOpAndContinue("set the pre-chain gain to " + juce::String(landed, 1) + " dB");
@@ -3147,6 +3263,16 @@ ChainHost::SlotPicture ChainHost::slotPicture(int i) const
         {
             p.grDb     = std::abs (dev->gainReductionDbForHost());   // reported as a positive amount of reduction
             p.grKnown  = true;
+            // 15 OCT 2026: and what the WINDOW saw, which is the figure the agent must quote. Taken
+            // from the device rather than sampled here, because the peaks live between any poll.
+            p.grLoudestDb     = dev->gainReductionLoudestDbForHost();   // the 95th: what a person sees
+            p.grPeakDb        = dev->gainReductionPeakDbForHost();      // one instant; spike warnings only
+            p.grHeldDb        = dev->gainReductionHeldDbForHost();      // what the TILE and the METER show
+            // SEAN'S RULING, 15 Oct 2026: an EchoJay device reports its own reduction, so it is
+            // certified by construction. A third party is certified only by its map (below).
+            p.grCertified     = true;
+            p.grTypicalDb     = dev->gainReductionTypicalDbForHost();
+            p.grWindowFrames  = dev->grWindowFramesForHost();
             p.dynamics = true;
             p.valid    = true;
             p.preTrimDb  = getSlotPreTrimDb (i);
@@ -3161,27 +3287,154 @@ bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, doub
     // const_cast: getSlotProcessor is non-const on this class but the device's getParamValue is const, and
     // this function promises not to change anything. The alternative is a const overload of the getter for
     // one caller.
-    auto* dev = dynamic_cast<EedDeviceProcessor*> (const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex));
-    if (dev == nullptr) return false;          // not a built-in: its values are not readable from here
-    out = dev->getParamValue (paramId);
+    auto* proc = const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex);
+    if (auto* dev = dynamic_cast<EedDeviceProcessor*> (proc))
+    {
+        // ---- SEAN'S #4 (16 Oct 2026): AN UNKNOWN ID IS NOT A ZERO -------------------------------
+        // getParamValue returns 0.0 for a name it does not have, and the agent's read-back then
+        // compared that 0.0 with what it asked for. The device says so itself now.
+        if (! dev->knowsParam (paramId)) return false;
+        out = dev->getParamValue (paramId);
+        return true;
+    }
+
+    // ---- SEAN'S #1 (16 Oct 2026): A THIRD PARTY'S KNOBS, READ FROM THE PLUGIN ITSELF -------------
+    //
+    // "add-with-settings never dials a third-party plugin (MTransient, bx_townhouse Buss Compressor,
+    // SSL Native X-Comp v6 and Transient Master all stayed at defaults/INIT)."
+    //
+    // The DIAL's cause was a missing map, fixed on its own road (the Link's maps-wanted/maps-ready
+    // channel). This is the other half: the READ-BACK. It used to return false for anything that was
+    // not an EchoJay device, so every third-party add could only ever be reported "not confirmed" -
+    // honest, but it meant the one check that would have caught a plugin sitting at its defaults
+    // could not run on the plugins it was written for.
+    //
+    // It reads the PLUGIN, not the request: the map resolves the semantic to a parameter (by NAME,
+    // with the stored index as a hint - the same resolution the write used), and the figure comes from
+    // that parameter's own display text, parsed in the unit the semantic implies. So "attack_db 0.00"
+    // on an MTransient that was never dialled reads as 0.00 and the comparison fails, which is the
+    // whole point.
+    //
+    // FALSE, NEVER A GUESS, in every case it cannot do this honestly: no fingerprint, no map, no entry
+    // for that semantic, an unresolved parameter, or display text that does not parse as a number in
+    // that unit. The caller reports those as `not_confirmed`, which is true - this build cannot read
+    // that value - and that is a different statement from "the setting did not land".
+    auto* plug = dynamic_cast<juce::AudioPluginInstance*> (proc);
+    if (plug == nullptr) return false;
+    const auto& s = slots_[(size_t) slotIndex];
+    if (s.fp.isEmpty()) return false;
+    const auto mapIt = paramMaps_.find (s.fp);
+    if (mapIt == paramMaps_.end()) return false;
+    // ---- TWO TABLES, BECAUSE A THIRD-PARTY DIAL USES BOTH (16 Oct 2026) ------------------------
+    // `params` is keyed by SEMANTIC ("attack_db"); `controls` is keyed by the plugin's own CONTROL
+    // NAME ("Attack (Transient)"), which is the shape a third-party dial actually uses - the contract
+    // says so in as many words: *"`params` in the built-in's own units, `controls` in the map's
+    // display units as the registry prints them."* The first cut of this read looked only in `params`,
+    // so the one shape Sean's four plugins are dialled through could not be read back at all. The
+    // normalised-name rescue is the same one the WRITE uses, so the two resolve a name identically.
+    const auto mapParams   = mapIt->second.getProperty ("params", juce::var());
+    const auto mapControls = mapIt->second.getProperty ("controls", juce::var());
+    auto entry = mapParams.isObject() ? mapParams.getProperty (juce::Identifier (paramId), juce::var())
+                                      : juce::var();
+    if (! entry.isObject() && mapControls.isObject())
+    {
+        entry = mapControls.getProperty (juce::Identifier (paramId), juce::var());
+        if (! entry.isObject())
+            if (auto* mo = mapControls.getDynamicObject())
+            {
+                const auto want = echojay::normalizeControlName (paramId);
+                for (auto& mk : mo->getProperties())
+                    if (echojay::normalizeControlName (mk.name.toString()).equalsIgnoreCase (want))
+                    { entry = mk.value; break; }
+            }
+    }
+    if (! entry.isObject()) return false;
+    juce::String how;
+    const int idx = echojay::resolveParamIndex (*plug, entry, paramId, how);
+    auto& params = plug->getParameters();
+    if (idx < 0 || idx >= params.size() || params[idx] == nullptr) return false;
+    const auto text = params[idx]->getCurrentValueAsText();
+    // The unit the map declares for this control wins over the one the semantic's name implies: a
+    // control mapped as "unit":"db" on a plugin whose key is "attack" must be parsed as dB.
+    auto unit = entry.getProperty ("unit", juce::var()).toString().trim().toLowerCase();
+    if (unit.isEmpty()) unit = echojay::semanticUnit (paramId);
+    float v = 0.0f;
+    bool negInf = false;
+    if (! echojay::parseDisplayForUnit (text, unit, v, negInf)) return false;
+    // "-oo" IS a reading, and the only honest number for it is the floor the parser hands back; it is
+    // reported as-is rather than suppressed, because a threshold at -inf is a real setting.
+    out = (double) v;
+    EchoJay_NSLog (("EJReadback: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                    + "\") third-party read \"" + paramId + "\" -> param " + juce::String (idx)
+                    + " (" + how + ") shows \"" + text.trim() + "\" = " + juce::String (out, 3)
+                    + " " + unit).toRawUTF8());
     return true;
 }
 juce::String ChainHost::slotPictureText(int i) const
 {
     const auto p = slotPicture(i);
-    if (! p.valid)
+    // ---- SEAN, 15 OCT 2026: NEVER PRINT THE SENTINEL -------------------------------------------------
+    //
+    // This read "in -200.0 / out -200.0 dBTP - -200.0 / -200.0 LUFS" on every slot whose GR could be read,
+    // because ship 1's fix 3 set `valid` from the GR alone and left the peaks and the loudness at their
+    // no-reading floor. `valid` was never four gates, and printing a floor as a figure is worse than
+    // printing nothing: the user (and the agent reading the same string) cannot tell it from a measurement.
+    //
+    // So each GROUP prints only when it has a reading of its own, and a slot with no real figure at all
+    // says "no reading" - the rule the OUT caption already follows: say nothing rather than claim one.
+    if (! p.valid || ! p.anyReading())
     {
         // R1 (21s-b): an exempt slot has no reading, but it DOES have trims, and they are what a stale one hides in.
         if (p.exempt) return "no reading (exempt: pre " + juce::String(p.preTrimDb, 1) + ", post " + juce::String(p.postTrimDb, 1) + " dB)";
-        return p.why.isEmpty() ? juce::String() : "no reading";
+        return (p.why.isEmpty() && ! p.valid) ? juce::String() : juce::String("no reading");
     }
-    juce::String t = "in " + juce::String(p.inTpDb, 1) + " / out " + juce::String(p.outTpDb, 1) + " dBTP";
+    juce::StringArray parts;
+    if (p.hasPeaks())
+        parts.add("in " + juce::String(p.inTpDb, 1) + " / out " + juce::String(p.outTpDb, 1) + " dBTP");
     // R3 (21s-b): the LOUDNESS pair beside the peaks - it has been measured all along and never shown.
-    t += juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(p.inLufs, 1) + " / " + juce::String(p.outLufs, 1) + " LUFS";
-    if (p.dynamics) t += juce::String::fromUTF8(" \xc2\xb7 working ") + juce::String(p.inLufs - p.outLufs, 1) + " dB";
-    if (p.grKnown) t += juce::String::fromUTF8(" \xc2\xb7 GR ") + juce::String(p.grDb, 1);
+    if (p.hasLoudness())
+    {
+        parts.add(juce::String(p.inLufs, 1) + " / " + juce::String(p.outLufs, 1) + " LUFS");
+        // "working" is a DIFFERENCE of two loudness readings, so it needs both of them to exist. It was
+        // being printed from two sentinels, which came out as a confident 0.0 dB.
+        if (p.dynamics) parts.add("working " + juce::String(p.inLufs - p.outLufs, 1) + " dB");
+    }
+    // SEAN'S RULING, 15 Oct 2026, APPLIES TO THE FULL LINE TOO - the agent reads this string, so an
+    // uncertified slot must carry no figure here either, and the figure that IS carried is the same
+    // 2 s hold the tile and the device's own meter draw.
+    if (p.grKnown && p.grCertified) parts.add("GR " + juce::String(p.grHeldDb, 1));
+    juce::String t = parts.joinIntoString(juce::String::fromUTF8(" \xc2\xb7 "));
     if (p.hot())     t += " HOT";
     if (p.working()) t += " WORKING";
+    return t;
+}
+int ChainHost::resetGrWindows()
+{
+    int n = 0;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+        if (auto* dev = dynamic_cast<EedDeviceProcessor*> (getSlotProcessor (i)))
+            if (dev->reportsGainReduction()) { dev->resetGrWindowForHost(); ++n; }
+    return n;
+}
+juce::String ChainHost::slotPictureBadge(int i) const
+{
+    // THE TILE'S SHORT FORM. The gain reduction and the two flags are what a glance at the strip is for;
+    // the peaks and the loudness pair are four figures and belong on the Listen card. Deliberately short
+    // enough to fit the 118 px trim row at 6.5 pt, because the reason this caption was over the buttons is
+    // that the full line never could.
+    const auto p = slotPicture(i);
+    if (! p.valid) return {};
+    // ---- SEAN, 15 Oct 2026: THE TILE MUST EQUAL THE DEVICE'S OWN METER --------------------------
+    // "the tile must match the device's own GR meter (tile said 0.4 while the meter said 1.2)". They
+    // disagreed because the tile took an INSTANT whenever the strip refreshed while the meter drew a
+    // hold. Both read the core's 2 s hold now, so they cannot differ.
+    //
+    // AND NO ESTIMATES, EVER: a figure appears only for a certified slot - an EchoJay device, or a
+    // third party whose map passed the EJ Maps sweep. Everything else shows nothing at all.
+    juce::String t;
+    if (p.grKnown && p.grCertified) t = "GR " + juce::String(p.grHeldDb, 1);
+    if (p.hot())     t += t.isEmpty() ? juce::String("HOT") : juce::String(" HOT");
+    if (p.working()) t += t.isEmpty() ? juce::String("WORKING") : juce::String(" WORKING");
     return t;
 }
 juce::StringArray ChainHost::listenCardLines() const
@@ -3199,10 +3452,20 @@ juce::StringArray ChainHost::listenCardLines() const
                                 : juce::String()));
             continue;
         }
-        juce::String line = s.desc.name + ": in " + juce::String(p.inTpDb, 1) + " dBTP, out " + juce::String(p.outTpDb, 1) + " dBTP"
-                          + ", in " + juce::String(p.inLufs, 1) + " LUFS, out " + juce::String(p.outLufs, 1) + " LUFS"
-                          + (p.dynamics ? ", working " + juce::String(p.inLufs - p.outLufs, 1) + " dB" : juce::String());
-        if (p.grKnown) line += ", GR " + juce::String(p.grDb, 1) + " dB";
+        // SAME RULE AS slotPictureText (15 Oct): a group is printed only when it has a reading. This card
+        // was quoting the -200 floor too, and the agent reads these lines.
+        juce::String line = s.desc.name + ":";
+        juce::StringArray bits;
+        if (p.hasPeaks())
+            bits.add(" in " + juce::String(p.inTpDb, 1) + " dBTP, out " + juce::String(p.outTpDb, 1) + " dBTP");
+        if (p.hasLoudness())
+        {
+            bits.add(" in " + juce::String(p.inLufs, 1) + " LUFS, out " + juce::String(p.outLufs, 1) + " LUFS");
+            if (p.dynamics) bits.add(" working " + juce::String(p.inLufs - p.outLufs, 1) + " dB");
+        }
+        if (p.grKnown && p.grCertified) bits.add(" GR " + juce::String(p.grHeldDb, 1) + " dB");
+        if (bits.isEmpty()) { out.add(s.desc.name + ": no reading"); continue; }
+        line += bits.joinIntoString(",");
         if (std::abs(p.preTrimDb) >= 0.1f || std::abs(p.postTrimDb) >= 0.1f)
             line += " (pre " + juce::String(p.preTrimDb, 1) + ", post " + juce::String(p.postTrimDb, 1) + " dB)";
         if (p.hot())     line += "  - over " + juce::String(kSlotInputCeilingDb, 0) + " dBTP into this slot";
@@ -4224,6 +4487,10 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     GraphMutation graphMutation(*this);   // v9 change B
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
+    // ...and the cross-process one, which is the half the agent's pick reads (Sean's check 5, part 2).
+    // "Clear the mark if the plugin later loads fine" - and a built-in standing in for something is not
+    // that thing loading, so only a real load clears it.
+    if (! isBuiltinDescription(desc)) clearLoadFailure(desc.name, desc.pluginFormatName);
     if (inst != nullptr && ! isBuiltinDescription(desc)) markKnownGood(desc);   // pre-flight (17 Sep 2026): an in-host create succeeded -> known-good
 
     if (mode_ == Mode::Borrowed) ++borrowFresh_;   // the gate's counter
@@ -5947,6 +6214,41 @@ void ChainHost::collapseFlatDuplicates(const juce::var& structured, std::vector<
 }
 // The report -> the slot's dial fields (manual / applied / readback lists, the status). Extracted (18g) so a harness can
 // record a report on a slot through EchoJayBorrowHostTestAccess and read the same bubble the build composes.
+// ---- SEAN'S #1 (16 Oct 2026): A BUILT-IN'S LANDED VALUES, FROM THE DEVICE ------------------------
+//
+// The mapped path records these inside recordApplyReport, from each control's display text. A built-in
+// has no map and no display text, but it has something better: the device itself, which answers
+// getParamValue(id) for every id it knows. So both roads fill the SAME field and the Link read-back has
+// one road to trust rather than a prose parse that cannot tell a request from a reading.
+//
+// ONLY IDS THE DEVICE SAYS IT KNOWS (knowsParam, added for Sean's #4): an unknown id used to come back
+// as 0.0, and recording that here would have put a fabricated zero into the one field whose whole
+// purpose is to be trustworthy.
+void ChainHost::recordBuiltinLandedValues (int slotIndex)
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return;
+    auto& s = slots_[(size_t) slotIndex];
+    s.dialLandedValues.clear();
+    auto* dev = dynamic_cast<EedDeviceProcessor*> (getSlotProcessor (slotIndex));
+    if (dev == nullptr) return;
+    auto* root = s.structuredSettings.getDynamicObject();
+    if (root == nullptr) return;
+    auto* asked = root;
+    if (auto* p = root->getProperty ("params").getDynamicObject()) asked = p;
+    for (auto& kv : asked->getProperties())
+    {
+        const auto id = kv.name.toString();
+        const auto want = kv.value;
+        // A mode NAME is not a number and has no landed figure of this kind; the readback summary
+        // carries it as a label and nothing here pretends otherwise.
+        if (! (want.isDouble() || want.isInt() || want.isInt64() || want.isBool())) continue;
+        if (! dev->knowsParam (id)) continue;
+        const double v = dev->getParamValue (id);
+        s.dialLandedValues << (s.dialLandedValues.isEmpty() ? "" : ";")
+                           << id << "=" << juce::String (v, 4).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+    }
+}
+
 juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& map, std::vector<ApplyReport>& report)
 {
     auto& s = slots_[(size_t) slotIndex];
@@ -5962,6 +6264,7 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
     s.dialApproximate.clear();
     s.dialServedFrom = map.getProperty("served_from", juce::var()).toString();
     s.dialOutOfRange.clear();
+    s.dialLandedValues.clear();   // SEAN'S #1: rebuilt from this report's READ-BACKS, below
     // dial-3 denominator (A3): the count of settings the model asked for,
     // stored HERE because appliedCount + manual.size() is not a substitute
     // (both dedupe through semanticLabel).
@@ -6031,6 +6334,29 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
             // reverts, lands in dialManual/dialReadbackMiss, and uploads a
             // readback_mismatch dial_miss.
             appliedSummary.add(line);
+            // ---- SEAN'S #1 (16 Oct 2026): THE LANDED NUMBER, FROM THE PLUGIN'S OWN DISPLAY -------
+            // `line` above is formatSemanticSetting(semantic, r.requestedValue) - the ASKED value - and
+            // that is right for the card, which is a record of what the user's turn requested. It is
+            // the wrong thing to confirm a setting against, and the agent's Link read-back was parsing
+            // its numbers back out of exactly that text. landedText is what the control SHOWS.
+            if (r.landedText.isNotEmpty())
+            {
+                float landed = 0.0f; bool negInf = false;
+                const auto unit = echojay::semanticUnit (r.semantic);
+                if (echojay::parseDisplayForUnit (r.landedText, unit, landed, negInf))
+                {
+                    // THE KEY IS SANITISED, because on this path it is a CONTROL NAME, not a semantic -
+                    // "Attack (Transient)" - and the two characters this packed form uses as structure
+                    // are the two a name must therefore not contain. The comment on dialLandedValues
+                    // argues ';' and '=' cannot appear in a VALUE, which is true and was not the whole
+                    // story once a controls dial started writing its own names in here.
+                    auto key = r.semantic;
+                    key = key.replaceCharacter (';', ',').replaceCharacter ('=', '-');
+                    s.dialLandedValues << (s.dialLandedValues.isEmpty() ? "" : ";")
+                                       << key << "=" << juce::String ((double) landed, 4)
+                                                           .trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+                }
+            }
             s.dialApplied.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));   // 18g: the readback list the bubble and the loop trust
             // The bridged report-only case is NOT the silent class: the
             // display DISAGREED and the write was kept anyway, on a measured
@@ -6232,6 +6558,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
             { if (auto* dev = dynamic_cast<EedDeviceProcessor*> (getSlotProcessor (slotIndex))) return dev->readbackSummaryForHost();
               return {}; }();
             s.settings   = "Applied automatically\n" + (back.isNotEmpty() ? back : summary);
+            recordBuiltinLandedValues (slotIndex);   // SEAN'S #1: the numbers, from the device
             clearModelTiers(s);   // built-in: no map, no tiering
             // Honest verdict, same contract as the mapped path: anything the
             // device could not place (the EQ was full, an id was unknown) is
@@ -6288,6 +6615,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                 s.settings = "Applied automatically\n" + back;
                 EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " readback -> " + back).toRawUTF8());
             }
+            recordBuiltinLandedValues (slotIndex);
         }
         if (onSlotSettingsChanged) onSlotSettingsChanged();
         return;
@@ -8087,6 +8415,11 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                     // absent on this machine); gone on plugin reload.
                     sessionLoadFailed_.addIfNotAlreadyThere(
                         sessionLoadKey(fullDesc.name, fullDesc.pluginFormatName));
+                    // SEAN'S CHECK 5, PART 2 (15 Oct 2026): and across processes and sessions, so the
+                    // agent's pick stops offering it. The session list above cannot answer that - the
+                    // failure happens in the LINK and the pick is made in the V2.
+                    recordLoadFailure(fullDesc.name, fullDesc.pluginFormatName,
+                                      err.isNotEmpty() ? err : juce::String("createPluginInstance returned nullptr"));
                     // 21t-m (30 Sep 2026, measured): the same function tests `callback` at four sites and
                     // invoked it bare at four others, including this async completion. A caller that passes no
                     // callback - the signature allows it, and level_slot_guard already does for built-ins - then

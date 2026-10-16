@@ -25,6 +25,8 @@ before the fix and PASSES after**, one full gate from S1, and nothing installed 
 >   floats just ABOVE the composer box, because there is no room under it (DESIGN_AGENT_IN_CHAT.md §6).
 > - **item 0's surface (the panel becoming a transcript row) and 0b: NOT STARTED, and blocked** - their
 >   rig legs cannot run until the rig can really close a window (see "OWED FROM SHIP 1" above).
+> - **item 0 + 0b: BUILT 15 Oct** (see DESIGN_AGENT_IN_CHAT.md §1b), with one limit stated in A2 below:
+>   a BUILD still needs a window and parks without one.
 > - **the plugin-choice card, the OUT knob, multi-track jobs, 0a: NOT STARTED.** The OUT knob's groundwork
 >   is written up in §6 below: both racks clamp to -24..+12 dB, a Link's OUT is already one value.
 
@@ -126,6 +128,405 @@ Shape, in order:
    the three skips (C11's and R4's "the plugin's editor was destroyed by that close") become real rows.
 4. Only then are item 0b's legs writable: close mid-run / reopen mid-run / approvals and asks surviving a
    close / Stop after a reopen / no editor at all for the whole run / two windows.
+
+# AFTER THE OVERNIGHT ROUND OF 15/16 OCT — WHAT IS LEFT, IN SEAN'S ORDER
+
+Everything on his overnight fix list (#1–#8) is built and in the gate. These are what remain.
+
+## #9. A LINK'S GR AND METERS IN THE MAIN PLUGIN'S MIRROR — QUEUED, and why
+Sean: *"a Link's GR and meters work in its own window but don't show in the main plugin's mirror of that
+rack. Send them across. If it's too big for tonight, queue it."* It is.
+
+`LinkMeterFrame` is **full**: 128 bytes, and its own header says *"the only honest four bytes do not
+exist"*. Carrying a rack's PER-SLOT gain reduction and meters across needs a new field group in the shared
+registry — a layout change to the one structure both binaries must agree on byte for byte, with its own
+two-sided guard and its own downgrade story (an old Link reading a new V2's frame, and the reverse). That
+is a round, not an evening's addition on top of nine other fixes.
+
+It also wants **item 0a's deep-meter region**, which is already queued and is the right home for it. Do the
+two together.
+
+## THE THIRD-PARTY GR ESTIMATE — CANCELLED BY SEAN'S OWN LATER RULING
+He queued it on 15 Oct (*"estimate it from the slot's own in/out metering… label the result an estimate"*)
+and then ruled, later the same day, **"NO estimates, ever"**. The later ruling is taken as the live one and
+the item is off the queue. The tile and `check(gr)` now show a figure only for an EchoJay device or a
+plugin whose map is CERTIFIED; everything else shows nothing and `check(gr)` answers `not_certified`.
+Flagged here rather than deleted silently, in case he meant the estimate to survive for third parties that
+are never going to be certified.
+
+## WHAT THE OVERNIGHT ROUND DID NOT TOUCH (his own ordering, unchanged)
+item 0's remaining rows and **0b** (its behaviour is now a separate switch and is OFF until row B3 proves a
+windowless run applies its change), the **plugin-choice card**, the **OUT knob** (O1–O6), **multi-track
+jobs**, **0a**, and the **chat-list round** (linked entries, the agent icon, the All/Agent filter, the
+search) — which still needs B's answer on where `touchedChannels` lives (FOR_B §6).
+
+## LESSONS RECORDED THIS ROUND, so they are not re-learned
+1. **A FIELD NAMED FOR WHAT IT LOOKS LIKE.** The Link read-back parsed numbers out of the slot's settings
+   TEXT, which is composed from the value the request ASKED FOR. The check written to catch an unapplied
+   setting could confirm one against an echo of its own request. The lesson is the one this codebase has
+   written down twice before and it arrived in a third costume: **a confirmation must read a different
+   source from the one the request wrote.**
+2. **TWO SWITCHES PRETENDING TO BE ONE.** Item 0's renderer and item 0b's behaviour shared a gate, which
+   was safe only while both were off. Turning the proven half on would have shipped the unproven half with
+   it. Separate switches from 16 Oct.
+3. **A FLAG THAT MOVES THE RIG AND NOT THE PRODUCT.** `EJ_AGENT_ROW` turned rows on in the rig and changed
+   nothing in the plugin, so G1–G7 spent a week proving a configuration that did not ship. The rig's gate
+   now *mirrors the plugin's own function*, and the env var the rig reads is the same one the plugin reads.
+4. **A HEADER THAT ASKS FOR A GUARD AND DOES NOT GET ONE.** EJParamPlainNames.h says, in its own comment,
+   that it exists as a separate header *so a guard can drive it*. No guard was written, and the renderer
+   turned out to be fed whole sentences instead of ids — rendering "the 00) of 6". `plain_names_guard` now
+   drives the renderer **and pins the call site**, because the defect was in the call.
+5. **A WAIT THAT MEASURED WHO WAS PRESENT, NOT WHAT WAS HAPPENING.** Gate 22's own pre-flight blocked
+   while B's node process EXISTED, to avoid gate 17's contention timeouts. Ten minutes in, the machine was
+   idle at load 1.8 with that process still alive and doing nothing. The hazard is CPU contention and the
+   load average measures it; a pid is a proxy that can be wrong in both directions. It waits on the load
+   now, bounded, and says whether B is merely present or actually busy. Same family as "decisions on
+   uncontrolled timing", arriving as a wait rather than as a read.
+6. **NO SOURCE EDIT BETWEEN S1 AND THE END OF S4.** I fixed the crash bug above while S4 was still
+   running, reasoning that the binaries were already compiled so a Source edit could not matter. It is
+   false: `link_build_level_guard` and `alias_mirror_guard` **compile the link side at test time** against
+   the archive and check its provenance, so both correctly refused a tree whose source was newer than the
+   archive — two reds with nothing wrong behind them, and an hour's gate thrown away to find that out. The
+   manifest rule protects the BUNDLES; it says nothing about guards that build.
+7. **THE RIG HAD NEVER LOADED A THIRD-PARTY PLUGIN.** The mock answered `/api/params/maps` with `{}`, so no
+   third party could ever be dialled in it — which is the single reason four plugins sitting at their
+   defaults in Logic passed a green rig. Row T1 loads the real MTransient, samples its own control for
+   anchors and keys the map on the product's own fingerprint function.
+
+# AHEAD OF EVERYTHING (Sean, 15 Oct 2026, from his Logic pass on ship_2026-10-15b)
+
+Three items, ruled ahead of the remaining round work. Items 2 and 3 are regressions in the build Sean is
+testing right now, so all three go in the SAME ship as item 0 + 0b rather than after it - that is the first
+build he will install, and a fix he has already reported should not wait behind a feature.
+
+## 1. `check(gr)` MUST REPORT THE MAX-HOLD OVER THE LISTEN WINDOW, NOT A MOMENTARY READING
+
+> *"check(gr) must report the max-hold over the whole listen window (the compressor's grMax), not a
+> momentary reading. Sean's test: the agent saw 2.1 dB on a quiet moment while the meter showed -3.7 dB and
+> loud parts hit 4-5 dB. Return both current and max, and name which is which."*
+
+A single instantaneous sample of gain reduction is not a measurement of what a compressor is doing - it is a
+measurement of the moment it happened to be read in, which is the "decisions on uncontrolled timing" fault
+with a dB sign on it. 2.1 dB read against 4-5 dB peaks is not a small error; it is the wrong answer, and the
+agent then reasons from it for the rest of the run.
+
+### HOW IT COMPUTED ITS FIGURE (Sean asked; answered from the code, 15 Oct)
+
+**Sean's guess was right.** The chain is three links and there is no accumulation anywhere in it:
+
+1. `EedDynamicsCore::gainReductionDb()` returns `grDb_` - **one float, overwritten every audio block** with
+   the reduction for that block. It is the editor's GR-meter tap and nothing more.
+2. `ChainHost::slotPicture(i)` calls `std::abs(dev->gainReductionDbForHost())` **at the moment it is
+   asked**, with no history and no gate on whether audio is playing.
+3. `ExecutorRead`'s `check(gr)` calls `slotPicture` once, when the tool call runs - which is right after
+   the listen window ends, i.e. after the loud part has gone past.
+
+So the figure is **the instantaneous reduction at one arbitrary instant**, and the instant is systematically
+the worst one available: the release tail or a quiet moment just after "Got it, you can stop". 0.1 dB and
+2.1 dB against a meter showing 5 dB are not an error of degree - they are the wrong question answered
+correctly. This is the "decisions on uncontrolled timing" rule with a dB sign on it: *wait with a bound, or
+say it is provisional.*
+
+**Build:** the device accumulates over the listen window **on the audio thread, where every block is seen** -
+a peak hold and a histogram for the median - **gated on audio actually being present**, and the window is
+reset when a listen begins (`ToolExecutor::beginListenWindow`, called by the client's `beginPlayback`). The
+read returns the **peak** and the **typical (median of the active blocks)**, plus the current value, each
+NAMED, with how long the window was. A sampler on a 1 Hz timer would have missed the peaks it exists to
+catch, so the accumulator is in the device and not in a poller.
+
+**Rig row G8:** a known signal into the EchoJay Compressor, and the agent's **peak must match the
+compressor's own meter max within 0.5 dB** - the row Sean specified. A row that only checked "a number came
+back" would pass today.
+
+### 1b. QUEUED AFTER THE CURRENT WORK: GAIN REDUCTION FOR THIRD-PARTY COMPRESSORS
+
+> *"We can't read their meters, but we host them, so estimate it from the slot's own in/out metering:
+> during quiet passages the in/out difference is makeup gain, and the extra drop on loud passages is gain
+> reduction. Accumulate peak and typical over the listen window, as for the EchoJay Compressor, and label
+> the result an estimate. Later this can be cross-checked against Kathy's EJ Maps compressor sweep
+> profiles."*
+
+The method is sound and the plumbing is already there: `SlotPicture` carries the slot's own in/out peaks and
+loudness, and item 1's window accumulator (below) is the thing to extend - it should accumulate the
+**in/out difference** per block for every measured slot, not only the GR of the built-ins that report one.
+
+**Two things that must not be fudged when it is built:**
+
+1. **It is an ESTIMATE and must be labelled one in the field name, not only in prose** - `grEstimateDb`
+   beside `grDb`, never the same key, so no caller can quote an estimate as a reading. The `dialCapable`
+   rule's own words apply: *the fallback is INCAPABLE, not unknown.*
+2. **The makeup baseline is itself a measurement with a window**, so it needs the quiet-passage detection to
+   be gated and bounded the same way: no quiet passage observed means no baseline means **no estimate**,
+   said plainly, rather than a number derived from one block.
+
+**Rig row:** a third-party or stand-in compressor with known settings, and the estimate must land within
+1 dB of its true reduction.
+
+---
+
+## 2. BUG (mine, from ship 2): THE AGENT MODE LINE IS DRAWN OVER THE CHAIN VIEW
+
+> *"the floating Agent mode line ("Ask: small moves just happen...") is drawn over the Suggested Settings
+> text in the chain view. It must only appear above the chat composer, never over other panels."*
+
+My own regression. The line floats above `chatBoxRect_` using the Reaper key-hint idiom, but it is not gated
+on the composer being on screen - so on the chain view it paints over Suggested Settings. It must be visible
+only where the composer it describes is visible.
+
+**Rig row G9:** the line is present with the chat composer in front, and ABSENT on the chain view - asserted
+on the published rect, not on a screenshot.
+
+## 3. BUG (since 15a): THE SLOT CAPTION DRAWS INSIDE THE TILES AND PRINTS THE -200 SENTINEL
+
+> *"the per-slot caption (slotPictureText) now draws inside the slot tiles on the chain strip, overlapping
+> the B/X/</> buttons, and shows "-200.0 dBTP" (the no-reading sentinel) as if it were a value. Either give
+> it proper space or hide it, and never print the -200 sentinel: show nothing until there's a real reading."*
+
+Two faults in one caption, and the second is the one that matters: **-200.0 dBTP is the absence of a
+reading, printed as a reading.** That is exactly the trap `LinkMeterFrame`'s own comment names - *"an
+ungated dB field reading 0.0f would render as a real measurement"* - and the rule here is the same one the
+OUT caption already follows: say nothing rather than claim a figure.
+
+**Build:** the sentinel is never rendered (no reading -> no caption), and the caption gets its own space or
+is hidden rather than painted over the tile's buttons.
+
+**Rig row G10:** no slot caption contains "-200", and no caption rect intersects a slot button's rect.
+
+---
+
+## 4. SEAN'S CHECK 5 (15 Oct 2026) - BUILT IN THE SAME SHIP
+
+### 4a. What actually happened to kHs Transient Shaper, from the log
+
+```
+08:11:18  (EchoJay Link) EJLoad: "kHs Transient Shaper" FAILED to load
+                         - An OS error occurred during initialisation of the plug-in (-1)
+08:11:18  (EchoJay Link) EJLoad: ... and no built-in stands in for role "" - the slot is empty
+08:11:58  (EchoJay V2)   EJAgent: ask card: "...the rack refused it (partial)"
+```
+
+**It failed to instantiate.** No auth dialog (no PACE prompt anywhere in the log), no partial load - the AU
+returned OS error -1 at initialisation, which is what an unlicensed kHs does, and the slot ended empty. The
+Link wrote that exact sentence into its ack's `perPluginResults`, and **`awaitChainAck` only ever read
+`status` and `reason`** - and a BUILD ack sets no `reason`. So "(partial)" was the whole of what the V2, the
+agent and the user ever learned, twice.
+
+**Built:** `awaitChainAck` reads `perPluginResults`, puts the troubled lines FIRST in the sentence (a count
+is not a reason), and hands back a separate `technical` string - the ack's status, every per-plugin line and
+the per-plugin detail. The sink and `DoSinks::applyChainOps` carry three arguments now instead of one, and
+the failure is raised with `failureFor(code, technical, userLine)` so the model and Details get the
+technical account while the person gets the rack's own plain sentence. **Details can no longer repeat the
+summary**, because the two are different strings by construction - and where there genuinely is nothing
+technical, no Details control appears at all, which is the honest outcome rather than a button that repeats.
+
+### 4b. Plugins that do not load are recorded, and never offered again
+
+`sessionLoadFailed_` already existed and could not answer the question: it is in-process and session-scoped,
+the failure happened in the **Link's** process, and the pick was made in the **V2's** a round later. So:
+`plugin_load_failed.json` in the shared state root, written by whichever process saw the failure, **cleared
+the moment the plugin loads for real** - a reading of now, never a judgement about ownership. The inventory
+the agent picks from withholds them, and the start context NAMES them with the host's own reason so the
+model can say what happened instead of trying a third time. A plugin the user names is still used as named.
+
+### 4c. TOP PRIORITY: settings on add / replace / build are read back
+
+> *"It was added to the Link, but its Attack is still 0.00 dB, while the closing said 'attack pushed up
+> +6 dB and sustain pulled down -2 dB'."*
+
+**MTransient has no map.** From the log:
+
+```
+08:15:13.722 (Link) EJDial: slot 1 ("MTransient") NO MAP for fp=3decf53d6bc0
+                    fetch_requested=n in_flight=n fetch_wired=n cached_maps=181 -> noMap
+08:16:42.233 (V2)   EJApply: slot 1 "MTransient" hadState=Y seeded=Y -> edited=N action=LEAVE-UNEDITED
+```
+
+No map, so nothing was dialled - `LEAVE-UNEDITED` in the apply path's own words. The settings were never
+applied at all. The add's read-back counted **one slot**, found one, and said yes; it was right about the
+slot and nobody was asking about the settings.
+
+**Built:** `ExecutorDo::confirmSettings` runs after the structural read-back for every op that carries
+settings - add, replace and build, per slot, on the open rack and on a Link (a Link's values come through
+the sidecar's landed-readback text, which `slotParam` already parses). Three outcomes, and none of them is
+success without a read: **applied** (read back and matching), **not_applied** (read back and wrong, or the
+rack dialled nothing), **not_confirmed** (this build cannot read that plugin's values - MTransient's case
+exactly). The op itself still succeeds when the slot landed, because it did; failing it would make the model
+add the plugin a second time. The landed line says which, and tells the model not to name a figure it was
+not given - so the closing text can only be built from what was confirmed.
+
+**Rows:** `agent_round15_guard` holds five legs (nothing readable, read-back-and-wrong, read-back-and-right,
+a build per slot, and no settings at all - proven in BOTH directions, so the check is neither unfalsifiable
+nor unpassable) plus four on the load-failure record. The rig's **G11** holds the specific-reason and
+Details-is-not-a-repeat half.
+
+---
+
+## 5. RULED (Sean, 15 Oct 2026): THE CHAT LIST — Albums & Songs
+
+**Not urgent. A small UI round, AFTER the current list** (plugin-choice card, OUT knob, multi-track jobs,
+0a, third-party GR estimation).
+
+> *"1. A chat lives under the track it was started on, and ALSO appears under every track it changed, as a
+> linked entry with a small "from &lt;track&gt;" tag. All entries open the same chat; there is never a copy.
+> 2. A small agent icon on any chat that contains an agent run. 3. A filter at the top of the list:
+> All / Agent. 4. A small search bar at the top that searches chat titles and contents."*
+
+### What the plugin owns
+
+1. **The touched-track list is a RECORD OF WHAT LANDED, not of what was attempted.** The executor already
+   knows the target of every op (`applyTo`), but a chat must appear under a track it actually changed — not
+   one it tried to change and was refused on. So the set is accumulated from the point where this round's
+   read-back confirms a landing, and nowhere earlier. This is the same rule as everything else in this
+   round: the tick appears when the read-back confirms, not when the write returns.
+2. **uid AND the name at the time, both.** A track's name changes, and a uid that no longer resolves must
+   still render something truthful. The rule the group naming already follows: prefer the live name when the
+   uid resolves, fall back to the stored one, and never invent a name for a uid that has gone.
+3. **One chat, several ROWS.** The list renders one row per (chat, track) pair and routes every one of them
+   by `chatId`, so "there is never a copy" is true by construction rather than by discipline. A linked row
+   carries the `from <track>` tag; the home row does not.
+4. **The agent icon is a fact about the chat, not about the session**: it must survive a reload, so it is a
+   persisted flag on the chat set the first time an agent run writes to it — which item 0's run row already
+   does. Deriving it in-session from "is there an agent message in chatMessages" would make the icon vanish
+   on reopen, which is the Level-persistence fault in a new costume.
+5. **The filter and the search are view state**, not persisted, and the search covers titles AND message
+   contents — so it has to search what the workspace holds, not only what this window has loaded. That is
+   the one part of (4) that may need B: a chat whose messages are not in memory cannot be searched locally.
+
+### What must be agreed with B (in `FOR_B_2026-10-15.md`)
+
+**Where the touched-track list is stored**, because Sean's requirement is that it *"survives a reload and
+shows on every machine"* — which rules out anything client-side. Recommendation: a field on the CHAT record
+in the workspace (`/api/data`), e.g. `touchedChannels: [{ uid, name, atMs }]`, appended by the plugin and
+returned with the chat. Downgrade-safe by the usual rule (a new key an old build never reads).
+
+Also to agree: whether the search is **local-only** over loaded chats, or whether B exposes a search
+endpoint over message contents. Local-only is honest if the list says so when it cannot see everything;
+silently searching a subset and showing "no results" is not.
+
+### Rig rows (Sean's ask, for 1-3)
+
+- **L6** a chat started on track A and landing a change on track B appears under BOTH, and the linked row
+  under B carries the `from A` tag.
+- **L7** both rows open the SAME chat — asserted on the chat id, not on the title, and on there being one
+  chat record and not two.
+- **L8** a chat with an agent run carries the agent icon, and still does after the window is rebuilt (the
+  persisted-flag half, which is the one that can regress silently).
+- **L9** the All / Agent filter shows exactly the chats with an agent run under Agent, and every chat under
+  All.
+- *(mine)* **L10** a track whose change was REFUSED does not get a linked row — the honesty half, and the
+  one a row written from `applyTo` alone would get wrong.
+
+---
+
+## FOUND BY THE RIG, 15 Oct 2026: THE AGENT'S set_pre_gain WRITES AS "AUTO", AND ITS UNDO LOSES THE USER'S VALUE
+
+**Awaiting Sean's ruling.** Found when U1's baseline stopped being a leftover: the row had been passing
+because whatever the previous leg left behind happened to match whatever the undo produced, so the claim
+"leaves the pre-gain back where it started" was never tested.
+
+```
+EJPreGain: set -5.00 dB (by the user)     <- the user's own hand, undo depth 2
+EJPreGain: set 3.00 dB (auto)             <- the agent's set_pre_gain
+EJPreGain: set 0.00 dB (auto)             <- {op:"undo"}
+```
+
+The agent's op goes through the chain channel's `pre_gain` edit, which calls
+`setPreGainDb (op.dbValue, /*userSet*/ false)` (`ChainHost.cpp:2819`). Two consequences:
+
+1. **The undo does not restore what the user had.** It restores the AUTO value - 0.00 on an empty rack -
+   so a hand-set -5.00 is simply gone.
+2. **The level-match loop may override what the agent just set**, because `preGainUserSet` is the flag
+   that tells it not to.
+
+**Why this is not fixed blind.** That line's comment is deliberate and its reasoning is right for a LINK:
+*"this is a remote move, not a hand on the Link's own dial. The flag exists so the Link can tell an
+explicit choice from a default it may still revise, and a V2's op is the former for the V2 and not for
+this instance."* The op arrives through ONE vocabulary for both the own rack and a Link, so separating
+them needs a flag on the batch - a semantic change, not a bug fix.
+
+**Proposed:** on the OWN rack the agent's `pre_gain` marks user-set (undo restores the prior value, the
+loop leaves it alone); the LINK path keeps `userSet=false` exactly as that comment defends, distinguished
+by the batch's existing `sourceNote` ("agent").
+
+---
+
+## A GATE RUN ALONGSIDE A LOGIC SESSION IS NOT A GATE RUN (15 Oct 2026)
+
+Gate 17 went red on four, and two of them were **timeouts** I nearly attributed to my own changes. The
+timings settled it instead:
+
+| guard | gates 10-16 | gate 17 |
+|---|---|---|
+| `level_match_guard` | ~280 s, every single gate | **833 s** |
+| `role_snapshot_guard` | ~300 s | **timeout at 4340 s** |
+| `link_live_edit_guard` | ~326 s | **timeout at 900 s** |
+
+Three guards do not regress by 3x together. Gate 17's S4 ran 09:02-11:00, which is exactly when Sean was
+testing `ship_2026-10-15b` in Logic: Logic, AUHostingService and his hosted plugins, against guards that
+each LTO-compile a 300 MB archive at test time. The machine was shared and the clock measured it.
+
+### AND THE STALL WATCHDOG HAS NEVER WORKED
+
+While watching gate 18 I found the gate's own instrument broken. S4 arms a watchdog meant to `sample` any
+guard alive for more than 300 s - the exact thing that would have diagnosed the two timeouts in minutes
+instead of a re-run. It reads:
+
+```bash
+ET=$(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')
+```
+
+**`etimes` is a Linux/procps keyword and does not exist in macOS `ps`.** So every tick prints
+`ps: etimes: keyword not found` followed by the whole list of valid keywords, `ET` is that garbage, and
+`[ "$ET" -gt 300 ]` errors with "integer expression expected". It has been doing this silently into every
+gate log, and it has never sampled anything.
+
+**Fix for the next gate script:** macOS spells it `etime`, as `[[dd-]hh:]mm:ss`, so it needs parsing:
+
+```bash
+ET=$(ps -o etime= -p "$p" 2>/dev/null | tr -d ' ')
+SECS=$(awk -F: -v t="$ET" 'BEGIN{n=split(t,a,":"); s=0; for(i=1;i<=n;i++) s=s*60+a[i]; print s+0}')
+```
+
+(and the `dd-hh:mm:ss` form needs the leading `dd-` turned into another `:` first). The lesson is the one
+this repo keeps relearning: **an instrument is a claim until something proves it fired.** A watchdog that
+has never produced a sample file is indistinguishable from a watchdog that was never needed, and the gate
+log said so on every line without anyone reading it.
+
+**Two lessons, and the first one is about me:**
+
+1. **I formed a theory and it did not survive arithmetic.** My first explanation was the per-load file I/O
+   that check 5 part 2 added - until a count showed it was one `existsAsFile()` per successful load, which
+   is microseconds and not seventy minutes. The thing that actually settled it was the HISTORY of the
+   timings, which was sitting in the previous gate logs the whole time. Read the baseline before blaming
+   the diff.
+2. **The gate needs to say when it cannot be trusted.** The standing rule is already *"don't gate while B's
+   hook runs or EJ Map runs"* - a Logic session with hosted plugins belongs on that list. Worth adding to
+   the gate script: refuse, or at least warn loudly, when `Logic Pro` is running, because a timeout is the
+   one failure that looks like a product fault and costs a whole re-run to disprove.
+
+---
+
+### A2. OWED BY ITEM 0b (15 Oct 2026): THE BUILD ROAD IS STILL THE WINDOW'S
+
+Item 0b moved the agent's client, executor, all eight sinks and the run's record onto the processor
+(`Source/EJAgentHome.h`), and a run now survives the window closing. **One sink did not move**, and this is
+the piece of work that finishes the job:
+
+`buildChain` runs **`loadChainFromJson`** (~450 lines) and **`sendChainToLink`** (~310 lines). Both are
+editor methods, and not incidentally: between them they call `switchToTab`, `chainListPanel.statusText` /
+`closeAllEditors`, `setStageStatus`, `promptForFailedPlugins`, `composeSkippedAltFollowUp`,
+`appendLocalResultBubble`, `finishChainBubbleWhenDialSettled`, `logDialMissesWhenSettled`,
+`refreshChainPanelForView`, `bumpMonthlyStat` and `resized`/`repaint` — thirteen editor dependencies on the
+most load-bearing path in the plugin.
+
+**The shape of the move, when it is done:** a `ChainBuildView` interface (status, failed, finished, close
+slot editors, the chat's follow-ups), implemented by the editor and held as a pointer by the processor that
+is null when no window is attached. That keeps ONE build path — which is the whole reason not to do it by
+halves. Roughly seven methods and a mechanical rework of those two functions.
+
+**Until then, and asserted rather than assumed (row B4):** with no window there is no build road, so a
+build **parks** — it waits, bounded, for a window and then takes the user's own road, or fails saying
+exactly that. Nothing claims a landing. Everything else in a run survives the window outright.
 
 ### B. THE OUT KNOB (§6 below has the ruling; this is the order to build it in)
 

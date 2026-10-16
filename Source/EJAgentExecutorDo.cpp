@@ -1,4 +1,6 @@
 #include "EJAgentExecutorDo.h"
+#include "ChainHost.h"   // check 5 part 2: the plugins that did not load here
+#include "EJParamPlainNames.h"   // Sean, 15 Oct: a line a person reads names parameters in words
 
 namespace echojay::agent
 {
@@ -53,6 +55,31 @@ juce::var ExecutorDo::startContext()
         //                  that does not know this proposes third-party plugins and every one is refused.
         o->setProperty ("can_act", sinks_.agentModeOn && sinks_.agentModeOn());
         o->setProperty ("echojay_only", sinks_.echoJayOnly && sinks_.echoJayOnly());
+
+        // ---- SEAN'S CHECK 5, PART 2 (15 Oct 2026): WHAT WILL NOT LOAD HERE -------------------------
+        //
+        // The inventory already withholds these, so they cannot be picked. They are NAMED here as well
+        // because the model needs to be able to answer "why not kHs Transient Shaper?" without guessing,
+        // and because a user who asks for one by name must be told what happened rather than watching it
+        // fail a third time. A named plugin is still used as named; this is an account, not a ban.
+        if (const auto wontLoad = ChainHost::loadFailedPluginNames(); ! wontLoad.isEmpty())
+        {
+            juce::Array<juce::var> arr;
+            for (const auto& n : wontLoad)
+            {
+                auto* e = new juce::DynamicObject();
+                e->setProperty ("name", n);
+                const auto why = ChainHost::loadFailureReasonFor (n);
+                if (why.isNotEmpty()) e->setProperty ("why", why);
+                arr.add (juce::var (e));
+            }
+            o->setProperty ("plugins_that_did_not_load", juce::var (arr));
+            o->setProperty ("plugins_that_did_not_load_note",
+                            "These are installed but did not instantiate on this machine (licence, or they "
+                            "refuse to load). They are withheld from the inventory so you cannot offer them "
+                            "in a pick. If the user names one, say what happened to it rather than trying "
+                            "again. The mark clears by itself the moment the plugin loads.");
+        }
 
         // THE UNDO CAPABILITY, DECLARED (14 Oct 2026). B gates the op on this and nothing else:
         // "the server sends it only when the start body's capabilities includes \"undo\"; otherwise it is
@@ -374,7 +401,11 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
 
         const int wantSlots = structuralWantSlots (call, "build");
         const auto aliveB   = this->alive();
-        sinks_.buildChain (buildTo, chain, [this, aliveB, done, buildTo, wantSlots] (bool ok, juce::String sentence)
+        // `call` BY VALUE, for the reason fix 1(b) recorded on the edit path: the ack can arrive after
+        // doOp has returned, and `call` is a reference parameter. A build's chain array is the thing
+        // confirmSettings reads, so it has to survive the hop.
+        auto callCopy = std::make_shared<ToolCall> (call);
+        sinks_.buildChain (buildTo, chain, [this, aliveB, done, buildTo, wantSlots, callCopy] (bool ok, juce::String sentence)
         {
             if (! ok)
             {
@@ -384,7 +415,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
             }
             if (aliveB.expired())
             { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence)); return; }
-            confirmLanded (buildTo, wantSlots, "build", sentence, done, 0);
+            confirmLanded (buildTo, wantSlots, "build", sentence, done, 0, callCopy.get());
         });
         return;
     }
@@ -436,15 +467,26 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     // `call` BY VALUE (fix 1(b)): this callback is asynchronous - the ack can arrive after doOp has
     // returned - and `call` is a reference parameter, so capturing it by reference would read a dead
     // ToolCall. A copy is cheap (ids, a name and a var) and cannot dangle.
-    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call] (bool ok, juce::String sentence)
+    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call]
+                          (bool ok, juce::String sentence, juce::String technical)
     {
         if (! ok)
         {
-            done (ToolOutcome::failure ("not_applied",
-                                        sentence.isNotEmpty() ? sentence
-                                                              : juce::String ("that change was not applied")));
+            // ---- SEAN'S CHECK 5 (15 Oct 2026): TWO AUDIENCES, WRITTEN FOR SEPARATELY --------------
+            // This was failure(code, sentence), so errorMessage and forTheUser() were the same string -
+            // the model got the summary and Details disclosed the summary again. failureFor keeps the
+            // rack's own plain sentence for the person and gives the model (and Details) the technical
+            // account the rack actually sent. With nothing technical to add it falls back, and then no
+            // Details control appears at all, which is correct: there is nothing behind it.
+            const auto userLine = sentence.isNotEmpty() ? sentence
+                                                        : juce::String ("that change was not applied");
+            if (technical.isNotEmpty())
+                done (ToolOutcome::failureFor ("not_applied", technical, userLine));
+            else
+                done (ToolOutcome::failure ("not_applied", userLine));
             return;
         }
+        juce::ignoreUnused (technical);
         // The ack can arrive after the editor that owns this executor has closed. Checked before src_ is
         // touched, for the reason recorded at aliveToken_'s declaration.
         if (aliveW.expired())
@@ -462,7 +504,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         // A structural read-back cannot answer a value question. So a `set` is confirmed against the VALUES.
         if (opName == "set")
         { confirmValues (call, applyTo, sentence, done); return; }
-        confirmLanded (applyTo, wantSlots, opName, sentence, done, 0);
+        confirmLanded (applyTo, wantSlots, opName, sentence, done, 0, &call);
     });
 }
 
@@ -543,6 +585,196 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
                                 "read back: " + matched.joinIntoString (", ")));
 }
 
+
+// =======================================================================================================
+//  SEAN'S CHECK 5 (15 Oct 2026): SETTINGS CARRIED ON add / replace / build ARE READ BACK TOO
+//
+//  The complaint, in his words: *"It was added to the Link, but its Attack is still 0.00 dB, while the
+//  closing said 'attack pushed up +6 dB and sustain pulled down -2 dB'. Last night's fix made SET read
+//  values back; settings carried on ADD and BUILD are still confirmed by slot count only."*
+//
+//  The log is unambiguous about what happened to those settings:
+//
+//      EJDial: slot 1 ("MTransient") NO MAP for fp=3decf53d6bc0 ... -> noMap
+//      EJApply: slot 1 "MTransient" hadState=Y seeded=Y -> withheld=N edited=N action=LEAVE-UNEDITED
+//
+//  No map, so nothing was dialled. The add's read-back counted ONE SLOT, found one, and said yes - which
+//  it was right about. The slot is not the settings, and nothing was asking about the settings at all.
+//
+//  THREE OUTCOMES, AND NONE OF THEM IS "SUCCESS FOR THE SETTINGS" WITHOUT A READ:
+//    applied        every asked value was read back and matches
+//    not_applied    a value was read back and is NOT what was asked (or the rack dialled nothing)
+//    not_confirmed  this build cannot read that plugin's values at all - a third party with no map
+//
+//  The op itself still SUCCEEDS when the slot landed, because it did: failing it would make the model add
+//  the plugin a second time. What changes is that the settings are reported separately and honestly, so
+//  the closing text can only be built from what was actually confirmed.
+// =======================================================================================================
+ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& applyTo, int slot1,
+                                                       const juce::var& settingsStructured) const
+{
+    SettingsCheck out;
+    auto* root = settingsStructured.getDynamicObject();
+    if (root == nullptr || slot1 < 1) return out;
+    // ---- BOTH SHAPES, BECAUSE A THIRD PARTY USES THE OTHER ONE (16 Oct 2026) -------------------
+    // This read `params` (and the flat form) only. A THIRD-PARTY slot is dialled through `controls`,
+    // keyed by the plugin's own control name - the shape the contract names and the shape Sean's four
+    // plugins arrive in - so the one case last night's read-back was written for was the one case it
+    // could not see. Row T1 caught it on a real MTransient: the rack even said so itself, *"a 'params'
+    // wrapper is a built-in device payload and reached the third-party map path"*.
+    juce::DynamicObject* asked = root;
+    if (auto* p = root->getProperty ("params").getDynamicObject())        asked = p;
+    else if (auto* c = root->getProperty ("controls").getDynamicObject()) asked = c;
+    for (auto& kv : asked->getProperties())
+    {
+        const auto id   = kv.name.toString();
+        const auto want = kv.value;
+        if (! (want.isDouble() || want.isInt() || want.isInt64())) continue;   // a mode name, not a number
+        ++out.askedCount;
+        const double wanted = (double) want;
+        double got = 0.0;
+        if (! src_.slotParam || ! src_.slotParam (applyTo, slot1, id, got)) { out.unreadable.add (id); continue; }
+        // Per magnitude, not absolute: a device stores 18 ms as 18.0 and a ratio as 4.0, but a dB value
+        // may round, and == would make an honest apply look like a failure.
+        const double tol = juce::jmax (0.05, std::abs (wanted) * 0.02);
+        if (std::abs (got - wanted) <= tol)
+        {
+            out.matched.add ("slot " + juce::String (slot1) + " " + id + " " + juce::String (got, 2));
+            out.matchedIds.add (id);
+        }
+        else
+        {
+            out.missed.add ("slot " + juce::String (slot1) + " " + id + " is " + juce::String (got, 2)
+                            + " (asked " + juce::String (wanted, 2) + ")");
+            out.missedIds.add (id);
+        }
+    }
+    return out;
+}
+
+void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
+                                  int slotsOnRack, juce::String landedSentence, Done done)
+{
+    const auto finish = [this, opName, done] (juce::var result, const juce::String& line)
+    {
+        done (ToolOutcome::success (std::move (result),
+                                    /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
+                                    line));
+    };
+
+    // ---- which slots carry asked values, and where they landed ------------------------------------
+    struct Ask { int slot1 = 0; juce::var settings; };
+    std::vector<Ask> asks;
+    if (opName == "build")
+    {
+        // The chain block IS the whole rack, so slot i of the block is slot i+1 of the rack.
+        const auto chain = argVar (call, "chain");
+        if (auto* arr = chain.getArray())
+            for (int i = 0; i < arr->size(); ++i)
+                if (auto* o = (*arr)[i].getDynamicObject())
+                {
+                    const auto ss = o->getProperty ("settings_structured");
+                    if (ss.getDynamicObject() != nullptr) asks.push_back ({ i + 1, ss });
+                }
+    }
+    else
+    {
+        const auto ss = argVar (call, "settings_structured");
+        if (ss.getDynamicObject() != nullptr)
+        {
+            bool haveSlot = false;
+            int slot1 = argInt (call, "slot", haveSlot);
+            // AN ADD WITHOUT A POSITION LANDS AT THE END, which is what the read-back just counted.
+            if (opName == "add" && (! haveSlot || slot1 < 1)) slot1 = juce::jmax (1, slotsOnRack);
+            // ANY OTHER OP WITHOUT A SLOT IS NOT GUESSED AT. Defaulting to slot 1 would compare the
+            // wrong slot's values and report an honest apply as "not applied" - a false negative inside
+            // the one check whose whole purpose is not to say things that are not so. No slot, no
+            // settings claim either way: the op's own result stands and nothing is added to it.
+            if (slot1 >= 1) asks.push_back ({ slot1, ss });
+            else
+                EchoJay_NSLog (("EJAgent: " + opName + " carried settings but named no slot, so there is "
+                                "nothing to read them back FROM - the settings are neither confirmed nor "
+                                "denied, and no figure is claimed").toRawUTF8());
+        }
+    }
+
+    if (asks.empty()) { finish (juce::var (new juce::DynamicObject()), landedSentence); return; }
+
+    SettingsCheck all;
+    for (const auto& a : asks)
+    {
+        const auto c = checkSlotValues (applyTo, a.slot1, a.settings);
+        all.askedCount += c.askedCount;
+        all.matched.addArray (c.matched);
+        all.missed.addArray (c.missed);
+        all.unreadable.addArray (c.unreadable);
+        all.matchedIds.addArray (c.matchedIds);
+        all.missedIds.addArray (c.missedIds);
+    }
+    if (all.askedCount == 0) { finish (juce::var (new juce::DynamicObject()), landedSentence); return; }
+
+    auto* r = new juce::DynamicObject();
+    r->setProperty ("applied", true);                 // the STRUCTURE landed; that is what this says
+    r->setProperty ("op", opName);
+    r->setProperty ("settings_asked",      all.askedCount);
+    r->setProperty ("settings_applied",    all.matched.joinIntoString (", "));
+    r->setProperty ("settings_unapplied",  all.missed.joinIntoString ("; "));
+    r->setProperty ("settings_unreadable", all.unreadable.joinIntoString (", "));
+    // ---- SEAN, 15 Oct 2026: THE IDS ARE FOR THE MODEL, THE WORDS ARE FOR THE PERSON ------------
+    // "The not-confirmed line shows raw parameter IDs. Show plain names." Both exist from here: the
+    // fields above keep the wire's vocabulary, which the model needs to retry or explain, and the
+    // *_plain fields - and every landed line below - read as English.
+    // THE ID LISTS, not the prose lists: `missed` entries are whole sentences and the renderer takes the
+    // last whitespace token out of one, so "slot 1 attack_db is 0.00 (asked 6.00)" came out as "6.00)".
+    const auto unreadablePlain = echojay::params::plainParamList (all.unreadable);
+    const auto askedPlain      = echojay::params::plainParamList (all.missedIds);
+    const auto landedPlain     = echojay::params::plainParamList (all.matchedIds);
+    if (unreadablePlain.isNotEmpty()) r->setProperty ("settings_unreadable_plain", unreadablePlain);
+    if (askedPlain.isNotEmpty())      r->setProperty ("settings_unapplied_plain", askedPlain);
+    if (landedPlain.isNotEmpty())     r->setProperty ("settings_applied_plain", landedPlain);
+
+    if (! all.missed.isEmpty())
+    {
+        r->setProperty ("settings_state", "not_applied");
+        r->setProperty ("settings_confirmed", false);
+        finish (juce::var (r),
+                // Same rule: the add landed, the SETTINGS did not. Lead with the part that is true.
+                "Added it, but the settings did NOT take: " + askedPlain
+                + (all.matched.isEmpty() ? juce::String()
+                                         : ". What did land: " + all.matched.joinIntoString (", "))
+                + ". Report the plugin as added with its settings NOT applied, and do not name any value "
+                  "you were not given here.");
+        return;
+    }
+    if (all.matched.isEmpty())
+    {
+        // NOTHING READABLE. This is MTransient's case exactly: a third party with no parameter map, so
+        // the values were never written and cannot be read either. "added, settings not applied" is
+        // Sean's own wording, and it is the only honest thing to say.
+        r->setProperty ("settings_state", "not_confirmed");
+        r->setProperty ("settings_confirmed", false);
+        finish (juce::var (r),
+                // SEAN'S #5 (16 Oct 2026): "Never 'Not applied: add X' when X was added: say 'Added X.
+                // Settings not confirmed.'" The sentence LEADS with what landed, so no renderer and no
+                // closing text can turn a successful add into a failure.
+                "Added it. Settings not confirmed: this build cannot read that plugin's values back"
+                + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
+                + ", so there is no evidence they were applied. Report it as ADDED, with its settings "
+                  "not confirmed. Do NOT call the add itself 'not applied', and do NOT state any "
+                  "figure for the settings.");
+        return;
+    }
+    r->setProperty ("settings_state", all.unreadable.isEmpty() ? "applied" : "partly_confirmed");
+    r->setProperty ("settings_confirmed", all.unreadable.isEmpty());
+    finish (juce::var (r),
+            // PLAIN NAMES AND THE FIGURES. The figures are the evidence and must stay; the NAMES are a
+            // sentence addressed to a person, so they read as words. The raw ids are in the result object
+            // for the model (settings_applied), which is the split Sean's ruling turns on.
+            landedSentence + "; read back " + landedPlain + " - " + all.matched.joinIntoString (", ")
+            + (unreadablePlain.isEmpty() ? juce::String()
+                                         : ". Not readable, so not confirmed: " + unreadablePlain));
+}
+
 // ---- ITEM 1 (14 Oct 2026): ONE CROSS-CHANNEL GATE ----------------------------------------------------
 // Three ops needed it (set_rack_out, build, every edit op) and two had their own copy. The copies agreed
 // today, which is exactly why a third would have been written from memory rather than from this one.
@@ -589,10 +821,15 @@ bool ExecutorDo::resolveTargetWithConfirm (const ToolCall& call, Done& done, juc
 // the poll is provable. With no clock supplied it reads once - correct for a synchronous fake, and the only
 // behaviour an older caller could have expected.
 void ExecutorDo::confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
-                                juce::String sentence, Done done, int waitedMs)
+                                juce::String sentence, Done done, int waitedMs, const ToolCall* call)
 {
-    const auto finishOk = [this, opName, done] (juce::String withSentence)
+    // SEAN'S CHECK 5 (15 Oct 2026): the structural read-back is only half of it. When the op carried
+    // SETTINGS, the settings are read back too - separately, and never reported as applied without a
+    // read. `call` is null only for a caller that has nothing to check (and the old behaviour then).
+    const auto finishOk = [this, opName, done, applyTo, call] (juce::String withSentence, int slotsOnRack)
     {
+        if (call != nullptr)
+        { confirmSettings (*call, applyTo, opName, slotsOnRack, withSentence, done); return; }
         auto* r = new juce::DynamicObject();
         r->setProperty ("applied", true);
         r->setProperty ("op", opName);
@@ -603,7 +840,7 @@ void ExecutorDo::confirmLanded (const juce::String& applyTo, int wantSlots, cons
                                     withSentence));
     };
 
-    if (wantSlots < 0) { finishOk (sentence); return; }      // nothing structural to count
+    if (wantSlots < 0) { finishOk (sentence, -1); return; }      // nothing structural to count
 
     const auto back = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
                                            : (src_.ownRack  ? src_.ownRack()          : RackRead());
@@ -611,7 +848,7 @@ void ExecutorDo::confirmLanded (const juce::String& applyTo, int wantSlots, cons
     if (back.valid && have >= wantSlots)
     {
         finishOk (sentence.isNotEmpty() ? sentence + "; read back " + juce::String (have) + " slot(s) on the rack"
-                                        : "read back " + juce::String (have) + " slot(s) on the rack");
+                                        : "read back " + juce::String (have) + " slot(s) on the rack", have);
         return;
     }
 
@@ -619,12 +856,15 @@ void ExecutorDo::confirmLanded (const juce::String& applyTo, int wantSlots, cons
     if (canWait)
     {
         const auto aliveW = this->alive();
-        sinks_.afterMs (kLandPollMs, [this, aliveW, applyTo, wantSlots, opName, sentence, done, waitedMs]
+        // `call` is COPIED into the poll (not the pointer): the poll outlives doOp's frame, and a
+        // pointer to a caller's ToolCall is the dangling read fix 1(b) already recorded once.
+        auto callCopy = call != nullptr ? std::make_shared<ToolCall> (*call) : std::shared_ptr<ToolCall>();
+        sinks_.afterMs (kLandPollMs, [this, aliveW, applyTo, wantSlots, opName, sentence, done, waitedMs, callCopy]
         {
             // The window can close while a build is still landing. Nothing is claimed in that case: the turn
             // is over and there is no rack read to be had from a dead editor.
             if (aliveW.expired()) { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, sentence)); return; }
-            confirmLanded (applyTo, wantSlots, opName, sentence, done, waitedMs + kLandPollMs);
+            confirmLanded (applyTo, wantSlots, opName, sentence, done, waitedMs + kLandPollMs, callCopy.get());
         });
         return;
     }

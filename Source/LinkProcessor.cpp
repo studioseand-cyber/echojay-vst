@@ -55,6 +55,55 @@ LinkProcessor::LinkProcessor()
     // Mirror hosted chain latency into the host on EVERY chain change —
     // Link sits on parallel and phase-critical tracks, so this must track
     // build/add/remove/bypass exactly.
+    // ---- SEAN'S #1, 16 Oct 2026: THE LINK CAN ASK FOR A PARAMETER MAP AT LAST ----------------------
+    //
+    // A third-party plugin can only be dialled through a parameter map, and ChainHost::onNeedParamMaps is
+    // the only route to one. It was installed ONLY by EchoJayEditor (the main and borrowed hosts), so a
+    // third-party slot living on a Link could never ASK: its own log said
+    // "fetch_requested=n  in_flight=n  fetch_wired=n  cached_maps=181 -> noMap", and the settings simply
+    // never applied. Sean lost four plugins to this (MTransient, bx_townhouse, SSL X-Comp, Transient
+    // Master) while built-ins dialled perfectly on the same Link, because built-ins need no map.
+    //
+    // THIS PROCESS HAS NO NETWORK CLIENT and should not grow one - no credentials, no HTTP stack. So the
+    // "fetch" is a REQUEST FILE that the V2 serves from its own authenticated API, and everything else in
+    // ChainHost is untouched: mapsRequested_, pendingMapFps_ and storeParamMaps's mapArrived re-dial sweep
+    // all behave exactly as they do on the main host. fetch_wired reads `y` for the first time.
+    chainHost.onNeedParamMaps = [this] (const juce::StringArray& fps)
+    {
+        if (fps.isEmpty()) return;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || instanceUid_.isEmpty()) return;
+        const juce::File f (dir + "maps-wanted-" + instanceUid_ + ".json");
+        // MERGED, not overwritten: two slots can want different maps within the same second, and the V2
+        // reads this file on a 1 Hz timer. Losing one of them would leave that slot undialled for ever.
+        juce::StringArray want;
+        if (f.existsAsFile())
+        {
+            // THE ROOT IS HELD IN A NAMED VAR, and temp_var_grep_guard caught me writing it the other
+            // way an hour ago: `juce::JSON::parse(...).getDynamicObject()` takes a raw pointer INTO A
+            // TEMPORARY, which dies at the end of the full expression - so the pointer dangles for the
+            // whole of the body that uses it. That is the 18 Sep Pro Tools crash exactly, and the guard
+            // exists because of it. A reference-counted root that outlives every pointer taken from it.
+            const auto rootVar = juce::JSON::parse (f.loadFileAsString());
+            if (auto* o = rootVar.getDynamicObject())
+                if (auto* arr = o->getProperty ("fps").getArray())
+                    for (const auto& v : *arr) want.addIfNotAlreadyThere (v.toString());
+        }
+        for (const auto& fp : fps) want.addIfNotAlreadyThere (fp);
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("v", 1);
+        o->setProperty ("uid", instanceUid_);
+        juce::Array<juce::var> arr;
+        for (const auto& fp : want) arr.add (fp);
+        o->setProperty ("fps", arr);
+        o->setProperty ("atMs", (double) juce::Time::currentTimeMillis());
+        f.replaceWithText (juce::JSON::toString (juce::var (o), true));
+        EchoJay_NSLog (("EJParamMaps(Link): asked the V2 for " + juce::String (fps.size())
+                        + " map(s), " + juce::String (want.size()) + " outstanding - "
+                        + f.getFileName()).toRawUTF8());
+    };
+
     chainHost.onChainChanged = [this]
     {
         updateChainLatency();
@@ -180,6 +229,46 @@ LinkProcessor::~LinkProcessor()
 // =============================================================================
 //  juce::Timer
 // =============================================================================
+// ---- SEAN'S #1 (16 Oct 2026): THE MAPS THE V2 FETCHED ON THIS RACK'S BEHALF ---------------------
+//
+// The request half is wired in the constructor (chainHost.onNeedParamMaps). This is the answer: the
+// maps go in through storeParamMaps, which is the SAME door the main host uses - so the re-dial sweep
+// that already exists (DialTrigger::mapArrived) does the dialling and nothing here re-implements it.
+//
+// AN EMPTY ANSWER IS STILL AN ANSWER. If the server has no map for that plugin, failMapFetch turns the
+// slot's state from "pending" into a terminal noMap with a reason, instead of leaving it waiting for
+// ever - which is what it did before this channel existed.
+void LinkProcessor::serviceMapsReady()
+{
+    if (instanceUid_.isEmpty()) return;
+    int err = 0;
+    const auto dir = LinkShm::resolveDir (err);
+    if (dir.isEmpty()) return;
+    const juce::File f (dir + "maps-ready-" + instanceUid_ + ".json");
+    if (! f.existsAsFile()) return;
+    const auto v = juce::JSON::parse (f.loadFileAsString());
+    f.deleteFile();                                  // consumed exactly once
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return;
+    const auto mapsV = o->getProperty ("maps");
+    auto* maps = mapsV.getDynamicObject();
+    const int served = maps != nullptr ? maps->getProperties().size() : 0;
+    EchoJay_NSLog (("EJParamMaps(Link): the V2 answered with " + juce::String (served)
+                    + " map(s) (status " + o->getProperty ("status").toString() + ")").toRawUTF8());
+    if (served > 0)
+    {
+        chainHost.storeParamMaps (mapsV);            // caches AND re-dials the waiting slots
+    }
+    else
+    {
+        // Nothing to store: tell the slots so, by their fingerprints, so each reaches a terminal
+        // state it can explain rather than sitting in "pending" for the rest of the session.
+        juce::StringArray asked;
+        asked.addTokens (o->getProperty ("asked").toString(), ",", "");
+        chainHost.failMapFetch (asked);
+    }
+}
+
 void LinkProcessor::timerCallback()
 {
     // Heartbeat once per second (timer runs at 30Hz since v0.8.5; only the
@@ -193,9 +282,14 @@ void LinkProcessor::timerCallback()
     // pointer. A rack with no ring is not a failure - the file channel carries everything, which is the
     // correct fallback - so this is attempted quietly and once.
     ringTick();
+    // SEAN'S #1 (16 Oct 2026): has the V2 answered the maps this rack asked for? On the heartbeat
+    // divider below rather than every 30 Hz tick: it is a file stat, and the answer is not urgent to
+    // the millisecond - a dial that lands a second after the plugin appeared is still a dial, and a
+    // dial that never lands is what this fixes.
     if (++heartbeatDivider_ >= 30)
     {
         heartbeatDivider_ = 0;
+        serviceMapsReady();
         // Bump heartbeat so the consumer can detect we're alive vs. crashed.
         // Registered-but-inactive Links heartbeat too — they must stay
         // visible (not reaped as stale) so remote re-activation works.

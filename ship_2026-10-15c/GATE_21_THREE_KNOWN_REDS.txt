@@ -1,0 +1,73 @@
+ship_2026-10-15c  —  installed 15 Oct 2026, 20:50, with Logic closed (checked, not assumed)
+
+THERE IS NO GREEN.txt IN THIS FOLDER, AND THAT IS DELIBERATE.
+Gate 21 was NOT fully green. Sean accepted three named reds so he could test tonight; writing GREEN.txt
+would be untrue, and it is also the trigger that starts EJ Map. This file is the honest record instead.
+
+WHAT GATE 21 PROVED
+  S1   OK   forced delete of all six archives across three trees, then relink
+            + a SHA-256 manifest of all 325 source files, recorded at compile time
+  S2   OK   ~87 guard targets
+  S3   OK   the four bundles
+  S3b  OK   archive provenance (now content-aware: a touched file is told from an edited one)
+  S4   OK   78/78
+  S5   OK   link_state_guard, two-sided
+  S6   RED  live pass GREEN (54 passed, 0 failed, 2 skipped)
+            mock pass RED  (52 passed, 3 failed, 3 skipped)
+
+SEAN'S TWO CONDITIONS
+  C11v(a)  PASS  the classifier answering after a REAL window close leaves an interrupted row
+  C11v(b)  PASS  a dead socket with no window attached leaves one too
+  G8       FAIL  ran (no longer skipped) and found a bug in MY median - see below
+
+THE THREE REDS, ACCEPTED BY SEAN BEFORE INSTALLING
+  1. G8  the listen window's PEAK is right - it matched the rig's own independent sampling exactly
+         (6.79 dB vs 6.79 dB) - but the TYPICAL could read up to half a bin (~0.13 dB) ABOVE the peak,
+         because the median returned the histogram bin's CENTRE. Incoherent, and the agent would have
+         quoted it. FIXED IN THE TREE (clamped to the peak), NOT IN THIS BUILD.
+  2. U1  OLD BEHAVIOUR, NOT NEW IN THIS SHIP. The agent's set_pre_gain writes the pre-gain as AUTO
+         (ChainHost.cpp:2731 at HEAD 8f54041e, unchanged by today's work), so undoing it restores the
+         AUTO value and a hand-set figure is lost - Sean's own -5.00 dB replaced by 0.00. ship_2026-10-15b
+         has this too. U1 had been PASSING because its baseline was a leftover that happened to match
+         what the undo produced; fixing the baseline is what exposed it. FIXED IN THE TREE, NOT HERE.
+  3. G9  the mode hint did not appear in the rig's run, and the PLUGIN WAS RIGHT: it published its own
+         reason, "the composer is not on this view". A hint above a composer that is not on screen. The
+         ROW was wrong and is fixed in the tree.
+
+WHAT IS IN THIS BUILD — Sean's six, in his order of importance
+  1  HONESTY  settings carried on add / replace / build are READ BACK per slot, open rack and Link.
+              applied / not_applied / not_confirmed, and never "applied" without a read. The MTransient
+              case: no map, nothing dialled, and a closing line that had named +6 dB.
+  2  CLOSE    close mid-reply on the real VST3 road. The bug was one step earlier than fix 6 ever looked:
+              the classify callback returned at `safeThis == nullptr` and /api/chat was never called.
+              BOTH classify legs now finalise the turn. A second drop site in classifyQuestion was found
+              by sweeping for the pattern rather than waiting to be told.
+  3  GR       check(gr) returns the listen WINDOW's peak and typical, accumulated on the audio thread,
+              gated on audio being present, reset when a listen begins. `grDb` is retired from BOTH
+              reads in favour of `grNowDb`, so the momentary figure cannot be quoted by habit.
+  4  STRAY    the slot caption never prints the -200 sentinel and never sits on the tile's buttons
+              (rig: `caption now "GR 6.8 WORKING"`, sentinel=0, overlapsButtons=0). The Agent mode line
+              is gone as a fixed line: the chip's tooltip plus a ~3 s hint on a mode change.
+  5  LOAD     a refused change carries the rack's OWN reason (awaitChainAck reads perPluginResults at
+              last), Details shows a different technical line, and plugins that do not load are recorded
+              across processes and withheld from every pick.
+  6  NAMES    underscores in track names render literally (CommonMark's word-boundary rule). A guard leg
+              had the OLD behaviour written down as correct; the contract changed and the leg with it.
+
+NOT IN THIS BUILD, DELIBERATELY
+  item 0   the agent run as a transcript row - present but OPT-IN (EJ_AGENT_ROW=1), by Sean's ordering
+  item 0b  the run surviving a closed window - the architecture moved to the processor, but the
+           BEHAVIOUR is gated with item 0's surface, so a close stops a run exactly as 15b does
+
+PROVENANCE OF THIS INSTALL
+  The bundles are gate 21's own, built 17:58-18:01, never rebuilt. Four files had been edited since
+  (the median clamp and the U1 fix); to install "exactly as built" the tree was returned to gate 21's
+  content and CONFIRMED byte-identical across all 325 files by SHA-256 against S1's manifest, not by
+  timestamps. Their mtimes were then aligned to match that proven content, because place_ship.sh checks
+  mtime and would otherwise refuse something the hashes had already settled. The four edits were
+  restored afterwards. Installed UUIDs read back from ~/Library and matched the ship folder four for four.
+
+  EchoJay V2.component   E32E929E-089A-334B-9D46-8987F8732799
+  EchoJay V2.vst3        0F46F8E0-A466-39F7-B6E3-1118EA642A69
+  EchoJay Link.component 3277ADF2-128A-3E66-9C3A-C20B93A3A009
+  EchoJay Link.vst3      DF2CA4DE-6CCD-3607-853B-D10A4971B9E0

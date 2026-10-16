@@ -198,6 +198,11 @@ struct CaptureSnapshot {
     }
 };
 
+/** ITEM 0b (15 Oct 2026): the agent's session, executor and record. Declared here and INCLUDED
+    ONLY IN THE .cpp, so moving the agent onto the processor does not drag EJAgentClient.h into
+    every translation unit that needs a processor. */
+class EJAgentHome;
+
 class EchoJayProcessor : public juce::AudioProcessor,
                          private juce::Timer   // §6.1 self-key scheduler (1 Hz)
 {
@@ -408,7 +413,10 @@ public:
     bool applyUndoEntry(echojay::UndoEntry& e, bool toBefore);          // the dispatcher (public for the guard)
     // the editor records the Link commands it sends; the dispatcher re-sends them as a ctrl-cmd
     /** FIX 4(a), 14 Oct: a HAND move on the pre-gain, as one undo step per drag. */
-    void recordPreGainUndo(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet);
+    /** `target` names the rack: "" is this instance's own, a uid is a borrowed one. Defaulted so the
+        three editor call sites (the knob, both windows) are unchanged. */
+    void recordPreGainUndo(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet,
+                           const juce::String& target = {});
     void recordLinkActiveUndo(const juce::String& uid, bool before, bool after);
     void recordLinkGainUndo(const juce::String& uid, float before, float after);
     /** 21t-l item 1: ONE undo entry for a whole op. A headroom op moves every Link the scope selects; the
@@ -463,6 +471,21 @@ public:
      *  handled by clearStagedTurn(); see the note on it in EchoJayAPI.h.
      */
     EchoJayAPI& getApi() { return api; }
+
+    // ---- ITEM 0b (Sean, 14 Oct 2026): THE RUN SURVIVES THE WINDOW -------------------------------
+    //
+    // The agent's client, executor and the run's record live HERE, not on the editor, because an
+    // editor is allowed to disappear in the middle of a run and until now the run disappeared with
+    // it: the socket, the steps and the undo tokens all went, with no error, because nothing was
+    // left to report one. See EJAgentHome.h.
+    //
+    // BUILT ON FIRST USE, not in the constructor: the sinks read chainHost, api and the undo
+    // history, and the first caller is the editor's constructor - which runs after this object is
+    // fully built. That is the same ordering the editor had, kept rather than re-reasoned.
+    EJAgentHome& agentHome();
+    /** Without building one. The rig and the state publisher ask "is there a run?" on a timer, and
+        a question must not be able to construct the thing it is asking about. */
+    EJAgentHome* agentHomeIfBuilt() noexcept { return agentHome_.get(); }
     // 21r item 3: the launch rescan question is asked at most once per PROCESS, not once per editor - closing and
     // reopening the window is not a new launch. Public because the editor asks the question and the processor
     // outlives it.
@@ -708,8 +731,16 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // Bounded, and the bound is reported in the sentence: a caller that gets `false` is told whether the Link
     // refused it (with the Link's own reason) or never answered, because those need different next moves.
     // slotsAfter is -1 when the Link is an older build that does not state it.
+    /** ---- SEAN'S CHECK 5 (15 Oct 2026): THE ACK CARRIES A TECHNICAL ACCOUNT TOO ----------------
+        It used to hand back ONE sentence, built from the ack's `status` and `reason` alone - and a
+        BUILD ack has no `reason`, so "the rack refused it (partial)" was the whole of what anyone
+        learned. The Link had written the real line into `perPluginResults` ("kHs Transient Shaper"
+        didn't load (An OS error occurred during initialisation of the plug-in (-1))...) and nothing
+        read it. `technical` is that, verbatim, for the model and for the line's Details disclosure;
+        `sentence` is the one plain line, now with the rack's own reason in it. */
     void awaitChainAck(const juce::String& linkUid, int seq,
-                       std::function<void(bool ok, juce::String sentence, int slotsAfter)> cb,
+                       std::function<void(bool ok, juce::String sentence, juce::String technical,
+                                          int slotsAfter)> cb,
                        int maxWaitMs = 8000);
     // ---- THE VALUE RING, PRODUCER SIDE (remote control stage 3, 10 Oct 2026) ----------------------------
     // The FILE above is for decisions; this is for values. The rule that picks the channel is one question -
@@ -1000,6 +1031,10 @@ public:
     juce::uint64 liveEditorId() const;
     /** The processor's own rig line, written on its 1 Hz timer so a row can assert on a SHUT window. */
     void publishRigProcessorState();
+    /** SEAN'S #1 (16 Oct 2026): serve the parameter maps a Link asked for. A Link has no network client,
+        so a third-party slot on one could never ask for the map it needs to be dialled. On the processor
+        rather than the editor because a run can be going with no window attached. */
+    void serviceLinkMapRequests();
 private:
     juce::uint64 editorIdCounter_ = 0;
     juce::uint64 chatTurnOwnerId_ = 0;
@@ -1024,6 +1059,23 @@ public:
         if (! rc.valid) return -1;
         for (const auto& sl : rc.slots) namesOut.add (sl.name);
         return namesOut.size();
+    }
+    /** ---- SEAN'S #1 (16 Oct 2026): THE LANDED VALUES ON A LINK'S RACK, FOR THE RIG ----------------
+        "slot 1 attack_db=6;sustain_db=-2|slot 2 ..." - the same `landed` field the agent's read-back
+        reads, from the same sidecar, so the rig cannot pass a row the agent would fail (or the other
+        way round). Empty for a slot that read nothing back, which is the state his four plugins were
+        in and the whole subject of row T1. */
+    juce::String linkRackLandedForRig (const juce::String& uid) const
+    {
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || uid.isEmpty()) return {};
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid) return {};
+        juce::StringArray out;
+        for (int i = 0; i < (int) rc.slots.size(); ++i)
+            out.add ("slot " + juce::String (i + 1) + " " + rc.slots[(size_t) i].landedValues);
+        return out.joinIntoString ("|");
     }
     // NO ACCESS TOGGLE HERE. The nearest specifier above this point is the `public:` at line 204, so these
     // accessors are already public and adding `public:`/`private:` around them would make every member
@@ -1312,6 +1364,11 @@ public:
         float lufs = -100.0f;
         juce::String wavFilename;
         juce::String wavFilePath;
+        // ITEM 0 (14 Oct 2026): the AGENT RUN's snapshot (echojay::agentui::toJson), so the run row
+        // survives this window being destroyed - which is the record half of item 0b. In memory and
+        // deliberately NOT in getStateInformation: it is about a closed window inside one session,
+        // and the run's prose is already in `content`, which is what a saved project carries.
+        juce::String agentJson;
     };
     std::vector<ChatEntry> chatHistory;
     // ITEM 3 (12 Oct 2026): turns that finished while NO editor was attached. Written by the api hook set in the
@@ -1398,6 +1455,23 @@ public:
         std::function holding a dangling editor is exactly the crash the
         editor-recreation cycle would produce twice a minute. */
     std::function<void()> onDashUnreadChanged;
+
+    /** ---- SEAN'S #3 (16 Oct 2026): THE AGENT CHANGED A RACK, SO THE VIEW MUST FOLLOW -------------
+        *"after the agent adds to a Link, the main plugin's rack stays empty / 'Reading 0 plugin(s)'
+        until I switch racks."*
+
+        The 14 Oct fix (a bounded poll + a row rebuild) lives on the BUILD path, which an `add` op does
+        not take: the agent's Link arm writes a chain-edit command, waits for the ack, and reports -
+        and nothing then told the window that the rack it is looking at had moved. The data was right
+        (the sidecar had the slot a second later) and the screen was not.
+
+        The agent's sinks live on the PROCESSOR, which has no business knowing about panels, so it
+        raises this instead. The editor sets it in its constructor and CLEARS IT FIRST in its
+        destructor, the rule the hook above it records. No window attached = nothing to refresh, which
+        is correct rather than a missed update: a window that opens later rebuilds its rows anyway.
+
+        `uid` is the rack that changed ("" = this instance's own rack). */
+    std::function<void (const juce::String& uid)> onAgentChangedRack;
 
 
     // Visual mode state — persisted with DAW session
@@ -1776,6 +1850,9 @@ private:
     // Declared AFTER chainHost and before nothing that uses it at
     // construction. See getApi() above for the lifetime argument.
     EchoJayAPI api;
+    /** Declared AFTER api, chainHost and undoHistory_, which its sinks read, so it is destroyed
+        BEFORE them - the same lifetime argument getApi() above makes for api itself. */
+    std::unique_ptr<EJAgentHome> agentHome_;
 
     /** The process-wide poller. juce::SharedResourcePointer creates it on
         first use and destroys it when the last processor releases it, so the

@@ -39,6 +39,9 @@ import struct
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SCRIPT = {"chat": [], "agent": []}
+# The file the RIG writes its sampled parameter maps into (--maps). Read per request, never cached, so
+# the rig may write it at any point after the server is up.
+MAPS_FILE = ""
 STATE = {"chatIdx": 0, "agentRound": 0, "lock": threading.Lock(), "requests": []}
 
 
@@ -104,6 +107,47 @@ class Handler(BaseHTTPRequestHandler):
             with STATE["lock"]:
                 return self._json({"requests": STATE["requests"]})
         self._record(self.path, {})                        # GETs are requests too (/api/vst-config, feeds)
+        # ---- SEAN'S #1 (16 Oct 2026): PARAMETER MAPS, SO A THIRD PARTY CAN BE DIALLED AT ALL -------
+        #
+        # Everything else here answers {} - which for THIS route meant "the server has no map", and no
+        # map means no third-party plugin has ever been dialled in the rig. That is the single reason
+        # the rig passed four plugins Sean's Logic session found sitting at their defaults.
+        #
+        # The map is NOT written by hand in this file. --maps names a file the RIG writes, after
+        # sampling the real plugin's own parameters: the names and the anchors come from the binary, so
+        # a map that passes here is a map that could have come from the server. Reread per request so
+        # the rig can write it after the server is up.
+        if self.path.startswith("/api/params/maps"):
+            want = []
+            if "fps=" in self.path:
+                want = [f for f in self.path.split("fps=", 1)[1].split("&")[0].split(",") if f]
+            store = {}
+            if MAPS_FILE:
+                try:
+                    with open(MAPS_FILE) as f:
+                        store = json.load(f) or {}
+                except Exception as e:
+                    log("params/maps: cannot read", MAPS_FILE, repr(e))
+            # ONLY the fps asked for, as the real route does: serving everything would let a row pass
+            # on a map the plugin never requested, and the request is half of what is under test.
+            served, exact, fallback = {}, [], []
+            for fp in want:
+                if fp in store:
+                    served[fp] = store[fp]
+                    exact.append(fp)
+                elif "__any__" in store:
+                    # NOT A SHORTCUT PAST THE FINGERPRINT, and it says so in the log. The rig computes
+                    # the fp with the product's own function over the live parameter count; if the
+                    # plugin's own arithmetic lands one character away (a version string), the row would
+                    # fail overnight for a reason that has nothing to do with dialling. The row asserts
+                    # the EXACT key matched as a separate check, so the information is not lost.
+                    served[fp] = store["__any__"]
+                    fallback.append(fp)
+            log("params/maps: asked %d, served %d (exact %s, __any__ fallback %s)"
+                % (len(want), len(served),
+                   ",".join(f[:12] for f in exact) or "-",
+                   ",".join(f[:12] for f in fallback) or "-"))
+            return self._json({"maps": served})
         return self._json({})
 
     # ---- A CUT THAT THE CLIENT ACTUALLY FEELS (15 Oct 2026) ---------------------------------------------
@@ -166,6 +210,30 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 log("chat: the client went away mid-reply (expected in the close test)")
                 return
+        if self.path.startswith("/api/classify"):
+            # ---- SEAN'S CHECK 1 (15 Oct 2026): THE CLASSIFIER OUTLIVING THE WINDOW ------------------
+            #
+            # His 11:39 run died HERE, not in the chat call. The log has no /api/chat line at all:
+            #
+            #   11:39:33  EJChat: window #1 owns the turn in flight
+            #   11:39:36  EJChat: window #1 closing; it OWNED the turn in flight
+            #   11:39:40  EJNet: postJSON /api/classify ... never reached the server (status 0) - GIVING UP
+            #
+            # The classifier answered four seconds after the window died, the editor-guarded callback
+            # returned, and the chat request was never made - so none of fix 6's transport instrumentation
+            # could fire. To test that at all the rig has to be able to make the classifier SLOW, which is
+            # what this hold is for: the window closes while the classify is still in flight.
+            # _body() returns an ALREADY-PARSED dict, as every other handler here assumes
+            # (`body.get("chatId", "")`). My first cut called json.loads() on it, which throws on a
+            # dict, fell into its own except, and left the message empty - so the marker could never
+            # match and the hold never fired. The leg then waited 20 s for a row that was never coming.
+            msg = (body.get("message") or "") if isinstance(body, dict) else ""
+            if "rig-classifyhold-marker" in msg:
+                log("classify: HOLDING 5000ms so the window can close while it is in flight")
+                time.sleep(5.0)
+            # An empty object is the mock's ordinary classify answer: no mode, no intent, so the plugin
+            # proceeds exactly as it does with the classifier gated off.
+            return self._json({})
         if self.path.startswith("/api/agent/start") or self.path.startswith("/api/agent/step"):
             return self.agent_stream(body)
         if self.path.startswith("/api/agent/stop"):
@@ -235,6 +303,51 @@ class Handler(BaseHTTPRequestHandler):
             # The rig closed the window mid-reply: that IS the test, not a failure.
             log("chat-stream: the client went away mid-reply (expected in the close test)")
 
+    # ---- SEAN'S RULE 1 (16 Oct 2026): THE SCRIPT CANNOT KNOW THE PLUGIN'S NUMBERS ------------------
+    # Row T1 adds a REAL third-party plugin with a REAL value, and both come from the plugin: the rig
+    # samples its control and writes the name and a value inside its sampled range into the maps file
+    # under "__ask__". A number hard-coded here would either be out of the plugin's range (applyOne
+    # refuses it, correctly, and the row would be testing the refusal) or equal to its default, which is
+    # exactly the state the row exists to detect.
+    def _substitute(self, frame):
+        ask = {}
+        if MAPS_FILE:
+            try:
+                with open(MAPS_FILE) as f:
+                    ask = (json.load(f) or {}).get("__ask__") or {}
+            except Exception:
+                ask = {}
+
+        def walk(v):
+            if isinstance(v, dict):
+                return {k: walk(x) for k, x in v.items()}
+            if isinstance(v, list):
+                return [walk(x) for x in v]
+            if v == "__TP_NAME__":
+                return ask.get("name", "MTransient")
+            if v == "__TP_SEMANTIC__":
+                return ask.get("semantic", "attack_db")
+            if v == "__TP_CONTROL__":
+                return ask.get("control", "Attack")
+            if v == "__TP_VALUE__":
+                return ask.get("value", 0)
+            return v
+
+        # The settings object is keyed BY the semantic, so the key itself may be a placeholder.
+        out = walk(frame)
+
+        def rekey(v):
+            if isinstance(v, dict):
+                return {(ask.get("semantic", "attack_db") if k == "__TP_SEMANTIC__"
+                         else ask.get("control", "Attack") if k == "__TP_CONTROL__"
+                         else k): rekey(x)
+                        for k, x in v.items()}
+            if isinstance(v, list):
+                return [rekey(x) for x in v]
+            return v
+
+        return rekey(out)
+
     def agent_stream(self, body):
         """The scripted agent rounds.
 
@@ -279,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
         self._sse_open()
         try:
             for f in frames:
-                f = dict(f) if isinstance(f, dict) else f
+                f = self._substitute(dict(f)) if isinstance(f, dict) else f
                 hold = int(f.pop("_holdMs", 0)) if isinstance(f, dict) else 0
                 if hold:
                     time.sleep(hold / 1000.0)
@@ -297,13 +410,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--script", default="")
+    ap.add_argument("--maps", default="", help="JSON { \"<fp>\": <map> } the rig writes from a real plugin")
     a = ap.parse_args()
+    global MAPS_FILE
+    MAPS_FILE = a.maps
     if a.script:
         with open(a.script) as f:
             SCRIPT.update(json.load(f))
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     log(f"listening on 127.0.0.1:{a.port}  chat entries={len(SCRIPT.get('chat', []))} "
-        f"agent rounds={len(SCRIPT.get('agent', []))}")
+        f"agent rounds={len(SCRIPT.get('agent', []))} maps={MAPS_FILE or '(none)'}")
     srv.serve_forever()
 
 

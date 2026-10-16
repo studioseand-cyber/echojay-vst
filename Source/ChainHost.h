@@ -73,6 +73,7 @@ public:
         bool  keepLevel = false;   // 21m ruling 2: "keep this plugin's level" (the trim measure skips it)
         juce::String trimText;  // "-2.3 dB match" / "level kept" / "" (ChainHost::slotTrimText)
         juce::String pictureText;  // 21p item 2: "in -5.2 / out -5.1 dBTP · GR 1.8" or "no reading", under the slot
+        juce::String pictureBadge; // 15 Oct 2026: the tile's short form ("GR 1.8 WORKING"), or empty
         juce::String manufacturer;  // catalogue identity — editorPlacement's
                                     // float-by-identity rule keys on it
         // THE MODEL'S COPY of the same slot's settings text, and the reason
@@ -92,6 +93,9 @@ public:
         // different SOURCE, not a fallback hiding a missing value: on those
         // paths (prose guidance, stale-map notes, built-in applies) no tiering
         // was ever computed, so there is nothing being concealed.
+        /** SEAN'S #1 (16 Oct 2026): the landed values as numbers - "attack_db=6;sustain_db=-2" - read
+            from the plugin or the device, never from the request. See Slot::dialLandedValues. */
+        juce::String landedValues;
         juce::String settingsForModel;
         // TRUE when this slot's parameters were actually read this turn.
         //
@@ -922,6 +926,10 @@ public:
         juce::StringArray manual, readbackMiss, unconfirmed, approximate, outOfRange;
         juce::String servedFrom, nearMapNote, substitutedFrom;
     };
+    /** SEAN'S #1 (16 Oct 2026): fill Slot::dialLandedValues for a BUILT-IN slot, from the device's own
+        getParamValue for every asked id it says it knows. The mapped path fills the same field from each
+        control's display text. Public so a guard can drive it without standing up an apply. */
+    void recordBuiltinLandedValues (int slotIndex);
     juce::String     slotPluginId (int i) const;                            // hex uniqueId, the sidecar's pluginId
     SlotDialSnapshot getSlotDialSnapshot (int i) const;
     bool             restoreSlotDial (int i, const SlotDialSnapshot& snap);  // false = identity mismatch
@@ -1329,13 +1337,25 @@ public:
     //    the rest — never roll back, never half-apply an op.
     // onDone(results (one line per op, or the abort reason), appliedCount,
     //        abortedBeforeStart).
+    /** ---- SEAN'S RULING, 15 Oct 2026: WHOSE CHOICE IS THIS EDIT? -------------------------------
+        `deliberateLocalEdit` is true when the batch originates from a deliberate choice made in THIS
+        instance - the agent acting on the user's instruction on the rack this window has open. It is
+        false (the default, so every existing caller keeps today's behaviour) for a batch that ARRIVED
+        from another instance over the chain-cmd channel, which is a remote move.
+
+        It exists for the pre-gain, and for one reason: the agent's set_pre_gain was writing as AUTO,
+        so the level-match loop could override what the agent had just set and - worse - undoing it
+        restored the AUTO value instead of the hand-set one the user had. His ruling: on the own rack
+        the agent's pre_gain counts as user-set; the Link path stays userSet=false exactly as the
+        comment at the op defends. */
     void applyChainEdits(std::vector<ChainEditOp> ops,
                          int expectedRevision,
                          const juce::StringArray& baseSlots,
                          std::function<void(const juce::StringArray& results,
                                             int appliedCount,
                                             bool abortedBeforeStart)> onDone,
-                         std::function<void(const juce::String& label)> onProgress = {});
+                         std::function<void(const juce::String& label)> onProgress = {},
+                         bool deliberateLocalEdit = false);
                          // onProgress (Phase 1d): fired on the message thread
                          // as each op STARTS, with a real present-tense label
                          // ("Loading SPL De-Esser...") — feeds the staged
@@ -1423,19 +1443,63 @@ public:
     static constexpr float kFlagGrDb = 3.0f;              // ...and no stage working harder than 3 dB
     struct SlotPicture
     {
+        /** THE NO-READING FLOOR, NAMED (Sean, 15 Oct 2026). The fields below start at -200 to mean
+            "nothing has been measured", and ship 1's fix 3 then set `valid` on a slot whose GR could
+            be read while leaving the peaks and the loudness at that floor - so the strip printed
+            "in -200.0 / out -200.0 dBTP" as though it were a measurement. That is the exact trap
+            LinkMeterFrame's own comment names: "an ungated dB field reading 0.0f would render as a
+            real measurement". `valid` is not one gate but four, so each group is printed only when
+            it has a reading of its own. */
+        static constexpr float kNoReadingDb = -199.0f;   // anything at or below is the floor, not a figure
         bool  valid = false;          // a reading that passed the gate; false = "no reading", never a floor number
         juce::String why;             // why it did not pass, in the card's words
         float inTpDb = -200.0f, outTpDb = -200.0f;
         float inLufs = -200.0f, outLufs = -200.0f;
         float grDb = 0.0f; bool grKnown = false;
+        // ---- THE LISTEN WINDOW (Sean, 15 Oct 2026) ---------------------------------------------
+        //  grDb above is the reduction AT THE INSTANT IT WAS READ, which for the agent was always the
+        //  release tail just after "Got it, you can stop" - 0.1 dB and 2.1 dB against a meter showing
+        //  5 dB. These three are what the device accumulated over the window, and grWindowFrames == 0
+        //  means NOTHING WAS MEASURED rather than "no reduction".
+        // grLoudestDb (the 95th percentile) is THE figure to report - Sean's ruling, 15 Oct 2026.
+        // grPeakDb is the true max: one transient instant, kept for spike warnings and never quoted.
+        float grPeakDb = 0.0f, grTypicalDb = 0.0f, grLoudestDb = 0.0f;
+        // grHeldDb is what the TILE shows and what the device's own meter draws - one source, so the
+        // two cannot disagree (Sean's ruling, 15 Oct 2026).
+        float grHeldDb = 0.0f;
+        /** ---- SEAN'S RULING, 15 Oct 2026: NO ESTIMATES, EVER -----------------------------------
+            A gain-reduction figure is shown ONLY for an EchoJay device (which reports its own) or a
+            third-party plugin whose map is CERTIFIED - it passed the EJ Maps compressor sweep, which
+            is what the server's validator gates a comp profile on. Everything else shows no GR and
+            check(gr) answers `not_certified` with no number. An estimate derived from in/out metering
+            is explicitly ruled out: a plausible figure nobody can check is worse than no figure. */
+        bool  grCertified = false;
+        juce::uint64 grWindowFrames = 0;
+        bool  grWindowKnown() const { return grKnown && grWindowFrames > 0; }
         float preTrimDb = 0.0f, postTrimDb = 0.0f;
         bool  exempt = false;     // R1 (21s-b): the Level / Limiter slots - no reading, but the trims are shown
         bool  dynamics = false;   // R3 (21s-b): a dynamics-role slot reports "working X dB" (inLufs - outLufs)
-        bool  hot() const { return valid && inTpDb > kSlotInputCeilingDb; }
-        bool  working() const { return valid && grKnown && grDb > kFlagGrDb; }
+        bool  hasPeaks()    const { return inTpDb  > kNoReadingDb && outTpDb  > kNoReadingDb; }
+        bool  hasLoudness() const { return inLufs > kNoReadingDb && outLufs > kNoReadingDb; }
+        /** Is there ANY real figure here? `valid` alone is not the question any more. */
+        bool  anyReading()  const { return hasPeaks() || hasLoudness() || (grKnown && grCertified); }
+        bool  hot() const { return valid && hasPeaks() && inTpDb > kSlotInputCeilingDb; }
+        // "working harder than N dB" is a claim about gain reduction, so it obeys the same rule: the
+        // held figure (what the meter shows), and only where a figure is allowed at all.
+        bool  working() const { return valid && grKnown && grCertified && grHeldDb > kFlagGrDb; }
     };
     SlotPicture slotPicture(int i) const;
-    juce::String slotPictureText(int i) const;            // the line under the slot in the chain strip
+    juce::String slotPictureText(int i) const;            // the FULL line: the Listen card and the agent
+    /** THE TILE'S OWN SHORT FORM (Sean, 15 Oct 2026). The full line does not fit a 118x64 chain block -
+        it was being drawn at y=47, which is exactly where the B / X / < / > buttons begin, so it sat on
+        top of them. The tile gets the short, high-value part (the gain reduction and the two flags) on
+        the trim row, where there is a free 8 px band; the full line keeps going to the Listen card and
+        to the agent, where length costs nothing. Empty when there is nothing real to say. */
+    juce::String slotPictureBadge(int i) const;
+    /** Start a new gain-reduction listen window on every slot that reports one. Called when the agent
+        begins a listen (ToolExecutor::beginListenWindow) and by the tally reset, so one reset means
+        one thing everywhere. Returns how many slots were reset. */
+    int resetGrWindows();
     /** FIX 1(b), 14 Oct: ONE SLOT PARAMETER, BY NAME, AS A NUMBER. The agent's `set` must read back what it
         asked for and refuse to call an unapplied change a success - Sean's compressor kept attack 10 ms,
         release 120 ms and makeup 0 dB while the closing text named 18, 85 and "a touch of makeup".
@@ -1498,6 +1562,13 @@ public:
     std::function<void(const UndoSnapshot& before, const juce::String& label, const juce::String& coalesceKey)> onUndoPush;
     std::function<void(const juce::String& kind, int slot, juce::var before, juce::var after, const juce::String& label, const juce::String& coalesceKey)> onScalarUndo;
     std::function<void(int slot, juce::var beforeParams, juce::var afterParams, const juce::String& label)> onDialUndo;
+    /** ---- U1 (16 Oct 2026): A PRE-GAIN EDIT FROM THE CHAIN CHANNEL IS AN UNDOABLE ACTION ----------
+        The knob's own gesture records an entry (EchoJayProcessor::recordPreGainUndo, value AND
+        hand-set flag). An `edit` op's pre_gain recorded NOTHING, so `{op:"undo"}` - which walks the
+        plugin's history one step - stepped straight past the agent's change and reversed the user's
+        previous move, reporting success because the history had moved. Raised by the op, recorded by
+        the processor's existing recorder, so there is one recorder for both roads. */
+    std::function<void(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet)> onPreGainUndo;
     void applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled);
     juce::String slotUndoTarget(int i) const;                       // "uidHex|name" - the identity an entry keys on
     int  slotForUndoTarget(const juce::String& target, int hintIndex = -1) const;   // -1 = absent
@@ -2049,6 +2120,17 @@ public:
     // the OTHER host resolves against the same list without scanning.
     // maybeReloadEntriesCache() re-loads when another host refreshed it.
     static juce::File getEntriesCacheFile();
+    /** SEAN'S CHECK 5, PART 2 (15 Oct 2026): plugins that do NOT load on this machine right now -
+        unlicensed, or they refuse to instantiate. Recorded by whichever process saw the failure (the
+        Link's, usually) and read by the V2 when it builds the inventory the agent picks from, so a
+        plugin that has already failed is never offered again. The mark is cleared the moment the
+        plugin loads for real, so it is a reading of now and never a judgement about ownership. */
+    static juce::File getLoadFailedFile();
+    static void recordLoadFailure(const juce::String& name, const juce::String& format,
+                                  const juce::String& why);
+    static void clearLoadFailure(const juce::String& name, const juce::String& format);
+    static juce::StringArray loadFailedPluginNames();
+    static juce::String loadFailureReasonFor(const juce::String& name);
     void maybeReloadEntriesCache();
 
     // ---- Popout-only plugins (both hosts) ----------------------------------
@@ -2528,6 +2610,22 @@ private:
         juce::String                         dialServedFrom;
         int                                  dialAppliedCount = 0;
         juce::StringArray                    dialApplied;   // 18g: the applied controls' labels (readback), beside dialManual
+        /** ---- SEAN'S #1 (16 Oct 2026): THE LANDED VALUES, AS NUMBERS, NOT AS PROSE ------------------
+            "<semantic>=<number>;..." - what each dialled control ACTUALLY READS, read from the plugin
+            (its display text, parsed in the semantic's unit) or from the built-in device's own
+            getParamValue. Empty for a control whose value could not be read.
+
+            IT EXISTS BECAUSE THE OTHER TWO FIELDS CANNOT ANSWER THIS. `settings` is composed from
+            formatSemanticSetting(semantic, r.requestedValue) - the value the request ASKED for - and
+            the agent's Link read-back was parsing numbers back out of that text. So an add whose
+            settings never landed could be "confirmed" against an echo of its own request, which is
+            the exact fault this contract was written to end, one level further out.
+
+            A PACKED STRING, and here that is safe: every value is a number, so neither ';' nor '='
+            can appear in one, and there is no escaping rule to get wrong. It rides in the rack
+            sidecar (additive, written only when non-empty) because a Link is another process and the
+            sidecar is the only road its values take. */
+        juce::String                         dialLandedValues;
         // dial-3 denominator (CONTRACT_racked_slot_controls.md A3/A7.2):
         // report.size() from the LAST apply loop; -1 = the apply never ran,
         // and getDialInfos derives the pre-apply key count instead.
@@ -3181,6 +3279,9 @@ private:
 
     static juce::File getPluginListFile();
     static juce::File getBlacklistFile();
+
+
+
     static juce::File getDeadmanFile();
     // Turn every chain_load_deadman.<pid>.txt left by a dead process into
     // blacklist rows (constructor; see the death-marker block in the cpp)

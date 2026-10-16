@@ -1837,7 +1837,7 @@ void EchoJayAPI::sendChat(const juce::StringArray& roles,
         // had been lost rather than answered badly, which is Sean's item 7 exactly. A real HTTP answer
         // (4xx/5xx with no error body) is NOT this case and keeps its own wording.
         juce::String error = (statusCode == 0)
-            ? interruptedTurnLine ("EchoJay could not be reached - check your connection and try again")
+            ? unreachableTurnLine()
             : juce::String ("Failed to get AI response");
         if (json.isObject())
         {
@@ -2135,7 +2135,7 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 // answer - so they say so in the same words, and both carry the [interrupted] marker the
                 // UI keys Retry on.
                 {
-                    const auto line = interruptedTurnLine ("EchoJay could not be reached - check your connection and try again");
+                    const auto line = unreachableTurnLine();
                     notifyChatTurnFinalised (line, false);
                     dispatch ([ev, line] { if (ev->onError) ev->onError (line, 0); });
                 }
@@ -2343,7 +2343,7 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 // contract shape: no done, deliver nothing, caller drops all.
                 DBG ("[EchoJay] streamChat ended without done frame");
                 {
-                    const auto line = interruptedTurnLine ("the connection dropped part way through");
+                    const auto line = unreachableTurnLine();
                     notifyChatTurnFinalised (line, false);   // fix 6
                     dispatch ([ev, line] { if (ev->onError) ev->onError (line, 0); });
                 }

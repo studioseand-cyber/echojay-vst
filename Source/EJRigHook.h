@@ -79,7 +79,19 @@ namespace cmd
     // (Sean's Auto ruling, 14 Oct). Both spellings, because every existing row sends `on` and a rig that
     // had to be migrated in lockstep with the plugin is a rig that stops being run.
     inline constexpr const char* agentChip    = "agent_chip";      // { on: bool } | { mode: "off|ask|auto" }
-    inline constexpr const char* press        = "press";           // { button: apply|apply_all|skip_all|skip_line|details|stop }
+    // ITEM 0 (15 Oct): with the run rendered as a transcript MESSAGE, these presses land on the
+    // message's own buttons (EchoJayEditor::rigPressAgentRow), falling back to the old card only when
+    // the row has no such control. `apply` keeps its old meaning - apply the plan - because twenty rows
+    // already send it; `apply_line` is the LINE's own Apply, which is item 2's actual fix, and
+    // `undo_step`, `undo_all` and `changes` are the row's other controls. `undo` is unchanged and still
+    // means the CHAIN BAR's Undo (ship 1, fix 4), not a step's.
+    // `chat_retry` (16 Oct 2026) is the CHAT row's own pill - the interrupted row's Retry, Sean's #7 -
+    // and it is deliberately NOT spelled `retry`, which in this vocabulary is the agent RUN row's retry.
+    // Two controls on two surfaces with one name is how a row ends up proving the wrong button.
+    // `tab_chat` / `tab_chain` press the TAB BUTTONS (16 Oct 2026). Row H1's subject is the mode hint,
+    // which is gated on the composer being on screen - *"CHAT tab, composer visible"*, Sean's own words -
+    // so a row about it has to be able to get there the way he does.
+    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|got_it|retry|chat_retry|tab_chat|tab_chain }
     inline constexpr const char* selectLink   = "select_link";     // { uid }  ("" = the own rack)
     inline constexpr const char* reportState  = "report_state";    // {}
     inline constexpr const char* setRackOut   = "set_rack_out";    // { db }   - the user's own knob, not the agent op

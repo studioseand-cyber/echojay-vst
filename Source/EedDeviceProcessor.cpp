@@ -153,6 +153,32 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
         const auto* spec = schema.find (id.toStdString());
         if (spec == nullptr)
         {
+            // ---- SEAN'S #4 (16 Oct 2026): AN ID THE DEVICE OWNS BUT DOES NOT PUBLISH ---------------
+            //
+            // The schema is the gate, and it is right to be: *"a device silently absorbing
+            // 'thrshold_db' would look like it worked and sound like it did nothing."* But the EQ's
+            // BANDS are not in its schema - six bands times eleven leaves would be sixty-six entries
+            // in the add-menu's parameter list - and they are exactly what the agent dials. So
+            // `band1.gain_db` resolved no spec, was counted as unknown, and setParamValue was never
+            // reached: the row that proved it (E1) read the bands back at their defaults, 1000 Hz and
+            // 0.0 dB, after a turn that asked for 240 Hz and -2.5 dB.
+            //
+            // THE TYPO IS STILL CAUGHT, and the gate is NARROW ON PURPOSE: a device must claim the id
+            // through ownsUnpublishedParam, which DEFAULTS TO FALSE, and setParamValue must then return
+            // true. Only the EQ overrides it. Using knowsParam here instead would have been wrong and I
+            // nearly did it: that one defaults to TRUE (so existing devices' reads behave as they did),
+            // and keying a write bypass on it would have opened every device's write path on the
+            // strength of a default chosen for reads.
+            //
+            // NO SPEC MEANS NO CLAMP HERE: the device clamps its own band ranges (EqEngine does), which
+            // it must, because it is the only thing that knows them.
+            double own = 0.0;
+            if (ownsUnpublishedParam (id) && numberFromVar (prop.value, own) && setParamValue (id, own))
+            {
+                ++applied;
+                notes.add (id + " " + juce::String (own, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."));
+                continue;
+            }
             ++skipped;
             unknown.add (id);
             continue;

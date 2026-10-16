@@ -68,6 +68,13 @@ public:
     // FIX 3, 14 Oct: the rack's route to this figure (the editors have painted it for months).
     bool  reportsGainReduction() const override { return true; }
     float gainReductionDbForHost() const override { return gainReductionDb(); }
+    // 15 Oct 2026: the listen window, not a momentary sample (Sean's checks 2 and 3).
+    float gainReductionHeldDbForHost()    const override { return core_.grRecentHoldDb(); }
+    float gainReductionLoudestDbForHost() const override { return core_.grWindowLoudestDb(); }
+    float gainReductionPeakDbForHost()    const override { return core_.grWindowPeakDb(); }
+    float gainReductionTypicalDbForHost() const override { return core_.grWindowTypicalDb(); }
+    juce::uint64 grWindowFramesForHost()  const override { return core_.grWindowFrames(); }
+    void  resetGrWindowForHost() override { core_.resetGrWindow(); }
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
     // Where the signal LIVES on that curve — the dwell histogram behind the

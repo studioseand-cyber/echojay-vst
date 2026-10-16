@@ -124,10 +124,10 @@ DoSinks sinks (SinkLog& lg)
     DoSinks s;
     s.agentModeOn = [] { return true; };
     s.echoJayOnly = [] { return false; };
-    s.applyChainOps = [&lg] (const juce::String& uid, const juce::var&, std::function<void (bool, juce::String)> cb)
+    s.applyChainOps = [&lg] (const juce::String& uid, const juce::var&, std::function<void (bool, juce::String, juce::String)> cb)
     {
         ++lg.chainOps; lg.lastUid = uid;
-        if (cb) cb (lg.applyOk, lg.applyOk ? juce::String ("the rack took it") : juce::String ("the rack refused it"));
+        if (cb) cb (lg.applyOk, lg.applyOk ? juce::String ("the rack took it") : juce::String ("the rack refused it"), {});
     };
     s.setRackOutDb = [&lg] (const juce::String& uid, double db, bool absolute,
                             std::function<void (bool, juce::String)> cb)
@@ -458,8 +458,27 @@ int main()
         // THE PART THAT MATTERS MORE THAN THE EMPHASIS: nothing a model writes may eat a reply.
         check (plain ("2 * 3 = 6") == "2 * 3 = 6", "a lone asterisk stays a literal asterisk", plain ("2 * 3 = 6"));
         check (plain ("gain **down") == "gain **down", "an unclosed ** stays literal", plain ("gain **down"));
-        check (plain ("a_b_c and x_y") == "abc and x_y", "a closed _pair_ renders; an unclosed one does not",
-               plain ("a_b_c and x_y"));
+        // ---- SEAN'S RULING, 15 OCT 2026: THIS LEG HAD THE BUG WRITTEN DOWN AS CORRECT -------------
+        // It asserted "a_b_c" -> "abc", i.e. that an underscore INSIDE A WORD is emphasis. He hit the
+        // consequence in Logic: "88_Omnisphere_01" rendered as italic "88Omnisphere01", and the chat
+        // has been misspelling the names of the tracks it is talking about ever since 3b landed. The
+        // rule is CommonMark's own - `_` only marks at a word boundary, `*` may mark inside a word -
+        // so the contract changed and this leg changed with it.
+        check (plain ("a_b_c and x_y") == "a_b_c and x_y",
+               "an underscore INSIDE a word is a literal character, not emphasis  (RED before this "
+               "ruling: it rendered as \"abc and x_y\")", plain ("a_b_c and x_y"));
+        check (plain ("88_Omnisphere_01 is loud") == "88_Omnisphere_01 is loud",
+               "...so Sean's own track name survives the renderer, which is the case that found it",
+               plain ("88_Omnisphere_01 is loud"));
+        check (plain ("88_7even Kick_2_01 and Aitch_4_01") == "88_7even Kick_2_01 and Aitch_4_01",
+               "...and so do the rest of them, in one string, with several underscores apiece",
+               plain ("88_7even Kick_2_01 and Aitch_4_01"));
+        check (plain ("an _italic_ word") == "an italic word",
+               "...while a REAL _italic_ at a word boundary still renders - proven in both directions, "
+               "so the rule is neither unfalsifiable nor unpassable", plain ("an _italic_ word"));
+        check (plain ("snake_case_name") == "snake_case_name",
+               "...and a three-part snake_case name keeps all of its underscores",
+               plain ("snake_case_name"));
         check (plain ("") == "", "an empty reply renders nothing");
         check (boldRuns ("**a** and **b**") == 2, "two bold runs", juce::String (boldRuns ("**a** and **b**")));
     }

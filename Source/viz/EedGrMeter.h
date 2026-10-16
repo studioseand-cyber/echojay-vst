@@ -56,6 +56,33 @@ public:
 
     void setCaption (const juce::String& c) { caption_ = c; repaint(); }
 
+    /** ---- SEAN'S RULING, 15 Oct 2026: A 2-SECOND HOLD, AND A FIGURE TO READ -----------------------
+        *"add a 2-second peak-hold tick on the EchoJay Compressor GR meter so I can verify the figure
+        by eye."* The point is to be able to compare what the meter shows with what check(gr) reports,
+        which a 1-second hold with no number does not allow.
+
+        SETTABLE RATHER THAN CHANGED: this component is shared by the whole Dynamics cluster, and he
+        asked for it on the compressor. The default stays exactly as the other five faces have it, so
+        this adds a capability instead of altering theirs. */
+    void setPeakHoldMs (int ms) { peakHoldMs_ = juce::jmax (0, ms); }
+    /** ---- SEAN, 15 Oct 2026: THE HELD FIGURE COMES FROM THE DEVICE, NOT FROM THE UI --------------
+        "the tile must match the device's own GR meter (tile said 0.4 while the meter said 1.2)."
+
+        They disagreed because this component computed its OWN hold while the tile sampled the live
+        float at a different instant. When the owner pushes the device's held value here, the meter
+        stops computing a second answer and draws the one the tile and the agent also read. */
+    void setHeldDb (float heldPositiveDb)
+    {
+        const auto v = juce::jmax (0.0f, heldPositiveDb);
+        if (std::abs (v - peak_) < 0.01f) return;
+        peak_ = v;
+        peakHoldFrames_ = 0;          // the DEVICE owns the hold now; this component only draws it
+        deviceOwnsHold_ = true;
+        repaint();
+    }
+    /** Draw the held figure as text beside the tick, so the eye has a number to compare. */
+    void setShowHeldFigure (bool show) { showHeldFigure_ = show; repaint(); }
+
     // Greys the meter out — used for BYPASS, so a bypassed device does not sit
     // there displaying stale reduction it is not applying.
     void setDimmed (bool d)
@@ -77,7 +104,7 @@ public:
         if (std::abs (v - value_) < 0.02f) return;
 
         value_ = v;
-        if (v > peak_) { peak_ = v; peakHoldFrames_ = kPeakHoldFrames; }
+        if (v > peak_) { peak_ = v; peakHoldFrames_ = juce::jmax (1, (peakHoldMs_ * 30) / 1000); }
         repaint();
     }
 
@@ -154,6 +181,21 @@ public:
                 else
                     g.fillRect (track.getX() + track.getWidth() * pt - 1.0f,
                                 track.getY() + 1.0f, 2.0f, track.getHeight() - 2.0f);
+
+                // THE NUMBER BESIDE THE TICK (Sean, 15 Oct 2026): a held line with no figure cannot
+                // be compared with what check(gr) reports, which is the whole reason for the hold.
+                if (showHeldFigure_)
+                {
+                    g.setColour (C::amber.brighter (0.4f));
+                    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+                    const auto txt = juce::String (peak_, 1);
+                    if (vertical_)
+                        g.drawText (txt, track.getX(), (int) (track.getY() + track.getHeight() * pt) - 11,
+                                    (int) track.getWidth(), 10, juce::Justification::centred, false);
+                    else
+                        g.drawText (txt, (int) track.getRight() - 30, (int) track.getY(),
+                                    28, (int) track.getHeight(), juce::Justification::centredRight, false);
+                }
             }
         }
 
@@ -178,11 +220,13 @@ public:
     }
 
 private:
-    // ~1 second at 30 Hz.
-    static constexpr int kPeakHoldFrames = 30;
+    // The hold, in milliseconds. 1000 is what every face had before the compressor asked for 2000;
+    // the timer runs at 30 Hz, so the frame count is derived rather than written twice.
+    int peakHoldMs_ = 1000;
 
     void timerCallback() override
     {
+        if (deviceOwnsHold_)     return;          // the device's hold is pushed, not decayed here
         if (peakHoldFrames_ > 0) { --peakHoldFrames_; return; }
         if (peak_ <= value_)     return;
 
@@ -195,7 +239,8 @@ private:
     float        maxDb_ = 24.0f;
     float        value_ = 0.0f, peak_ = 0.0f;
     int          peakHoldFrames_ = 0;
-    bool         vertical_ = false, dimmed_ = false;
+    bool         vertical_ = false, dimmed_ = false, showHeldFigure_ = false;
+    bool         deviceOwnsHold_ = false;
     juce::String caption_ { "GR" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GrMeter)

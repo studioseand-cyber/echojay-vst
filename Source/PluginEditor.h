@@ -6,6 +6,8 @@
 #include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the Link editor
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJAgentPanel.h"
+#include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
+#include "EJAgentHome.h"      // ITEM 0b (15 Oct 2026): the client and executor live on the PROCESSOR
 #include "EJAgentExecutorDo.h"   // agent mode: A2's read half plus the mutating half
 #include "EJChatMarkdown.h"      // item 3b (13 Oct 2026): the chat's inline markdown, shared by paint + measure
 #include "EJRigHook.h"           // ask A (13 Oct 2026): the host rig's automation channel, inert by default
@@ -2016,6 +2018,31 @@ private:
         // reloaded chat has no tap in flight, so there is nothing for a
         // persisted copy to answer.
         juce::String clientAskKind;
+        // ---- ITEM 0 (Sean, 14 Oct 2026): THE AGENT RUN IS A MESSAGE ------------------
+        //
+        // One agent run = one row in the transcript, with its steps ticking in place and
+        // its buttons on the lines (docs/MOCKUP_AGENT_IN_CHAT_APPROVED.md). This is the
+        // FIFTH typed payload on a message, not a new mechanism - chainData, editData,
+        // gainData and askData already render structured cards with buttons inside a
+        // bubble, which is the one fact that decided the shape.
+        //
+        // agentData is the run's SNAPSHOT: echojay::agentui::toJson(RunView), rewritten on
+        // every change while the run is live and left as the record once it is over. The
+        // live client and this snapshot both produce a RunView, and the measure pass, the
+        // paint pass, the hit test and the rig all read only that - so a height and a
+        // pixel cannot come from different authorities.
+        //
+        // DOWNGRADE-SAFE: a new key the old build never reads, and the run's prose stays
+        // in `content`, so ship_2026-10-09a opens a saved project showing the closing
+        // sentence as an ordinary reply. True, not merely harmless.
+        juce::String agentData;
+        // Identity, NOT an index: the run's rows are rewritten from async callbacks and a
+        // captured index drifts when another message lands first (the provisionalId
+        // reasoning above, verbatim). 0 = this message is not an agent run.
+        int  agentRunId = 0;
+        // -1 = follow the run's own state (expanded while it runs, collapsed once it is
+        // done); 0/1 = the user has pressed "N changes" / "Hide steps" and that press wins.
+        int  agentStepsOpen = -1;
     };
     std::vector<ChatMsg> chatMessages;
     // THE shared display source: both text-layout passes (measure + paint)
@@ -2325,11 +2352,29 @@ private:
     bool lastAgentChip_ = false;
     // The timer's change test is the MODE now, not the boolean: Ask -> Auto is a change the chip must show.
     AgentApproval lastAgentMode_ = AgentApproval::Off;
+    /** False until this window has synced the chip once, so the construction-time sync and a window
+        rebuild cannot raise the mode hint - they are not somebody changing the mode. */
+    bool haveSeenMode_ = false;
     /** THE MOCKUP'S ONE PLAIN LINE about what the current mode does. It FLOATS over the chat, anchored to
         chatBoxRect_ exactly as the Reaper key hint does, because that is the idiom in this file for "a strip
         by the composer" and it touches no surface's height math. It yields to the key hint, which is rarer
         and more urgent, so the two can never overlap. */
     juce::Label      agentModeLine_;
+    /** SEAN'S RULING, 15 Oct 2026: the mode description is the CHIP'S TOOLTIP, and this strip is a
+        three-second acknowledgement shown only when the mode CHANGES. The chat column reserves
+        nothing for it, because it is no longer a fixed line. */
+    static constexpr int kAgentModeLineH = 16;
+    static constexpr int kAgentModeLineMs = 3000;
+    juce::int64 agentModeLineUntilMs_ = 0;
+    void showAgentModeLineBriefly();
+    /** The composer column's left inset, so the containment belt in syncAgentModeLine measures against
+        the column the line is allowed to live in rather than against the viewport alone. */
+    static constexpr int chatAvatarReserveForLine() { return 34; }
+    /** Where the line actually is, published for the rig. Empty = not shown. */
+    juce::Rectangle<int> agentModeLineRect_;
+    /** Why the hint is not showing, in words, published for the rig. Six independent gates refuse it
+        and the verdict alone cannot tell them apart. */
+    juce::String agentModeLineWhy_;
     void             syncAgentModeLine();
     void syncAgentChip (bool force = false);
     bool rehydratedFromStore_ = false;  // one-shot onLoaded re-hydrate
@@ -2527,9 +2572,10 @@ private:
     // DECLARATION ORDER MATTERS, and A2 said so: the panel removes itself as a listener in its destructor, so
     // it must be destroyed BEFORE the client. Members are destroyed in reverse declaration order, so the panel
     // is declared AFTER the client. The executor outlives both (the client holds a reference).
-    std::unique_ptr<echojay::agent::ToolExecutor> agentExecutor_;   // ExecutorDo (10 Oct): A2's read half + A's mutating half
-    // The same object, typed, for setTarget - which only the read half declares. Never owned here.
-    echojay::agent::ExecutorRead* agentReadExecutor_ = nullptr;
+    // ---- ITEM 0b (15 Oct 2026): THE EXECUTOR IS THE PROCESSOR'S ----------------------------------
+    // It used to be owned here, which is why a closed window ended a run. Both accessors go through
+    // the processor's EJAgentHome; neither owns anything.
+    echojay::agent::ExecutorRead* agentReadExecutor() const;
     // ITEM 7 (14 Oct 2026): the last target handed to the executor, so syncAgentTarget() logs a CHANGE
     // rather than restating the same uid on every send. "(unset)" is distinguishable from "" (the own rack),
     // which is the distinction that hid the bug: an executor that was never told anything looked exactly
@@ -2545,8 +2591,76 @@ private:
     void publishRigState();
     // rigLastSeq_ moved to the PROCESSOR (14 Oct 2026): an editor member started at 0 on every reopen, so
     // the last command on disk was re-executed by the next window.
-    std::unique_ptr<EJAgentClient>                agentClient_;
+    /** The run's client, which OUTLIVES this window (item 0b). Never null once the editor has been
+        constructed: the processor builds the home on first use, and that first use is here. */
+    EJAgentClient* agentClient() const;
     std::unique_ptr<EJAgentPanel>                 agentPanel_;
+
+    // ======================= ITEM 0: THE AGENT RUN AS A TRANSCRIPT ROW ========================
+    //
+    // Sean's ruling, 14 Oct 2026: "like Claude does it". The run is a message, its steps tick
+    // in place, the buttons are on the lines, and when it finishes the row collapses to its
+    // closing sentence with "N changes" and Undo all. docs/MOCKUP_AGENT_IN_CHAT_APPROVED.md.
+    //
+    // The floating EJAgentPanel above STAYS THIS ROUND, as Sean's Q5 ruling says ("stay for one
+    // round, then delete") - a renderer swap is exactly the change that wants a fallback. It is
+    // suppressed while the row renders, and EJ_AGENT_PANEL=1 brings it back without a rebuild.
+    bool agentRowRendererOn() const;
+    /** ITEM 0b, SEPARATELY (16 Oct 2026): does a live run survive its window closing? Default NO -
+        item 0's renderer ships this round and 0b's behaviour does not, and one switch for both would
+        have shipped the unproven half with the proven one. EJ_AGENT_0B=1 for the rig's B1-B4. */
+    bool agentRunSurvivesCloseOn() const;
+
+    /** The client talks to the editor through this, so the editor does not need to become a
+        listener base of its own. The bridge is declared AFTER the client for the destruction
+        order A2 named: it removes itself in its destructor, so it must die first. */
+    struct AgentRunBridge : EJAgentClient::Listener
+    {
+        explicit AgentRunBridge (EchoJayEditor& e) : ed (e) {}
+        void agentChanged() override;
+        void agentTranscript (const juce::String& role, const juce::String& text) override;
+        EchoJayEditor& ed;
+    };
+    std::unique_ptr<AgentRunBridge> agentBridge_;
+
+    int   agentRunIdSeq_  = 0;     // never reissued, so a stale callback cannot find a new run
+    int   agentRunMsgId_  = 0;     // the run message this session is writing (0 = none)
+    juce::String agentRunSession_; // the sessionId that message belongs to
+    juce::String agentRunKey_;     // the row's own key, minted before any sessionId exists
+    int   agentRowLastH_ = -1;     // the last height laid out, so a delta does not re-run resized()
+    /** THE ONE WIDTH the row is laid out at: maxBubbleW's own formula less the bubble's inner
+        padding, which is exactly what the paint pass hands drawAgentRunRow. A second derivation is
+        how a card's measured height and its painted pixels part company. */
+    int  agentRowWidth() const;
+    float agentRunPhase_  = 0.0f;  // the spinner's phase; advanced by the editor's own 20 Hz timer
+    juce::StringArray agentExpandedRows_;   // Details open, BY STEP ID (item 3's rule, 13 Oct)
+    juce::Rectangle<int> agentRowPaintRect_;      // what the ticker repaints while a run is live
+    std::vector<echojay::agentui::RunZone> agentRunZones_;   // rebuilt by every chat paint
+    int agentRunZoneMsg_ = -1;                               // which message those zones belong to
+
+    /** The run's model for this message: the LIVE client when the message is this session's
+        run, the persisted snapshot otherwise. One function, so a reopened chat and a running
+        one are rendered by the same code. */
+    echojay::agentui::RunView agentRunViewFor (const ChatMsg& msg) const;
+    /** The row's height at the chat's inner width. The measure pass AND the paint pass call
+        this, like every other card helper here. */
+    int  agentCardHeight (const ChatMsg& msg) const;
+    /** Create or rewrite this run's message from the client. Called on every agentChanged(). */
+    void syncAgentRunMessage();
+    /** A press on the row. The ONE handler; a zone exists only when pressing it does something. */
+    void agentRowPressed (const echojay::agentui::RunZone& z);
+    ChatMsg* agentRunMessage();
+    const ChatMsg* agentRunMessage() const;
+    /** THE HOST RIG: press a named control on the run row exactly as the mouse does. Returns
+        false when there is no such control, so a row can tell "the button did nothing" from
+        "there was no button" - the distinction item 3 turned on. */
+    void drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> area, const ChatMsg& msg, int msgIndex);
+    bool rigPressAgentRow (const juce::String& button);
+    /** ITEM 0b: render whatever the run said while no window was attached, and mirror the record
+        the processor kept, so a reopened window shows the run at whatever point it reached. */
+    void drainParkedAgentLines();
+    void adoptAgentRunRow();
+    juce::var rigAgentRowState() const;
     /** HOOK E5's switch. Off = byte-identical to today: nothing is constructed, nothing is sent, no path runs.
         Dev-mode marker AND a named flag file, which is the discipline every new path in this round uses, and it
         comes out before beta. */
@@ -2558,11 +2672,13 @@ private:
         running a dev build. A switch that cannot be switched is not a switch. The flag file alone is the
         answer, written by the Settings toggle, and OFF is still the default because the file does not exist
         until somebody ticks it. */
-    static juce::File agentModeFlagFile()
-    {
-        return echojay::userAppData().getChildFile ("EchoJay").getChildFile ("agent_mode");
-    }
-    static bool agentModeOn() { return agentModeFlagFile().existsAsFile(); }
+    //  ITEM 0b (15 Oct 2026): THE PATH AND THE PREDICATE MOVED, THE MEANING DID NOT. The one gate
+    //  every mutating op consults used to be a static of the class that is allowed to disappear
+    //  mid-run, and the executor - now owned by the processor - cannot reach into the editor for it.
+    //  So the implementation is echojay::agentmode (EJAgentHome.h) and these delegate: one reader of
+    //  the file, and ship_2026-10-09a, every guard and the Settings toggle all see what they did.
+    static juce::File agentModeFlagFile() { return echojay::agentmode::flagFile(); }
+    static bool agentModeOn() { return echojay::agentmode::on(); }
 
     /** AGENT MODE HAS THREE STATES SINCE SEAN'S RULING OF 14 OCT: Off -> Ask -> Auto.
      *
@@ -2841,6 +2957,11 @@ private:
             bool popoutOnly = false;   // editor opens in a floating window
             juce::String trimText;     // 21m ruling 2: "-2.3 dB match" / "level kept" (from the slot's trim atomic, via SlotInfo)
             juce::String pictureText;  // 21p item 2: "in -5.2 / out -5.1 dBTP - GR 1.8" or "no reading", measured at Listen
+            // SEAN, 15 OCT 2026: the tile draws THIS, not pictureText. The full line was drawn at y=47,
+            // which is exactly where the button row begins (by = 64 - 14 - 3), so it sat on top of the
+            // B / X / < / > buttons - and it was quoting the -200 no-reading floor as a measurement. The
+            // short form fits the free 8 px trim band; the full line goes where length costs nothing.
+            juce::String pictureBadge;
             bool keepLevel = false;    // 21m ruling 2: the per-slot "keep this plugin's level" flag
             // 21m ruling 3: on a borrowed or held remote rack the toggle is GREYED with a note, never a silent no-op
             // (the transport op is owed). The pure menu state, so the guard reads what the popup would show.
@@ -2926,6 +3047,23 @@ private:
                 if (onOpen) onOpen();
             }
 
+            /** ---- SEAN, 15 OCT 2026: ONE AUTHOR FOR THE TWO BOTTOM ROWS -----------------------
+                The picture caption was drawn at y = 47 and the button row is laid out at
+                y = getHeight() - 14 - 3, which in a 64 px tile is ALSO 47 - so the caption sat on
+                top of the B / X / < / > buttons. The two rects came from two places that had never
+                been compared. They come from here now, so paint(), resized() and the rig all read
+                the same arithmetic, and "nothing overlaps the slot buttons" is a property the rig
+                can assert rather than a thing someone has to remember. */
+            struct Rows { juce::Rectangle<int> captionRow, buttonRow; };
+            static Rows rowsFor (int w, int h)
+            {
+                constexpr int bw = 18, bh = 14, m = 3;
+                const int by = h - bh - m;
+                return { { 2, 39, juce::jmax (1, w - 4), juce::jmax (0, juce::jmin (8, by - 39)) },
+                         { m, by, juce::jmax (1, w - 2 * m), bh } };
+            }
+            Rows rows() const { return rowsFor (getWidth(), getHeight()); }
+
             void paint(juce::Graphics& g) override
             {
                 // Consumes EchoJayLookAndFeel::ChainCard, THE plugin-card
@@ -2963,18 +3101,32 @@ private:
                     g.drawText(juce::String::fromUTF8("\xe2\x86\x97"),
                                2, 2, 12, 11, juce::Justification::centred);   // Build 2: moved left
                 }
-                if (trimText.isNotEmpty() && ! bypassed)
-                {   // 21m ruling 2: the unity trim under the knob, the SAME text the card line shows
-                    g.setColour(Card::nameOn.withAlpha(0.8f));
-                    g.setFont(juce::Font(juce::FontOptions(7.0f)));
-                    g.drawText(trimText, 2, 39, getWidth() - 4, 8, juce::Justification::centred, true);
-                }
-                if (pictureText.isNotEmpty() && ! bypassed)
-                {   // 21p item 2: the per-slot picture from the last Listen - amber when the slot is over a line
-                    const bool flagged = pictureText.contains("HOT") || pictureText.contains("WORKING");
-                    g.setColour(flagged ? juce::Colour(0xfff59e0b) : Card::nameOn.withAlpha(0.55f));
-                    g.setFont(juce::Font(juce::FontOptions(6.5f)));
-                    g.drawText(pictureText, 1, 47, getWidth() - 2, 8, juce::Justification::centred, true);
+                // ---- THE TRIM ROW: 39..47, THE ONE FREE BAND IN A 64 px TILE -----------------------
+                // The buttons begin at y = 47 (getHeight() - 14 - 3), so 39..47 is all there is between
+                // the knob and them. The trim text and the picture badge SHARE it - the trim on the left,
+                // the badge on the right - rather than the badge being drawn at 47 over the buttons, which
+                // is what Sean reported. Neither is drawn outside this band, so nothing can overlap again.
+                {
+                    const auto R = rows();
+                    const int rowY = R.captionRow.getY(), rowH = R.captionRow.getHeight();
+                    const bool haveBadge = rowH > 0 && pictureBadge.isNotEmpty() && ! bypassed;
+                    const bool haveTrim  = rowH > 0 && trimText.isNotEmpty() && ! bypassed;
+                    const int badgeW = haveBadge ? juce::jmin (getWidth() - 4, 46) : 0;
+                    if (haveTrim)
+                    {   // 21m ruling 2: the unity trim under the knob, the SAME text the card line shows
+                        g.setColour(Card::nameOn.withAlpha(0.8f));
+                        g.setFont(juce::Font(juce::FontOptions(7.0f)));
+                        g.drawText(trimText, 2, rowY, juce::jmax (1, getWidth() - 4 - badgeW), rowH,
+                                   juce::Justification::centredLeft, true);
+                    }
+                    if (haveBadge)
+                    {   // 21p item 2, shortened: amber when the slot is over a line
+                        const bool flagged = pictureBadge.contains("HOT") || pictureBadge.contains("WORKING");
+                        g.setColour(flagged ? juce::Colour(0xfff59e0b) : Card::nameOn.withAlpha(0.65f));
+                        g.setFont(juce::Font(juce::FontOptions(6.5f)));
+                        g.drawText(pictureBadge, getWidth() - 2 - badgeW, rowY, badgeW, rowH,
+                                   haveTrim ? juce::Justification::centredRight : juce::Justification::centred, true);
+                    }
                 }
             }
 
@@ -2987,8 +3139,10 @@ private:
                 const auto lay = echojay::layOutCardReadouts (getWidth(), 16);
                 inReadout .setBounds (lay.in);
                 outReadout.setBounds (lay.out);
-                int bw = 18, bh = 14, m = 3;   // 21m: one row shorter so the trim text fits between knob and buttons
-                int by = getHeight() - bh - m;
+                // 21m: one row shorter so the trim text fits between knob and buttons. The row comes
+                // from rowsFor() now, so paint cannot place a caption inside it (15 Oct 2026).
+                const int bw = 18, bh = 14, m = 3;
+                const int by = rows().buttonRow.getY();
                 bypassBtn.setBounds(m, by, bw, bh);
                 removeBtn.setBounds(m + bw + 2, by, bw, bh);
                 nextBtn.setBounds(getWidth() - m - bw, by, bw, bh);
@@ -4017,7 +4171,8 @@ private:
                 bl->addAndMakeVisible (bl->inReadout);
                 bl->addAndMakeVisible (bl->outReadout);
                 bl->trimText    = slotInfos[(size_t)i].trimText;    // 21m ruling 2
-                bl->pictureText = slotInfos[(size_t)i].pictureText; // 21p item 2
+                bl->pictureText = slotInfos[(size_t)i].pictureText; // 21p item 2 (not drawn on the tile)
+                bl->pictureBadge = slotInfos[(size_t)i].pictureBadge; // 15 Oct: what the tile draws
                 bl->keepLevel = slotInfos[(size_t)i].keepLevel;
                 bl->keepAvailable = keepLevelAvailable;   // 21m ruling 3
                 bl->onKeepLevel = [this, ci](bool k) { if (onSlotKeepLevel) onSlotKeepLevel(ci, k); };

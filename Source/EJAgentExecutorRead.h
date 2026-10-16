@@ -57,6 +57,15 @@ struct SlotRead
     float wet = 1.0f, preTrimDb = 0.0f, outGainDb = 0.0f;
     bool  pictureValid = false, grKnown = false;
     float inLufs = -200.0f, outLufs = -200.0f, inTpDb = -200.0f, outTpDb = -200.0f, grDb = 0.0f;
+    // THE LISTEN WINDOW (Sean's checks 2 and 3, 15 Oct 2026). grDb above is a momentary sample, which
+    // is what was being reported and is not a measurement of a compressor. grWindowFrames == 0 means
+    // NOTHING WAS MEASURED, and the read must say so rather than quote 0 dB.
+    float grPeakDb = 0.0f, grTypicalDb = 0.0f, grLoudestDb = 0.0f, grHeldDb = 0.0f;
+    /** SEAN'S RULING, 15 Oct 2026: NO ESTIMATES, EVER. A figure is given only for an EchoJay device or
+        a plugin certified in its map (it passed the EJ Maps sweep). Anything else returns
+        `not_certified` with no number at all. */
+    bool  grCertified = false;
+    double grWindowFrames = 0.0;
 };
 
 struct RackRead
@@ -135,6 +144,10 @@ struct Sources
     std::function<echojay::LevelTally::Snapshot()> chainOut;      // the chain output window
     // the window: resets ONLY the loop-owned tallies (LoudnessLoop::startWindow's list), never the song's integrated reading
     std::function<void()> beginWindow;
+    /** Start a new gain-reduction window on every slot that reports one (15 Oct 2026). Separate from
+        beginWindow because that one is the LOUDNESS loop's list and its contents are Sean's 13:22
+        ruling; the GR window is the devices' own and is reset at the same moment. */
+    std::function<void()> beginGrWindow;
     std::function<bool()> transportKnown, transportPlaying;
     std::function<int()>  chainRevision;
     std::function<juce::StringArray()> inventory;   // installed plugin names; empty = unknown

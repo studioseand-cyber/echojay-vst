@@ -41,6 +41,19 @@ inline void appendChatMarkdown (juce::AttributedString& as, const juce::String& 
     auto p = text.getCharPointer();
     juce::String run;
     bool b = false, i = false, c = false;
+    // ---- SEAN, 15 OCT 2026: AN UNDERSCORE INSIDE A WORD IS A CHARACTER, NOT EMPHASIS -------------
+    //
+    // "88_Omnisphere_01" rendered as italic "88Omnisphere01". Track and plugin names are full of
+    // underscores - 88_7even Kick_2_01, Aitch_4_01 - and this renderer was eating them, which means
+    // the chat has been quietly misspelling the names of the things it is talking about.
+    //
+    // The rule is CommonMark's own, and it exists for exactly this reason: `_` only opens or closes
+    // emphasis at a WORD BOUNDARY, while `*` may do so inside a word. So snake_case survives and
+    // _italic_ still works, with no escaping anywhere and nothing for a caller to remember.
+    //
+    // A GUARD LEG HAD THE OLD BEHAVIOUR WRITTEN DOWN AS CORRECT ("a_b_c" -> "abc"). That is what a
+    // test is for: the contract changed by Sean's ruling, so the leg changed with it and says why.
+    juce::juce_wchar prevCh = 0;
 
     auto flush = [&]
     {
@@ -58,21 +71,30 @@ inline void appendChatMarkdown (juce::AttributedString& as, const juce::String& 
         const auto ch = *p;
         const juce::String rest (p);
         if (ch == '`' && (c || closes (rest.substring (1), "`")))
-        { flush(); c = ! c; ++p; continue; }
+        { flush(); c = ! c; prevCh = ch; ++p; continue; }
         if (! c && ch == '*' && rest.startsWith ("**"))
         {
             // A `**` is EITHER a bold marker or two literal asterisks - never one italic marker followed by
             // another. Caught by the guard: "gain **down" rendered as "gain down", because the bold rule
             // correctly declined (no closing **) and the italic rule below then opened on the first star and
             // closed on the second, deleting both. So `**` is decided here and never falls through.
-            if (b || closes (rest.substring (2), "**")) { flush(); b = ! b; p += 2; continue; }
-            run += "**"; p += 2; continue;
+            if (b || closes (rest.substring (2), "**")) { flush(); b = ! b; prevCh = ch; p += 2; continue; }
+            run += "**"; prevCh = ch; p += 2; continue;
         }
         if (! c && ch == '*' && (i || closes (rest.substring (1), "*")))
-        { flush(); i = ! i; ++p; continue; }
+        { flush(); i = ! i; prevCh = ch; ++p; continue; }
         if (! c && ch == '_' && (i || closes (rest.substring (1), "_")))
-        { flush(); i = ! i; ++p; continue; }
+        {
+            // At a word boundary? Opening looks BACK (nothing alphanumeric before it), closing looks
+            // FORWARD (nothing alphanumeric after it). An underscore that fails its test is a literal
+            // character and falls through, which is what keeps 88_Omnisphere_01 intact.
+            const auto nextCh = rest.length() > 1 ? rest[1] : juce::juce_wchar (0);
+            const bool boundary = i ? ! juce::CharacterFunctions::isLetterOrDigit (nextCh)
+                                    : ! juce::CharacterFunctions::isLetterOrDigit (prevCh);
+            if (boundary) { flush(); i = ! i; prevCh = ch; ++p; continue; }
+        }
         run += juce::String::charToString (ch);
+        prevCh = ch;
         ++p;
     }
     flush();

@@ -61,6 +61,24 @@ const echojay::ParamSchema& SurgicalEqProcessor::schema()
     return s;
 }
 
+namespace
+{
+    // "band3.gain_db" -> (3, "gain_db"); (0, "") when it is not a band id at all.
+    inline std::pair<int, juce::String> parseBandId (const juce::String& id)
+    {
+        if (! id.startsWithIgnoreCase ("band")) return { 0, {} };
+        const auto rest = id.substring (4);
+        const auto dot  = rest.indexOfChar ('.');
+        if (dot <= 0) return { 0, {} };
+        const auto numPart = rest.substring (0, dot);
+        if (! numPart.containsOnly ("0123456789")) return { 0, {} };
+        return { numPart.getIntValue(), rest.substring (dot + 1).trim().toLowerCase() };
+    }
+}
+// ^ ABOVE BOTH USERS ON PURPOSE: the write (setParamValue) and the read (getParamValue) resolve a band
+// id through ONE parser, so they cannot disagree about what "band2.q" means. A second copy is how a read
+// and a write end up addressing different bands.
+
 bool SurgicalEqProcessor::setParamValue (const juce::String& id, double value)
 {
     if (id == kOutputDb)  { setOutputDb ((float) value);   return true; }
@@ -68,16 +86,148 @@ bool SurgicalEqProcessor::setParamValue (const juce::String& id, double value)
     if (id == kPhaseMode) { setPhaseMode (value >= 0.5 ? PhaseMode::Linear
                                                        : PhaseMode::Zero); return true; }
     if (id == kMsMode)    { setMsMode (value >= 0.5);      return true; }
+
+    // ---- SEAN'S #4 (16 Oct 2026): WRITABLE BY THE SAME NAMES IT IS READABLE BY ------------------
+    //
+    // The read below grew band ids so the agent could confirm what it had dialled. Leaving the WRITE
+    // without them would make the two halves speak different vocabularies - the exact thing the read's
+    // own comment claims they do not - and it matters for more than tidiness: the agent's read-back
+    // compares the ids the request CARRIED against what it can read, so a turn that arrives as
+    // `band1.gain_db` can only be confirmed if that name is also the name that wrote it.
+    //
+    // The EQ's array shape (`bands` / `eq_bands`) is untouched and is still the primary road; this is
+    // the per-control road, which every other built-in device already has.
+    const auto [band1Based, leaf] = parseBandId (id);
+    if (band1Based >= 1 && band1Based <= kNumBands && leaf.isNotEmpty())
+    {
+        auto b = getBand (band1Based - 1);          // read-modify-write: one control, the rest kept
+        bool known = true;
+        if      (leaf == "freq_hz")      b.freqHz        = (float) value;
+        else if (leaf == "gain_db")      b.gainDb        = (float) value;
+        else if (leaf == "q")            b.q             = (float) value;
+        else if (leaf == "type")         b.type          = (echojay::BandType) (int) value;
+        else if (leaf == "enabled" || leaf == "on") b.enabled = value >= 0.5;
+        else if (leaf == "slope_db_oct") b.slopeDbPerOct = (int) value;
+        else if (leaf == "dynamic")      b.dynamic       = value >= 0.5;
+        else if (leaf == "threshold_db") b.thresholdDb   = (float) value;
+        else if (leaf == "range_db")     b.rangeDb       = (float) value;
+        else if (leaf == "attack_ms")    b.attackMs      = (float) value;
+        else if (leaf == "release_ms")   b.releaseMs     = (float) value;
+        else known = false;
+        if (known)
+        {
+            // A BAND NAMED BY A WRITE IS A BAND THE USER MEANT. A disabled band silently keeping a new
+            // frequency would be a dial that reports success and changes nothing audible - the family of
+            // untruth this whole round is about. Setting any of its values turns it on, except when the
+            // write IS the enable flag.
+            if (leaf != "enabled" && leaf != "on") b.enabled = true;
+            setBand (band1Based - 1, b);
+            return true;
+        }
+    }
     return false;
 }
 
+// ---- SEAN'S #4 (16 Oct 2026): THE BANDS ARE READABLE BY NAME ------------------------------------
+//
+// *"bands dial correctly but report only 'applied', not type/freq/gain/Q, so the agent can't
+// confirm."* This read handled four device-level params and nothing else, so every band read came
+// back 0.0 - and the agent's value read-back then compared 0.0 with what it had asked for. Two
+// consequences, both bad: it could not confirm a band it had just dialled correctly, and an unknown
+// id looked like a real zero.
+//
+// The ids are the ones the dial path already uses, so the read and the write speak one vocabulary:
+//   band<N>.freq_hz   .gain_db   .q   .type   .enabled   .slope_db_oct
+//   band<N>.threshold_db  .range_db  .attack_ms  .release_ms   (the dynamic extension)
+// N is 1-based, as every id a model sees is (contract 8).
 double SurgicalEqProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kOutputDb)  return (double) getOutputDb();
     if (id == kAutoGain)  return getAutoGain() ? 1.0 : 0.0;
     if (id == kPhaseMode) return getPhaseMode() == PhaseMode::Linear ? 1.0 : 0.0;
     if (id == kMsMode)    return getMsMode() ? 1.0 : 0.0;
-    return 0.0;
+
+    const auto [band1Based, leaf] = parseBandId (id);
+    if (band1Based >= 1 && band1Based <= kNumBands && leaf.isNotEmpty())
+    {
+        const juce::ScopedLock sl (modelLock_);
+        const auto& b = bands_[band1Based - 1];
+        if (leaf == "freq_hz")      return (double) b.freqHz;
+        if (leaf == "gain_db")      return (double) b.gainDb;
+        if (leaf == "q")            return (double) b.q;
+        if (leaf == "type")         return (double) (int) b.type;
+        if (leaf == "enabled" || leaf == "on") return b.enabled ? 1.0 : 0.0;
+        if (leaf == "slope_db_oct") return (double) b.slopeDbPerOct;
+        if (leaf == "dynamic")      return b.dynamic ? 1.0 : 0.0;
+        if (leaf == "threshold_db") return (double) b.thresholdDb;
+        if (leaf == "range_db")     return (double) b.rangeDb;
+        if (leaf == "attack_ms")    return (double) b.attackMs;
+        if (leaf == "release_ms")   return (double) b.releaseMs;
+    }
+    return 0.0;      // knowsParam() below is what stops this reading as a measurement
+}
+
+juce::String SurgicalEqProcessor::readbackSummary() const
+{
+    // The bands first, then the device-level params the base class already reported. Joined with
+    // "; " because each band line already contains commas.
+    auto parts = describeBands();
+    const auto base = EedDeviceProcessor::readbackSummary();
+    if (parts.isEmpty()) parts.add ("no band is enabled");
+    if (base.isNotEmpty()) parts.add (base);
+    return parts.joinIntoString ("; ");
+}
+
+bool SurgicalEqProcessor::ownsUnpublishedParam (const juce::String& id) const
+{
+    // The BANDS only. The four device-level params ARE in the schema and must keep going through it,
+    // where they are clamped against their declared ranges; claiming them here would quietly route them
+    // round their own clamp.
+    const auto [band1Based, leaf] = parseBandId (id);
+    if (band1Based < 1 || band1Based > kNumBands || leaf.isEmpty()) return false;
+    return knowsParam (id);
+}
+
+bool SurgicalEqProcessor::knowsParam (const juce::String& id) const
+{
+    if (id == kOutputDb || id == kAutoGain || id == kPhaseMode || id == kMsMode) return true;
+    const auto [band1Based, leaf] = parseBandId (id);
+    if (band1Based < 1 || band1Based > kNumBands || leaf.isEmpty()) return false;
+    static const char* kLeaves[] = { "freq_hz", "gain_db", "q", "type", "enabled", "on",
+                                     "slope_db_oct", "dynamic", "threshold_db", "range_db",
+                                     "attack_ms", "release_ms" };
+    for (const char* l : kLeaves) if (leaf == l) return true;
+    return false;
+}
+
+juce::StringArray SurgicalEqProcessor::describeBands() const
+{
+    // ONE LINE PER ENABLED BAND, in band order, in the same words the chat uses elsewhere. Sean asked
+    // for the bands listed in the EQ's Suggested Settings; this is the one place that composes them,
+    // so the listing and the agent's read-back cannot describe the same band differently.
+    juce::StringArray out;
+    const juce::ScopedLock sl (modelLock_);
+    for (int i = 0; i < kNumBands; ++i)
+    {
+        const auto& b = bands_[i];
+        if (! b.enabled) continue;
+        juce::String line;
+        line << "band " << (i + 1) << ": " << echojay::bandTypeToString (b.type)
+             << " " << juce::String (b.freqHz, b.freqHz >= 1000.0f ? 0 : 1) << " Hz";
+        // gain is meaningless on a notch/HP/LP, so it is not printed there - a 0.0 dB on a high-pass
+        // would read as a deliberate setting rather than as "this band has no gain".
+        if (b.type == echojay::BandType::Bell || b.type == echojay::BandType::LowShelf
+            || b.type == echojay::BandType::HighShelf)
+            line << ", " << juce::String (b.gainDb, 1) << " dB";
+        line << ", Q " << juce::String (b.q, 2);
+        if (b.type == echojay::BandType::HighPass || b.type == echojay::BandType::LowPass)
+            line << ", " << b.slopeDbPerOct << " dB/oct";
+        if (b.dynamic)
+            line << " (dynamic: threshold " << juce::String (b.thresholdDb, 1)
+                 << " dB, range " << juce::String (b.rangeDb, 1) << " dB)";
+        out.add (line);
+    }
+    return out;
 }
 
 // ---- audio ----------------------------------------------------------------

@@ -1,0 +1,77 @@
+GATE 24 — GREEN. ship_2026-10-16a, installed 16 Oct 2026, 05:05 BST.
+=======================================================================
+
+WHY THIS FILE IS NOT CALLED GREEN.txt
+-------------------------------------
+Because GREEN.txt starts EJ Map automatically, and starting a long compressor sweep at five in the
+morning, unsupervised, would have it still running into Sean's 08:00 Logic recheck - competing for the
+machine with the one test this whole round exists to enable. That is the contention hazard this gate
+spent the night avoiding (gate 17's three guards at 3x their baseline), so it is not a thing to start
+without him.
+
+The gate IS green and the evidence is below. To start EJ Map:  mv GATE_24_GREEN.txt GREEN.txt
+
+THE STAGES
+----------
+S1   OK   six archives force-deleted and relinked across three trees; content manifest: 326 files
+S2   OK   all guard targets (including the new plain_names_guard)
+S3   OK   the four bundles
+S3b  OK   archive provenance - no source newer-and-changed than the archive
+S4   EXIT=0   79 of 79 tests
+S5   EXIT=0   link_state_guard
+S6   EXIT=0   BOTH rig passes GREEN: 0 failed, 74 passed, 3 skipped (live and mock)
+
+S6 was re-run ALONE after the full gate, under Sean's standing rule 1 ("if a red is rig-side and the log
+proves the plugin did the right thing, fix the rig and re-run S6 alone under the freshness check"). The
+freshness check is not an assertion: it compared every source file against S1's SHA-256 manifest and
+printed "all 326 source files identical to what S1 compiled" before running. The two rig-side fixes were
+(a) C11v(a)/(b) naming themselves when they PASS and not only when they skip, and (b) the third-party
+fixture's plugin catalogue being ADDITIVE instead of replacing the catalogue with one entry.
+
+SEAN'S TWO INSTALL CONDITIONS
+-----------------------------
+C11v(a)   PASS in both passes - "the classifier answered after the window was destroyed, and the turn is
+          recorded as INTERRUPTED rather than dropped". Not a skip.
+G8        PASS in both passes - "check(gr) reports the WINDOW as LOUDEST HITS (95th percentile) and
+          TYPICAL (median), with the absolute max kept back for spike warnings - ordered spike >=
+          loudest >= typical".
+
+THE SEVEN NEW ROWS (Sean's RULE 1: reproduce before fixing), all PASS
+--------------------------------------------------------------------
+T1    a REAL third-party plugin (MTransient, 78 params, fp 3decf53d6bc0 - the same fingerprint his own
+      Logic log recorded) added with settings on a LINK is actually DIALLED, and its knob is read back
+      from the plugin itself.
+D1    every message in an agent run is drawn exactly once.
+R1b   the main plugin's rack view shows a slot the agent added to a Link, with NO rack switch.
+E1    the EchoJay EQ's bands are readable BY NAME and listed one line per band.
+I1    the interrupted row says "You closed the window before the answer came back", carries a Retry
+      pill, and the pill is PRESSED and resends.
+H1    clicking the Agent chip raises the mode hint above the composer.
+M1    the tile's gain reduction IS the device's own meter figure, and no uncertified slot shows one.
+
+THE THREE SKIPS, each naming its own reason
+-------------------------------------------
+B1-B4   item 0b's behaviour is its own switch and is OFF (row B3 has never shown a windowless run apply
+        its change). EJ_AGENT_0B=1 runs them.
+"...editor actually destroyed" on the AU road: an AU host releases a wrapper view and the plugin's
+        editor outlives it. The VST3 road proves it instead, which is why C11 moved there.
+the old mode-hint check: SUPERSEDED by row H1, and it says so.
+
+IDENTITY — all four bundles, BOTH architecture slices, ship folder vs ~/Library
+-------------------------------------------------------------------------------
+EchoJay V2.component     x86_64 E6C1442D-97F5-338A-B629-65632AF34451   arm64 E170F579-4EE1-3252-B883-3AF9DF3CA03D
+EchoJay V2.vst3          x86_64 1B12CEE4-5CBF-33E5-AE54-CCCA54FC808C   arm64 EDD3D5B1-324A-3512-A654-7FF3D991CC5E
+EchoJay Link.component   x86_64 4FDBD4D4-CCFC-38D1-8F6C-7851D94AA7ED   arm64 1E99F562-D6D8-3B16-BB50-1C32A9F5F5C7
+EchoJay Link.vst3        x86_64 54592D76-3AA5-3E5E-9F33-429FDF207BD1   arm64 7CE7EEFF-0FE4-3F32-AB3C-AF6E509D2A2B
+
+Installed and ship-folder identities are IDENTICAL on all eight. AUHostingService was killed after the
+install, so the next host loads this build and not the previous one out of its cache.
+
+WHAT IS NOT PROVEN HERE
+-----------------------
+- item 0b (a run surviving its window): deliberately off, see above.
+- Sean's four third-party plugins DIALLING in Logic: the mechanism is proven (T1, on a real MTransient),
+  but whether MTransient / bx_townhouse / SSL X-Comp / Transient Master dial on his Mac depends on the
+  SERVER having maps for them. That is FOR_B section 8.
+- #9 (a Link's GR and meters in the main plugin's mirror): queued with its reason - LinkMeterFrame is
+  full and it wants item 0a's deep-meter region.

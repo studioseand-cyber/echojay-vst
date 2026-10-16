@@ -48,6 +48,9 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         // 5 Oct 2026: the slot's own EchoJay gains, so a borrow can start where the rack actually is.
         back.outGainDb    = host.getSlotOutGainDb (i);
         back.preTrimDb    = host.getSlotPreTrimDb (i);
+        // SEAN'S #1 (16 Oct 2026): the LANDED numbers, so the agent's read-back on a Link reads what the
+        // plugin shows instead of parsing them back out of an echo of its own request.
+        back.landedValues = s.landedValues;
     }
 }
 } // namespace echojay

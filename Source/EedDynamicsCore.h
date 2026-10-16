@@ -59,6 +59,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -1019,6 +1020,7 @@ public:
         scFilter_.reset();
         lookahead_.reset();
         grDb_ = 0.0f;
+        resetGrWindow();          // 15 Oct: a reset device has measured nothing, and must say so
         inDb_ = dyn::kSilenceDb;
         makeupGain_ = dyn::dbToGain (makeupDb_);
         mixSmoothed_ = mix_;
@@ -1164,6 +1166,82 @@ public:
     // lock here would be on the audio thread.
     float gainReductionDb() const noexcept { return grDb_; }
 
+    // ---- THE LISTEN WINDOW (Sean, 15 Oct 2026) ------------------------------------------------
+    //  What the agent must be told instead of a momentary sample. All three are benign racy reads of
+    //  plain integers/floats on exactly the contract above, and all three are 0 / absent until some
+    //  audio has actually been through - `grWindowFrames()` is how a caller knows the difference
+    //  between "no reduction" and "nothing measured", which is the distinction the whole fix is about.
+    /** The deepest reduction seen since the window was reset, as a POSITIVE number of dB. */
+    float grWindowPeakDb() const noexcept { return grPeakDb_; }
+    /** ---- SEAN'S RULING, 15 Oct 2026: WHICH FIGURE IS "THE LOUDEST HITS" ------------------------
+        *"the absolute-max peak (8 dB) is a single transient instant nobody can see on the meter; I see
+        2-4, hitting 5. Report 'loudest hits' as the 95th percentile of active blocks instead, keep the
+        true max internal for spike warnings only."*
+
+        So there are now THREE figures over one window, and they answer different questions:
+
+          grWindowTypicalDb()   the 50th percentile - what the needle sits at
+          grWindowLoudestDb()   the 95th percentile - the loudest hits a person can actually SEE
+          grWindowPeakDb()      the true max - ONE instant, kept for spike warnings and never quoted
+
+        One walk of the histogram serves all of them, so they cannot disagree about the same frames. */
+    float grWindowPercentileDb (float fraction) const noexcept
+    {
+        const auto total = grFrames_.load (std::memory_order_relaxed);
+        if (total == 0) return 0.0f;
+        const auto want = (juce::uint64) (((double) total) * (double) juce::jlimit (0.0f, 1.0f, fraction));
+        juce::uint64 run = 0;
+        for (int b = 0; b < kGrBins; ++b)
+        {
+            run += grHist_[(size_t) b].load (std::memory_order_relaxed);
+            // Clamped to the true peak for the same reason the median was: a bin CENTRE can sit above
+            // the deepest reduction actually measured, and a figure above the peak is incoherent.
+            if (run > want) return juce::jmin (grPeakDb_, ((float) b + 0.5f) * kGrBinDb);
+        }
+        return juce::jmin (grPeakDb_, (float) (kGrBins - 1) * kGrBinDb);
+    }
+    /** The LOUDEST HITS: the 95th percentile of the frames with audio. This is the figure to report,
+        by Sean's ruling - the absolute max is one transient and reads as a number nobody can see. */
+    float grWindowLoudestDb() const noexcept { return grWindowPercentileDb (0.95f); }
+    /** The MEDIAN reduction over the frames where audio was present, positive dB. Sean's "typical".
+        From a histogram rather than a running mean: a mean is dragged by the release tail, and the
+        median of the active frames is the figure that matches what a meter looks like it is doing. */
+    float grWindowTypicalDb() const noexcept
+    {
+        const auto total = grFrames_.load (std::memory_order_relaxed);
+        if (total == 0) return 0.0f;
+        const juce::uint64 half = total / 2;
+        juce::uint64 run = 0;
+        for (int b = 0; b < kGrBins; ++b)
+        {
+            run += grHist_[(size_t) b].load (std::memory_order_relaxed);
+            // ---- NEVER ABOVE THE PEAK (15 Oct 2026, found by the rig's G8 row) -------------------
+            // The bin CENTRE is the better estimator of a median, but it can exceed the deepest
+            // reduction actually measured: the rig saw peak 6.79 dB and typical 6.88 dB, because
+            // 6.79 lands in the bin whose centre is 6.875. A "typical" above the peak is incoherent
+            // - and the agent would have quoted it. Clamped to the peak, which is a real measurement
+            // and therefore the honest ceiling for any figure derived from the same frames.
+            if (run > half) return juce::jmin (grPeakDb_, ((float) b + 0.5f) * kGrBinDb);
+        }
+        return juce::jmin (grPeakDb_, (float) (kGrBins - 1) * kGrBinDb);
+    }
+    /** THE HELD FIGURE the meter draws and the tile shows - the deepest reduction of the last ~2 s,
+        maintained on the audio thread. Sean's ruling: the tile, the meter and the agent read THIS, so
+        they cannot disagree about a moving value by sampling it at different instants. */
+    float grRecentHoldDb() const noexcept { return grHoldDb_; }
+    /** How many frames with audio present went into those two figures. 0 = nothing was measured. */
+    juce::uint64 grWindowFrames() const noexcept { return grFrames_.load (std::memory_order_relaxed); }
+    /** Start a new window. Called when a listen begins, and by the tally reset, so one reset means
+        one thing everywhere (DESIGN_LINK_METERS Q4). Safe from any thread: the audio thread only
+        ever adds, so a clear that races a block loses at most that block. */
+    void resetGrWindow() noexcept
+    {
+        grPeakDb_ = 0.0f;
+        grHoldDb_ = 0.0f; grHoldFramesLeft_ = 0;
+        grFrames_.store (0, std::memory_order_relaxed);
+        for (auto& b : grHist_) b.store (0, std::memory_order_relaxed);
+    }
+
     // The level the DETECTOR is currently seeing, in dBFS — the same number the
     // gain computer was just asked about. One more benign racy float on exactly
     // the contract above, and the whole data path behind the live dot riding
@@ -1230,6 +1308,18 @@ public:
         // is doing to the signal. Averaging them would under-report a device
         // pulling 10 dB off one channel and nothing off the other.
         grDb_ = std::min (gDbL, gDbR);
+        // ---- SEAN, 15 OCT 2026: THE LISTEN WINDOW'S PEAK AND TYPICAL -----------------------------
+        //
+        // The agent used to read grDb_ once, at whatever instant its tool call ran - which is right
+        // after "Got it, you can stop", i.e. in the release tail. Sean's meter showed 5 dB and the
+        // agent reported 0.1, then 2.1. A momentary sample of a time-varying quantity is not a
+        // measurement of it, and a poller could not fix that: the peaks live between 1 Hz ticks.
+        //
+        // So it accumulates HERE, where every block is seen, and it costs two compares and one
+        // histogram increment per frame. GATED ON AUDIO BEING PRESENT, because a compressor sitting
+        // over silence reduces nothing and those frames would drag the typical value to zero - which
+        // is a different wrong answer, not a fix.
+        accumulateGrWindow (std::max (std::fabs (scLeft), std::fabs (scRight)));
 
         gainLeft  = dyn::dbToGain (gDbL);
         gainRight = dyn::dbToGain (gDbR);
@@ -1466,6 +1556,57 @@ private:
     float  makeupSmoothCoeff_ = 1.0f;
 
     float  grDb_ = 0.0f;
+    // ---- the listen window's accumulator (Sean, 15 Oct 2026) ---------------------------------
+    // 0.25 dB bins to 24 dB: finer than any meter is read to, and 96 atomics is 384 bytes. The
+    // histogram is what makes the median cheap on the audio thread (one increment) and exact on the
+    // reader's (one walk), with no buffer of samples to own.
+    static constexpr int   kGrBins  = 96;
+    static constexpr float kGrBinDb = 0.25f;
+    /** The floor for "audio is actually playing". -80 dBFS: below it a compressor is reducing nothing
+        and the frame says nothing about what the device does to the material. */
+    static constexpr float kGrAudioFloor = 1.0e-4f;
+    void accumulateGrWindow (float sidechainPeak) noexcept
+    {
+        if (sidechainPeak < kGrAudioFloor) return;        // not playing: this frame is not evidence
+        const float red = -grDb_;                         // grDb_ is negative; report a positive amount
+        // ---- SEAN'S RULING, 15 Oct 2026: ONE SOURCE FOR THE TILE, THE METER AND THE AGENT --------
+        //
+        // *"the tile must match the device's own GR meter (tile said 0.4 while the meter said 1.2),
+        // and the agent's figures come from the same source."*
+        //
+        // They disagreed because they were three different readings of a moving value: the tile took
+        // an INSTANT whenever the strip refreshed, the meter drew a 1 s hold computed in the UI, and
+        // the agent had its own window. 0.4 against 1.2 is not a bug in either number - it is two
+        // honest samples of different moments, which is exactly the fault check(gr) started with.
+        //
+        // So the hold lives HERE, on the audio thread where every frame is seen, and the tile, the
+        // meter and the agent all read this one value. Two seconds, the figure Sean asked the meter
+        // to show, so what he reads by eye is what the other two report.
+        if (red >= grHoldDb_)
+        {
+            grHoldDb_ = red;
+            grHoldFramesLeft_ = (int) (sampleRate_ * 2.0);      // 2 s, his figure
+        }
+        else if (grHoldFramesLeft_ > 0)
+        {
+            --grHoldFramesLeft_;
+        }
+        else
+        {
+            // Fall back TOWARD the live value, never below it, so the held figure is always a
+            // reduction that really happened within the last couple of seconds.
+            grHoldDb_ = juce::jmax (red, grHoldDb_ - 24.0f / (float) juce::jmax (1.0, sampleRate_));
+        }
+        if (red > grPeakDb_) grPeakDb_ = red;
+        const int bin = juce::jlimit (0, kGrBins - 1, (int) (red / kGrBinDb));
+        grHist_[(size_t) bin].fetch_add (1, std::memory_order_relaxed);
+        grFrames_.fetch_add (1, std::memory_order_relaxed);
+    }
+    float  grPeakDb_ = 0.0f;
+    float  grHoldDb_ = 0.0f;          // the ~2 s hold the tile and the meter both read
+    int    grHoldFramesLeft_ = 0;
+    std::atomic<juce::uint64> grFrames_ { 0 };
+    std::array<std::atomic<juce::uint64>, kGrBins> grHist_ {};
     float  inDb_ = dyn::kSilenceDb;
 
     // The accumulator is audio-thread-private and plain; only the published

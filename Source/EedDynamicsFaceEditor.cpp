@@ -137,7 +137,13 @@ void EedDynamicsFaceEditor::timerCallback()
     if (grSource_ != nullptr)
     {
         meter_.setDimmed (byp);
-        if (! byp) meter_.setGainReductionDb (grSource_());
+        if (! byp)
+        {
+            meter_.setGainReductionDb (grSource_());
+            // SEAN, 15 Oct 2026: and the HELD figure from the device itself, so the meter, the slot
+            // tile and the agent all draw one value instead of sampling a moving one three times.
+            if (proc_.reportsGainReduction()) meter_.setHeldDb (proc_.gainReductionHeldDbForHost());
+        }
     }
 
     refreshExtras();

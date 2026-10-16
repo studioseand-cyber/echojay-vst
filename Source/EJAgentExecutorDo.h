@@ -47,8 +47,20 @@ struct DoSinks
         The var is the `edit` array the chain channel already takes, so there is ONE
         op vocabulary and this executor invents none of its own. Calls back with
         (ok, sentence) - the sentence is what the model is shown on a refusal. */
+    //  ---- SEAN'S CHECK 5 (15 Oct 2026): THREE ARGUMENTS, BECAUSE THERE ARE TWO AUDIENCES ----------
+    //  The callback used to carry ONE string, so the user's sentence and the technical account were the
+    //  same text - which is why "Details" repeated the summary instead of disclosing anything, and why
+    //  "the rack refused it (partial)" was all anyone ever saw of an AU that had failed to instantiate
+    //  with "An OS error occurred during initialisation of the plug-in (-1)". The Link had said exactly
+    //  that, in its ack's perPluginResults, and nothing read it.
+    //
+    //    sentence   the one plain line a person reads (the rack's own words, not a paraphrase)
+    //    technical  the full account: the ack's status, the per-plugin results, the per-plugin detail.
+    //               It goes to the model AND behind the line's Details disclosure. Empty is allowed and
+    //               means "there is nothing more than the sentence" - in which case no Details appears,
+    //               which is the honest outcome rather than a button that repeats itself.
     std::function<void (const juce::String& targetUid, const juce::var& editOps,
-                        std::function<void (bool, juce::String)>)> applyChainOps;
+                        std::function<void (bool ok, juce::String sentence, juce::String technical)>)> applyChainOps;
 
     /** ---- ITEM 1 (Sean, 14 Oct 2026): A BUILD IS NOT AN EDIT OP ------------------------------------
         A build replaces the whole rack and has its own road on each side: the V2's own build path for the
@@ -155,8 +167,38 @@ public:
 private:
     /** FIX 1(b), 14 Oct: a `set` is confirmed against the VALUES, not the slot count. */
     void confirmValues (const ToolCall& call, const juce::String& applyTo, juce::String sentence, Done done);
+    /** ---- SEAN'S CHECK 5, 15 OCT 2026: SETTINGS CARRIED ON add / replace / build ------------------
+        Last night's fix made `set` read its values back. Everything ELSE that carries settings was
+        still confirmed by SLOT COUNT alone - so "add MTransient with attack +6 dB" counted one slot,
+        found it, and reported success, while the Link's own log said `NO MAP ... -> noMap` and
+        `action=LEAVE-UNEDITED`. The structure landed and not one value did, and the closing text named
+        two figures that were never written.
+
+        This runs after the structural read-back and reports the SETTINGS separately from the slot:
+        applied (read back and matching), not_applied (read back and wrong, or the rack says it dialled
+        nothing), or not_confirmed (this build cannot read that plugin's values). It never reports the
+        settings as applied without having read them. */
+    struct SettingsCheck
+    {
+        /** The human-readable lines: "slot 1 attack_db 6.00", "slot 1 attack_db is 0.00 (asked 6.00)". */
+        juce::StringArray matched, missed, unreadable;
+        /** ---- SEAN'S #5, PROPERLY (16 Oct 2026): THE BARE IDS, SEPARATELY ---------------------------
+            The plain-name renderer takes IDS. Handing it `missed` - whose entries are whole sentences -
+            made it take the LAST whitespace token, so "slot 1 attack_db is 0.00 (asked 6.00)" rendered as
+            "6.00)". The lists above are prose and these are the vocabulary; one cannot be derived from the
+            other without parsing, and parsing a sentence back into its parts is how the raw ids got into
+            a sentence in the first place. */
+        juce::StringArray matchedIds, missedIds;
+        int askedCount = 0;
+        bool anythingAsked() const { return askedCount > 0; }
+    };
+    /** Compare one slot's asked values with what it now holds. `asked` may be the flat object or the
+        "params" wrapper; both shapes are accepted, as fix 1(a) established. */
+    SettingsCheck checkSlotValues (const juce::String& applyTo, int slot1, const juce::var& settingsStructured) const;
+    void confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
+                          int slotsOnRack, juce::String landedSentence, Done done);
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
-                        juce::String sentence, Done done, int waitedMs);
+                        juce::String sentence, Done done, int waitedMs, const ToolCall* call = nullptr);
 
     DoSinks sinks_;
 };

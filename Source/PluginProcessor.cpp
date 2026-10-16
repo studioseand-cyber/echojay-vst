@@ -16,6 +16,7 @@
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
+#include "EJAgentHome.h"   // ITEM 0b: the agent lives here now, not on the editor
 #include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
 #include "EedTempoClock.h"      // publishHostTempo (built-in tempo-synced devices)
 #include "EedKeyEngine.h"       // offline key pass over captures (§5.2)
@@ -396,6 +397,17 @@ EchoJayProcessor::EchoJayProcessor()
             chatRoles.add ("assistant");
             chatContents.add (line);
             markStateDirty();
+            // SEAN'S #7 (16 Oct 2026): the row offers a RETRY that resends the question. Kept as an
+            // orphan entry as well as in the history, so the next window renders the pill rather than
+            // a bare sentence the user has to answer by retyping.
+            {
+                auto* ro = new juce::DynamicObject();
+                ro->setProperty ("chatId", chatId);
+                ro->setProperty ("reply",  line);
+                ro->setProperty ("retry",  api.turnUserMessage());
+                ro->setProperty ("atMs",   (double) juce::Time::currentTimeMillis());
+                orphanedChatTurns_.add (juce::var (ro));
+            }
             EchoJay_NSLog (("EJChat: a turn FAILED with no live owner - recorded an interrupted row for chat "
                             + chatId + " (" + why.substring (0, 80) + ") - fix 6, 14 Oct").toRawUTF8());
             return;
@@ -710,6 +722,12 @@ void ejDashLog(const juce::String& msg)
    #endif
 }
 
+EJAgentHome& EchoJayProcessor::agentHome()
+{
+    if (agentHome_ == nullptr) agentHome_ = std::make_unique<EJAgentHome> (*this);
+    return *agentHome_;
+}
+
 EchoJayProcessor::~EchoJayProcessor()
 {
     // 6 Oct 2026: THE PROCESS IS COMING DOWN. Set before anything else in this destructor, because from here any
@@ -719,6 +737,15 @@ EchoJayProcessor::~EchoJayProcessor()
     // teardown was in flight. ~EchoJayEditor is deliberately NOT a signal: that window closes constantly
     // mid-session, and mid-session disposal is correct and must keep working.
     ChainHost::noteHostTeardownBegan ("an EchoJayProcessor destructor (AP_Close)");
+    // ITEM 0b: the agent goes FIRST. Its client holds a socket and a timer, and its sinks read
+    // chainHost, api and the undo history - all of which are still alive on this line and none of
+    // which are by the time the member list destructs. A session still running is stopped here
+    // rather than left to be torn down underneath itself.
+    if (agentHome_ != nullptr)
+    {
+        if (agentHome_->client().isActive()) agentHome_->client().stop();
+        agentHome_.reset();
+    }
     // §5a-R: drop any in-flight apply poll — its lambdas hold this token
     // weakly and go inert now, never calling into freed memory.
     *aliveToken_ = false;
@@ -1882,6 +1909,7 @@ void EchoJayProcessor::applyPendingBorrowRestores()
 void EchoJayProcessor::timerCallback()
 {
     publishRigProcessorState();   // 15 Oct: the one fact the rig cannot get from a window that is shut
+    serviceLinkMapRequests();     // Sean's #1 (16 Oct): a Link cannot reach the server; the V2 serves it
     applyHostTrackNameIfDirty();
     serviceCaptureStop();   // 1 Hz backstop; the editor timer services it at 30 Hz when open
     scheduleSelfKeyPass();
@@ -3011,15 +3039,15 @@ void EchoJayProcessor::parkChatStream (std::shared_ptr<ChatStreamHandle> h)
 }
 
 void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
-                                     std::function<void(bool, juce::String, int)> cb, int maxWaitMs)
+                                     std::function<void(bool, juce::String, juce::String, int)> cb, int maxWaitMs)
 {
     if (! cb) return;
-    if (linkUid.isEmpty() || seq < 0) { cb(false, "there was nothing to acknowledge", -1); return; }
+    if (linkUid.isEmpty() || seq < 0) { cb(false, "there was nothing to acknowledge", {}, -1); return; }
 
     struct Poll
     {
         juce::String uid; int seq; int waitedMs; int maxMs;
-        std::function<void(bool, juce::String, int)> cb;
+        std::function<void(bool, juce::String, juce::String, int)> cb;
         std::weak_ptr<bool> alive;
     };
     auto poll = std::make_shared<Poll>(Poll { linkUid, seq, 0, juce::jmax(250, maxWaitMs), std::move(cb), aliveToken_ });
@@ -3041,18 +3069,56 @@ void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
                 const auto why = v.getProperty("reason", juce::var()).toString();
                 int slots = -1;
                 if (auto* o = v.getDynamicObject()) if (o->hasProperty("slotsAfter")) slots = (int) v.getProperty("slotsAfter", -1);
+                // ---- SEAN'S CHECK 5 (15 Oct 2026): READ perPluginResults ---------------------
+                //
+                // This function knew about `status` and `reason` and nothing else. A BUILD ack sets no
+                // `reason` (LinkProcessor only sets it on the structural path), so a failed AU gave
+                // exactly "the rack refused it (partial)" - twice - while the Link's own ack carried
+                // "kHs Transient Shaper" didn't load (An OS error occurred during initialisation of the
+                // plug-in (-1)) and I have no built-in equivalent for it...". The sentence was there
+                // and the reader did not look.
+                juce::StringArray perPlugin;
+                if (auto* arr = v.getProperty("perPluginResults", juce::var()).getArray())
+                    for (const auto& r : *arr)
+                    {
+                        const auto line = r.toString().trim();
+                        if (line.isNotEmpty()) perPlugin.add(line);
+                    }
+                // The lines that are NOT plain successes are the ones that explain a refusal. ": ok" is
+                // the Link's own suffix for a slot that landed (see its failure count above).
+                juce::StringArray troubles;
+                for (const auto& line : perPlugin) if (! line.endsWith(": ok")) troubles.add(line);
+                juce::String technical;
+                if (! perPlugin.isEmpty())
+                    technical << "the rack's ack: status=" << st
+                              << (why.isNotEmpty() ? ", reason=" + why : juce::String())
+                              << (slots >= 0 ? ", slots now " + juce::String(slots) : juce::String())
+                              << "\n" << perPlugin.joinIntoString("\n");
+                if (auto* d = v.getProperty("perPluginDetail", juce::var()).getArray())
+                    for (const auto& dv : *d)
+                    {
+                        const auto line = juce::JSON::toString(dv, true);
+                        if (line.isNotEmpty() && line != "{}") technical << "\n" << line;
+                    }
+
                 if (st == "ok")
                 {
                     poll->cb(true, slots >= 0 ? "the rack took it and now holds " + juce::String(slots) + " slot(s)"
-                                              : juce::String("the rack took it"), slots);
+                                              : juce::String("the rack took it"), technical, slots);
                     return;
                 }
                 if (st.isNotEmpty())
                 {
                     // THE LINK'S OWN REASON, unparaphrased. It is the only account of why, and a caller that
-                    // reports "it failed" without it sends the next round out blind.
-                    poll->cb(false, "the rack refused it (" + st + ")"
-                                    + (why.isNotEmpty() ? ": " + why : juce::String()), slots);
+                    // reports "it failed" without it sends the next round out blind. The per-plugin lines come
+                    // FIRST when there are any, because "(partial)" is a count and they are the reason.
+                    juce::String sentence;
+                    if (! troubles.isEmpty())
+                        sentence = troubles.joinIntoString("; ");
+                    else
+                        sentence = "the rack refused it (" + st + ")"
+                                 + (why.isNotEmpty() ? ": " + why : juce::String());
+                    poll->cb(false, sentence, technical, slots);
                     return;
                 }
             }
@@ -3061,7 +3127,9 @@ void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
         if (poll->waitedMs >= poll->maxMs)
         {
             poll->cb(false, "the rack never acknowledged it within " + juce::String(poll->maxMs / 1000) + " s - "
-                            "it may be gone, or its track may be disabled", -1);
+                            "it may be gone, or its track may be disabled",
+                     "no chain-ack-" + poll->uid + ".json with seq " + juce::String(poll->seq)
+                     + " appeared in " + juce::String(poll->maxMs) + " ms", -1);
             return;
         }
         juce::Timer::callAfterDelay(100, [step] { (*step)(); });
@@ -6476,6 +6544,76 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
  *  This is the processor's own line, written on its 1 Hz timer whether a window exists or not. It carries
  *  only facts the processor owns, and it is the ONLY way a rig row can assert on a shut window.
  */
+// ---- SEAN'S #1 (16 Oct 2026): THE V2 FETCHES THE MAPS A LINK CANNOT ------------------------------
+//
+// A Link has no network client, so a third-party slot on a Link could never ask for the parameter map it
+// needs and its settings never applied (its own log: "fetch_wired=n ... -> noMap"). The Link now writes
+// maps-wanted-<uid>.json; this serves it from THIS instance's authenticated API and writes the answer back
+// as maps-ready-<uid>.json, which the Link stores through its ordinary storeParamMaps path - so the
+// re-dial sweep that already exists does the dialling.
+//
+// ON THE PROCESSOR, NOT THE EDITOR, deliberately: the agent can be running with the V2's window shut
+// (item 0b moved it here for exactly that reason), and a Link waiting on a map it will never be sent is
+// the same silence this round has been removing everywhere else. The API lives on the processor, so no
+// window is required.
+void EchoJayProcessor::serviceLinkMapRequests()
+{
+    int err = 0;
+    const auto dir = LinkShm::resolveDir (err);
+    if (dir.isEmpty()) return;
+    const juce::File d (dir);
+    if (! d.isDirectory()) return;
+
+    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "maps-wanted-*.json"))
+    {
+        const auto v = juce::JSON::parse (f.loadFileAsString());
+        auto* o = v.getDynamicObject();
+        if (o == nullptr) { f.deleteFile(); continue; }
+        const auto uid = o->getProperty ("uid").toString();
+        juce::StringArray fps;
+        if (auto* arr = o->getProperty ("fps").getArray())
+            for (const auto& fv : *arr)
+            {
+                const auto fp = fv.toString().trim();
+                // ALREADY IN FLIGHT FOR THIS UID? Then leave it: the 1 Hz tick must not re-ask every
+                // second, which would be a request storm against the server for a map it is already
+                // sending. The request file is deleted the moment we take it, which is the lock.
+                if (fp.isNotEmpty()) fps.addIfNotAlreadyThere (fp);
+            }
+        f.deleteFile();                     // taken; a later want writes a fresh file
+        if (uid.isEmpty() || fps.isEmpty()) continue;
+
+        EchoJay_NSLog (("EJParamMaps(V2): a Link asked for " + juce::String (fps.size())
+                        + " map(s) it cannot fetch itself (uid " + uid + ") - fetching").toRawUTF8());
+        const auto fpsJoined = fps.joinIntoString (",");
+        api.getJSON ("/api/params/maps?fps=" + fpsJoined,
+            [this, uid, fps, dir, fpsJoined] (const juce::var& json, int statusCode)
+        {
+            auto* root = json.getDynamicObject();
+            const auto mapsV = root != nullptr ? root->getProperty ("maps") : juce::var();
+            auto* maps = mapsV.getDynamicObject();
+            const int served = maps != nullptr ? maps->getProperties().size() : 0;
+            // ANSWERED EITHER WAY. A Link told nothing waits for ever and reports noMap with no reason;
+            // an empty answer is a real answer - the server has no map for that plugin - and the Link's
+            // own failMapFetch path turns it into a terminal, explainable state instead of "pending".
+            auto* out = new juce::DynamicObject();
+            out->setProperty ("v", 1);
+            out->setProperty ("status", statusCode);
+            out->setProperty ("asked", fpsJoined);
+            if (served > 0) out->setProperty ("maps", mapsV);
+            juce::File (dir + "maps-ready-" + uid + ".json")
+                .replaceWithText (juce::JSON::toString (juce::var (out), true));
+            EchoJay_NSLog (("EJParamMaps(V2): served " + juce::String (served) + " map(s) to Link " + uid
+                            + " (status " + juce::String (statusCode) + ")"
+                            + (served == 0 ? " - the server has none for that plugin, which the Link will"
+                                             " report as noMap rather than waiting" : "")).toRawUTF8());
+            // ...and into THIS instance's own cache, because the V2 is the one disk writer. A map fetched
+            // for a Link is the same map this rack will want next time.
+            if (served > 0) getChainHost().storeParamMaps (mapsV);
+        });
+    }
+}
+
 void EchoJayProcessor::publishRigProcessorState()
 {
     if (! echojay::rig::enabled()) return;
@@ -6491,6 +6629,45 @@ void EchoJayProcessor::publishRigProcessorState()
     juce::String lastAssistant;
     for (const auto& m : chatHistory) if (m.role == "assistant") lastAssistant = m.content;
     o->setProperty ("lastAssistant", lastAssistant);
+    // ---- ITEM 0b: THE RUN, READ WITH THE WINDOW SHUT ---------------------------------------------
+    // rig-state.json is published by the EDITOR when it is given a command, so with no window there
+    // is nothing to ask and nothing to read - which is precisely the state every 0b leg is about.
+    // This is the same channel fix 6 added for the chat turn, carrying the agent's own facts.
+    if (auto* home = agentHomeIfBuilt())
+    {
+        auto& c = home->client();
+        o->setProperty ("agentPresent",  true);
+        o->setProperty ("agentActive",   c.isActive());
+        o->setProperty ("agentState",    juce::String (EJAgentClient::stateName (c.state())));
+        o->setProperty ("agentSession",  c.sessionId());
+        o->setProperty ("agentRunKey",   home->runKey());
+        o->setProperty ("agentGoal",     c.goal());
+        o->setProperty ("agentBuildRoad", home->hasBuildRoad());
+        o->setProperty ("agentBuildParked", home->buildParked());
+        o->setProperty ("agentParkedLines", (double) home->parkedLineCount());
+        // the run's own record, as the processor holds it - which is what a reopened window adopts
+        juce::String agentRowJson, statuses;
+        int runRows = 0;
+        for (const auto& m : chatHistory)
+            if (m.agentJson.isNotEmpty())
+            {
+                ++runRows;
+                if (home->runKey().isNotEmpty()
+                    && echojay::agentui::fromJson (juce::JSON::parse (m.agentJson)).runKey == home->runKey())
+                    agentRowJson = m.agentJson;
+            }
+        o->setProperty ("agentRunRows", (double) runRows);
+        if (agentRowJson.isNotEmpty())
+        {
+            const auto v = echojay::agentui::fromJson (juce::JSON::parse (agentRowJson));
+            for (const auto& st : v.steps) statuses << echojay::agentui::statusToken (st.status) << " ";
+            o->setProperty ("agentRowSteps",   statuses.trim());
+            o->setProperty ("agentRowClosing", v.closing);
+            o->setProperty ("agentRowChanges", (double) v.changeCount);
+            o->setProperty ("agentRowFinished", v.finished);
+        }
+    }
+    else o->setProperty ("agentPresent", false);
     // ONE FILE PER WRAPPER (15 Oct 2026, before the second instance exists rather than after).
     //
     // A single rig-processor.json is correct for exactly as long as there is exactly one V2 in the process.
@@ -6628,6 +6805,22 @@ void EchoJayProcessor::wireUndoHooks(ChainHost& h, const juce::String& rackUid)
         echojay::UndoEntry e; e.kind = kind; e.target = (rackUid == "@borrow" ? borrowSession_.uid : rackUid) + "#" + hp->slotUndoTarget(slot) + "#" + juce::String(slot);
         e.label = label; e.before = before; e.after = after; e.coalesceKey = key.isNotEmpty() ? kind + ":" + key : juce::String(); undoHistory_.push(std::move(e));
     };
+    // ---- U1 (16 Oct 2026): THE AGENT'S PRE-GAIN MOVE GOES ON THE UNDO HISTORY ------------------
+    //
+    // Row U1 said the undo restored 0.00 / auto over Sean's hand-set -5.00. The cause was worse than
+    // that reads: an agent `set_pre_gain` pushed NO UNDO ENTRY AT ALL, so `{op:"undo"}` - which by
+    // Sean's ruling 4 walks the plugin's own history one step - stepped past the agent's change and
+    // undid THE USER'S OWN PREVIOUS MOVE instead. It did not restore the wrong value; it reversed the
+    // wrong action, and reported success, because the history HAD moved.
+    //
+    // ONE RECORDER for both roads: recordPreGainUndo is what the knob already uses, it packs the value
+    // AND the hand-set flag, and it coalesces a drag into one entry. A second recorder here would be a
+    // second thing to keep in step with the ruling.
+    h.onPreGainUndo = [this, rackUid](float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet)
+    {
+        recordPreGainUndo (beforeDb, beforeUserSet, afterDb, afterUserSet,
+                           rackUid == "@borrow" ? borrowSession_.uid : rackUid);
+    };
     h.onDialUndo = [this, rackUid, hp = &h](int slot, juce::var before, juce::var after, const juce::String& label)
     {
         echojay::UndoEntry e; e.kind = "dial"; e.target = (rackUid == "@borrow" ? borrowSession_.uid : rackUid) + "#" + hp->slotUndoTarget(slot) + "#" + juce::String(slot);
@@ -6659,10 +6852,11 @@ void EchoJayProcessor::drainHostedGestures()
     if (borrowHost_ != nullptr && borrowActive()) drain(*borrowHost_, borrowSession_.uid);
 }
 
-void EchoJayProcessor::recordPreGainUndo(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet)
+void EchoJayProcessor::recordPreGainUndo(float beforeDb, bool beforeUserSet, float afterDb, bool afterUserSet,
+                                        const juce::String& target)
 {
     if (std::abs(beforeDb - afterDb) < 0.01f && beforeUserSet == afterUserSet) return;
-    echojay::UndoEntry e; e.kind = "preGain"; e.target = {};   // "" = this instance's own rack
+    echojay::UndoEntry e; e.kind = "preGain"; e.target = target;   // "" = this instance's own rack
     e.label = "pre-gain " + juce::String(afterDb, 1) + " dB";
     auto pack = [](float db, bool us) { auto* o = new juce::DynamicObject();
                                         o->setProperty("db", (double) db); o->setProperty("userSet", us);

@@ -64,6 +64,23 @@ public:
     const echojay::ParamSchema& paramSchema() const override { return schema(); }
     bool   setParamValue (const juce::String& id, double value) override;
     double getParamValue (const juce::String& id) const override;
+    /** SEAN'S #4 (16 Oct 2026): the bands are readable BY NAME now - band1.freq_hz, band1.gain_db,
+        band1.q, band1.type, band1.enabled, band1.slope_db_oct and the dynamic quartet - so the agent
+        can confirm what it dialled instead of reporting a bare "applied". And an id this device does
+        not know says so, rather than reading as 0.0. */
+    bool knowsParam (const juce::String& id) const override;
+    /** SEAN'S #4: the bands are the EQ's own vocabulary and are not in its schema (sixty-six entries
+        would be), so the dial path must be allowed past the schema gate for them - and for nothing
+        else. Same parser as the read, so the two cannot disagree about what "band2.q" means. */
+    bool ownsUnpublishedParam (const juce::String& id) const override;
+    /** Every band's current state, for the EQ's Suggested Settings listing and for a read-back that
+        wants the whole picture in one call. One line per ENABLED band, in band order. */
+    juce::StringArray describeBands() const;
+    /** SEAN'S #4: *"list the bands in the EQ's Suggested Settings"*. The base readback walks
+        paramSchema(), which holds the four DEVICE-level params and no band at all - which is exactly
+        why the card said "applied" and nothing more. The bands go first, because they are what the
+        user asked for and what the agent dialled. */
+    juce::String readbackSummary() const override;
 
     static constexpr const char* kOutputDb  = "output_db";
     static constexpr const char* kAutoGain  = "auto_gain";

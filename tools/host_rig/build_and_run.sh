@@ -21,6 +21,14 @@
 # =============================================================================
 : "${ECHOJAY_STATE_HOME:=$(mktemp -d /tmp/echojay-rig-state.XXXXXX)}"; export ECHOJAY_STATE_HOME
 export EJ_RIG_HOOK=1
+# ITEM 0 IS ON BY DEFAULT FROM 16 OCT (Sean's RULE 2): the run renders as a message in the chat, and
+# rows G1-G7 therefore run in S6 unasked - no EJ_AGENT_ROW, because a flag that switched rows on in
+# the rig while changing nothing in the plugin is how those rows spent a week proving a configuration
+# that did not ship. EJ_AGENT_PANEL=1 puts the old floating card back on both sides at once.
+#
+# ITEM 0b (a run surviving its window) is a SEPARATE switch and is OFF: row B3 has never shown a
+# windowless run apply its change, so a close still stops the run as 15b did. EJ_AGENT_0B=1 runs
+# B1-B4 against that behaviour; deliberately NOT exported here, so S6 tests the shipped build.
 echo "isolated state root: $ECHOJAY_STATE_HOME"
 
 set -u
@@ -104,6 +112,8 @@ cat > "$SCRATCH/script.json" <<'JSON'
       "text": "mock reply held back so the window could be closed mid-reply, then finished." },
     { "holdIfContains": "rig-cut-marker", "holdMs": 3000, "deltaMs": 60, "cutAfterDeltas": 3,
       "text": "this reply starts and then the socket dies before any done frame arrives" },
+    { "holdIfContains": "rig-underscore-marker", "holdMs": 0, "deltaMs": 10,
+      "text": "88_Omnisphere_01 and 88_7even Kick_2_01 both sound fine to me." },
     { "text": "mock reply, sent quickly.", "deltaMs": 15, "holdMs": 0 }
   ],
   "agent": [
@@ -147,6 +157,119 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-row-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_r1", "name": "do", "approval": "ask_first",
+            "summary": "pre-gain 4 dB", "args": { "op": "set_pre_gain", "db": 4 } },
+          { "event": "tool_call", "id": "tc_r2", "name": "do", "approval": "ask_first",
+            "summary": "pre-gain 6 dB", "args": { "op": "set_pre_gain", "db": 6 } },
+          { "event": "await", "ids": ["tc_r1", "tc_r2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Set the pre-gain to 4 dB, then to 6 dB." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-rowask-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_rq", "name": "talk", "approval": "free",
+            "summary": "how firm should it be?",
+            "args": { "text": "Two ways to go about this.",
+                      "ask": { "question": "How firm should it be?",
+                               "choices": [ { "label": "Gentle" }, { "label": "More upfront" } ],
+                               "allowFreeText": false } } },
+          { "event": "await", "ids": ["tc_rq"] } ],
+        [ { "event": "round", "round": 2, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_rq2", "name": "do", "approval": "free",
+            "summary": "pre-gain 2 dB", "args": { "op": "set_pre_gain", "db": 2 } },
+          { "event": "await", "ids": ["tc_rq2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 2,
+            "summary": "Gentle it is - the pre-gain is at 2 dB." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-gr-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_g1", "name": "do", "approval": "free",
+            "summary": "build a compressor on this rack",
+            "args": { "op": "build",
+                      "chain": [ { "name": "EchoJay Compressor",
+                                   "settings_structured": { "params": { "threshold_db": -24, "ratio": 4 } } } ] } },
+          { "event": "await", "ids": ["tc_g1"] } ],
+        [ { "event": "round", "round": 2, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_g2", "name": "check", "approval": "free",
+            "summary": "gain reduction on slot 1", "args": { "what": "gr", "slot": 1 } },
+          { "event": "await", "ids": ["tc_g2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 2, "summary": "Read the gain reduction." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkadd-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_la", "name": "do", "approval": "free",
+            "summary": "add a compressor to this rack",
+            "args": { "op": "add", "name": "EchoJay Compressor" } },
+          { "event": "await", "ids": ["tc_la"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added a compressor." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-eqband-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_eq", "name": "do", "approval": "free",
+            "summary": "two bells on an EchoJay EQ",
+            "args": { "op": "add", "name": "EchoJay EQ",
+                      "settings_structured": { "params": { "band1.freq_hz": 240, "band1.gain_db": -2.5,
+                                                           "band1.q": 1.2,
+                                                           "band2.freq_hz": 3200, "band2.gain_db": 1.5,
+                                                           "band2.q": 0.9 } } } },
+          { "event": "await", "ids": ["tc_eq"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Two bells on the EQ." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-thirdparty-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_tp", "name": "do", "approval": "free",
+            "summary": "add a real third-party plugin, with a setting",
+            "args": { "op": "add", "name": "__TP_NAME__",
+                      "settings_structured": { "controls": { "__TP_CONTROL__": "__TP_VALUE__" } } } },
+          { "event": "await", "ids": ["tc_tp"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it, with the setting you asked for." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-setfail-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sf", "name": "do", "approval": "free",
+            "summary": "add a plugin that is not installed",
+            "args": { "op": "add", "name": "Nothing Of This Name Exists",
+                      "settings_structured": { "params": { "attack_db": 6, "sustain_db": -2 } } } },
+          { "event": "await", "ids": ["tc_sf"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "One step did not land." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-rowfail-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_rf", "name": "do", "approval": "free",
+            "summary": "a change this rack will refuse",
+            "args": { "op": "teleport_the_rack" } },
+          { "event": "await", "ids": ["tc_rf"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "One step did not land." } ]
+      ]
+    },
+    {
       "goalContains": "rig-autostrange-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
@@ -162,7 +285,12 @@ cat > "$SCRATCH/script.json" <<'JSON'
 JSON
 
 if [ -z "$LIVE_PORT" ]; then
-python3 "$ROOT/tools/host_rig/mock_server.py" --port "$PORT" --script "$SCRATCH/script.json" &
+# --maps: the file the RIG writes after sampling a real third-party plugin's own controls (row T1,
+# Sean's RULE 1). The mock reads it per request, so the order of startup does not matter. Without it
+# /api/params/maps answers {} - which is how the rig passed four plugins that were sitting at their
+# defaults in Logic: no map, no third-party dial, ever.
+python3 "$ROOT/tools/host_rig/mock_server.py" --port "$PORT" --script "$SCRATCH/script.json" \
+        --maps "$ECHOJAY_STATE_HOME/rig-maps.json" &
 MOCK_PID=$!
 fi
 # Wait for it to answer rather than sleeping a guessed amount.

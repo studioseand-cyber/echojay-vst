@@ -323,6 +323,9 @@ public:
 private:
     // juce::Timer — bumps registry heartbeat once per second while active
     void timerCallback() override;
+    /** SEAN'S #1 (16 Oct 2026): consume the parameter maps the V2 fetched for this rack. A Link has no
+        network client, so without this a third-party slot here could never be dialled. */
+    void serviceMapsReady();
 
     // Host audio format — stored in prepareToPlay, used when opening the ring
     double hostSampleRate  = 44100.0;

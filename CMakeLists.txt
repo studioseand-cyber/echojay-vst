@@ -144,6 +144,11 @@ target_sources(EchoJay PRIVATE
     Source/EJAgentExecutorRead.cpp
     Source/EJAgentExecutorDo.cpp
     Source/EJAgentExecutorRead.h
+    # ITEM 0b (15 Oct 2026): the agent's session and record live on the PROCESSOR now, so a
+    # closing window cannot end a run. See the header for what moved and what still needs one.
+    Source/EJAgentHome.cpp
+    Source/EJAgentHome.h
+    Source/EJAgentRunView.h
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp

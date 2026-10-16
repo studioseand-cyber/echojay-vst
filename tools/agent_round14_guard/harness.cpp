@@ -124,10 +124,10 @@ DoSinks sinks (SinkLog& lg, bool withClock = true)
     DoSinks s;
     s.agentModeOn = [] { return true; };
     s.echoJayOnly = [] { return false; };
-    s.applyChainOps = [&lg] (const juce::String& uid, const juce::var& ops, std::function<void (bool, juce::String)> cb)
+    s.applyChainOps = [&lg] (const juce::String& uid, const juce::var& ops, std::function<void (bool, juce::String, juce::String)> cb)
     {
         ++lg.chainOps; lg.lastUid = uid; lg.lastOps = ops;
-        if (cb) cb (lg.applyOk, lg.applyOk ? juce::String ("the rack took it") : juce::String ("the rack refused it"));
+        if (cb) cb (lg.applyOk, lg.applyOk ? juce::String ("the rack took it") : juce::String ("the rack refused it"), {});
     };
     s.buildChain = [&lg] (const juce::String& uid, const juce::var& chain, std::function<void (bool, juce::String)> cb)
     {

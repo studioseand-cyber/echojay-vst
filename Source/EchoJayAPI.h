@@ -443,17 +443,40 @@ public:
         ruling is that the user must see "interrupted" with a Retry, so the sentence is written ONCE, here,
         and both renderers use it. The `[interrupted]` marker is what the UI keys its Retry on, so it is
         part of the text rather than a second flag that can disagree with it. */
+    /** ---- SEAN'S #7, 16 Oct 2026: THE TAG IS GONE AND THE SENTENCE SAYS WHAT HAPPENED -----------
+        *"remove the [interrupted] tag, use 'You closed the window before the answer came back', and add
+        a Retry button that resends the question."*
+
+        The tag was a marker the UI keyed its Retry on, which is why it was in the text at all - and a
+        machine marker in a sentence a person reads is the kind of thing this round has been removing
+        everywhere else. The Retry now rides on the message as a pill (the same mechanism a build
+        failure's "Find replacements" uses), so the text is only text.
+
+        TWO CAUSES, TWO SENTENCES. "You closed the window" is only true when that is what happened; a
+        network failure gets its own line, because telling someone they closed a window they did not
+        close is a new untruth in place of an old one. */
     static juce::String interruptedTurnLine (const juce::String& why = {})
     {
-        juce::String line = juce::String::fromUTF8 ("\xe2\x9a\xa0 That answer didn't arrive");
         const auto w = why.trim();
-        if (w.isNotEmpty()) line << " - " << w;
-        else                line << " (nothing came back)";
-        line << "  [interrupted]";
-        return line;
+        if (w.isNotEmpty()) return w;
+        return "The answer didn't come back.";
     }
+    /** The sentence for the one cause Sean named: the window went before the reply did. */
+    static juce::String closedWindowTurnLine()
+    { return "You closed the window before the answer came back."; }
+    /** The sentence for a transport failure, which is NOT the same thing and must not claim to be. */
+    static juce::String unreachableTurnLine()
+    { return "The answer didn't come back - EchoJay could not be reached. Check your connection."; }
     /** True when a row already carries the marker above, so no renderer doubles it. */
-    static bool looksInterrupted (const juce::String& text) { return text.contains ("[interrupted]"); }
+    /** True when a row already says the answer did not arrive, so no renderer doubles it. Keyed on the
+        SENTENCES now that the "[interrupted]" tag is gone (Sean's #7) - the tag existed only to be
+        found, and a marker a person can read is a marker in the wrong place. */
+    static bool looksInterrupted (const juce::String& text)
+    {
+        return text.contains ("[interrupted]")                       // rows written by an older build
+            || text.contains ("before the answer came back")
+            || text.contains ("didn't come back");
+    }
 
     void notifyChatTurnFinalised (const juce::String& reply, bool success)
     {
@@ -468,11 +491,16 @@ public:
         try { onChatTurnFinalised (turnChatId_, reply, success); } catch (...) {}
     }
     juce::String turnChannel() const { return turnChannel_; }
+    /** The user's own message for the turn in flight, so an interrupted row can offer a Retry that
+        resends the actual question rather than asking the user to retype it (Sean's #7). */
+    juce::String turnUserMessage() const { return turnUserMessage_; }
+    void setTurnUserMessage (const juce::String& m) { turnUserMessage_ = m; }
     void setSelectedGroupId(const juce::String& id) { selectedGroupId_ = id; }
     juce::String selectedGroupId() const { return selectedGroupId_; }
     juce::var groupsLinks_, groupsVar_;
     juce::String selectedGroupId_;
     juce::String turnChatId_, turnChannel_;   // 21s-b: the request contract
+    juce::String turnUserMessage_;            // Sean's #7: what a Retry would resend
     bool unityChain() const { return unityChain_; }
     bool unityChain_ = false;
     void stageCapturePayload(const juce::String& metersBlob, int busCount)

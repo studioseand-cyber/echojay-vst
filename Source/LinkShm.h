@@ -1287,6 +1287,18 @@ struct RackSidecarSlot {
     // visit, same positional-brace-init rule as above.
     float outGainDb = 0.0f;
     float preTrimDb = 0.0f;
+    /** ---- SEAN'S #1 (16 Oct 2026): THE LANDED VALUES, AS NUMBERS ----------------------------------
+        "<semantic>=<number>;..." - what each dialled control on this slot ACTUALLY READS, taken from
+        the plugin's own display (or a built-in device's getParamValue), never from the request.
+
+        `settings` above cannot answer this: it is composed from the value the request ASKED for, and
+        the agent's Link read-back was parsing numbers back out of it - so a third-party add whose
+        settings never landed could be "confirmed" against an echo of itself. Empty means NOTHING was
+        read back on this slot, which the agent must report as `not_confirmed` and never as applied.
+
+        Additive at v:1, written only when non-empty; an old reader never asks for it. LAST in the
+        struct, the positional-brace-init rule the four notes above record. */
+    juce::String landedValues;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -2079,6 +2091,10 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
             so->setProperty("lastEditMs", s.lastEditMs);
         if (s.manufacturer.isNotEmpty())
             so->setProperty("mfr", s.manufacturer);
+        // SEAN'S #1: bounded like `settings` is - a rack of 16 slots must not grow this file without a
+        // ceiling - and written only when something was actually read back.
+        if (s.landedValues.isNotEmpty())
+            so->setProperty("landed", s.landedValues.substring (0, 400));
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -2154,6 +2170,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                 s.lastEditMs = so->hasProperty("lastEditMs")
                                  ? (double) so->getProperty("lastEditMs") : 0.0;
                 s.manufacturer = so->getProperty("mfr").toString();
+                s.landedValues = so->getProperty("landed").toString();   // SEAN'S #1; absent reads ""
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

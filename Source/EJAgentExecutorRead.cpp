@@ -331,7 +331,20 @@ juce::var ExecutorRead::rackVar (const RackRead& r, const LevellingRead& lv)
         if (settings.isNotEmpty()) so->setProperty ("settings", capped (settings, kMaxSettingsChars));
         if (s.preTrimDb != 0.0f) so->setProperty ("inDb", r1 (s.preTrimDb));
         if (s.outGainDb != 0.0f) so->setProperty ("outDb", r1 (s.outGainDb));
-        if (s.pictureValid && s.grKnown) so->setProperty ("grDb", r1 (s.grDb));
+        if (s.pictureValid && s.grKnown)
+        {
+            // grNowDb, NOT grDb (Sean's checks 2 and 3, 15 Oct). The old name is retired from BOTH
+            // reads rather than only from check(gr): one quantity with two names across two reads is
+            // how a reader keeps quoting the momentary figure by accident. A caller that still asks
+            // for "grDb" now gets nothing, which is safer than silently getting the misleading number.
+            so->setProperty ("grNowDb", r1 (s.grDb));                    // this instant only
+            if (s.grWindowFrames > 0.0)                                  // ...and what the window saw
+            {
+                so->setProperty ("grLoudestDb", r1 (s.grLoudestDb));
+                so->setProperty ("grTypicalDb", r1 (s.grTypicalDb));
+                so->setProperty ("grSpikeMaxDb", r1 (s.grPeakDb));   // spike warnings only
+            }
+        }
         slots.add (juce::var (so));
     }
     o->setProperty ("slots", juce::var (slots));
@@ -415,7 +428,16 @@ juce::var ExecutorRead::levelsVar (const RackRead& r, const echojay::LevelTally:
         {
             setLevel (so, "inLufs", s.inLufs);   setLevel (so, "outLufs", s.outLufs);
             setLevel (so, "inDbtp", s.inTpDb);   setLevel (so, "outDbtp", s.outTpDb);
-            if (s.grKnown) so->setProperty ("grDb", r1 (s.grDb));
+            if (s.grKnown)
+            {
+                so->setProperty ("grNowDb", r1 (s.grDb));                // see the note above: one name
+                if (s.grWindowFrames > 0.0)
+                {
+                    so->setProperty ("grLoudestDb", r1 (s.grLoudestDb));
+                    so->setProperty ("grTypicalDb", r1 (s.grTypicalDb));
+                    so->setProperty ("grSpikeMaxDb", r1 (s.grPeakDb));   // spike warnings only
+                }
+            }
         }
         else so->setProperty ("reading", "none");
         slots.add (juce::var (so));
@@ -678,9 +700,69 @@ void ExecutorRead::check (const ToolCall& call, Done done)
                                                         "I could not read that rack.")); return; }
         if (slotArg < 1 || slotArg > (int) r.slots.size()) { done (ToolOutcome::failure ("unknown_slot", "slot " + juce::String (slotArg) + " is not on the rack (1.." + juce::String ((int) r.slots.size()) + ")")); return; }
         const auto& s = r.slots[(size_t) slotArg - 1];
+        // ---- SEAN'S RULING, 15 Oct 2026: NO ESTIMATES, EVER ------------------------------------
+        // "check(gr) returns a figure only for those; for anything else it returns not_certified with
+        // no number." An EchoJay device reports its own reduction; a third party must have passed the
+        // EJ Maps sweep, which is what the server gates a comp profile on. Everything else gets a
+        // refusal with no figure in it - not a guess, and not a zero that reads like a measurement.
+        if (s.pictureValid && s.grKnown && ! s.grCertified)
+        {
+            done (ToolOutcome::failureFor ("not_certified",
+                        "gain reduction is not readable for \"" + s.name + "\": it is not an EchoJay device "
+                        "and its parameter map is not certified for gain reduction (it has not passed the "
+                        "EJ Maps compressor sweep). There is no figure to give and an estimate is not "
+                        "acceptable. Say that you cannot measure this one, and do not infer a figure from "
+                        "the slot's input and output levels.",
+                        "I cannot measure gain reduction on " + s.name + " - it is not a plugin EchoJay has "
+                        "measured, so any figure would be a guess."));
+            return;
+        }
         if (! s.pictureValid || ! s.grKnown) { done (notPlaying ("gain reduction on slot " + juce::String (slotArg))); return; }
+        // ---- SEAN'S CHECKS 2 AND 3 (15 Oct 2026): THE WINDOW, NOT THE INSTANT -------------------
+        //
+        // This used to return `grDb` alone - the reduction at the single instant the tool call ran,
+        // which is systematically just after "Got it, you can stop", in the release tail. Sean's meter
+        // showed about 5 dB on the loud parts and the agent reported 0.1 dB, then 2.1 dB. A momentary
+        // sample of a time-varying quantity is not a measurement of it.
+        //
+        // So the device accumulates over the listen window and this reports what it saw: the PEAK and
+        // the TYPICAL (the median of the frames where audio was present), each NAMED, with the current
+        // value kept and labelled as the momentary one so nothing can quote it as "the" figure.
         auto* o = new juce::DynamicObject();
-        o->setProperty ("slot", slotArg); o->setProperty ("name", s.name); o->setProperty ("grDb", r1 (s.grDb));
+        o->setProperty ("slot", slotArg); o->setProperty ("name", s.name);
+        const bool haveWindow = s.grWindowFrames > 0.0;
+        if (haveWindow)
+        {
+            // ---- SEAN'S RULING, 15 Oct 2026: THE LOUDEST HITS, NOT THE ABSOLUTE MAX --------------
+            // "the absolute-max peak (8 dB) is a single transient instant nobody can see on the meter;
+            // I see 2-4, hitting 5. Report 'loudest hits' as the 95th percentile of active blocks
+            // instead, keep the true max internal for spike warnings only."
+            o->setProperty ("grLoudestDb", r1 (s.grLoudestDb));   // 95th percentile - THE figure
+            o->setProperty ("grHeldDb",    r1 (s.grHeldDb));      // what the tile and the meter show
+            o->setProperty ("grTypicalDb", r1 (s.grTypicalDb));   // median - where the needle sits
+            o->setProperty ("grNowDb",     r1 (s.grDb));          // this instant only
+            o->setProperty ("grSpikeMaxDb", r1 (s.grPeakDb));     // one transient; a WARNING, not a reading
+            o->setProperty ("grWindowFrames", s.grWindowFrames);
+            o->setProperty ("measured", "over the whole listen window, only while audio was playing");
+            o->setProperty ("note", "Report grLoudestDb as the loudest hits and grTypicalDb as the typical "
+                                    "amount. grLoudestDb is the 95th percentile of the blocks with audio - "
+                                    "what a person actually sees on a meter. grSpikeMaxDb is the single "
+                                    "deepest instant in the whole window: use it ONLY to warn about spikes, "
+                                    "never as what the compressor is doing. grNowDb is this instant alone "
+                                    "and must not be quoted at all.");
+        }
+        else
+        {
+            // NOTHING WAS MEASURED, which is not 0 dB of reduction. Saying so is the whole point: a
+            // window with no frames is the absence of a reading, and the default has to be the safe
+            // answer rather than the convenient one.
+            o->setProperty ("grNowDb", r1 (s.grDb));
+            o->setProperty ("measured", "nothing yet - no audio has been through this slot since the "
+                                        "listen window began");
+            o->setProperty ("note", "there is no peak or typical figure to give. Ask for a listen with "
+                                    "audio playing before quoting a gain reduction; grNowDb is one "
+                                    "instant and must not be reported as what the compressor is doing.");
+        }
         setLevel (o, "inLufs", s.inLufs); setLevel (o, "outLufs", s.outLufs);
         done (ToolOutcome::success (juce::var (o)));
         return;
@@ -840,6 +922,10 @@ const ExecutorRead::Checkpoint* ExecutorRead::checkpoint (const juce::String& to
 void ExecutorRead::beginPlaybackWindow()
 {
     windowOpen_ = true;
+    // SEAN'S CHECKS 2 AND 3 (15 Oct 2026): the gain-reduction window starts HERE, with the loudness
+    // one. It is reset for either target: a listen on a Link still listens through this instance's own
+    // rack, and leaving yesterday's peak in place would be the opposite of the fault being fixed.
+    if (src_.beginGrWindow) src_.beginGrWindow();
     if (target_.isEmpty())
     {
         if (src_.beginWindow) src_.beginWindow();   // the loop's list: out tally, loop-owned in tally, both short-term maxes - never the song's integrated reading
@@ -909,6 +995,9 @@ namespace
             s.pictureText = info.pictureText;
             const auto pic = host.slotPicture (i);
             s.pictureValid = pic.valid; s.grKnown = pic.grKnown; s.grDb = pic.grDb;
+            s.grPeakDb = pic.grPeakDb; s.grTypicalDb = pic.grTypicalDb; s.grLoudestDb = pic.grLoudestDb;
+            s.grHeldDb = pic.grHeldDb; s.grCertified = pic.grCertified;
+            s.grWindowFrames = (double) pic.grWindowFrames;
             s.inLufs = pic.inLufs; s.outLufs = pic.outLufs; s.inTpDb = pic.inTpDb; s.outTpDb = pic.outTpDb;
             r.slots.push_back (s);
         }
@@ -986,6 +1075,24 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         host.maybeReloadEntriesCache();
         juce::StringArray names;
         for (const auto& d : host.getFilteredPlugins ({})) names.addIfNotAlreadyThere (d.name);
+        // ---- SEAN'S CHECK 5, PART 2 (15 Oct 2026): NEVER OFFER A PLUGIN THAT WILL NOT LOAD ------
+        //
+        // "Record plugins that fail to load (unlicensed / won't instantiate) ... so they're never
+        // offered again in a pick." kHs Transient Shaper was offered, failed to instantiate on the
+        // Link with "An OS error occurred during initialisation of the plug-in (-1)", and was then
+        // offered AGAIN in the next round's pick - because the inventory is a list of what is
+        // INSTALLED and nothing had ever recorded what does not run.
+        //
+        // The mark is cleared the moment the plugin loads for real, so this removes nothing
+        // permanently: a user who signs into iLok gets it back on the next successful load. And a
+        // plugin the user NAMES is still used as named - the add path does not consult this list,
+        // which is Sean's standing ruling about a named plugin.
+        const auto wontLoad = ChainHost::loadFailedPluginNames();
+        for (const auto& bad : wontLoad) names.removeString (bad);
+        if (! wontLoad.isEmpty())
+            EchoJay_NSLog (("EJAgent: the inventory withholds " + juce::String (wontLoad.size())
+                            + " plugin(s) that did not load here (" + wontLoad.joinIntoString (", ")
+                            + ") - they are not offered in a pick until they load").toRawUTF8());
         return names;
     };
     s.linkRack = [p] (const juce::String& uid)
@@ -1004,31 +1111,36 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         if (slot1Based < 1 || paramId.isEmpty()) return false;
         if (uid.isEmpty())
             return p->getChainHost().slotParamValue (slot1Based - 1, paramId, out);   // the device's own value
-        // A LINK: its sidecar carries each slot's landed readback as text ("attack_ms 18 ms, release_ms
-        // 85 ms, ..."), which is what crosses the process boundary. Parsed for the asked name only, and a
-        // name that is not in the text is NOT READABLE rather than zero - a missing value reported as 0.0
-        // would read as a real measurement and fail a comparison for the wrong reason.
+        // ---- A LINK, AND SEAN'S #1 (16 Oct 2026): THE SIDECAR'S `landed` FIELD, NOTHING ELSE --------
+        //
+        // This used to parse numbers out of the slot's `settings` TEXT. That text is composed from
+        // formatSemanticSetting(semantic, requestedValue) - the value the turn ASKED for - so the
+        // read-back was comparing a request with an echo of itself and could confirm a setting that
+        // never reached the plugin. It is why three third-party adds on the Kick's Link reported
+        // honestly-worded results while MTransient, bx_townhouse and X-Comp all sat at their defaults:
+        // the dial failed for want of a map, and the only thing that could have caught it was reading
+        // the same string the request wrote.
+        //
+        // `landed` carries the numbers the PLUGIN shows (or a built-in device's own getParamValue), set
+        // by ChainHost on both apply roads. Absent or missing this id = NOT READABLE, which the caller
+        // reports as `not_confirmed` - a different statement from "it did not land", and the only
+        // honest one when a Link's binary predates the field.
         int err = 0; const auto dir = LinkShm::resolveDir (err);
         if (dir.isEmpty()) return false;
         const auto rc = LinkShm::readRackSidecar (dir, uid);
         if (! rc.valid || slot1Based > (int) rc.slots.size()) return false;
-        const auto text = rc.slots[(size_t) (slot1Based - 1)].settings;
-        if (text.isEmpty()) return false;
-        const int at = text.indexOf (paramId);
-        if (at < 0) return false;
-        // the number that follows the name, sign and decimals included
-        juce::String num;
-        for (int i = at + paramId.length(); i < text.length(); ++i)
+        const auto landed = rc.slots[(size_t) (slot1Based - 1)].landedValues;
+        if (landed.isEmpty()) return false;
+        for (const auto& pair : juce::StringArray::fromTokens (landed, ";", ""))
         {
-            const auto c = text[i];
-            if (num.isEmpty() && (c == ' ' || c == ':' || c == '=')) continue;
-            if (juce::CharacterFunctions::isDigit (c) || c == '-' || c == '+' || c == '.') num += c;
-            else if (num.isNotEmpty()) break;
-            else if (! juce::CharacterFunctions::isWhitespace (c)) break;   // a word, not a value
+            const auto id = pair.upToFirstOccurrenceOf ("=", false, false).trim();
+            if (id != paramId) continue;
+            const auto num = pair.fromFirstOccurrenceOf ("=", false, false).trim();
+            if (num.isEmpty()) return false;
+            out = num.getDoubleValue();
+            return true;
         }
-        if (num.isEmpty()) return false;
-        out = num.getDoubleValue();
-        return true;
+        return false;
     };
     s.ownAnalysis = [p]
     {
@@ -1109,6 +1221,12 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     };
     s.chainInLoop = [p] { return p->getChainHost().getChainInLoopLevels(); };
     s.chainOut    = [p] { return p->getChainHost().getChainOutLevels(); };
+    s.beginGrWindow = [p]
+    {
+        const int n = p->getChainHost().resetGrWindows();
+        EchoJay_NSLog (("EJAgent: a listen began - the gain-reduction window was reset on "
+                        + juce::String (n) + " slot(s) (Sean's checks 2 and 3, 15 Oct)").toRawUTF8());
+    };
     s.beginWindow = [p]
     {
         // LoudnessLoop::startWindow's list, verbatim: the loop-owned tallies only. chainInTally_ (the song's

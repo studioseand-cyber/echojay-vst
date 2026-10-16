@@ -168,8 +168,50 @@ public:
     // on this shared base. These two are that route. The default is "does not report", not "reports 0 dB":
     // a device with no dynamics stage must read as ABSENT, since 0.0 dB of reduction is a real measurement
     // and an EQ claiming it would be a lie in the same family as the one being fixed.
+    /** ---- SEAN'S #4, 16 Oct 2026: AN UNKNOWN PARAMETER IS NOT A ZERO ---------------------------
+        `getParamValue` returns a double and has no way to say "I have never heard of that id", so a
+        device that did not know a name returned 0.0 - and the agent's read-back then compared 0.0 with
+        what it asked for and reported "not applied". A silent 0.0 is the -200 sentinel in a new place.
+
+        DEFAULTS TO TRUE so every existing device behaves exactly as it did; a device that can answer
+        honestly overrides it. The EQ does, because its bands were the ones being misread. */
+    virtual bool  knowsParam (const juce::String& id) const { juce::ignoreUnused (id); return true; }
+    /** ---- SEAN'S #4 (16 Oct 2026): AN ID THIS DEVICE OWNS BUT ITS SCHEMA DOES NOT PUBLISH --------
+        The schema is the gate on every write, and it is right to be: a device silently absorbing
+        "thrshold_db" would look like it worked and sound like it did nothing. But the EQ's BANDS are
+        not in its schema - six bands times eleven leaves would be sixty-six entries in the parameter
+        list the add-menu reads - and they are precisely what the agent dials. `band1.gain_db` resolved
+        no spec, counted as unknown, and never reached setParamValue: row E1 read the bands back at
+        1000 Hz / 0.0 dB after a turn that asked for 240 Hz / -2.5 dB.
+
+        DEFAULTS TO FALSE, DELIBERATELY, and it is NOT knowsParam. knowsParam answers "can I READ this
+        id", and it defaults to TRUE so every existing device's read-back behaves exactly as it did.
+        This answers a different and far more dangerous question - "may a write bypass my schema?" - so
+        it defaults to no, and only a device that has a vocabulary outside its schema says yes. One
+        shared virtual for both would have opened every device's write path on the strength of a
+        default chosen for reads. */
+    virtual bool  ownsUnpublishedParam (const juce::String& id) const { juce::ignoreUnused (id); return false; }
     virtual bool  reportsGainReduction() const { return false; }
     virtual float gainReductionDbForHost() const { return 0.0f; }
+    // ---- THE LISTEN WINDOW (Sean, 15 Oct 2026) -------------------------------------------------
+    //  A momentary sample is not a measurement of a time-varying quantity, and the agent was reading
+    //  exactly one, at the worst possible instant. These three carry what the window actually saw.
+    //  `grWindowFramesForHost() == 0` means NOTHING WAS MEASURED - which a caller must report as such
+    //  and never as 0 dB of reduction, for the same reason the default above is "does not report".
+    /** THE LOUDEST HITS (95th percentile of the active frames) - the figure to report, by Sean's
+        ruling of 15 Oct 2026. The absolute max below is ONE transient instant and is kept for spike
+        warnings only; quoting it reads as a number nobody can see on a meter. */
+    /** THE HELD FIGURE the GR meter draws (deepest of the last ~2 s). Sean's ruling of 15 Oct 2026:
+        the slot tile, the device's own meter and the agent all read this one value, so they cannot
+        disagree by sampling a moving number at different instants (his tile read 0.4 while the meter
+        read 1.2). */
+    virtual float gainReductionHeldDbForHost() const { return 0.0f; }
+    virtual float gainReductionLoudestDbForHost() const { return 0.0f; }
+    virtual float gainReductionPeakDbForHost()    const { return 0.0f; }
+    virtual float gainReductionTypicalDbForHost() const { return 0.0f; }
+    virtual juce::uint64 grWindowFramesForHost()  const { return 0; }
+    /** Start a new listen window. Called when the agent begins a listen, and by the tally reset. */
+    virtual void  resetGrWindowForHost() {}
 
 private:
     bool applyingState_ = false;

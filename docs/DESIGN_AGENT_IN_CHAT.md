@@ -32,6 +32,50 @@ Sean's downgrade rule as well: a new key in the persisted row is simply never re
 reader"*), so a project saved by the new build opens in `ship_2026-10-09a` showing the agent's closing
 sentence as ordinary text.
 
+## 1b. BUILT, 15 October 2026 — item 0 and item 0b
+
+**Item 0 is built**, to `docs/MOCKUP_AGENT_IN_CHAT_APPROVED.md`. The run is one transcript row: the opening
+sentence, the steps ticking in place with the mockup's own right-hand words, `[Apply] [Skip]` on an
+ask-first line, `Apply all / Skip all` under the list, a question's chips on its own row, a failed line's
+`Details` disclosure, `Stop` on the running message, and a collapse to the closing sentence with
+`N changes` and `Undo all` when it ends.
+
+Where it differs from this document, and why:
+
+- **One model, two producers, in `Source/EJAgentRunView.h`.** The live client and the snapshot persisted on
+  the message both produce a `RunView`, and the chat's measure pass, its paint pass, its hit test and the
+  rig all read only that. The alternative was the chat measuring from the client and painting from the
+  message, which is this file's own "two authorities for one height" fault.
+- **Zones, not components.** The row's buttons are painted and hit-tested from the rect list `layoutRun()`
+  returns, so a drawn control is a pressable control — which item 3's dead `Details` button was not.
+- **`press: apply` keeps its old meaning** in the rig's vocabulary (apply the plan). The LINE's own Apply —
+  item 2's actual fix — is `apply_line`, with its own row, because quietly changing what twenty existing
+  rows assert would have been a behaviour change wearing a refactor's clothes.
+- **The floating `EJAgentPanel` stays this round**, per Q5, suppressed while the row renders.
+  `EJ_AGENT_PANEL=1` brings it back without a rebuild. It goes once Sean signs off.
+
+**Item 0b is built**, as `EJAgentHome` on the processor (`Source/EJAgentHome.h`). The client, the executor,
+all eight sinks and the run's record live there; the editor is a view that adopts the row by the run's key.
+The three lines in `~EchoJayEditor` that called `agentClient_->stop()` — and the comment that admitted
+they were the bug — are gone.
+
+**ONE LIMIT, STATED RATHER THAN HIDDEN.** A **build** still needs a window. `loadChainFromJson` and
+`sendChainToLink` are ~750 lines of the most load-bearing path in the plugin and they drive the chain panel,
+the tab, the failed-plugin prompt and the chat's own follow-ups; moving them is its own piece of work and is
+owed in `NEXT_ROUND_QUEUE.md`. Until then the editor hands those two roads over as **one function** (not a
+second build path), and with no window a build **parks**: it waits, bounded, for a window and then takes the
+user's own road, or fails with that reason in plain words. Row **B4** asserts it. Everything else in a run —
+edits, OUT moves, reads, undo, asks, approvals and the closing sentence — survives the window outright.
+
+Rows: **G1** one row and no floating card, **G2** the steps tick in the message to their final statuses,
+**G3** a line's own Apply runs that line and leaves the other waiting line alone, **G4** the collapse and
+the `N changes` expander, **G5** `Undo all` on the message, **G6** a question's chips on the row and the
+answer recorded there, **G7** the `Details` disclosure; and for 0b **B1** the run survives the close,
+**B2** the waiting approval is pressed by the window that reopened, **B3** a whole run completes with no
+window attached at all, **B4** the build road is the one thing withdrawn.
+
+---
+
 ## 2. What an agent turn looks like in the transcript
 
 ```

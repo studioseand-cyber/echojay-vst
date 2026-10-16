@@ -71,6 +71,30 @@ struct FakeHost
             s.wet = i == 2 ? 0.15f : 1.0f; s.settings = i == 1 ? "ratio 4:1, attack 10 ms, release 300 ms" : "";
             s.dialSummary = i == 0 ? "bell 300 Hz -2.0 dB Q 1.4" : ""; s.preTrimDb = i == 1 ? -2.0f : 0.0f;
             s.pictureValid = i != 2; s.grKnown = i == 1; s.grDb = 2.4f; s.inLufs = -16.0f - i; s.outLufs = -16.5f - i; s.inTpDb = -4.0f; s.outTpDb = -4.5f;
+            // SEAN'S CHECKS 2 AND 3 (15 Oct 2026): the slot that reports GR also has a LISTEN WINDOW,
+            // so the peak and the typical are proven present and named. Put here rather than on a new
+            // fifth slot deliberately: a fifth slot moves "the last slot", the rack's size and the
+            // "1..4" range that four other legs assert, and proves nothing extra.
+            // ---- SEAN'S RULING, 15 Oct 2026: NO ESTIMATES, EVER, AND THREE FIGURES NOT TWO -------
+            // A figure is given only for an EchoJay device or a plugin CERTIFIED in its map (it passed
+            // the EJ Maps compressor sweep). This slot models a third party that HAS passed it, which is
+            // the only shape in which a third party may report one at all; the UNCERTIFIED case gets its
+            // own leg (G10a3), because a new refusal with no test is how the -200 sentinel came to be
+            // printed as a measurement.
+            //
+            // And the window is three figures: the LOUDEST HITS (95th percentile, the reported figure),
+            // the TYPICAL (median), and the SPIKE max (one transient instant, kept for warnings and
+            // never quoted) - "the absolute-max peak (8 dB) is a single transient instant nobody can see
+            // on the meter; I see 2-4, hitting 5." The read must preserve spike >= loudest >= typical.
+            if (i == 1)
+            {
+                s.grCertified   = true;     // see the note above: a swept third party
+                s.grPeakDb      = 5.1f;     // the SPIKE max: one transient instant, never quoted
+                s.grLoudestDb   = 4.2f;     // the 95th percentile - THE figure to report
+                s.grTypicalDb   = 2.8f;     // the median - where the needle sits
+                s.grHeldDb      = 3.9f;     // the 2 s hold the tile and the device meter both draw
+                s.grWindowFrames = 412800.0;
+            }
             own.slots.push_back (s);
         }
         ownL.present = true; ownL.option = "dynamic"; ownL.targetLufs = -12.0f; ownL.drives = "limiter_in"; ownL.landedGainDb = 3.3f;
@@ -182,10 +206,17 @@ int main()
                && s0.getProperty ("settings", {}).toString() == "bell 300 Hz -2.0 dB Q 1.4",
                "G2b a built-in carries builtin:true, a coarse role, and the dial summary as its settings");
         check (s1.getProperty ("settings", {}).toString() == "ratio 4:1, attack 10 ms, release 300 ms" && ! s1.hasProperty ("role") && std::abs ((double) s1.getProperty ("inDb", {}) + 2.0) < 0.01
-               && std::abs ((double) s1.getProperty ("grDb", {}) - 2.4) < 0.01,
+               && std::abs ((double) s1.getProperty ("grNowDb", {}) - 2.4) < 0.01,
                "G2c a third-party slot carries its prose settings, its IN trim and its GR, and no guessed role");
-        check ((int) s2.getProperty ("wet", {}) == 15 && (int) s0.getProperty ("wet", {}) == 100 && ! s3.hasProperty ("grDb") && ! s2.hasProperty ("grDb"),
-               "G2d wet is a percentage; a slot with no GR reading carries no grDb");
+        // SEAN'S CHECKS 2 AND 3 (15 Oct 2026): the momentary figure is grNowDb now, in BOTH reads. It
+        // was `grDb`, and `grDb` is the name that kept being quoted as what a compressor is doing -
+        // one instant read in the release tail. Retiring the name from look(rack) as well as from
+        // check(gr) is deliberate: one quantity with two names is how that mistake survives a fix.
+        check ((int) s2.getProperty ("wet", {}) == 15 && (int) s0.getProperty ("wet", {}) == 100
+               && ! s3.hasProperty ("grNowDb") && ! s2.hasProperty ("grNowDb")
+               && ! s1.hasProperty ("grDb"),
+               "G2d wet is a percentage; a slot with no GR reading carries no grNowDb - and the old "
+               "`grDb` name is gone from every slot, so nothing can quote it by habit");
         check (o.result.getProperty ("channel", {}).getProperty ("kind", {}).toString() == "mix_bus" && (int) o.result.getProperty ("revision", {}) == 7
                && (int) o.result.getProperty ("masterWet", {}) == 100 && std::abs ((double) o.result.getProperty ("preGainDb", {}) + 3.0) < 0.01 && (bool) o.result.getProperty ("remote", {}) == false,
                "G2e channel kind, revision, masterWet, preGainDb, remote:false");
@@ -250,7 +281,7 @@ int main()
         auto o = runCounted (ex, "look", call ("look", R"({"what":"levels"})"));
         auto* slots = o.result.getProperty ("slots", {}).getArray();
         auto chain = o.result.getProperty ("chain", {});
-        check (o.ok && slots != nullptr && slots->size() == 4 && std::abs ((double) (*slots)[1].getProperty ("grDb", {}) - 2.4) < 0.01
+        check (o.ok && slots != nullptr && slots->size() == 4 && std::abs ((double) (*slots)[1].getProperty ("grNowDb", {}) - 2.4) < 0.01
                && (*slots)[2].getProperty ("reading", {}).toString() == "none"
                && std::abs ((double) chain.getProperty ("inLufs", {}) + 15.3) < 0.01 && std::abs ((double) chain.getProperty ("outLufs", {}) + 12.1) < 0.01
                && std::abs ((double) chain.getProperty ("deltaDb", {}) - 3.2) < 0.01,
@@ -301,8 +332,70 @@ int main()
     // ---- G10 check(gr) --------------------------------------------------------------------------------------------------------
     {
         auto o = runCounted (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
-        check (o.ok && (int) o.result.getProperty ("slot", {}) == 2 && o.result.getProperty ("name", {}).toString() == "API-2500 (s)" && std::abs ((double) o.result.getProperty ("grDb", {}) - 2.4) < 0.01,
-               "G10a check(gr, slot 2): the slot's GR");
+        // ---- SEAN'S CHECKS 2 AND 3 (15 Oct 2026): THE WINDOW, NOT THE INSTANT -------------------
+        // His meter showed about 5 dB on the loud parts and the agent reported 0.1, then 2.1. The
+        // figure was `grDb` - one float, read at whatever moment the tool call ran, which is the
+        // release tail just after "Got it, you can stop". It is `grNowDb` now, explicitly labelled as
+        // this instant and NOT the figure to quote, beside the window's peak and typical.
+        check (o.ok && (int) o.result.getProperty ("slot", {}) == 2 && o.result.getProperty ("name", {}).toString() == "API-2500 (s)" && std::abs ((double) o.result.getProperty ("grNowDb", {}) - 2.4) < 0.01,
+               "G10a check(gr, slot 2): the slot's momentary GR, named grNowDb");
+        // ...and the WINDOW is what it leads with: the peak and the typical, by name, with the
+        // momentary value kept and labelled. This is the row Sean asked for - "return the peak and a
+        // typical value, named as such" - and it fails on any build that reports one moment.
+        {
+            // ---- SEAN'S RULING, 15 Oct 2026: THE LOUDEST HITS, NOT THE ABSOLUTE MAX --------------
+            // This leg asserted grPeakDb as the headline figure. His ruling moved it: *"the absolute-max
+            // 'peak' (8 dB) is a single transient instant nobody can see on the meter; I see 2-4, hitting
+            // 5. Report 'loudest hits' as the 95th percentile of active blocks instead, keep the true max
+            // internal for spike warnings only."* So the contract is THREE figures with an ORDER, and the
+            // leg had to move with it - the old assertion would have failed on the fix, which is the
+            // right way round but only if the leg is corrected rather than the product.
+            const double loudest = (double) o.result.getProperty ("grLoudestDb", {});
+            const double typ     = (double) o.result.getProperty ("grTypicalDb", {});
+            const double spike   = (double) o.result.getProperty ("grSpikeMaxDb", {});
+            const double held    = (double) o.result.getProperty ("grHeldDb", {});
+            const auto note      = o.result.getProperty ("note", {}).toString();
+            check (std::abs (loudest - 4.2) < 0.01 && std::abs (typ - 2.8) < 0.01
+                   && std::abs (spike - 5.1) < 0.01 && std::abs (held - 3.9) < 0.01
+                   && spike >= loudest && loudest >= typ
+                   && o.result.getProperty ("measured", {}).toString().containsIgnoreCase ("listen window")
+                   && note.containsIgnoreCase ("loudest hits")
+                   && note.containsIgnoreCase ("must not be quoted"),
+                   "G10a2 check(gr) leads with the LOUDEST HITS (95th percentile) and the TYPICAL "
+                   "(median), keeps the spike max back for warnings, carries the meter's held figure, "
+                   "and tells the model which to report  (RED before this round: there was no window at "
+                   "all, then the ABSOLUTE MAX was the headline - 8 dB of transient against a meter "
+                   "reading 2-4)",
+                   "loudest " + juce::String (loudest, 2) + " typical " + juce::String (typ, 2)
+                   + " spike " + juce::String (spike, 2) + " held " + juce::String (held, 2)
+                   + " now " + o.result.getProperty ("grNowDb", {}).toString());
+        }
+        // ---- G10a3: AN UNCERTIFIED SLOT GETS NO FIGURE AT ALL (Sean's ruling, 15 Oct) -------------
+        // *"NO estimates, ever... check(gr) returns a figure only for those; for anything else it
+        // returns not_certified with no number."* The refusal is new, and a refusal with no test is how
+        // the -200 sentinel came to be printed as a measurement. Proven BOTH ways on one slot: certified
+        // above gives the figures, uncertified here gives a refusal with no number in it.
+        {
+            fh.own.slots[1].grCertified = false;
+            auto nc = run (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
+            // NO FIGURE ANYWHERE - and "no digits" is the WRONG test for that, which I nearly shipped:
+            // this slot is called "API-2500 (s)" and naming the plugin is exactly what the refusal must
+            // do. What must not appear is a MEASUREMENT, so the test is for the unit.
+            const bool noNumber = ! nc.result.hasProperty ("grLoudestDb")
+                               && ! nc.result.hasProperty ("grTypicalDb")
+                               && ! nc.result.hasProperty ("grNowDb")
+                               && ! nc.result.hasProperty ("grHeldDb")
+                               && ! nc.errorMessage.contains (" dB")
+                               && ! nc.userMessage.contains (" dB");
+            check (! nc.ok && nc.errorCode == "not_certified" && noNumber
+                   && nc.errorMessage.containsIgnoreCase ("estimate")
+                   && nc.userMessage.containsIgnoreCase ("guess"),
+                   "G10a3 an UNCERTIFIED slot's gain reduction is refused as not_certified, with no "
+                   "figure anywhere in the answer and no estimate offered  (Sean, 15 Oct: \"no "
+                   "estimates, ever\" - a plausible figure nobody can check is worse than no figure)",
+                   "code=" + nc.errorCode + " msg=\"" + nc.errorMessage.substring (0, 90) + "\"");
+            fh.own.slots[1].grCertified = true;      // restored: later legs read this slot
+        }
         auto oor = run (ex, "check", call ("check", R"({"what":"gr","slot":9})"));
         check (! oor.ok && oor.errorCode == "unknown_slot" && oor.errorMessage.contains ("1..4"), "G10b slot 9 of 4 -> unknown_slot naming the range");
         auto nr = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
@@ -402,8 +495,8 @@ int main()
         sinks.agentModeOn = [&modeOn] { return modeOn; };
         sinks.echoJayOnly = [&ejOnly] { return ejOnly; };
         sinks.applyChainOps = [&] (const juce::String& uid, const juce::var& ops,
-                                   std::function<void (bool, juce::String)> cb)
-        { sentUid = uid; sentOps = ops; ++sends; if (cb) cb (true, "sent to the rack"); };
+                                   std::function<void (bool, juce::String, juce::String)> cb)
+        { sentUid = uid; sentOps = ops; ++sends; if (cb) cb (true, "sent to the rack", {}); };
         sinks.undoOne = [] (const juce::String&, std::function<void (bool, juce::String)> cb)
         { if (cb) cb (true, "undone"); };
         FakeHost dh;
