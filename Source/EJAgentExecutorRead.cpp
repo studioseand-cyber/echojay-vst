@@ -173,6 +173,43 @@ juce::String ExecutorRead::describeOtherChannel (const ToolCall& call)
     return {};
 }
 
+// ---- WHAT A BUILD WOULD REMOVE (16 Oct 2026, Sean's step 7.4) -------------------------------
+//
+// His report: "make the kick punchier" on a Link already holding Transient Master and Renaissance
+// Axx proposed "build 3 slots: EchoJay EQ, EchoJay Compressor, EchoJay Limiter", which REPLACES the
+// existing chain, with no explanation. Whether the model should have proposed a rebuild at all is
+// B's (FOR_B §17); what this build owes him either way is the DISCLOSURE, before the press.
+//
+// A `build` carries the whole rack it wants, so the answer is the live rack minus what the block
+// names: anything on the rack today that the block does not ask for is coming off. Matched on name,
+// loosely (the same comparison the read-back uses), because the block writes display names and so
+// does the rack. Anything that is not a build, or a build that keeps everything, returns nothing.
+juce::StringArray ExecutorRead::buildWouldRemove (const ToolCall& call)
+{
+    juce::StringArray going;
+    if (argString (call, "op").trim().toLowerCase() != "build") return going;
+    const auto chain = call.args.getDynamicObject() != nullptr
+                           ? call.args.getDynamicObject()->getProperty ("chain") : juce::var();
+    auto* arr = chain.getArray();
+    if (arr == nullptr) return going;                 // no block: nothing to compare, nothing claimed
+    const auto asked = resolveChannelArg (call);
+    const auto rack = asked.isNotEmpty() && asked != target_
+                          ? (src_.linkRack ? src_.linkRack (asked) : RackRead())
+                          : targetRack();
+    if (! rack.valid) return going;                  // the rack cannot be read: claim nothing
+    juce::StringArray wanted;
+    for (const auto& e : *arr)
+        if (auto* o = e.getDynamicObject()) wanted.add (o->getProperty ("name").toString().trim());
+    for (const auto& sl : rack.slots)
+    {
+        bool kept = false;
+        for (const auto& w : wanted)
+            if (w.isNotEmpty() && namesMatchLoosely (sl.name, w)) { kept = true; break; }
+        if (! kept && sl.name.isNotEmpty()) going.add (sl.name);
+    }
+    return going;
+}
+
 RackRead ExecutorRead::targetRack() const
 {
     if (target_.isNotEmpty()) return src_.linkRack ? src_.linkRack (target_) : RackRead();

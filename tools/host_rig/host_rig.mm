@@ -1352,7 +1352,14 @@ static juce::StringArray wordingOffences (const juce::var& state)
         "band1.", "band2.", "_db ", "_hz ", "_ms ", "threshold_db", "attack_db", "gain_db",
         "[interrupted]", "Report it as", "Report the plugin", "Do NOT", "do not name any value",
         "must not be quoted", "repeat this same call", "you were not given", "settings_structured",
-        "null", "undefined", "Traceback", "HTTP 5"
+        "null", "undefined", "Traceback", "HTTP 5",
+        // ---- SEAN'S STEP 8 (16 Oct 2026): THE EDIT VALIDATOR'S OWN PREFIX --------------------
+        // He read "op 1 invalid: ..." on a failed line. That is ChainHost's pre-flight talking to
+        // whoever sent the ops, in the vocabulary of an edit protocol - a person has no "op 1".
+        // Banned here so the invariant catches it wherever it leaks, and translated into words at
+        // the one place it becomes a person's line (ExecutorDo's refusal).
+        "op 1 invalid", "op 2 invalid", "op 3 invalid", "invalid: unknown operation",
+        "settings_unapplied", "not_applied", "apply_to"
     };
     juce::StringArray out;
     auto scan = [&out] (const juce::String& where, const juce::String& text)
@@ -3565,6 +3572,187 @@ int main (int argc, char* argv[])
                   "A", v2.editor.get(), st);
         }
 
+        // ---- I4c: A RACK'S REFUSAL READS AS WORDS (Sean's step 8, 16 Oct) -------------------------
+        //
+        // He read "op 1 invalid: ..." on a failed line. That is ChainHost's edit pre-flight speaking
+        // in the vocabulary of the protocol it validates - a person has no "op 1". I4's deny-list
+        // bans the phrase outright now, and this row produces it on purpose so the rule is held
+        // deterministically rather than only when a model happens to send a bad op.
+        if (! linkUid.isEmpty())
+        {
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            const auto r = askAgent (rig, "rig-badop-marker: do the impossible", 60000);
+            juce::String line;
+            if (auto* arr = rig.freshState().getProperty ("agentRow", juce::var())
+                                .getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    const auto d = sv.getProperty ("detail", juce::var()).toString();
+                    if (d.isNotEmpty()) line = d;
+                }
+            const bool raw = line.containsIgnoreCase ("op 1 invalid")
+                          || line.containsIgnoreCase ("unknown operation");
+            scen ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
+                  r.ran() && line.isNotEmpty() && ! raw,
+                  "the failed line reads: \"" + line.substring (0, 130) + "\""
+                  + (raw ? "  <- THE RAW PREFIX Sean read in Logic" : juce::String())
+                  + "  (RED on 16b: \"op 1 invalid: unknown operation ...\" went straight to the row)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+        }
+        else
+            scenSkip ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
+                      "no Link in the registry this run, and the own rack's parser answers in different "
+                      "words (\"that change carried no operation this rack understands\") - the phrase "
+                      "Sean read comes from a Link's validator.", "A");
+
+        // ---- P1: NOTHING UNLOADABLE REACHES THE INVENTORY (Sean's step 7, 16 Oct) -----------------
+        //
+        // His report: *"'Add Pro-C 2' put FabFilter Pro-C 2 behind an Apply and only then failed
+        // ('no arm64 build'). Mark every inventory entry that can't load in this host (no arm64
+        // slice, failed scan, PACE refused) as not loadable BEFORE the agent sees the inventory, so
+        // it's never offered or put behind an Apply."*
+        //
+        // The architecture gate judged VST3 rows only and said so in a comment; an AU's identifier
+        // is not a path, so there was nothing to read. It judges AU bundles by name now.
+        //
+        // THE ROW FINDS ITS OWN SUBJECT: it sweeps the two Components directories, reads each
+        // bundle's Mach-O slices with `lipo`, and takes the first AU with NO arm64 slice as the
+        // thing that must not be offered. If this Mac has none, the row SKIPS with that reason -
+        // there is nothing to prove, and a pass would be about nothing.
+        {
+            juce::String unloadable, swept;
+            int sweptCount = 0;
+            for (const auto& dir : { juce::File ("/Library/Audio/Plug-Ins/Components"),
+                                     juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                                         .getChildFile ("Library/Audio/Plug-Ins/Components") })
+            {
+                if (! dir.isDirectory()) continue;
+                for (const auto& f : dir.findChildFiles (juce::File::findDirectories, false, "*.component"))
+                {
+                    auto bin = f.getChildFile ("Contents/MacOS")
+                                .getChildFile (f.getFileNameWithoutExtension());
+                    if (! bin.existsAsFile()) continue;
+                    ++sweptCount;
+                    juce::ChildProcess lipo;
+                    if (! lipo.start ("lipo -archs \"" + bin.getFullPathName() + "\"")) continue;
+                    const auto archs = lipo.readAllProcessOutput();
+                    lipo.waitForProcessToFinish (4000);
+                    if (archs.isNotEmpty() && ! archs.containsIgnoreCase ("arm64"))
+                    { unloadable = f.getFileNameWithoutExtension(); swept = archs.trim(); break; }
+                }
+                if (unloadable.isNotEmpty()) break;
+            }
+            if (unloadable.isEmpty())
+                scenSkip ("P1", "an AU that cannot load in this process is never offered in the inventory",
+                          "every one of the " + juce::String (sweptCount) + " AU component(s) on this Mac "
+                          "has an arm64 slice, so there is nothing here that cannot load and nothing to "
+                          "withhold. NEVER counted as a pass.", "A");
+            else
+            {
+                const auto st = rig.freshState();
+                const auto names = st.getProperty ("inventory", juce::var())
+                                      .getProperty ("names", juce::var()).toString();
+                const int count = (int) st.getProperty ("inventory", juce::var())
+                                         .getProperty ("count", juce::var (0));
+                const bool offered = names.containsIgnoreCase (unloadable);
+                scen ("P1", "an AU that cannot load in this process is never offered in the inventory",
+                      count > 0 && ! offered,
+                      "\"" + unloadable + "\" has slices [" + swept + "] and no arm64, and the "
+                      "inventory the agent sees (" + juce::String (count) + " plugin(s)) "
+                      + (offered ? "STILL OFFERS it" : "does not offer it")
+                      + "  (RED on 16b: the architecture gate judged VST3 rows only, so Pro-C 2 was "
+                      "offered, put behind an Apply, and only then refused with \"no arm64 build\")",
+                      "A", v2.editor.get(), st);
+            }
+        }
+
+        // ---- B2b: A TAPPED PICK IS THE APPROVAL (Sean's step 7, 16 Oct) ---------------------------
+        //
+        // His report, on the Kick's Link: he tapped "Transient Master" from the chips and was then
+        // asked to press Apply on "add Transient Master - on 88_7even Kick_2_01". Two gates, each
+        // right on its own; between them he answered the same question twice. "The tap IS the
+        // approval, including on another track."
+        //
+        // The script asks a pick and then sends the add as ask_first, which is the exact shape. The
+        // row taps the chip and then asserts that NOTHING is waiting for a press and the plugin
+        // landed - and the slot count is the proof that it ran rather than sat.
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
+            const int before = ownSlotCount (rig.freshState());
+            // answerAsks = true: the rig TAPS the card's own first choice, which is the user's tap.
+            const auto r = askAgent (rig, "rig-tappick-marker: add a transient shaper", 90000);
+            int after = before;
+            rig.until ([&] (const juce::var& stv) { after = ownSlotCount (stv); return after > before; }, 20000);
+            const auto st = rig.freshState();
+            const auto arow = st.getProperty ("agentRow", juce::var());
+            const auto zones = arow.getProperty ("zones", juce::var()).toString();
+            // kind 1/2 are a line's Apply/Skip and 5/6 the run's Apply all / Skip all: none of them
+            // may be on screen, because the tap already said yes.
+            const bool waitingForAPress = zones.contains ("1:") || zones.contains ("2:")
+                                       || zones.contains ("5:") || zones.contains ("6:");
+            bool autoApplied = false;
+            if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr) if ((bool) sv.getProperty ("autoApplied", false)) autoApplied = true;
+            scen ("B2b", "a tapped pick IS the approval: the step it chose runs without a second press",
+                  r.ran() && after > before && ! waitingForAPress && autoApplied,
+                  "slots " + juce::String (before) + " -> " + juce::String (after)
+                  + "; autoApplied=" + juce::String (autoApplied ? "y" : "n")
+                  + "; zones=[" + zones.substring (0, 80) + "]"
+                  + (waitingForAPress ? "  <- STILL ASKING FOR A PRESS, which is what Sean read in Logic"
+                                      : juce::String())
+                  + "  (RED on 16b: he tapped \"Transient Master\" and was then asked to Apply "
+                  "\"add Transient Master - on 88_7even Kick_2_01\")",
+                  "A", v2.editor.get(), st, &r);
+        }
+
+        // ---- B6: #21 COVERS A RUN WAITING ON APPLY, NOT ONLY AN ASK (Sean's step 7.4 (A)) ----------
+        //
+        // His report: while a run waited on Apply ("build 3 slots") he typed "set the pre-gain to
+        // 2 dB" and got "The agent is still working on ... Stop it first, or wait for it to finish."
+        // His ruling: rule #21 covers ANY waiting run. A run waiting on HIM is a question in another
+        // shape, and the answer to a question nobody wants to answer is a new instruction.
+        {
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
+            // A run that WAITS FOR A PRESS: the auto-marker's steps are ask_first, and in Ask mode
+            // they wait. Deliberately not answered.
+            const auto r = askAgent (rig, "rig-auto-marker: set the pre gain, twice", 60000, false);
+            const auto before = rig.freshState().getProperty ("agentRow", juce::var());
+            const auto stateBefore = rig.freshState().getProperty ("agent", juce::var())
+                                         .getProperty ("state", juce::var()).toString();
+            const int  rowsBefore = (int) before.getProperty ("rows", juce::var());
+            const auto sidBefore  = before.getProperty ("sessionId", juce::var()).toString();
+            // ...and now a new instruction typed into it, in his own words.
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", "Set the pre-gain to 2 dB"), 15000);
+            juce::String notice, statusAfter, sidAfter;
+            int rowsAfter = rowsBefore;
+            rig.until ([&] (const juce::var& stv)
+            {
+                const auto a = stv.getProperty ("agentRow", juce::var());
+                const auto ag = stv.getProperty ("agent", juce::var());
+                notice      = ag.getProperty ("notice", juce::var()).toString();
+                statusAfter = a.getProperty ("status", juce::var()).toString();
+                sidAfter    = a.getProperty ("sessionId", juce::var()).toString();
+                rowsAfter   = (int) a.getProperty ("rows", juce::var());
+                return rowsAfter > rowsBefore || (sidAfter.isNotEmpty() && sidAfter != sidBefore);
+            }, 30000);
+            const bool refused = notice.containsIgnoreCase ("still working");
+            scen ("B6", "a new instruction typed while a run waits on APPLY stops it and starts its own",
+                  r.ran() && ! refused && (rowsAfter > rowsBefore || sidAfter != sidBefore),
+                  "the run was " + (stateBefore.isEmpty() ? juce::String ("(no state)") : stateBefore)
+                  + " when the text was typed; rows " + juce::String (rowsBefore) + " -> "
+                  + juce::String (rowsAfter) + ", session \"" + sidBefore.substring (0, 10) + "\" -> \""
+                  + sidAfter.substring (0, 10) + "\", status now \"" + statusAfter + "\""
+                  + (refused ? ("  <- REFUSED with \"" + notice.substring (0, 70) + "\"")
+                             : juce::String())
+                  + "  (RED on 16b: \"The agent is still working on ... Stop it first, or wait for it "
+                  "to finish\" - #21 was wired to the ask road only)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        }
+
         // ---- A3: A NEW INSTRUCTION CLOSES A WAITING RUN AND STARTS ITS OWN ---------------------------
         //
         // RED ON 16a: *"A new request typed while a run waits on an ask got merged into that run ('Add
@@ -4425,6 +4613,41 @@ int main (int argc, char* argv[])
         }
         else
             scenSkip ("I9b", "the card's figure IS the plugin's figure", tp.why, "A");
+
+        // ---- I9c: THE SAME, ON A LINK (16 Oct 2026 - Sean saw it stale there too) ---------------
+        // "Threshold 0" on the Mix Bus AND the Kick Link, and "Attack 0, Sustain 0" for Transient
+        // Master: three out of three. The Link's card travels in its rack sidecar's `settings`, so
+        // this reads the MIRROR - what the main plugin draws for that slot - against the mirror's
+        // own `landed` field. Same rule, the other road.
+        if (tp.ok && ! linkUid.isEmpty())
+        {
+            const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
+                                          + tp.paramName, 120000);
+            juce::String card, landed;
+            rig.until ([&] (const juce::var& stv)
+            {
+                const auto lr = linkRowOf (stv, linkUid);
+                landed = lr.getProperty ("landed", juce::var()).toString();
+                card   = lr.getProperty ("settings", juce::var()).toString();
+                return landed.containsIgnoreCase (tp.paramName);
+            }, 20000);
+            juce::String plugFig;
+            for (const auto& pair : juce::StringArray::fromTokens (landed, ";|", ""))
+                if (pair.containsIgnoreCase (tp.paramName) && pair.contains ("="))
+                    plugFig = pair.fromLastOccurrenceOf ("=", false, false).trim();
+            const bool cardHasIt = plugFig.isNotEmpty()
+                                && card.contains (juce::String (plugFig.getDoubleValue(), 0).trim());
+            scen ("I9c", "the Link's mirrored card carries the plugin's figure too",
+                  r.ran() && plugFig.isNotEmpty() && cardHasIt,
+                  "the Link reads " + tp.paramName + "=" + plugFig + " and its mirrored card reads: \""
+                  + card.replaceCharacter ('\n', ' ').substring (0, 110) + "\""
+                  + "  (RED before this evening: \"Threshold 0\" on the Mix Bus AND the Kick Link, and "
+                  "\"Attack 0, Sustain 0\" for Transient Master - three out of three)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+        }
+        else
+            scenSkip ("I9c", "the Link's mirrored card carries the plugin's figure too",
+                      tp.ok ? juce::String ("no Link in the registry this run") : tp.why, "A");
 
         // =====================================================================================
         //  THE REST OF THE MATRIX THE RIG CAN RUN (Sean, 16 Oct: *"only 29 of ~60 scenarios ran"*)

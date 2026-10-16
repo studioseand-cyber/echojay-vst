@@ -195,6 +195,17 @@ public:
     // the registry. "" means "the channel you already have open", which needs no words.
     virtual juce::String describeOtherChannel (const ToolCall& call) { juce::ignoreUnused (call); return {}; }
 
+    // ---- WHAT A BUILD WOULD REMOVE, SAID BEFORE THE PRESS (16 Oct 2026, Sean's step 7.4) -------------
+    // His report: "make the kick punchier" on a Link already holding Transient Master and Renaissance
+    // Axx proposed "build 3 slots: EchoJay EQ, EchoJay Compressor, EchoJay Limiter", which REPLACES the
+    // existing chain, with no explanation. His rule: "If a build would remove plugins, the line must say
+    // what it removes."
+    //
+    // Only the executor can answer it - it is the one that can read the live rack the call addresses -
+    // and the line is composed in the client, so this is the seam. Returns the names a `build` call would
+    // take OFF that rack, in rack order, and nothing for any other op or when nothing would go.
+    virtual juce::StringArray buildWouldRemove (const ToolCall& call) { juce::ignoreUnused (call); return {}; }
+
     // The opening read sent as `context` on /api/agent/start: channel (role,
     // name, uid), the rack in one line per slot, the inventory shortlist.
     virtual juce::var startContext() = 0;

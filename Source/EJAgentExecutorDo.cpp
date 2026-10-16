@@ -272,6 +272,38 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
     return juce::var (edits);
 }
 
+// ---- A RACK'S REFUSAL, IN WORDS (16 Oct 2026, Sean's step 8) ---------------------------------
+//
+// He read this on a failed line: "op 1 invalid: ...". It is ChainHost's edit pre-flight speaking in
+// the vocabulary of the protocol it validates - the sender's vocabulary, not a person's. A person
+// has no "op 1", and I4 now bans the phrase outright, so this is where the translation happens: the
+// one seam where a rack's refusal becomes the line on the row.
+//
+// Narrow on purpose. The prefix is dropped and the DETAIL is kept, because the detail is the part
+// that says what was wrong; the only phrase translated is the one piece of jargon inside it that a
+// person cannot act on. Anything this does not recognise comes through exactly as the rack wrote it -
+// a refusal nobody can read is better than a refusal nobody is shown.
+static juce::String plainRefusal (const juce::String& raw)
+{
+    auto t = raw.trim();
+    if (t.isEmpty()) return t;
+    // "op 3 invalid: unknown operation "build"" -> the detail, led by a sentence a person can read.
+    if (t.startsWithIgnoreCase ("op ") && t.containsIgnoreCase (" invalid:"))
+    {
+        auto detail = t.fromFirstOccurrenceOf (" invalid:", false, false).trim();
+        if (detail.startsWithIgnoreCase ("unknown operation"))
+        {
+            const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
+                                      .upToLastOccurrenceOf ("\"", false, false);
+            detail = quoted.isNotEmpty()
+                         ? ("this rack has no way to \"" + quoted + "\"")
+                         : juce::String ("this rack does not understand one of the changes asked for");
+        }
+        return "I could not make that change: " + detail;
+    }
+    return t;
+}
+
 void ExecutorDo::doOp (const ToolCall& call, Done done)
 {
     // AGENT MODE, CHECKED LIVE AND FIRST. Sean's standing rule: the switch stays until he signs off, and OFF
@@ -478,7 +510,12 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
             // rack's own plain sentence for the person and gives the model (and Details) the technical
             // account the rack actually sent. With nothing technical to add it falls back, and then no
             // Details control appears at all, which is correct: there is nothing behind it.
-            const auto userLine = sentence.isNotEmpty() ? sentence
+            // ---- AND IN WORDS, NOT THE EDIT PROTOCOL'S (16 Oct 2026, Sean's step 8) -------------
+            // He read "op 1 invalid: ..." on a failed line. That is ChainHost's pre-flight talking
+            // to whoever sent the ops; a person has no "op 1". Translated here, at the one place the
+            // rack's refusal becomes a person's line, and the raw string stays as the technical half
+            // where it belongs.
+            const auto userLine = sentence.isNotEmpty() ? plainRefusal (sentence)
                                                         : juce::String ("that change was not applied");
             if (technical.isNotEmpty())
                 done (ToolOutcome::failureFor ("not_applied", technical, userLine));

@@ -1430,6 +1430,36 @@ void LinkProcessor::pollControlCommand()
     // no-op there; guarding on presence means a hand-built gain-only command
     // can never spuriously deactivate the Link. (v stays 1: the fields are
     // additive; a pre-gain Link ignores gainDb and reads the echoed active.)
+    // ---- "BRING YOUR OWN WINDOW FORWARD" (16 Oct 2026, Sean's step 6) -------------------------
+    //
+    // The main plugin's mirror cannot create a second editor for a third party that lives over here
+    // (a licence, a single-instance UI, or simply the process boundary), so it now says where the
+    // plugin IS - "Renaissance Axx is running on 88_7even Kick_2_01" - and offers to bring that
+    // window forward. This is the asking half.
+    //
+    // WHAT IT CAN AND CANNOT DO, because the button must not promise more: nothing in either process
+    // can make Logic OPEN a plugin window. If this Link's editor already exists, its top-level
+    // component can be raised, and that is what happens. If it does not, the honest answer goes back
+    // in the ack (`fronted:false`) and the main plugin tells him Logic owns that window. A button
+    // that silently does nothing is the thing this avoids.
+    if (obj->hasProperty("bringEditorToFront"))
+    {
+        bool fronted = false;
+        if (auto* ed = getActiveEditor())
+            if (auto* top = ed->getTopLevelComponent())
+            { top->toFront (true); fronted = true; }
+        EchoJay_NSLog (("EJCtrl: bringEditorToFront seq=" + juce::String (seq) + " -> "
+                        + (fronted ? "raised this Link's editor window"
+                                   : "NO editor exists here - Logic owns that window, and nothing in "
+                                     "this process can open it") + " (Sean's step 6)").toRawUTF8());
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("v", 1);
+        r->setProperty ("seq", seq);
+        r->setProperty ("fronted", fronted);
+        juce::File (resolvedDir + "ctrl-ack-" + id + ".json")
+            .replaceWithText (juce::JSON::toString (juce::var (r), true));
+    }
+
     if (obj->hasProperty("active"))
     {
         bool wantActive = (bool)obj->getProperty("active");

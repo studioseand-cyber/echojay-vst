@@ -1,3 +1,29 @@
+# ITEM 0 — LINK METERS TO THE MAIN PLUGIN (Sean's ruling, 16 Oct: **the FIRST item of the next round**)
+
+The agent says "this track's meters can't be read from this window" on every Link, which blocks
+listening and gain reduction on every linked track - the two things most of his questions are about.
+NEEDS_SEAN D18 records why it was not started on the overnight round of 16/17 Oct.
+
+What it needs, written out now so the next round starts rather than designs:
+
+1. **A per-slot meter frame in shared memory, published by the Link.** The rack sidecar is a
+   structural document on a slow timer; gain reduction is a per-slot, per-block quantity. It needs
+   its own frame (one per slot, fixed size, versioned like `LinkMeterFrame`), written on the Link's
+   audio thread without allocation.
+2. **A reader in the main plugin that can tell three states apart:** not published (an older Link,
+   or a slot that reports nothing), published-and-zero (the compressor is not reducing), and
+   published-with-a-figure. Today's code cannot say the first, which is how "GR 0.0" came to be
+   drawn on a mirror at all.
+3. **The certification rule rides with the frame**, not with the reader: an uncertified third party
+   publishes no figure, so the main plugin cannot draw one by accident.
+4. **The listen window too** - `heardSeconds` and the GR window's frame count - so `check(gr)` on a
+   Link can answer "I have heard 12 seconds through it" instead of refusing.
+
+Downgrade-safe by construction: an old Link publishes no frame, the reader says "not published", and
+that is exactly today's behaviour.
+
+---
+
 # NEXT ROUND — THE ORDER (Sean, 14 Oct, after his full Logic check of ship_2026-10-14a)
 
 **This section is authoritative and replaces every earlier partial list in this file.** The detailed

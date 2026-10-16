@@ -117,6 +117,19 @@ public:
     // A typed message while a session is live: answers a pending ask (true = consumed) or is refused (true, with a
     // status line) so the send path does not start a second conversation under a running agent.
     bool interceptTyped (const juce::String& typed);
+    /** ---- THE TAP IS THE APPROVAL (16 Oct 2026, Sean in Logic, step 7) -------------------------
+        The label a user TAPPED on an ask, kept until the step it chose has run.
+
+        His step 7, on the Kick's Link: he tapped "Transient Master" from the chips and was then
+        asked to press Apply on "add Transient Master - on 88_7even Kick_2_01". Both gates are right
+        on their own - the server marks a cross-track add ask_first, and Ask mode waits on an
+        ask_first step - but between them the user answered the same question twice. His ruling: "The
+        tap IS the approval, including on another track."
+
+        So the tap is remembered, and the step that carries out THAT pick runs without a second press.
+        Cleared the moment it is used, and matched by the plugin NAME the call carries, so it can
+        only ever cover the thing the tap chose. */
+    juce::String tappedPick_;
     /** An answer is a name; an instruction is a sentence. Public and static so a guard can hold it
         in both directions - "MTransient" must never read as an instruction, "Set the pre-gain to
         2 dB" must never read as an answer. See the note on the definition. */

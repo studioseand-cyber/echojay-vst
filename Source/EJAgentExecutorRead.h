@@ -199,6 +199,7 @@ public:
     PlaybackReading readPlayback() override;
     juce::String captureCheckpoint (const juce::String& label) override;
     juce::String describeOtherChannel (const ToolCall& call) override;   // item 2: the track name, or "" for self
+    juce::StringArray buildWouldRemove (const ToolCall& call) override;  // step 7.4: what a build takes OFF the rack
     void undoStep (const juce::String& undoToken, Done done) override;
     void undoToCheckpoint (const juce::String& checkpoint, Done done) override;
 

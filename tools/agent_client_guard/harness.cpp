@@ -676,6 +676,51 @@ int main()
         check (! confirmed, "M5 a DECLINED line is not confirmed - the press is permission for what was pressed");
     }
 
+    // ---- A9: A TAPPED PICK IS THE APPROVAL, INCLUDING ON ANOTHER TRACK (16 Oct 2026) ------------
+    //
+    // Sean's step 7, in Logic, on the Kick's Link: he tapped "Transient Master" from the chips and
+    // was then asked to press Apply on "add Transient Master - on 88_7even Kick_2_01". Two gates,
+    // each right on its own; between them he answered the same question twice.
+    //
+    // Both directions, because the dangerous mistake here is the other one - a tap that approves
+    // something it did not choose:
+    //   the step that carries out the TAPPED pick     -> runs, with confirm:true recorded on it
+    //   a step for something else in the same round   -> still waits for a press
+    {
+        r.client.dismiss();
+        r.client.start ("add a transient shaper to the kick", "chat_1");
+        r.round (1);
+        r.tool (R"({"id":"tc_pick","name":"talk","args":{"ask":{"question":"Which transient shaper?","choices":[{"label":"Transient Master"},{"label":"MTransient"}],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_pick" });
+        pumpMs (10);
+        r.client.answerAsk ("Transient Master");
+        pumpMs (10);
+        r.round (2);
+        r.tool (R"({"id":"tc_add","name":"do","approval":"ask_first","summary":"add Transient Master - on 88_7even Kick_2_01","args":{"op":"add","name":"Transient Master","apply_to":"kick"}})");
+        pumpMs (10);
+        const auto* added = r.step ("tc_add");
+        check (added != nullptr && added->status != EJAgentClient::Step::Status::AwaitingApproval
+               && added->autoApplied
+               && (bool) added->call.args.getProperty ("confirm", false)
+               && r.logHas ("IS the approval for this step"),
+               "A9a the step that carries out the TAPPED pick runs without a second press, and the tap "
+               "is recorded as the cross-channel confirmation (Sean's step 7)",
+               added == nullptr ? juce::String ("no step") 
+                                : ("status=" + juce::String ((int) added->status)
+                                   + " autoApplied=" + juce::String (added->autoApplied ? "y" : "n")
+                                   + " confirm=" + juce::String ((bool) added->call.args.getProperty ("confirm", false) ? "y" : "n")));
+        // ...and the tap is SPENT: anything else ask_first in the same run still waits.
+        r.tool (R"({"id":"tc_other","name":"do","approval":"ask_first","summary":"add an EchoJay Limiter","args":{"op":"add","name":"EchoJay Limiter"}})");
+        pumpMs (10);
+        const auto* other = r.step ("tc_other");
+        check (other != nullptr && other->status == EJAgentClient::Step::Status::AwaitingApproval
+               && ! other->autoApplied,
+               "A9b ...and the tap covers ONLY what it chose: another ask_first step still waits",
+               other == nullptr ? juce::String ("no step")
+                                : ("status=" + juce::String ((int) other->status)));
+        r.client.stop();
+    }
+
     // ---- A5 LIVES LAST TOO, AND FOR THE SAME REASON (16 Oct 2026) -------------------------------
     // This leg ENDS a run - that is what Sean's #21 asks for - and a stopped session posts no step
     // results (contract 1, which S5 asserts). Sitting where it used to sit, it quietly finished the

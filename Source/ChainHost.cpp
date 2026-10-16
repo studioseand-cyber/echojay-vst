@@ -9413,8 +9413,9 @@ ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDesc
     // Settings too large to save: its own file, its own reason (any format)
     if (d.fileOrIdentifier.isNotEmpty() && stateOversize_.find(d.fileOrIdentifier) != stateOversize_.end())
         return WithholdReason::SettingsTooLarge;
-    // VST3 rows only. AU rows are never judged and built-ins never reach
-    // entries_ (compiled in, exempt by construction).
+    // VST3 rows by path; AU rows by their bundle, found by name (16 Oct 2026, Sean's step 7 - they
+    // used to be exempt, and FabFilter Pro-C 2 with no arm64 slice was offered, put behind an Apply
+    // and only then refused). Built-ins never reach entries_ (compiled in, exempt by construction).
     if (d.pluginFormatName == "VST3")
     {
         switch (archVerdict(d.fileOrIdentifier))
@@ -9424,7 +9425,68 @@ ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDesc
             case ArchVerdict::Loadable:    break;
         }
     }
+    else if (d.pluginFormatName == "AudioUnit")
+    {
+        switch (archVerdictForAuNamed (d.name))
+        {
+            case ArchVerdict::NotLoadable: return WithholdReason::ArchitectureIncompatible;
+            case ArchVerdict::Unreadable:  return WithholdReason::Unreadable;   // KEPT
+            case ArchVerdict::Loadable:    break;
+        }
+    }
     return WithholdReason::None;
+}
+
+// ---- AN AU'S SLICES, FOUND BY NAME (16 Oct 2026, Sean's step 7) ------------------------------
+//
+// His report: "Add Pro-C 2" put FabFilter Pro-C 2 behind an Apply and only then failed with "no
+// arm64 build". The architecture gate judged VST3 rows only - an AU's fileOrIdentifier is an
+// identifier, not a path, so there was nothing to read - and the comment in withholdReasonLocked
+// said as much. This finds the bundle by name, once, and then the ordinary slice check applies.
+//
+// FAIL-OPEN, like every other arm of this gate: a name that matches no bundle, or a bundle whose
+// binary cannot be read, is KEPT. A plugin silently missing from the catalogue is worse than one
+// that is offered and refuses, which is the rule the Unreadable case was written under.
+ChainHost::ArchVerdict ChainHost::archVerdictForAuNamed (const juce::String& name) const
+{
+   #if JUCE_MAC
+    const auto key = name.trim().toLowerCase();
+    if (key.isEmpty()) return ArchVerdict::Unreadable;
+    {
+        std::lock_guard<std::mutex> lk (archMutex_);
+        if (! auPathsSwept_)
+        {
+            auPathsSwept_ = true;
+            for (const auto& dir : { juce::File ("/Library/Audio/Plug-Ins/Components"),
+                                     juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                                         .getChildFile ("Library/Audio/Plug-Ins/Components") })
+            {
+                if (! dir.isDirectory()) continue;
+                for (const auto& f : dir.findChildFiles (juce::File::findDirectories, false, "*.component"))
+                    auPathByName_[f.getFileNameWithoutExtension().trim().toLowerCase()] = f.getFullPathName();
+            }
+            EchoJay_NSLog (("EJScan: swept " + juce::String ((int) auPathByName_.size())
+                            + " AU component bundle(s) for the architecture gate - an AU row is judged "
+                              "by its slices now, not exempted (Sean's step 7)").toRawUTF8());
+        }
+    }
+    juce::String path;
+    {
+        std::lock_guard<std::mutex> lk (archMutex_);
+        auto it = auPathByName_.find (key);
+        if (it == auPathByName_.end())
+        {
+            // A name the sweep did not see: a Waves shell member, a bundle under another name, a
+            // plugin installed since the sweep. Kept, and not cached as a verdict.
+            return ArchVerdict::Unreadable;
+        }
+        path = it->second;
+    }
+    return archVerdict (path);
+   #else
+    juce::ignoreUnused (name);
+    return ArchVerdict::Unreadable;
+   #endif
 }
 
 ChainHost::WithholdReason ChainHost::withholdReason(const juce::PluginDescription& d) const

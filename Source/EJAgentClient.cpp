@@ -374,6 +374,33 @@ bool EJAgentClient::interceptTyped (const juce::String& typed)
     }
     if (isActive())
     {
+        // ---- #21 APPLIES TO ANY WAITING RUN, NOT ONLY AN ASK (16 Oct 2026, Sean's step 7.4) -------
+        //
+        // His report: while a run waited on Apply ("build 3 slots") he typed "set the pre-gain to
+        // 2 dB" and got "The agent is still working on ... Stop it first, or wait for it to finish."
+        // His ruling: *"Rule #21 applies to ANY waiting run, not only an ask: a new instruction marks
+        // the waiting run stopped and starts its own run."*
+        //
+        // A run WAITING ON HIM is not a run that is working: it is a question in another shape, and
+        // the answer to a question nobody wants to answer is a new instruction. The states below are
+        // exactly the ones where the next move is his - a plan awaiting Apply, an ask, and a wait for
+        // playback - and the refusal stays for the states where the agent is actually mid-flight
+        // (connecting, streaming, executing, posting), where two conversations really would race the
+        // rack.
+        //
+        // Guarded by the same sentence test as the ask road: a NAME is not an instruction, so a
+        // one-word reply typed into a waiting plan still reads as a reply and is still refused.
+        const bool waitingOnTheUser = state_ == State::AwaitingApproval
+                                   || state_ == State::AwaitingAsk
+                                   || state_ == State::Listening;
+        if (waitingOnTheUser && typedLooksLikeNewInstruction (typed))
+        {
+            log ("typed text \"" + typed.trim() + "\" is a new instruction and this run is WAITING ("
+                 + juce::String (stateName (state_)) + ") - stopping it and letting the text start its "
+                 "own run (Sean's #21, step 7.4: it applies to any waiting run, not only an ask)");
+            stop();
+            return false;
+        }
         // A second conversation under a running agent would race the rack it is editing. The send is REFUSED with
         // a line the user sees (a message that vanishes is indistinguishable from a dropped send - 08c item C).
         refusedTypedLine_ = "The agent is still working on \"" + goal_ + "\". Stop it first, or wait for it to finish.";
@@ -584,6 +611,37 @@ void EJAgentClient::onFrame (int generation, Frame f)
                 const auto u = executor_.undoabilityOf (f.call, goal_);
                 autoRan = u.mayRunInAuto();
                 s.askReason = u.whyNot;
+            }
+            // ---- AND A TAPPED PICK NEEDS NO SECOND PRESS (16 Oct 2026, Sean's step 7) -------------
+            //
+            // He tapped "Transient Master" from the chips and was then asked to press Apply on "add
+            // Transient Master - on 88_7even Kick_2_01". Two gates, each right on its own - the
+            // server marks a cross-track add ask_first, Ask mode waits on ask_first - and between
+            // them he answered the same question twice. His ruling: "The tap IS the approval,
+            // including on another track."
+            //
+            // So the tap runs the step that carries out THAT pick, and records itself as the
+            // cross-channel confirmation at the same moment (the same reasoning as item 2's
+            // "the press IS the confirmation", one layer up). Matched on the plugin NAME the call
+            // carries, so the tap can only ever cover the thing it chose, and spent immediately so
+            // it cannot cover a second step.
+            if (! autoRan && f.call.askFirst() && tappedPick_.isNotEmpty())
+            {
+                const auto named = argString (f.call, "name").trim();
+                if (named.isNotEmpty()
+                    && (named.equalsIgnoreCase (tappedPick_)
+                        || named.containsIgnoreCase (tappedPick_)
+                        || tappedPick_.containsIgnoreCase (named)))
+                {
+                    autoRan = true;
+                    if (auto* o = s.call.args.getDynamicObject()) o->setProperty ("confirm", true);
+                    else { auto* o2 = new juce::DynamicObject(); o2->setProperty ("confirm", true);
+                           s.call.args = juce::var (o2); }
+                    log ("the tapped pick \"" + tappedPick_ + "\" IS the approval for this step (\""
+                         + named + "\"), including on another channel - no second press, and the tap is "
+                         "recorded as the cross-channel confirmation (Sean's step 7)");
+                    tappedPick_.clear();
+                }
             }
             s.autoApplied = autoRan;
             s.status = (f.call.askFirst() && ! autoRan) ? Step::Status::AwaitingApproval : Step::Status::Pending;
@@ -1028,6 +1086,11 @@ void EJAgentClient::answerAsk (const juce::String& choiceIn, bool typed)
     const auto id = pendingAskId_;
     if (! typed && ! pendingAsk_.labels.contains (choice)) return;   // a tap is one of the offered labels, nothing else
     auto answer = askAnswerVar (choice, typed);                      // {tapped:"<label>"} or {typed:"<text>"}
+    // ---- THE TAP IS THE APPROVAL (16 Oct 2026, Sean's step 7) ---------------------------------
+    // Remembered here, spent on the step that carries out this pick (see the ToolCall frame). A
+    // TYPED answer is deliberately not remembered: he ruled on the tap, and free text can say
+    // anything, so it goes on asking.
+    if (! typed) tappedPick_ = choice;
     log ("ask answered" + juce::String (typed ? " (typed)" : " (tapped)") + ": \"" + choice + "\"" + (id == "tc_keep_going" ? " [soft cap]" : ""));
     listeners_.call ([&] (Listener& l) { l.agentTranscript ("user", choice); });
     pendingAsk_ = {}; pendingAskId_.clear();

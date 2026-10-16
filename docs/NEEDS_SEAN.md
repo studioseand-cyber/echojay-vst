@@ -234,6 +234,37 @@ draws no per-step Undo but does draw Undo all; a one-change run's own Undo rever
 If you would rather every step kept a button, that needs a redo-aware history - a bigger piece than
 tonight - and it is yours to call.
 
+## Decisions taken overnight, 16-17 Oct (you were asleep; nothing is waiting on you)
+
+### D18. Item 9 (Link meters to the main plugin) is QUEUED FIRST, not started tonight
+
+Your words: *"ITEM 9, LINK METERS to the main plugin: start it. ... If it can't be done safely
+tonight, queue it as the first item of the next round; don't let it block the install."*
+
+It cannot be done safely tonight, and the reason is its shape rather than its size. "This track's
+meters can't be read from this window" is true: a Link publishes a meter FRAME for its own channel
+and the main plugin reads a rack sidecar, and the two carry different things. Making GR and the
+listen window readable across that boundary means a new shared-memory frame per slot (gain reduction
+has to be per-slot, not per-rack), a publisher on the Link's audio thread, a reader that can tell
+"not published yet" from "zero reduction", and the certification rule riding with it so an
+uncertified slot still shows nothing. Every one of those is a thing I would be writing blind at
+midnight against a plugin I cannot open in Logic until you are awake, and the failure mode is a
+figure that is WRONG rather than absent - which is the one class of fault you have ruled hardest
+against all day.
+
+So it is the first item of `docs/NEXT_ROUND_QUEUE.md`, with that design written out, and it is not
+blocking tonight's install. The agent's sentence about it is honest in the meantime.
+
+### D19. The "bring that Link's window forward" button is in, and it can only promise what it does
+
+Your step 6 asked for the sentence "plus a button that brings that Link's window forward if
+possible". The sentence is in. The button is in too, and here is exactly what it can do, because "if
+possible" turns out to be the whole of it: this process cannot focus another plugin's window in
+Logic. What it CAN do is ask the Link, over the control channel it already has, to bring its own
+editor to the front - and that works only if Logic already has that editor open. So the button asks,
+and then says which of the two happened: the window came forward, or "Logic owns that window - open
+EchoJay on <track> and the plugin is in its rack." No button that silently does nothing.
+
 ---
 
 ## What the new runner found on its FIRST run, before any scenario

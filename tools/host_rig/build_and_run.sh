@@ -233,6 +233,36 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-badop-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_bo", "name": "do", "approval": "free",
+            "summary": "do something this rack has no operation for",
+            "args": { "op": "frobnicate", "slot": 1 } },
+          { "event": "await", "ids": ["tc_bo"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "That one did not work." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-tappick-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_tp1", "name": "talk", "approval": "free",
+            "args": { "ask": { "question": "Which transient shaper?",
+                               "choices": [ { "label": "EchoJay Transient" }, { "label": "MTransient" } ],
+                               "allowFreeText": false } } },
+          { "event": "await", "ids": ["tc_tp1"] } ],
+        [ { "event": "round", "round": 2, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_tp2", "name": "do", "approval": "ask_first",
+            "summary": "add EchoJay Transient",
+            "args": { "op": "add", "name": "EchoJay Transient" } },
+          { "event": "await", "ids": ["tc_tp2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 2,
+            "summary": "Added the EchoJay Transient." } ]
+      ]
+    },
+    {
       "goalContains": "rig-onesentence-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

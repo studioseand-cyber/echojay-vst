@@ -3370,6 +3370,13 @@ private:
         juce::TextButton cardBypassBtn { "B" };
         juce::TextButton cardRemoveBtn { "X" };
         juce::TextButton popBtn { juce::String::fromUTF8("\xe2\x86\x97") }; // expand to floating window
+        /** ---- "BRING IT FORWARD" (16 Oct 2026, Sean's step 6) ---------------------------------
+            Shown only when the mirror cannot open a third party's editor because the plugin lives on
+            a Link - beside the sentence that says where it is. Asks that Link to raise its own
+            window, and then says which of the two things happened, because nothing in this process
+            can make Logic OPEN a window that is closed. */
+        juce::TextButton bringFwdBtn { "Bring it forward" };
+        std::function<void (const juce::String& /*note*/)> onBringLinkForward;
 
         // SUGGESTED SETTINGS box content — wraps, scrolls when it overflows
         juce::TextEditor settingsBox;
@@ -3579,6 +3586,18 @@ private:
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             popBtn.setTooltip("Open in floating window at native size");
             popBtn.onClick = [this] { openPopoutForSelected(); };
+            // The forward button lives with the note it belongs to: hidden unless the mirror has
+            // just said "this plugin is running on <track>".
+            bringFwdBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xcc0E1020));
+            bringFwdBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff22d3ee));
+            bringFwdBtn.setTooltip ("Ask that track's EchoJay to bring the plugin's window forward");
+            bringFwdBtn.setVisible (false);
+            addChildComponent (bringFwdBtn);
+            bringFwdBtn.onClick = [this]
+            {
+                if (onBringLinkForward == nullptr) return;
+                onBringLinkForward (remoteName);
+            };
             addChildComponent(popBtn);
 
             // Card header B / X — same actions as the strip blocks
@@ -3719,6 +3738,8 @@ private:
                     const auto note = remoteEditorNote (slotInfos[(size_t) i].name);
                     statusText = note.isNotEmpty() ? note
                                                    : juce::String ("Failed: could not open editor");
+                    bringFwdBtn.setVisible (note.isNotEmpty());
+                    resized();
                     repaint(); return;
                 }
 
@@ -4095,6 +4116,8 @@ private:
                 statusText = note.isNotEmpty() ? note
                            : ("Failed: " + slotInfos[(size_t)i].name
                               + "'s editor could not be created");
+                bringFwdBtn.setVisible (note.isNotEmpty());
+                resized();
                 EchoJay_NSLog(("EJPane(main): popout create FAILED: "
                     + slotInfos[(size_t)i].name).toRawUTF8());
                 repaint();
@@ -4469,6 +4492,9 @@ private:
             applyBtn.setVisible(editingSession);
             editBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
             editBtn.setVisible(remote && !editingSession && selectedIdx >= 0);
+            // "Bring it forward", under the note it belongs to (its visibility is set where the note
+            // is written, not here: it is about one failed open, not about the view's shape).
+            bringFwdBtn.setBounds (kCardMargin, getHeight() - 30, 150, 22);
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();

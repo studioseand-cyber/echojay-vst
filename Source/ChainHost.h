@@ -3317,6 +3317,22 @@ private:
     bool archLoadable(const juce::String& path) const;   // Unreadable counts as loadable
     mutable std::mutex                          archMutex_;
     mutable std::map<std::string, ArchVerdict>  archCache_;
+    /** ---- AN AU IS JUDGED TOO (16 Oct 2026, Sean's step 7) ------------------------------------
+        name (lower case) -> the .component bundle's path, from one sweep of the two standard
+        Components directories, built once and kept.
+
+        His report: *"'Add Pro-C 2' put FabFilter Pro-C 2 behind an Apply and only then failed ('no
+        arm64 build'). Mark every inventory entry that can't load in this host ... as not loadable
+        BEFORE the agent sees the inventory, so it's never offered or put behind an Apply."*
+
+        The architecture gate judged VST3 rows only, and said so in a comment - "AU rows are never
+        judged" - because an AU's `fileOrIdentifier` is an identifier and not a path, so there was
+        nothing for archVerdict to read. This map is the missing half: an AU row is matched to its
+        bundle by NAME and then judged by its slices, exactly as a VST3 row is. A name that matches
+        nothing is left alone and KEPT, which is the same fail-open rule the unreadable case has. */
+    mutable std::map<juce::String, juce::String> auPathByName_;
+    mutable bool                                 auPathsSwept_ = false;
+    ArchVerdict archVerdictForAuNamed (const juce::String& name) const;
     // The one decision (see WithholdReason, public). Caller holds
     // pluginsMutex_: blacklist_ is read directly, archVerdict takes its own
     // lock. The three feed sites call THIS; the public withholdReason wraps it.

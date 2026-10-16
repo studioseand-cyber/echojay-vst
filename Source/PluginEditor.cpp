@@ -2492,6 +2492,73 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         beginRemoteEditSession(uid, slotIdx);
     };
 
+    // ---- "BRING IT FORWARD" (16 Oct 2026, Sean's step 6) --------------------------------------
+    //
+    // Beside the sentence that says where a third party actually is. This asks THAT Link to raise
+    // its own editor window, over the control channel it already has, and then says which of the two
+    // things happened - because nothing in this process can make Logic OPEN a window that is shut,
+    // and a button that silently does nothing is worse than no button.
+    chainListPanel.onBringLinkForward = [this] (const juce::String& trackName)
+    {
+        const auto uid = chainViewUid();
+        if (uid.isEmpty()) return;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return;
+        const int seq = (int) (juce::Time::currentTimeMillis() & 0x7fffffff);
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty ("v", 1);
+        cmd->setProperty ("seq", seq);
+        cmd->setProperty ("bringEditorToFront", true);
+        juce::File (dir + "ctrl-ack-" + uid + ".json").deleteFile();
+        juce::File (dir + "ctrl-cmd-" + uid + ".json")
+            .replaceWithText (juce::JSON::toString (juce::var (cmd), true));
+        chainListPanel.statusText = "Asking " + (trackName.isNotEmpty() ? trackName
+                                                                        : juce::String ("that track"))
+                                  + " to bring it forward...";
+        chainListPanel.repaint();
+        // The answer, with a bound: `fronted` true means that Link raised its own window; false
+        // means Logic has it closed, and then the only true thing to say is where to open it.
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor> (this);
+        auto poll = std::make_shared<std::function<void (int)>>();
+        *poll = [safeThis, poll, dir, uid, trackName, seq] (int left)
+        {
+            juce::Timer::callAfterDelay (200, [safeThis, poll, dir, uid, trackName, seq, left]
+            {
+                if (safeThis == nullptr) return;
+                juce::File ack (dir + "ctrl-ack-" + uid + ".json");
+                if (ack.existsAsFile())
+                {
+                    const auto v = juce::JSON::parse (ack.loadFileAsString());
+                    if (auto* o = v.getDynamicObject(); o != nullptr && (int) o->getProperty ("seq") == seq)
+                    {
+                        const bool fronted = (bool) o->getProperty ("fronted");
+                        safeThis->chainListPanel.statusText = fronted
+                            ? ((trackName.isNotEmpty() ? trackName : juce::String ("that track"))
+                               + " brought its window forward")
+                            : ("Logic owns that window - open EchoJay on "
+                               + (trackName.isNotEmpty() ? trackName : juce::String ("that track"))
+                               + " and the plugin is in its rack");
+                        safeThis->chainListPanel.repaint();
+                        EchoJay_NSLog (("EJPane(main): bring-forward answered fronted="
+                                        + juce::String (fronted ? "y" : "n")).toRawUTF8());
+                        return;
+                    }
+                }
+                if (left <= 1)
+                {
+                    safeThis->chainListPanel.statusText =
+                        (trackName.isNotEmpty() ? trackName : juce::String ("That track"))
+                        + " did not answer - open EchoJay there and the plugin is in its rack";
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+                (*poll) (left - 1);
+            });
+        };
+        (*poll) (15);
+    };
+
     // Sidebar collapse toggle. Collapsing gives the main column the full tab
     // width. NOT Chain only any more: one flag for every chat-hosting
     // surface, on the processor, persisted.
@@ -36932,6 +36999,27 @@ void EchoJayEditor::publishRigState()
         cv->setProperty ("slotBadges", juce::var (badgeArr));
         cv->setProperty ("status", chainListPanel.statusText);
         o->setProperty ("chainView", juce::var (cv));
+    }
+
+    // ---- THE INVENTORY THE AGENT SEES (16 Oct 2026, Sean's step 7) ----------------------------
+    // "Mark every inventory entry that can't load in this host ... as not loadable BEFORE the agent
+    // sees the inventory, so it's never offered or put behind an Apply." A row cannot assert that
+    // against a list nobody publishes, so the list the agent is handed is published here - the
+    // count, and the names, bounded so a big catalogue cannot flood the state file.
+    {
+        auto* inv = new juce::DynamicObject();
+        juce::StringArray names;
+        if (auto* c = agentClient())
+        {
+            juce::ignoreUnused (c);
+            auto& host = processorRef.getChainHost();
+            host.maybeReloadEntriesCache();
+            for (const auto& d : host.getFilteredPlugins ({})) names.addIfNotAlreadyThere (d.name);
+            for (const auto& bad : ChainHost::loadFailedPluginNames()) names.removeString (bad);
+        }
+        inv->setProperty ("count", names.size());
+        inv->setProperty ("names", names.joinIntoString (", ").substring (0, 4000));
+        o->setProperty ("inventory", juce::var (inv));
     }
 
     // THE RACK LOCK, as a word (16 Oct 2026, the matrix's T3). A Link whose rack is selected in
