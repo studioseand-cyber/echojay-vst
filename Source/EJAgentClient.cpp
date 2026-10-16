@@ -304,11 +304,22 @@ bool EJAgentClient::interceptTyped (const juce::String& typed)
         //
         // Either way the words are acted on. Nothing is dropped, which is the rule both of his
         // instructions share.
-        if (! pendingAsk_.labels.isEmpty())
+        // ---- THE SERVER'S OWN FLAG DECIDES, AND IT WAS RIGHT ALL ALONG (16 Oct 2026) ---------------
+        // My first cut of #21 made ANY unmatched text a new instruction while chips were on screen,
+        // and the gate caught it: contract 2.4 says `allowFreeText: true` means typing is an answer,
+        // so "the museq" against ["EchoJay EQ", "elysia museq"] stopped the run instead of answering
+        // it. The two rules do not conflict once the flag is read:
+        //
+        //   allowFreeText TRUE   typing is an answer, whether or not it names a chip.
+        //   allowFreeText FALSE  the server asked for a tap; text that names no chip is therefore a
+        //                        NEW INSTRUCTION, which is Sean's #21 exactly ("What now?" with
+        //                        [Stop here, Try once more] and "Add Pro-C 2" typed into it).
+        //   no choices at all    talkAskOf has already forced the flag true: typing is the only road.
+        if (! pendingAsk_.labels.isEmpty() && ! pendingAsk_.allowFreeText)
         {
             log ("typed text \"" + typed.trim() + "\" matches none of the " + juce::String (pendingAsk_.labels.size())
-                 + " choice(s) on screen - taking it as a NEW INSTRUCTION: this run is stopped and the "
-                   "text starts its own (Sean's #21)");
+                 + " choice(s) and the server asked for a tap (allowFreeText false) - taking it as a NEW "
+                   "INSTRUCTION: this run is stopped and the text starts its own (Sean's #21)");
             stop();
             return false;
         }

@@ -3293,6 +3293,10 @@ int main (int argc, char* argv[])
             // confirmation. A row about dialling has to assert the dial.
             const bool landed = ! words.containsIgnoreCase ("did NOT take")
                              && ! words.containsIgnoreCase ("not applied");
+            // THE CLOSING, which is what Sean reads (his note: "show the closing actually saying
+            // confirmed with the value"). The step line is the detail behind it.
+            const auto closingNow = st.getProperty ("agentRow", juce::var())
+                                        .getProperty ("closing", juce::var()).toString();
             // ...and the plugin itself, through the same door the agent reads: the slot's own figure.
             juce::String ownLanded;
             if (auto* arr = st.getProperty ("chainSlots", juce::var()).getArray())
@@ -3302,8 +3306,10 @@ int main (int argc, char* argv[])
             scen ("A3", "own rack, third party with a good map, add with settings: dialled AND confirmed",
                   r.ran() && ! claimsUnreadable && namesFigure && landed,
                   juce::String ("asked ") + juce::String (tp.askValue, 2) + " for \"" + tp.paramName
-                  + "\"; the run said: \"" + words.substring (0, 160) + "\"; the slot's own landed field: \""
-                  + ownLanded.substring (0, 80) + "\"  (RED on 16a: an add carries `after`, so it lands "
+                  + "\"; the CLOSING says: \"" + closingNow + "\"; the step said: \""
+                  + words.substring (0, 140) + "\"; the slot's own landed field: \""
+                  + (ownLanded.isEmpty() ? juce::String ("(empty)") : ownLanded.substring (0, 80))
+                  + "\"  (RED on 16a: an add carries `after`, so it lands "
                   "where the server asked, and the read-back read the LAST slot - another plugin - and "
                   "reported \"settings not confirmed\" about a value the plugin was showing correctly)",
                   "A", v2.editor.get(), st, &r);
@@ -3770,6 +3776,19 @@ int main (int argc, char* argv[])
         {
             rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
             const auto r = askAgent (rig, "rig-gr-marker: how much is it doing?", 120000);
+            // ---- AUDIO THROUGH THE COMPRESSOR, OR THE FIGURE IS 0.0 (Sean, 16 Oct) ---------------
+            // *"E2 must compare tile and meter while the compressor is actually reducing (several
+            // dB), not at 0.0."* He is right, and the reason it read 0.0 is that Rig::pump runs the
+            // MESSAGE loop only: between the build and the read, not one audio block went through
+            // the rack, so the device had nothing to reduce. Two seconds of the rig's -12 dBFS tone
+            // against a threshold of -24 is about 3 dB of reduction, which is what the tile and the
+            // meter then have to agree about.
+            for (int i = 0; i < 180; ++i)
+            {
+                for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
+                if ((i % 20) == 0) Rig::pump (12);
+            }
+            Rig::pump (300);
             const auto st = rig.freshState();
 
             // G6: the build's own result bubble must not ride beside the run (Sean's #3 morning)
@@ -3809,10 +3828,16 @@ int main (int argc, char* argv[])
                         break;
                     }
             const bool fits = ! badge.contains ("...") && badge.length() <= 14;
-            scen ("E2", "the tile's GR figure is the device's own held value, and the caption fits",
-                  badgeGr >= 0.0 && std::abs (badgeGr - devHeld) <= 0.15 && fits,
+            // AND IT HAS TO BE REDUCING. A tile and a meter that agree about 0.0 agree about nothing:
+            // Sean's complaint was a figure frozen at 10.9 while the meter moved, and only a live,
+            // non-zero reduction can tell a frozen badge from a correct one.
+            const bool reducing = devHeld >= 0.5;
+            scen ("E2", "the tile's GR figure is the device's own held value while it is reducing, "
+                        "and the caption fits",
+                  reducing && badgeGr >= 0.0 && std::abs (badgeGr - devHeld) <= 0.15 && fits,
                   "the tile draws \"" + badge + "\" (" + juce::String (badgeGr, 2)
                   + ") and the device's own hold reads " + juce::String (devHeld, 2)
+                  + (reducing ? " while it is reducing" : " - BUT IT IS NOT REDUCING, so this compares nothing")
                   + "  (RED on 16a: the badge only reached the panel on a STRUCTURAL rebuild, so it froze "
                   "- \"GR 10.9 WORK...\" while the meter read 4.4, 3.8, 8.8)",
                   "A", v2.editor.get(), st, &r);
@@ -3831,14 +3856,25 @@ int main (int argc, char* argv[])
         // ---- E3: AN UNCERTIFIED PLUGIN IS SAID TO BE UNCERTIFIED, NOT SILENT (Sean's #19) -----------
         if (tp.ok)
         {
-            // The third party is on this rack from scenario A3 above, and it is NOT certified for GR.
-            const auto r = askAgent (rig, "rig-gr-marker: how much is the other one doing?", 90000);
+            // ---- THE UNCERTIFIED PLUGIN, BY NAME (Sean, 16 Oct) -----------------------------------
+            // *"E3 must use an uncertified plugin (Renaissance Axx), not the EchoJay Compressor."*
+            // The first cut ran the same gr-marker script, which checks SLOT 1 - and slot 1 was the
+            // EchoJay Compressor the build had just put there, so the row was asking about a
+            // certified device and passing because it did not say "no audio". Its own script asks
+            // about the slot the third party is in.
+            const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
             const auto st = rig.freshState();
             const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
             const bool saysSilence = words.containsIgnoreCase ("no audio has been heard")
                                   || words.containsIgnoreCase ("silent or muted");
-            scen ("E3", "check(gr) on an uncertified plugin says so at once, and never blames silence",
-                  r.ran() && ! saysSilence,
+            // ...and it must actually SAY it cannot measure that one, not merely avoid the silence
+            // excuse: a run that said nothing at all would have passed the old assertion.
+            const bool saysUncertified = words.containsIgnoreCase ("not certified")
+                                      || words.containsIgnoreCase ("not a plugin EchoJay has measured")
+                                      || words.containsIgnoreCase ("cannot measure")
+                                      || words.containsIgnoreCase ("not an EchoJay device");
+            scen ("E3", "check(gr) on an UNCERTIFIED third party says so at once, and never blames silence",
+                  r.ran() && ! saysSilence && saysUncertified,
                   "the run said: \"" + words.substring (0, 200) + "\"  (RED on 16a: with audio playing and "
                   "Renaissance Axx showing 15.5 dB of attenuation, the answer was \"No audio has been heard "
                   "for gain reduction on slot 1 yet\" - a reason that was not true)",
@@ -3966,7 +4002,17 @@ int main (int argc, char* argv[])
             // The closing sentence, as the card last said it. AgentOutcome has no dedicated field for it
             // and inventing one here would be a second description of the same thing; `text` IS what the
             // card was saying when the run settled, which is the line Sean saw four copies of.
-            const auto closing = r.text.trim().substring (0, 60);
+            // ---- THE CLOSING AS THE ROW HOLDS IT (Sean, 16 Oct) ----------------------------------
+            // *"F4 found the closing 0 times; it must be exactly 1."* It was counting `r.text` - what
+            // the CARD was saying when the turn settled - against the messages on screen, and with
+            // the run rendered as a row the closing lives in the row's own `closing` field, not in a
+            // message. Counting a string that is not there could only ever return 0, which read as
+            // "no duplicates" and proved nothing. The row's own closing is the thing to count, and
+            // exactly one copy of it must be on screen.
+            auto closing = rig.freshState().getProperty ("agentRow", juce::var())
+                               .getProperty ("closing", juce::var()).toString().trim();
+            if (closing.isEmpty()) closing = r.text.trim();
+            closing = closing.substring (0, 60);
             if (auto* arr = st.getProperty ("onScreen", juce::var()).getArray())
                 for (const auto& m : *arr)
                 {
@@ -3974,14 +4020,24 @@ int main (int argc, char* argv[])
                     roles.add (m.getProperty ("role", juce::var()).toString());
                     if (text.contains (mark)) ++userCopies;
                     if (closing.isNotEmpty() && text.contains (closing)) ++closingCopies;
+                    juce::ignoreUnused (0);
                 }
             // F4 in the matrix: *"scroll up after any run - still no duplicates"*. The scroll is a
             // re-render, and `onScreen` IS what a re-render draws from, so reading it after the run
             // has settled is the same assertion without pretending to move a scrollbar.
+            // WHAT "EXACTLY ONCE" MEANS HERE, said precisely. The closing is drawn by the ROW, from
+            // its own `closing` field; a message repeats it only when the run had no separate opening
+            // (then the row's content IS the closing). So: the row must HAVE a closing, there must be
+            // exactly ONE row for the run, and no message may repeat it more than once. Sean's
+            // duplicate showed as two rows or a second message; a closing of zero length would mean
+            // the row has nothing to draw, which is its own failure and is caught here too.
+            const auto rowsNow = (int) rig.freshState().getProperty ("agentRow", juce::var())
+                                            .getProperty ("rows", juce::var());
             scen ("F4", "every message in a run is drawn exactly once, and still is on a re-render",
-                  userCopies == 1 && closingCopies <= 1,
-                  "the user's marker appears " + juce::String (userCopies) + "x, the closing "
-                  + juce::String (closingCopies) + "x, in " + juce::String (roles.size())
+                  userCopies == 1 && closing.isNotEmpty() && closingCopies <= 1 && rowsNow == 1,
+                  "the user's marker appears " + juce::String (userCopies) + "x; the row's closing is \""
+                  + closing + "\" and " + juce::String (closingCopies) + " message(s) repeat it; "
+                  + juce::String (rowsNow) + " run row(s) in " + juce::String (roles.size())
                   + " on-screen message(s) [" + roles.joinIntoString (",") + "]  (RED on 15c: two "
                   "transcript writers were live, so his message appeared twice and the closing up to "
                   "four times)",

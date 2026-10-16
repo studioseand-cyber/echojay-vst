@@ -705,14 +705,48 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     std::vector<Ask> asks;
     if (opName == "build")
     {
-        // The chain block IS the whole rack, so slot i of the block is slot i+1 of the rack.
+        // ---- BY NAME, BECAUSE A BUILD IS NOT INSTANT (16 Oct 2026, Sean's #3) --------------------
+        //
+        // "the chain block IS the whole rack, so slot i of the block is slot i+1 of the rack" is true
+        // of the rack the build PRODUCES, and the read-back can run while the rack is still the one
+        // it is replacing: the structural check is satisfied by a slot count, and a one-slot build
+        // over a rack that already had slots is satisfied immediately - by the OLD first slot. Sean
+        // saw the result as "Added it. Settings not confirmed: this build cannot read that plugin's
+        // values back (the threshold and ratio)" over an EchoJay Compressor whose dial log says
+        // `requested=2 applied=2 manual=0 readbackMiss=0 status=applied`. The device had taken both
+        // values; the read was looking at another plugin.
+        //
+        // So each block entry finds ITS OWN slot by name, exactly as an add does, and falls back to
+        // the positional answer when the rack cannot be read or the name is not there yet.
         const auto chain = argVar (call, "chain");
+        const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                               : (src_.ownRack  ? src_.ownRack()          : RackRead());
         if (auto* arr = chain.getArray())
             for (int i = 0; i < arr->size(); ++i)
                 if (auto* o = (*arr)[i].getDynamicObject())
                 {
                     const auto ss = o->getProperty ("settings_structured");
-                    if (ss.getDynamicObject() != nullptr) asks.push_back ({ i + 1, ss });
+                    if (ss.getDynamicObject() == nullptr) continue;
+                    int slot1 = i + 1;
+                    const auto wantName = o->getProperty ("name").toString().trim();
+                    if (rack.valid && wantName.isNotEmpty())
+                    {
+                        std::vector<int> hits;
+                        for (const auto& sl : rack.slots)
+                            if (echojay::agent::namesMatchLoosely (sl.name, wantName)) hits.push_back (sl.n);
+                        if (hits.size() == 1) slot1 = hits.front();
+                        else if (hits.size() > 1)
+                        {
+                            // Several of the same plugin in one build: the i-th of them is this one.
+                            int seen = 0;
+                            for (int j = 0; j < i; ++j)
+                                if (auto* oj = (*arr)[j].getDynamicObject())
+                                    if (echojay::agent::namesMatchLoosely (oj->getProperty ("name").toString(), wantName))
+                                        ++seen;
+                            slot1 = hits[(size_t) juce::jlimit (0, (int) hits.size() - 1, seen)];
+                        }
+                    }
+                    asks.push_back ({ slot1, ss });
                 }
     }
     else
@@ -807,11 +841,15 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // write went in) are two different moments, and this read them as one. A miss is re-read, up to
     // three times at 500 ms, and only then reported. A clean read still finishes immediately, so
     // nothing that works today gets slower.
-    if (! all.missed.isEmpty() && triesLeft > 1 && sinks_.afterMs != nullptr)
+    // UNREADABLE COUNTS TOO (16 Oct 2026). A value that cannot be read yet is the same story as one
+    // that has not landed yet: the map is still coming, or the device is still being built. Both are
+    // re-read; a clean confirmation still finishes at once.
+    if ((! all.missed.isEmpty() || ! all.unreadable.isEmpty()) && triesLeft > 1 && sinks_.afterMs != nullptr)
     {
         const auto aliveW = this->alive();
         auto callCopy = std::make_shared<ToolCall> (call);
-        EchoJay_NSLog (("EJAgent: " + juce::String (all.missed.size()) + " setting(s) have not landed yet - "
+        EchoJay_NSLog (("EJAgent: " + juce::String (all.missed.size() + all.unreadable.size())
+                        + " setting(s) have not landed or cannot be read yet - "
                         "re-reading in 500 ms (" + juce::String (triesLeft - 1) + " more look(s)), because a "
                         "map that is still arriving is not a setting that did not take").toRawUTF8());
         sinks_.afterMs (500, [this, aliveW, callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft]

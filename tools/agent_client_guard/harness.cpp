@@ -347,10 +347,29 @@ int main()
         r.await ({ "tc_11" });
         pumpMs (10);
         const auto p2 = r.posts.size();
-        check (r.client.interceptTyped ("maybe") && r.posts.size() == p2 && r.client.askPending() && r.client.notice().contains ("Tap one of the choices"),
-               "A5 allowFreeText:false refuses a typed answer WITH a line and keeps waiting");
+        // ---- SEAN'S #21 (16 Oct 2026) MOVED THIS LEG, AND IT IS A BETTER ANSWER ------------------
+        // It used to assert that a typed reply under allowFreeText:false was REFUSED with a line and
+        // the run kept waiting. His ruling: *"A new request typed while a run waits on an ask got
+        // merged into that run. A new instruction closes the waiting run (marked stopped) and starts
+        // a new run."* So with chips on screen and the server asking for a tap, text that names no
+        // chip is a new instruction: interceptTyped RETURNS FALSE (the composer's own road takes it)
+        // and the run is STOPPED. Nothing is dropped - which is the half of his rule the old
+        // behaviour did keep, and the half this one keeps as well.
+        check (! r.client.interceptTyped ("maybe") && r.posts.size() == p2
+               && ! r.client.askPending()
+               && r.client.state() == EJAgentClient::State::Stopped,
+               "A5 allowFreeText:false + text that names no choice = a NEW INSTRUCTION: the run is "
+               "stopped and the text goes down the composer's own road (Sean's #21)");
+        // A FRESH ASK FOR THE TAP LEGS. The run above was stopped by the new instruction - which is
+        // the point of it - so the next two legs need a question of their own rather than asserting
+        // against a client that has correctly finished.
+        r.round (7);
+        r.tool (R"({"id":"tc_12","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_12" });
+        pumpMs (10);
+        const auto p3 = r.posts.size();
         r.client.answerAsk ("Perhaps");
-        check (r.client.askPending() && r.posts.size() == p2, "A5b a tap that is not one of the offered labels is ignored");
+        check (r.client.askPending() && r.posts.size() == p3, "A5b a tap that is not one of the offered labels is ignored");
         r.client.answerAsk ("No");
         check (r.result (0).getProperty ("result", {}).getProperty ("tapped", {}).toString() == "No" && ! r.result (0).getProperty ("result", {}).hasProperty ("typed"),
                "A6 a tapped choice goes back as {tapped:\"<label>\"}");

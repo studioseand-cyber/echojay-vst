@@ -744,7 +744,13 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // fell through to the not-playing answer, which invented a reason that was not true and sent
         // the user looking for a muted channel. Certification is a property of the PLUGIN, not of
         // whether audio has been heard, so it is decided here, before any listening question.
-        if (! s.grCertified)
+        // A BUILT-IN IS CERTIFIED BY CONSTRUCTION (16 Oct 2026, caught by the gate). Dropping the
+        // old `pictureValid && grKnown` condition made the refusal fire for an EchoJay device that
+        // simply had not been heard yet - "not certified" about our own compressor, which is both
+        // wrong and exactly the kind of confident wrong answer this round is about. The refusal is
+        // for a THIRD PARTY whose map has not passed the sweep; a device falls through to the
+        // playback answer, which is the true one when nothing has been measured.
+        if (! s.builtin && ! s.grCertified)
         {
             done (ToolOutcome::failureFor ("not_certified",
                         "gain reduction is not readable for \"" + s.name + "\": it is not an EchoJay device "
