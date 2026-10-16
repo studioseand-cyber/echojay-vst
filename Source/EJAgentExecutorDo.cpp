@@ -685,7 +685,7 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
 }
 
 void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
-                                  int slotsOnRack, juce::String landedSentence, Done done)
+                                  int slotsOnRack, juce::String landedSentence, Done done, int triesLeft)
 {
     // TWO AUDIENCES, ONE CALL (Sean's #10, 16 Oct 2026). `userLine` is the row's words; `modelLine`
     // is what the model is told, which may carry ids and instructions. Passing only one is the old
@@ -798,6 +798,30 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         if (all.slotName.isEmpty()) all.slotName = c.slotName;
     }
     if (all.askedCount == 0) { finish (juce::var (new juce::DynamicObject()), landedSentence); return; }
+
+    // ---- GIVE A PENDING DIAL ITS BOUND BEFORE CALLING IT A FAILURE (16 Oct 2026) ----------------
+    //
+    // The rig caught this on a real Renaissance Axx: "Added it, but the settings did NOT take: the
+    // threshold - threshold 0 (asked threshold -30)" - on a plugin whose map had not arrived yet.
+    // The structural landing (the slot exists) and the VALUE landing (the map came back and the
+    // write went in) are two different moments, and this read them as one. A miss is re-read, up to
+    // three times at 500 ms, and only then reported. A clean read still finishes immediately, so
+    // nothing that works today gets slower.
+    if (! all.missed.isEmpty() && triesLeft > 1 && sinks_.afterMs != nullptr)
+    {
+        const auto aliveW = this->alive();
+        auto callCopy = std::make_shared<ToolCall> (call);
+        EchoJay_NSLog (("EJAgent: " + juce::String (all.missed.size()) + " setting(s) have not landed yet - "
+                        "re-reading in 500 ms (" + juce::String (triesLeft - 1) + " more look(s)), because a "
+                        "map that is still arriving is not a setting that did not take").toRawUTF8());
+        sinks_.afterMs (500, [this, aliveW, callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft]
+        {
+            if (aliveW.expired())
+            { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, landedSentence)); return; }
+            confirmSettings (*callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft - 1);
+        });
+        return;
+    }
 
     auto* r = new juce::DynamicObject();
     r->setProperty ("applied", true);                 // the STRUCTURE landed; that is what this says

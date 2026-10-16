@@ -200,8 +200,16 @@ private:
     /** Compare one slot's asked values with what it now holds. `asked` may be the flat object or the
         "params" wrapper; both shapes are accepted, as fix 1(a) established. */
     SettingsCheck checkSlotValues (const juce::String& applyTo, int slot1, const juce::var& settingsStructured) const;
+    /** ---- THE DIAL SETTLES BEFORE THE READ-BACK JUDGES IT (16 Oct 2026) -------------------------
+        A third party is dialled through a map that may still be ARRIVING when the structural landing
+        is confirmed: the slot exists, the plugin is loaded, and the values are written a moment later
+        when the map comes back. Reading once, immediately, reports "the settings did NOT take" over a
+        dial that lands half a second afterwards - which is exactly the sentence Sean has been getting.
+        `triesLeft` is a bounded re-read, and it only ever runs when something MISSED: a clean read is
+        final at once, and a value that is genuinely wrong costs two extra half-seconds before it is
+        reported as wrong. */
     void confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
-                          int slotsOnRack, juce::String landedSentence, Done done);
+                          int slotsOnRack, juce::String landedSentence, Done done, int triesLeft = 3);
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
                         juce::String sentence, Done done, int waitedMs, const ToolCall* call = nullptr);
 
