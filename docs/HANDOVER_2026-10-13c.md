@@ -275,4 +275,12 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - **The night run (11c62972)** is running from the MOUNTED Test DMG (/Volumes/EchoJay Wizard Test) - so the new Test DMG is saved beside it as "EchoJay Wizard Test (next).dmg".
 - Its Checking took 1 h 05 min (vs 2 h 15 min the night before).
 
+## 16 Oct addendum 18: the night run, and the inert fix (wizard c3ddf12a; DMGs Test "(16 Oct)" 28eacbdf, Beta 4ff5360b)
+- **The night run (11c62972) finished:** Checking 1 h 05; measuring 5 h 43 (19:41-20:56, paused by the Pause button, 21:47-02:13); promo EJ-FREE-A1083193 (stub). 197 measured, 253 needs_licence (206 UAD by their window, each under a minute), 24 demo, 54 not measurable, 8 held, 8 needs_hardware (APB), 5 crashed, 7 won't load, 183 for review. Nothing over 45 min (longest Maag MAGNUM-K 28 min; the CSV's six 34-min Checking rows are a timing-script artefact, each really 0.1 min). Frozen CSV: ~/Desktop/WIZARD_TIMING_15oct_night_FINAL (run 11c62972).csv.
+- **The upload:** JSON only (no audio), no paths / user / host / email; one outcome for each of the 474 queued.
+- **The inert false positives** (33 working plugins filed "never processes"; RChannel (m->s) measured while (m) and (s) were filed inert): fixed - only a plain level control proves it, none -> measured (WIZARD_SPEC sound check; pins WZ-SOUND-1/2). Safety proof with `ejmap --wizard-soundcheck --names <file> --out <dir>` on 293 plugins: 0 wrongly inert, NEOLD U17 and the 7 silent still caught, SSL 4K B showed its iLok window.
+- **The receipt's crash count:** the manifest's "crashed" now carries probe crashes too (pin WZ-CRASH-1); it said 0 for the night run's 5.
+- 8 mutants red.
+- **Do not run `auval -a` on this Mac for identifiers:** it loads every component (UAD and PACE ones included). Read the component's Info.plist AudioComponents instead.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).
