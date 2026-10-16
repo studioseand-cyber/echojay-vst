@@ -155,7 +155,9 @@ inline std::set<juce::String> certifiedFromList (const juce::File& publishList)
 // THE HUMAN CHECK (Kathy, 16 Oct): answers from the review page - {"answers": [{"id": "<fp>|<control>", "fp", "control", "role",
 // "verdict": "yes" | "no", "at", "by"}]}. A yes identifies the control for that role on that map (human-checked); a no refutes it (the
 // name rule never claims it back). The read-back is still required for "mapped"
-struct HumanAnswer { juce::String control, role; bool yes = false; };
+// verdicts (16 Oct, the role dropdown): "yes" = the suggested role in the row's section; "role" = the role and section the person picked;
+// "no" = not the suggestion (no role given); "other" = not a main control; "unsure" = counts neither way (measuring / ask Sean)
+struct HumanAnswer { juce::String control, role, section, verdict; bool yes = false; };
 inline std::map<juce::String, std::vector<HumanAnswer>> loadHuman (const juce::File& f)
 {
     std::map<juce::String, std::vector<HumanAnswer>> out;
@@ -164,14 +166,24 @@ inline std::map<juce::String, std::vector<HumanAnswer>> loadHuman (const juce::F
         for (const auto& x : *a)
         {
             const auto v = x.getProperty ("verdict", "").toString();
-            if (v != "yes" && v != "no") continue;
-            out[x.getProperty ("fp", "").toString()].push_back ({ x.getProperty ("control", "").toString(), x.getProperty ("role", "").toString(), v == "yes" });
+            if (v != "yes" && v != "no" && v != "role" && v != "other") continue;   // unsure counts neither way
+            out[x.getProperty ("fp", "").toString()].push_back ({ x.getProperty ("control", "").toString(), x.getProperty ("role", "").toString(),
+                                                               x.getProperty ("section", "").toString(), v, v == "yes" || v == "role" });
         }
     return out;
 }
 inline trust::Measured withHuman (trust::Measured m, const std::vector<HumanAnswer>& answers)
 {
-    for (const auto& h : answers) { if (h.yes) { m.roles[h.role].addIfNotAlreadyThere (h.control); m.dropped.erase (h.control); } else { m.dropped.insert (h.control); for (auto& [r, n] : m.roles) n.removeString (h.control); } }
+    for (const auto& h : answers)
+    {
+        if (h.yes && h.role.isNotEmpty() && h.role != "other")
+        {   // the role (and the section the person put it in: "Gate" -> "gate", "Band 2" -> "band 2", "" = the plugin's own)
+            for (auto& [r, n] : m.roles) if (r != h.role) n.removeString (h.control);
+            m.roles[h.role].addIfNotAlreadyThere (h.control); m.dropped.erase (h.control);
+            m.section[h.control] = trust::knownSection (h.section.toLowerCase());
+        }
+        else { m.dropped.insert (h.control); for (auto& [r, n] : m.roles) n.removeString (h.control); }
+    }
     return m;
 }
 // THE REVIEW LIST: for a map left unsure by "role not identified", every control a human could settle - a name that matches a needed
@@ -183,6 +195,9 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
     const auto* co = m.getProperty ("controls", {}).getDynamicObject(); if (co == nullptr) return items;
     juce::StringArray needRoles; for (const auto& need : trust::needsFor (cat)) for (const auto& alt : juce::StringArray::fromTokens (need, "|", "")) for (const auto& r : juce::StringArray::fromTokens (alt, "+", "")) needRoles.addIfNotAlreadyThere (r);
     const auto R = trust::rolesOf (m, measured);
+    juce::Array<juce::var> pluginSections;   // every named section this plugin's controls carry, for the role dropdown
+    { juce::StringArray seen; for (const auto& p : co->getProperties()) { const auto l = trust::sectionLabel (trust::knownSection (trust::sectionOf (p.value.getProperty ("name", p.name.toString()).toString())));
+          if (l.isNotEmpty() && seen.addIfNotAlreadyThere (l)) pluginSections.add (l); } }
     for (const auto& p : co->getProperties())
     {
         const auto& c = p.value; const auto name = c.getProperty ("name", p.name.toString()).toString();
@@ -201,6 +216,9 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
         o->setProperty ("vendor", m.getProperty ("identity", {}).getProperty ("vendor", "")); o->setProperty ("version", m.getProperty ("identity", {}).getProperty ("version", ""));
         o->setProperty ("category", cat); o->setProperty ("control", name); o->setProperty ("unit", trust::unitOf (c).isEmpty() ? juce::String ("-") : trust::unitOf (c));
         o->setProperty ("suggested_role", hit.role); o->setProperty ("why", why);
+        // the section the control's name puts the role in (Kathy, 16 Oct): the question is "Gate -> Threshold", never a bare "Threshold"
+        o->setProperty ("section", trust::sectionLabel (trust::knownSection (trust::sectionOf (name))));
+        o->setProperty ("plugin_sections", juce::var (pluginSections));
         o->setProperty ("read_back", rit != rb.end() && rit->second.proven());
         o->setProperty ("yes_makes_mapped", L.level == "mapped");
         items.add (juce::var (o));

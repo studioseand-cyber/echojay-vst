@@ -3,7 +3,9 @@
  *         -> { schema: "ejmap_role_review/1", generated_at, items: [...], answers: { <id>: answer } }
  * GET   /api/v2/admin/plugin-review?export=1
  *         -> { schema: "ejmap_human_checks/1", items_generated_at, answers: [answer...] }   (what EJ Map's --trust-levels --human reads)
- * POST  /api/v2/admin/plugin-review  { id, verdict: "yes" | "no" | "clear" }
+ * POST  /api/v2/admin/plugin-review  { id, verdict, role?, section? }
+ *         verdict: "yes" (the suggestion) | "role" (picked role + section) | "no" | "other" (not a main control) | "unsure" (counts neither
+ *         way: the needs-measuring / ask-Sean list) | "clear"
  *         -> { ok: true, answer: answer | null, counts: { items, answered, countsNowMaps, mapsMappedByAnswers } }
  *
  * THE PLUGIN ROLE REVIEW (Kathy, 16 Oct 2026): the human check for controls EJ Map could not identify by name + unit. The items come
@@ -28,7 +30,8 @@ try { redis = require('@upstash/redis').Redis.fromEnv(); } catch (e) { redis = n
 
 const K_ITEMS = () => scopedKey('ejmap:review:items');
 const K_ANSWERS = () => scopedKey('ejmap:review:answers');
-const VERDICTS = new Set(['yes', 'no', 'clear']);
+const VERDICTS = new Set(['yes', 'no', 'role', 'other', 'unsure', 'clear']);
+const ROLES = new Set(['threshold', 'ratio', 'attack', 'release', 'makeup', 'output', 'gain', 'freq', 'q', 'mix', 'delay_time', 'decay', 'predelay', 'drive', 'ceiling']);
 
 function parse(x) { if (x && typeof x === 'object') return x; try { return JSON.parse(x); } catch (e) { return null; } }
 
@@ -36,8 +39,9 @@ function counts(items, answers) {
   const nowMaps = new Set(), mapped = new Set(); let answered = 0;
   for (const it of items) {
     const a = answers[it.id];
-    if (a && (a.verdict === 'yes' || a.verdict === 'no')) answered++;
-    if (it.yes_makes_mapped) { nowMaps.add(it.fp); if (a && a.verdict === 'yes') mapped.add(it.fp); }
+    if (a && a.verdict && a.verdict !== 'unsure') answered++;
+    const isSuggestion = a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || '')));
+    if (it.yes_makes_mapped) { nowMaps.add(it.fp); if (isSuggestion) mapped.add(it.fp); }
   }
   return { items: items.length, answered, countsNowMaps: nowMaps.size, mapsMappedByAnswers: mapped.size };
 }
@@ -68,6 +72,7 @@ module.exports = async function handler(req, res) {
     }
     const body = typeof req.body === 'string' ? parse(req.body) : req.body;
     if (!body || typeof body.id !== 'string' || !VERDICTS.has(body.verdict)) return res.status(400).json({ error: 'bad_body' });
+    if (body.verdict === 'role' && (!ROLES.has(body.role) || typeof (body.section || '') !== 'string')) return res.status(400).json({ error: 'bad_role' });
     const { doc, answers } = await readAll();
     const item = (doc.items || []).find((i) => i.id === body.id);
     if (!item) return res.status(404).json({ error: 'no_such_item' });
@@ -75,8 +80,11 @@ module.exports = async function handler(req, res) {
     let answer = null;
     if (body.verdict === 'clear') { await redis.hdel(K_ANSWERS(), body.id); delete answers[body.id]; }
     else {
+      let role = item.suggested_role, section = item.section || '';
+      if (body.verdict === 'role') { role = body.role; section = body.section || ''; }
+      if (body.verdict === 'other') { role = 'other'; section = ''; }
       answer = { id: item.id, fp: item.fp, plugin: item.plugin, version: item.version || null, control: item.control,
-                 role: item.suggested_role, verdict: body.verdict, at: new Date().toISOString(), by: String(session.userId || 'admin') + ' (' + source + ')' };
+                 suggested_role: item.suggested_role, suggested_section: item.section || '', role, section, verdict: body.verdict, at: new Date().toISOString(), by: String(session.userId || 'admin') + ' (' + source + ')' };
       await redis.hset(K_ANSWERS(), { [item.id]: JSON.stringify(answer) });
       answers[item.id] = answer;
     }

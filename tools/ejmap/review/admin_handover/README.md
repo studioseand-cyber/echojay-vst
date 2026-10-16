@@ -1,7 +1,8 @@
 # Plugin role review - handover for Sean's admin session (Kathy, 16 Oct 2026)
 
-**What it is:** the human check for plugin controls EJ Map could not identify by name and unit. One row per control: plugin, control, the unit its display shows, the suggested role, why it was not identified, and Yes / No.
-- **Yes:** this control does that job. **No:** it does not.
+**What it is:** the human check for plugin controls EJ Map could not identify by name and unit. One row per control: plugin, control, the unit its display shows, a role dropdown (section + role, e.g. "Gate → Threshold", pre-set to the suggestion, plus "Other / not a main control"), why it was not identified, and Yes / No / Unsure.
+- **Yes:** the suggestion is right. **Picking a role:** a human check of that role, in that section. **No:** not the suggestion, no role given. **Unsure:** counts neither way; the row moves to a "Needs measuring / ask Sean" list.
+- **Keyboard on a row:** y / n / u answer and move on; r opens the dropdown; Backspace clears.
 - An answer saves at once and counts straight away.
 - Rows marked "counts now" are the ones where a single yes makes that plugin's map dialable ("mapped"). They come first.
 
