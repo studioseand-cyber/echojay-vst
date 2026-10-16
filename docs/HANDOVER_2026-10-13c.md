@@ -284,4 +284,13 @@ Evidence: `tools/ejmap/cert-traces/2026-10-13-reward-partial/` (screenshots + re
 - 8 mutants red.
 - **Do not run `auval -a` on this Mac for identifiers:** it loads every component (UAD and PACE ones included). Read the component's Info.plist AudioComponents instead.
 
+## 16 Oct addendum 19: THE GUARD on the developer's own loads (Kathy) - a standing rule
+- **Before ANY plugin load run by the developer on Kathy's Mac** (tests, sound checks, proofs), the list goes through EjmapSelfGuard.h. It drops UAD, McDSP APB, Soundtoys, Kilohearts / kHs, SSL, anything PACE / iLok (Melda, Antares and TH-U included), and anything that has shown a licence window here.
+- **The window memory:** tools/ejmap/scripts/self_guard_windows.json (seeded with 210 products) plus each EchoJay Wizard folder's licence_windows.json. Add to it, never remove.
+- **How:** `ejmap --self-guard --names <file>` prints KEEP / DROP, loads nothing, and exits 3 if anything was dropped. `ejmap --wizard-soundcheck` applies the guard itself.
+- **A proof that needs a licence-bound plugin:** ask Kathy first, then `--allow-licence-bound`.
+- **No `auval -a`** or any whole-system scan.
+- **Pin WZ-GUARD-1.** The wizard a user runs is not guarded; it decides licences by their window, once.
+- **Measured on the morning's 293-plugin proof list:** the guard drops 8 - SSL 4K B, plus 7 PACE-wrapped (AVOX PUNCH, AVOX ARTICULATOR, Auto-Tune Pro, MetaTune, MComb, MAutoPitch, TH-U Slate). That proof loaded all 8, before the guard existed.
+
 The standing rules are unchanged (HANDOVER_2026-10-13 §6).

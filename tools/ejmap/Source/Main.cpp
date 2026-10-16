@@ -772,12 +772,22 @@ namespace
             }
             if (a == "--wizard-soundcheck")   // 16 Oct: the wizard's sound check alone, on the plugins named in --names, into --out only
             {
-                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File names;
-                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
-                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--names") names = cwdFile (v); else if (k == "--jobs") o.jobs = juce::jlimit (1, 8, v.getIntValue()); }
-                if (o.out == juce::File() || ! names.existsAsFile()) { std::cerr << "usage: ejmap --wizard-soundcheck --names <file> --out <folder> [--jobs N]" << std::endl; return 2; }
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File names; bool allow = false;
+                for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j), v = j + 1 < argc ? argAt (argc, argv, j + 1) : juce::String();
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--names") names = cwdFile (v); else if (k == "--jobs") o.jobs = juce::jlimit (1, 8, v.getIntValue()); else if (k == "--allow-licence-bound") allow = true; }
+                if (o.out == juce::File() || ! names.existsAsFile()) { std::cerr << "usage: ejmap --wizard-soundcheck --names <file> --out <folder> [--jobs N] [--allow-licence-bound: only after Kathy says yes]" << std::endl; return 2; }
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
-                return ejmap::cert::runSoundCheckAlone (o, names);
+                return ejmap::cert::runSoundCheckAlone (o, names, allow);
+            }
+            if (a == "--self-guard")   // 16 Oct (Kathy): the guard alone, for scripts - prints KEEP / DROP per name, loads nothing; exit 3 if anything dropped
+            {
+                juce::File names; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--names") names = cwdFile (argAt (argc, argv, j + 1));
+                if (! names.existsAsFile()) { std::cerr << "usage: ejmap --self-guard --names <file>" << std::endl; return 2; }
+                juce::StringArray ns; ns.addLines (names.loadFileAsString()); ns.trim(); ns.removeEmptyStrings(); ns.removeDuplicates (false);
+                juce::StringArray dropped; const auto kept = ejmap::cert::guardedPlugins (ns, false, "GUARD", &dropped);
+                for (const auto& d : kept) std::cout << "KEEP\t" << d.name << std::endl;
+                for (const auto& d : dropped) std::cout << "DROP\t" << d << std::endl;
+                return dropped.isEmpty() ? 0 : 3;
             }
             if (a == "--wizard")   // the user-side wizard (feat/ejmap-wizard): scan, look up (A/B/C), quick check, measure, bundle; upload stubbed
             {

@@ -10350,6 +10350,32 @@ void testWizardCategories()
                && run.contains ("\"state\", v.window || v.silent || v.inert ? \"needs_licence\" : \"demo\"") && run.contains ("v.silent = (bool) c.getProperty (\"silent\", false); v.inert = (bool) c.getProperty (\"inert\", false);"),
                "wizard WZ-SOUND-1: silence and never-processing caught in the demo check (needs_licence at once); anything that changes the signal measured; only plain level controls (Output / Gain) tried");
     }
+    // WZ-GUARD-1 THE GUARD ON MY OWN LOADS (Kathy, 16 Oct): before any load the developer runs (tests, sound checks, proofs), licence-bound
+    // plugins are dropped - UAD, APB, Soundtoys, Kilohearts, SSL, anything that showed a licence window here, anything PACE / iLok; the rest
+    // kept. The seed memory carries the window plugins seen on this Mac; the sound check resolves its list only through the guard
+    {
+        using namespace ejmap::selfguard;
+        Memory mem; mem.products.insert ("bloom"); mem.ids.insert ("audiounit|547d5677|2.5.71");
+        auto drops = [&] (const char* n, const char* v, const char* id = "AudioUnit|1|1", bool pace = false) { return judge (n, v, id, pace, "PACE-wrapped (x.component)", mem); };
+        const auto seed = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/self_guard_windows.json").loadFileAsString());
+        Memory sm; addMemoryFrom (sm, seed);
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto alone = run.fromFirstOccurrenceOf ("inline int runSoundCheckAlone", false, false).upToFirstOccurrenceOf ("opt.out.getChildFile (\"soundcheck.tsv\")", false, false);
+        const auto main = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        check (drops ("UAD 1176LN", "Universal Audio").drop && drops ("UADx 1176", "Universal Audio").drop && drops ("APB Royal Mu", "McDSP").drop
+               && drops ("EchoBoy", "Soundtoys").why == "Soundtoys" && drops ("kHs Filter", "Kilohearts").drop && drops ("kHs Haas", "").drop
+               && drops ("SSL 4K B", "Solid State Logic").why == "SSL" && drops ("SSL Fusion HF Compressor", "SSL").drop
+               && drops ("bloom", "Oeksound").why.contains ("licence window") && drops ("Weiss Deess", "Softube", "AudioUnit|547D5677|2.5.71").drop
+               && drops ("MTurboComp", "MeldaProduction", "AudioUnit|2|1", true).why.startsWith ("PACE / iLok")
+               && ! drops ("CLA-76 (m)", "Waves").drop && ! drops ("RChannel (m)", "Waves").drop && ! drops ("elysia mpressor", "Plugin Alliance").drop
+               && sm.products.count ("ssl 4k b") && sm.products.count ("bloom") && sm.products.count ("h3000 factory") && sm.products.size() >= 200
+               && alone.contains ("const auto ds = guardedPlugins (names, allowLicenceBound, \"SOUNDCHECK\");") && ! alone.contains ("installedAudioUnits()")
+               && [&] { const auto blk = main.fromFirstOccurrenceOf ("if (a == \"--wizard-soundcheck\")", false, false).upToFirstOccurrenceOf ("if (a == \"--self-guard\")", false, false);
+                       int n = 0; for (int at = blk.indexOf ("allow = true"); at >= 0; at = blk.indexOf (at + 1, "allow = true")) ++n;
+                       return blk.contains ("bool allow = false;") && blk.contains ("else if (k == \"--allow-licence-bound\") allow = true; }") && n == 1   // set by the flag and nowhere else
+                              && blk.contains ("return ejmap::cert::runSoundCheckAlone (o, names, allow);"); }(),
+               "wizard WZ-GUARD-1: my own loads drop UAD / APB / Soundtoys / kHs / SSL / a remembered window / PACE and keep Waves and the rest; the sound check is guarded");
+    }
     // WZ-CRASH-1 EVERY CRASH IS REPORTED (Kathy, 16 Oct: the night run's 5 probe crashes, receipt crashed_reported 0): the manifest's
     // "crashed" carries the app's crashes (with their report) and every skipped row filed crashed, once each; the receipt counts that list
     {
