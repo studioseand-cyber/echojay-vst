@@ -1141,6 +1141,28 @@ static double busGainOf (const juce::var& st)
 {
     return (double) st.getProperty ("ownRack", juce::var()).getProperty ("busGainDb", 0.0);
 }
+/** The figure a packed `landed` field holds for one control, or NaN. The field is
+    "slot 1 Threshold=-30;Attack=2|slot 2 ..." - the slot prefix is stripped by position and
+    everything up to the '=' is the name, spaces and all, because a controls dial is keyed by the
+    plugin's own control name. (The first cut of this took the last whitespace token as the key and
+    would have read "(Transient)=-14.4".) */
+static double landedValueOf (const juce::String& landed, const juce::String& control)
+{
+    for (const auto& part : juce::StringArray::fromTokens (landed, "|", ""))
+    {
+        auto body = part.trim();
+        if (body.contains ("{")) body = body.fromFirstOccurrenceOf ("{", false, false)
+                                            .upToLastOccurrenceOf ("}", false, false);
+        if (body.startsWith ("slot "))
+            body = body.fromFirstOccurrenceOf (" ", false, false).trim()
+                       .fromFirstOccurrenceOf (" ", false, false).trim();
+        for (const auto& pair : juce::StringArray::fromTokens (body, ";", ""))
+            if (pair.upToFirstOccurrenceOf ("=", false, false).trim() == control)
+                return pair.fromFirstOccurrenceOf ("=", false, false).trim().getDoubleValue();
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
 static juce::var linkRowOf (const juce::var& st, const juce::String& uid)
 {
     if (auto* arr = st.getProperty ("links", juce::var()).getArray())
@@ -3246,7 +3268,8 @@ int main (int argc, char* argv[])
                 after  = (int) lr.getProperty ("slotCount", -1);
                 names  = lr.getProperty ("slots",  juce::var()).toString();
                 landed = lr.getProperty ("landed", juce::var()).toString();
-                return after > before && landed.contains (tp.paramName);
+                const double v = landedValueOf (landed, tp.paramName);
+                return after > before && v == v && std::abs (v - tp.askValue) <= 1.0;   // the VALUE, after the settle
             }, 30000);
             {
                 const auto lr = linkRowOf (Rig::state(), linkUid);
@@ -3596,13 +3619,20 @@ int main (int argc, char* argv[])
                 const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
                                               + tp.paramName, 120000);
                 int after = before; juce::String landed, names;
+                // WAIT FOR THE VALUE, NOT FOR THE KEY (16 Oct 2026). A Waves plugin's display is one
+                // write behind until the message loop runs, so the product writes, reads "0.0",
+                // and VERIFIES AFTER A SETTLE - its log says so in as many words ("applied after
+                // settle, reads -30.0"). A rig that stops as soon as the key appears reads the
+                // pre-settle 0.0 and reports a correct dial as a failure, which is the same class of
+                // mistake as the product's own 21 Sep one.
                 rig.until ([&] (const juce::var&)
                 {
                     const auto st = fresh.state();
                     after  = (int) st.getProperty ("slotCount", -1);
                     names  = st.getProperty ("slots",  juce::var()).toString();
                     landed = st.getProperty ("landed", juce::var()).toString();
-                    return after > before && landed.contains (tp.paramName);
+                    const double v = landedValueOf (landed, tp.paramName);
+                    return after > before && v == v && std::abs (v - tp.askValue) <= 1.0;
                 }, 30000);
                 double readBack = 0.0; bool haveReadBack = false;
                 for (const auto& part : juce::StringArray::fromTokens (landed, "|", ""))

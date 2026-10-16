@@ -850,9 +850,15 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         auto callCopy = std::make_shared<ToolCall> (call);
         EchoJay_NSLog (("EJAgent: " + juce::String (all.missed.size() + all.unreadable.size())
                         + " setting(s) have not landed or cannot be read yet - "
-                        "re-reading in 500 ms (" + juce::String (triesLeft - 1) + " more look(s)), because a "
+                        "re-reading in 800 ms (" + juce::String (triesLeft - 1) + " more look(s)), because a "
                         "map that is still arriving is not a setting that did not take").toRawUTF8());
-        sinks_.afterMs (500, [this, aliveW, callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft]
+        // 800 ms x 6 = about four seconds, not one and a half. A third party's map comes from the
+        // SERVER: the rig watched the V2 ask for it, finish the request without it, and receive it a
+        // moment after the read-back had already given up and said "this build cannot read that
+        // plugin's values back". A bound that is shorter than the thing it waits for is not a bound,
+        // it is a race - and this one is still bounded, still only runs when something is missing,
+        // and still lets a clean read finish at once.
+        sinks_.afterMs (800, [this, aliveW, callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft]
         {
             if (aliveW.expired())
             { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, landedSentence)); return; }

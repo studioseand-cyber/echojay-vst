@@ -1,5 +1,5 @@
 scenario A4b
-captured 2026-10-16T12:35:43.630+01:00
+captured 2026-10-16T14:36:42.028+01:00
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it, with the setting you asked for.
   run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]

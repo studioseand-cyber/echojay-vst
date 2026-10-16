@@ -209,7 +209,7 @@ private:
         final at once, and a value that is genuinely wrong costs two extra half-seconds before it is
         reported as wrong. */
     void confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
-                          int slotsOnRack, juce::String landedSentence, Done done, int triesLeft = 3);
+                          int slotsOnRack, juce::String landedSentence, Done done, int triesLeft = 6);
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
                         juce::String sentence, Done done, int waitedMs, const ToolCall* call = nullptr);
 
