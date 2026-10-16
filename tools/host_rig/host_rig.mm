@@ -1350,8 +1350,13 @@ static void writeMatrixReport (const juce::String& buildName, const juce::String
 {
     if (gScenarios.empty()) return;
     const auto day = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    // THE LIVE PASS AND THE MOCK PASS ARE TWO REPORTS, NOT ONE FILE TWICE (16 Oct 2026). S6 runs both
+    // under ctest, so a single name means whichever finishes second silently replaces the other - and
+    // the one that matters for a given question would be gone. The mock pass keeps the plain name
+    // (it is the deterministic one the matrix is written against); the live pass says so in its own.
     const auto f = juce::File::getCurrentWorkingDirectory().getChildFile ("docs")
-                       .getChildFile ("MATRIX_REPORT_" + day + ".md");
+                       .getChildFile ("MATRIX_REPORT_" + day
+                                      + (mode.containsIgnoreCase ("live") ? "_live" : "") + ".md");
     int pass = 0, fail = 0, skip = 0;
     for (const auto& s : gScenarios) { if (s.skipped) ++skip; else if (s.pass) ++pass; else ++fail; }
     juce::StringArray out;
