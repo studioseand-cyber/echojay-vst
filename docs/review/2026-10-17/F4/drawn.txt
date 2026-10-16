@@ -1,0 +1,9 @@
+scenario F4
+captured 2026-10-17T00:11:18.012+01:00
+  [user] rig-row-marker: rig-dupe-76600
+  [assistant] Set the pre-gain to 4 dB, then to 6 dB.
+  run row: status=Done changes=2 steps=2 zones=[11:2 changes,8:Undo all]
+  opening: Set the pre-gain to 4 dB, then to 6 dB.
+  closing: 
+    step "pre-gain 4 dB" [done] right="applied" detail="set the pre-chain gain to 4.0 dB" chips=[]
+    step "pre-gain 6 dB" [done] right="applied" detail="set the pre-chain gain to 6.0 dB" chips=[]

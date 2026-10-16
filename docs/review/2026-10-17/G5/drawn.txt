@@ -1,0 +1,13 @@
+scenario G5
+captured 2026-10-17T00:09:51.380+01:00
+  [user] rig-nomap-marker: add that compressor
+  [assistant] Added Vertigo VSM-3. Settings not confirmed.
+  [user] rig-oneline-marker: nudge the pre-gain
+  [assistant] Stopped.
+  [user] rig-readonly-marker: what is on this rack?
+  [assistant] Had a look and changed nothing.
+  run row: status=Done changes=0 steps=2 zones=[11:2 steps]
+  opening: Had a look and changed nothing.
+  closing: 
+    step "read the rack" [done] right="" detail="" chips=[]
+    step "read the channel" [done] right="" detail="" chips=[]

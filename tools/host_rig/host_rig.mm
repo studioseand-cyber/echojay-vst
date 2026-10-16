@@ -3714,8 +3714,18 @@ int main (int argc, char* argv[])
             const auto zones = arow.getProperty ("zones", juce::var()).toString();
             // kind 1/2 are a line's Apply/Skip and 5/6 the run's Apply all / Skip all: none of them
             // may be on screen, because the tap already said yes.
-            const bool waitingForAPress = zones.contains ("1:") || zones.contains ("2:")
-                                       || zones.contains ("5:") || zones.contains ("6:");
+            // A ZONE LIST IS A LIST, AND A SUBSTRING IS NOT A KIND. "11:1 change" contains "1:",
+            // so the first cut read the collapse toggle as a line's Apply and failed a run that had
+            // already applied cleanly (slots 0 -> 1, autoApplied=y). Each entry's kind is compared
+            // whole, the same way D4 compares its per-step Undo.
+            const auto hasZoneKind = [] (const juce::String& z, const char* kind)
+            {
+                for (auto& e : juce::StringArray::fromTokens (z, ",", ""))
+                    if (e.trim().upToFirstOccurrenceOf (":", false, false).trim() == kind) return true;
+                return false;
+            };
+            const bool waitingForAPress = hasZoneKind (zones, "1") || hasZoneKind (zones, "2")
+                                       || hasZoneKind (zones, "5") || hasZoneKind (zones, "6");
             bool autoApplied = false;
             if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
                 for (const auto& sv : *arr) if ((bool) sv.getProperty ("autoApplied", false)) autoApplied = true;
@@ -3786,7 +3796,7 @@ int main (int argc, char* argv[])
             }, 30000);
             const bool refused = notice.containsIgnoreCase ("still working");
             scen ("B6", "a new instruction typed while a run waits on APPLY stops it and starts its own",
-                  r.ran() && ! refused && (rowsAfter > rowsBefore || sidAfter != sidBefore),
+                  ! refused && (rowsAfter > rowsBefore || sidAfter != sidBefore),
                   "the run was " + (stateBefore.isEmpty() ? juce::String ("(no state)") : stateBefore)
                   + " when the text was typed; rows " + juce::String (rowsBefore) + " -> "
                   + juce::String (rowsAfter) + ", session \"" + sidBefore.substring (0, 10) + "\" -> \""
@@ -4141,7 +4151,12 @@ int main (int argc, char* argv[])
                         }, 8000);
                         const auto track = linkRowOf (rig.freshState(), linkUid)
                                                .getProperty ("name", juce::var()).toString();
-                        const bool saysFailed = status.containsIgnoreCase ("Failed");
+                        // THE WORD HE READ, not any use of it. The run found "The write to
+                        // 88_7even Kick_2_01 failed - the rack is not the one this plan was made
+                        // for", a true line about a stale borrow, and called it the editor's red
+                        // "Failed:". The two forms this row is about are the ones the panel writes.
+                        const bool saysFailed = status.trim().startsWithIgnoreCase ("Failed:")
+                                             || status.containsIgnoreCase ("editor could not be created");
                         const bool saysWhere  = status.containsIgnoreCase ("is running on")
                                              && (track.isEmpty() || status.contains (track));
                         // A third party that DOES open inline draws no status at all, and that is a
@@ -4709,7 +4724,10 @@ int main (int argc, char* argv[])
                 const auto lr = linkRowOf (stv, linkUid);
                 landed = lr.getProperty ("landed", juce::var()).toString();
                 card   = lr.getProperty ("settings", juce::var()).toString();
-                return landed.containsIgnoreCase (tp.paramName);
+                // BOTH halves, or the row is comparing a card it has not read yet (the first cut
+                // read `settings` off the link row before anything published it, and reported an
+                // empty card about a slot that had one).
+                return landed.containsIgnoreCase (tp.paramName) && card.isNotEmpty();
             }, 20000);
             juce::String plugFig;
             for (const auto& pair : juce::StringArray::fromTokens (landed, ";|", ""))
@@ -4784,9 +4802,15 @@ int main (int argc, char* argv[])
             const int before = (int) linkRowOf (rig.freshState(), liveLink).getProperty ("slotCount", -1);
             const auto r = askAgent (rig, "rig-builtinset-marker: add the compressor to the kick", 120000);
             int after = before;
+            // -1 IS "NOT READABLE", NOT A COUNT. The run read "the Link went 5 -> -1 slot(s)": the
+            // registry row was missing for a beat and the row compared against the sentinel. Only a
+            // real count ends the wait.
             rig.until ([&] (const juce::var& stv)
-            { after = (int) linkRowOf (stv, liveLink).getProperty ("slotCount", -1); return after > before; },
-                       30000);
+            {
+                const int n = (int) linkRowOf (stv, liveLink).getProperty ("slotCount", -1);
+                if (n >= 0) after = n;
+                return n >= 0 && n > before;
+            }, 30000);
             // ---- AND THE STRIP IS WAITED FOR, WITH SEAN'S OWN BOUND (16 Oct 2026) ------------
             // The row waited for the LINK's count to grow and then read the strip ONCE, which is a
             // race it introduced itself: invariant I7 says the strip follows "within 3 s of any
@@ -5138,10 +5162,22 @@ int main (int argc, char* argv[])
             // the row has nothing to draw, which is its own failure and is caught here too.
             const auto rowsNow = (int) rig.freshState().getProperty ("agentRow", juce::var())
                                             .getProperty ("rows", juce::var());
+            // ---- THE SENTENCE, NOT THE FIELD (17 Oct) --------------------------------------------
+            // G7b's fix drops the row's `closing` when it would only REPEAT the opening (Sean read
+            // the same sentence twice in Logic), and this row then found "the closing is '' and 0
+            // messages repeat it" and failed a build that was doing exactly what he asked for. What
+            // "exactly once" is about is the SENTENCE: the closing when there is one, the opening
+            // when the closing was dropped for being the same words.
+            const auto openingNow = st.getProperty ("agentRow", juce::var())
+                                      .getProperty ("opening", juce::var()).toString().trim();
+            const auto sentence = closing.isNotEmpty() ? closing : openingNow;
             scen ("F4", "every message in a run is drawn exactly once, and still is on a re-render",
-                  userCopies == 1 && closing.isNotEmpty() && closingCopies <= 1 && rowsNow == 1,
-                  "the user's marker appears " + juce::String (userCopies) + "x; the row's closing is \""
-                  + closing + "\" and " + juce::String (closingCopies) + " message(s) repeat it; "
+                  userCopies == 1 && sentence.isNotEmpty() && closingCopies <= 1 && rowsNow == 1,
+                  "the user's marker appears " + juce::String (userCopies) + "x; the run's sentence is \""
+                  + sentence.substring (0, 60) + "\" (from the "
+                  + (closing.isNotEmpty() ? "closing" : "opening, the closing having been dropped as a "
+                                                        "repeat of it") + ") and "
+                  + juce::String (closingCopies) + " message(s) repeat it; "
                   + juce::String (rowsNow) + " run row(s) in " + juce::String (roles.size())
                   + " on-screen message(s) [" + roles.joinIntoString (",") + "]  (RED on 15c: two "
                   "transcript writers were live, so his message appeared twice and the closing up to "

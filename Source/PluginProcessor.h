@@ -1065,6 +1065,23 @@ public:
         reads, from the same sidecar, so the rig cannot pass a row the agent would fail (or the other
         way round). Empty for a slot that read nothing back, which is the state his four plugins were
         in and the whole subject of row T1. */
+    /** The same, for the slots' CARDS (16 Oct 2026, Sean's step 4 on the Link). The row that asserts
+        "the card's figure is the plugin's figure" needs both halves from the same place, and the
+        mirror's card travels in the sidecar's `settings`. Newlines are flattened so one slot stays
+        one field. */
+    juce::String linkRackSettingsForRig (const juce::String& uid) const
+    {
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || uid.isEmpty()) return {};
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid) return {};
+        juce::StringArray out;
+        for (int i = 0; i < (int) rc.slots.size(); ++i)
+            out.add ("slot " + juce::String (i + 1) + " "
+                     + rc.slots[(size_t) i].settings.replaceCharacter ('\n', ' '));
+        return out.joinIntoString ("|");
+    }
     juce::String linkRackLandedForRig (const juce::String& uid) const
     {
         int err = 0;

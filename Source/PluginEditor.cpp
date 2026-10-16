@@ -37249,6 +37249,10 @@ void EchoJayEditor::publishRigState()
             l->setProperty ("slots", names.joinIntoString ("|"));
             // SEAN'S #1: the LANDED values, the same field the agent's Link read-back trusts.
             l->setProperty ("landed", processorRef.linkRackLandedForRig (li.uid));
+            // The mirrored CARDS too (Sean's step 4 on the Link): a row that holds "the card's figure
+            // is the plugin's figure" needs both halves, and reading a field nobody publishes is how
+            // I9c came to report an empty card about a slot that had one.
+            l->setProperty ("settings", processorRef.linkRackSettingsForRig (li.uid));
             links.add (juce::var (l));
         }
         o->setProperty ("links", juce::var (links));

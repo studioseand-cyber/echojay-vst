@@ -1,0 +1,9 @@
+scenario B2b
+captured 2026-10-17T00:03:58.150+01:00
+  [user] rig-tappick-marker: add a transient shaper
+  [assistant] Added the EchoJay Compressor.
+  run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
+  opening: Added the EchoJay Compressor.
+  closing: 
+    step "Which compressor?" [done] right="" detail="" chips=[]
+    step "add EchoJay Compressor" [done] right="auto-applied" detail="added EchoJay Compressor first; read back 1 slot(s) on the rack" chips=[]
