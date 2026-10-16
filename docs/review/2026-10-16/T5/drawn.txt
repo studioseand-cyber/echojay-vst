@@ -1,0 +1,8 @@
+scenario T5
+captured 2026-10-16T23:42:28.341+01:00
+  [user] rig-linkadd-marker: add a compressor to the kick
+  [assistant] Added a compressor.
+  run row: status=Done changes=0 steps=1 zones=[3,11:1 step]
+  opening: Added a compressor.
+  closing: 
+    step "add a compressor to this rack" [failed] right="not applied" detail="the rack never acknowledged it within 8 s - it may be gone, or its track may be disabled" chips=[]

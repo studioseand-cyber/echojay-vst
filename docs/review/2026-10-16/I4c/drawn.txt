@@ -1,0 +1,16 @@
+scenario I4c
+captured 2026-10-16T23:38:11.763+01:00
+  [user] rig: does the box clear?
+  [assistant] mock reply, sent quickly.
+  [user] rig-midreply-marker
+  [assistant] mock reply held back so the window could be closed mid-reply, then finished.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [user] rig-nochoice-marker: which shaper?
+  [assistant] Took your answer and set the pre-gain to 3 dB.
+  [assistant] Took your answer and set the pre-gain to 3 dB.
+  [user] rig-badop-marker: do the impossible
+  [assistant] That one did not work.
+  run row: status=Done changes=0 steps=1 zones=[3,11:1 step]
+  opening: That one did not work.
+  closing: 
+    step "do something this rack has no operation for" [failed] right="not applied" detail=""frobnicate" is not an operation this build can do." chips=[]

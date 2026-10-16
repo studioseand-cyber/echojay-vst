@@ -1,11 +1,11 @@
 scenario D2
-captured 2026-10-16T19:54:59.764+01:00
+captured 2026-10-16T23:37:31.914+01:00
   [user] rig-undo-marker: set the pre gain to 3 dB, then undo it
   [assistant] Set the pre-gain to 3 dB, then undid it.
   [user] rig-undo-marker: set the pre gain to 3 dB, then undo it
   [assistant] Set the pre-gain to 3 dB, then undid it.
   run row: status=Done changes=2 steps=2 zones=[11:2 changes,8:Undo all]
   opening: Set the pre-gain to 3 dB, then undid it.
-  closing: Set the pre-gain to 3 dB, then undid it.
+  closing: 
     step "pre-gain 3 dB" [done] right="applied" detail="set the pre-chain gain to 3.0 dB" chips=[]
     step "undo that" [done] right="applied" detail="Undone: pre-gain 3.0 dB." chips=[]

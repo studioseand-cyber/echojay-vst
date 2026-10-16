@@ -1373,3 +1373,13 @@ pass on today's build.
     entries would let every step keep its own button, which is what the matrix's D4 was originally
     written against. It is a real piece of work - the history would need per-entry targets that
     survive a later edit to the same slot - and it is deliberately not a pre-launch item.
+
+11. **The AU architecture sweep does its disk read under `archMutex_`** (noted 17 Oct, while the
+    night chain was building). `archVerdictForAuNamed` builds its name->path map with
+    `findChildFiles` over the two Components directories while holding `archMutex_`, and the caller
+    holds `pluginsMutex_` - which is exactly the pattern `archVerdict`'s own comment warns about
+    ("file reads under a mutex the feed builders wait on would serialise the first browser open
+    behind disk"). It is a ONE-OFF cost over a few dozen bundles and there is no deadlock (nothing
+    nested: the sweep releases the lock before `archVerdict` takes it), so it was not worth
+    restarting a running build for. The fix is the same shape as archVerdict's: sweep into a local
+    map with no lock held, then install it under the lock.

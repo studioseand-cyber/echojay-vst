@@ -1,9 +1,9 @@
 scenario B3
-captured 2026-10-16T19:55:38.091+01:00
+captured 2026-10-16T23:38:11.389+01:00
   [user] rig-nochoice-marker: which shaper?
   [assistant] Took your answer and set the pre-gain to 3 dB.
   run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
   opening: Took your answer and set the pre-gain to 3 dB.
-  closing: Took your answer and set the pre-gain to 3 dB.
+  closing: 
     step "ask" [done] right="" detail="" chips=[]
     step "pre-gain 3 dB" [done] right="applied" detail="set the pre-chain gain to 3.0 dB" chips=[]

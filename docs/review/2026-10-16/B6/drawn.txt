@@ -1,0 +1,9 @@
+scenario B6
+captured 2026-10-16T23:38:34.195+01:00
+  [user] rig-auto-marker: set the pre gain, twice
+  [assistant] Stopped.
+  [user] Set the pre-gain to 2 dB
+  [assistant] nothing further
+  run row: status=Done changes=0 steps=0 zones=[]
+  opening: nothing further
+  closing: 
