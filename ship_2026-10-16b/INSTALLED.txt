@@ -1,0 +1,29 @@
+ship_2026-10-16b - INSTALLED 16 Oct 2026, late evening
+
+WHAT THIS IS, AND WHAT IT IS NOT GATED ON
+=========================================
+Sean's instruction: "Install the bundles this gate's S3 already built (S1-S3 green on this tree;
+your 21:36 fix touched only test code)."
+
+So this is NOT a fully gated ship, and the two things that make it safe to run are written down
+rather than assumed:
+
+  S1 OK   six archives force-deleted, three trees relinked, and a CONTENT MANIFEST of 326 source
+          files recorded. Re-checked at install time: byte-for-byte IDENTICAL, so these bundles
+          correspond exactly to the source S1 compiled.
+  S2 OK   the whole guard suite built.
+  S3 OK   the four bundles built in build-guards - these ones. Verified by UUID at install:
+          build-guards == ~/Library, both slices, all four bundles.
+  S3b OK  archive provenance: the guards' link line is newer than every header.
+  S4      ran 78 of 79 tests with NO failure and was stopped at the 79th on Sean's instruction so
+          he could test tonight. agent_client_guard - the one that failed the 20:04 gate - PASSED
+          here, and separately runs GREEN (113 ok, 0 failed).
+  S5/S6   NOT RUN. The full gate, including the live rig, runs overnight (tools/finish_round_2026-10-16.sh)
+          and the next install happens only if it is green.
+
+The deterministic scenario matrix on this source: GREEN, 107 passed, 0 failed, 8 honest skips.
+The joint live pass proved eight of thirteen rows at five attempts out of five, including the Link
+read-back (A4-live) that was this morning's item 5.
+
+Full account: docs/MATRIX_REPORT_2026-10-16_evening.md
+Smoke test:   docs/LOGIC_SMOKE_TEST.md (steps 9a-9c are new)
