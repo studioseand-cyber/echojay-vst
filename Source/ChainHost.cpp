@@ -6483,6 +6483,15 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
         // status that wrote anything, which is why it is the only one the
         // emitter lets pair with readback_mismatch (A9 §1c).
         s.dialStatus = DialStatus::writesRejected;
+    // ---- THE CARD FOLLOWS THE LEDGER, ON EVERY ROAD (16 Oct 2026, Sean's step 4) -------------
+    //
+    // My first cut put this at the end of the CALLER, which is the dial road - and the SETTLE road
+    // calls this function directly (tickSettleJobs -> recordApplyReport). So the pass that finally
+    // read -30 updated the ledger here and never reached the recompose: the matrix caught it with
+    // "the plugin reads Threshold=-30 and the card reads 'threshold 0'", which is Sean's complaint
+    // reproduced by my own half-fix. The ledger is written in THIS function, so the card is
+    // composed from it in THIS function.
+    refreshCardFromLandedValues (slotIndex);
     return appliedSummary;
 }
 

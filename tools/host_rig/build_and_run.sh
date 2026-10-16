@@ -249,17 +249,17 @@ cat > "$SCRATCH/script.json" <<'JSON'
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
           { "event": "tool_call", "id": "tc_tp1", "name": "talk", "approval": "free",
-            "args": { "ask": { "question": "Which transient shaper?",
-                               "choices": [ { "label": "EchoJay Transient" }, { "label": "MTransient" } ],
+            "args": { "ask": { "question": "Which compressor?",
+                               "choices": [ { "label": "EchoJay Compressor" }, { "label": "Pro-C 3" } ],
                                "allowFreeText": false } } },
           { "event": "await", "ids": ["tc_tp1"] } ],
         [ { "event": "round", "round": 2, "ofSoftCap": 20 },
           { "event": "tool_call", "id": "tc_tp2", "name": "do", "approval": "ask_first",
-            "summary": "add EchoJay Transient",
-            "args": { "op": "add", "name": "EchoJay Transient" } },
+            "summary": "add EchoJay Compressor",
+            "args": { "op": "add", "name": "EchoJay Compressor" } },
           { "event": "await", "ids": ["tc_tp2"] } ],
         [ { "event": "done", "reason": "complete", "rounds": 2,
-            "summary": "Added the EchoJay Transient." } ]
+            "summary": "Added the EchoJay Compressor." } ]
       ]
     },
     {

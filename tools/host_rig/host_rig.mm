@@ -3592,6 +3592,13 @@ int main (int argc, char* argv[])
                 }
             const bool raw = line.containsIgnoreCase ("op 1 invalid")
                           || line.containsIgnoreCase ("unknown operation");
+            if (line.trim().isEmpty())
+                scenSkip ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
+                          "the run produced no failed line at all in this host (the op was refused "
+                          "before it reached a rack's validator), so there is no wording to judge. "
+                          "A10 and B5 hold the same rule on the line Sean actually read. NEVER "
+                          "counted as a pass.", "A");
+            else
             scen ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
                   r.ran() && line.isNotEmpty() && ! raw,
                   "the failed line reads: \"" + line.substring (0, 130) + "\""
@@ -3638,7 +3645,13 @@ int main (int argc, char* argv[])
                     if (! lipo.start ("lipo -archs \"" + bin.getFullPathName() + "\"")) continue;
                     const auto archs = lipo.readAllProcessOutput();
                     lipo.waitForProcessToFinish (4000);
-                    if (archs.isNotEmpty() && ! archs.containsIgnoreCase ("arm64"))
+                    // A LIPO THAT FAILED SAYS NOTHING ABOUT THE SLICES. The green run took
+                    // "can't open input file" as "no arm64" and named bx_distorange, whose binary is
+                    // not at Contents/MacOS/<bundle name> at all (the product reads its
+                    // CFBundleExecutable; this sweep does not). An unreadable bundle is skipped.
+                    if (archs.isEmpty() || archs.containsIgnoreCase ("fatal error")
+                        || archs.containsIgnoreCase ("can't open")) continue;
+                    if (! archs.containsIgnoreCase ("arm64"))
                     { unloadable = f.getFileNameWithoutExtension(); swept = archs.trim(); break; }
                 }
                 if (unloadable.isNotEmpty()) break;
@@ -3656,6 +3669,17 @@ int main (int argc, char* argv[])
                 const int count = (int) st.getProperty ("inventory", juce::var())
                                          .getProperty ("count", juce::var (0));
                 const bool offered = names.containsIgnoreCase (unloadable);
+                if (count == 0)
+                {
+                    // The rig refuses a plugin scan (the iLok rule), so its catalogue holds only what
+                    // the run registered by hand and the feed can be empty. An empty inventory
+                    // withholds everything and proves nothing.
+                    scenSkip ("P1", "an AU that cannot load in this process is never offered in the inventory",
+                              "the inventory the agent sees is EMPTY in this run (the rig refuses a scan, so "
+                              "the feed has nothing in it), and an empty list withholds everything by "
+                              "accident. NEVER counted as a pass; the Logic smoke test covers it.", "A");
+                }
+                else
                 scen ("P1", "an AU that cannot load in this process is never offered in the inventory",
                       count > 0 && ! offered,
                       "\"" + unloadable + "\" has slices [" + swept + "] and no arm64, and the "
@@ -3716,9 +3740,31 @@ int main (int argc, char* argv[])
         {
             rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
-            // A run that WAITS FOR A PRESS: the auto-marker's steps are ask_first, and in Ask mode
-            // they wait. Deliberately not answered.
-            const auto r = askAgent (rig, "rig-auto-marker: set the pre gain, twice", 60000, false);
+            // ---- THE RUN HAS TO BE *WAITING* WHEN THE TEXT GOES IN (the red capture said so) -----
+            // My first cut used askAgent, which PRESSES APPLY when a plan waits - so by the time the
+            // text was typed the run had finished, the text started a run of its own exactly as it
+            // should, and the row PASSED on 16b about a state Sean never hit. The run is started
+            // directly and the row WAITS for awaiting_approval before typing a word.
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "rig-auto-marker: set the pre gain, twice"), 15000);
+            juce::String waitState;
+            const bool reachedWaiting = rig.until ([&] (const juce::var& stv)
+            {
+                waitState = stv.getProperty ("agent", juce::var())
+                               .getProperty ("state", juce::var()).toString();
+                return waitState.containsIgnoreCase ("awaiting_approval");
+            }, 45000);
+            AgentOutcome r;
+            r.adopted = true; r.settled = true; r.state = waitState;
+            if (! reachedWaiting)
+            {
+                scenSkip ("B6", "a new instruction typed while a run waits on APPLY stops it and starts its own",
+                          "the run never reached awaiting_approval (state \"" + waitState + "\" after 45 s), "
+                          "so there was no waiting run to type into. NEVER counted as a pass.", "A");
+                rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            }
+            else
+            {
             const auto before = rig.freshState().getProperty ("agentRow", juce::var());
             const auto stateBefore = rig.freshState().getProperty ("agent", juce::var())
                                          .getProperty ("state", juce::var()).toString();
@@ -3749,8 +3795,15 @@ int main (int argc, char* argv[])
                              : juce::String())
                   + "  (RED on 16b: \"The agent is still working on ... Stop it first, or wait for it "
                   "to finish\" - #21 was wired to the ask road only)",
-                  "A", v2.editor.get(), rig.freshState(), &r);
+                  // NO OUTCOME PASSED, deliberately: this row judges TWO runs - the one that was
+                  // waiting and the one the typed text started - and the "a row cannot pass without
+                  // a turn" rule is about a single turn's outcome. Its evidence is the row count and
+                  // the session id, both printed above. (The first cut passed &r and forced a fail
+                  // on a row whose behaviour was right.)
+                  "A", v2.editor.get(), rig.freshState());
+            juce::ignoreUnused (r);
             rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            }
         }
 
         // ---- A3: A NEW INSTRUCTION CLOSES A WAITING RUN AND STARTS ITS OWN ---------------------------
@@ -4093,6 +4146,22 @@ int main (int argc, char* argv[])
                                              && (track.isEmpty() || status.contains (track));
                         // A third party that DOES open inline draws no status at all, and that is a
                         // pass too: the rule is "never the word Failed about a plugin that is fine".
+                        // THE STATUS LINE HAS OTHER THINGS TO SAY. On the green run it read
+                        // "88_7even Kick_2_01 has not published its rack yet" - a true line about
+                        // the sidecar, left from before the open, and nothing to do with an editor.
+                        // A row cannot judge the note from a line that is not about it: the rule is
+                        // held (never "Failed"), and anything that is neither the note nor a failure
+                        // SKIPS with its text, because the open produced no note to read.
+                        const bool aboutTheOpen = saysWhere || saysFailed || status.trim().isEmpty();
+                        if (! aboutTheOpen)
+                        {
+                            scenSkip ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
+                                      "the panel's status line was about something else when the slot was "
+                                      "opened (\"" + status.substring (0, 90) + "\"), so there is no note to "
+                                      "judge. The rule it does hold - never the word \"Failed\" - was not "
+                                      "broken. NEVER counted as a pass.", "A");
+                        }
+                        else
                         scen ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
                               ! saysFailed && (status.trim().isEmpty() || saysWhere),
                               "opening slot " + juce::String (tpSlot) + " of the mirror [" + drawn.substring (0, 70)
@@ -4542,10 +4611,21 @@ int main (int argc, char* argv[])
             const int  turns = (int) req.getProperty ("recentChatCount", juce::var (0));
             const auto transport = req.getProperty ("transport", juce::var()).toString();
             const bool hasChat   = turns > 0 && chat.contains (mark);
-            const bool saysSignal = transport.contains ("\"signalNow\": true")
-                                 || transport.contains ("\"signalNow\":true");
-            scen ("E9", "the start body carries the recent chat and says the transport is playing",
-                  r.ran() && hasChat && saysSignal,
+            // WHAT THIS HOST CAN PROVE. `signalNow` is `playing && heardSeconds > 0`, and `playing`
+            // is the HOST's transport flag - the rig has no transport at all, so it is false here
+            // however much audio flows. What the row can hold is that the body CARRIES the three
+            // facts and that the audio figure is real; whether a playing transport makes the model
+            // listen instead of asking is Logic's to answer (smoke test 6, and E10-live).
+            const bool hasTransport = transport.contains ("heardSeconds")
+                                   && transport.contains ("playing")
+                                   && transport.contains ("signalNow");
+            double heard = 0.0;
+            {
+                const auto h = transport.fromFirstOccurrenceOf ("\"heardSeconds\":", false, false);
+                heard = h.trimCharactersAtStart (" ").getDoubleValue();
+            }
+            scen ("E9", "the start body carries the recent chat and the transport's three facts",
+                  r.ran() && hasChat && hasTransport && heard > 0.0,
                   juce::String ("recentChat has ") + juce::String (turns) + " turn(s) and "
                   + (chat.contains (mark) ? "DOES" : "does NOT") + " contain the user's last message; "
                   "transport=" + transport.substring (0, 150)

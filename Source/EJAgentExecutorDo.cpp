@@ -287,21 +287,46 @@ static juce::String plainRefusal (const juce::String& raw)
 {
     auto t = raw.trim();
     if (t.isEmpty()) return t;
-    // "op 3 invalid: unknown operation "build"" -> the detail, led by a sentence a person can read.
-    if (t.startsWithIgnoreCase ("op ") && t.containsIgnoreCase (" invalid:"))
+    // ---- LINE BY LINE, BECAUSE THE PREFIX IS RARELY FIRST (the green run said so) -------------
+    // My first cut tested the WHOLE string, and the refusal that actually reaches a person is two
+    // lines: "the batch was refused before it started\nop 1 invalid: "EchoJay Transient" not in the
+    // loadable plugin list". The prefix was on the second line and came through untouched - the rig
+    // caught it on the fixed build, which is the only reason this is right now.
+    juce::StringArray out;
+    for (auto line : juce::StringArray::fromLines (t))
     {
-        auto detail = t.fromFirstOccurrenceOf (" invalid:", false, false).trim();
-        if (detail.startsWithIgnoreCase ("unknown operation"))
+        auto l = line.trim();
+        if (l.isEmpty()) continue;
+        if (l.startsWithIgnoreCase ("op ") && l.containsIgnoreCase (" invalid:"))
         {
-            const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
-                                      .upToLastOccurrenceOf ("\"", false, false);
-            detail = quoted.isNotEmpty()
-                         ? ("this rack has no way to \"" + quoted + "\"")
-                         : juce::String ("this rack does not understand one of the changes asked for");
+            auto detail = l.fromFirstOccurrenceOf (" invalid:", false, false).trim();
+            if (detail.startsWithIgnoreCase ("unknown operation"))
+            {
+                const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
+                                          .upToLastOccurrenceOf ("\"", false, false);
+                detail = quoted.isNotEmpty()
+                             ? ("this rack has no way to \"" + quoted + "\"")
+                             : juce::String ("this rack does not understand one of the changes asked for");
+            }
+            // "not in the loadable plugin list" is the other one a person reads often, and it is
+            // true but mechanical: it means the rack could not find that plugin to load.
+            else if (detail.containsIgnoreCase ("not in the loadable plugin list"))
+            {
+                const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
+                                          .upToLastOccurrenceOf ("\"", false, false);
+                detail = (quoted.isNotEmpty() ? quoted : juce::String ("that plugin"))
+                       + " is not one this rack can load here";
+            }
+            l = detail;
         }
-        return "I could not make that change: " + detail;
+        out.add (l);
     }
-    return t;
+    if (out.isEmpty()) return t;
+    // Led by the plain sentence when the rack's own first line is the protocol's, not a person's.
+    auto joined = out.joinIntoString (" - ");
+    if (joined.startsWithIgnoreCase ("the batch was refused"))
+        joined = "I could not make that change" + joined.fromFirstOccurrenceOf ("started", false, false);
+    return joined;
 }
 
 void ExecutorDo::doOp (const ToolCall& call, Done done)
