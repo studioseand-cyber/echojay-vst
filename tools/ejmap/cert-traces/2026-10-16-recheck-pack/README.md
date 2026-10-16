@@ -35,3 +35,17 @@
   - CLEAR: bx_opto, elysia alpha mix, MaxxVolume m/s, OneKnob Pressure m/s, Renaissance Axx m/s, RVox m/s, SSL Native X-ValveComp v6, DSM V3.
   - COMBINED: elysia alpha master, Millennia TCL-2, MixWave DW Fearn VT-7, SSL Native X-Comp v6.
 - **Caveat:** bx_opto, Millennia TCL-2 and DSM V3 are re-exported by b7aa304c / 26b3cbaf without their unnamed neutrals (not_written). The file to publish is the re-check's, not cert 5's.
+
+## The combined check on the 4 (16 Oct)
+- **Rule** (ACCURACY_37 §2.3, as applied to DPR-402 (s) in v2): a combined miss is not a hold when the combined pass wrote a timing position whose |gr_shift| > 0.5 dB. v1 never writes such a position.
+  - Basis: v1 profiles keep attack / release at their pick, and the time block is not published. `writable_v1` is still only proposed - no time-block draft carries it.
+- **Results** (cert 5 combined records, g 4):
+
+| unit | attack (shift) | release (shift) | predicted / measured GR | verdict |
+|---|---|---|---|---|
+| elysia alpha master | 150.0 ms (-0.57) | 60.0 ms (-0.58) | 2.85 / 4.10 | CLEAR - both positions refused; measured = g + 0.10 |
+| Millennia TCL-2 | 100.0 mS (-1.02) | 0.4 S (+0.01) | 2.99 / 4.01 | CLEAR - attack refused; measured = g + 0.01 (re-export caveat: not_written) |
+| SSL Native X-Comp v6 | 100.00 (-2.08) | 1.00 (-6.42) | -4.50 / 0.00 | CLEAR - both refused (already in ACCURACY_37's table) |
+| MixWave DW Fearn VT-7 | 100% (-0.06) | 14% (-0.09) | 3.85 / 3.14 | HELD - writable positions only, still -0.71 (measured = g - 0.86) |
+
+- **The 46 under v1's rule:** 15 clear, 31 held.
