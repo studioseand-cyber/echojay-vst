@@ -1,0 +1,30 @@
+# Matrix report - 2026-10-16 (live pass, 5 attempt(s) per live id)
+
+Build under test: **build**.  Runner: `tools/host_rig` driving the real bundles, real plugins and real editors; evidence under `docs/review/2026-10-16/<scenario>/`.
+
+**1 passed, 7 failed, 6 skipped.** A skip is never a pass (matrix rule 9).
+
+| Scenario | Result | Owner | What happened | Evidence |
+|---|---|---|---|---|
+| **F3** a run stops when its window closes (0b off), and the reopen shows it once | SKIP | - | this leg needs a live run and a REAL close: started=n editorDestroyed=y | - |
+| **A3-live** live: add a third party with a setting, dialled and confirmed | pass | - | 5 of 5 live attempt(s) held | `docs/review/2026-10-16/A3-live/editor.png` |
+| **A4-live** live: the same add, on a Link | **FAIL** | B | 4 of 5 live attempt(s) held.  attempt 4: the run said it did not take | `docs/review/2026-10-16/A4-live/editor.png` |
+| **B1-live** live: a goal that names a track is answered ON that track | **FAIL** | B | 1 of 5 live attempt(s) held (2 attempt(s) discarded and retried: the server did not serve them).  attempt 2 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 2 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 2: no turn ran (no step, no question and no text - the turn produced nothing)  \|  attempt 3: no turn ran (no step, no questi... | `docs/review/2026-10-16/B1-live/editor.png` |
+| **C1-live** live: the closing never claims a figure the rack does not show | **FAIL** | B | 0 of 5 live attempt(s) held (2 attempt(s) discarded and retried: the server did not serve them).  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1: no turn ran (no step, no question and no text - the turn produced nothing)  \|  attempt 2: no turn ran (no step, no questi... | `docs/review/2026-10-16/C1-live/editor.png` |
+| **B2-live** live: tapping a chip answers the question and the run carries on | SKIP | - | the real model did not ask a question in 5 attempts of "Add a compressor to this rack", so there was no waiting ask to act on. NEVER counted as a pass. | - |
+| **B3-live** live: a typed answer lands in the waiting ask and the run carries on | SKIP | - | the real model did not ask a question in 5 attempts of "Add a transient shaper to the kick with attack at +6 dB", so there was no waiting ask to act on. NEVER counted as a pass. | - |
+| **B4-live** live: a new instruction closes the waiting run and starts its own | SKIP | - | the real model did not ask a question in 5 attempts of "Add a transient shaper to the kick with attack at +6 dB", so there was no waiting ask to act on. NEVER counted as a pass. | - |
+| **A8-live** live: a plugin that is not installed is offered as the nearest one that is | SKIP | - | the real model did not ask a question in 5 attempts of "Add Pro-C 2 to this rack", so there was no waiting ask to act on. NEVER counted as a pass. | - |
+| **A9-live** live: the installed plugin is offered once, not twice | SKIP | - | the real model did not ask a question in 5 attempts of "Add Pro-C 3 to this rack", so there was no waiting ask to act on. NEVER counted as a pass. | - |
+| **C2-live** live: a placed add states the position the rack actually has | **FAIL** | B | 0 of 5 live attempt(s) held (2 attempt(s) discarded and retried: the server did not serve them).  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1: no turn ran (no step, no question and no text - the turn produced nothing)  \|  attempt 2: no turn ran (no step, no questi... | `docs/review/2026-10-16/C2-live/editor.png` |
+| **C3-live** live: the closing says "confirmed" only when a value was read back | **FAIL** | B | 0 of 5 live attempt(s) held (2 attempt(s) discarded and retried: the server did not serve them).  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1: no turn ran (no step, no question and no text - the turn produced nothing)  \|  attempt 2: no turn ran (no step, no questi... | `docs/review/2026-10-16/C3-live/editor.png` |
+| **E1-live** live: a gain-reduction answer gives the loudest hits and the typical | **FAIL** | B | 0 of 5 live attempt(s) held (2 attempt(s) discarded and retried: the server did not serve them).  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1: no turn ran (no step, no question and no text - the turn produced nothing)  \|  attempt 2: no turn ran (no step, no questi... | `docs/review/2026-10-16/E1-live/editor.png` |
+| **E3-live** live: an uncertified plugin's GR is refused without blaming silence | **FAIL** | B | 0 of 5 live attempt(s) held (2 attempt(s) discarded and retried: the server did not serve them).  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1 DISCARDED: the server did not serve the turn (agent state "failed") - retried  \|  attempt 1: no turn ran (no step, no question and no text - the turn produced nothing)  \|  attempt 2: no turn ran (no step, no questi... | `docs/review/2026-10-16/E3-live/editor.png` |
+
+## Failures by owner
+
+**A**: nothing
+
+**B**: 7 - A4-live live: the same add, on a Link; B1-live live: a goal that names a track is answered ON that track; C1-live live: the closing never claims a figure the rack does not show; C2-live live: a placed add states the position the rack actually has; C3-live live: the closing says "confirmed" only when a value was read back; E1-live live: a gain-reduction answer gives the loudest hits and the typical; E3-live live: an uncertified plugin's GR is refused without blaming silence
+
+**Sean**: nothing

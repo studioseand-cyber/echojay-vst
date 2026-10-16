@@ -85,6 +85,33 @@ if [ -n "$LIVE_PORT" ]; then
     exit 2
   fi
   echo "  account: $(echo "$LOGIN" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("email"), d.get("tier"))' 2>/dev/null)"
+  # ---- AND THE ROUND HAS TO ACTUALLY RUN (16 Oct 2026) ------------------------------------------------
+  #
+  # /local/health said ok=true, agentOn=true, the login gave a token - and every single turn came back
+  # `frame error code=round_failed retryable=0 "The agent couldn't start, please try again."`. The server
+  # on that port had gone bad hours earlier; a newer instance on another port answered perfectly. Thirteen
+  # live rows went red for a reason that had nothing to do with the build, which is the one thing a live
+  # pass must never report.
+  #
+  # So the pre-flight sends a REAL round and reads what comes back. A round frame followed by an immediate
+  # error is a REFUSAL, not a pass, and it says so with the server's own words rather than running an hour
+  # of rows against it.
+  PROBE=$(curl -s -m 25 -X POST "http://127.0.0.1:$PORT/api/agent/start" \
+            -H 'Content-Type: application/json' -H 'Accept: text/event-stream' \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"goal":"rig pre-flight: say hello","context":{"agentMode":true},"agentMode":true,"appVersion":"2.26.5","chatId":"rig-preflight"}' \
+            | head -c 800 || true)
+  case "$PROBE" in
+    *round_failed*|*agent_mode_off*|"")
+      echo "REFUSED: the agent route on $PORT does not serve a round. What it answered:"
+      echo "$PROBE" | head -c 400
+      echo ""
+      echo "  This is NOT a verdict on the build - no turn can run, so no row could judge anything. Try the"
+      echo "  other local-agent-server instances (3213, 3211, 3210: /local/health alone does not tell them"
+      echo "  apart - one can be up and answering health while its rounds all fail)."
+      exit 2 ;;
+  esac
+  echo "  the agent route serves a round: $(echo "$PROBE" | head -c 60 | tr '\n' ' ')"
   # ---- THE RED-DIRECTION INSTRUMENT (EJ_RIG_BREAK_AGENT=1, 14 Oct 2026) ----------------------------------
   # Every agent POST gets a 401 and no turn can run, which is the 14:34 condition (a server-side 500 on the
   # agent route) reproduced on demand. It exists because that run reported SEVERAL ROWS AS PASSES while the

@@ -1,15 +1,7 @@
 scenario A4-live
-captured 2026-10-16T17:55:49.715+01:00
+captured 2026-10-16T18:18:03.896+01:00
   [user] Add Renaissance Axx (s) to the Kick's rack and set its Threshold
-  [assistant] Stopped.
-  run row: status=Done changes=1 steps=8 zones=[3,3,3,11:1 change,8:Undo all]
-  opening: Stopped.
-  closing: Stopped.
-    step "ask" [done] right="" detail="" chips=[]
-    step "add Renaissance Axx - on 88_7even Kick_2_01" [done] right="applied" detail="the rack took it and now holds 7 slot(s); read back 7 slot(s) on the rack" chips=[]
-    step "read the rack - on 88_7even Kick_2_01" [done] right="" detail="" chips=[]
-    step "set slot 1: Threshold -10 - on 88_7even Kick_2_01" [failed] right="not applied" detail="This is on 88_7even Kick_2_01's channel, not the one you have open." chips=[]
-    step "ask" [done] right="" detail="" chips=[]
-    step "set slot 1: Threshold -10 - on 88_7even Kick_2_01" [failed] right="not applied" detail="the rack never acknowledged it within 8 s - it may be gone, or its track may be disabled" chips=[]
-    step "set slot 1: Threshold -10 - on 88_7even Kick_2_01" [failed] right="not applied" detail="the rack never acknowledged it within 8 s - it may be gone, or its track may be disabled" chips=[]
-    step "ask: stop or try once more?" [done] right="" detail="" chips=[]
+  [assistant] The agent stopped: The agent couldn't start, please try again.
+  run row: status=Failed changes=0 steps=0 zones=[]
+  opening: The agent stopped: The agent couldn't start, please try again.
+  closing: The agent couldn't start, please try again.

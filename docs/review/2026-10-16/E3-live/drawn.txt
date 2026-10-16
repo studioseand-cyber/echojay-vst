@@ -1,8 +1,7 @@
 scenario E3-live
-captured 2026-10-16T17:40:39.387+01:00
+captured 2026-10-16T18:19:35.322+01:00
   [user] How much gain reduction is Renaissance Axx (s) doing?
-  [assistant] I checked the Mix Bus rack and Renaissance Axx isn't actually loaded there - the only dynamics slot is an EchoJay Compressor. There's no Renaissance Axx on this channel to measure.
-  run row: status=Done changes=0 steps=1 zones=[11:1 step]
-  opening: I checked the Mix Bus rack and Renaissance Axx isn't actually loaded there - the only dynamics slot is an EchoJay Compressor. There's no Renaissance Axx on this channel to measure.
-  closing: I checked the Mix Bus rack and Renaissance Axx isn't actually loaded there - the only dynamics slot is an EchoJay Compressor. There's no Renaissance Axx on this channel to measure.
-    step "read the rack" [done] right="" detail="" chips=[]
+  [assistant] The agent stopped: The agent couldn't start, please try again.
+  run row: status=Failed changes=0 steps=0 zones=[]
+  opening: The agent stopped: The agent couldn't start, please try again.
+  closing: The agent couldn't start, please try again.
