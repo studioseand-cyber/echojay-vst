@@ -1,5 +1,6 @@
 #include "EJAgentClient.h"
 #include "EJAgentFraming.h"
+#include "EJParamPlainNames.h"   // plainifyLine: a line the user reads carries words, not ids
 #include "EJNetCensus.h"   // no network worker outlives the last processor (06d item 1)
 #include <algorithm>
 #include <cmath>
@@ -558,7 +559,13 @@ void EJAgentClient::onFrame (int generation, Frame f)
             Step s;
             s.call = f.call;
             s.id = f.call.id.isNotEmpty() ? f.call.id : "tc_local_" + juce::String ((int) steps_.size() + 1);
-            s.label = describeCall (f.call);
+            // ---- WORDS, NOT IDS, WHOEVER WROTE THE LINE (16 Oct 2026) --------------------------
+            // The live pass drew "set slot 1: attack_ms 20, release_ms 60 - on 88_7even Kick_2_02"
+            // from the server's own summary, and invariant I4 caught it. The ids are the server's to
+            // stop sending (FOR_B), but a line the user reads is this build's responsibility whoever
+            // composed it. plainifyLine is deliberately conservative: it rewrites only what is
+            // unmistakably an id, so a track called "88_7even Kick_2_02" comes through untouched.
+            s.label = echojay::params::plainifyLine (describeCall (f.call));
             // ITEM 2: the card names the track. Appended rather than built into describeCall because only the
             // executor can turn a uid into a name, and describeCall is a pure function the guards rely on.
             if (const auto other = executor_.describeOtherChannel (f.call); other.isNotEmpty())
@@ -606,7 +613,7 @@ void EJAgentClient::onFrame (int generation, Frame f)
                     steps_.push_back (std::move (n));
                     s = &steps_.back();
                 }
-                if (item.summary.isNotEmpty()) s->label = item.summary;
+                if (item.summary.isNotEmpty()) s->label = echojay::params::plainifyLine (item.summary);
                 // ---- FIX 1(d) (Sean, 14 Oct): A PLAN LINE MUST NEVER SHOW AN EMPTY DESCRIPTION ----------
                 //
                 // Sean's card read "set slot 2:  - on 88_7even Kick_2_01" - a `set` with NOTHING between the
@@ -856,7 +863,7 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
         // "Internal model instructions leak into the step details." They did, through the SUCCESS door:
         // item 3 split the failure path on 13 Oct and left this line reading the model's string whole.
         // The user half on the row, the whole string behind Details and in the result the model gets.
-        s->detail      = o.landedForTheUser();
+        s->detail      = echojay::params::plainifyLine (o.landedForTheUser());
         s->modelDetail = o.landedLine != s->detail ? o.landedLine : juce::String();
         s->undoToken = o.undoToken;
         s->result = o.result;
@@ -873,7 +880,7 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
         // written FOR THE MODEL - it carries imperatives ("repeat this same call with confirm: true") and, by
         // item 6(d)'s design, the full list of channels and uids. All of it went straight to the user.
         // The model's copy still travels untouched on s->result below; the user gets one plain line.
-        s->detail      = o.forTheUser();
+        s->detail      = echojay::params::plainifyLine (o.forTheUser());
         s->modelDetail = o.errorMessage.isNotEmpty() ? o.errorMessage : o.errorCode;
         s->result = juce::var();
         if (s->isDo()) roundDoFailed_ = true;

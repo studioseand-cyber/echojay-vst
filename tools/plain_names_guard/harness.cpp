@@ -83,6 +83,34 @@ int main()
     check (echojay::params::joinWords ({ "a", "b", "c" }) == "a, b and c", "a, b and c");
     check (echojay::params::joinWords ({ "a", "a", "b" }) == "a and b", "a duplicate is said once");
 
+    // ---- plainifyLine: A WHOLE LINE, BOTH DIRECTIONS (16 Oct 2026) -----------------------------
+    //
+    // The joint live pass drew "set slot 1: attack_ms 20, release_ms 60 - on 88_7even Kick_2_02"
+    // from the server's own plan summary. Invariant I4 caught it. Two directions matter equally
+    // here, and a one-sided test would ship the worse of the two faults:
+    //   - an id MUST become a word, or the row reads as a wire format;
+    //   - a NAME must survive untouched, because a track can be called "88_7even Kick_2_02" and
+    //     mangling someone's track name is worse than printing an id.
+    {
+        const auto L = [] (const char* t) { return echojay::params::plainifyLine (t); };
+        check (L ("set slot 1: attack_ms 20, release_ms 60") == "set slot 1: attack 20, release 60",
+               "plainifyLine turns the ids into words", L ("set slot 1: attack_ms 20, release_ms 60"));
+        check (L ("threshold_db -18, ratio 4") == "threshold -18, ratio 4",
+               "...including the ones it knows by name", L ("threshold_db -18, ratio 4"));
+        check (L ("band1.freq_hz 240") == "band 1 frequency 240",
+               "...and a dotted id reads as words too", L ("band1.freq_hz 240"));
+        // AND THE NAMES, UNTOUCHED - the half that keeps this safe to run on every line.
+        check (L ("on 88_7even Kick_2_02") == "on 88_7even Kick_2_02",
+               "a track name with underscores and digits is left exactly as it was",
+               L ("on 88_7even Kick_2_02"));
+        check (L ("Added Pro-C 3 to 88_7even Vox_Lead_01.") == "Added Pro-C 3 to 88_7even Vox_Lead_01.",
+               "...and so is a plugin name and the sentence's full stop",
+               L ("Added Pro-C 3 to 88_7even Vox_Lead_01."));
+        check (L ("Renaissance Axx (s)") == "Renaissance Axx (s)", "...and a variant suffix in brackets",
+               L ("Renaissance Axx (s)"));
+        check (L ("") .isEmpty(), "nothing in, nothing out");
+    }
+
     // ---- (pin) THE EXECUTOR PASSES THE ID LISTS, not the prose ones ----------------------------
     // A source pin, because the defect was in the CALL and not in the callee, and nothing else here can
     // see a call. Same idiom as checklist_reason_guard's paint pin.

@@ -94,6 +94,44 @@ the whole point of having both.
 
 ---
 
+### 9a. What the server offers when you name a plugin (1 min) — the rig cannot judge this
+
+*A8/A9 in the matrix. Both are about the OFFER, and the live pass found that the model does not ask
+at all when you name a plugin - it either adds it or says it cannot - so there is no offer for a
+machine to judge. In Logic, with your own installed set, you can see the whole answer.*
+
+1. Mix Bus, Agent **Ask**: **"Add Pro-C 2 to this rack"** (Pro-C 2 is not installed; Pro-C 3 is).
+   - **PASS:** it offers **Pro-C 3** as the nearest thing that IS installed, or says plainly that
+     Pro-C 2 is not installed. **FAIL:** it claims to have added Pro-C 2, or offers a plugin you do
+     not own.
+2. Then **"Add Pro-C 3 to this rack"**.
+   - **PASS:** one chip or one add - **not two offers for the same plugin** (your B-c).
+
+### 9b. The chip-less question, in your own project (1 min)
+
+*The live pass watched the server send `{"question":"Pick a transient shaper...","choices":[],
+"allowFreeText":false}` five times in five. The plugin keeps it answerable (type the name), and that
+is proved. What it cannot prove is whether YOU are offered chips in Logic, where your installed set
+is bigger than the rig's.*
+
+1. Kick's Link, Agent **Ask**: **"add a transient shaper with attack at +6 dB"**.
+   - **Tell me:** did the question come with chips to tap, or only the amber "type your answer" line?
+     Either is answerable; which one you got tells me whether FOR_B §15 is fixed.
+2. While that question is waiting, type **"Set the pre-gain to 2 dB"** and press Enter.
+   - **PASS:** the waiting run is marked **stopped** and a NEW run sets the pre-gain. It must NOT be
+     taken as the answer to "which transient shaper" (that was failing 5 of 5 this afternoon).
+3. Start it again, and this time type **"MTransient"**.
+   - **PASS:** that IS taken as the answer and the run carries on with the same job.
+
+### 9c. The track names are real in Logic, so the targeting is too (1 min)
+
+*The rig's Links were all called "Untitled" until this afternoon, which is why "make the kick
+punchier" went to the mix bus there. Your project has real names, so this is the real test.*
+
+1. Mix Bus, Agent **Ask**, with the Kick's Link connected: **"make the kick punchier"**.
+   - **PASS:** it acts on the **kick**, or asks which kick track if more than one could match.
+   - **FAIL:** it changes the **mix bus** without asking.
+
 ### 9. The two the runner cannot produce (1 min)
 
 *Both are in the matrix as SKIPS with their reasons - never as passes.*

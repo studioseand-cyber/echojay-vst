@@ -3631,6 +3631,40 @@ int main (int argc, char* argv[])
                   "A", v2.editor.get(), arow.isVoid() ? rig.freshState() : rig.freshState());
         }
 
+        // ---- I4b: A RAW ID IN THE SERVER'S OWN SUMMARY IS STILL NOT DRAWN ----------------------
+        //
+        // The joint live pass drew this step line from the real server's plan summary:
+        //
+        //     set slot 1: attack_ms 20, release_ms 60 - on 88_7even Kick_2_02
+        //
+        // Invariant I4 caught it, and the ids are the server's to stop sending - but a line the user
+        // reads is this build's responsibility whoever composed it. The mock sends that exact shape
+        // so the rule is held DETERMINISTICALLY rather than only when the model happens to produce
+        // it, and the row asserts BOTH halves: the ids read as words AND the track name survives.
+        {
+            clearOwnRack (rig);
+            const auto r = askAgent (rig, "rig-rawids-marker: set the attack and release", 60000);
+            const auto st = rig.freshState();
+            juce::String line;
+            if (auto* arr = st.getProperty ("agentRow", juce::var())
+                                .getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    const auto l = sv.getProperty ("label", juce::var()).toString();
+                    if (l.isNotEmpty()) line = l;
+                }
+            const bool wordsNow = line.contains ("attack") && line.contains ("release")
+                               && ! line.contains ("attack_ms") && ! line.contains ("release_ms")
+                               && ! line.contains ("freq_hz") && ! line.contains ("band1.");
+            scen ("I4b", "a raw id in the server's own summary is drawn as words, and names survive",
+                  r.ran() && wordsNow,
+                  "the step line reads: \"" + line + "\"  (the server sent \"set slot 1: attack_ms 20, "
+                  "release_ms 60, band1.freq_hz 240\"; RED before 16 Oct evening: the ids went straight "
+                  "to the row, which is how the live pass drew \"attack_ms 20, release_ms 60 - on "
+                  "88_7even Kick_2_02\")",
+                  "A", v2.editor.get(), st, &r);
+        }
+
         // =====================================================================================
         //  THE MATRIX'S LINK TARGETS, ON LINKS IN THEIR OWN PROCESSES (T2, T3, T4)
         //

@@ -704,6 +704,13 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // ---- which slots carry asked values, and where they landed ------------------------------------
     struct Ask { int slot1 = 0; juce::var settings; };
     std::vector<Ask> asks;
+    // ---- SEVERAL COPIES OF THE SAME PLUGIN, AND NO WAY TO TELL THEM APART (16 Oct 2026) --------
+    // Set when the rack holds more than one slot of this name, nothing matched the asked values, and
+    // the server stated no placement. The read-back then genuinely does not know which slot this add
+    // made, and the one thing it must not do is name a figure from one of the others.
+    bool slotAmbiguous = false;
+    int  sameNameCount = 0;
+    juce::String ambiguousName;
     if (opName == "build")
     {
         // ---- BY NAME, BECAUSE A BUILD IS NOT INSTANT (16 Oct 2026, Sean's #3) --------------------
@@ -829,6 +836,19 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
                                 const int matched = c.matched.size();
                                 if (matched > 0 && matched >= bestMatched) { bestMatched = matched; chosen = h; }
                             }
+                            // THE HONEST ANSWER WHEN NEITHER THE VALUES NOR THE PLACEMENT DECIDES.
+                            // The live pass, fourth attempt on a Link that had accumulated four
+                            // Renaissance Axx: "chose slot 4 by the append position" and then "slot 4
+                            // Threshold is -10.00 (asked -6.00)" - which was the THIRD attempt's
+                            // value, read off the wrong copy. An add on a Link does not always land
+                            // last (the Link's own apply may insert), so the append position is a
+                            // guess, and a guess must not be reported as a measurement.
+                            if (bestMatched == 0 && ! byAfter)
+                            {
+                                slotAmbiguous = true;
+                                sameNameCount = (int) hits.size();
+                                ambiguousName = wantName;
+                            }
                             EchoJay_NSLog (("EJAgent: " + juce::String ((int) hits.size()) + " slots named \""
                                             + wantName + "\"; chose slot " + juce::String (chosen) + " by "
                                             + (bestMatched > 0 ? "value match (" + juce::String (bestMatched)
@@ -944,6 +964,19 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // A dial still running at the ceiling is the REASON nothing could be read, whether the values
     // came back wrong-and-unmatched or could not be read at all.
     const bool stillDialling = anyDialPending;
+    // AMBIGUOUS SLOT: the same conversion, for the same reason. A miss read off a slot that might not
+    // be the one this add made is not evidence of anything, so it is reported as not confirmed.
+    if (slotAmbiguous && ! all.missed.isEmpty())
+    {
+        EchoJay_NSLog (("EJAgent: the rack holds " + juce::String (sameNameCount) + " slots named \""
+                        + ambiguousName + "\", none of them reads back what was asked, and the server "
+                        "stated no placement - so this read-back cannot say WHICH of them the add made. "
+                        + juce::String (all.missed.size()) + " setting(s) are reported as NOT CONFIRMED "
+                        "rather than as not applied; naming a figure from one of the others is the "
+                        "false claim this build must never make").toRawUTF8());
+        all.unreadable.addArray (all.missedIds);
+        all.missed.clear(); all.missedIds.clear(); all.missedPlain.clear();
+    }
     if (anyDialPending && ! all.missed.isEmpty())
     {
         EchoJay_NSLog (("EJAgent: the dial is STILL pending after about twenty seconds, so "
@@ -1006,9 +1039,12 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         // being made over a dial that was simply still running - the live pass caught it on a Link,
         // where the round trip outlasts the read-back's ceiling. A slot that is still dialling is
         // told apart in words, and neither sentence names a figure.
-        const auto why = stillDialling
-            ? juce::String ("the plugin had not reported them yet")
-            : juce::String ("this build cannot read that plugin's values back");
+        const auto why = slotAmbiguous
+            ? ("this rack holds " + juce::String (sameNameCount) + " copies of that plugin and I cannot "
+               "tell which one I just added, so I will not name a figure from one of the others")
+            : stillDialling
+                ? juce::String ("the plugin had not reported them yet")
+                : juce::String ("this build cannot read that plugin's values back");
         finish (juce::var (r),
                 // SEAN'S #5 (16 Oct 2026): "Never 'Not applied: add X' when X was added: say 'Added X.
                 // Settings not confirmed.'" The sentence LEADS with what landed, so no renderer and no

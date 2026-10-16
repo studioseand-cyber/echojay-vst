@@ -1,8 +1,8 @@
 scenario B2-live
-captured 2026-10-16T16:57:26.386+01:00
-  [user] Add a transient shaper to the kick with attack at +6 dB
+captured 2026-10-16T18:06:46.493+01:00
+  [user] Add a compressor to this rack
   [assistant] 
-  run row: status=Waiting for your answer changes=0 steps=1 zones=[7:Stop]
+  run row: status=Waiting for your answer changes=0 steps=1 zones=[4:EchoJay Compressor,7:Stop]
   opening: 
   closing: 
-    step "ask" [running] right="your answer?" detail="" chips=[]
+    step "ask" [running] right="your answer?" detail="" chips=[EchoJay Compressor]

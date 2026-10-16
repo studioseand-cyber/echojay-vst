@@ -162,6 +162,80 @@ inline juce::String plainValuePhrase (const juce::String& idIn, double value,
 
     Mixed groups and bare leaves are joined with a semicolon, because two different shapes in one
     comma list is where a sentence like this stops being readable. */
+/** ---- A WHOLE LINE, WITH ITS RAW IDS TURNED INTO WORDS (16 Oct 2026) --------------------------
+
+    The joint live pass drew this step line, straight from the server's own plan summary:
+
+        set slot 1: attack_ms 20, release_ms 60 - on 88_7even Kick_2_02
+
+    Invariant I4 ("no raw parameter IDs") caught it, and the ids are the server's to stop sending -
+    but a line the user reads is this build's responsibility whoever composed it, so the ids are
+    turned into words here before anything draws them.
+
+    DELIBERATELY CONSERVATIVE, because of the second half of that same line. A track can be called
+    "88_7even Kick_2_02" and a plugin "Pro-C 3": underscores and digits are ordinary characters in a
+    name, and mangling someone's track name would be a worse fault than printing an id. So a token is
+    only rewritten when it is UNMISTAKABLY an id:
+
+      - it is all LOWER-CASE letters and underscores and nothing else ("attack_ms", "threshold_db",
+        "stereo_link"): a digit or a capital anywhere in the token means it is a name, or
+      - it is a dotted id whose leaf is one of those ("band1.freq_hz" -> "band 1 frequency").
+
+    Everything else is left exactly as it was written.                                              */
+inline juce::String plainifyLine (const juce::String& lineIn)
+{
+    if (lineIn.isEmpty()) return lineIn;
+    static const char* kUnits[] = { "_hz", "_db", "_ms", "_pct", "_s" };
+    // ONE TEST, AND THE GUARD WROTE IT. My first cut also rewrote anything plainLeaf would change,
+    // which turned "88_7even Kick_2_02" into "88 7even kick 2 02" - someone's track name, mangled,
+    // which is the worse of the two faults by a long way. An id in this product is LOWER CASE
+    // letters and underscores and nothing else: a digit or a capital means it is a name.
+    const auto looksLikeBareId = [&] (const juce::String& t)
+    {
+        if (! t.containsChar ('_')) return false;
+        for (int i = 0; i < t.length(); ++i)
+        {
+            const auto c = t[i];
+            if (! ((c >= 'a' && c <= 'z') || c == '_')) return false;
+        }
+        juce::ignoreUnused (kUnits);
+        return true;
+    };
+    juce::String out;
+    int i = 0;
+    const int n = lineIn.length();
+    while (i < n)
+    {
+        // A token is a run of characters an id could be made of; everything else is copied through.
+        if (! (juce::CharacterFunctions::isLetterOrDigit (lineIn[i]) || lineIn[i] == '_' || lineIn[i] == '.'))
+        { out << lineIn[i]; ++i; continue; }
+        int j = i;
+        while (j < n && (juce::CharacterFunctions::isLetterOrDigit (lineIn[j]) || lineIn[j] == '_' || lineIn[j] == '.'))
+            ++j;
+        auto tok = lineIn.substring (i, j);
+        // A trailing full stop belongs to the sentence, not to the token.
+        juce::String trailer;
+        while (tok.endsWithChar ('.')) { trailer = "." + trailer; tok = tok.dropLastCharacters (1); }
+        juce::String rewritten;
+        if (tok.containsChar ('.'))
+        {
+            const auto g    = tok.upToFirstOccurrenceOf (".", false, false);
+            const auto leaf = tok.fromFirstOccurrenceOf (".", false, false);
+            if (looksLikeBareId (leaf) || plainLeaf (leaf) != leaf)
+            {
+                int num = 0;
+                const auto gp = plainGroup (g, &num);
+                rewritten = (gp.isNotEmpty() ? gp + " " : juce::String()) + plainLeaf (leaf);
+            }
+        }
+        else if (looksLikeBareId (tok))
+            rewritten = plainLeaf (tok);
+        out << (rewritten.isNotEmpty() ? rewritten : tok) << trailer;
+        i = j;
+    }
+    return out;
+}
+
 inline juce::String plainParamList (const juce::StringArray& ids)
 {
     juce::StringArray bare;                                  // leaves with no group

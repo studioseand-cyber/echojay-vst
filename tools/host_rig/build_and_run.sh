@@ -206,6 +206,18 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-rawids-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_ri", "name": "do", "approval": "free",
+            "summary": "set slot 1: attack_ms 20, release_ms 60, band1.freq_hz 240",
+            "args": { "op": "set_pre_gain", "db": 1 } },
+          { "event": "await", "ids": ["tc_ri"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Set the attack and release." } ]
+      ]
+    },
+    {
       "goalContains": "rig-autoadd-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

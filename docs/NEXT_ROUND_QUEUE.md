@@ -1326,3 +1326,16 @@ pass on today's build.
    finished run draws itself collapsed behind its "N changes" toggle - so the row found no button
    because nothing had opened the list. The scenario presses the toggle first, as a person does, and
    then the step's own Undo. The skip had blamed the build for something the row had not done.
+
+9. **The chain ack should name the slot an add created** (found by the joint live pass, 16 Oct).
+   On a Link the read-back has to work out which slot an add made, and it cannot always: the live
+   pass accumulated four Renaissance Axx on one Link rack and the fourth attempt read the THIRD
+   attempt's value off the wrong copy ("slot 4 Threshold is -10.00 (asked -6.00)"). An add on a Link
+   does not always land last - the Link's own apply may insert - so the append position is a guess.
+   Today's answer is honest rather than exact: when several copies share a name, none reads back what
+   was asked, and the server stated no placement, the settings are reported NOT CONFIRMED with the
+   reason in words, and no figure from another copy is ever named. The exact fix is a protocol one:
+   `LinkProcessor::writeChainAck` should carry `insertedSlots: [n]` (it knows, by diffing the rack it
+   just edited), `awaitChainAck` should hand it back, and the add should pass it to confirmSettings
+   instead of inferring. Additive and downgrade-safe; about forty lines across three files, and it
+   turns the honest answer into the exact one.
