@@ -1,11 +1,10 @@
 scenario C5
-captured 2026-10-16T12:39:18.000+01:00
+captured 2026-10-16T14:41:18.017+01:00
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
-  [user] rig-gr-marker: how much is the other one doing?
-  [assistant] Read the gain reduction.
-  [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
   [user] rig-undoclose-marker: put the pre-gain up
   [assistant] The pre gain on the Mix Bus is set to 3 dB.
   run row: status=Done changes=0 steps=1 zones=[11:1 step]

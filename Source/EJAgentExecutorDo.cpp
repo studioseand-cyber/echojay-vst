@@ -791,8 +791,24 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
                         if (hits.size() == 1) slot1 = hits.front();
                         else if (hits.size() > 1)
                         {
-                            int chosen = hits.back();
-                            if (byAfter) for (int h : hits) if (h == after + 1) chosen = h;
+                            // ---- TWO OF THE SAME PLUGIN ON ONE RACK (16 Oct 2026) -----------------
+                            // The rig put a second EchoJay Compressor on a rack that already had one
+                            // and the read-back answered about the OTHER one: "the settings did NOT
+                            // take: the threshold - threshold -24 dB (asked -20 dB)" - a true
+                            // sentence about the wrong slot. Position cannot settle it (an add
+                            // appends, then the rack may walk it), so the VALUES do: the slot that
+                            // best matches what was asked is the one this add produced. If none
+                            // matches, the placement decides, as before, and the answer is honest
+                            // about that slot.
+                            int chosen = hits.back(), bestMatched = -1;
+                            for (int h : hits)
+                            {
+                                const auto c = checkSlotValues (applyTo, h, ss);
+                                const int matched = c.matched.size();
+                                if (matched > bestMatched) { bestMatched = matched; chosen = h; }
+                            }
+                            if (bestMatched <= 0 && byAfter)
+                                for (int h : hits) if (h == after + 1) chosen = h;
                             slot1 = chosen;
                         }
                         EchoJay_NSLog (("EJAgent: add read-back targets slot " + juce::String (slot1)

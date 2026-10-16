@@ -3936,6 +3936,9 @@ int main (int argc, char* argv[])
             // EchoJay Compressor the build had just put there, so the row was asking about a
             // certified device and passing because it did not say "no audio". Its own script asks
             // about the slot the third party is in.
+            // SLOT 1 IS THE THIRD PARTY HERE: scenario A3 added it with `after: 0`, which puts it at
+            // the front. The script asks about slot 1 and does NOT wait for playback first - the
+            // whole point of #19 is that an uncertified plugin is refused BEFORE any listening.
             const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
             const auto st = rig.freshState();
             const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
@@ -4091,16 +4094,29 @@ int main (int argc, char* argv[])
         }
 
         // ---- A2 / G2: THE SAME ON A LINK, AND THE MAIN RACK FOLLOWS ---------------------------------
-        if (! linkUid.isEmpty())
+        // A LIVE LINK, RESOLVED NOW (16 Oct 2026). `linkUid` was captured early in the run and the
+        // registry moves: by this point the rig had been told "that uid is not live" and the row
+        // reported "the Link went -1 -> -1", which is the rig asking about a Link that is not there
+        // rather than anything about the product.
+        juce::String liveLink;
         {
-            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
-            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", linkUid), 8000);
+            const auto st0 = rig.freshState();
+            if (auto* arr = st0.getProperty ("links", juce::var()).getArray())
+                for (const auto& l : *arr)
+                    if ((bool) l.getProperty ("connected", false) && liveLink.isEmpty())
+                        liveLink = l.getProperty ("uid", juce::var()).toString();
+            if (liveLink.isEmpty()) liveLink = linkUid;
+        }
+        if (! liveLink.isEmpty())
+        {
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", liveLink), 8000);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", liveLink), 8000);
             Rig::pump (1000);
-            const int before = (int) linkRowOf (rig.freshState(), linkUid).getProperty ("slotCount", -1);
+            const int before = (int) linkRowOf (rig.freshState(), liveLink).getProperty ("slotCount", -1);
             const auto r = askAgent (rig, "rig-builtinset-marker: add the compressor to the kick", 120000);
             int after = before;
             rig.until ([&] (const juce::var& stv)
-            { after = (int) linkRowOf (stv, linkUid).getProperty ("slotCount", -1); return after > before; },
+            { after = (int) linkRowOf (stv, liveLink).getProperty ("slotCount", -1); return after > before; },
                        30000);
             const auto st = rig.freshState();
             const int drawn = (int) st.getProperty ("chainView", juce::var()).getProperty ("count", -1);
@@ -4187,9 +4203,14 @@ int main (int argc, char* argv[])
             const auto r = askAgent (rig, "rig-undoadd-marker: add a gate", 90000);
             const int added = ownSlotCount (rig.freshState());
             rig.send (echojay::rig::cmd::press, args1 ("button", "undo_all"), 12000);
-            Rig::pump (1500);
+            // AN UNDO REBUILDS THE CHAIN, WHICH IS NOT INSTANT. Waiting 1.5 s and declaring a figure
+            // is the "decisions on uncontrolled timing" fault this tree has written down three
+            // times; this waits for the count to come back, bounded, and reports what it saw.
+            int after = ownSlotCount (rig.freshState());
+            rig.until ([&] (const juce::var& stv) { after = ownSlotCount (stv); return after == before; },
+                       10000);
             const auto st = rig.freshState();
-            const int after = ownSlotCount (st);
+            after = ownSlotCount (st);
             scen ("D3", "undo all after an add puts the rack back as it was",
                   r.ran() && added > before && after == before,
                   "slots " + juce::String (before) + " -> " + juce::String (added) + " -> "
@@ -4205,8 +4226,14 @@ int main (int argc, char* argv[])
             const double pgMid  = (double) mid.getProperty ("preGainDb", juce::var());
             const double wetMid = (double) mid.getProperty ("masterWetPct", juce::var());
             // The FIRST step's own Undo, pressed on its line.
+            const auto zonesBefore = rig.freshState().getProperty ("agentRow", juce::var())
+                                         .getProperty ("zones", juce::var()).toString();
             rig.send (echojay::rig::cmd::press, args1 ("button", "undo_step"), 12000);
-            Rig::pump (1500);
+            rig.until ([&] (const juce::var& stv)
+            {
+                return std::abs ((double) stv.getProperty ("preGainDb", juce::var()) - pgMid) > 0.5
+                    || std::abs ((double) stv.getProperty ("masterWetPct", juce::var()) - wetMid) > 5.0;
+            }, 10000);
             const auto st = rig.freshState();
             const double pgAfter  = (double) st.getProperty ("preGainDb", juce::var());
             const double wetAfter = (double) st.getProperty ("masterWetPct", juce::var());
@@ -4215,7 +4242,8 @@ int main (int argc, char* argv[])
             scen ("D4", "undoing ONE step reverts that step and leaves the other alone",
                   r.ran() && oneReverted && otherKept,
                   "pre-gain " + juce::String (pgMid, 2) + " -> " + juce::String (pgAfter, 2)
-                  + ", master wet " + juce::String (wetMid, 0) + " -> " + juce::String (wetAfter, 0),
+                  + ", master wet " + juce::String (wetMid, 0) + " -> " + juce::String (wetAfter, 0)
+                  + "; the row drew [" + zonesBefore.substring (0, 90) + "]",
                   "A", v2.editor.get(), st, &r);
         }
 

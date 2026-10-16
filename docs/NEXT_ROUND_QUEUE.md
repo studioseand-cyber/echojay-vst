@@ -1312,3 +1312,10 @@ pass on today's build.
    deselects, so the second instance never gets to hold it and there is no contention to refuse - the
    row says exactly that rather than claiming anything. In Logic it takes ten seconds to produce by
    hand. T2w's is simpler: the Link's own process did not open an editor that run.
+
+7. **A BREADTH SWEEP (Sean, 16 Oct, queued for after this install).** For every installed plugin that
+   has a map and is NOT PACE/iLok-wrapped: load it in the rig, set two of its mapped controls to values
+   away from their defaults, read them back from the plugin itself, and write a table - plugin, vendor,
+   dialled y/n, read back y/n, reason. At least ten vendors, and non-compressors too: EQ, reverb,
+   saturation, transient. The maps that fail go to B as a list. Not started; this round's install comes
+   first.

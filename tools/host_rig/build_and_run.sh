@@ -355,14 +355,10 @@ cat > "$SCRATCH/script.json" <<'JSON'
       "goalContains": "rig-grtp-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
-          { "event": "tool_call", "id": "tc_gt1", "name": "check", "approval": "free",
-            "summary": "wait for playback", "args": { "what": "playback", "min_seconds": 2 } },
-          { "event": "await", "ids": ["tc_gt1"] } ],
-        [ { "event": "round", "round": 2, "ofSoftCap": 20 },
           { "event": "tool_call", "id": "tc_gt2", "name": "check", "approval": "free",
-            "summary": "gain reduction on the third-party slot", "args": { "what": "gr", "slot": 2 } },
+            "summary": "gain reduction on the third-party slot", "args": { "what": "gr", "slot": 1 } },
           { "event": "await", "ids": ["tc_gt2"] } ],
-        [ { "event": "done", "reason": "complete", "rounds": 2,
+        [ { "event": "done", "reason": "complete", "rounds": 1,
             "summary": "Had a look at that one." } ]
       ]
     },
