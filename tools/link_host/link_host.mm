@@ -246,9 +246,17 @@ int main (int argc, char* argv[])
     const double sr = 48000.0;
     host.plugin->setPlayConfigDetails (2, 2, sr, 512);
     host.plugin->prepareToPlay (sr, 512);
-    std::printf ("link_host \"%s\": %s up, pid %d, state root %s\n",
-                 host.label.toRawUTF8(), found[0]->name.toRawUTF8(), (int) ::getpid(),
-                 echojay::userStateHome().getFullPathName().toRawUTF8());
+    {
+        // THE DIRECTORY THIS PROCESS RESOLVED, on its own line. A Link that ends up on a different
+        // shared directory from the V2 is invisible to it, and the only way to tell that from "it
+        // never registered" is to have both processes say where they are looking.
+        int derr = 0;
+        const auto sharedDir = LinkShm::resolveDir (derr);
+        std::printf ("link_host \"%s\": %s up, pid %d, state root %s, shared dir %s\n",
+                     host.label.toRawUTF8(), found[0]->name.toRawUTF8(), (int) ::getpid(),
+                     echojay::userStateHome().getFullPathName().toRawUTF8(),
+                     sharedDir.isEmpty() ? "(none)" : sharedDir.toRawUTF8());
+    }
     std::fflush (stdout);
 
     const auto cmdFile   = rigDir().getChildFile ("linkhost-" + host.label + "-cmd.json");
@@ -271,7 +279,13 @@ int main (int argc, char* argv[])
         juce::Timer::callPendingTimersSynchronously();
         CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false);
 
-        if (host.uid.isEmpty()) host.uid = ownUid();
+        if (host.uid.isEmpty())
+        {
+            host.uid = ownUid();
+            if (host.uid.isNotEmpty())
+                { std::printf ("link_host \"%s\": uid %s\n", host.label.toRawUTF8(), host.uid.toRawUTF8());
+                  std::fflush (stdout); }
+        }
 
         // The prebuilt rack, once the instance has a uid to send to.
         if (! prebuilt && host.uid.isNotEmpty() && ! prebuild.isEmpty()

@@ -117,8 +117,12 @@ static bool registerAU (const juce::File& component, juce::String& identOut,
             if (nv == nullptr) continue;
             const auto nm = juce::String::fromCFString (nv);
             if (! nm.containsIgnoreCase (wantName)) continue;
-            const int score = (nm.containsIgnoreCase ("stereo") ? 2 : 0)
-                            - (nm.containsIgnoreCase ("mono")   ? 2 : 0);
+            // WAVES WRITES IT AS A SUFFIX, NOT A WORD: "Waves: Renaissance Axx (m)" and
+            // "...(s)". The first cut scored only the words "stereo"/"mono", so both entries tied on
+            // zero, the first won, and the catalogue got the MONO plugin - which the rack then
+            // refused on a stereo channel, leaving the Link processes with nothing to hold.
+            const int score = (nm.endsWith ("(s)") || nm.containsIgnoreCase ("stereo") ? 2 : 0)
+                            - (nm.endsWith ("(m)") || nm.containsIgnoreCase ("mono")   ? 2 : 0);
             if (score > bestScore || (score == bestScore && nm.length() < bestLen))
             { bestScore = score; bestLen = nm.length(); best = i; }
         }

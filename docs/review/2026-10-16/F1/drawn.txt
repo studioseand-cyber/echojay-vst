@@ -1,5 +1,5 @@
 scenario F1
-captured 2026-10-16T11:00:15.893+01:00
+captured 2026-10-16T11:20:39.919+01:00
   [user] rig-classifyhold-marker: how does this kick sound
   [assistant] You closed the window before the answer came back.
   [user] rig-classifyhold-marker: how does this kick sound
