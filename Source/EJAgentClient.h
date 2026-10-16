@@ -138,6 +138,10 @@ public:
     void playbackGotIt();       // the user's early stop
 
     // ---- undo ----------------------------------------------------------------
+    /** The server's checkpoint for this run, or "" before it sends one. Public because "undo
+        everything this run did" is a walk back to a POINT, and the only thing that can hold the
+        point on the plugin's side is whoever watched the run start (EJAgentHome). */
+    juce::String checkpoint() const { return checkpoint_; }
     bool undoAllowedNow() const noexcept;    // not while a round is executing or a request is in flight
     bool canUndoAll() const noexcept;
     void undoStep (const juce::String& id);

@@ -223,8 +223,40 @@ sinks.setRackOutDb = [this] (const juce::String& uid, double db, bool absolute,
         juce::Timer::callAfterDelay (250, *step);
     }
 };
-sinks.undoOne = [this] (const juce::String&, std::function<void (bool, juce::String)> cb)
+sinks.undoOne = [this] (const juce::String& token, std::function<void (bool, juce::String)> cb)
 {
+    // ---- "UNDO ALL" IS A WALK BACK TO THE CHECKPOINT, NOT ONE POP (16 Oct 2026) -----------------
+    //
+    // Found by the matrix's D3: an agent add, then Undo all, and the slot was still there - the step
+    // said "undone" and the rack said six slots. The reason is here: undoToCheckpoint handed the
+    // CHECKPOINT token to this sink, and this sink ignored the token and popped the history once.
+    // One pop is right for one step; for a whole run it undid whatever happened to be on top -
+    // which could be the dial rather than the add, and then reported success about it.
+    //
+    // The checkpoint names a POINT, so the plugin side has to remember where that point was: the
+    // history's depth when the run started. From there it is a bounded walk back, and each step is
+    // judged the same way a single undo is (the stack moving is not the change being reversed).
+    if (client_ != nullptr && token.isNotEmpty() && token == client_->checkpoint()
+        && checkpointDepth_ >= 0)
+    {
+        auto& h = proc_.undoHistory();
+        int steps = 0;
+        juce::StringArray labels;
+        while (h.undoDepth() > checkpointDepth_ && steps < 32)
+        {
+            const auto label = h.undoLabel();
+            if (! h.undo()) break;
+            if (h.lastApplyOk()) labels.add (label.isNotEmpty() ? label : juce::String ("a change"));
+            ++steps;
+        }
+        EchoJay_NSLog (("EJAgent: undo all walked the history back to the run's checkpoint - "
+                        + juce::String (steps) + " step(s), depth now " + juce::String (h.undoDepth())
+                        + " (the run started at " + juce::String (checkpointDepth_) + ")").toRawUTF8());
+        if (cb) cb (steps > 0 && ! labels.isEmpty(),
+                    labels.isEmpty() ? juce::String ("there was nothing left to undo")
+                                     : "undone: " + labels.joinIntoString (", "));
+        return;
+    }
     // ONE UNDO BUTTON FOR EVERYTHING. The plugin-wide history already walks local and remote
     // edits in one order (stage 5), so an agent's undo is that same step and not a second stack.
     // WHAT undo() RETURNS IS "THE STACK WAS NOT EMPTY", NOT "THE CHANGE WAS REVERSED" (14 Oct
@@ -377,6 +409,23 @@ void EJAgentHome::servicePark()
 // =============================================================================================
 void EJAgentHome::agentChanged()
 {
+    // ---- WHERE THE RUN STARTED, WRITTEN DOWN ONCE (16 Oct 2026) --------------------------------
+    // The checkpoint arrives from the server a moment after the run begins. The history's depth at
+    // that moment is what "undo everything this run did" means on this side, and it has to be taken
+    // while it is still true - the first time this run's checkpoint is seen, and not again until
+    // the next run brings a new one.
+    if (client_ != nullptr)
+    {
+        const auto cp = client_->checkpoint();
+        if (cp.isNotEmpty() && cp != lastCheckpoint_)
+        {
+            lastCheckpoint_  = cp;
+            checkpointDepth_ = proc_.undoHistory().undoDepth();
+            EchoJay_NSLog (("EJAgent: run checkpoint " + cp + " - the undo history is "
+                            + juce::String (checkpointDepth_) + " deep, which is where \"undo all\" "
+                            "walks back to").toRawUTF8());
+        }
+    }
     writeSnapshot();
 }
 

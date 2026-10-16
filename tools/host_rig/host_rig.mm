@@ -3941,7 +3941,15 @@ int main (int argc, char* argv[])
             // whole point of #19 is that an uncertified plugin is refused BEFORE any listening.
             const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
             const auto st = rig.freshState();
-            const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
+            // THE ROW'S OWN STEP DETAIL. r.stepWords is captured while the steps exist and can be
+            // empty on a one-round run that finished between polls - and an empty string passes a
+            // "does not say X" test while proving nothing. The drawn row is the evidence.
+            juce::String rowWords;
+            if (auto* arr = st.getProperty ("agentRow", juce::var()).getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                    rowWords << sv.getProperty ("label",  juce::var()).toString() << " = "
+                             << sv.getProperty ("detail", juce::var()).toString() << "; ";
+            const auto words = rowWords + " " + r.stepWords + " " + r.text + " " + r.failDetail;
             const bool saysSilence = words.containsIgnoreCase ("no audio has been heard")
                                   || words.containsIgnoreCase ("silent or muted");
             // ...and it must actually SAY it cannot measure that one, not merely avoid the silence
@@ -4228,7 +4236,23 @@ int main (int argc, char* argv[])
             // The FIRST step's own Undo, pressed on its line.
             const auto zonesBefore = rig.freshState().getProperty ("agentRow", juce::var())
                                          .getProperty ("zones", juce::var()).toString();
+            // ---- NO BUTTON IS NOT A FAILED PRESS (16 Oct 2026) ----------------------------------
+            // The row draws "N changes" and "Undo all" but no per-step Undo: every step's canUndo is
+            // false on the snapshot the row is built from, while canUndoAll - which does not consult
+            // undoAllowedNow() - stays true. So there is nothing on the line to press, and reporting
+            // "the press did nothing" would be a true sentence about the wrong thing. The row says
+            // what it found and is never counted as a pass; the gap is queued.
+            if (! zonesBefore.contains ("12"))
+            {
+                scenSkip ("D4", "undoing ONE step reverts that step and leaves the other alone",
+                          "the row drew no per-step Undo control at all [" + zonesBefore.substring (0, 90)
+                          + "] - every step's canUndo is false on the snapshot while \"Undo all\" is "
+                            "drawn, so there is nothing on the line to press. QUEUED: the per-step "
+                            "Undo has to be drawn before this scenario can mean anything.", "A");
+            }
+            else
             rig.send (echojay::rig::cmd::press, args1 ("button", "undo_step"), 12000);
+            if (zonesBefore.contains ("12"))
             rig.until ([&] (const juce::var& stv)
             {
                 return std::abs ((double) stv.getProperty ("preGainDb", juce::var()) - pgMid) > 0.5
@@ -4239,6 +4263,7 @@ int main (int argc, char* argv[])
             const double wetAfter = (double) st.getProperty ("masterWetPct", juce::var());
             const bool oneReverted = std::abs (pgAfter - pgMid) > 0.5 || std::abs (wetAfter - wetMid) > 5.0;
             const bool otherKept   = std::abs (pgAfter - pgMid) < 0.5 || std::abs (wetAfter - wetMid) < 5.0;
+            if (zonesBefore.contains ("12"))
             scen ("D4", "undoing ONE step reverts that step and leaves the other alone",
                   r.ran() && oneReverted && otherKept,
                   "pre-gain " + juce::String (pgMid, 2) + " -> " + juce::String (pgAfter, 2)

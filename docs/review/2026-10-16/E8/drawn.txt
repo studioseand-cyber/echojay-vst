@@ -1,5 +1,5 @@
 scenario E8
-captured 2026-10-16T14:36:35.710+01:00
+captured 2026-10-16T14:59:57.826+01:00
   [assistant] Stopped.
   [user] rig-readonly-marker: what is on this rack?
   [assistant] Stopped.

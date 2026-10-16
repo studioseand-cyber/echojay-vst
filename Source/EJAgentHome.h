@@ -127,6 +127,11 @@ private:
     std::unique_ptr<EJAgentClient> client_;
     std::function<void (const juce::String&, const juce::String&)> buildRoad_;
     juce::String runKey_, lastSession_;
+    /** THE HISTORY'S DEPTH WHEN THIS RUN STARTED (16 Oct 2026). "Undo all" means "put back
+        everything this run did", which is a walk back to a point - and the point only exists if
+        somebody wrote it down when the run began. -1 = no run has started since this object did. */
+    int checkpointDepth_ = -1;
+    juce::String lastCheckpoint_;   // so the depth is taken once per run, not on every change
     /** AN ALIVE FLAG, NOT AN ADDRESS (fix 6's rule, 15 Oct). Every deferred poll this object
         starts captures it, so a poll that fires after the plugin has gone returns instead of
         reading a dead object - and an address that happened to be reused could not pretend to
