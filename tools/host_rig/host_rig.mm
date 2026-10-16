@@ -3559,9 +3559,18 @@ int main (int argc, char* argv[])
                 const auto r = askAgent (rig, "rig-linkadd-marker: add a compressor to the kick", 90000);
                 const auto st = rig.freshState();
                 const auto words = r.stepWords + " " + r.text + " " + r.failDetail;
+                // THE SENTENCE FAMILY, not one phrasing. The rack refuses contention in more than one
+                // form of words depending on which door it comes through - "this rack is being edited
+                // from the main plugin - try again after release" is the one the agent's edit road
+                // produces, and my first cut only looked for the SELECTION wording and called a
+                // correct refusal a failure. What matters is that a person is told, in words, that
+                // someone else has it - never a silent no-op and never a code.
                 const bool refusedInWords = words.containsIgnoreCase ("deselect")
                                          || words.containsIgnoreCase ("selected on")
-                                         || words.containsIgnoreCase ("locked by");
+                                         || words.containsIgnoreCase ("locked by")
+                                         || words.containsIgnoreCase ("being edited from")
+                                         || words.containsIgnoreCase ("try again after release")
+                                         || words.containsIgnoreCase ("edited in its own window");
                 scen ("T3", "T3: a Link held by another instance refuses the edit in words a person reads",
                       refusedInWords,
                       "what the run said: \"" + words.substring (0, 200) + "\"  (the second V2 holds the "

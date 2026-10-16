@@ -1,13 +1,13 @@
 scenario A12
-captured 2026-10-16T11:07:01.984+01:00
+captured 2026-10-16T11:28:08.283+01:00
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
   [user] rig-gr-marker: how much is the other one doing?
   [assistant] Read the gain reduction.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
-  [user] rig-undo-marker: put the pre-gain up
-  [assistant] Set the pre-gain to 3 dB, then undid it.
+  [user] rig-undoclose-marker: put the pre-gain up
+  [assistant] The pre gain on the Mix Bus is set to 3 dB.
   [user] rig-setfail-marker: add something that is not there
   [assistant] One step did not land.
   [user] rig-eqband-marker: two bells on the EQ

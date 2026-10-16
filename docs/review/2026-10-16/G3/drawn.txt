@@ -1,4 +1,4 @@
 scenario G3
-captured 2026-10-16T11:07:07.067+01:00
+captured 2026-10-16T11:28:46.165+01:00
   [user] rig-hint-marker: hello
   [assistant] mock reply, sent quickly.
