@@ -1,17 +1,14 @@
 scenario G1
-captured 2026-10-16T15:49:03.237+01:00
+captured 2026-10-16T18:27:13.554+01:00
   [user] rig: does the box clear?
   [assistant] mock reply, sent quickly.
   [user] rig-midreply-marker
   [assistant] mock reply held back so the window could be closed mid-reply, then finished.
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
-  [assistant] Stopped.
-  [user] rig-readonly-marker: what is on this rack?
-  [assistant] Stopped.
-  [user] rig-nomap-marker: add that compressor
-  [assistant] Added Vertigo VSM-3. Settings not confirmed.
-  [assistant] Added Vertigo VSM-3. Settings not confirmed.
+  [user] rig-rawids-marker: set the attack and release
+  [assistant] Set the attack and release.
+  [assistant] Set the attack and release.
   run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
-  opening: Added Vertigo VSM-3. Settings not confirmed.
-  closing: Added Vertigo VSM-3. Settings not confirmed.
-    step "add a plugin this build has no map for, with a setting" [done] right="applied" detail="Added it. Settings not confirmed: this build cannot read that plugin's values back (the drive), so there is no evidence they were applied." chips=[]
+  opening: Set the attack and release.
+  closing: Set the attack and release.
+    step "set slot 1: attack 20, release 60, band 1 frequency 240" [done] right="applied" detail="set the pre-chain gain to 1.0 dB" chips=[]

@@ -271,6 +271,22 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     }
 
     const bool undoNow = c.undoAllowedNow();
+    // ---- ONLY THE LAST UNDOABLE STEP CARRIES AN UNDO BUTTON (16 Oct 2026) ----------------------
+    //
+    // The matrix's D4 pressed a step's Undo and watched the OTHER step's value change. The sink is
+    // why: a per-step undo pops the plugin-wide history ONCE - the last change - whatever token it
+    // was given. For the last step that is exactly right; for any earlier one the button says
+    // "undone" beside a line whose value is still on the rack and reverts something else.
+    //
+    // A history of this shape cannot undo a middle entry without a redo model, which does not exist
+    // before beta. So the button is offered where its promise is true - the last step that handed
+    // back a token - and everything earlier is covered by the run's own "Undo all", which walks back
+    // to the checkpoint. A button that can only tell the truth, rather than a button everywhere.
+    int lastUndoable = -1;
+    {
+        int k = -1;
+        for (const auto& s : c.steps()) { ++k; if (s.canUndo()) lastUndoable = k; }
+    }
     const bool askNow  = c.askPending();
     // The pending ask hangs off the LAST step, which is the tool call that asked it. With no steps at all
     // (a talk-only round that asks straight away) it gets a row of its own so the chips have somewhere to
@@ -288,7 +304,7 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         r.status      = (int) s.status;
         r.autoApplied = s.autoApplied;
         r.askReason   = s.askReason;
-        r.canUndo     = undoNow && s.canUndo();
+        r.canUndo     = undoNow && s.canUndo() && i == lastUndoable;
         r.hasDetails  = s.status == St::Failed && s.modelDetail.isNotEmpty() && s.modelDetail != s.detail;
         r.expanded    = expanded.contains (s.id);
         r.applySkip   = s.status == St::AwaitingApproval && c.state() == S::AwaitingApproval;

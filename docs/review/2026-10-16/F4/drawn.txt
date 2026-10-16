@@ -1,6 +1,6 @@
 scenario F4
-captured 2026-10-16T15:53:24.267+01:00
-  [user] rig-row-marker: rig-dupe-2870
+captured 2026-10-16T18:31:20.251+01:00
+  [user] rig-row-marker: rig-dupe-78832
   [assistant] Set the pre-gain to 4 dB, then to 6 dB.
   run row: status=Done changes=2 steps=2 zones=[11:2 changes,8:Undo all]
   opening: Set the pre-gain to 4 dB, then to 6 dB.

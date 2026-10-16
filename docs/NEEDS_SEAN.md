@@ -195,6 +195,22 @@ claim: **a goal that names a track is answered on that track.** If the run adds 
 the kick is untouched, the row fails and prints both slot counts. If it still lands on the mix bus
 with the names in place, that is a real targeting fault with evidence, and it goes to B.
 
+### D17. A step's Undo is offered only on the last undoable step, because that is where it is true
+
+D4 pressed one step's Undo and watched the OTHER step's value change. The sink says why: a per-step
+undo pops the plugin-wide history ONCE - the last change - whatever token it is handed. For the last
+step that is exactly right. For any earlier one the button says "undone" beside a line whose value is
+still on the rack, and reverts something else.
+
+A history of this shape cannot undo a middle entry without a redo model, and there is no redo before
+beta. So the button is drawn where its promise holds - the last step that handed back an undo token -
+and the same rule stands at the door (`undoStep` refuses anything else and logs why), so a stale
+snapshot cannot get round it. Everything earlier is covered by the run's own **Undo all**, which
+walks back to the checkpoint and is tested by D3.
+
+If you would rather every step kept a button, that needs a redo-aware history - a bigger piece than
+tonight - and it is yours to call.
+
 ---
 
 ## What the new runner found on its FIRST run, before any scenario

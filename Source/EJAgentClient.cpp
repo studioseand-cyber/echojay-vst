@@ -1181,6 +1181,22 @@ void EJAgentClient::undoStep (const juce::String& id)
     if (! undoAllowedNow()) return;
     auto* s = stepById (id);
     if (s == nullptr || ! s->canUndo()) return;
+    // ---- AND IT HAS TO BE THE LAST UNDOABLE STEP (16 Oct 2026) ---------------------------------
+    // The sink pops the plugin-wide history once, so undoing anything but the top entry would
+    // revert a different change and report it against this line. The view only draws the button on
+    // the last undoable step; this is the same rule at the door, so a stale snapshot or a rig press
+    // cannot get round it. "Undo all" is the road for anything earlier.
+    {
+        const Step* last = nullptr;
+        for (const auto& st : steps_) if (st.canUndo()) last = &st;
+        if (last != nullptr && last->id != id)
+        {
+            log ("undo step " + id + " REFUSED: it is not the last undoable step (that is \"" + last->id
+                 + "\"), and this build's history can only undo its top entry - \"Undo all\" is the road "
+                   "back past it");
+            return;
+        }
+    }
     const int gen = generation_;
     const auto token = s->undoToken;
     ++undoInFlight_;

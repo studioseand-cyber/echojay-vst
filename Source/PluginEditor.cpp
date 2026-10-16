@@ -37134,7 +37134,12 @@ void EchoJayEditor::publishRigState()
         {
             auto* l = new juce::DynamicObject();
             l->setProperty ("uid", li.uid);
-            l->setProperty ("name", li.name);
+            // THE NAME A PERSON SEES, which is what resolveLinkDisplayName answers: li.name is the
+            // registry's own field and is empty for a Link whose host delivered its track name after
+            // registration - so A11b read `the Link called ""` about a Link the chat calls
+            // "88_7even Kick_2_01".
+            l->setProperty ("name", processorRef.resolveLinkDisplayName (li.uid).isNotEmpty()
+                                        ? processorRef.resolveLinkDisplayName (li.uid) : li.name);
             l->setProperty ("gainDb", (double) li.gainDb);
             l->setProperty ("connected", li.connected);
             juce::StringArray names;
@@ -37176,6 +37181,13 @@ void EchoJayEditor::publishRigState()
             sv->setProperty ("status", (int) st.status);
             sv->setProperty ("detail", st.detail);
             sv->setProperty ("modelDetail", st.modelDetail);
+            // ---- AUTO MODE'S OWN FACT (16 Oct 2026) ------------------------------------------
+            // A11 asserts that Auto RAN an undoable step without waiting, and read `autoApplied`
+            // off this object - which did not carry it, so the row could only ever read false.
+            // The same shape of hole as "chainSlots": a row testing a field nobody publishes.
+            sv->setProperty ("autoApplied", st.autoApplied);
+            sv->setProperty ("askReason",   st.askReason);
+            sv->setProperty ("canUndo",     st.canUndo());
             steps.add (juce::var (sv));
         }
         a->setProperty ("steps", juce::var (steps));

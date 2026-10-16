@@ -4066,11 +4066,18 @@ int main (int argc, char* argv[])
             clearOwnRack (rig);
             const auto added = askAgent (rig, "rig-tpown-marker: add " + tp.name + " to this rack and set its "
                                               + tp.paramName, 120000);
+            // WAITED FOR, NOT READ ONCE: the add returns when the run ends and the panel publishes on
+            // its own tick, so the first cut read an empty rack and reported `slot 1 holds ""` about a
+            // rack that held exactly what it had just put there.
             juce::String slot1Name;
-            if (auto* arr = rig.freshState().getProperty ("ownRack", juce::var())
-                                .getProperty ("slots", juce::var()).getArray())
-                if (! arr->isEmpty())
-                    slot1Name = (*arr)[0].getProperty ("name", juce::var()).toString();
+            rig.until ([&] (const juce::var& stv)
+            {
+                if (auto* arr = stv.getProperty ("ownRack", juce::var())
+                                   .getProperty ("slots", juce::var()).getArray())
+                    if (! arr->isEmpty())
+                        slot1Name = (*arr)[0].getProperty ("name", juce::var()).toString();
+                return slot1Name.containsIgnoreCase (tp.name);
+            }, 8000);
             const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
             const auto st = rig.freshState();
             // THE ROW'S OWN STEP DETAIL. r.stepWords is captured while the steps exist and can be
@@ -4259,12 +4266,25 @@ int main (int argc, char* argv[])
             rig.until ([&] (const juce::var& stv)
             { after = (int) linkRowOf (stv, liveLink).getProperty ("slotCount", -1); return after > before; },
                        30000);
+            // ---- AND THE STRIP IS WAITED FOR, WITH SEAN'S OWN BOUND (16 Oct 2026) ------------
+            // The row waited for the LINK's count to grow and then read the strip ONCE, which is a
+            // race it introduced itself: invariant I7 says the strip follows "within 3 s of any
+            // change", so three seconds is what it is given (five, for the sampling), and the row
+            // fails only if it never catches up.
+            int drawn = -1;
+            rig.until ([&] (const juce::var& stv)
+            {
+                drawn = (int) stv.getProperty ("chainView", juce::var()).getProperty ("count", -1);
+                return drawn == after;
+            }, 5000);
             const auto st = rig.freshState();
-            const int drawn = (int) st.getProperty ("chainView", juce::var()).getProperty ("count", -1);
+            if (drawn != after)
+                drawn = (int) st.getProperty ("chainView", juce::var()).getProperty ("count", -1);
             scen ("A2", "a built-in add with settings on a Link, and the main rack follows it",
                   r.ran() && after > before && drawn == after,
                   "the Link went " + juce::String (before) + " -> " + juce::String (after)
-                  + " slot(s) and the V2's strip draws " + juce::String (drawn),
+                  + " slot(s) and the V2's strip draws " + juce::String (drawn)
+                  + " (waited up to 5 s for it: invariant I7's three seconds, with room to sample)",
                   "A", v2.editor.get(), st, &r);
             scen ("G2", "the rack strip follows a Link change with no manual switch (the build road)",
                   drawn == after && after > 0,
@@ -4496,14 +4516,26 @@ int main (int argc, char* argv[])
             const auto st = rig.freshState();
             const double pgAfter  = (double) st.getProperty ("preGainDb", juce::var());
             const double wetAfter = (double) st.getProperty ("masterWetPct", juce::var());
-            const bool oneReverted = std::abs (pgAfter - pgMid) > 0.5 || std::abs (wetAfter - wetMid) > 5.0;
-            const bool otherKept   = std::abs (pgAfter - pgMid) < 0.5 || std::abs (wetAfter - wetMid) < 5.0;
+            // ---- WHAT THE BUTTON NOW PROMISES, EXACTLY (16 Oct 2026) ---------------------------
+            // The first cut of this row pressed a step's Undo and found BOTH values changed, and the
+            // sink said why: a per-step undo pops the plugin-wide history once - the LAST change -
+            // whatever token it is given. So the button is now drawn only on the last undoable step,
+            // where that is the truth, and this row holds that contract: the LAST step's change
+            // reverts and the first step's stays. "Undo all" is the road back past it, and D3 is the
+            // row for that.
+            const bool lastReverted  = std::abs (wetAfter - wetMid) > 5.0;
+            const bool firstKept     = std::abs (pgAfter - pgMid) < 0.5;
+            const bool oneReverted = lastReverted;
+            const bool otherKept   = firstKept;
             if (haveStepUndo)
             scen ("D4", "undoing ONE step reverts that step and leaves the other alone",
                   r.ran() && oneReverted && otherKept,
-                  "pre-gain " + juce::String (pgMid, 2) + " -> " + juce::String (pgAfter, 2)
-                  + ", master wet " + juce::String (wetMid, 0) + " -> " + juce::String (wetAfter, 0)
-                  + "; the row drew [" + zonesBefore.substring (0, 90) + "]",
+                  "the LAST step's master wet " + juce::String (wetMid, 0) + " -> "
+                  + juce::String (wetAfter, 0) + " (reverted) and the first step's pre-gain "
+                  + juce::String (pgMid, 2) + " -> " + juce::String (pgAfter, 2) + " (kept); the row drew ["
+                  + zonesBefore.substring (0, 90) + "]  (RED before this evening: the button was drawn on "
+                  "EVERY undoable step while the sink pops the history's top entry, so pressing the first "
+                  "step's Undo reverted the second's change and said \"undone\" on the wrong line)",
                   "A", v2.editor.get(), st, &r);
         }
 
