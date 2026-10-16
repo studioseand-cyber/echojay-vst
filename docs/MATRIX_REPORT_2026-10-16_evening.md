@@ -53,24 +53,31 @@ and then every model call on this account started failing, which is why the gate
 
 ---
 
-## 3. Why the gate is incomplete and nothing is installed
+## 3. The evening's stall, and what it actually was
 
-Every model call on this account is failing, and it is not one bad server:
+For about two hours every model call failed and the live half could not run:
 
 - 3211 answered `/local/health` with `ok=true, agentOn=true` all evening while **every round** came
   back `round_failed "The agent couldn't start, please try again."`
 - 3213 served rounds perfectly for twenty minutes and then began failing identically.
-- Plain chat fails too: a well-formed `/api/chat-stream` body answers `{"error":"Internal server
+- Plain chat failed too: a well-formed `/api/chat-stream` body answered `{"error":"Internal server
   error"}`.
 
-So the fault is upstream of this tree (the account's model access), and S6 - the live rig - cannot
-run. Your rule is **"Install only when S6 is fully green"**, so nothing has been installed and
-nothing has been pushed. The gate now prints the S1-S5 verdicts, says which half is missing and why,
-and exits as **GATE INCOMPLETE** rather than RED, because a RED there would be a false statement
-about the build.
+I wrote here that the fault was "upstream of this tree (the account's model access)". **It was not,
+and B found it:** Node's built-in fetch kept dispatching on a pooled HTTP/2 session to the provider
+that had been destroyed - `ERR_HTTP2_INVALID_SESSION` in both server logs, with no status code and
+nothing from the provider at all (no 401, 402, 429 or 529). A restart cured it; B has added a local
+watchdog that restarts a server whose `modelFetchFailures` counter grows, and that counter in the
+health line is the tell if it ever happens again (FOR_A §52).
 
-**To finish it:** when a round answers again, rerun the gate script and the install follows it. The
-whole thing is one command and it is written down.
+What the stall did produce is worth keeping: both pre-flights now send a REAL round and read what
+comes back, because `/local/health` said ok through the whole thing. A gate that had trusted health
+would have run an hour of rows against a server that could not answer and reported it as a product
+failure.
+
+**The gate resumed as soon as the model did** - it was at S4 when B restarted 3211, so its S1-S4
+verdicts are about this same source and its S6 ran live. Nothing was installed while S6 could not
+run, which is your rule.
 
 ---
 

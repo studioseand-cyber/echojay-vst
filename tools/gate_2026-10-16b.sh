@@ -197,6 +197,11 @@ if [ "$S4" -eq 0 ] && [ "$S5" -eq 0 ]; then echo "######## S6: the host rig (ask
 # claims is worse than one that fails, so there is no mock fallback here: it retries for 60 s across both
 # ports and, finding nothing, FAILS the gate as NOT PROVEN.
 # ---- HEALTH IS NOT THE TEST; A SERVED ROUND IS (16 Oct 2026) ------------------------------------
+# AND THE TELL, FOR THE NEXT READER (B's FOR_A §52): the cause was Node's built-in fetch dispatching
+# on a pooled HTTP/2 session to the provider that had been DESTROYED - ERR_HTTP2_INVALID_SESSION, no
+# status code, nothing from the provider. /local/health's `modelFetchFailures` counter is what grows
+# while it happens, and a restart is the cure. So if this stage ever says "rounds FAIL" again, read
+# that counter before suspecting the account.
 # The evening live pass went red on thirteen rows and the build had nothing to do with it: the server
 # on 3211 answered /local/health with ok=true and agentOn=true all evening, and every single round came
 # back `round_failed "The agent couldn't start, please try again."` A newer instance on 3213 answered
