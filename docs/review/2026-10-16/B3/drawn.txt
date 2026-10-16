@@ -1,8 +1,9 @@
 scenario B3
-captured 2026-10-16T10:36:08.780+01:00
+captured 2026-10-16T11:01:54.067+01:00
   [user] rig-nochoice-marker: which shaper?
-  [assistant] 
-  run row: status=Waiting for your answer changes=0 steps= zones=[7:Stop]
-  opening: 
-  closing: 
-    step "ask" [running] right="your answer?" detail="" chips=[]
+  [assistant] Took your answer and set the pre-gain to 3 dB.
+  run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
+  opening: Took your answer and set the pre-gain to 3 dB.
+  closing: Took your answer and set the pre-gain to 3 dB.
+    step "ask" [done] right="" detail="" chips=[]
+    step "pre-gain 3 dB" [done] right="applied" detail="set the pre-chain gain to 3.0 dB" chips=[]

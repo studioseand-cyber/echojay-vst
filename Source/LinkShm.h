@@ -491,8 +491,15 @@ inline juce::String resolveDir(int& errno_out)
     auto tryDir = [&](const juce::File& d) -> bool {
         if (!d.exists())
         {
+            // ---- TWO PROCESSES CREATING ONE DIRECTORY (16 Oct 2026) ------------------------------
+            // The SECOND half of the channel split, and the half the per-process probe did not cover.
+            // When a project loads, several instances reach this line within milliseconds and the
+            // directory does not exist yet: they all call createDirectory, one wins, and a loser that
+            // gets a failure used to fall straight through to the TMPDIR fallback - with no retry,
+            // because the retry below was gated on the directory having existed beforehand. The
+            // question that matters is not "did MY create succeed" but "is it there now".
             const juce::Result r = d.createDirectory();
-            if (r.failed()) { errno_out = EACCES; return false; }
+            if (r.failed() && !d.isDirectory()) { errno_out = EACCES; return false; }
         }
         const bool existed = d.isDirectory();
         for (int attempt = 0; attempt < 2; ++attempt)
@@ -515,7 +522,17 @@ inline juce::String resolveDir(int& errno_out)
         juce::File appSupport = echojay::userAppData()
             .getChildFile("Application Support/EchoJay/link");
         if (tryDir(appSupport))
+        {
+            // SAID ONCE PER PROCESS, so a run's log names the directory each instance chose. The rig
+            // caught a Link publishing its rack into TMPDIR while its sibling used App Support, and
+            // the thing I could not answer from the evidence was WHEN it chose and WHAT it chose -
+            // because nothing had ever written it down.
+            static std::atomic<bool> saidOnce { false };
+            if (! saidOnce.exchange(true))
+                EchoJay_NSLog(("EJLinkShm: shared directory = " + appSupport.getFullPathName()
+                               + " (pid " + juce::String((int) ::getpid()) + ")").toRawUTF8());
             return appSupport.getFullPathName() + "/";
+        }
         EchoJay_NSLog(("EJLinkShm: the shared directory " + appSupport.getFullPathName()
                        + " would not take a write probe (errno " + juce::String(errno_out)
                        + ") - FALLING BACK to TMPDIR. Every instance that resolves differently is on "
@@ -531,7 +548,16 @@ inline juce::String resolveDir(int& errno_out)
                              : juce::File::getSpecialLocation(juce::File::tempDirectory);
         juce::File fallback = base.getChildFile("echojay_link");
         if (tryDir(fallback))
+        {
+            static std::atomic<bool> saidFallbackOnce { false };
+            if (! saidFallbackOnce.exchange(true))
+                EchoJay_NSLog(("EJLinkShm: shared directory = " + fallback.getFullPathName()
+                               + " (pid " + juce::String((int) ::getpid())
+                               + ") - THE FALLBACK. Any instance on a different directory cannot see "
+                                 "this one; this line and the refusal above are the whole story when a "
+                                 "Link does not appear.").toRawUTF8());
             return fallback.getFullPathName() + "/";
+        }
     }
 
     errno_out = EACCES;

@@ -454,8 +454,21 @@ void EJAgentHome::recordAnswerOnRow (const juce::String& answer)
         if (e.agentJson.isEmpty()) continue;
         auto v = fromJson (juce::JSON::parse (e.agentJson));
         if (v.runKey != runKey_) continue;
-        for (auto it = v.steps.rbegin(); it != v.steps.rend(); ++it)
-            if (! it->chips.isEmpty() && it->answered.isEmpty()) { it->answered = "You said: " + answer; break; }
+        // ---- THE ROW RECORDS A TYPED ANSWER TOO (16 Oct 2026) -----------------------------------
+        // This looked for a step WITH CHIPS, which is most asks and not the one that mattered: an ask
+        // with no choices at all (Sean's blocker) has nothing on it to match, so his typed answer
+        // reached the run - the pre-gain moved - and the row never said "You said: ...". The question
+        // is the step that was WAITING for an answer, chips or no chips.
+        bool recorded = false;
+        for (auto it = v.steps.rbegin(); it != v.steps.rend() && ! recorded; ++it)
+            if (! it->chips.isEmpty() && it->answered.isEmpty())
+            { it->answered = "You said: " + answer; recorded = true; }
+        if (! recorded)
+            for (auto it = v.steps.rbegin(); it != v.steps.rend() && ! recorded; ++it)
+                if (it->answered.isEmpty()
+                    && (it->right == "your answer?" || it->id == "ask"
+                        || it->status == (int) EJAgentClient::Step::Status::Running))
+                { it->answered = "You said: " + answer; recorded = true; }
         e.agentJson = juce::JSON::toString (toJson (v), true);
         return;
     }

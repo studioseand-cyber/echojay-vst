@@ -1,10 +1,10 @@
 scenario E8
-captured 2026-10-16T10:41:11.147+01:00
+captured 2026-10-16T11:04:56.165+01:00
   [assistant] Stopped.
   [user] rig-readonly-marker: what is on this rack?
-  [assistant] Had a look and changed nothing.
-  run row: status=Done changes=2 steps= zones=[11:2 changes]
-  opening: Had a look and changed nothing.
+  [assistant] Stopped.
+  run row: status=Done changes=0 steps=2 zones=[11:2 steps]
+  opening: Stopped.
   closing: Had a look and changed nothing.
-    step "read the rack" [done] right="applied" detail="" chips=[]
-    step "read the channel" [done] right="applied" detail="" chips=[]
+    step "read the rack" [done] right="" detail="" chips=[]
+    step "read the channel" [done] right="" detail="" chips=[]

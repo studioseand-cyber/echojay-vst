@@ -1,9 +1,11 @@
 scenario B4
-captured 2026-10-16T10:39:39.790+01:00
-  [assistant] Stopped.
+captured 2026-10-16T11:03:24.509+01:00
   [user] rig-newinstr-marker: check the gr
+  [assistant] Stopped.
+  [user] rig-row-marker: set the pre-gain
   [assistant] 
-  run row: status=Waiting for your answer changes=0 steps= zones=[4:Stop here,4:Try once more,7:Stop]
+  run row: status=Working changes=0 steps=2 zones=[7:Stop]
   opening: 
   closing: 
-    step "ask" [running] right="your answer?" detail="" chips=[Stop here, Try once more]
+    step "pre-gain 4 dB" [awaiting] right="" detail="" chips=[]
+    step "pre-gain 6 dB" [awaiting] right="" detail="" chips=[]

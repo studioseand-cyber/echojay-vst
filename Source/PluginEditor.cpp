@@ -32458,8 +32458,19 @@ void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, c
         {
             // record it on the question's row; the chips go away because the row is answered
             auto v = echojay::agentui::fromJson (juce::JSON::parse (m->agentData));
-            for (auto it = v.steps.rbegin(); it != v.steps.rend(); ++it)
-                if (! it->chips.isEmpty() && it->answered.isEmpty()) { it->answered = "You said: " + text; break; }
+            // CHIPS OR NO CHIPS (16 Oct 2026): an ask with nothing to tap is still a question, and a
+            // typed answer to it has to show on the row - see EJAgentHome::recordAnswerOnRow, which
+            // makes the same choice for the record this mirrors.
+            bool recorded = false;
+            for (auto it = v.steps.rbegin(); it != v.steps.rend() && ! recorded; ++it)
+                if (! it->chips.isEmpty() && it->answered.isEmpty())
+                { it->answered = "You said: " + text; recorded = true; }
+            if (! recorded)
+                for (auto it = v.steps.rbegin(); it != v.steps.rend() && ! recorded; ++it)
+                    if (it->answered.isEmpty()
+                        && (it->right == "your answer?" || it->id == "ask"
+                            || it->status == (int) EJAgentClient::Step::Status::Running))
+                    { it->answered = "You said: " + text; recorded = true; }
             m->agentData = juce::JSON::toString (echojay::agentui::toJson (v), true);
             ed.resized(); ed.repaint();
             return;

@@ -264,20 +264,30 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
     for (auto* f : fm.getFormats())
         if (f->getName() == "AudioUnit") f->findAllTypesForFile (found, ident);
     if (found.isEmpty()) { p.why = "no AU types for " + ident; return p; }
-    // BY NAME on a shell; found[0] only when nothing was asked for.
+    // ---- THE STEREO DESCRIPTION, NOT THE FIRST (16 Oct 2026) ---------------------------------
+    // One AU can offer several channel configurations and JUCE names them "(m)" and "(s)". The first
+    // cut took found[0] and got "Renaissance Axx (m)" - which the rack then REFUSED, correctly, as a
+    // mono plugin on a stereo channel ("21m item 2"), so scenarios A3 and A4 were red for a fixture
+    // reason rather than the product one. A rig that cannot set its own fixture up proves nothing.
     const juce::PluginDescription* chosen = found[0];
-    if (wantName.isNotEmpty())
     {
-        const juce::PluginDescription* hit = nullptr;
+        const juce::PluginDescription* best = nullptr;
+        int bestScore = -1000;
         for (auto* d : found)
-            if (d != nullptr && d->name.containsIgnoreCase (wantName)) { hit = d; break; }
-        if (hit == nullptr)
+        {
+            if (d == nullptr) continue;
+            if (wantName.isNotEmpty() && ! d->name.containsIgnoreCase (wantName)) continue;
+            const int score = (d->name.endsWith ("(s)") || d->name.containsIgnoreCase ("stereo") ? 2 : 0)
+                            - (d->name.endsWith ("(m)") || d->name.containsIgnoreCase ("mono")   ? 2 : 0);
+            if (score > bestScore) { bestScore = score; best = d; }
+        }
+        if (best == nullptr && wantName.isNotEmpty())
         {
             p.why = comp.getFileName() + " carries " + juce::String (found.size())
                   + " plugin(s) and none of them is named like \"" + wantName + "\"";
             return p;
         }
-        chosen = hit;
+        if (best != nullptr) chosen = best;
     }
     const auto desc = *chosen;
     p.name = desc.name;
@@ -514,14 +524,21 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                 juce::OwnedArray<juce::PluginDescription> types;
                 for (auto* fmt : fm.getFormats())
                     if (fmt->getName() == "AudioUnit") fmt->findAllTypesForFile (types, id2);
+                // The same stereo rule as above: a rack that refuses a mono variant must be given
+                // the stereo one, or the catalogue holds a plugin nothing can use.
+                const juce::PluginDescription* pick = nullptr; int bestScore = -1000;
                 for (auto* d : types)
                 {
                     if (d == nullptr || ! d->name.containsIgnoreCase (juce::String (w.name))) continue;
-                    if (d->name == desc.name) break;                 // already the one above
-                    if (auto* child = d->createXml().release()) entries.addChildElement (child);
-                    kl.addType (*d);
-                    added.add (d->name);
-                    break;
+                    const int score = (d->name.endsWith ("(s)") || d->name.containsIgnoreCase ("stereo") ? 2 : 0)
+                                    - (d->name.endsWith ("(m)") || d->name.containsIgnoreCase ("mono")   ? 2 : 0);
+                    if (score > bestScore) { bestScore = score; pick = d; }
+                }
+                if (pick != nullptr && pick->name != desc.name)
+                {
+                    if (auto* child = pick->createXml().release()) entries.addChildElement (child);
+                    kl.addType (*pick);
+                    added.add (pick->name);
                 }
             }
             if (auto xml = kl.createXml()) listFile.replaceWithText (xml->toString());
@@ -2030,22 +2047,31 @@ int main (int argc, char* argv[])
                     // THE ORDER IS THE ASSERTION: the question this leg sent must come after everything
                     // that was on screen before it, and its own answer after that.
                     {
+                        // THE TWO QUESTIONS ARE DIFFERENT ROWS (16 Oct 2026). The Retry pressed just
+                        // above RESENDS the question, so the transcript legitimately holds it twice:
+                        // the original, the interrupted answer under it, and the resend at the bottom.
+                        // The first cut took the LAST occurrence as "the question" and then demanded
+                        // the answer below it - backwards, and it called a correct transcript out of
+                        // order. What Sean reported is a row appearing ABOVE an earlier exchange, so
+                        // that is what this asserts.
                         const auto st3 = rig.freshState();
-                        int askedAt = -1, interruptedAt = -1, i = 0;
+                        int askedAt = -1, lastAsked = -1, interruptedAt = -1, i = 0;
                         if (auto* arr = st3.getProperty ("onScreen", juce::var()).getArray())
                             for (const auto& m : *arr)
                             {
                                 const auto txt = m.getProperty ("text", juce::var()).toString();
                                 if (m.getProperty ("role", juce::var()).toString() == "user"
                                     && txt.containsIgnoreCase ("how does this kick sound"))
-                                    askedAt = i;
+                                { if (askedAt < 0) askedAt = i; lastAsked = i; }
                                 if (EchoJayAPI::looksInterrupted (txt)) interruptedAt = i;
                                 ++i;
                             }
                         scen ("F2", "after a close and reopen the transcript is still in order",
-                              askedAt >= 0 && interruptedAt > askedAt,
-                              "the question is at row " + juce::String (askedAt) + " and its answer at row "
-                              + juce::String (interruptedAt) + " of " + juce::String (i)
+                              askedAt >= 0 && interruptedAt > askedAt
+                              && (lastAsked == askedAt || lastAsked > interruptedAt),
+                              "the question is at row " + juce::String (askedAt) + ", its answer at row "
+                              + juce::String (interruptedAt) + ", the Retry's resend at row "
+                              + juce::String (lastAsked) + " of " + juce::String (i)
                               + "  (RED on 16a: the reload appended the rows the store had not caught up "
                               "with, which put an earlier exchange UNDER a later question)",
                               "A", v2v.editor.get(), st3);
@@ -3256,37 +3282,62 @@ int main (int argc, char* argv[])
         {
             rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
             rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
-            // ANSWERED BY TYPING, which is the user's own road and the only one this ask offers.
-            const auto r = askAgent (rig, "rig-nochoice-marker: which shaper?", 90000, true, "MTransient");
+            // ---- THE HINT IS READ WHILE THE QUESTION IS UP (16 Oct 2026) -------------------------
+            // The first cut read it AFTER the answer had been typed and the run had finished, so it
+            // found an empty hint and a row saying "1 change" - and reported the dead end as still
+            // present when it was not. A question's own surface has to be read while it is asking.
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "rig-nochoice-marker: which shaper?"), 15000);
+            juce::String hint, zonesWhileAsking;
+            rig.until ([&] (const juce::var& stv)
+            {
+                const auto a = stv.getProperty ("agentRow", juce::var());
+                hint = a.getProperty ("askHint", juce::var()).toString();
+                zonesWhileAsking = a.getProperty ("zones", juce::var()).toString();
+                return a.getProperty ("status", juce::var()).toString().containsIgnoreCase ("answer");
+            }, 45000);
+            {   // one more read, so the hint belongs to the moment the status said "waiting"
+                const auto a = rig.freshState().getProperty ("agentRow", juce::var());
+                hint = a.getProperty ("askHint", juce::var()).toString();
+                zonesWhileAsking = a.getProperty ("zones", juce::var()).toString();
+            }
+            // ...and NOW the user types their answer, which is the other half of the blocker.
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", "MTransient"), 15000);
+            AgentOutcome r;
+            r.adopted = true; r.settled = true;
+            r.state = "done";
+            rig.until ([] (const juce::var& stv)
+            { const auto a = agentVarOf (stv);
+              return ! (bool) a.getProperty ("active", false); }, 60000);
             const auto st = rig.freshState();
             const auto arow = st.getProperty ("agentRow", juce::var());
-            const auto zones = arow.getProperty ("zones", juce::var()).toString();
-            juce::String answered, hint;
+            const auto zones = zonesWhileAsking;
+            juce::String answered;
             if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
                 for (const auto& sv : *arr)
                 {
                     const auto a = sv.getProperty ("answered", juce::var()).toString();
                     if (a.isNotEmpty()) answered = a;
                 }
-            hint = arow.getProperty ("askHint", juce::var()).toString();
             const double pg = (double) st.getProperty ("preGainDb", juce::var());
             // A1: the window TOLD the user how to answer. It cannot show chips that were never sent -
             // only B can send those - so what it must do instead is name the road that IS open.
             scen ("B1", "an ask is answerable: chips when there are chips, and a named road when there are not",
                   hint.isNotEmpty(),
-                  "askHint=\"" + hint + "\"  zones=[" + zones.substring (0, 120) + "]  (RED on 16a: the row "
-                  "showed the question and a faint \"your answer?\" with nothing to press, and typing was "
-                  "refused with \"Tap one of the choices\" about choices that did not exist)",
-                  "A", v2.editor.get(), st, &r);
+                  "while the question was up: askHint=\"" + hint + "\"  zones=["
+                  + zones.substring (0, 120) + "]  (RED on 16a: the row showed the question and a faint "
+                  "\"your answer?\" with nothing to press, and typing was refused with \"Tap one of the "
+                  "choices\" about choices that did not exist)",
+                  "A", v2.editor.get(), st);
             // A2: and the typed answer REACHED the run, rather than vanishing.
             scen ("B3", "a typed answer lands in the waiting ask and the run carries on",
-                  r.ran() && answered.isNotEmpty() && std::abs (pg - 3.0) < 0.2,
+                  answered.isNotEmpty() && std::abs (pg - 3.0) < 0.2,
                   "the row recorded " + (answered.isEmpty() ? juce::String ("NOTHING")
                                                             : "\"" + answered + "\"")
                   + " and the run went on to set the pre-gain to " + juce::String (pg, 2) + " dB  (RED on "
                   "16a: interceptTyped refused it because the server sent allowFreeText false, so the text "
                   "vanished and the run sat in awaiting_ask until Stop)",
-                  "A", v2.editor.get(), st, &r);
+                  "A", v2.editor.get(), st);
         }
 
         // ---- A3: A NEW INSTRUCTION CLOSES A WAITING RUN AND STARTS ITS OWN ---------------------------
