@@ -97,6 +97,7 @@
 #include "EjmapDrafts.h"
 #include "EjmapRunAll.h"
 #include "EjmapTrustRun.h"    // 16 Oct: the trust levels, v1 certification of the other categories
+#include "EjmapMultibandV1.h"  // 16 Oct: multiband v1
 #include "EjmapSelfGuardRun.h" // 16 Oct: the guard
 #include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
 #include "../../au_instantiate_probe/probe_noise.h"      // standalone: the --sweep signal=noise generator, pinned here
@@ -10054,6 +10055,79 @@ int main (int, char**)
         check (levelFor (strip, false, "", rb, comp).level == "mapped" && levelFor (strip, false, "", rb, gate).level == "unsure" && levelFor (strip, false, "", rb, other).level == "unsure"
                && comp.section.at ("Thr 2") == "comp" && other.dropped.count ("Thr 2") && loaded.count ("S") && loaded.at ("S").size() == 1 && loaded.at ("S")[0].section == "Comp",
                "wizard WZ-TRUST-7: a picked role counts in its section (Comp -> Threshold maps a strip, Gate -> Threshold does not); other refutes; unsure is not loaded");
+    }
+    // WZ-MBV1-1 MULTIBAND v1, PER BAND (Kathy, 16 Oct): identity (paired by measurement), range (4 dB), direction (either way), the threshold
+    // display TRACKS the real onset 1:1 (a fixed reference allowed, e.g. Lindell's dBu-style -21; Drawmer's 18..29 dB spread fails), the
+    // per-band tone check within 0.5 dB at 2 / 3 / 4 dB, the crossovers within 1/6 octave (none = not applicable); only passing bands offered
+    {
+        using namespace ejmap::mbv1;
+        auto J = [] (const char* x) { return juce::JSON::parse (x); };
+        // a band ladder: GR grows as the threshold falls; onset tracks the display with a -21 dB reference (Lindell MBC's shape)
+        const auto lindell = J (R"J({"band":2,"threshold_control":"Mid Threshold","pairing":"cuts 200-5000 Hz","centre_hz":1000,"in_at_gr":[
+            {"norm":0.0,"display":"10.00","gr_db_by_level":{"-12":0.0,"-18":0.0,"-24":0.0,"-30":0.0,"-6":0.0}},
+            {"norm":0.2,"display":"6.93","gr_db_by_level":{"-12":0.87,"-18":0.02,"-24":0.0,"-30":0.03,"-6":1.64}},
+            {"norm":0.4,"display":"1.31","gr_db_by_level":{"-12":2.39,"-18":0.77,"-24":0.01,"-30":0.13,"-6":3.67}},
+            {"norm":0.6,"display":"-4.85","gr_db_by_level":{"-12":4.33,"-18":2.23,"-24":0.65,"-30":0.01,"-6":5.82}},
+            {"norm":0.8,"display":"-10.92","gr_db_by_level":{"-12":6.51,"-18":4.25,"-24":2.16,"-30":0.66,"-6":8.06}}]})J");
+        const auto drawmer = J (R"J({"band":1,"threshold_control":"Low Threshold","pairing":"x","centre_hz":63,"in_at_gr":[
+            {"norm":0.2,"display":"16.7","gr_db_by_level":{"-12":0.56,"-18":0.19,"-24":0.07,"-30":0.02,"-6":1.68}},
+            {"norm":0.4,"display":"-2.4","gr_db_by_level":{"-12":4.99,"-18":2.22,"-24":0.66,"-30":0.16,"-6":8.38}},
+            {"norm":0.6,"display":"-14.7","gr_db_by_level":{"-12":9.15,"-18":6.13,"-24":3.07,"-30":0.85,"-6":12.14}}]})J");
+        const auto lc = cellsOf (lindell), dc = cellsOf (drawmer);
+        const auto n3 = predictNorm (lc, -12.0, 3.0);
+        const auto tLin = thresholdPart (lc), tDraw = thresholdPart (dc);
+        // THE CROSSOVER = where the neighbours' responses are equal (no type assumed): soloed responses with different slopes cross at
+        // 400 * 2^0.8 = 696 Hz; isolated cuts of unequal depth (-10 and -4 dB) cross at 566 Hz once each is scaled by its own depth (unscaled
+        // they would cross near 735 Hz)
+        const std::vector<std::pair<double, double>> soloBelow { { 200, 0.0 }, { 400, -1.0 }, { 800, -3.0 }, { 1600, -20.0 } }, soloAbove { { 200, -20.0 }, { 400, -9.0 }, { 800, -1.0 }, { 1600, 0.0 } };
+        const std::vector<std::pair<double, double>> cutBelow { { 100, -10.0 }, { 400, -8.0 }, { 800, -2.0 }, { 1600, 0.0 } }, cutAbove { { 100, 0.0 }, { 400, -1.0 }, { 800, -3.0 }, { 1600, -4.0 } };
+        const auto soloX = crossingHz (soloBelow, soloAbove, 150.0, 1700.0), isoX = crossingHz (normalisedCut (cutBelow), normalisedCut (cutAbove), 150.0, 1700.0);
+        const bool crossings = soloX && std::abs (*soloX - 696.0) < 5.0 && isoX && std::abs (*isoX - 566.0) < 5.0 && normalisedCut ({ { 100, -0.2 } }).empty()
+                               && ! crossingHz (soloBelow, soloAbove, 1000.0, 1700.0);   // no crossing inside the window: none reported
+        const auto xoOk = J (R"J([{"control":"Low-Mid Freq","band_below":1,"band_above":2,"positions":[{"norm":0.5,"display":"600 Hz","measured_hz":610}]}])J");
+        const auto xoOff = J (R"J([{"control":"Low-Mid Freq","band_below":1,"band_above":2,"positions":[{"norm":0.5,"display":"600 Hz","measured_hz":800}]}])J");
+        const auto tcOk = J (R"J([{"asked_db":2,"gr_db":2.1},{"asked_db":3,"gr_db":2.8},{"asked_db":4,"gr_db":4.3}])J");
+        const auto tcOff = J (R"J([{"asked_db":2,"gr_db":2.1},{"asked_db":3,"gr_db":3.9}])J");
+        // a whole unit: band 2 passes everything; band 1 misses its range; the v1 record carries the tone check, the crossover, a make-up
+        auto draft = J (R"J({"plugin":{"name":"MB","plugin_id":"AudioUnit|1|1"},"bands":[]})J");
+        juce::Array<juce::var> bs; auto weak = J (juce::JSON::toString (lindell).toRawUTF8()); weak.getDynamicObject()->setProperty ("band", 1);
+        if (auto* a = weak.getProperty ("in_at_gr", {}).getArray()) for (auto& p : *a) if (auto* lv = p.getProperty ("gr_db_by_level", {}).getDynamicObject()) for (auto& kv : lv->getProperties()) lv->setProperty (kv.name, (double) kv.value * 0.3);
+        bs.add (weak); bs.add (lindell); draft.getDynamicObject()->setProperty ("bands", bs);
+        const auto v1 = J (R"J({"plugin_id":"AudioUnit|1|1","bands":[{"band":2,"tonecheck":[{"asked_db":2,"gr_db":2.1},{"asked_db":3,"gr_db":3.1},{"asked_db":4,"gr_db":4.2}],
+                               "makeup":{"control":"Mid Gain","points":[{"display_delta_db":6.0,"measured_delta_db":5.8}]}}],
+                               "crossovers":[{"control":"Low-Mid Freq","band_below":1,"band_above":2,"positions":[{"display":"200 Hz","measured_hz":205}]}]})J");
+        const auto R = judge (draft, v1), noV1 = judge (draft, {});
+        // one good band, varied one part at a time: unpaired, reversing, a failed crossover, a wrong make-up step - each must stop it
+        auto oneBand = [&] (std::function<void (juce::DynamicObject&)> edit) { auto b = J (juce::JSON::toString (lindell).toRawUTF8()); edit (*b.getDynamicObject());
+            auto d = J (R"J({"plugin":{"name":"MB","plugin_id":"AudioUnit|1|1"}})J"); juce::Array<juce::var> one; one.add (b); d.getDynamicObject()->setProperty ("bands", one); return d; };
+        const auto unpaired = judge (oneBand ([] (juce::DynamicObject& b) { b.setProperty ("threshold_control", ""); }), v1);
+        const auto reversing = judge (oneBand ([] (juce::DynamicObject& b) { if (auto* a = b.getProperty ("in_at_gr").getArray()) if (auto* lv = (*a)[4].getProperty ("gr_db_by_level", {}).getDynamicObject()) lv->setProperty ("-12", 3.0); }), v1);   // -12 dBFS only: no onset moves
+        const auto v1BadXo = J (R"J({"bands":[{"band":2,"tonecheck":[{"asked_db":2,"gr_db":2.0},{"asked_db":3,"gr_db":3.0},{"asked_db":4,"gr_db":4.0}]}],
+                                    "crossovers":[{"control":"X","band_below":1,"band_above":2,"positions":[{"display":"200 Hz","measured_hz":300}]}]})J");
+        const auto v1BadMakeup = J (R"J({"bands":[{"band":2,"tonecheck":[{"asked_db":2,"gr_db":2.0},{"asked_db":3,"gr_db":3.0},{"asked_db":4,"gr_db":4.0}],
+                                        "makeup":{"control":"Mid Gain","points":[{"display_delta_db":6.0,"measured_delta_db":4.0}]}}],"crossovers":[]})J");
+        const auto good = oneBand ([] (juce::DynamicObject&) {});
+        const auto badXo = judge (good, v1BadXo), badMk = judge (good, v1BadMakeup);
+        const bool eachStops = ! unpaired.pass && ! reversing.pass && ! badXo.pass && badMk.pass && ! badMk.bands[0].makeupOffered;
+        check (n3 && *n3 > 0.4 && *n3 < 0.6 && tLin.state == "pass" && tLin.why.contains ("reference") && tDraw.state == "fail" && crossings
+               && crossoverPart (xoOk, 2).state == "pass" && crossoverPart (xoOff, 2).state == "fail" && crossoverPart (J ("[]"), 1).state == "not_applicable" && crossoverPart ({}, 1).state == "not_tested"
+               && gainPart (tcOk).state == "pass" && gainPart (tcOff).state == "fail" && gainPart ({}).state == "not_tested"
+               && R.pass && R.bands.size() == 2 && ! R.bands[0].pass && R.bands[1].pass && R.bands[1].makeupOffered
+               && R.certifiedParts() == juce::StringArray { "band 2", "band 2 make-up" } && eachStops && ! noV1.pass && passesSoFar (noV1.bands[1]) && ! passesSoFar (noV1.bands[0]),
+               "wizard WZ-MBV1-1: per band - identity, 4 dB range, direction, a threshold display that tracks (Lindell's -21 reference passes, Drawmer's spread fails), the tone check within 0.5 dB, crossovers (where the neighbours' responses are equal) within 1/6 oct; only passing bands (and their make-up) offered");
+    }
+    // WZ-MBV1-2 THE STEP IN SEAN'S RUN: multiband_v1 is a run-all step that takes --out and --only, and stops at the run's hour
+    {
+        using namespace ejmap::runall;
+        const Step* st = nullptr; for (const auto& x : steps()) if (x.name == "multiband_v1") st = &x;
+        const auto a = st != nullptr ? argsFor (*st, false, "/c", { "C4 (m)" }) : juce::StringArray();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapMultibandV1Run.h").loadFileAsString();
+        check (st != nullptr && a.contains ("--cert-multiband-v1") && a.contains ("--out") && a.contains ("/c") && a.contains ("--only") && a.contains ("C4 (m)")
+               && drv.contains ("setenv (\"EJ_RUNALL_UNTIL_MS\"") && run.contains ("if (untilMs > 0 && juce::Time::currentTimeMillis() >= untilMs)") && run.contains ("licenceGate (opt, desc)")
+               && run.contains ("std::getenv (\"EJ_MBV1_ISOLATED\") : \"\") == \"1\";") && run.contains ("const auto soloB = forceIsolated ? juce::String() : soloOf (below, Lb.control)")
+               && run.contains ("if (soloB.isNotEmpty() && soloA.isNotEmpty())") && run.contains ("mbv1::crossingHz (mbv1::normalisedCut (cb), mbv1::normalisedCut (ca), Lb.tone, La.tone)"),
+               "wizard WZ-MBV1-2: multiband_v1 runs in Sean's run-all with --out / --only, licence-gated, stopping between products at the hour; solo first, isolated (depth-scaled) without one");
     }
     // WZ-TRUST-5 WHAT IS HELD: a cert outcome or a wizard skip in a held state - licence, hardware, silent, crashed, demo, refused, review,
     // MULTIBAND (16 Oct: profiling not built, so a band threshold is not a compressor's dial) - and never the old "never processes" filing

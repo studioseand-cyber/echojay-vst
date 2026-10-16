@@ -22,6 +22,7 @@
 #include "EjmapCertDriver.h"
 #include "EjmapTunerProfile.h"
 #include "EjmapTrustRun.h"   // 16 Oct: --cert-v1, --trust-levels
+#include "EjmapMultibandV1Run.h"   // 16 Oct: --cert-multiband-v1
 #include "EjmapSelfGuardRun.h"   // 16 Oct: --self-guard (the guard on the developer's own loads)
 
 #include <map>
@@ -846,6 +847,17 @@ namespace
             }
             // --run-all [--until HH:MM] [--only <product>]... [--steps a,b] [--skip a,b] [--dry-run] [--out <cert>] [--probe <p>] [--ejmap-ledger <d>]
             // [--assume-uad-device]: Sean's whole sequence, resumable (8 Oct stretch S1; EjmapRunAll.h)
+            if (a == "--cert-multiband-v1")   // 16 Oct (Kathy): v1 multiband measuring over the cert's multiband records - licence-gated, resumable
+            {
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::StringArray only;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--only") only.add (v); }
+                if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+                ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
+                return ejmap::cert::runMultibandV1All (o, only);
+            }
             if (a == "--cert-v1")   // 16 Oct (Kathy): v1 certification of the measurable parts, over the drafts on disk - nothing loaded
             {
                 juce::File cert, outF; for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--cert") cert = cwdFile (v); else if (k == "--out") outF = cwdFile (v); }

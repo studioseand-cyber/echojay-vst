@@ -16,6 +16,7 @@
 #pragma once
 
 #include "EjmapCertV1.h"
+#include "EjmapMultibandV1.h"
 #include <iostream>
 
 namespace ejmap::trustrun
@@ -26,6 +27,20 @@ inline juce::var readJson (const juce::File& f) { return juce::JSON::parse (f.lo
 inline std::vector<certv1::Result> judgeFolder (const juce::File& cert)
 {
     std::vector<certv1::Result> out;
+    {   // MULTIBAND v1 (16 Oct): the draft + its v1 measuring record, by plugin_id; certified per band (mbv1::judge)
+        std::map<juce::String, juce::var> v1; for (const auto& f : cert.getChildFile ("phaseb").getChildFile ("multiband").getChildFile ("v1").findChildFiles (juce::File::findFiles, false, "*.multiband_v1.json"))
+        { const auto r = readJson (f); v1[r.getProperty ("plugin_id", "").toString()] = r; }
+        for (const auto& f : cert.getChildFile ("phaseb").getChildFile ("multiband").getChildFile ("drafts").findChildFiles (juce::File::findFiles, false, "*.json"))
+        {
+            const auto d = readJson (f); if (! d.isObject()) continue;
+            const auto pid = d.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString();
+            const auto m = mbv1::judge (d, v1.count (pid) ? v1[pid] : juce::var());
+            certv1::Result r; r.category = "multiband"; r.product = m.product; r.pluginId = m.pluginId; r.pass = m.pass;
+            for (const auto& b : m.bands) for (const auto& p : b.parts) r.parts.push_back ({ "band " + juce::String (b.band) + ": " + p.name, p.state, p.why });
+            for (const auto& b : m.bands) r.parts.push_back ({ "band " + juce::String (b.band), b.pass ? "pass" : (mbv1::passesSoFar (b) ? "not_tested" : "fail"), b.pass ? juce::String() : juce::String (mbv1::passesSoFar (b) ? "passes so far; the v1 measuring decides" : "a part failed") });
+            out.push_back (r);
+        }
+    }
     for (const auto& cat : certv1::v1Categories())
         for (const auto& f : cert.getChildFile ("phaseb").getChildFile (cat).getChildFile ("drafts").findChildFiles (juce::File::findFiles, false, "*.json"))
         {
@@ -249,7 +264,8 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         const auto rb = trust::creditMap (m, pd.readings);
         const auto fpKey = m.getProperty ("fp", "").toString();
         const auto measured = human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured;
-        const bool certified = (cat == "compressor" && compCert.count (name)) || (v1Pass.count (cat) && v1Pass[cat].count (name)) || (cat == "amp_sim" && v1Pass["saturation"].count (name));
+        const bool certified = (cat == "compressor" && compCert.count (name)) || (v1Pass.count (cat) && v1Pass[cat].count (name)) || (cat == "amp_sim" && v1Pass["saturation"].count (name))
+                               || (cat == "compressor" && v1Pass["multiband"].count (name));   // 16 Oct: a multiband passes per band (mbv1)
         const auto heldWhy = heldWhyFor (held, name);
         const auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
         if (L.level == "unsure" && L.why.startsWith ("role not identified")) review.addArray (reviewItems (m, measured, rb));
