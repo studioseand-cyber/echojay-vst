@@ -76,6 +76,28 @@ struct RunView
     juce::String runKey;
     juce::String opening;       // the first sentence. Lives in ChatMsg::content; carried here for the guard.
     juce::String closing;       // the closing sentence once the run is over
+
+    /** ---- ONE SENTENCE, DRAWN ONCE (16 Oct 2026, Sean in Logic) --------------------------------
+        He read a MTransient run in Logic: *"the closing appears twice, as a bubble ABOVE the ASK row
+        and again inside the run"* - and named the cause from my own evidence: A3-live's drawn.txt has
+        `opening` and `closing` as the SAME sentence. On a short run they are: the model streams one
+        sentence, which becomes the message's content (the bubble, drawn above the rows), and the
+        done-summary is that same sentence, which the row draws as its closing underneath.
+
+        So when they are the same sentence, the row does not draw it again. The copy that stays is the
+        message's own content - it is what the transcript holds and what an older build reads - and
+        the one that goes is the repeat. Compared on the trimmed text, because the only thing that
+        makes them differ is whitespace from the stream.
+
+        Called by the editor once the opening is known (it comes from the ChatMsg, not from the JSON),
+        so every reader of the view - the paint pass, the measure pass, the rig's published row - gets
+        the same answer from the same place. */
+    void dropClosingIfItRepeatsTheOpening()
+    {
+        if (closing.trim().isEmpty() || opening.trim().isEmpty()) return;
+        if (closing.trim() == opening.trim())
+            closing.clear();
+    }
     juce::String statusWord;    // "Working" | "Waiting for your OK" | ... (the mockup's words)
     juce::String modeBadge;     // "ASK" | "AUTO"
     juce::String notice;        // one amber line: a refused send, an undo-all outcome

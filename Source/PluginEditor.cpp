@@ -32268,6 +32268,11 @@ echojay::agentui::RunView EchoJayEditor::agentRunViewFor (const ChatMsg& msg) co
     RunView v = fromJson (juce::JSON::parse (msg.agentData));
     // The prose lives in content - one copy, and the one an old build can read.
     v.opening = displayedText (msg);
+    // ...and if the closing is that same sentence, the row does not draw it twice (Sean, in Logic,
+    // 16 Oct: "the closing appears twice, as a bubble ABOVE the ASK row and again inside the run").
+    // Here, because this is the one place where the opening - which comes from the ChatMsg and not
+    // from the stored JSON - and the closing are both known.
+    v.dropClosingIfItRepeatsTheOpening();
     // The user's press wins over the run's own default (expanded while running, collapsed after).
     if (msg.agentStepsOpen >= 0) v.stepsOpen = msg.agentStepsOpen == 1;
     return v;

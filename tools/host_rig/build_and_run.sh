@@ -233,6 +233,18 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-onesentence-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "delta", "text": "Added an EchoJay Gate to this rack." },
+          { "event": "tool_call", "id": "tc_os", "name": "do", "approval": "free",
+            "summary": "add an EchoJay Gate", "args": { "op": "add", "name": "EchoJay Gate" } },
+          { "event": "await", "ids": ["tc_os"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added an EchoJay Gate to this rack." } ]
+      ]
+    },
+    {
       "goalContains": "rig-onestep-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

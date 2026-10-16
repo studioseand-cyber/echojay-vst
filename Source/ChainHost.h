@@ -1911,6 +1911,21 @@ public:
     // 18g (item 5): the apply report -> the slot's dial fields (extracted from applyStructuredIfReady so the harness seam can
     // record a report on a slot and read the bubble the build composes). Returns the applied summary lines for the card.
     juce::StringArray recordApplyReport(int slotIndex, const juce::var& map, std::vector<ApplyReport>& report);
+    /** ---- THE CARD SHOWS WHAT THE PLUGIN SHOWS (16 Oct 2026, Sean in Logic, step 4) ------------
+        Rewrites a slot's Suggested Settings text from `dialLandedValues` - the numbers READ BACK
+        from the plugin, which is the same source the closing sentence quotes.
+
+        His report: "the closing correctly says threshold set to -20 dB and Renaissance Axx shows
+        -20.0, but the slot's Suggested Settings reads 'Applied automatically, Threshold 0'. The card
+        took its value before the dial settled and never refreshed." Both roads showed it - the Mix
+        Bus and the Kick's Link.
+
+        The cause is one line in recordApplyReport: the card is only rewritten `if
+        (!appliedSummary.isEmpty())`, and the settle pass that finally read -20 had nothing in that
+        list (the value was already there, so nothing "applied" on that pass). The landed ledger was
+        updated and the card was not, so the two disagreed - which is the thing this product is not
+        allowed to do. Called wherever the ledger changes; returns true when it rewrote the card. */
+    bool refreshCardFromLandedValues (int slotIndex);
     static void collapseFlatDuplicates(const juce::var& structured, std::vector<ApplyReport>& report, const juce::String& slotName);
 
     // ---- Auto-apply pipeline (the ONE apply path) ------------------------

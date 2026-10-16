@@ -549,6 +549,37 @@ juce::var ExecutorRead::startContext()
     o->setProperty ("channel", juce::var (ch));
     const auto lvv = levellingVar (targetLevelling());
     if (! lvv.isVoid()) o->setProperty ("levelling", lvv);
+    // ---- THE RECENT CHAT (16 Oct 2026, Sean's step 6, rule (a)) ---------------------------------
+    // "every agent run gets the recent chat (my messages and the agent's last reply) as context, so
+    // a reply continues the job it answers." He asked for gain reduction, the run asked him to play
+    // and ENDED, he said "im playing it", and the next run had no idea what it was answering.
+    // Sent whether or not the model uses it yet; using it is B's half (FOR_B §16).
+    if (src_.recentChat != nullptr)
+    {
+        const auto rc = src_.recentChat();
+        if (rc.isArray() && ! rc.getArray()->isEmpty()) o->setProperty ("recentChat", rc);
+    }
+    // ---- AND WHETHER THE TRANSPORT IS ALREADY PLAYING (rule (c)) -------------------------------
+    // "if the transport is already playing with signal, listen instead of asking." The model cannot
+    // know that unless it is told: his run asked him to start playback while playback was running.
+    // `playing` is the host's own transport flag, `known` says whether the host tells us at all, and
+    // `heardSeconds` is how much audio this rack has actually measured - the three facts between
+    // them say "there is signal here now", which is the condition the rule turns on.
+    {
+        auto* tr = new juce::DynamicObject();
+        const bool known   = src_.transportKnown   != nullptr && src_.transportKnown();
+        const bool playing = src_.transportPlaying != nullptr && src_.transportPlaying();
+        tr->setProperty ("known", known);
+        tr->setProperty ("playing", playing);
+        double heard = 0.0;
+        if (src_.ownAnalysis != nullptr) { const auto a = src_.ownAnalysis(); heard = a.heardSeconds; }
+        tr->setProperty ("heardSeconds", heard);
+        tr->setProperty ("signalNow", playing && heard > 0.0);
+        if (playing && heard > 0.0)
+            tr->setProperty ("note", "audio is playing through this rack right now - measure it rather "
+                                     "than asking for playback");
+        o->setProperty ("transport", juce::var (tr));
+    }
     juce::Array<juce::var> caps; caps.add ("look"); caps.add ("check"); caps.add ("wait_for_playback"); caps.add ("checkpoint");
     o->setProperty ("capabilities", juce::var (caps));
     // ---- SEAN'S #8 (16 Oct 2026): WHAT CANNOT BE DONE, SAID BEFORE IT IS TRIED ------------------
@@ -1149,6 +1180,30 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     // maybeReloadEntriesCache() first, for the same reason the Link's v:2 path needed it: entries_ is filled from
     // the shared chain_entries.xml and is EMPTY until something asks for it, so an unprimed list would read as
     // "nothing installed" rather than "not read yet".
+    // ---- THE RECENT CHAT, FROM THE PROCESSOR'S OWN HISTORY (16 Oct 2026) -----------------------
+    // The processor holds the conversation (chatHistory), which is what survives the window closing
+    // and is the same list the transcript draws. The last few turns, oldest first, each capped so a
+    // long answer cannot dominate the body; the agent run rows are included by their own prose,
+    // because "the agent's last reply" is exactly what Sean's rule (a) names.
+    s.recentChat = [p]
+    {
+        juce::Array<juce::var> turns;
+        const auto& h = p->chatHistory;
+        const int want = 6;
+        const int from = juce::jmax (0, (int) h.size() - want);
+        for (int i = from; i < (int) h.size(); ++i)
+        {
+            const auto& e = h[(size_t) i];
+            auto text = e.content.trim();
+            if (text.isEmpty()) continue;
+            if (text.length() > 400) text = text.substring (0, 397).trim() + "...";
+            auto* t = new juce::DynamicObject();
+            t->setProperty ("role", e.role.isNotEmpty() ? e.role : juce::String ("assistant"));
+            t->setProperty ("text", text);
+            turns.add (juce::var (t));
+        }
+        return juce::var (turns);
+    };
     s.inventory = [p]
     {
         auto& host = p->getChainHost();

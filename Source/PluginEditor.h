@@ -3450,6 +3450,26 @@ private:
         // use. Two names for one door is how one of them stayed dead; there is one now.
         juce::String remoteName;     // the Link's display name, for the note
         bool         remoteOffline = false;
+
+        /** ---- WHY A THIRD PARTY WILL NOT OPEN IN THE MIRROR (16 Oct 2026, Sean in Logic) --------
+            His step 4 on the Kick's Link: selecting the Renaissance Axx slot in the MAIN plugin's
+            mirror drew a red *"Failed: Renaissance Axx (s)'s editor could not be created"*, and the
+            plugin could not be opened from the main window at all.
+
+            Nothing failed. The plugin is loaded and running - in ANOTHER PROCESS, on the Link's own
+            track, and a second instance of its editor is not something this build can conjure (a
+            licence, a single-instance UI, or simply that the plugin lives over there). The built-ins
+            draw in the mirror because they are OURS and live in this process.
+
+            So the mirror says where the plugin actually is, in a sentence a person can act on, and
+            the word "Failed" is kept for things that failed. Empty when the slot is not a mirror of
+            a Link, in which case the old wording still applies and is still right.                */
+        juce::String remoteEditorNote (const juce::String& pluginName) const
+        {
+            if (remoteName.trim().isEmpty()) return {};
+            return pluginName.trim() + " is running on " + remoteName.trim()
+                 + ", open it in that track's EchoJay window";
+        }
         // Rack lock: TRUE while viewing a remote rack this main does not
         // hold — remote edit affordances disable, tooltip says why. Set only
         // by refreshChainPanelForView (the one author), like the flags above.
@@ -3693,7 +3713,14 @@ private:
             {
                 juce::AudioProcessorEditor* ed = nullptr;
                 try { ed = onCreateEditor(i); } catch (...) {}
-                if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
+                if (!ed)
+                {
+                    // A MIRROR SAYS WHERE THE PLUGIN IS; only a local slot can have "failed".
+                    const auto note = remoteEditorNote (slotInfos[(size_t) i].name);
+                    statusText = note.isNotEmpty() ? note
+                                                   : juce::String ("Failed: could not open editor");
+                    repaint(); return;
+                }
 
                 statusText.clear();
                 inlineEditor.reset(ed);
@@ -4062,8 +4089,12 @@ private:
             {
                 // 1 Sep 2026: was a SILENT return — empty pane, no window,
                 // no caption. Same fix as the Link's panel.
-                statusText = "Failed: " + slotInfos[(size_t)i].name
-                             + "'s editor could not be created";
+                // ...and 16 Oct 2026: on a MIRROR of a Link it never failed - the plugin is running
+                // on another track, in another process, and that is what the line says now.
+                const auto note = remoteEditorNote (slotInfos[(size_t) i].name);
+                statusText = note.isNotEmpty() ? note
+                           : ("Failed: " + slotInfos[(size_t)i].name
+                              + "'s editor could not be created");
                 EchoJay_NSLog(("EJPane(main): popout create FAILED: "
                     + slotInfos[(size_t)i].name).toRawUTF8());
                 repaint();

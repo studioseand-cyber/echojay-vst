@@ -14,6 +14,7 @@
 #include "EJWavesRegistryFeed.h"   // Waves candidates come from the scan, not the catalog
 #include "EJNameLadder.h"          // normalizeName, trailingModelNumber, the match ladder
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
+#include "EJParamPlainNames.h"   // the card is composed from the READ-BACK in plain words (Sean's step 4)
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
 #include "NotDialableText.h"
@@ -7056,6 +7057,49 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                                                          : juce::String("another version"))
                         + ", dial by hand if it matters";
     }
+
+    // ---- AND THE CARD IS WHAT THE PLUGIN SHOWS, NOT WHAT THIS PASS HAPPENED TO WRITE ----------
+    // Sean, in Logic, step 4: the closing said -20 dB, Renaissance Axx read -20.0, and the card
+    // still said "Threshold 0". The block above only rewrites the card `if
+    // (!appliedSummary.isEmpty())`, and the settle pass that finally read -20 had nothing in that
+    // list - the value was already there, so nothing "applied" on that pass. The ledger moved and
+    // the card did not. Composed from the ledger here, every pass, so they cannot disagree.
+    refreshCardFromLandedValues (slotIndex);
+}
+
+bool ChainHost::refreshCardFromLandedValues (int slotIndex)
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    auto& s = slots_[(size_t) slotIndex];
+    if (s.dialLandedValues.isEmpty()) return false;
+    juce::StringArray phrases;
+    for (const auto& pair : juce::StringArray::fromTokens (s.dialLandedValues, ";", ""))
+    {
+        const auto id  = pair.upToFirstOccurrenceOf ("=", false, false).trim();
+        const auto num = pair.fromFirstOccurrenceOf ("=", false, false).trim();
+        if (id.isEmpty() || num.isEmpty()) continue;
+        phrases.add (echojay::params::plainValuePhrase (id, num.getDoubleValue()));
+    }
+    if (phrases.isEmpty()) return false;
+    // The caveat lines are kept: a written-but-unconfirmable display and an approximate mapping are
+    // facts about the write, not about the number, and both still apply to the figure shown here.
+    juce::String text = "Applied automatically\n" + phrases.joinIntoString (", ");
+    if (! s.dialUnconfirmed.isEmpty())
+        text += "\n" + s.dialUnconfirmed.joinIntoString (", ")
+              + ": written - display could not be confirmed on this bridged plugin";
+    if (! s.dialApproximate.isEmpty())
+        text += "\n" + s.dialApproximate.joinIntoString (", ")
+              + ": approximate - mapped from "
+              + (s.dialServedFrom.isNotEmpty() ? s.dialServedFrom : juce::String ("another version"))
+              + ", dial by hand if it matters";
+    if (text == s.settings) return false;
+    EchoJay_NSLog (("EJDial: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                    + "\") Suggested Settings recomposed from the READ-BACK: " + s.dialLandedValues
+                    + "  (was: \"" + s.settings.replaceCharacter ('\n', ' ').substring (0, 70)
+                    + "\") - Sean's step 4, 16 Oct").toRawUTF8());
+    s.settings = text;
+    if (onSlotSettingsChanged) onSlotSettingsChanged();
+    return true;
 }
 
 void ChainHost::loadParamMapsFromDisk()

@@ -1383,6 +1383,28 @@ static juce::StringArray wordingOffences (const juce::var& state)
     return out;
 }
 
+/** WHAT THE PLUGIN ACTUALLY SENT (16 Oct 2026, Sean's step 6).
+
+    The mock records every request's path, goal, `context.recentChat` and `context.transport`, and
+    this fetches the list so a row can assert on the BODY rather than on what the model did with it.
+    Rules (a) and (c) of his step 6 are about what the start body carries, and nothing else in this
+    runner could see it. Returns the newest matching request, or void.                              */
+static juce::var lastRequestTo (int mockPort, const juce::String& pathContains)
+{
+    juce::URL u ("http://127.0.0.1:" + juce::String (mockPort) + "/api/rig/requests");
+    int status = 0;
+    auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                    .withConnectionTimeoutMs (4000).withStatusCode (&status);
+    auto stream = u.createInputStream (opts);
+    if (stream == nullptr || status != 200) return {};
+    const auto v = juce::JSON::parse (stream->readEntireStreamAsString());
+    juce::var best;
+    if (auto* arr = v.getProperty ("requests", v).getArray())
+        for (const auto& r : *arr)
+            if (r.getProperty ("path", juce::var()).toString().contains (pathContains)) best = r;
+    return best;
+}
+
 /** THE RACK A ROW WAS WRITTEN FOR (16 Oct 2026, pass 12).
 
     Three rows failed pass 11 and not one of them was a product fault: the matrix runs in one
@@ -3839,6 +3861,63 @@ int main (int argc, char* argv[])
                                          || words.containsIgnoreCase ("try again after release")
                                          || words.containsIgnoreCase ("edited in its own window");
                 const auto lockNow = st.getProperty ("rackLock", juce::var()).toString();
+                // ---- T5: A THIRD PARTY IN THE MIRROR SAYS WHERE IT IS (16 Oct 2026, Sean) -----
+                //
+                // His step 4 on the Kick's Link: selecting the Renaissance Axx slot in the MAIN
+                // plugin's mirror drew a red "Failed: Renaissance Axx (s)'s editor could not be
+                // created". Nothing failed - the plugin is loaded and running in ANOTHER PROCESS on
+                // the Link's own track, and a second instance of its editor is not something this
+                // build can conjure. His ruling: don't say "Failed", say where it is.
+                //
+                // The row opens a mirrored third-party slot and reads the panel's own status line.
+                {
+                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
+                    Rig::pump (400);
+                    int tpSlot = -1;
+                    juce::String drawn;
+                    {   // the mirror's drawn slot names, in order, 1-based
+                        const auto names = rig.freshState().getProperty ("chainView", juce::var())
+                                               .getProperty ("slots", juce::var()).toString();
+                        drawn = names;
+                        const auto list = juce::StringArray::fromTokens (names, ",", "");
+                        for (int i = 0; i < list.size(); ++i)
+                            if (list[i].containsIgnoreCase (tp.name.upToFirstOccurrenceOf (" (", false, false)))
+                            { tpSlot = i + 1; break; }
+                    }
+                    if (tpSlot < 1)
+                        scenSkip ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
+                                  "no third-party slot is drawn in the mirror this run (the strip reads ["
+                                  + drawn.substring (0, 90) + "]), so there is nothing to open.", "A");
+                    else
+                    {
+                        rig.send (echojay::rig::cmd::openSlot, args1 ("n", tpSlot), 12000);
+                        juce::String status;
+                        rig.until ([&] (const juce::var& stv)
+                        {
+                            status = stv.getProperty ("chainView", juce::var())
+                                        .getProperty ("status", juce::var()).toString();
+                            return status.isNotEmpty();
+                        }, 8000);
+                        const auto track = linkRowOf (rig.freshState(), linkUid)
+                                               .getProperty ("name", juce::var()).toString();
+                        const bool saysFailed = status.containsIgnoreCase ("Failed");
+                        const bool saysWhere  = status.containsIgnoreCase ("is running on")
+                                             && (track.isEmpty() || status.contains (track));
+                        // A third party that DOES open inline draws no status at all, and that is a
+                        // pass too: the rule is "never the word Failed about a plugin that is fine".
+                        scen ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
+                              ! saysFailed && (status.trim().isEmpty() || saysWhere),
+                              "opening slot " + juce::String (tpSlot) + " of the mirror [" + drawn.substring (0, 70)
+                              + "] left the panel reading: \"" + status.substring (0, 120) + "\""
+                              + (status.trim().isEmpty() ? "  (empty - it opened inline, which is also fine)"
+                                                         : juce::String())
+                              + "  (RED before this: \"Failed: Renaissance Axx (s)'s editor could not be "
+                              "created\", about a plugin running perfectly on another track)",
+                              "A", v2.editor.get(), rig.freshState());
+                    }
+                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                }
+
                 // IF THE LOCK NEVER BECAME VISIBLE, SAY SO RATHER THAN JUDGE THE REFUSAL. A row that
                 // reports "it was not refused" when nothing was holding the rack is testing nothing.
                 if (! lockVisible && ! lockNow.equalsIgnoreCase ("other"))
@@ -4009,6 +4088,43 @@ int main (int argc, char* argv[])
                   "16a: the editor and EJAgentHome each opened a record for one run, so the closing was "
                   "written to a second row that drew as a plain bubble)",
                   "A", v2.editor.get(), st, &r);
+
+            // ---- G7b: ONE SENTENCE, DRAWN ONCE (16 Oct 2026, Sean in Logic) --------------------
+            //
+            // He read a MTransient run in Logic: "the closing appears twice, as a bubble ABOVE the
+            // ASK row and again inside the run" - and named the cause from this runner's own
+            // evidence: A3-live's drawn.txt has `opening` and `closing` as the SAME sentence. On a
+            // short run they are. The model streams one sentence, which becomes the message's
+            // content and is drawn above the rows; the done-summary is that same sentence, which the
+            // row drew again as its closing.
+            //
+            // The mock sends exactly that shape - one delta, and a done summary word for word the
+            // same - so the rule is held deterministically: the row draws NO closing when it would
+            // only repeat the opening, and the sentence is on screen exactly ONCE.
+            {
+                clearOwnRack (rig);
+                const auto r1 = askAgent (rig, "rig-onesentence-marker: add a gate", 90000);
+                const auto st1 = rig.freshState();
+                const auto arow = st1.getProperty ("agentRow", juce::var());
+                const auto sentence = juce::String ("Added an EchoJay Gate to this rack.");
+                int copies = 0;
+                if (auto* arr = st1.getProperty ("onScreen", juce::var()).getArray())
+                    for (const auto& m : *arr)
+                        if (m.getProperty ("text", juce::var()).toString().contains (sentence)) ++copies;
+                const auto closingNow = arow.getProperty ("closing", juce::var()).toString().trim();
+                const auto openingNow = arow.getProperty ("opening", juce::var()).toString().trim();
+                scen ("G7b", "a short run whose closing IS its opening draws that sentence once",
+                      r1.ran() && copies == 1 && closingNow.isEmpty(),
+                      juce::String (copies) + " copy(ies) of \"" + sentence + "\" on screen; the row's "
+                      "opening is \"" + openingNow.substring (0, 60) + "\" and its closing is "
+                      + (closingNow.isEmpty() ? juce::String ("EMPTY, as it should be when it would only "
+                                                              "repeat the opening")
+                                              : "\"" + closingNow.substring (0, 60) + "\"")
+                      + "  (RED before this: the same sentence was drawn as the message's content AND "
+                      "again as the row's closing - what Sean read in Logic on the MTransient run)",
+                      "A", v2.editor.get(), st1, &r1);
+            }
+
 
             // E2: the tile's figure IS the device's own held value
             double badgeGr = -1.0, devHeld = -1.0; juce::String badge;
@@ -4210,6 +4326,105 @@ int main (int argc, char* argv[])
                   "over settings the read-back said had not taken)",
                   "A", v2.editor.get(), st, &r);
         }
+
+        // ---- E9: WHAT THE START BODY CARRIES (16 Oct 2026, Sean's step 6, rules (a) and (c)) -------
+        //
+        // His step 6, which he called top priority: he asked how much gain reduction the compressor
+        // was doing WHILE AUDIO WAS PLAYING, the run asked him to play the loudest section and
+        // ENDED, and his reply "im playing it" started a new run with no memory of the goal that
+        // measured loudness instead.
+        //
+        // Two of his four rules are about what this build SENDS, and nothing in this runner could
+        // see the body before now: (a) every run gets the recent chat, so a reply continues the job
+        // it answers; (c) if the transport is already playing with signal, listen instead of asking.
+        // The other two - a run that needs him to act ends as an ask, and no offer-asks after a
+        // read-only answer - are the server's and are live rows in FOR_B §16.
+        {
+            clearOwnRack (rig);
+            // A line of his own in the history first, so "his last message" is a real thing to find.
+            const juce::String mark = "mark-" + juce::String (juce::Time::currentTimeMillis() % 100000);
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", "rig-onestep-marker: " + mark), 15000);
+            Rig::pump (1200);
+            // ...and audio flowing while the next run starts, which is rule (c)'s condition.
+            for (int i = 0; i < 160; ++i)
+            { for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr); if ((i % 20) == 0) Rig::pump (10); }
+            const auto r = askAgent (rig, "rig-gr-marker: how much is it doing?", 90000);
+            const auto req = lastRequestTo (mockPort, "/api/agent/start");
+            const auto chat = req.getProperty ("recentChat", juce::var()).toString();
+            const int  turns = (int) req.getProperty ("recentChatCount", juce::var (0));
+            const auto transport = req.getProperty ("transport", juce::var()).toString();
+            const bool hasChat   = turns > 0 && chat.contains (mark);
+            const bool saysSignal = transport.contains ("\"signalNow\": true")
+                                 || transport.contains ("\"signalNow\":true");
+            scen ("E9", "the start body carries the recent chat and says the transport is playing",
+                  r.ran() && hasChat && saysSignal,
+                  juce::String ("recentChat has ") + juce::String (turns) + " turn(s) and "
+                  + (chat.contains (mark) ? "DOES" : "does NOT") + " contain the user's last message; "
+                  "transport=" + transport.substring (0, 150)
+                  + "  (RED before this: the body carried the goal and nothing of the conversation, "
+                  "which is why \"im playing it\" arrived as a brand new intention, and nothing told "
+                  "the model that audio was already playing)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+        }
+
+        // ---- I9b: THE CARD'S FIGURE IS THE PLUGIN'S FIGURE (16 Oct 2026, Sean in Logic, step 4) ----
+        //
+        // His report, on both roads: "the closing correctly says threshold set to -20 dB and
+        // Renaissance Axx shows -20.0, but the slot's Suggested Settings reads 'Applied
+        // automatically, Threshold 0'. The card took its value before the dial settled and never
+        // refreshed." The cause was one line in recordApplyReport: the card is rewritten only when
+        // that pass had something in appliedSummary, and the settle pass that finally read -20 had
+        // nothing in it - the value was already there. The ledger moved, the card did not.
+        //
+        // So this row holds the one thing that must be true: THE CARD'S NUMBER IS THE PLUGIN'S
+        // NUMBER. It reads the slot's `landed` field (what the plugin shows, the same source the
+        // closing quotes) and requires the card to carry that figure.
+        if (tp.ok)
+        {
+            clearOwnRack (rig);
+            const auto r = askAgent (rig, "rig-tpown-marker: add " + tp.name + " and set its "
+                                          + tp.paramName, 120000);
+            juce::String card, landed, slotName;
+            rig.until ([&] (const juce::var& stv)
+            {
+                if (auto* arr = stv.getProperty ("ownRack", juce::var())
+                                   .getProperty ("slots", juce::var()).getArray())
+                    for (const auto& sl : *arr)
+                        if (sl.getProperty ("name", juce::var()).toString().containsIgnoreCase (tp.name))
+                        {
+                            slotName = sl.getProperty ("name",     juce::var()).toString();
+                            card     = sl.getProperty ("settings", juce::var()).toString();
+                            landed   = sl.getProperty ("landed",   juce::var()).toString();
+                        }
+                return landed.isNotEmpty() && card.isNotEmpty();
+            }, 20000);
+            const auto st = rig.freshState();
+            // The figure the PLUGIN shows, out of the landed ledger ("Threshold=-30").
+            juce::String plugFig;
+            for (const auto& pair : juce::StringArray::fromTokens (landed, ";", ""))
+                if (pair.upToFirstOccurrenceOf ("=", false, false).trim()
+                        .containsIgnoreCase (tp.paramName))
+                    plugFig = pair.fromFirstOccurrenceOf ("=", false, false).trim();
+            // ...and whether the card carries it. Compared on the NUMBER, because the card writes it
+            // in words ("threshold -30 dB") and the ledger in a packed form.
+            const bool cardHasIt = plugFig.isNotEmpty()
+                                && card.contains (juce::String (plugFig.getDoubleValue(), 0).trim());
+            const bool cardSaysZeroInstead = plugFig.isNotEmpty()
+                                          && std::abs (plugFig.getDoubleValue()) > 0.5
+                                          && ! cardHasIt
+                                          && (card.contains (" 0") || card.contains ("=0"));
+            scen ("I9b", "the Suggested Settings card's figure IS the plugin's figure, after a settle",
+                  r.ran() && plugFig.isNotEmpty() && cardHasIt,
+                  "the plugin reads " + tp.paramName + "=" + plugFig + " and the card reads: \""
+                  + card.replaceCharacter ('\n', ' ').substring (0, 120) + "\""
+                  + (cardSaysZeroInstead ? "  <- THE STALE CARD Sean read in Logic: it still says 0"
+                                         : juce::String())
+                  + "  (RED before this evening: the card was composed at apply time and the settle "
+                  "pass that read the real value rewrote the ledger and not the card)",
+                  "A", v2.editor.get(), st, &r);
+        }
+        else
+            scenSkip ("I9b", "the card's figure IS the plugin's figure", tp.why, "A");
 
         // =====================================================================================
         //  THE REST OF THE MATRIX THE RIG CAN RUN (Sean, 16 Oct: *"only 29 of ~60 scenarios ran"*)
@@ -5241,6 +5456,86 @@ int main (int argc, char* argv[])
                              juce::ignoreUnused (r);
                              return true;
                          });
+
+            // ---- E10-E13 live: SEAN'S STEP 6, THE SERVER'S FOUR HALVES (16 Oct 2026) -------------
+            //
+            // His top-priority finding, and these are the rows for B's side of it. All four run
+            // against the real model, because all four are about what it decides to do.
+            {
+                // Audio flowing first: rule (c)'s whole condition is "already playing with signal".
+                for (int i = 0; i < 200; ++i)
+                { for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr); if ((i % 20) == 0) Rig::pump (10); }
+            }
+            repeated ("E10-live", "live: with audio playing, a GR question is MEASURED, not asked about",
+                      "Add an EchoJay Compressor with a threshold of -20 dB to this rack, then tell me "
+                      "how much gain reduction it is doing",
+                      [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                      {
+                          const auto words = (r.stepWords + " " + r.text).toLowerCase();
+                          // IT MUST NOT ASK HIM TO DO WHAT IS ALREADY HAPPENING.
+                          const bool askedForPlayback = words.contains ("go ahead and play")
+                                                     || words.contains ("play the loudest")
+                                                     || words.contains ("press play");
+                          const auto state = st.getProperty ("agent", juce::var())
+                                               .getProperty ("state", juce::var()).toString();
+                          if (askedForPlayback && ! state.containsIgnoreCase ("ask"))
+                          { why = "it asked for playback and ENDED (state \"" + state + "\") while audio "
+                                  "was already flowing: \"" + words.substring (0, 110) + "\""; return false; }
+                          // ...and a figure has to come back.
+                          const bool hasFigure = words.containsIgnoreCase (" db");
+                          if (! hasFigure)
+                          { why = "no gain-reduction figure in the answer: \"" + words.substring (0, 110) + "\""; return false; }
+                          return true;
+                      }, /*clearFirst*/ true);
+
+            // E11/E12: a run that needs him to act must END AS AN ASK, and his reply must resume THAT
+            // job. One row, because the second half is only testable if the first holds.
+            repeatedAsk ("E11-live", "live: a run that needs the user to act waits as an ask, and the reply resumes THAT job",
+                         "How much gain reduction is the compressor doing?",
+                         [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                         {
+                             const auto arow = st.getProperty ("agentRow", juce::var());
+                             const auto sidBefore = arow.getProperty ("sessionId", juce::var()).toString();
+                             const int  rowsBefore = (int) arow.getProperty ("rows", juce::var());
+                             // His own words, verbatim, as the reply.
+                             rig.send (echojay::rig::cmd::sendChat, args1 ("text", "im playing it"), 15000);
+                             juce::String after, sidAfter;
+                             rig.until ([&] (const juce::var& stv)
+                             {
+                                 const auto a = stv.getProperty ("agentRow", juce::var());
+                                 sidAfter = a.getProperty ("sessionId", juce::var()).toString();
+                                 after    = a.getProperty ("closing", juce::var()).toString() + " "
+                                          + a.getProperty ("opening", juce::var()).toString();
+                                 return after.trim().isNotEmpty()
+                                     && ! a.getProperty ("status", juce::var()).toString().containsIgnoreCase ("work");
+                             }, 90000);
+                             if ((int) rig.freshState().getProperty ("agentRow", juce::var())
+                                     .getProperty ("rows", juce::var()) > rowsBefore
+                                 || sidAfter != sidBefore)
+                             { why = "the reply started a NEW run instead of resuming the waiting one"; return false; }
+                             // ...and it is still about GAIN REDUCTION, not loudness.
+                             const auto low = after.toLowerCase();
+                             if (low.contains ("lufs") && ! low.contains ("gain reduction"))
+                             { why = "the resumed run answered about LOUDNESS: \"" + after.substring (0, 110) + "\""; return false; }
+                             juce::ignoreUnused (r);
+                             return true;
+                         });
+
+            // E13: a read-only answer does not end by offering to change something.
+            repeated ("E13-live", "live: a read-only answer ends without an offer to change anything",
+                      "What is the loudness of this rack?",
+                      [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
+                      {
+                          const auto arow = st.getProperty ("agentRow", juce::var());
+                          const auto words = (arow.getProperty ("closing", juce::var()).toString() + " "
+                                            + arow.getProperty ("ask", juce::var()).toString()).toLowerCase();
+                          for (const char* offer : { "want me to", "shall i", "would you like me to" })
+                              if (words.contains (offer))
+                              { why = juce::String ("a read-only answer ended by offering to act: \"")
+                                    + words.substring (0, 110) + "\""; return false; }
+                          juce::ignoreUnused (r);
+                          return true;
+                      }, /*clearFirst*/ true);
 
             // ---- A8/A9 live: WHAT THE SERVER OFFERS when the named plugin is not the one here -------
             //

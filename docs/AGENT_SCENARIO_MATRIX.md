@@ -123,6 +123,11 @@ Format: **ID** · setup · input · expected (beyond the invariants, which alway
 - **E1** T1 P1 A1 · "how much gain reduction is the compressor doing?" · loudest hits (95th percentile) and typical, both near the meter; no instant max quoted (★17).
 - **E2** T1 P1 A1 · tile vs meter · same held number; caption fits, not "WORK..." (★16).
 - **E3** T1 P2 A1 · same question on Renaissance Axx · "This compressor hasn't been tested with EchoJay yet..." immediately, no measurement, never "no audio" (★19).
+- **E9** T1 A1 · audio PLAYING, "how much gain reduction is the compressor doing?" · the START BODY carries `recentChat` (his last message in it) and `context.transport.signalNow` true (★ step 6 (a)+(c); mine).
+- **E10** T1 A1 · the same question, live · it LISTENS and answers with a figure, never asks him to start playback (★ step 6 (c); B).
+- **E11** T1 · a run that needs him to act · ends in `awaiting_ask`, never Done (★ step 6 (b); B).
+- **E12** T1 · a reply to that ask ("im playing it") · continues the SAME job - gain reduction, not loudness (★ step 6 (a); B).
+- **E13** T1 · a read-only answer · ends without an offer-ask ("want me to bring the loudness up?") (★ step 6 (d); B).
 - **E4** T2 P1 A1 · on a Link · agent does not call check(gr); says plainly it can't read GR on a Link yet; no "Try once more" (★8 morning).
 - **E5** T2 tile · no GR on a Link slot until Link meters ship (★7 morning).
 - **E6** T1 P1 A2 · transport stopped · asks to play once, then measures; listens before reading (★17 order).

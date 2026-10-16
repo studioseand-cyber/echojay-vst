@@ -162,6 +162,22 @@ struct Sources
     std::function<bool()> transportKnown, transportPlaying;
     std::function<int()>  chainRevision;
     std::function<juce::StringArray()> inventory;   // installed plugin names; empty = unknown
+
+    /** ---- THE RECENT CHAT, SO A REPLY CONTINUES THE JOB IT ANSWERS (16 Oct 2026, Sean) ---------
+        The last few turns of this conversation, oldest first, as [{role, text}].
+
+        His step 6, and he called it top priority: he asked how much gain reduction the compressor
+        was doing, the run said *"Go ahead and play the loudest section so I can read the gain
+        reduction"* and ENDED; he replied *"im playing it"*, and a NEW run started with no memory of
+        the goal, measured LUFS instead, and answered a different question.
+
+        A run that cannot see what was just said cannot continue it, and the start body carried
+        nothing but the goal. His rule (a): "every agent run gets the recent chat (my messages and
+        the agent's last reply) as context, so a reply continues the job it answers."
+
+        This is the plugin's half - sending it. Using it is B's (FOR_B §16). Void when the host has
+        no chat to offer, which reads exactly as it did before the field existed.                   */
+    std::function<juce::var()> recentChat;
 };
 
 class ExecutorRead : public ToolExecutor

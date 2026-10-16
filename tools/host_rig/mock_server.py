@@ -96,10 +96,19 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def _record(self, path, body):
+        # ---- THE CONTEXT, NOT JUST THE GOAL (16 Oct 2026, Sean's step 6) ------------------------
+        # His rules (a) and (c) are about what the START BODY CARRIES - the recent chat, and whether
+        # the transport is already playing. A row cannot assert that against a recorder that kept
+        # only the goal, so the two fields the rules name are recorded verbatim.
+        ctx = body.get("context") or {}
+        chat = ctx.get("recentChat") or []
         with STATE["lock"]:
             STATE["requests"].append({"path": path, "atMs": int(time.time() * 1000),
                                       "chatId": body.get("chatId", ""),
-                                      "message": (body.get("message") or body.get("goal") or "")[:200]})
+                                      "message": (body.get("message") or body.get("goal") or "")[:200],
+                                      "recentChatCount": len(chat) if isinstance(chat, list) else 0,
+                                      "recentChat": json.dumps(chat)[:1200],
+                                      "transport": json.dumps(ctx.get("transport") or {})[:400]})
 
     # ---- the routes ------------------------------------------------------
     def do_GET(self):
