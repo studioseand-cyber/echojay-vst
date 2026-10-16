@@ -5030,12 +5030,28 @@ int main (int argc, char* argv[])
                           // ASKING WHICH KICK IS THE RIGHT ANSWER, not a failure. With real track
                           // names the model asks "There are two kick tracks linked - which one do you
                           // mean?", which is exactly what it should do; what must never happen is a
-                          // silent edit of another track, and that is the branch above. A run that
-                          // changed nothing and asked NOTHING is the only other failure here.
+                          // silent edit of another track, and that is the branch above.
+                          //
+                          // AND SO IS PROPOSING ONE (16 Oct 2026). One attempt in five read "nothing
+                          // changed anywhere" over a run that had proposed exactly the right thing -
+                          // "build 1 slots: EchoJay Compressor - on 88_7even Kick_2_02" - and was
+                          // WAITING for the press when the row looked. The row is about WHERE the
+                          // work lands, so a proposal that names the kick is the claim holding; it is
+                          // the silent edit of another track that must fail, and that is above.
+                          juce::String labels;
+                          if (auto* arr = st.getProperty ("agentRow", juce::var())
+                                              .getProperty ("steps", juce::var()).getArray())
+                              for (const auto& sv : *arr)
+                                  labels << sv.getProperty ("label", juce::var()).toString() << " | ";
+                          const auto kickName = linkRowOf (st, linkUid)
+                                                    .getProperty ("name", juce::var()).toString();
+                          const bool namedTheKick = kickName.isNotEmpty()
+                                                 && labels.containsIgnoreCase (kickName);
                           if (kickNow <= wasKick && ownNow <= wasOwn
-                              && ! r.sawAsk && r.asksAnswered == 0)
+                              && ! r.sawAsk && r.asksAnswered == 0 && ! namedTheKick)
                           {
-                              why = "nothing changed anywhere and it asked nothing";
+                              why = "nothing changed anywhere, it asked nothing, and no line named the "
+                                    "kick. The lines were: " + labels.substring (0, 140);
                               return false;
                           }
                           return true;
@@ -5147,8 +5163,12 @@ int main (int argc, char* argv[])
                          });
 
             // ---- B3 live: the SAME question, answered by typing -------------------------------------
+            // THE GOAL THAT ASKS (16 Oct 2026, the final pass). "Add a transient shaper to the kick"
+            // stopped asking once the kick had a real name and the inventory could resolve it - both
+            // of these rows SKIPPED, honestly but uselessly. B2-live holds 5 of 5 on the compressor
+            // goal, so that is the question these two act on.
             repeatedAsk ("B3-live", "live: a typed answer lands in the waiting ask and the run carries on",
-                         "Add a transient shaper to the kick with attack at +6 dB",
+                         "Add a compressor to this rack",
                          [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                          {
                              const auto arow = st.getProperty ("agentRow", juce::var());
@@ -5186,7 +5206,7 @@ int main (int argc, char* argv[])
 
             // ---- B4 live: a new instruction typed over a waiting question ---------------------------
             repeatedAsk ("B4-live", "live: a new instruction closes the waiting run and starts its own",
-                         "Add a transient shaper to the kick with attack at +6 dB",
+                         "Add a compressor to this rack",
                          [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                          {
                              const auto arow = st.getProperty ("agentRow", juce::var());

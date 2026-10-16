@@ -1,5 +1,5 @@
 scenario C2-live
-captured 2026-10-16T18:18:59.799+01:00
+captured 2026-10-16T19:20:20.788+01:00
   [user] Add an EchoJay EQ to this rack, then add an EchoJay Compressor before it
   [assistant] The agent stopped: The agent couldn't start, please try again.
   run row: status=Failed changes=0 steps=0 zones=[]

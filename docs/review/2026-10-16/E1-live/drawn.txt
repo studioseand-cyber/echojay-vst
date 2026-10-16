@@ -1,5 +1,5 @@
 scenario E1-live
-captured 2026-10-16T18:19:24.505+01:00
+captured 2026-10-16T19:20:45.592+01:00
   [user] Add an EchoJay Compressor with a threshold of -20 dB and a ratio of 4:1 to this rack, then tell me how much gain reduction it is doing
   [assistant] The agent stopped: The agent couldn't start, please try again.
   run row: status=Failed changes=0 steps=0 zones=[]

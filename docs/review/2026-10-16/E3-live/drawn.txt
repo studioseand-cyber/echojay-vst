@@ -1,5 +1,5 @@
 scenario E3-live
-captured 2026-10-16T18:19:35.322+01:00
+captured 2026-10-16T19:20:56.488+01:00
   [user] How much gain reduction is Renaissance Axx (s) doing?
   [assistant] The agent stopped: The agent couldn't start, please try again.
   run row: status=Failed changes=0 steps=0 zones=[]
