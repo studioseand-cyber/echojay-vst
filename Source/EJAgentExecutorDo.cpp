@@ -801,15 +801,41 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
                             // best matches what was asked is the one this add produced. If none
                             // matches, the placement decides, as before, and the answer is honest
                             // about that slot.
-                            int chosen = hits.back(), bestMatched = -1;
+                            // ---- AND A ZERO-MATCH "BEST" IS NOT AN ANSWER (16 Oct 2026) -------
+                            //
+                            // The live pass on a Link failed four attempts in five on this line. The
+                            // Kick's rack already held a Renaissance Axx (never dialled, Threshold
+                            // 0.00); the add appended a second one, which dialled to -18. Nothing
+                            // matched the asked value at read time - the new slot had not published
+                            // its landed figure yet - so EVERY hit scored zero, and the loop below
+                            // nevertheless "improved" on its starting answer at the first
+                            // iteration (0 > -1) and picked hits[0]: the OLD slot, sitting at 0.00.
+                            // The step then said "the settings did NOT take: threshold 0 (asked
+                            // -18)" - a true sentence about the wrong slot, which is the exact fault
+                            // this block was written to end.
+                            //
+                            // So the PLACEMENT is the answer unless the values genuinely name a
+                            // better one: an add with no placement appends, so the last hit is the
+                            // one it just made; `after + 1` wins when the server asked for a
+                            // position. A value match only overrides when something actually
+                            // matched, and the LAST such slot wins a tie for the same reason.
+                            int chosen = hits.back();
+                            if (byAfter)
+                                for (int h : hits) if (h == after + 1) chosen = h;
+                            int bestMatched = 0;
                             for (int h : hits)
                             {
                                 const auto c = checkSlotValues (applyTo, h, ss);
                                 const int matched = c.matched.size();
-                                if (matched > bestMatched) { bestMatched = matched; chosen = h; }
+                                if (matched > 0 && matched >= bestMatched) { bestMatched = matched; chosen = h; }
                             }
-                            if (bestMatched <= 0 && byAfter)
-                                for (int h : hits) if (h == after + 1) chosen = h;
+                            EchoJay_NSLog (("EJAgent: " + juce::String ((int) hits.size()) + " slots named \""
+                                            + wantName + "\"; chose slot " + juce::String (chosen) + " by "
+                                            + (bestMatched > 0 ? "value match (" + juce::String (bestMatched)
+                                                                 + " of the asked values read back there)"
+                                                               : juce::String (byAfter ? "the placement the server asked for"
+                                                                                       : "the append position (the last of them)"))
+                                              ).toRawUTF8());
                             slot1 = chosen;
                         }
                         EchoJay_NSLog (("EJAgent: add read-back targets slot " + juce::String (slot1)

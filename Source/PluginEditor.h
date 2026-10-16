@@ -6444,6 +6444,8 @@ private:
         si.manufacturer = rs.manufacturer;   // sidecar is the remote view's
                                              // ONLY identity source ("" from
                                              // an old Link reads not-Waves)
+        si.landedValues = rs.landedValues;   // 16 Oct: the numbers the plugin SHOWS, not the request
+        si.dialPending  = rs.dialPending;    // 16 Oct: and whether its dial has finished
         return si;
     }
     ChainRackView chainRackView() const;

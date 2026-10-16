@@ -1,8 +1,7 @@
 scenario B5
-captured 2026-10-16T15:03:47.833+01:00
-  [user] rig-gr-marker: how much is it doing?
-  [assistant] Read the gain reduction.
-  [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
+captured 2026-10-16T15:52:50.333+01:00
+  [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
   [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
   [assistant] Had a look at that one.
   [user] rig-undoclose-marker: put the pre-gain up

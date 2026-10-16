@@ -1,0 +1,8 @@
+scenario B3-live
+captured 2026-10-16T17:06:57.266+01:00
+  [user] Add a transient shaper to the kick with attack at +6 dB
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=1 zones=[7:Stop]
+  opening: 
+  closing: 
+    step "ask" [running] right="your answer?" detail="" chips=[]

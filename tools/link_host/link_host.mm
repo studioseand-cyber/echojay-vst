@@ -207,18 +207,21 @@ int main (int argc, char* argv[])
     }
     if (argc < 3)
     {
-        std::printf ("usage: link_host <Link.component> <label> [--prebuild \"Name,Name\"] [--open-editor]\n");
+        std::printf ("usage: link_host <Link.component> <label> [--prebuild \"Name,Name\"] "
+                     "[--track-name \"88_7even Kick_2_01\"] [--open-editor]\n");
         return 2;
     }
 
     const juce::File comp { juce::String (argv[1]) };
     Host host; host.label = juce::String (argv[2]);
     juce::StringArray prebuild;
+    juce::String trackName;
     bool openAtStart = false;
     for (int i = 3; i < argc; ++i)
     {
         const juce::String a { argv[i] };
         if (a == "--prebuild" && i + 1 < argc) prebuild.addTokens (juce::String (argv[++i]), ",", "");
+        else if (a == "--track-name" && i + 1 < argc) trackName = juce::String (argv[++i]);
         else if (a == "--open-editor")         openAtStart = true;
     }
 
@@ -246,6 +249,24 @@ int main (int argc, char* argv[])
     const double sr = 48000.0;
     host.plugin->setPlayConfigDetails (2, 2, sr, 512);
     host.plugin->prepareToPlay (sr, 512);
+    // ---- THE TRACK NAME, THROUGH THE DOOR LOGIC USES (16 Oct 2026, Sean) ------------------------
+    //
+    // Every Link in the rig was called "Untitled". The live pass showed what that costs: asked to
+    // "make the kick punchier", the model answered "I don't see a track named Kick - did you mean one
+    // of these linked tracks?" and offered Untitled, Untitled 2, Untitled 3, Untitled 4. The rows were
+    // testing a project with no track names in it, which is not the project anyone has.
+    //
+    // updateTrackProperties is the HOST's own door - the one Logic and every AU host calls, and the
+    // one LinkProcessor already treats as authoritative (hostNameFromHost_). A name delivered here is
+    // a name delivered the way Logic delivers it, so what the rows exercise is the real path.
+    // --track-name overrides; the default is a name shaped like one of Sean's own.
+    {
+        juce::AudioProcessor::TrackProperties tp;
+        tp.name = trackName.isNotEmpty() ? trackName : host.label;
+        host.plugin->updateTrackProperties (tp);
+        std::printf ("link_host \"%s\": track name delivered as \"%s\" (the host's own door)\n",
+                     host.label.toRawUTF8(), tp.name->toRawUTF8());
+    }
     {
         // THE DIRECTORY THIS PROCESS RESOLVED, on its own line. A Link that ends up on a different
         // shared directory from the V2 is invisible to it, and the only way to tell that from "it

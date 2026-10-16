@@ -155,6 +155,46 @@ Downgrade-safe: the sidecar key is written only when true, so an old build readi
 sidecar sees nothing, and a new build reading an old Link's sees `false` - which is the settled case
 and exactly how this build behaved before the field existed.
 
+### D15. The per-step Undo was not lost: a finished run collapses, and the button is on the line
+
+You asked me to make sure. It is there, and here is exactly where: the per-step Undo is drawn on any
+step that finished and handed back an undo token, and the step LINES are laid out only while the step
+list is open. A finished run draws itself collapsed behind its "N changes" toggle - your own rule
+("one agent run = one message", collapse to the closing) - so after a run ends you press the count
+first and the line's Undo is there.
+
+What changed this morning, and it is worth naming because it is the nearest thing to a loss: the old
+rule was *"a failed run never collapses"* (`stepsOpen = stepsOpen || ! finished || anyFailed`), so a
+run with a failure stayed open and its lines' buttons stayed visible. Your #13 said "Hide steps does
+nothing on a failed run", so the press is honoured now and the collapse keeps the failed lines on
+screen instead of refusing. A failed step has no undo token - there is nothing to put back - so no
+Undo button went with it.
+
+The matrix row D4 presses the toggle and then the line's Undo, which is what a person does, and the
+evidence prints the drawn zones either side: pass 12 drew `[12,12,11:Hide steps,8:Undo all]` - two
+per-step Undo buttons, one per undoable step. The pass-11 skip that said "the row drew no per-step
+Undo control at all" was my row failing to open the list, and it is withdrawn.
+
+### D16. Every Link in the rig was called "Untitled", and that was hiding a targeting question
+
+Your two readings of the live evidence were the same fault: *"A4-live says Untitled's rack"* and
+*"'Make the kick punchier' put a compressor on the MIX BUS, not the Kick."* The rig's Links had no
+track name at all, so the model was working in a project where no track has a name. In one row it
+said so - *"I don't see a track named Kick - did you mean one of these linked tracks?"* with chips
+reading Untitled, Untitled 2, Untitled 3, Untitled 4 - and in the other it quietly used the channel
+the chat was working on, which was the mix bus.
+
+The names are real now and they arrive the way Logic delivers them: `updateTrackProperties`, the
+host's own door, which `LinkProcessor` already treats as authoritative. The out-of-process pair are
+"88_7even Kick_2_01" and "88_7even Vox_Lead_01"; the in-process pair are "88_7even Kick_2_02" and
+"88_7even Vox_Dbl_01"; the V2 is "Mix Bus". The rig also prefers the Kick when it picks a Link, so a
+row that says "the kick" is about the kick.
+
+And B1-live is no longer only about whether a question can be answered - it now holds the whole
+claim: **a goal that names a track is answered on that track.** If the run adds to the mix bus while
+the kick is untouched, the row fails and prints both slot counts. If it still lands on the mix bus
+with the names in place, that is a real targeting fault with evidence, and it goes to B.
+
 ---
 
 ## What the new runner found on its FIRST run, before any scenario

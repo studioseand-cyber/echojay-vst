@@ -594,11 +594,25 @@ struct Track
     juce::MidiBuffer midi;
     double phase = 0.0;
 
+    /** The name the HOST gives this track. "" leaves it unnamed, which is what every Link in this
+        rig was until 16 Oct - and the live pass showed the cost: asked to "make the kick punchier",
+        the model answered "I don't see a track named Kick" and offered Untitled, Untitled 2,
+        Untitled 3, Untitled 4. Delivered through updateTrackProperties, the door Logic uses. */
+    juce::String trackName;
+
     void prepare (double sr, int block)
     {
         plugin->setPlayConfigDetails (2, 2, sr, block);
         plugin->prepareToPlay (sr, block);
         buf.setSize (2, block);
+        if (trackName.isNotEmpty())
+        {
+            juce::AudioProcessor::TrackProperties tp;
+            tp.name = trackName;
+            plugin->updateTrackProperties (tp);
+            std::printf ("  %s: track name delivered as \"%s\"\n",
+                         name.toRawUTF8(), trackName.toRawUTF8());
+        }
     }
 
     /** One block of real audio: a -12 dBFS 220 Hz tone. The level matters - the
@@ -1063,8 +1077,28 @@ static AgentOutcome askAgent (Rig& rig, const juce::String& request, int timeout
             // that want a plugin say which), defaulting to "yes" for a plain confirmation.
             if (how.containsIgnoreCase ("no choices"))
             {
-                rig.send (echojay::rig::cmd::sendChat, args1 ("text", answerText), 15000);
-                how = "no chips were offered, so the rig TYPED \"" + answerText + "\" as a user would";
+                // ---- AND "yes" IS NOT AN ANSWER TO "WHICH PLUGIN?" (16 Oct 2026) -----------------
+                // The live pass watched the real server ask "Pick a transient shaper for the kick"
+                // with `{"choices": [], "allowFreeText": false}` five times in five, the rig type
+                // its default "yes", and the run end having changed nothing - and the ROW then
+                // reported "nothing changed anywhere", which is a true sentence about the rig's own
+                // answer rather than about the product. A question that names a kind of plugin is
+                // answered with a plugin of that kind that is REALLY INSTALLED here.
+                auto typed = answerText;
+                // The question ON SCREEN NOW, not the last one answered: out.lastAsk is still the
+                // previous round's at this point in the loop.
+                auto q = a.getProperty ("askText", juce::var()).toString();
+                if (q.isEmpty()) q = out.lastAsk;
+                if (typed == "yes" || typed.isEmpty())
+                {
+                    if (q.containsIgnoreCase ("transient"))        typed = "EchoJay Transient";
+                    else if (q.containsIgnoreCase ("compressor"))  typed = "EchoJay Compressor";
+                    else if (q.containsIgnoreCase ("eq") || q.containsIgnoreCase ("equaliser")) typed = "EchoJay EQ";
+                    else if (q.containsIgnoreCase ("limiter"))     typed = "EchoJay Limiter";
+                    else if (q.containsIgnoreCase ("gate"))        typed = "EchoJay Gate";
+                }
+                rig.send (echojay::rig::cmd::sendChat, args1 ("text", typed), 15000);
+                how = "no chips were offered, so the rig TYPED \"" + typed + "\" as a user would";
             }
             ++out.asksAnswered;
             out.lastAsk = a.getProperty ("askText", juce::var()).toString();
@@ -1670,10 +1704,15 @@ int main (int argc, char* argv[])
                           "cannot run. They are SKIPPED, never passed.";
         else
         {
-            struct Want { const char* label; const char* plugins; };
+            // ---- REAL TRACK NAMES (16 Oct 2026, Sean) ------------------------------------------
+            // "A4-live says Untitled's rack. If that's the rig's unnamed Link, name it
+            // 88_7even Kick_2_01 so the row tests real names." They are delivered through
+            // updateTrackProperties, the host's own door - see link_host - so a row that asks for
+            // "the kick" is asking the question Sean asks in Logic.
+            struct Want { const char* label; const char* plugins; const char* track; };
             static const Want kWant[] = {
-                { "Kick",  "Renaissance Axx,Vertigo VSM-3" },
-                { "Vocal", "Renaissance Axx" },
+                { "Kick",  "Renaissance Axx,Vertigo VSM-3", "88_7even Kick_2_01" },
+                { "Vocal", "Renaissance Axx",               "88_7even Vox_Lead_01" },
             };
             for (const auto& w : kWant)
             {
@@ -1691,6 +1730,8 @@ int main (int argc, char* argv[])
                 argv.add (lp->label);
                 argv.add ("--prebuild");
                 argv.add (w.plugins);
+                argv.add ("--track-name");
+                argv.add (w.track);
                 lp->proc = std::make_unique<juce::ChildProcess>();
                 if (! lp->proc->start (argv))
                 {
@@ -1723,9 +1764,11 @@ int main (int argc, char* argv[])
     }
 
     leg ("R0: the built bundles load in one host process");
-    Track v2; v2.name = "Mix Bus (V2)";
-    Track lk1; lk1.name = "Kick (Link)";
-    Track lk2; lk2.name = "Vocal (Link)";
+    // REAL TRACK NAMES (16 Oct 2026, Sean): the in-process pair gets them too, or "the kick" still
+    // means nothing on half the racks in the rig. These are the names a Logic project has.
+    Track v2; v2.name = "Mix Bus (V2)";  v2.trackName  = "Mix Bus";
+    Track lk1; lk1.name = "Kick (Link)"; lk1.trackName = "88_7even Kick_2_02";
+    Track lk2; lk2.name = "Vocal (Link)"; lk2.trackName = "88_7even Vox_Dbl_01";
     v2.plugin  = load (v2Comp,   "V2");
     lk1.plugin = load (linkComp, "Link 1");
     lk2.plugin = load (linkComp, "Link 2");
@@ -2302,14 +2345,25 @@ int main (int argc, char* argv[])
     // The registry pass runs on the processor's 1 Hz timer, so the Links appear a second or so after they
     // first process audio. Waited for, with a bound, rather than read once - the "decisions on uncontrolled
     // timing" rule applies to the rig as much as to the plugin.
-    juce::String linkUid;
-    const bool sawLink = rig.until ([&linkUid] (const juce::var& s)
+    juce::String linkUid, linkName;
+    // THE KICK BY PREFERENCE (16 Oct 2026, Sean): with real track names in the registry the rows that
+    // say "the kick" can be about the kick. Any connected Link still satisfies the wait - a row must
+    // not hang because a name is late - but the Kick is taken when it is there.
+    const bool sawLink = rig.until ([&linkUid, &linkName] (const juce::var& s)
     {
+        juce::String anyUid, anyName;
         if (auto* arr = s.getProperty ("links", juce::var()).getArray())
             for (const auto& l : *arr)
-                if ((bool) l.getProperty ("connected", false))
-                { linkUid = l.getProperty ("uid", juce::var()).toString(); return linkUid.isNotEmpty(); }
-        return false;
+            {
+                if (! (bool) l.getProperty ("connected", false)) continue;
+                const auto u = l.getProperty ("uid",  juce::var()).toString();
+                const auto n = l.getProperty ("name", juce::var()).toString();
+                if (u.isEmpty()) continue;
+                if (n.containsIgnoreCase ("Kick")) { linkUid = u; linkName = n; return true; }
+                if (anyUid.isEmpty()) { anyUid = u; anyName = n; }
+            }
+        if (anyUid.isNotEmpty()) { linkUid = anyUid; linkName = anyName; }
+        return false;        // keep looking for the Kick until the bound
     }, 8000);
     if (! sawLink) rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()));
     check (linkUid.isNotEmpty(), "a Link is in the registry and connected",
@@ -4306,14 +4360,14 @@ int main (int argc, char* argv[])
                         if (lb.isNotEmpty()) linkLabel = lb;
                     }
                 rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
-                const auto linkName = linkRowOf (stLink, linkUid)
+                const auto trackNow = linkRowOf (stLink, linkUid)
                                           .getProperty ("name", juce::var()).toString();
-                const bool namesTrack = linkName.isNotEmpty()
-                                     && linkLabel.containsIgnoreCase (linkName.substring (0, 6));
+                const bool namesTrack = trackNow.isNotEmpty()
+                                     && linkLabel.containsIgnoreCase (trackNow.substring (0, 6));
                 scen ("A11b", "Auto on ANOTHER track: the approved line names that track",
                       rLink.ran() && namesTrack,
                       "the line reads \"" + linkLabel.substring (0, 90) + "\" for the Link called \""
-                      + linkName + "\"; autoApplied=" + juce::String (linkAuto ? "y" : "n")
+                      + trackNow + "\"; autoApplied=" + juce::String (linkAuto ? "y" : "n")
                       + ", it " + (rLink.sawApproval ? "DID wait" : "did not wait")
                       + "  (the matrix line expects a wait here; the build decides on undoability "
                       "alone - NEEDS_SEAN D13)",
@@ -4798,11 +4852,25 @@ int main (int argc, char* argv[])
                           "Add " + tp.name + " to the Kick's rack and set its " + tp.paramName,
                           [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                           {
-                              const auto lr = linkRowOf (st, linkUid);
-                              const auto landed = lr.getProperty ("landed", juce::var()).toString();
+                              // ---- WAIT FOR THE SIDECAR, WITH A BOUND (16 Oct 2026) ----------------
+                              // The first cut read the Link's landed field the instant the turn ended
+                              // and failed one attempt with "slot 1 |slot 2 " - two empty fields and
+                              // the third slot not in the sidecar yet. A Link publishes its rack on
+                              // its own timer, so the row waits for the thing it is about instead of
+                              // racing it, and says so if the wait runs out.
+                              juce::String landed = linkRowOf (st, linkUid)
+                                                        .getProperty ("landed", juce::var()).toString();
+                              if (! landed.containsIgnoreCase (tp.paramName))
+                                  rig.until ([&] (const juce::var& stv)
+                                  {
+                                      landed = linkRowOf (stv, linkUid)
+                                                   .getProperty ("landed", juce::var()).toString();
+                                      return landed.containsIgnoreCase (tp.paramName);
+                                  }, 15000);
                               const auto words = r.stepWords + " " + r.text;
                               if (! landed.containsIgnoreCase (tp.paramName))
-                              { why = "the Link's landed field has no " + tp.paramName + ": \"" + landed.substring (0, 90) + "\""; return false; }
+                              { why = "the Link's landed field still has no " + tp.paramName
+                                    + " fifteen seconds after the run: \"" + landed.substring (0, 110) + "\""; return false; }
                               if (words.containsIgnoreCase ("did NOT take")) { why = "the run said it did not take"; return false; }
                               return true;
                           });
@@ -4813,18 +4881,61 @@ int main (int argc, char* argv[])
             // ---- B1-B4 live: whatever it asks, the user can answer --------------------------------
             // The model may or may not ask. What must hold is that IF it asks, the question is
             // answerable - chips, or a line saying to type - and that the run then carries on.
-            repeated ("B1-live", "live: any question it asks can be answered",
+            // ---- AND IT MUST LAND ON THE TRACK THE GOAL NAMED (16 Oct 2026, Sean) ----------------
+            //
+            // His reading of the first live evidence: *"B1-live: 'Make the kick punchier' put a
+            // compressor on the MIX BUS, not the Kick. If the Kick is in the rig, that's a targeting
+            // bug."* It was in the rig and it had no name - every Link was "Untitled", so the model
+            // answered "I don't see a track named Kick" in one row and quietly used the current
+            // channel in this one. The names are real now (updateTrackProperties, the host's door),
+            // so the row can hold the whole claim: the question is answerable AND the change lands on
+            // the kick. A run that silently edits another track is a FAILURE here, which is the only
+            // way a targeting fault can be caught by a machine rather than by Sean.
+            const auto kickSlots = [&] { return (int) linkRowOf (rig.freshState(), linkUid)
+                                                          .getProperty ("slotCount", -1); };
+            int ownBefore  = ownSlotCount (rig.freshState());
+            int kickBefore = kickSlots();
+            repeated ("B1-live", "live: a goal that names a track is answered ON that track",
                       "Make the kick punchier",
                       [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                       {
                           const auto arow = st.getProperty ("agentRow", juce::var());
                           const auto hint = arow.getProperty ("askHint", juce::var()).toString();
                           const auto zones = arow.getProperty ("zones", juce::var()).toString();
-                          if (! r.sawAsk && r.asksAnswered == 0) return true;   // it did not ask: nothing to prove
-                          const bool answerable = zones.contains ("4:") || hint.isNotEmpty()
-                                               || r.asksAnswered > 0;
-                          if (! answerable) { why = "it asked \"" + r.lastAsk.substring (0, 70)
-                                                  + "\" with no chips and no hint"; return false; }
+                          if (r.sawAsk || r.asksAnswered > 0)
+                          {
+                              const bool answerable = zones.contains ("4:") || hint.isNotEmpty()
+                                                   || r.asksAnswered > 0;
+                              if (! answerable) { why = "it asked \"" + r.lastAsk.substring (0, 70)
+                                                      + "\" with no chips and no hint"; return false; }
+                          }
+                          // WHERE IT LANDED. The own rack is the mix bus; the Kick is a Link. A change
+                          // to the mix bus while the Kick is untouched is the fault Sean named.
+                          const int ownNow  = ownSlotCount (st);
+                          const int kickNow = kickSlots();
+                          const int wasOwn = ownBefore, wasKick = kickBefore;
+                          // EVERY attempt is measured against what the last one left, pass or fail,
+                          // so a stale baseline cannot make the next attempt read as a change.
+                          ownBefore = ownNow; kickBefore = kickNow;
+                          if (ownNow > wasOwn && kickNow <= wasKick)
+                          {
+                              why = "it changed the MIX BUS (" + juce::String (wasOwn) + " -> "
+                                  + juce::String (ownNow) + " slot(s)) and left the kick alone ("
+                                  + juce::String (wasKick) + " -> " + juce::String (kickNow)
+                                  + ") for a goal that named the kick";
+                              return false;
+                          }
+                          // ASKING WHICH KICK IS THE RIGHT ANSWER, not a failure. With real track
+                          // names the model asks "There are two kick tracks linked - which one do you
+                          // mean?", which is exactly what it should do; what must never happen is a
+                          // silent edit of another track, and that is the branch above. A run that
+                          // changed nothing and asked NOTHING is the only other failure here.
+                          if (kickNow <= wasKick && ownNow <= wasOwn
+                              && ! r.sawAsk && r.asksAnswered == 0)
+                          {
+                              why = "nothing changed anywhere and it asked nothing";
+                              return false;
+                          }
                           return true;
                       });
 
@@ -4883,6 +4994,16 @@ int main (int argc, char* argv[])
                               "NEVER counted as a pass.", "B");
                     return;
                 }
+                // A row that could not RUN is a skip, not a failure, and the lambda says which by
+                // marking its reason. Every attempt must agree: one real failure makes it a failure.
+                bool allSkip = passed == 0 && ! notes.isEmpty();
+                for (const auto& nt : notes) if (! nt.contains ("SKIP-REASON")) allSkip = false;
+                if (allSkip)
+                {
+                    scenSkip (id, title, notes[0].fromFirstOccurrenceOf ("SKIP-REASON: ", false, false)
+                              + "  (every one of " + juce::String (asked) + " attempt(s))", "B");
+                    return;
+                }
                 scen (id, title, passed == asked && asked > 0,
                       juce::String (passed) + " of " + juce::String (asked) + " ask(s) held (it asked in "
                       + juce::String (asked) + " of " + juce::String (n) + " attempts)"
@@ -4891,14 +5012,22 @@ int main (int argc, char* argv[])
             };
 
             // ---- B2 live: the chip the model offered, TAPPED ---------------------------------------
+            // A GOAL THAT REALLY DOES COME BACK WITH CHIPS (16 Oct 2026). The transient-shaper goal
+            // below asks "Pick a transient shaper" with `choices: []` five times in five - there is
+            // nothing to tap, which is B1's subject, not B2's. The live evidence has the server
+            // offering a chip for "which compressor", so that is the question this row taps. A row
+            // that still finds no chip SKIPS with the reason, because what the server offers is not
+            // this build's to decide (FOR_B has the evidence).
             repeatedAsk ("B2-live", "live: tapping a chip answers the question and the run carries on",
-                         "Add a transient shaper to the kick with attack at +6 dB",
+                         "Add a compressor to this rack",
                          [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                          {
                              const auto arow = st.getProperty ("agentRow", juce::var());
                              const auto zones = arow.getProperty ("zones", juce::var()).toString();
                              if (! zones.contains ("4:"))
-                             { why = "the question drew no chip to tap [" + zones.substring (0, 90) + "]"; return false; }
+                             { why = "SKIP-REASON: the ask arrived with no choices, so there was no chip "
+                                     "to tap [" + zones.substring (0, 90) + "] - what the server offers is "
+                                     "not this build's to decide (FOR_B)"; return false; }
                              const auto sidBefore = arow.getProperty ("sessionId", juce::var()).toString();
                              rig.send (echojay::rig::cmd::press, args1 ("button", "chip0"), 12000);
                              bool wentOn = false;

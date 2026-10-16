@@ -1,0 +1,8 @@
+scenario A3-live
+captured 2026-10-16T16:38:10.053+01:00
+  [user] Add Renaissance Axx (s) to this rack and set its Threshold to -30 dB
+  [assistant] Added Renaissance Axx (s) to the Mix Bus rack with Threshold set to -30 dB.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added Renaissance Axx (s) to the Mix Bus rack with Threshold set to -30 dB.
+  closing: Added Renaissance Axx (s) to the Mix Bus rack with Threshold set to -30 dB.
+    step "add Renaissance Axx (s)" [done] right="applied" detail="added Renaissance Axx (s) first; read back 1 slot(s) on the rack; read back Renaissance Axx (s): threshold -30" chips=[]
