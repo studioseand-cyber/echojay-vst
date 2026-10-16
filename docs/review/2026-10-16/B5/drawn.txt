@@ -1,18 +1,16 @@
 scenario B5
-captured 2026-10-16T10:41:20.177+01:00
+captured 2026-10-16T11:07:01.169+01:00
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.
-  [assistant] Chain built - 1 plugin loaded.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
   [user] rig-gr-marker: how much is the other one doing?
   [assistant] Read the gain reduction.
-  [assistant] Chain built - 1 plugin loaded.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
   [user] rig-undo-marker: put the pre-gain up
   [assistant] Set the pre-gain to 3 dB, then undid it.
   [user] rig-setfail-marker: add something that is not there
   [assistant] One step did not land.
-  run row: status=Done changes=0 steps= zones=[3]
+  run row: status=Done changes=0 steps=1 zones=[3,11:Hide steps]
   opening: One step did not land.
   closing: One step did not land.
     step "add a plugin that is not installed" [failed] right="not applied" detail="op 1 invalid: "Nothing Of This Name Exists" not in the loadable plugin list" chips=[]

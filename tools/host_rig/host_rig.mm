@@ -845,13 +845,18 @@ struct AgentOutcome
         silence. */
     bool ran() const
     {
-        return adopted && (stepWords.isNotEmpty() || asksAnswered > 0 || sawAsk || text.isNotEmpty());
+        // sawApproval counts (16 Oct 2026): a row that deliberately leaves the plan waiting - to read
+        // what is DRAWN while it waits - breaks out before any step line is captured, and would
+        // otherwise be forced to fail for "the turn produced nothing" when the turn had plainly
+        // produced a plan the user was being asked to approve.
+        return adopted && (stepWords.isNotEmpty() || asksAnswered > 0 || sawAsk || sawApproval
+                           || text.isNotEmpty());
     }
     juce::String whyNotRan() const
     {
         juce::StringArray why;
         if (! adopted) why.add ("the card never took up this goal");
-        if (stepWords.isEmpty() && asksAnswered == 0 && text.isEmpty())
+        if (stepWords.isEmpty() && asksAnswered == 0 && text.isEmpty() && ! sawApproval && ! sawAsk)
             why.add ("no step, no question and no text - the turn produced nothing");
         return why.joinIntoString ("; ");
     }
@@ -3763,7 +3768,7 @@ int main (int argc, char* argv[])
         // ---- C5: AFTER AN UNDO, THE CLOSING DESCRIBES THE UNDONE STATE (Sean's #14) -----------------
         {
             rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
-            const auto r = askAgent (rig, "rig-undo-marker: put the pre-gain up", 90000);
+            const auto r = askAgent (rig, "rig-undoclose-marker: put the pre-gain up", 90000);
             Rig::pump (600);
             rig.send (echojay::rig::cmd::press, args1 ("button", "undo_all"), 12000);
             Rig::pump (1500);
@@ -3785,19 +3790,30 @@ int main (int argc, char* argv[])
         {
             const auto r = askAgent (rig, "rig-setfail-marker: add something that is not there", 90000);
             const auto before = rig.freshState().getProperty ("agentRow", juce::var());
-            const bool openBefore = (bool) before.getProperty ("stepsOpen", false);
+            const bool openBefore  = (bool) before.getProperty ("stepsOpen", false);
+            const bool failsBefore = (bool) before.getProperty ("failuresOnly", false);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "changes"), 10000);
+            Rig::pump (900);
+            const auto mid = rig.freshState().getProperty ("agentRow", juce::var());
+            const bool openMid = (bool) mid.getProperty ("stepsOpen", false);
             rig.send (echojay::rig::cmd::press, args1 ("button", "changes"), 10000);
             Rig::pump (900);
             const auto after = rig.freshState().getProperty ("agentRow", juce::var());
             const bool openAfter   = (bool) after.getProperty ("stepsOpen", false);
-            const bool failsShown  = (bool) after.getProperty ("failuresOnly", false);
-            scen ("B5", "Hide steps works on a run with a failed line, and the failure stays visible",
-                  openBefore && ! openAfter && failsShown,
+            const bool failsAfter  = (bool) after.getProperty ("failuresOnly", false);
+            // BOTH WAYS, and the failure never hidden. A finished run that failed a line starts
+            // COLLAPSED (the mockup's rule) with its failed line still drawn - failuresOnly - so the
+            // first press OPENS it and the second collapses it again. The thing that must never
+            // happen is a press that changes nothing, which is what Sean reported.
+            scen ("B5", "the steps control works on a run with a failed line, and the failure stays visible",
+                  openMid != openBefore && openAfter != openMid
+                  && (openBefore ? true : failsBefore) && (openAfter ? true : failsAfter),
                   "stepsOpen " + juce::String (openBefore ? "y" : "n") + " -> "
-                  + juce::String (openAfter ? "y" : "n") + ", failuresOnly="
-                  + juce::String (failsShown ? "y" : "n")
+                  + juce::String (openMid ? "y" : "n") + " -> " + juce::String (openAfter ? "y" : "n")
+                  + ", failuresOnly " + juce::String (failsBefore ? "y" : "n") + " -> "
+                  + juce::String (failsAfter ? "y" : "n")
                   + "  (RED on 16a: the view forced the steps open on any run with a failure, so the "
-                  "control was drawn and did nothing)",
+                  "control was drawn and did nothing at all)",
                   "A", v2.editor.get(), rig.freshState(), &r);
         }
 

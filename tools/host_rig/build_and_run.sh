@@ -314,6 +314,17 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-undoclose-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_uc", "name": "do", "approval": "free",
+            "summary": "pre-gain 3 dB", "args": { "op": "set_pre_gain", "db": 3 } },
+          { "event": "await", "ids": ["tc_uc"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "The pre gain on the Mix Bus is set to 3 dB." } ]
+      ]
+    },
+    {
       "goalContains": "rig-nomap-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
