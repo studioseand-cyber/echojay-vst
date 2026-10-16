@@ -291,6 +291,67 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-builtinset-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_bi", "name": "do", "approval": "free",
+            "summary": "add the EchoJay Compressor with a threshold and a ratio",
+            "args": { "op": "add", "name": "EchoJay Compressor",
+                      "settings_structured": { "params": { "threshold_db": -20, "ratio": 4 } } } },
+          { "event": "await", "ids": ["tc_bi"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added the EchoJay Compressor." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-undoadd-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_ua", "name": "do", "approval": "free",
+            "summary": "add an EchoJay Gate",
+            "args": { "op": "add", "name": "EchoJay Gate",
+                      "settings_structured": { "params": { "threshold_db": -30 } } } },
+          { "event": "await", "ids": ["tc_ua"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "Added an EchoJay Gate." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-twostep-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_s1", "name": "do", "approval": "free",
+            "summary": "pre-gain 2 dB", "args": { "op": "set_pre_gain", "db": 2 } },
+          { "event": "tool_call", "id": "tc_s2", "name": "do", "approval": "free",
+            "summary": "master wet 80", "args": { "op": "set_master_wet", "pct": 80 } },
+          { "event": "await", "ids": ["tc_s1", "tc_s2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Pre-gain at 2 dB and the master wet at 80 per cent." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-noload-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_nl", "name": "do", "approval": "free",
+            "summary": "add a plugin that will not load",
+            "args": { "op": "add", "name": "kHs Transient Shaper" } },
+          { "event": "await", "ids": ["tc_nl"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "That one would not load." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-proc3-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_pc", "name": "do", "approval": "free",
+            "summary": "add Pro-C 3 with a threshold",
+            "args": { "op": "add", "name": "Pro-C 3",
+                      "settings_structured": { "controls": { "Threshold": -18 } } } },
+          { "event": "await", "ids": ["tc_pc"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1, "summary": "Added Pro-C 3." } ]
+      ]
+    },
+    {
       "goalContains": "rig-grtp-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

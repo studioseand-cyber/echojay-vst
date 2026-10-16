@@ -37031,6 +37031,10 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("stateNotes", chainListPanel.stateNotes.joinIntoString ("|"));
     // RULING 1: the pre-gain, and whether it is AUTO or a hand-set value.
     o->setProperty ("preGainDb", (double) processorRef.getChainHost().getPreGainDb());
+    // The master wet, as a percentage - the other half of the matrix's D4, where undoing ONE step of
+    // a two-step run must revert that step and leave the other alone. A row cannot assert that
+    // without both numbers.
+    o->setProperty ("masterWetPct", (double) (processorRef.getChainHost().getMasterWet() * 100.0f));
     // ---- SHIP 1 (15 Oct): what the new rows assert on ---------------------------------------------------
     // The SCREEN, for fix 7: a row that asserted on a screenshot would prove nothing, and the whole fault
     // was dashboard text surviving onto the login view.
