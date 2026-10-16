@@ -112,7 +112,16 @@ typical amount is about 2.1 dB."), because handing over the words is the surest 
 being misdescribed. That sentence is now also the step's landed line. The model's instructions stay in
 `note`, off the row.
 
-### D13. Auto mode decides on undoability alone, including on another track — a ruling for you
+### D13. Auto mode decides on undoability alone, including on another track — **RULED, KEEP IT**
+
+> **Sean, 16 Oct:** *"D13: keep it, Auto runs undoable changes on other tracks without waiting, line
+> names the track."*
+
+So the build stands as it is, and the matrix line that said otherwise was mine: `AGENT_SCENARIO_MATRIX`
+A11 is corrected, and the row (A11/A11b) now asserts the ruling rather than flagging it. The original
+reasoning is below for the record.
+
+
 
 The matrix row I wrote for A11 says *"no approval asked for a small move; add on another track still
 asks per the mode table."* The build does the first half and not the second, and the reason is your
@@ -195,7 +204,15 @@ claim: **a goal that names a track is answered on that track.** If the run adds 
 the kick is untouched, the row fails and prints both slot counts. If it still lands on the mix bus
 with the names in place, that is a real targeting fault with evidence, and it goes to B.
 
-### D17. A step's Undo is offered only on the last undoable step, because that is where it is true
+### D17. A step's Undo is offered only where it is true — **RULED, ACCEPTED**
+
+> **Sean, 16 Oct:** *"D17: accept, Undo all on multi-step runs, per-step Undo only where it's true;
+> queue a redo-aware history for after launch."*
+
+Shipped as described, and the redo-aware history is queued for after launch (`NEXT_ROUND_QUEUE`
+item 10) rather than attempted now. The reasoning is below for the record.
+
+
 
 D4 pressed one step's Undo and watched the OTHER step's value change. The sink says why: a per-step
 undo pops the plugin-wide history ONCE - the last change - whatever token it is handed. For the last

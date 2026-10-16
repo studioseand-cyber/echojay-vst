@@ -4367,13 +4367,13 @@ int main (int argc, char* argv[])
         // answered by the executor's `undoabilityOf` - the same function that decides whether the op
         // hands back an undo token. An `add` is undoable, so Auto runs it.
         //
-        // THE MATRIX LINE SAYS MORE THAN THE BUILD DOES, and the row says so rather than inventing a
-        // verdict: *"add on another track still asks per the mode table."* The build asks only about
-        // undoability, so an add on another track runs in Auto too - with the track NAMED on the
-        // line, which is the safety this actually needs ("a line the user approves must say what it
-        // acts on"). Whether Auto should additionally stop for another track is a RULING, and it is
-        // in NEEDS_SEAN as D13. This row asserts what is ruled today: no wait on the own rack, and
-        // on another track the line names that track.
+        // RULED, 16 Oct 2026 (Sean): *"D13: keep it, Auto runs undoable changes on other tracks
+        // without waiting, line names the track."* So undoability is the whole decider, which is his
+        // 14 Oct ruling unchanged, and the safety on another track is that the approved line NAMES it
+        // ("a line the user approves must say what it acts on"). My earlier matrix wording - "add on
+        // another track still asks per the mode table" - was wrong and is corrected in the matrix.
+        // This row asserts the ruling: no wait on the own rack, and on another track the line names
+        // that track.
         {
             clearOwnRack (rig);
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
@@ -4434,8 +4434,9 @@ int main (int argc, char* argv[])
                       "the line reads \"" + linkLabel.substring (0, 90) + "\" for the Link called \""
                       + trackNow + "\"; autoApplied=" + juce::String (linkAuto ? "y" : "n")
                       + ", it " + (rLink.sawApproval ? "DID wait" : "did not wait")
-                      + "  (the matrix line expects a wait here; the build decides on undoability "
-                      "alone - NEEDS_SEAN D13)",
+                      + "  (RULED 16 Oct, Sean: Auto runs undoable changes on another track WITHOUT "
+                      "waiting, and the line names the track - which is what this row asserts. The "
+                      "matrix's earlier \"still asks\" wording was mine and is corrected)",
                       "A", v2.editor.get(), stLink, &rLink);
                 rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
             }

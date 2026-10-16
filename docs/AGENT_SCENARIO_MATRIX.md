@@ -90,7 +90,7 @@ Format: **ID** · setup · input · expected (beyond the invariants, which alway
 - **A8** T1 P7 O1 M1 · "Add Pro-C 2" · offers the real nearest match (Pro-C 3) as a chip.
 - **A9** T1 P8 O1 M1 · "Add Pro-C 3" · one chip, not two (★ B-c).
 - **A10** T1 P5 O1 M1 · force "Add kHs Transient Shaper" · fails with the real reason; run stays open with Details (★11b).
-- **A11** T2 P2 O2 M2 · Auto mode add with settings · no approval asked for a small move; add on another track still asks per the mode table.
+- **A11** T2 P2 O2 M2 · Auto mode add with settings · no approval asked for a small move. **RULED 16 Oct (Sean): Auto runs undoable changes on other tracks WITHOUT waiting, and the approved line names the track.** Undoability is the whole decider (his 14 Oct ruling); the earlier wording here - "add on another track still asks" - was mine and was wrong.
 - **A12** T1 P1 O7 M1 · "make the kick punchier" · builds or offers a choice; every slot's settings read back; step details in plain words (★6 morning).
 
 ### B. Choices, asks and replies

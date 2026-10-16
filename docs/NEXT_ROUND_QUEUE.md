@@ -1339,3 +1339,11 @@ pass on today's build.
    just edited), `awaitChainAck` should hand it back, and the add should pass it to confirmSettings
    instead of inferring. Additive and downgrade-safe; about forty lines across three files, and it
    turns the honest answer into the exact one.
+
+10. **A redo-aware undo history** - **AFTER LAUNCH** (Sean's ruling, 16 Oct 2026: *"queue a
+    redo-aware history for after launch"*). Today a step's Undo is offered only on a one-change run,
+    because `EchoJayUndoHistory` coalesces consecutive edits and the sink pops its top entry: a
+    multi-step run is undone as a whole, by "Undo all". A history that could undo and REDO individual
+    entries would let every step keep its own button, which is what the matrix's D4 was originally
+    written against. It is a real piece of work - the history would need per-entry targets that
+    survive a later edit to the same slot - and it is deliberately not a pre-launch item.

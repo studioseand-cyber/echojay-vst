@@ -17,6 +17,10 @@ set -u
 cd /Users/SeanD/echojay-vst || exit 2
 S=/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad
 
+# SEAN'S CONDITION, 16 Oct 2026: *"Once B confirms the model is answering, run finish_round and
+# install."* So this script is run WHEN HE SAYS, not on a timer, and the probe below is the second
+# check rather than the first - B's word is the first. EJ_FINISH_FORCE=1 is deliberately not a thing:
+# if the probe disagrees with the confirmation, the probe wins and nothing is touched.
 echo "######## is the model answering? ########"
 OK=""
 for P in 3213 3211 3210; do
