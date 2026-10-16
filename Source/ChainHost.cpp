@@ -1961,6 +1961,7 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.intendedBypassed = s.intendedBypassed;
     info.settings         = s.settings;
     info.landedValues     = s.dialLandedValues;   // SEAN'S #1: the numbers, read back, never the request
+    info.dialPending      = (s.dialStatus == DialStatus::pending);   // 16 Oct: no reading YET is not a failed write
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
     info.preTrimDb        = s.preTrimDb;         // 21p item 3

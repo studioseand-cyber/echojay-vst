@@ -685,7 +685,8 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
 }
 
 void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
-                                  int slotsOnRack, juce::String landedSentence, Done done, int triesLeft)
+                                  int slotsOnRack, juce::String landedSentence, Done done, int triesLeft,
+                                  bool pendingBudget)
 {
     // TWO AUDIENCES, ONE CALL (Sean's #10, 16 Oct 2026). `userLine` is the row's words; `modelLine`
     // is what the model is told, which may carry ids and instructions. Passing only one is the old
@@ -860,27 +861,71 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // UNREADABLE COUNTS TOO (16 Oct 2026). A value that cannot be read yet is the same story as one
     // that has not landed yet: the map is still coming, or the device is still being built. Both are
     // re-read; a clean confirmation still finishes at once.
-    if ((! all.missed.isEmpty() || ! all.unreadable.isEmpty()) && triesLeft > 1 && sinks_.afterMs != nullptr)
+    // ---- THE DIAL ITSELF SAYS WHETHER IT HAS FINISHED (16 Oct 2026, the joint live pass) --------
+    //
+    // Two of five live attempts at "add Renaissance Axx to the Kick's rack and set its Threshold"
+    // came back "Added it, but the settings did NOT take: slot 1 Threshold is 0.00 (asked -18.00)".
+    // The write had not failed; it had not happened yet. On a Link the round trip is V2 -> server ->
+    // V2 -> Link -> dial -> sidecar, and six looks at 800 ms is not always enough of it.
+    //
+    // Counting looks was the wrong instrument: it measures how many times this function ran, not
+    // whether the thing it waits for is still coming. The dial now says so itself - ChainHost's own
+    // DialStatus::pending, carried to a Link's reader in its sidecar - so the wait is on the signal,
+    // with a stated ceiling: up to kPendingLooks at 800 ms (about twenty seconds) WHILE the slot
+    // reports pending, and the original six when it does not. A clean read still finishes at once.
+    bool anyDialPending = false;
+    if (src_.slotDialPending != nullptr)
+        for (const auto& a : asks)
+            if (src_.slotDialPending (applyTo, a.slot1)) { anyDialPending = true; break; }
+    static constexpr int kPendingLooks = 25;        // x 800 ms = about twenty seconds
+    // Raised ONCE, and `pendingBudget` is how this function knows it already did: the recursion
+    // counts down through the default budget on its way to zero, so a test on the count alone would
+    // raise the ceiling again every time it passed six and the read-back would never end.
+    const bool enterPending = anyDialPending && ! pendingBudget;
+    const int  looksLeft    = enterPending ? kPendingLooks : triesLeft;
+    const bool inPending    = pendingBudget || enterPending;
+    if ((! all.missed.isEmpty() || ! all.unreadable.isEmpty()) && looksLeft > 1 && sinks_.afterMs != nullptr)
     {
         const auto aliveW = this->alive();
         auto callCopy = std::make_shared<ToolCall> (call);
         EchoJay_NSLog (("EJAgent: " + juce::String (all.missed.size() + all.unreadable.size())
                         + " setting(s) have not landed or cannot be read yet - "
-                        "re-reading in 800 ms (" + juce::String (triesLeft - 1) + " more look(s)), because a "
-                        "map that is still arriving is not a setting that did not take").toRawUTF8());
+                        "re-reading in 800 ms (" + juce::String (looksLeft - 1) + " more look(s), dial "
+                        + (anyDialPending ? "STILL PENDING" : "settled")
+                        + "), because a map that is still arriving is not a setting that did not take").toRawUTF8());
         // 800 ms x 6 = about four seconds, not one and a half. A third party's map comes from the
         // SERVER: the rig watched the V2 ask for it, finish the request without it, and receive it a
         // moment after the read-back had already given up and said "this build cannot read that
         // plugin's values back". A bound that is shorter than the thing it waits for is not a bound,
         // it is a race - and this one is still bounded, still only runs when something is missing,
         // and still lets a clean read finish at once.
-        sinks_.afterMs (800, [this, aliveW, callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft]
+        sinks_.afterMs (800, [this, aliveW, callCopy, applyTo, opName, slotsOnRack, landedSentence, done,
+                              looksLeft, inPending]
         {
             if (aliveW.expired())
             { done (ToolOutcome::success (juce::var (new juce::DynamicObject()), {}, landedSentence)); return; }
-            confirmSettings (*callCopy, applyTo, opName, slotsOnRack, landedSentence, done, triesLeft - 1);
+            confirmSettings (*callCopy, applyTo, opName, slotsOnRack, landedSentence, done,
+                             looksLeft - 1, inPending);
         });
         return;
+    }
+
+    // ---- A DIAL STILL RUNNING WHEN THE CEILING IS REACHED IS NOT A FAILED WRITE -----------------
+    // The absence of a reading is not evidence that the write failed, and "Threshold is 0.00 (asked
+    // -18.00)" is a positive claim that it did. If the slot is STILL pending now, every miss becomes
+    // an UNREADABLE - which the wording below reports as "sent, not confirmed" instead - and the log
+    // says the ceiling was reached rather than that the plugin refused.
+    // A dial still running at the ceiling is the REASON nothing could be read, whether the values
+    // came back wrong-and-unmatched or could not be read at all.
+    const bool stillDialling = anyDialPending;
+    if (anyDialPending && ! all.missed.isEmpty())
+    {
+        EchoJay_NSLog (("EJAgent: the dial is STILL pending after about twenty seconds, so "
+                        + juce::String (all.missed.size()) + " setting(s) are reported as NOT CONFIRMED "
+                        "rather than as not applied - no reading is not the same as a refused write")
+                           .toRawUTF8());
+        all.unreadable.addArray (all.missedIds);
+        all.missed.clear(); all.missedIds.clear(); all.missedPlain.clear();
     }
 
     auto* r = new juce::DynamicObject();
@@ -930,6 +975,14 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         // Sean's own wording, and it is the only honest thing to say.
         r->setProperty ("settings_state", "not_confirmed");
         r->setProperty ("settings_confirmed", false);
+        // ---- WHY IT CANNOT BE CONFIRMED, AND THE TWO REASONS ARE NOT THE SAME (16 Oct 2026) ----
+        // "this build cannot read that plugin's values back" is a claim about the BUILD, and it was
+        // being made over a dial that was simply still running - the live pass caught it on a Link,
+        // where the round trip outlasts the read-back's ceiling. A slot that is still dialling is
+        // told apart in words, and neither sentence names a figure.
+        const auto why = stillDialling
+            ? juce::String ("the plugin had not reported them yet")
+            : juce::String ("this build cannot read that plugin's values back");
         finish (juce::var (r),
                 // SEAN'S #5 (16 Oct 2026): "Never 'Not applied: add X' when X was added: say 'Added X.
                 // Settings not confirmed.'" The sentence LEADS with what landed, so no renderer and no
@@ -938,14 +991,17 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
                 // SEAN'S #10: the instruction that used to finish this sentence - "Report it as ADDED
                 // ... do NOT state any figure" - is addressed to the MODEL and he read it in his step
                 // details. It now travels on the model's line only.
-                "Added it. Settings not confirmed: this build cannot read that plugin's values back"
+                "Added it. Settings not confirmed: " + why
                 + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
                 + ", so there is no evidence they were applied.",
-                "Added it. Settings not confirmed: this build cannot read that plugin's values back"
+                "Added it. Settings not confirmed: " + why
                 + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
                 + ", so there is no evidence they were applied. Report it as ADDED, with its settings "
                   "not confirmed. Do NOT call the add itself 'not applied', and do NOT state any "
-                  "figure for the settings.");
+                  "figure for the settings."
+                + (stillDialling ? juce::String (" The dial was still running when the read-back "
+                                                 "reached its ceiling, so this is NOT a refused write.")
+                                 : juce::String()));
         return;
     }
     r->setProperty ("settings_state", all.unreadable.isEmpty() ? "applied" : "partly_confirmed");

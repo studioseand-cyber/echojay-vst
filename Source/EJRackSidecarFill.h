@@ -51,6 +51,10 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         // SEAN'S #1 (16 Oct 2026): the LANDED numbers, so the agent's read-back on a Link reads what the
         // plugin shows instead of parsing them back out of an echo of its own request.
         back.landedValues = s.landedValues;
+        // 16 Oct 2026 (the joint live pass): whether this slot's dial has FINISHED, so the agent's
+        // read-back on a Link can wait for the round trip instead of calling an unread value a
+        // failed write.
+        back.dialPending  = s.dialPending;
     }
 }
 } // namespace echojay

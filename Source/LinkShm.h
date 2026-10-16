@@ -1359,6 +1359,20 @@ struct RackSidecarSlot {
         Additive at v:1, written only when non-empty; an old reader never asks for it. LAST in the
         struct, the positional-brace-init rule the four notes above record. */
     juce::String landedValues;
+    /** ---- THE DIAL HAS NOT FINISHED YET (16 Oct 2026, the joint live pass) --------------------------
+        TRUE while this slot's dial is still PENDING on the Link - the map has been asked for and has
+        not arrived, or it has arrived and the write has not been read back yet.
+
+        The joint live pass needed this. A third-party add on a Link read back `Threshold is 0.00
+        (asked -18.00)` in two of five attempts and the step said "the settings did NOT take" - a
+        positive claim that the write failed, made four seconds into a round trip that goes V2 ->
+        server -> V2 -> Link -> dial -> sidecar. The absence of a reading is not evidence of a failed
+        write, and nothing in this sidecar could tell the two apart.
+
+        Additive at v:1, written only when true; an old reader never asks for it and absent reads
+        false, which is the settled case. LAST in the struct - the positional-brace-init rule the five
+        notes above record. */
+    bool dialPending = false;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -2155,6 +2169,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         // ceiling - and written only when something was actually read back.
         if (s.landedValues.isNotEmpty())
             so->setProperty("landed", s.landedValues.substring (0, 400));
+        // Written ONLY when true, so an old reader is indistinguishable from a settled slot.
+        if (s.dialPending)
+            so->setProperty("dialPending", true);
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -2231,6 +2248,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                                  ? (double) so->getProperty("lastEditMs") : 0.0;
                 s.manufacturer = so->getProperty("mfr").toString();
                 s.landedValues = so->getProperty("landed").toString();   // SEAN'S #1; absent reads ""
+                s.dialPending  = (bool) so->getProperty("dialPending");  // absent reads false = settled
                 if (s.name.isNotEmpty()) rc.slots.push_back(std::move(s));
             }
     rc.valid = rc.uid == uid && rc.revision >= 0;

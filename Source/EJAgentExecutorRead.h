@@ -125,6 +125,17 @@ struct Sources
         reports as "could not confirm" and never as success. */
     std::function<bool (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out)> slotParam;
 
+    /** ---- IS THIS SLOT'S DIAL STILL RUNNING? (16 Oct 2026, the joint live pass) --------------------
+        "" uid = the own rack, else a Link's. TRUE while the slot's dial is PENDING: the map has been
+        asked for and has not arrived, or the write has not been read back yet.
+
+        The read-back needs it to tell two different facts apart. A third-party add on a Link read back
+        `Threshold is 0.00 (asked -18.00)` in two of five live attempts and said "the settings did NOT
+        take" - a positive claim that the write failed, made four seconds into a round trip that runs
+        V2 -> server -> V2 -> Link -> dial -> sidecar. Unset reads false, which is the settled case and
+        the behaviour this build had before the field existed. */
+    std::function<bool (const juce::String& uid, int slot1Based)> slotDialPending;
+
     // identity
     std::function<juce::String()> ownName;       // the channel's display name
     std::function<juce::String()> ownKind;       // channel | bus | mix_bus | master

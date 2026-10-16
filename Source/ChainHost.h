@@ -96,6 +96,10 @@ public:
         /** SEAN'S #1 (16 Oct 2026): the landed values as numbers - "attack_db=6;sustain_db=-2" - read
             from the plugin or the device, never from the request. See Slot::dialLandedValues. */
         juce::String landedValues;
+        /** TRUE while this slot's dial is still PENDING: the map has been asked for and has not
+            arrived, or the write has not been read back yet. The agent's read-back needs it to tell
+            "no reading yet" from "the write failed"; the Link carries it in its sidecar. */
+        bool dialPending = false;
         juce::String settingsForModel;
         // TRUE when this slot's parameters were actually read this turn.
         //

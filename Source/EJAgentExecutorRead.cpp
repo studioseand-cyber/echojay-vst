@@ -1186,6 +1186,21 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         return rackFromSidecar (LinkShm::readRackSidecar (dir, uid), p->resolveLinkDisplayName (uid));
     };
     // FIX 1(b), 14 Oct: the read-back a `set` needs. Two roads, because a Link is another process.
+    // ---- IS THE DIAL STILL RUNNING ON THIS SLOT? (16 Oct 2026) ----------------------------------
+    // The own rack answers from its ChainHost; a Link from its sidecar's additive `dialPending` key,
+    // which an older Link does not write and which then reads false - the settled case, and exactly
+    // the behaviour this build had before the field existed.
+    s.slotDialPending = [p] (const juce::String& uid, int slot1Based) -> bool
+    {
+        if (slot1Based < 1) return false;
+        if (uid.isEmpty())
+            return p->getChainHost().getSlotInfo (slot1Based - 1).dialPending;
+        int err = 0; const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return false;
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid || slot1Based > (int) rc.slots.size()) return false;
+        return rc.slots[(size_t) (slot1Based - 1)].dialPending;
+    };
     s.slotParam = [p] (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out) -> bool
     {
         if (slot1Based < 1 || paramId.isEmpty()) return false;

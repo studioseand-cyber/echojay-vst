@@ -128,6 +128,33 @@ the row (A11/A11b) asserts exactly that. If you want Auto to stop for anything t
 other than the one you are working on, say so and it becomes one more clause in `undoabilityOf` -
 about a dozen lines, with its own row.
 
+### D14. "The settings did NOT take" was being said over a dial that had not finished
+
+The joint live pass found this, which is exactly what it was built for. "Add Renaissance Axx to the
+Kick's rack and set its Threshold", five times against the real server and the real model: three came
+back confirmed and **two** came back *"Added it, but the settings did NOT take: slot 1 Threshold is
+0.00 (asked -18.00)"*. The write had not failed. It had not happened yet - on a Link the round trip
+runs V2 -> server -> V2 -> Link -> dial -> sidecar, and the read-back's six looks at 800 ms is not
+always enough of it.
+
+This is your morning item 5 ("the third-party read-back on a Link is broken") with its cause named.
+
+Two things were wrong and both are fixed:
+
+1. **The read-back was counting its own looks instead of watching the thing it waits for.** The dial
+   now says whether it has finished - `DialStatus::pending`, carried to a Link's reader as an additive
+   `dialPending` key in the rack sidecar - and the read-back waits while that is true, up to about
+   twenty seconds, instead of giving up after four.
+2. **The absence of a reading is not evidence of a failed write.** If the ceiling is reached while the
+   dial is still running, the settings are reported as NOT CONFIRMED - "Added it. Settings not
+   confirmed: the plugin had not reported them yet" - and never as "did not take". The sentence that
+   blames the build ("this build cannot read that plugin's values back") is kept for the case it is
+   actually true of.
+
+Downgrade-safe: the sidecar key is written only when true, so an old build reading a new Link's
+sidecar sees nothing, and a new build reading an old Link's sees `false` - which is the settled case
+and exactly how this build behaved before the field existed.
+
 ---
 
 ## What the new runner found on its FIRST run, before any scenario

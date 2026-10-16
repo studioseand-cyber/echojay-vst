@@ -208,8 +208,12 @@ private:
         `triesLeft` is a bounded re-read, and it only ever runs when something MISSED: a clean read is
         final at once, and a value that is genuinely wrong costs two extra half-seconds before it is
         reported as wrong. */
+    /** `pendingBudget` records that the longer, dial-driven wait has ALREADY been entered for this
+        read-back, so the ceiling is raised exactly once. Without it the recursion would raise its own
+        budget again every time the countdown passed the default and never finish. */
     void confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
-                          int slotsOnRack, juce::String landedSentence, Done done, int triesLeft = 6);
+                          int slotsOnRack, juce::String landedSentence, Done done, int triesLeft = 6,
+                          bool pendingBudget = false);
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
                         juce::String sentence, Done done, int waitedMs, const ToolCall* call = nullptr);
 
