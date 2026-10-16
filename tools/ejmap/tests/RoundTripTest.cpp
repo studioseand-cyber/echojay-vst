@@ -10015,11 +10015,45 @@ int main (int, char**)
         const auto noUnit = J (R"({"fp":"F1","category":"compressor","identity":{"name":"P"},"controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":null,"anchors":[[-60,0],[0,1]]}}})");
         std::map<juce::String, ControlReadback> rb; rb["Threshold"].judged = 3;
         const auto items = ejmap::trustrun::reviewItems (noUnit, {}, rb);
-        const auto yes = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", true } }), no = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", false } });
+        const auto yes = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", "", "yes", true } }), no = ejmap::trustrun::withHuman ({}, { { "Threshold", "threshold", "", "no", false } });
         check (sections && notes && items.size() == 1 && (bool) items[0].getProperty ("yes_makes_mapped", false) && items[0].getProperty ("suggested_role", "").toString() == "threshold"
                && levelFor (noUnit, false, "", rb).level == "unsure" && levelFor (noUnit, false, "", rb, yes).level == "mapped" && levelFor (noUnit, false, "", rb, no).level == "unsure"
                && ejmap::trustrun::reviewItems (noUnit, no, rb).isEmpty() && ! (bool) ejmap::trustrun::reviewItems (noUnit, {}, {})[0].getProperty ("yes_makes_mapped", true),
                "wizard WZ-TRUST-4: Comp / Gate / De-ess sections each own their threshold, two in one section or an unknown prefix stay ambiguous; note values are a delay time; a human yes maps, a no refutes and leaves the list");
+    }
+    // WZ-TRUST-6 THE SECTION IS PART OF THE QUESTION (Kathy, 16 Oct, RChannel): "Gate Threshold slider" is the Gate section's threshold
+    // (widget words name no section); a lone control in a named section the category does not dial is never its dial (a compressor or a
+    // strip does not take a lone Gate threshold; a gate does); the review row carries the section ("Gate" -> "Gate -> Threshold")
+    {
+        using namespace ejmap::trust;
+        auto J = [] (const char* x) { return juce::JSON::parse (x); };
+        const auto rch = J (R"J({"fp":"R","category":"channel_strip","identity":{"name":"RChannel (m)"},"controls":{"Gate Threshold slider":{"name":"Gate Threshold slider","kind":"anchored","unit":"db","anchors":[[-80,0],[0,1]]}}})J");
+        const auto asComp = J (R"J({"category":"compressor","controls":{"Gate Threshold slider":{"name":"Gate Threshold slider","kind":"anchored","unit":"db","anchors":[[-80,0],[0,1]]}}})J");
+        const auto asGate = J (R"J({"category":"gate","controls":{"Gate Threshold slider":{"name":"Gate Threshold slider","kind":"anchored","unit":"db","anchors":[[-80,0],[0,1]]}}})J");
+        const auto plain = J (R"J({"category":"compressor","controls":{"Threshold slider":{"name":"Threshold slider","kind":"anchored","unit":"db","anchors":[[-80,0],[0,1]]}}})J");
+        auto first = [] (const juce::var& m) { return meetNeed (needsFor (m.getProperty ("category", "").toString())[0], rolesOf (m), m.getProperty ("category", "").toString()); };
+        const auto noUnit = J (R"J({"fp":"R","category":"channel_strip","identity":{"name":"RChannel (m)"},"controls":{"Gate Threshold slider":{"name":"Gate Threshold slider","kind":"anchored","unit":null,"anchors":[[-80,0],[0,1]]}}})J");
+        const auto items = ejmap::trustrun::reviewItems (noUnit, {}, {});
+        check (knownSection (sectionOf ("Gate Threshold slider")) == "gate" && knownSection ("comp knob") == "comp" && sectionLabel ("gate") == "Gate" && sectionLabel ("band 2") == "Band 2" && sectionLabel ("?").isEmpty()
+               && first (rch).isEmpty() && first (asComp).isEmpty() && first (asGate) == juce::StringArray { "Gate Threshold slider" } && first (plain) == juce::StringArray { "Threshold slider" }
+               && items.size() == 1 && items[0].getProperty ("section", "").toString() == "Gate" && items[0].getProperty ("suggested_role", "").toString() == "threshold",
+               "wizard WZ-TRUST-6: 'Gate Threshold slider' is the Gate's threshold - never a compressor's or a strip's dial alone, a gate's dial; the review asks 'Gate -> Threshold'");
+    }
+    // WZ-TRUST-7 THE ROLE DROPDOWN (Kathy, 16 Oct): a picked role is a human check of THAT role in THAT section - "Comp -> Threshold" on a
+    // strip's "Thr 2" makes it the strip's dial, "Gate -> Threshold" does not; "other" refutes; "unsure" counts neither way
+    {
+        using namespace ejmap::trust;
+        const auto strip = juce::JSON::parse (R"J({"fp":"S","category":"channel_strip","identity":{"name":"Strip"},"controls":{"Thr 2":{"name":"Thr 2","kind":"anchored","unit":null,"anchors":[[-60,0],[0,1]]}}})J");
+        std::map<juce::String, ControlReadback> rb; rb["Thr 2"].judged = 3;
+        const auto comp = ejmap::trustrun::withHuman ({}, { { "Thr 2", "threshold", "Comp", "role", true } });
+        const auto gate = ejmap::trustrun::withHuman ({}, { { "Thr 2", "threshold", "Gate", "role", true } });
+        const auto other = ejmap::trustrun::withHuman ({}, { { "Thr 2", "other", "", "other", false } });
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_hc_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".json");
+        f.replaceWithText (R"J({"schema":"ejmap_human_checks/1","answers":[{"id":"S|Thr 2","fp":"S","control":"Thr 2","role":"threshold","section":"Comp","verdict":"role"},{"id":"S|X","fp":"S","control":"X","role":"mix","verdict":"unsure"}]})J");
+        const auto loaded = ejmap::trustrun::loadHuman (f); f.deleteFile();
+        check (levelFor (strip, false, "", rb, comp).level == "mapped" && levelFor (strip, false, "", rb, gate).level == "unsure" && levelFor (strip, false, "", rb, other).level == "unsure"
+               && comp.section.at ("Thr 2") == "comp" && other.dropped.count ("Thr 2") && loaded.count ("S") && loaded.at ("S").size() == 1 && loaded.at ("S")[0].section == "Comp",
+               "wizard WZ-TRUST-7: a picked role counts in its section (Comp -> Threshold maps a strip, Gate -> Threshold does not); other refutes; unsure is not loaded");
     }
     // WZ-TRUST-5 WHAT IS HELD: a cert outcome or a wizard skip in a held state - licence, hardware, silent, crashed, demo, refused, review,
     // MULTIBAND (16 Oct: profiling not built, so a band threshold is not a compressor's dial) - and never the old "never processes" filing

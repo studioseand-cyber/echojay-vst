@@ -26,7 +26,7 @@ if (doc.schema !== 'ejmap_role_review/1' || !Array.isArray(doc.items)) { console
 const ids = new Set(doc.items.map((i) => i.id));
 const given = answersPath ? JSON.parse(readFileSync(answersPath, 'utf8')) : { answers: [] };
 if (answersPath && given.schema !== 'ejmap_human_checks/1') { console.error('not an ejmap_human_checks/1 document'); process.exit(2); }
-const valid = (given.answers || []).filter((a) => ids.has(a.id) && (a.verdict === 'yes' || a.verdict === 'no'));
+const valid = (given.answers || []).filter((a) => ids.has(a.id) && ['yes', 'no', 'role', 'other', 'unsure'].includes(a.verdict));
 const skipped = (given.answers || []).filter((a) => !ids.has(a.id));
 
 console.log(`IMPORT: ${doc.items.length} item(s) (generated ${doc.generated_at}); ${valid.length} answer(s) to import, ${skipped.length} for ids not in this list (skipped)`);

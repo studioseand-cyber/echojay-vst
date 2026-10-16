@@ -7,11 +7,14 @@
 Standard library only; listens on 127.0.0.1 alone; nothing leaves this Mac. Every answer is written to --answers at once
 (atomic replace), in the format the admin's import reads (ejmap_human_checks/1), and EJ Map's --trust-levels --human reads.
     GET  /api/review                        -> { schema, generated_at, items, answers: { id: answer } }
-    POST /api/review { id, verdict }        -> { ok, answer, counts }      verdict: yes | no | clear
+    POST /api/review { id, verdict, role?, section? } -> { ok, answer, counts }
+         verdict: yes (the suggestion) | role (picked role + section) | no | other (not a main control) | unsure (counts neither way) | clear
 """
 import argparse, json, os, tempfile, time, http.server, threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+VERDICTS = ('yes', 'no', 'role', 'other', 'unsure', 'clear')
+ROLES = ('threshold', 'ratio', 'attack', 'release', 'makeup', 'output', 'gain', 'freq', 'q', 'mix', 'delay_time', 'decay', 'predelay', 'drive', 'ceiling')
 LOCK = threading.Lock()
 
 def load(path, empty):
@@ -29,10 +32,10 @@ def counts(items, answers):
     now_maps, mapped, answered = set(), set(), 0
     for it in items:
         a = answers.get(it['id'])
-        if a and a.get('verdict') in ('yes', 'no'): answered += 1
+        if a and a.get('verdict') and a.get('verdict') != 'unsure': answered += 1
         if it.get('yes_makes_mapped'):
             now_maps.add(it['fp'])
-            if a and a.get('verdict') == 'yes': mapped.add(it['fp'])
+            if a and (a.get('verdict') == 'yes' or (a.get('verdict') == 'role' and a.get('role') == it['suggested_role'] and a.get('section', '') == it.get('section', ''))): mapped.add(it['fp'])
     return {'items': len(items), 'answered': answered, 'countsNowMaps': len(now_maps), 'mapsMappedByAnswers': len(mapped)}
 
 def make_handler(items_path, answers_path):
@@ -59,15 +62,19 @@ def make_handler(items_path, answers_path):
             try: body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0') or 0)) or b'{}')
             except ValueError: return self.send(400, {'error': 'bad_json'})
             verdict = body.get('verdict'); iid = body.get('id')
-            if verdict not in ('yes', 'no', 'clear'): return self.send(400, {'error': 'bad_verdict'})
+            if verdict not in VERDICTS: return self.send(400, {'error': 'bad_verdict'})
+            if verdict == 'role' and (body.get('role') not in ROLES or not isinstance(body.get('section', ''), str)): return self.send(400, {'error': 'bad_role'})
             with LOCK:
                 rv, hc, by = self.state()
                 item = next((i for i in rv.get('items', []) if i['id'] == iid), None)
                 if item is None: return self.send(404, {'error': 'no_such_item'})
                 if verdict == 'clear': by.pop(iid, None); ans = None
                 else:
+                    role, section = item['suggested_role'], item.get('section', '')
+                    if verdict == 'role': role, section = body['role'], body.get('section', '')
+                    if verdict == 'other': role, section = 'other', ''
                     ans = {'id': iid, 'fp': item['fp'], 'plugin': item['plugin'], 'version': item.get('version'), 'control': item['control'],
-                           'role': item['suggested_role'], 'verdict': verdict, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'by': 'kathy (local review)'}
+                           'suggested_role': item['suggested_role'], 'suggested_section': item.get('section', ''), 'role': role, 'section': section, 'verdict': verdict, 'at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'by': 'kathy (local review)'}
                     by[iid] = ans
                 save_atomic(answers_path, {'schema': 'ejmap_human_checks/1', 'items_generated_at': rv.get('generated_at'), 'answers': list(by.values())})
                 return self.send(200, {'ok': True, 'answer': ans, 'counts': counts(rv.get('items', []), by)})

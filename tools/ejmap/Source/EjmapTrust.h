@@ -215,10 +215,12 @@ struct Roles
 {
     std::map<juce::String, juce::StringArray> identified;   // role -> control names (name + unit + unique in its section)
     juce::StringArray ambiguous, wrongUnit;                  // "role: a, b" / "name (role, unit seen 'x')"
+    std::map<juce::String, juce::String> sectionFor;         // a person's section for a control, over what its name says
 };
 // measured: role -> controls a measurement identified (confirmed, or found on a control its name did not propose); dropped: controls a
 // measurement REFUTED for the role their name proposed - the name rule never claims them back
-struct Measured { std::map<juce::String, juce::StringArray> roles; std::set<juce::String> dropped; };
+struct Measured { std::map<juce::String, juce::StringArray> roles; std::set<juce::String> dropped;
+                 std::map<juce::String, juce::String> section; };   // control -> its known section, when a person said which (16 Oct)
 inline juce::String ruleRoleOfMeasured (const juce::String& recordRole, const juce::String& category)
 {
     if (recordRole == "eq_gain") return "gain";
@@ -248,6 +250,7 @@ inline Roles rolesOf (const juce::var& map, const Measured& measured = {})
             else R.ambiguous.add (role + ": " + names.joinIntoString (", "));
         }
     for (const auto& [role, names] : measured.roles) for (const auto& n : names) R.identified[role].addIfNotAlreadyThere (n);   // measurement decides
+    R.sectionFor = measured.section;
     return R;
 }
 // THE DIAL TARGETS: what a category needs identified (and read back) before it may be dialled. Each entry is alternatives ('|');
@@ -279,6 +282,9 @@ inline juce::String knownSection (const juce::String& section)
     auto t = " " + section.toLowerCase().trim() + " ";
     t = t.replace (" de ess ", " deess ").replace (" de esser ", " deess ").replace (" deesser ", " deess ").replace (" de-ess ", " deess ");
     auto tokens = juce::StringArray::fromTokens (t, " ", ""); tokens.removeEmptyStrings();
+    // the widget words a name may carry ("Gate Threshold slider", "Comp Knob") name no section of their own
+    static const juce::StringArray kFiller { "slider", "knob", "fader", "dial", "control", "ctrl", "param", "parameter", "value", "amount", "amt" };
+    for (int i = tokens.size(); --i >= 0;) if (kFiller.contains (tokens[i])) tokens.remove (i);
     if (tokens.isEmpty()) return "";
     static const std::map<juce::String, juce::String> canon {
         { "comp", "comp" }, { "compressor", "comp" }, { "cmp", "comp" }, { "gate", "gate" }, { "exp", "gate" }, { "expander", "gate" }, { "expand", "gate" },
@@ -290,6 +296,14 @@ inline juce::String knownSection (const juce::String& section)
     for (int i = 1; i < tokens.size(); ++i) { if (! tokens[i].containsOnly ("0123456789")) return "?"; out << " " << tokens[i]; }
     if (out == "band") return "?";   // "Band" with no number names no section
     return out;
+}
+// how a section reads on the review page: "gate" -> "Gate", "band 2" -> "Band 2", "de-ess" -> "De-ess"; none for "" and "?"
+inline juce::String sectionLabel (const juce::String& known)
+{
+    if (known.isEmpty() || known == "?") return {};
+    if (known == "comp") return "Comp"; if (known == "eq") return "EQ"; if (known == "de-ess") return "De-ess";
+    if (known == "lf" || known == "lmf" || known == "mf" || known == "hmf" || known == "hf") return known.toUpperCase();
+    return known.substring (0, 1).toUpperCase() + known.substring (1);
 }
 // the section a category's dial wants first: a compressor's own (or its Comp section), a gate's Gate / Exp, a de-esser's De-ess
 inline juce::StringArray preferredSections (const juce::String& category)
@@ -304,22 +318,31 @@ inline juce::StringArray preferredSections (const juce::String& category)
 }
 inline juce::StringArray meetNeed (const juce::String& need, const Roles& R, const juce::String& category = {})
 {
+    auto secOf = [&R] (const juce::String& n) { const auto it = R.sectionFor.find (n); return it != R.sectionFor.end() ? it->second : knownSection (sectionOf (n)); };
     for (const auto& alt : juce::StringArray::fromTokens (need, "|", ""))
     {
         if (alt == "freq+gain")
         {
             const auto fi = R.identified.find ("freq"), gi = R.identified.find ("gain");
             if (fi == R.identified.end() || gi == R.identified.end()) continue;
-            for (const auto& f : fi->second) for (const auto& g : gi->second) if (sectionOf (f) == sectionOf (g)) return { f, g };
+            for (const auto& f : fi->second) for (const auto& g : gi->second)
+                if (R.sectionFor.count (f) || R.sectionFor.count (g) ? secOf (f) == secOf (g) : sectionOf (f) == sectionOf (g)) return { f, g };
             continue;
         }
         // one control for the role; or, with several, each under its own KNOWN section and one of them the section this category dials
         // (Comp Threshold + Gate Threshold: the compressor dials Comp's); two in one section, or an unnamed section, stay ambiguous
         if (const auto it = R.identified.find (alt); it != R.identified.end() && ! it->second.isEmpty())
         {
-            if (it->second.size() == 1) return { it->second[0] };
+            // one candidate: it is the dial unless it sits in a NAMED section this category does not dial (a lone Gate Threshold is
+            // the gate's, never a compressor's - Kathy, 16 Oct, RChannel)
+            if (it->second.size() == 1)
+            {
+                const auto k = secOf (it->second[0]);
+                if (k.isEmpty() || k == "?" || preferredSections (category).contains (k) || category.isEmpty()) return { it->second[0] };
+                continue;
+            }
             std::map<juce::String, juce::String> bySec; bool clean = true;
-            for (const auto& n : it->second) { const auto k = knownSection (sectionOf (n)); if (k == "?" || bySec.count (k)) { clean = false; break; } bySec[k] = n; }
+            for (const auto& n : it->second) { const auto k = secOf (n); if (k == "?" || bySec.count (k)) { clean = false; break; } bySec[k] = n; }
             if (clean) for (const auto& want : preferredSections (category)) if (bySec.count (want)) return { bySec[want] };
         }
     }

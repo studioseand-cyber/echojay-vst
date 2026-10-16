@@ -13,6 +13,14 @@ assert.strictEqual(g.length, 1); assert.strictEqual(all.length, 2); assert.stric
 const c = R.__test.counts(items, { 'A|Mix': { verdict: 'yes' }, 'B|Thr': { verdict: 'no' } });
 assert.deepStrictEqual([c.answered, c.countsNowMaps, c.mapsMappedByAnswers, c.maps], [2, 1, 1, 2]);
 assert.strictEqual(R.__test.roleWord('delay_time'), 'Delay time');
+assert.strictEqual(R.__test.question({ section: 'Gate', suggested_role: 'threshold' }), 'Gate \u2192 Threshold');
+assert.strictEqual(R.__test.question({ section: '', suggested_role: 'mix' }), 'Mix');
+const opts = R.__test.options({ section: 'Gate', suggested_role: 'threshold', plugin_sections: ['Comp', 'Gate'] });
+assert.strictEqual(opts[0].value, 'Gate|threshold'); assert.ok(opts.some((o) => o.value === 'Comp|makeup' && o.text === 'Comp \u2192 Make-up'));
+assert.strictEqual(opts[opts.length - 1].value, '|other'); assert.strictEqual(new Set(opts.map((o) => o.value)).size, opts.length);
+assert.strictEqual(R.__test.chosen({ section: 'Gate', suggested_role: 'threshold' }, { verdict: 'role', role: 'makeup', section: 'Comp' }), 'Comp|makeup');
+const c2 = R.__test.counts(items, { 'A|Mix': { verdict: 'role', role: 'mix', section: '' }, 'A|Time': { verdict: 'unsure' } });
+assert.deepStrictEqual([c2.answered, c2.unsure, c2.mapsMappedByAnswers], [1, 1, 1]);
 
 // the route, with its requires answered by fakes
 const store = { s: {}, h: {} };
@@ -42,6 +50,10 @@ function call(method, body, session, query) {
   assert.strictEqual((await call('POST', { id: 'A|Mix', verdict: 'maybe' }, admin)).code, 400);
   const ok = await call('POST', { id: 'A|Mix', verdict: 'yes' }, admin);
   assert.strictEqual(ok.code, 200); assert.strictEqual(ok.body.counts.mapsMappedByAnswers, 1); assert.strictEqual(ok.body.answer.role, 'mix');
+  assert.strictEqual((await call('POST', { id: 'B|Thr', verdict: 'role', role: 'nonsense' }, admin)).code, 400);
+  const picked = await call('POST', { id: 'B|Thr', verdict: 'role', role: 'makeup', section: 'Comp' }, admin);
+  assert.strictEqual(picked.body.answer.role, 'makeup'); assert.strictEqual(picked.body.answer.section, 'Comp'); assert.strictEqual(picked.body.answer.suggested_role, 'threshold');
+  await call('POST', { id: 'B|Thr', verdict: 'clear' }, admin);
   const got = await call('GET', null, admin); assert.strictEqual(got.body.items.length, 3); assert.strictEqual(got.body.answers['A|Mix'].verdict, 'yes');
   const ex = await call('GET', null, admin, { export: '1' }); assert.strictEqual(ex.body.schema, 'ejmap_human_checks/1'); assert.strictEqual(ex.body.answers.length, 1);
   await call('POST', { id: 'A|Mix', verdict: 'clear' }, admin);

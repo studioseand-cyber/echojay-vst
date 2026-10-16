@@ -13,7 +13,8 @@
       "plugin": "EchoBoy", "vendor": "Soundtoys", "version": "5.4.3.17500", "category": "delay",
       "control": "Mix",
       "unit": "-",                       // the unit the display shows ("db", "hz", "ms", "s", "pct", "ratio", "q", "note"), "-" = none
-      "suggested_role": "mix",           // threshold | ratio | attack | release | makeup | output | gain | freq | q | mix | delay_time | decay | predelay | drive | ceiling
+      "section": "",                    // the section the name puts the role in: "Gate", "Comp", "EQ", "Band 2", "LF".."HF", "De-ess", "Limiter"; "" = the plugin's own
+      "suggested_role": "mix",           // the question is "<section> -> <role>" (e.g. "Gate -> Threshold"), or the role alone           // threshold | ratio | attack | release | makeup | output | gain | freq | q | mix | delay_time | decay | predelay | drive | ceiling
       "why": "the name says mix; the display shows no unit",   // or "one of several <role> candidates"
       "read_back": true,                 // the control's writes already read back (a yes alone can then count)
       "yes_makes_mapped": true           // one yes on this row moves the map to "mapped"
@@ -29,9 +30,17 @@
   "items_generated_at": "2026-10-16T17:36:44.786+01:00",
   "answers": [
     { "id": "<map fp>|<control name>", "fp": "...", "plugin": "EchoBoy", "version": "5.4.3.17500", "control": "Mix",
-      "role": "mix", "verdict": "yes", "at": "2026-10-16T17:39:57+0100", "by": "kathy (local review)" }
+      "suggested_role": "mix", "suggested_section": "", "role": "mix", "section": "", "verdict": "yes", "at": "2026-10-16T17:39:57+0100", "by": "kathy (local review)" }
   ]
 }
 ```
-- **`verdict`:** "yes" identifies the control for that role on that map; "no" refutes it (the name rule never claims it back). A cleared answer is simply absent.
+- **`verdict`:**
+  - "yes": the suggested role, in the suggested section;
+  - "role": the role and section the person picked in the dropdown (`role`, `section`);
+  - "no": not the suggestion, and no role given - refutes it (the name rule never claims it back);
+  - "other": not a main control - refutes it;
+  - "unsure": counts neither way; the row goes to the "Needs measuring / ask Sean" list.
+  - A cleared answer is simply absent.
+- **`suggested_role` / `suggested_section`:** what the row asked, kept beside the answer.
+- **`section`:** a section label ("Gate", "Comp", "EQ", "Band 2", "LF".."HF", "De-ess", "Limiter", or "" for the plugin's own). EJ Map reads it as the control's section, over what the name says.
 - **One answer per id; the latest wins.**
