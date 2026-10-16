@@ -1,0 +1,3 @@
+SEAN_RECHECK_PACK_16oct.zip sha256 ed565b73531aea65823181f0d3c155500ba464d36fbd448b89a448d3cfc990a2
+ejmap build ad50ddbb (feat/ejmap-cert), probe cdhash 7adf508f388964eb7be1013f2dceaf75be0cee7f
+replaces 26b3cbaf (kept on the Desktop as SEAN_RECHECK_PACK_16oct_26b3cbaf.zip)
