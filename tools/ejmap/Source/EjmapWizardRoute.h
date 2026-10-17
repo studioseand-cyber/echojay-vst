@@ -30,7 +30,7 @@ enum class Rule { A, B, C, pendingReview };
 // passes (13 Oct, limiters): when not empty, the only Phase B passes still to run (a limiter the database has half of); limiterKnown:
 // the database holds its limiter pass, so its compressor pass may run without a limiter row of this Mac's own
 struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; juce::StringArray passes; bool limiterKnown = false; };
-inline juce::String pluginId (const juce::String& uid, const juce::String& version) { return "AudioUnit|" + uid.toLowerCase() + "|" + version; }
+inline juce::String pluginId (const juce::String& uid, const juce::String& version, const juce::String& format = "AudioUnit") { return format + "|" + uid.toLowerCase() + "|" + version; }   // 17 Oct: tagged by format
 // <db>/pending_review.json: [{"plugin_id": "AudioUnit|uid|version", "product": ...}] - what other users already sent as needs_category
 inline std::set<juce::String> loadPending (const juce::File& db)
 {

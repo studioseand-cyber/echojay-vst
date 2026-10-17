@@ -44,6 +44,11 @@ inline std::vector<Want> plan (const juce::var& map, const juce::var& at = {})  
         Want w; w.index = (int) c.getProperty ("index", -1); w.name = name;
         w.kind = c.getProperty ("kind", "").toString(); if (w.index < 0) continue;
         if (w.kind == "anchored") for (const auto& t : trust::readbackTargets (trust::anchorsOf (c))) w.norms.push_back (t.norm);
+        else if (w.kind == "steps")   // rulings 3: a stepped display is read at the middles of the steps at 25 / 50 / 75 % of its list
+        {
+            const auto st = trust::stepsOf (c);
+            if (st.size() >= 2) for (double f : { 0.25, 0.5, 0.75 }) { const double m = st[(size_t) std::llround (f * (double) (st.size() - 1))].mid(); if (std::none_of (w.norms.begin(), w.norms.end(), [&] (double x) { return std::abs (x - m) < 1e-6; })) w.norms.push_back (m); }
+        }
         else if (w.kind == "mode")
             if (const auto* lo = c.getProperty ("labels", {}).getDynamicObject())
             {
@@ -108,10 +113,22 @@ inline std::map<int, Got> parse (const juce::String& out)
 }
 
 // the VST3 class line's installed version ("vst3 class: \"X\" (...)\tversion\t1.3.5.0"); empty when the probe did not print one
-inline juce::String vst3VersionOf (const juce::String& out)
+inline juce::String vst3FieldOf (const juce::String& out, const juce::String& field)   // the token after "<field>" on the vst3 class line
 {
     for (const auto& line : juce::StringArray::fromLines (out))
-        if (line.startsWith ("vst3 class: ") && line.contains ("\tversion\t")) return line.fromLastOccurrenceOf ("\tversion\t", false, false).trim();
+        if (line.startsWith ("vst3 class: "))
+        {
+            const auto t = juce::StringArray::fromTokens (line, "\t", ""); const int i = t.indexOf (field);
+            if (i > 0 && i + 1 < t.size()) return t[i + 1].trim();
+        }
+    return {};
+}
+inline juce::String vst3VersionOf (const juce::String& out) { return vst3FieldOf (out, "version"); }
+inline juce::String vst3UidOf (const juce::String& out) { return vst3FieldOf (out, "uid").toLowerCase(); }   // 17 Oct (rulings 3): the class's JUCE uid, hex
+inline juce::String vst3ClassOf (const juce::String& out)   // the class name the probe loaded ("vst3 class: \"Pro-Q 3\" (asked ...")
+{
+    for (const auto& line : juce::StringArray::fromLines (out))
+        if (line.startsWith ("vst3 class: \"")) return line.fromFirstOccurrenceOf ("\"", false, false).upToFirstOccurrenceOf ("\"", false, false);
     return {};
 }
 // THE VST3 CANDIDATES (17 Oct, rulings 2): the scan cache's VST3 entries for these names, through the same guard as the AudioUnits -
@@ -274,7 +291,7 @@ inline int runReadbackRederive (const juce::File& mapsDir, const juce::File& fro
 //   plan: { product: { "format": "AudioUnit"|"VST3", "controls": { name: { "index": n (a control the map lacks), "hold_out": [norms] } } } }
 namespace repair
 {
-inline juce::var repairedMap (const juce::var& map, const juce::String& name, int index, const trust::Rebuilt& r, const juce::var& how)
+inline juce::var repairedMap (const juce::var& map, const juce::String& name, int index, const trust::Rebuilt& r, const juce::var& how, const std::vector<trust::Step>& steps = {})
 {
     auto copy = juce::JSON::parse (juce::JSON::toString (map));   // a deep copy: the map that was read is never changed
     auto* co = copy.getProperty ("controls", {}).getDynamicObject();
@@ -283,11 +300,18 @@ inline juce::var repairedMap (const juce::var& map, const juce::String& name, in
     for (const auto& p : co->getProperties()) if (p.value.getProperty ("name", p.name.toString()).toString() == name) { key = p.name; prev = p.value; }
     auto* c = new juce::DynamicObject();
     c->setProperty ("name", name); c->setProperty ("index", index); c->setProperty ("kind", "anchored");
-    juce::Array<juce::var> as; double lo = r.anchors.front().value, hi = lo;
+    juce::Array<juce::var> as; double lo = r.anchors.empty() ? (steps.empty() ? 0.0 : steps.front().value) : r.anchors.front().value, hi = lo;
     for (const auto& a : r.anchors) { as.add (juce::var (juce::Array<juce::var> { a.value, a.norm })); lo = std::min (lo, a.value); hi = std::max (hi, a.value); }
+    for (const auto& t : steps) { lo = std::min (lo, t.value); hi = std::max (hi, t.value); }
     c->setProperty ("range", juce::var (juce::Array<juce::var> { lo, hi }));
     c->setProperty ("unit", prev.isObject() && ! prev.getProperty ("unit", {}).isVoid() ? prev.getProperty ("unit", {}) : (r.unit.isEmpty() ? juce::var() : juce::var (r.unit)));
     c->setProperty ("anchors", juce::var (as)); c->setProperty ("trust", "repair");
+    if (! steps.empty())   // rulings 3: a stepped display - each step's read norm range; the anchors are the steps' middles (where a dial goes)
+    {
+        c->setProperty ("kind", "steps"); juce::Array<juce::var> sv, mids;
+        for (const auto& t : steps) { sv.add (juce::var (juce::Array<juce::var> { t.lo, t.hi, t.value, t.display })); mids.add (juce::var (juce::Array<juce::var> { t.value, t.mid() })); }
+        c->setProperty ("steps", juce::var (sv)); c->setProperty ("anchors", juce::var (mids));
+    }
     auto h = juce::JSON::parse (juce::JSON::toString (how));
     if (auto* ho = h.getDynamicObject()) { if (prev.isObject()) ho->setProperty ("previous_anchors", prev.getProperty ("anchors", {}).size()); else ho->setProperty ("added", true); }
     c->setProperty ("repair", h);
@@ -298,8 +322,13 @@ inline juce::var repairedMap (const juce::var& map, const juce::String& name, in
 }
 } // namespace repair
 
-inline int runAnchorRepair (const SweepOptions& opt, const juce::File& mapsDir, const juce::var& plan, double step)
+inline int runAnchorRepair (const SweepOptions& opt, const juce::File& mapsDir, const juce::var& plan, double step, const juce::File& refineFrom = {})
 {
+    // --refine <cert> (rulings 3, the adaptive grid): the held-out read-back records of the first repair, by product -> control -> readings
+    std::map<juce::String, trust::Readings> prior;
+    if (refineFrom != juce::File())
+        for (const auto& f : refineFrom.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("sweep").findChildFiles (juce::File::findFiles, false, "*.readback.json"))
+        { const auto r = juce::JSON::parse (f.loadFileAsString()); auto& dst = prior[r.getProperty ("product", "").toString()]; for (auto& [n, rs] : trust::readingsOfRecord (r)) for (auto& x : rs) dst[n].push_back (x); }
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("REPAIR: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
     const auto* po = plan.getDynamicObject(); if (po == nullptr) { say ("REPAIR: the plan is not an object"); return 2; }
@@ -334,8 +363,20 @@ inline int runAnchorRepair (const SweepOptions& opt, const juce::File& mapsDir, 
                     const auto n = p.name.toString(); const int idx = inMap.count (n) ? inMap[n] : (int) p.value.getProperty ("index", -1);
                     if (idx < 0) { say ("REPAIR: " + desc.name + " / " + n + " - not in the map and the plan gives no index"); ++refused; continue; }
                     std::vector<double> ho; if (const auto* h = p.value.getProperty ("hold_out", {}).getArray()) for (const auto& x : *h) ho.push_back (x.toString().getDoubleValue());
+                    std::vector<double> norms = trust::repairGrid (step, ho);
+                    if (refineFrom != juce::File())
+                    {   // the adaptive round: only a control whose held-out read-back failed against its repaired anchors, around its failures and jumps
+                        juce::var cur; for (const auto& [mn, mc] : trust::mapControls (*picked)) if (mn == n) cur = mc;
+                        if (cur.getProperty ("kind", "").toString() != "anchored") { say ("REPAIR: " + desc.name + " / " + n + " - not an anchored control here: not refined"); continue; }
+                        const auto a = trust::anchorsOf (cur); std::vector<double> failed;
+                        if (prior.count (desc.name) && prior[desc.name].count (n))
+                            for (const auto& x : prior[desc.name].at (n)) { const auto v = trust::judgeObservation (a, x.norm, x.display, cur.getProperty ("unit", "").toString()); if (v.judged && ! v.pass) failed.push_back (x.norm); }
+                        if (failed.empty()) { say ("REPAIR: " + desc.name + " / " + n + " - its held-out read-back passed (or none was taken): not refined"); continue; }
+                        norms = trust::refineNorms (a, failed, step, ho);
+                        if (norms.empty()) { say ("REPAIR: " + desc.name + " / " + n + " - nothing left to sample around its failures"); continue; }
+                    }
                     want[n] = { idx, ho };
-                    juce::StringArray ns; for (double x : trust::repairGrid (step, ho)) ns.add (juce::String (x, 6));
+                    juce::StringArray ns; for (double x : norms) ns.add (juce::String (x, 6));
                     parts.add (juce::String (idx) + ":" + ns.joinIntoString (","));
                 }
             if (want.empty()) continue;
@@ -365,14 +406,18 @@ inline int runAnchorRepair (const SweepOptions& opt, const juce::File& mapsDir, 
                     rs.push_back ({ at, x.text, ! x.landed });
                 }
                 if (rs.empty() && empty > 0) { said ("the display is empty at every setting (" + juce::String (empty) + " reads): the plugin prints no text for it"); continue; }
-                const auto rb = trust::anchorsFromReadings (rs);
-                if (! rb.ok) { said (rb.why); continue; }
+                juce::var curControl; for (const auto& [mn, mc] : trust::mapControls (*picked)) if (mn == n) curControl = mc;
+                const auto steps = refineFrom == juce::File() ? trust::detectSteps (rs) : std::vector<trust::Step>();
+                const auto rb = refineFrom == juce::File() ? trust::anchorsFromReadings (rs) : trust::mergeAnchors (trust::anchorsOf (curControl), rs);   // the adaptive round adds to the repaired anchors
+                if (! rb.ok && steps.empty()) { said (rb.why); continue; }
                 auto* how = new juce::DynamicObject(); how->setProperty ("source", "anchor-repair"); how->setProperty ("grid_step", step);
                 juce::Array<juce::var> hv; for (double x : w.second) hv.add (x); how->setProperty ("held_out", juce::var (hv));
                 how->setProperty ("version", desc.version); how->setProperty ("measuredAt", rec->getProperty ("measuredAt"));
-                map = repair::repairedMap (map, n, w.first, rb, juce::var (how));
-                res->setProperty (n, rb.why); ++built;
-                say ("REPAIR: " + desc.name + " / " + n + " - " + rb.why + (inMap.count (n) ? "" : " (added: the map lacked it)"));
+                if (refineFrom != juce::File()) how->setProperty ("refined", true);
+                const auto what = steps.empty() ? rb.why : juce::String ((int) steps.size()) + " display steps (a stepped display: judged at its step, dialled mid-step)";
+                map = repair::repairedMap (map, n, w.first, rb, juce::var (how), steps);
+                res->setProperty (n, what); ++built;
+                say ("REPAIR: " + desc.name + " / " + n + " - " + what + (inMap.count (n) ? "" : " (added: the map lacked it)") + (refineFrom != juce::File() ? " (refined)" : ""));
             }
             rec->setProperty ("result", juce::var (res));
             opt.out.getChildFile ("repair").getChildFile (stem + ".repair.json").replaceWithText (juce::JSON::toString (juce::var (rec)));

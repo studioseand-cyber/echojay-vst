@@ -706,6 +706,10 @@ inline bool isPaceWrapped (const juce::File& bundle)
 
 // "type,subtype,manufacturer" -> the .component bundle that registers it, from each
 // bundle's own Info.plist. Built-in system components have no bundle here.
+// THE FORMAT A DESCRIPTION IS (17 Oct, rulings 3: wizard VST3 support): record stems and identities say AudioUnit or VST3 from the
+// plugin itself, never a hard-coded "AudioUnit"
+inline juce::String fmtTag (const juce::PluginDescription& d) { return d.pluginFormatName == "VST3" ? juce::String ("VST3") : juce::String ("AudioUnit"); }
+
 inline std::map<juce::String, juce::File> componentBundles()
 {
     std::map<juce::String, juce::File> out;
@@ -891,6 +895,13 @@ inline std::vector<Subject> loadFixtures (const juce::File& dir)
 // built-ins have no bundle here and are exempt. One rule, used by classify and by discovery.
 inline bool paceHeld (const juce::PluginDescription& d, const std::map<juce::String, juce::File>& bundles, juce::String& why)
 {
+    if (d.pluginFormatName == "VST3")   // 17 Oct (rulings 3): a VST3 is its own bundle - read it; one that is not there is held, not assumed clear
+    {
+        const juce::File b (d.fileOrIdentifier);
+        if (! b.exists()) { why = "the bundle " + d.fileOrIdentifier + " is not on this Mac, so its PACE state cannot be checked: held, not assumed clear"; return true; }
+        if (isPaceWrapped (b)) { why = "PACE-wrapped (" + b.getFileName() + ")"; return true; }
+        return false;
+    }
     const auto code = d.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false);
     auto it = bundles.find (code);
     if (it != bundles.end())
@@ -1076,7 +1087,7 @@ inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListR
                            ? s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)
                            : s.desc.version;
     auto* o = new juce::DynamicObject();
-    o->setProperty ("identity", "AudioUnit|" + uid + "|" + version);
+    o->setProperty ("identity", fmtTag (s.desc) + "|" + uid + "|" + version);
     o->setProperty ("product", s.desc.name);
     o->setProperty ("format", s.desc.pluginFormatName.isNotEmpty() ? s.desc.pluginFormatName : juce::String ("AudioUnit"));
     // the vendor as the host registers it (the export's plugin.manufacturer): the 103 store records got it stamped on
@@ -1543,7 +1554,7 @@ inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
 
 struct InstalledRecord { juce::PluginDescription desc; juce::String identityKey, uidKey; };
 
-inline std::vector<InstalledRecord> installedAudioUnits()
+inline std::vector<InstalledRecord> registryAudioUnits()   // the AU registry only (loads nothing)
 {
     std::vector<InstalledRecord> out;
     for (const auto& t : echojay::auregistry::buildCensus().targets)
@@ -1552,6 +1563,63 @@ inline std::vector<InstalledRecord> installedAudioUnits()
         if (d.fileOrIdentifier.isEmpty()) continue;
         out.push_back ({ d, echojay::identityKeyForDescription (d), "AudioUnit|" + juce::String::toHexString (d.uniqueId).toLowerCase() });
     }
+    return out;
+}
+
+// THE VST3s A RUN MEASURES (17 Oct, rulings 3): the wizard writes the VST3-only products it found (no AU twin) to a file and points
+// EJ_VST3_EXTRAS at it, so every Phase B child finds them by name exactly as it finds an AudioUnit. Unset (every cert run, Sean's
+// builds): nothing is added and every lookup is the AU registry, as before
+inline std::vector<InstalledRecord> vst3Extras()
+{
+    std::vector<InstalledRecord> out; const char* p = std::getenv ("EJ_VST3_EXTRAS"); if (p == nullptr || *p == 0) return out;
+    const auto root = juce::JSON::parse (juce::File (juce::String::fromUTF8 (p)).loadFileAsString());   // held by name: an array read out of a temporary is gone before the loop
+    if (const auto* a = root.getArray())
+        for (const auto& x : *a)
+        {
+            juce::PluginDescription d; d.pluginFormatName = "VST3"; d.name = x.getProperty ("name", "").toString(); d.fileOrIdentifier = x.getProperty ("file", "").toString();
+            d.version = x.getProperty ("version", "").toString(); d.manufacturerName = x.getProperty ("vendor", "").toString();
+            d.uniqueId = d.deprecatedUid = (int) (juce::int64) x.getProperty ("uid", "").toString().getHexValue64();
+            if (d.name.isEmpty() || d.fileOrIdentifier.isEmpty()) continue;
+            out.push_back ({ d, echojay::identityKeyForDescription (d), "VST3|" + juce::String::toHexString (d.uniqueId).toLowerCase() });
+        }
+    return out;
+}
+inline std::vector<InstalledRecord> installedPlugins() { auto out = registryAudioUnits(); for (auto& x : vst3Extras()) out.push_back (std::move (x)); return out; }
+
+// THE VST3 BUNDLES ON THIS MAC (17 Oct, rulings 3), loading nothing: every *.vst3 under the two VST3 folders (vendor sub-folders too).
+// The name is the bundle's CFBundleName (else its file name), the version CFBundleShortVersionString (else CFBundleVersion), the vendor
+// the sub-folder it sits in. A WaveShell bundle hosts many classes, which only a load can list: it is reported, not enumerated
+struct Vst3Bundle { juce::String name, version, vendor; juce::File bundle; bool shell = false; };
+inline std::vector<Vst3Bundle> installedVst3Bundles (const juce::StringArray& roots = { "/Library/Audio/Plug-Ins/VST3", "~/Library/Audio/Plug-Ins/VST3" })
+{
+    std::vector<Vst3Bundle> out;
+    auto info = [] (const juce::File& b, CFStringRef key) -> juce::String
+    {
+        const auto path = b.getFullPathName(); juce::String v;
+        auto url = CFURLCreateFromFileSystemRepresentation (nullptr, (const UInt8*) path.toRawUTF8(), (CFIndex) path.getNumBytesAsUTF8(), true);
+        if (url == nullptr) return v;
+        if (auto bundle = CFBundleCreate (nullptr, url))
+        {
+            if (auto s = (CFStringRef) CFBundleGetValueForInfoDictionaryKey (bundle, key); s != nullptr && CFGetTypeID (s) == CFStringGetTypeID())
+                v = juce::String::fromCFString (s);
+            CFRelease (bundle);
+        }
+        CFRelease (url); return v;
+    };
+    std::function<void (const juce::File&, const juce::String&, int)> walk = [&] (const juce::File& dir, const juce::String& vendor, int depth)
+    {
+        if (depth > 3) return;
+        for (const auto& f : dir.findChildFiles (juce::File::findDirectories, false))
+        {
+            if (! f.getFileName().endsWithIgnoreCase (".vst3")) { walk (f, f.getFileName(), depth + 1); continue; }
+            Vst3Bundle b; b.bundle = f; b.vendor = vendor;
+            b.name = info (f, CFSTR ("CFBundleName")); if (b.name.isEmpty()) b.name = f.getFileNameWithoutExtension();
+            b.version = info (f, CFSTR ("CFBundleShortVersionString")); if (b.version.isEmpty()) b.version = info (f, kCFBundleVersionKey);
+            b.shell = f.getFileName().startsWithIgnoreCase ("WaveShell");
+            out.push_back (b);
+        }
+    };
+    for (const auto& r : roots) walk (juce::File (r), {}, 0);
     return out;
 }
 
@@ -1568,7 +1636,7 @@ inline std::vector<loop::QuarantinedBundle> quarantinedBundles (const juce::File
     const auto cats = juce::JSON::parse (ledgerRoot.getChildFile ("categories.json").loadFileAsString());
     std::map<juce::String, juce::StringArray> auNamesByBundle; std::map<juce::String, juce::String> uidByName;
     const auto bundles = componentBundles();
-    for (const auto& r : installedAudioUnits())
+    for (const auto& r : installedPlugins())
     {
         // "AudioUnit:Effects/aufx,clST,SfTb" -> "aufx,clST,SfTb" -> the bundle that registers it
         const auto key = r.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false);
@@ -1678,7 +1746,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
     const int certified = part.recorded;
 
     const auto in = loadDiscoveryInputs (ledgerRoot);
-    const auto installed = installedAudioUnits();
+    const auto installed = installedPlugins();
     const auto disc = discoverCandidates (in, installed, fixtureKeys);
     const auto bundles = componentBundles();
     int added = 0;
@@ -1690,7 +1758,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         s.product = c.inst.desc.name; s.uid = uid; s.version = c.inst.desc.version;
         auto* o = new juce::DynamicObject();
         o->setProperty ("product", s.product); o->setProperty ("uid", uid); o->setProperty ("version", s.version);
-        o->setProperty ("format", "AudioUnit");
+        o->setProperty ("format", fmtTag (c.inst.desc));
         o->setProperty ("discovered", "map: " + c.mappedBy + ", category " + c.category + ", no fixture: defaults are sampled first");
         o->setProperty ("category", c.category);
         s.pushed = juce::var (o);
@@ -1820,7 +1888,7 @@ inline juce::String bundleArchs (const juce::File& bundle)
 
 inline juce::String fixtureFileName (const juce::var& f)
 {
-    return "AudioUnit_" + f.getProperty ("uid", "").toString() + "_" + f.getProperty ("version", "").toString() + ".json";
+    return f.getProperty ("format", "AudioUnit").toString() + "_" + f.getProperty ("uid", "").toString() + "_" + f.getProperty ("version", "").toString() + ".json";
 }
 
 // DERIVE, COMPOSE, WRITE AND REPORT: shared by a live sweep and by a re-derivation from its traces, so the two can
@@ -2197,7 +2265,7 @@ inline customdefault::Act certSweepReference (const SweepOptions& opt, const juc
                                               const std::function<ChildResult (const juce::StringArray&)>& runner = {})
 {
     auto say = [] (const juce::String& m) { std::cout << m << std::endl; };
-    const auto refStem = "AudioUnit_" + juce::String::toHexString (d.uniqueId) + "_" + d.version;
+    const auto refStem = fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId) + "_" + d.version;
     const auto certDir = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
     const auto refF = certDir.getChildFile ("references").getChildFile (refStem + ".reference.json");
     const char* already = std::getenv ("EJ_PROBE_PRESET");
@@ -2271,7 +2339,7 @@ inline int runCertSweep (const SweepOptions& opt)
     auto overBudget = [&] { return unclean >= kUncleanBudget; };
     juce::var base = s.pushed;               // the store's fixture, or the discovered identity; replaced by the sampled defaults below
     // The trace stem for THIS product, known before its defaults are: a refusal's processes.json lands under it too.
-    const auto stem0 = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".sweep" + armTag;
+    const auto stem0 = fmtTag (s.desc) + "_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".sweep" + armTag;
     // THE RETRY RULE, as --cert-defaults: anything but a clean exit is re-run ONCE; a refusal (exit 3) and a
     // window are answers, not retried. Every attempt's output is kept.
     auto runProbe = [&] (const juce::String& stem, const juce::String& tag, const juce::StringArray& extra, float norm) -> ChildResult
@@ -2322,7 +2390,7 @@ inline int runCertSweep (const SweepOptions& opt)
     bool newIdentity = false;
     if (needsDefaultsFirst (s))
     {
-        const auto dstem = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".defaults";
+        const auto dstem = fmtTag (s.desc) + "_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".defaults";
         auto lp = runProbe (dstem, "list-params", { "--list-params" }, -1.0f);
         if (! lp.cleanExit()) return refuse (1, "defaults", licenceLine ("defaults --list-params", lp));
         auto ta = runProbe (dstem, "text-at", { "--text-at", "all" }, -1.0f);
@@ -3310,7 +3378,7 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::String& pro
     }
     const auto lines = licenceLinesOf (certRoot);
     if (lines.empty()) return g;
-    juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
+    juce::StringArray siblings; for (const auto& r : installedPlugins()) siblings.add (r.desc.name);
     const auto m = licence::matchPlugin (product, manufacturer, lines, siblings); const auto v = licence::verdictFor (m, runDateIso());
     if (v.outsideFile) return g;
     g.note = v.reason;
@@ -3322,7 +3390,7 @@ inline LicenceGate licenceGate (const SweepOptions& opt, const juce::String& pro
 inline bool licenceFileAdmits (const juce::File& certRoot, const juce::String& product, const juce::String& manufacturer)
 {
     const auto lines = licenceLinesOf (certRoot); if (lines.empty()) return false;
-    juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
+    juce::StringArray siblings; for (const auto& r : installedPlugins()) siblings.add (r.desc.name);
     const auto v = licence::verdictFor (licence::matchPlugin (product, manufacturer, lines, siblings), runDateIso());
     return ! v.outsideFile && v.load;
 }
@@ -3378,11 +3446,11 @@ inline int runStrip (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("STRIP: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("STRIP: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("STRIP: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
-    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("strip"); outDir.createDirectory();
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     const auto fx = sampledFixture (opt, desc, raw, stem, "strip", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, {});
@@ -3409,7 +3477,7 @@ inline int runStrip (const SweepOptions& opt)
     say (line);
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_strip_prototype/0"); o->setProperty ("status", "PROTOTYPE (item E, 7 Oct): sections by name, each through its category's mode with its engage switch as the probe's preset; data only, nothing exported");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     if (! noiseOff.empty()) o->setProperty ("noise_off", strip::stripWritesVar (noiseOff));
     o->setProperty ("rule", "Rule 1 (2 Oct): the section's own engage switch rides with it; every other section at its instantiate value - a section's measurement is the strip with that section engaged, the others as instantiated");
     juce::Array<juce::var> secs; int ran = 0;
@@ -3518,7 +3586,7 @@ inline categorise::Row categoriseOne (const SweepOptions& opt, const InstalledRe
             row.why = (gate.stop.isNotEmpty() ? gate.stop : "PACE-wrapped (" + why + "): not loaded here (--include-pace loads it)") + "; the words propose " + (row.proposed.isEmpty() ? juce::String ("nothing") : row.proposed.joinIntoString (" / ")) + ": review";
             row.category = row.proposed.size() == 1 ? row.proposed[0] : juce::String(); say ("  " + row.product + ": " + row.why); return row;
         }
-        const auto uidHex = r.uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + r.desc.version;
+        const auto uidHex = r.uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (r.desc) + "_" + uidHex + "_" + r.desc.version;
         auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId) }; args.addArray (extra); const auto x = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".categorise." + tag + ".1.txt").replaceWithText (x.out, false, false, "\n"); return x; };
         const auto t1 = juce::Time::getMillisecondCounterHiRes();
         const auto lp = run ("list-params", { "--list-params" });
@@ -3553,12 +3621,12 @@ inline int runFactoryRead (const SweepOptions& opt, const juce::StringArray& onl
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("FACTORY: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
     const auto bundles = componentBundles(); const auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
     int read = 0, gated = 0, failed = 0;
-    for (const auto& r : installedAudioUnits())
+    for (const auto& r : installedPlugins())
     {
         if (! only.contains (r.desc.name)) continue;
         juce::String why; const bool pace = paceHeld (r.desc, bundles, why);
         if (const auto gate = licenceGate (opt, r.desc); gate.stop.isNotEmpty() || (pace && ! opt.includePace)) { ++gated; say ("  " + r.desc.name + ": not loaded (" + (gate.stop.isNotEmpty() ? gate.stop : "PACE-wrapped") + ")"); continue; }
-        const auto stem = "AudioUnit_" + r.uidKey.fromLastOccurrenceOf ("|", false, false) + "_" + r.desc.version;
+        const auto stem = fmtTag (r.desc) + "_" + r.uidKey.fromLastOccurrenceOf ("|", false, false) + "_" + r.desc.version;
         const auto x = runProbeCall ({ opt.probe.getFullPathName(), r.desc.name, r.desc.fileOrIdentifier, juce::String::toHexString (r.desc.uniqueId), "--factory-preset", "default" }, opt.timeoutMs);
         raw.getChildFile (stem + ".factory.1.txt").replaceWithText (x.out, false, false, "\n");
         if (! x.cleanExit()) { ++failed; say ("  " + r.desc.name + ": " + x.describe()); continue; }
@@ -3583,7 +3651,7 @@ inline int runCategoriseRedecide (const juce::File& folder, const juce::File& ou
     {
         if (! p.hasProperty ("signatures")) continue;   // out of scope, licence-gated, no automatable control: nothing was read
         ++measured;
-        const auto id = p.getProperty ("identity", "").toString(); const auto stem = "AudioUnit_" + id.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false) + "_" + id.fromLastOccurrenceOf ("|", false, false);
+        const auto id = p.getProperty ("identity", "").toString(); const auto stem = id.upToFirstOccurrenceOf ("|", false, false) + "_" + id.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false) + "_" + id.fromLastOccurrenceOf ("|", false, false);
         auto rd = [&] (const char* tag) { return raw.getChildFile (stem + ".categorise." + tag + ".1.txt").loadFileAsString(); };
         if (rd ("resp30").isEmpty() && rd ("tail").isEmpty()) { ++missing; continue; }
         categorise::Signatures sg;
@@ -3616,7 +3684,7 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
     const auto in = loadDiscoveryInputs (opt.ledger);
     const auto bundles = componentBundles();
     std::vector<InstalledRecord> todo;
-    for (const auto& r : installedAudioUnits())
+    for (const auto& r : installedPlugins())
     {
         if (! only.isEmpty() && ! only.contains (r.desc.name)) continue;
         const auto it = in.categoryByUid.find (r.uidKey); if (only.isEmpty() && it != in.categoryByUid.end() && it->second.isNotEmpty()) continue;   // categorised already (--only names a product regardless: a rehearsal on a known one)
@@ -3650,14 +3718,14 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
 inline int runLimiterCompressor (const SweepOptions& opt0)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt0.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt0.product) hits.push_back (r);
     if (hits.size() != 1) { say ("LIMITER-COMP: '" + opt0.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     SweepOptions opt = opt0; opt.fixtures = opt.out.getChildFile ("fixtures"); opt.fixtures.createDirectory(); opt.profile = true;
     auto sub = std::make_shared<Subject>(); sub->desc = hits[0].desc; sub->product = opt0.product; sub->uid = juce::String::toHexString (hits[0].desc.uniqueId).toLowerCase(); sub->version = hits[0].desc.version;
     sub->reach = Subject::Reach::unfixtured; sub->installedUnique = true; sub->category = "compressor";
     const bool contribution = opt0.purpose == "contribution";
     sub->detail = contribution ? juce::String ("a contribution: the compressor certification on the user's Mac (the wizard)") : juce::String ("a limiter through the compressor certification (v0.2: its profile = the compressor profile + the ceiling block)");
-    { auto* o = new juce::DynamicObject(); o->setProperty ("product", sub->product); o->setProperty ("uid", sub->uid); o->setProperty ("version", sub->version); o->setProperty ("format", "AudioUnit"); o->setProperty ("category", "compressor"); sub->pushed = juce::var (o); }
+    { auto* o = new juce::DynamicObject(); o->setProperty ("product", sub->product); o->setProperty ("uid", sub->uid); o->setProperty ("version", sub->version); o->setProperty ("format", fmtTag (sub->desc)); o->setProperty ("category", "compressor"); sub->pushed = juce::var (o); }
     opt.sectionSubject = sub;
     const int rc = runCertSweep (opt);
     say ("LIMITER-COMP: sweep exit " + juce::String (rc));
@@ -3676,7 +3744,7 @@ inline int runLimiterCompressor (const SweepOptions& opt0)
     for (const auto& f : opt.out.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json")) mark (f);
     // kept beside the row: the record (Phase B skips a mode's fixtures/) and the outcome
     { const auto d = opt.out.getChildFile ("record"); d.createDirectory(); rec.copyFileTo (d.getChildFile (rec.getFileName())); }
-    { const auto d = opt.out.getChildFile ("outcome"); d.createDirectory(); opt.out.getChildFile ("outcomes.json").copyFileTo (d.getChildFile ("AudioUnit_" + sub->uid + "_" + sub->version + ".outcomes.json")); }
+    { const auto d = opt.out.getChildFile ("outcome"); d.createDirectory(); opt.out.getChildFile ("outcomes.json").copyFileTo (d.getChildFile (fmtTag (sub->desc) + "_" + sub->uid + "_" + sub->version + ".outcomes.json")); }
     // a licence the certification suspected (MLimiterX here: dropouts) files the Phase B row needs_licence, as every other mode's does
     if (row.getProperty ("state", "").toString() == "needs_licence") { say ("LIMITER-COMP: " + opt.product + " - " + row.getProperty ("reason", "").toString()); return kToneLicenceKnownExit; }
     return 0;
@@ -3690,7 +3758,7 @@ inline int runLimiterCompressor (const SweepOptions& opt0)
 inline int runStripSection (const SweepOptions& opt0)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt0.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt0.product) hits.push_back (r);
     if (hits.size() != 1) { say ("SECTION: '" + opt0.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     SweepOptions opt = opt0; opt.fixtures = opt.out.getChildFile ("fixtures"); opt.fixtures.createDirectory(); opt.profile = true;   // the profile sweep, as the certification loop runs it (31 levels, 2.5 s)
     const auto stripWrites = juce::JSON::parse (opt0.stripWritesJson);   // the section's engage and the other dynamics sections' off writes (Kathy's ruling, 7 Oct)
@@ -3698,7 +3766,7 @@ inline int runStripSection (const SweepOptions& opt0)
     sub->reach = Subject::Reach::unfixtured; sub->installedUnique = true; sub->category = "compressor";
     juce::StringArray only; for (int i : onlyControlsFlag()) only.add (juce::String (i));
     sub->detail = "channel strip, compressor section: controls " + only.joinIntoString (",") + (std::getenv ("EJ_PROBE_PRESET") ? "; engage preset " + juce::String::fromUTF8 (std::getenv ("EJ_PROBE_PRESET")) : juce::String ("; no engage switch")) + "; the other sections at their instantiate values (Rule 1)";
-    { auto* o = new juce::DynamicObject(); o->setProperty ("product", sub->product); o->setProperty ("uid", sub->uid); o->setProperty ("version", sub->version); o->setProperty ("format", "AudioUnit"); o->setProperty ("category", "compressor"); sub->pushed = juce::var (o); }
+    { auto* o = new juce::DynamicObject(); o->setProperty ("product", sub->product); o->setProperty ("uid", sub->uid); o->setProperty ("version", sub->version); o->setProperty ("format", fmtTag (sub->desc)); o->setProperty ("category", "compressor"); sub->pushed = juce::var (o); }
     opt.sectionSubject = sub;
     const int rc = runCertSweep (opt);
     say ("SECTION: sweep exit " + juce::String (rc));
@@ -3814,7 +3882,7 @@ inline int runLicenceCheck (const SweepOptions& opt, const juce::File& csv, cons
     const auto lines = licence::parseCsv (file.loadFileAsString()); const auto date = dateArg.isNotEmpty() ? dateArg : runDateIso();
     if (lines.empty()) { std::cout << "LICENCE: no lines in " << file.getFullPathName() << std::endl; return 2; }
     // every governed plugin: installed here, or named in this folder's rows (Sean's products are not all installed here); the siblings are all of them
-    std::map<juce::String, juce::String> names; for (const auto& r : installedAudioUnits()) names[r.desc.name] = r.desc.manufacturerName;
+    std::map<juce::String, juce::String> names; for (const auto& r : installedPlugins()) names[r.desc.name] = r.desc.manufacturerName;
     const auto outcomesVar = juce::JSON::parse (root.getChildFile ("outcomes.json").loadFileAsString());
     if (const auto* a = outcomesVar.getArray()) for (const auto& r : *a) { const auto n = r.getProperty ("product", "").toString(); if (n.isNotEmpty() && ! names.count (n)) names[n] = {}; }
     for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false)) for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json")) { const auto n = juce::JSON::parse (f.loadFileAsString()).getProperty ("product", "").toString(); if (n.isNotEmpty() && ! names.count (n)) names[n] = {}; }
@@ -3865,7 +3933,7 @@ inline int runLicenceStamp (const SweepOptions& opt, const juce::File& csv, cons
     const auto root = opt.out; const auto file = csv != juce::File() ? csv : root.getChildFile ("licences.csv");
     const auto lines = licence::parseCsv (file.loadFileAsString()); const auto date = dateArg.isNotEmpty() ? dateArg : runDateIso();
     if (lines.empty()) { std::cout << "LICENCE: no lines in " << file.getFullPathName() << std::endl; return 2; }
-    std::map<juce::String, juce::String> manu; juce::StringArray siblings; for (const auto& r : installedAudioUnits()) { manu[r.desc.name] = r.desc.manufacturerName; siblings.add (r.desc.name); }
+    std::map<juce::String, juce::String> manu; juce::StringArray siblings; for (const auto& r : installedPlugins()) { manu[r.desc.name] = r.desc.manufacturerName; siblings.add (r.desc.name); }
     for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false)) for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json")) siblings.addIfNotAlreadyThere (juce::JSON::parse (f.loadFileAsString()).getProperty ("product", "").toString());
     int stamped = 0, filed = 0, kept = 0;
     for (const auto& catDir : root.getChildFile ("phaseb").findChildFiles (juce::File::findDirectories, false))
@@ -3900,14 +3968,14 @@ inline int runCombined (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("COMBINED: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("COMBINED: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("COMBINED: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     const auto recordFile = latestRecordFor (root.getChildFile ("fixtures"), opt.product);
     const auto record = juce::JSON::parse (recordFile.loadFileAsString());
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
@@ -3980,7 +4048,7 @@ inline int runCombined (const SweepOptions& opt)
     if (auto* o = rec.getDynamicObject())
     {
         o->setProperty ("schema", "ej_combined_setting/0"); o->setProperty ("status", "ACCURACY PASS A1 (6 Oct): data only, not exported, not published");
-        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
         o->setProperty ("inputs", juce::StringArray { profileFile.getFileName(), tcFile.getFileName(), timingFile.getFileName(), gainFile.getFileName() }.joinIntoString ("; "));
         if (unlanded.isNotEmpty()) o->setProperty ("write_unlanded", unlanded);
         if (haveTiming) o->setProperty ("additivity_check", combined::additivityVar (add, holdS));
@@ -3998,14 +4066,14 @@ inline int runMaterial (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("MATERIAL: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("MATERIAL: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("MATERIAL: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
     const auto profileFile = root.getChildFile ("profiles").getChildFile (pstem + ".json"), tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
     const auto profile = juce::JSON::parse (profileFile.loadFileAsString()), tc = juce::JSON::parse (tcFile.loadFileAsString());
@@ -4044,7 +4112,7 @@ inline int runMaterial (const SweepOptions& opt)
     }
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_material_pass/0"); o->setProperty ("status", "ACCURACY PASS A2 (6 Oct): data only, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     o->setProperty ("pick_norm", pickNorm); o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("writes", sets.joinIntoString (",")); o->setProperty ("prediction", "the profile's in_at_gr at the pick (interpolated across norm), inverted at each window's input RMS; GR(t) = quiet-pass gain - (out - in)(t); windows under -50 dBFS not counted");
     o->setProperty ("signals", "generated by the probe (probe_material.h): a sung-like harmonic line with vibrato and breaths; a 100 BPM kick / snare / hat loop; the two with a bass and a pad; 6 s each, 50 ms windows, latency-aligned");
     o->setProperty ("materials", results); o->setProperty ("measuredAt", nowStamp());
@@ -4059,14 +4127,14 @@ inline int runFrequency (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("FREQUENCY: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("FREQUENCY: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("FREQUENCY: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
     const auto tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
     const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
@@ -4111,7 +4179,7 @@ inline int runFrequency (const SweepOptions& opt)
     if (auto* o = rec.getDynamicObject())
     {
         o->setProperty ("schema", "ej_frequency_pass/0"); o->setProperty ("status", "ACCURACY PASS A3 (6 Oct): data only, not exported, not published");
-        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
         o->setProperty ("pick_norm", pickNorm); o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("writes", sets.joinIntoString (",")); o->setProperty ("method", "the tone check's process (quiet ladder + L, 2.5 s holds) at 100, 997 and 5000 Hz; GR = quiet reference gain - gain at L");
         o->setProperty ("measuredAt", nowStamp());
     }
@@ -4126,14 +4194,14 @@ inline int runSampleRate (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("SAMPLERATE: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("SAMPLERATE: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     const auto root = opt.certRoot != juce::File() ? opt.certRoot : opt.out;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("SAMPLERATE: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     const auto pstem = juce::File::createLegalFileName (opt.product).replaceCharacter (' ', '_') + "_" + desc.version;
     const auto tcFile = root.getChildFile ("profiles").getChildFile (pstem + ".tonecheck.json");
     const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
@@ -4178,7 +4246,7 @@ inline int runSampleRate (const SweepOptions& opt)
     if (auto* o = rec.getDynamicObject())
     {
         o->setProperty ("schema", "ej_samplerate_pass/0"); o->setProperty ("status", "ACCURACY PASS A4 (6 Oct): data only, not exported, not published");
-        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+        o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
         o->setProperty ("pick_norm", pickNorm); o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("writes", sets.joinIntoString (",")); o->setProperty ("method", "the tone check's process (quiet ladder + L, 2.5 s holds, 997 Hz) with the plugin prepared at 44100, 48000 and 96000; GR = quiet reference gain - gain at L");
         o->setProperty ("measuredAt", nowStamp());
     }
@@ -4191,14 +4259,14 @@ inline int runGainCal (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("GAINCAL: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("GAINCAL: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("GAINCAL: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("gaincal"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     int reusedTraces = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
     {
@@ -4307,7 +4375,7 @@ inline int runGainCal (const SweepOptions& opt)
     auto* o = new juce::DynamicObject();
     setRoles (o, roles);
     o->setProperty ("schema", "ej_gaincal_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.1, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     o->setProperty ("signal", "997 Hz sine at -20 and -40 dBFS peak, 1.5 s hold, 21 norms per control, everything else as instantiated");
     o->setProperty ("measuredAt", nowStamp()); o->setProperty ("controls", controls);
     outDir.getChildFile (stem + ".gaincal.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
@@ -4341,7 +4409,7 @@ inline int runTiming (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("TIMING: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("TIMING: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
@@ -4556,14 +4624,14 @@ inline int runLimiter (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("LIMITER: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("LIMITER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("LIMITER: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("limiter"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
     {
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
@@ -4653,7 +4721,7 @@ inline int runLimiter (const SweepOptions& opt)
         if (! measuredCeiling)
         {
             auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_limiter_prototype/0"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: no ceiling word and " + juce::String (probed) + " control(s) probed show no output peak sitting at a dB label");
-            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard0);
+            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard0);
             o->setProperty ("ceiling", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
             outDir.getChildFile (stem + ".limiter.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
             return 4;
@@ -4719,7 +4787,7 @@ inline int runLimiter (const SweepOptions& opt)
     auto* o = new juce::DynamicObject();
     setRoles (o, roles);
     o->setProperty ("schema", "ej_limiter_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.4, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     o->setProperty ("ceiling_control", ceilingName); o->setProperty ("nominated_by", measuredCeiling ? "measurement (unnamed: no ceiling word; the control whose two ends show the ceiling signature)" : "names"); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard); o->setProperty ("oversampling_control", osIdx >= 0 ? juce::var (osName) : juce::var());
     o->setProperty ("drive_dbfs_peak", "label + " + juce::String (limiter::kDriveOverLabelDb, 0) + " dB per position (7 Oct); -1 dBFS for the nomination probes"); o->setProperty ("drive_over_label_db", limiter::kDriveOverLabelDb);
     o->setProperty ("method", "997 Hz sine with its peak at the ceiling label + 6 dB, amount at its hard end, ceiling at the labels nearest -0.1/-0.3/-1/-3/-6 (every detent on a stepped control); output sample peak and BS.1770 4x-oversampled true peak over 0.75 s (the older 4x cubic estimate beside it); not_driven = output over 0.5 dB under the label or input peak short of label + 6");
@@ -4770,8 +4838,8 @@ inline int runLimiter (const SweepOptions& opt)
         D->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz sine, peak at the ceiling label + 6 dB, amount at its hard end; sample peak and BS.1770 4x-oversampled true peak over 0.75 s"));
         D->setProperty ("ceiling", limiter::ceilingBlock (ceilingName, measuredCeiling ? "measurement" : "name", offRows, onRows, osName, osOnText, acceptance));
         const auto f = drafts::draftFile (opt.out, stem, "limiter_ceiling");
-        juce::String src; const auto cp = compProfileFor (opt.out, "AudioUnit|" + uidHex + "|" + desc.version, src);
-        const auto problem = drafts::writeDraft (f, limiter::oneProfile (juce::var (D), cp, src, "AudioUnit|" + uidHex + "|" + desc.version));
+        juce::String src; const auto cp = compProfileFor (opt.out, fmtTag (desc) + "|" + uidHex + "|" + desc.version, src);
+        const auto problem = drafts::writeDraft (f, limiter::oneProfile (juce::var (D), cp, src, fmtTag (desc) + "|" + uidHex + "|" + desc.version));
         say (problem.isEmpty() ? "LIMITER: draft ceiling block -> " + f.getFullPathName() : "LIMITER: " + problem);
     }
     return 0;
@@ -4785,14 +4853,14 @@ inline int runEq (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("EQ: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("EQ: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("EQ: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("eq"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
-    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
     {
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
@@ -4878,7 +4946,7 @@ inline int runEq (const SweepOptions& opt)
         {
             juce::StringArray names; for (const auto& [i, n] : controls) names.add (n); say ("  controls: " + names.joinIntoString (", "));
             auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_eq_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends showed no band");
-            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("bands", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
+            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("bands", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
             outDir.getChildFile (stem + ".eq.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
             return 4;
         }
@@ -5117,7 +5185,7 @@ inline int runEq (const SweepOptions& opt)
     auto* o = new juce::DynamicObject();
     setRoles (o, roles, "unnamed controls probed for the gain signature only (frequency / q need a boosted band)");
     o->setProperty ("schema", "ej_eq_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.2, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     o->setProperty ("grid", eq::gridDescription());
     o->setProperty ("method", juce::String (eq::kGridTones) + "-tone log multitone " + juce::String (eq::kGridLoHz, 0) + " Hz-" + juce::String (eq::kGridHiHz, 0) + " Hz (1/12 oct; " + juce::String (eq::kQGridTones) + " = 1/24 oct for the Q positions) at -12 dBFS peak, 1 s hold, 0.5 s discard; the gain map also at -30 dBFS against its own baseline (level check); deviation against the band's baseline; centre = largest deviation (parabolic in log f), bandwidth = -3 dB span, a shelf's corner = half the plateau; Q at the +6 and +3 dB labels; the shape guard (dynamic / not_static) before any label is judged; acceptance +3 / -3 dB at two figures (gain within 0.5 dB, figure within 5 % or the detent)");
     o->setProperty ("bands", bandRows); o->setProperty ("measuredAt", nowStamp());
@@ -5145,13 +5213,13 @@ inline int runSaturation (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("SAT: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("SAT: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("SAT: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("saturation"); outDir.createDirectory();
-    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
         const auto r = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".saturation." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
@@ -5194,7 +5262,7 @@ inline int runSaturation (const SweepOptions& opt)
         {
             juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", "));
             auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends moved no THD");
-            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("controls", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
+            o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("controls", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
             outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
             return 4;
         }
@@ -5254,7 +5322,7 @@ inline int runSaturation (const SweepOptions& opt)
     auto* o = new juce::DynamicObject();
     setRoles (o, roles);
     o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.5, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     o->setProperty ("method", "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere; verdicts (7 Oct, spec section 5): drive / no_effect / inert / silent / level_only (THD never rises 3 dB); acceptance (section 8): steps 1-3 at -12 dBFS, the drive position nearest the band's middle, the level compensated on the output control (the gain draft's, else an inline 21-norm curve at -40 dBFS), re-measured: THD in band and output within 0.5 dB of the input");
     o->setProperty ("controls", controls); o->setProperty ("inert_or_silent_controls", inertN); o->setProperty ("no_effect_controls", noEffectN); o->setProperty ("measuredAt", nowStamp());
     o->setProperty ("nominated_by", measuredNominees.empty() ? "names" : "measurement (unnamed: the lexicon nominated nothing; " + juce::String ((int) measuredNominees.size()) + " control(s) whose THD rises at their ends)");
@@ -5404,13 +5472,13 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     using namespace reverbdelay;
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("RD: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("RD: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("RD: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
-    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
-    if (kind.isEmpty()) { const auto in = loadDiscoveryInputs (opt.ledger); const auto it = in.categoryByUid.find ("AudioUnit|" + uidHex); kind = it != in.categoryByUid.end() ? it->second : juce::String(); }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
+    if (kind.isEmpty()) { const auto in = loadDiscoveryInputs (opt.ledger); const auto it = in.categoryByUid.find (fmtTag (desc) + "|" + uidHex); kind = it != in.categoryByUid.end() ? it->second : juce::String(); }
     if (kind != "reverb" && kind != "delay") { say ("RD: '" + opt.product + "' is category '" + kind + "' in the ledger; say --kind reverb or --kind delay"); return 2; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("reverbdelay"); outDir.createDirectory();
     int processN = 0;
@@ -5457,7 +5525,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_reverb_delay_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.7 against REVERB_DELAY_PROFILE_SPEC v0.1, not exported, not published"); o->setProperty ("space_fields", "7 Oct: roles by measurement, pink decay, adaptive tail, relative pre-delay, sync per note, verdicts, acceptance");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
     int measured = 0; juce::Array<juce::var> roleNotes;
     auto readTail = [&] (const juce::String& tag, const juce::StringArray& args, bool& window) -> Tail { const auto r = run (tag, args); if (r.kind == ChildResult::Kind::uiShown) window = true; return parseTail (r.cleanExit() ? r.out : juce::String()); };
     bool windowSeen = false;
@@ -5759,13 +5827,13 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     using namespace dynamics;
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("DYN: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("DYN: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("DYN: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
-    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
-    if (kind.isEmpty()) { const auto in = loadDiscoveryInputs (opt.ledger); const auto it = in.categoryByUid.find ("AudioUnit|" + uidHex); kind = it != in.categoryByUid.end() ? it->second : juce::String(); if (kind == "transient_shaper") kind = "transient"; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
+    if (kind.isEmpty()) { const auto in = loadDiscoveryInputs (opt.ledger); const auto it = in.categoryByUid.find (fmtTag (desc) + "|" + uidHex); kind = it != in.categoryByUid.end() ? it->second : juce::String(); if (kind == "transient_shaper") kind = "transient"; }
     if (kind != "transient" && kind != "gate") { say ("DYN: '" + opt.product + "' is category '" + kind + "' in the ledger; say --kind transient or --kind gate"); return 2; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("dynamics"); outDir.createDirectory();
     int processN = 0;
@@ -5801,7 +5869,7 @@ inline int runDynamics (const SweepOptions& opt, juce::String kind)
     say ("DYN: " + opt.product + " " + desc.version + " (" + kind + "), names propose: " + (kind == "transient" ? "attack " + named (attack) + "; sustain " + named (sustain) : "threshold " + named (threshold) + "; range " + named (range) + "; attack " + named (gAttack) + "; hold " + named (gHold) + "; release " + named (gRelease)));
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_dynamics_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.8 against TRANSIENT_GATE_PROFILE_SPEC v0.1, not exported, not published"); o->setProperty ("tg_fields", "7 Oct: 500 ms hits + held tone, roles by measurement, timing at a ramp-taken threshold, both definitions, verdicts, acceptance");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     auto sevenNorms = [&] (int idx) { std::vector<double> v; const auto ctl = sweep::findControl (base, idx); const int st = (int) ctl.getProperty ("numSteps", 0); if (sweep::isSteppedControl (ctl) && st > 2 && st <= 24) for (int k = 0; k < st; ++k) v.push_back ((double) k / (st - 1)); else for (int k = 0; k <= 6; ++k) v.push_back (k / 6.0); return v; };
     int measured = 0; std::vector<roleevidence::RoleVerdict> roles; juce::Array<juce::var> acc;
@@ -6046,12 +6114,12 @@ inline int runDeesser (const SweepOptions& opt)
     using namespace deesser;
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("DS: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("DS: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("DS: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
-    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("deesser"); outDir.createDirectory();
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
@@ -6086,7 +6154,7 @@ inline int runDeesser (const SweepOptions& opt)
     if (threshold.index < 0) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no threshold control by name; controls: " + names.joinIntoString (", ")); return 4; }
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_deesser_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.9, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     o->setProperty ("section_token", sectionToken); o->setProperty ("threshold_control", threshold.name); o->setProperty ("frequency_control", freq.index >= 0 ? juce::var (freq.name) : juce::var()); o->setProperty ("mode_control", mode.index >= 0 ? juce::var (mode.name) : juce::var());
     auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
     juce::StringArray norms; for (int k = 0; k <= 5; ++k) norms.add (juce::String (k / 5.0f, 6));
@@ -6369,12 +6437,12 @@ inline int runMultiband (const SweepOptions& opt)
     using namespace multiband;
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("MB: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.size() != 1) { say ("MB: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty())
     { say ("MB: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
-    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("multiband"); outDir.createDirectory();
     int processN = 0;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
@@ -6394,7 +6462,7 @@ inline int runMultiband (const SweepOptions& opt)
     if (thresholds.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no band thresholds by name; controls: " + names.joinIntoString (", ")); return 4; }
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_multiband_prototype/0"); o->setProperty ("status", "PROTOTYPE - the multiband proposal with real numbers, not exported, not published");
-    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
     if (! stageSkipped.isEmpty()) { juce::Array<juce::var> sv; for (const auto& n : stageSkipped) sv.add (n); o->setProperty ("stage_thresholds_not_nominated", sv); }
     if (! floatingVar.isEmpty()) o->setProperty ("floating_bands", floatingVar);
     if (! qualifierSkipped.isEmpty()) { juce::Array<juce::var> qv; for (const auto& n : qualifierSkipped) qv.add (n); o->setProperty ("crossover_qualifiers_not_edges", qv); }
@@ -6683,7 +6751,7 @@ inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& on
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto phasebDir = opt.out.getChildFile ("phaseb");
-    std::map<juce::String, juce::String> manufacturerOf; for (const auto& r : installedAudioUnits()) manufacturerOf[r.desc.name] = r.desc.manufacturerName;   // the registry, no instantiation
+    std::map<juce::String, juce::String> manufacturerOf; for (const auto& r : installedPlugins()) manufacturerOf[r.desc.name] = r.desc.manufacturerName;   // the registry, no instantiation
     int total = 0, written = 0, refusedN = 0;
     for (const auto& sp : draftpass::specs())
     {
@@ -6724,11 +6792,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
     // DISCOVERY: installed AUs by category from the ledger; certified compressors from the cert folder; multibands from its outcomes
     const auto in = loadDiscoveryInputs (opt.ledger);
-    const auto installed = installedAudioUnits();
+    const auto installed = installedPlugins();
     const auto scanStops = quarantinedBundles (opt.ledger);
     const auto outcomes = juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString());
     std::map<juce::String, std::vector<PhaseBProduct>> work;
-    auto stemFor = [] (const juce::PluginDescription& d) { return "AudioUnit_" + juce::String::toHexString (d.uniqueId) + "_" + d.version; };
+    auto stemFor = [] (const juce::PluginDescription& d) { return fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId) + "_" + d.version; };
     for (const auto& cat : categories())
     {
         if (! phaseb::categoryRuns (cat, onlyCategories, redo)) continue;
@@ -6854,7 +6922,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     std::vector<PItem> items;
     {
         const auto bundles = componentBundles(); const auto lines = licenceLinesOf (opt.out);
-        juce::StringArray siblings; for (const auto& r : installedAudioUnits()) siblings.add (r.desc.name);
+        juce::StringArray siblings; for (const auto& r : installedPlugins()) siblings.add (r.desc.name);
         for (const auto& cat : categories()) if (work.count (cat.name)) for (const auto& pp : work[cat.name])
         {
             jobs::LaneInputs in; in.category = cat.name; in.uad = uad::isUadProduct (pp.product, pp.desc.manufacturerName);
@@ -6883,7 +6951,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
             if (tmp.isDirectory()) { juce::ChildProcess pk; pk.start (juce::StringArray { "/usr/bin/pkill", "-f", tmp.getFullPathName() }); pk.waitForProcessToFinish (5000); }
             tmp.deleteRecursively(); tmp.createDirectory();
             saveProgress (cat.name + ": " + pp.product);
-            juce::DynamicObject::Ptr row = new juce::DynamicObject(); row->setProperty ("product", pp.product); row->setProperty ("identity", "AudioUnit|" + juce::String::toHexString (pp.desc.uniqueId) + "|" + pp.desc.version); row->setProperty ("category", cat.name); row->setProperty ("mode", cat.mode);
+            juce::DynamicObject::Ptr row = new juce::DynamicObject(); row->setProperty ("product", pp.product); row->setProperty ("identity", fmtTag (pp.desc) + "|" + juce::String::toHexString (pp.desc.uniqueId) + "|" + pp.desc.version); row->setProperty ("category", cat.name); row->setProperty ("mode", cat.mode);
             juce::String outcome; double seconds = 0.0;
             // THE LICENCE GATE (6 Oct): the scan's stop or a needs_licence row (skipped), the UAD-2 device (needs_device), the licence
             // file (needs_licence: expired / unowned / unmatched); a running demo measures and stamps the row and its records
@@ -7194,7 +7262,7 @@ inline juce::String inertCheckOnRecord (const SweepOptions& opt, const juce::Fil
     if (! sw.isObject() || sw.getProperty ("result", "").toString() != "flat" || (bool) sw.getProperty ("engageWrites", {}).getProperty ("found", false) || sw.hasProperty ("inertCheck")) return {};
     const auto product = record.getProperty ("product", "").toString();
     if (deriveOnly) return "would run the inert check (flat, no engage write found, not yet checked)";
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) return "inert check not run: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)";
     const auto& desc = hits[0].desc;
     if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) return "inert check not run: " + vm;
@@ -7299,7 +7367,7 @@ inline int runToneCheckAll (SweepOptions opt)
                 if (r.getProperty ("pickedCandidate", {}).isObject()) { const int want = (int) r.getProperty ("pickedCandidate", {}).getProperty ("index", -1); for (const auto& c : plan0.candidates) if (c.index == want) { auto cc = c; plan0 = plan0.forCandidate (cc); break; } }
                 if (plan0.ok && plan0.thr >= 0 && ! sweep::isSteppedControl (sweep::findControl (r, plan0.thr)))
                 {
-                    std::vector<InstalledRecord> hits; for (const auto& ir : installedAudioUnits()) if (ir.desc.name == product) hits.push_back (ir);
+                    std::vector<InstalledRecord> hits; for (const auto& ir : installedPlugins()) if (ir.desc.name == product) hits.push_back (ir);
                     if (hits.size() == 1 && profile::versionMismatch (r.getProperty ("version", "").toString(), hits[0].desc.version).isEmpty())
                     {
                         const auto recF = latestRecordFor (fixturesDir, product);
@@ -7478,7 +7546,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         if (! opt.slice.isEmpty() && ! opt.slice.contains (s.product)) continue;
         const bool planLater = s.reach == Subject::Reach::unfixtured;
         const bool tuner = s.category == "pitch";
-        const auto identity = "AudioUnit|" + s.uid + "|" + (s.desc.version.isNotEmpty() ? s.desc.version : s.version);
+        const auto identity = fmtTag (s.desc) + "|" + s.uid + "|" + (s.desc.version.isNotEmpty() ? s.desc.version : s.version);
         if (skip.contains (s.product)) continue;
         auto withMap = [&] (juce::var row) { if (s.mapState.isNotEmpty()) if (auto* o = row.getDynamicObject()) o->setProperty ("map", s.mapState); return row; };
         if (! measurable (s, opt.includePace))
@@ -7571,7 +7639,7 @@ inline int runCertTuner (const SweepOptions& opt)
     const juce::String probeLabel = "signed EchoJayProbe (feat/ejmap-cert), team " + id.team + ", cdhash " + id.cdhash;
     // Resolve the installed component by product name.
     std::vector<InstalledRecord> hits;
-    for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    for (const auto& r : installedPlugins()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.empty()) { say ("TUNER: '" + opt.product + "' is not an installed AudioUnit"); return 2; }
     if (hits.size() > 1) { say ("TUNER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " components; refused"); return 2; }
     Subject s; s.desc = hits[0].desc; s.product = s.desc.name; s.uid = juce::String::toHexString (s.desc.uniqueId).toLowerCase(); s.version = s.desc.version;
@@ -7894,7 +7962,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (candidate.isNotEmpty()) { juce::String why; record = profile::candidateAsSingle (record, candidate, why); if (record.isVoid()) { say ("TONE: " + why); return 2; } }
     const auto product = profile.getProperty ("plugin", {}).getProperty ("name", "").toString();
     std::vector<InstalledRecord> hits;
-    for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    for (const auto& r : installedPlugins()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("TONE: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
     const auto& desc = hits[0].desc;
     // SECTION 11: the installed version must be the record's
@@ -8217,7 +8285,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     if (! sweepVar.isObject()) { say ("DETECTOR: the record has no thresholdSweep (candidates: pass --candidate NAME; or a refusal)"); return 2; }
     const auto product = record.getProperty ("product", "").toString();
     std::vector<InstalledRecord> hits;
-    for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    for (const auto& r : installedPlugins()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("DETECTOR: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
     // the same two guards as the tone check, before any load: section 11 and the known licence (ruled 3 Oct)
     if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), hits[0].desc.version); vm.isNotEmpty()) { say ("DETECTOR: " + product + " - " + vm); return kToneVersionExit; }

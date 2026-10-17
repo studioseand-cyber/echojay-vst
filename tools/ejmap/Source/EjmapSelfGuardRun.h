@@ -20,7 +20,7 @@ inline std::vector<juce::PluginDescription> guardedPlugins (const juce::StringAr
     const auto mem = selfguard::loadMemory (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/self_guard_windows.json"));
     const auto bundles = componentBundles();
     std::vector<juce::PluginDescription> ds; juce::StringArray found;
-    for (const auto& r : installedAudioUnits())
+    for (const auto& r : installedPlugins())
     {
         if (! names.contains (r.desc.name) || found.contains (r.desc.name)) continue;
         found.add (r.desc.name);

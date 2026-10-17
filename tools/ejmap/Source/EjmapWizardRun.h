@@ -16,6 +16,7 @@
 #include "EjmapWizardRoute.h"
 #include "EjmapApbPreflight.h"
 #include "EjmapSelfGuardRun.h"   // 16 Oct: the guard on the developer's own loads (guardedPlugins)
+#include "EjmapReadbackSweepRun.h"   // 17 Oct (rulings 3): the VST3 lane - the bridge read and the probe's VST3 identity line
 #include <fstream>
 #include <atomic>
 #include <csignal>
@@ -38,7 +39,7 @@ inline std::map<juce::String, StoreEntry> mapStore (const juce::File& ledger)
     for (const auto& f : ledger.getChildFile ("maps").findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         const auto d = juce::JSON::parse (f.loadFileAsString()); const auto id = d.getProperty ("identity", {});
-        if (id.getProperty ("format", "").toString() != "AudioUnit") continue;
+        if (id.getProperty ("format", "").toString() != "AudioUnit" && id.getProperty ("format", "").toString() != "VST3") continue;   // 17 Oct: VST3 maps too (their uids are the class hashes: no clash)
         m[id.getProperty ("uid", "").toString().toLowerCase() + "|" + id.getProperty ("version", "").toString()] = { d.getProperty ("fp", "").toString(), d.getProperty ("category", "").toString() };
     }
     return m;
@@ -319,6 +320,64 @@ inline int runSoundCheckAlone (const SweepOptions& opt, const juce::File& namesF
     return 0;
 }
 
+// THE VST3 LANE (Kathy, 17 Oct, rulings 3: "measure once per product on AU, then bridge-read the VST3 twin; full VST3 measuring only
+// when there is no AU twin"). A VST3 whose class name is an installed AudioUnit's name is a TWIN: it is not measured, its role-named
+// controls are read beside the AU's at the same five settings (the bridge read; the server judges it - trust::bridgeFor). One with no
+// AU of that name is MEASURED like an AudioUnit (its own map, its own Phase B rows, plugin_id "VST3|uid|version")
+inline juce::String vst3Lane (const juce::String& className, const juce::StringArray& auNames, juce::String& twin)
+{
+    for (const auto& n : auNames) if (n.trim().equalsIgnoreCase (className.trim())) { twin = n; return "bridge"; }
+    twin = {}; return "measure";
+}
+// the bridge's controls: parameters both formats carry under the same name whose name says a role (the trust role table), at most 12;
+// (AU index, VST3 index, name)
+struct BridgePick { int au = -1, v3 = -1; juce::String name; };
+inline std::vector<BridgePick> bridgeControls (const std::vector<std::pair<int, juce::String>>& au, const std::vector<std::pair<int, juce::String>>& v3, int cap = 12)
+{
+    std::vector<BridgePick> out;
+    for (const auto& [ai, an] : au)
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty ("name", an); const juce::var c (o);
+        if (trust::roleOf (c).role.isEmpty()) continue;
+        for (const auto& [vi, vn] : v3) if (vn.trim() == an.trim()) { out.push_back ({ ai, vi, an }); break; }
+        if ((int) out.size() >= cap) break;
+    }
+    return out;
+}
+// one bridge read: the AU twin's parameter list, then both formats at 10 / 30 / 50 / 70 / 90 % on the picked controls (one load each),
+// written as read-back records (ej_readback_sweep/1, "purpose": "bridge", tagged by format) under <dir>
+inline juce::String bridgeRead (const SweepOptions& opt, const juce::PluginDescription& au, const juce::PluginDescription& v3,
+                                const std::vector<std::pair<int, juce::String>>& v3Params, const juce::File& dir, bool& window)
+{
+    window = false;
+    const auto lr = runChild ({ opt.probe.getFullPathName(), au.name, au.fileOrIdentifier, juce::String::toHexString (au.uniqueId), "--list-params" }, opt.timeoutMs);
+    if (lr.kind == ChildResult::Kind::uiShown) { window = true; return "a window appeared on the AU twin (licence?) - closed, not clicked"; }
+    const auto auParams = paramsOfList (lr.out);
+    const auto picks = bridgeControls (auParams, v3Params);
+    if (picks.empty()) return "no role-named control in both formats - nothing to read for the bridge";
+    dir.createDirectory();
+    for (const bool isV3 : { false, true })
+    {
+        const auto& d = isV3 ? v3 : au;
+        std::vector<readback::Want> ws; juce::StringArray parts;
+        for (const auto& p : picks)
+        {
+            readback::Want w; w.index = isV3 ? p.v3 : p.au; w.name = p.name; w.kind = "anchored"; w.norms = { 0.1, 0.3, 0.5, 0.7, 0.9 };
+            juce::StringArray ns; for (double x : w.norms) ns.add (juce::String (x, 6)); parts.add (juce::String (w.index) + ":" + ns.joinIntoString (",")); ws.push_back (w);
+        }
+        const auto r = runProbeCall ({ opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--text-at-norms-multi", parts.joinIntoString (";") }, opt.timeoutMs);
+        if (r.kind == ChildResult::Kind::uiShown) { window = true; return "a window appeared (licence?) - closed, not clicked"; }
+        auto* id = new juce::DynamicObject(); id->setProperty ("name", d.name); id->setProperty ("version", d.version); id->setProperty ("format", fmtTag (d));
+        auto* mm = new juce::DynamicObject(); mm->setProperty ("identity", juce::var (id));
+        auto rec = readback::record (juce::var (mm), ws, readback::parse (r.out), d.version);
+        rec.getDynamicObject()->setProperty ("purpose", "bridge"); rec.getDynamicObject()->setProperty ("measuredAt", nowStamp());
+        rec.getDynamicObject()->setProperty ("plugin_id", fmtTag (d) + "|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version);
+        rec.getDynamicObject()->setProperty ("twin_plugin_id", fmtTag (isV3 ? au : v3) + "|" + juce::String::toHexString ((isV3 ? au : v3).uniqueId).toLowerCase() + "|" + (isV3 ? au : v3).version);
+        dir.getChildFile (fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId).toLowerCase() + "_" + d.version + ".readback.json").replaceWithText (juce::JSON::toString (rec) + "\n");
+    }
+    return juce::String ((int) picks.size()) + " control(s) read in both formats";
+}
+
 inline int runWizard (const WizardOptions& wo)
 {
     installWizardStop();
@@ -358,16 +417,75 @@ inline int runWizard (const WizardOptions& wo)
     // THE NEVER-RETRY LIST (the app's crash recovery): a plugin the wizard went down with is not loaded again, by any stage
     const auto skipped = wo.skip != juce::File() ? wizapp::skipList (wo.skip.getParentDirectory()) : juce::StringArray();
     std::vector<InstalledRecord> plugins; juce::Array<juce::var> skippedRows;
-    for (const auto& r : installedAudioUnits())
+    for (const auto& r : registryAudioUnits())   // AU here; the VST3s are found below (installedVst3Bundles)
     {
         if (! (wo.only.isEmpty() || wo.only.contains (r.desc.name))) continue;
         if (skipped.contains (r.desc.name))
-        { auto* row = new juce::DynamicObject(); row->setProperty ("product", r.desc.name); row->setProperty ("plugin_id", "AudioUnit|" + juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version);
+        { auto* row = new juce::DynamicObject(); row->setProperty ("product", r.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (juce::String::toHexString (r.desc.uniqueId), r.desc.version, fmtTag (r.desc))); row->setProperty ("format", fmtTag (r.desc));
           row->setProperty ("state", "crashed"); row->setProperty ("why", "the wizard closed while checking it: skipped for good, never retried"); skippedRows.add (juce::var (row));
           say ("  " + r.desc.name + ": on the never-retry list (the wizard closed while checking it) - not loaded"); continue; }
         plugins.push_back (r);
     }
     auto store = mapStore (opt.ledger);
+    // THE VST3s (Kathy, 17 Oct, rulings 3): found from their bundles (nothing loaded), then each non-shell one loaded ONCE for its identity
+    // (class name, uid, version) and parameter list - after the same licence / PACE / hardware checks an AudioUnit gets. A twin of an
+    // installed AudioUnit is bridge-read (vst3Lane); one with no twin joins the run as its own plugin (its map, its rows, its Phase B).
+    // The VST3-only products are listed for every Phase B child (EJ_VST3_EXTRAS, installedPlugins)
+    juce::Array<juce::var> vst3Rows; juce::Array<juce::var> vst3Extras;
+    if (! wo.plan && std::getenv ("EJ_WIZARD_NO_VST3") == nullptr)
+    {
+        std::map<juce::String, juce::PluginDescription> auByName; juce::StringArray auNames;
+        for (const auto& r : registryAudioUnits()) { auByName[r.desc.name.toLowerCase()] = r.desc; auNames.add (r.desc.name); }
+        const auto licF = out.getChildFile ("licence_windows.json"); const auto licMem = wizroute::loadLicenceMemory (licF);
+        const bool paceOk = juce::File ("/Library/Application Support/PACEAntiPiracy/LicenseSupport").exists() || juce::File ("/Applications/iLok License Manager.app").exists();
+        auto vrow = [&] (const juce::String& product, const juce::String& pid, const juce::String& st, const juce::String& why)
+        { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);
+          row->setProperty ("state", st); row->setProperty ("why", why); vst3Rows.add (juce::var (row)); return row; };
+        const auto bundlesV3 = installedVst3Bundles();
+        say ("WIZARD: " + juce::String ((int) bundlesV3.size()) + " VST3 bundle(s) found (nothing loaded yet)");
+        for (const auto& b : bundlesV3)
+        {
+            if (wizardStop() != 0) break;
+            const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase();
+            if (! (wo.only.isEmpty() || std::any_of (wo.only.begin(), wo.only.end(), [&] (const juce::String& o) { return o.equalsIgnoreCase (b.name) || b.name.containsIgnoreCase (o); }))) continue;
+            if (b.shell) { vrow (b.name, {}, "out_of_scope", "a WaveShell VST3 bundle: its plugins are measured through their AudioUnits"); continue; }
+            if (skipped.contains (b.name)) { vrow (b.name, {}, "crashed", "the wizard closed while checking it: skipped for good, never retried"); continue; }
+            if (licMem.count (bundleKey)) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered)); continue; }
+            juce::PluginDescription d; d.pluginFormatName = "VST3"; d.name = b.name; d.fileOrIdentifier = path; d.version = b.version; d.manufacturerName = b.vendor;
+            juce::String pw; const bool pace = paceHeld (d, {}, pw) && pw.startsWith ("PACE");
+            if (pace && ! paceOk) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::paceNoIlok)); continue; }
+            if (apb::isApbProduct (d.name, d.manufacturerName)) { const auto& a = apb::device (apb::assumeFlag()); if (! a.present) { vrow (b.name, {}, "needs_hardware", juce::String (apb::kNotConnected) + " (" + a.how + "); not loaded"); continue; } }
+            const auto r = runChild ({ opt.probe.getFullPathName(), d.name, path, "0", "--list-params" }, opt.timeoutMs);
+            if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licF, bundleKey); vrow (b.name, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); continue; }
+            const auto ps = paramsOfList (r.out); const auto cls = readback::vst3ClassOf (r.out), uid = readback::vst3UidOf (r.out), ver = readback::vst3VersionOf (r.out);
+            if (! r.cleanExit() || ps.empty() || uid.isEmpty()) { vrow (b.name, {}, r.cleanExit() ? "wont_load" : "crashed", "the VST3 did not load (" + (r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); continue; }
+            if (cls.isNotEmpty()) d.name = cls; if (ver.isNotEmpty()) d.version = ver;
+            if (const auto vv = readback::vst3FieldOf (r.out, "vendor"); vv.isNotEmpty()) d.manufacturerName = vv;   // the class's own vendor (the folder is only a guess)
+            d.uniqueId = d.deprecatedUid = (int) (juce::int64) uid.getHexValue64();
+            const auto pid = wizroute::pluginId (uid, d.version, "VST3");
+            juce::String twin;
+            if (vst3Lane (d.name, auNames, twin) == "bridge")
+            {
+                bool window = false; const auto& au = auByName[twin.toLowerCase()];
+                juce::String apw; if (! paceOk && paceHeld (au, componentBundles(), apw) && apw.startsWith ("PACE")) { vrow (d.name, pid, "needs_licence", "its AU twin is iLok-protected and this Mac has no iLok: not read"); continue; }
+                const auto why = bridgeRead (opt, au, d, ps, out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge"), window);
+                if (window) wizroute::rememberLicenceWindow (licF, bundleKey);
+                auto* row = vrow (d.name, pid, window ? "needs_licence" : why.endsWith ("in both formats") ? "bridge_read" : "not_measurable", why);
+                row->setProperty ("twin_plugin_id", wizroute::pluginId (juce::String::toHexString (au.uniqueId), au.version, "AudioUnit"));
+                say ("  " + d.name.paddedRight (' ', 30) + " VST3 twin of the AU: " + why); continue;
+            }
+            const auto fp = echojay::fingerprintForDescription (d, (int) ps.size()); const auto cat = wizard::wizardCategory (d.name, catalogue);
+            opt.ledger.getChildFile ("maps").createDirectory();
+            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat, "VST3")) + "\n");
+            store[uid + "|" + d.version] = { fp, cat };
+            plugins.push_back ({ d, echojay::identityKeyForDescription (d), "VST3|" + uid });
+            auto* x = new juce::DynamicObject(); x->setProperty ("name", d.name); x->setProperty ("file", path); x->setProperty ("uid", uid); x->setProperty ("version", d.version); x->setProperty ("vendor", d.manufacturerName);
+            vst3Extras.add (juce::var (x));
+            say ("  " + d.name.paddedRight (' ', 30) + " VST3 with no AU twin: measured as its own plugin (" + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12) + ")");
+        }
+        const auto xf = out.getChildFile ("vst3_extras.json"); xf.replaceWithText (juce::JSON::toString (juce::var (vst3Extras)) + "\n");
+        setenv ("EJ_VST3_EXTRAS", xf.getFullPathName().toRawUTF8(), 1);
+    }
     prog.setPlugins ((int) plugins.size());
     const auto bundlesAll = componentBundles();
     setenv ("EJ_WIZARD_BACKGROUND", "1", 1); jobs::beBackgroundGuest();   // 15 Oct (sharing the Mac): this engine and every child it starts run as background guests
@@ -394,10 +512,11 @@ inline int runWizard (const WizardOptions& wo)
     }
     auto* state = new juce::DynamicObject(); juce::Array<juce::var> rows; std::map<juce::String, juce::StringArray> queues; std::map<juce::String, int> counts;   // queues: Phase B category -> products
     for (const auto& r : skippedRows) { rows.add (r); ++counts["crashed"]; }
+    for (const auto& r : vst3Rows) { rows.add (r); ++counts[r.getProperty ("state", "").toString()]; }   // 17 Oct: the VST3 lane's own rows (twins, shells, skips)
     const auto problemState = [] (const juce::String& st) { return wizprog::isProblemState (st); };
     struct Pending { size_t i; wizroute::Decision d; juce::DynamicObject* row; };
     std::vector<Pending> toMap, toCategorise;
-    auto typeOf = [] (const juce::PluginDescription& d) { return d.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false); };
+    auto typeOf = [] (const juce::PluginDescription& d) { return d.pluginFormatName == "VST3" ? juce::String ("aufx") : d.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false); };   // a VST3 is an effect here
     std::set<juce::String> limiterKnown;   // 13 Oct: limiters whose limiter pass the database holds (their compressor pass alone is queued)
     auto enqueue = [&] (const juce::String& name, const juce::String& cat, const juce::StringArray& passes = {}, bool limKnown = false)
     { for (const auto& pb : passes.isEmpty() ? wizroute::phaseBFor (cat) : passes) queues[pb].addIfNotAlreadyThere (name); if (limKnown) limiterKnown.insert (name); };
@@ -412,7 +531,7 @@ inline int runWizard (const WizardOptions& wo)
             if (demoQueued.insert (n).second) { wizprog::Item d; d.product = n; d.kind = "demo"; d.serial = serialOf (ir.desc); d.group = gi; q.push_back (d); }
             wizprog::Item it; it.product = n; it.kind = wizroute::kindOf (pb); it.serial = serialOf (ir.desc); it.group = gi; it.weight = expectedWork.secondsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);
             it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);   // 15 Oct: steps within a plugin (its probe calls)
-            it.stepDir = out.getChildFile ("phaseb").getChildFile (pb).getChildFile (".tmp-AudioUnit_" + juce::String::toHexString (ir.desc.uniqueId).toLowerCase() + "_" + ir.desc.version).getFullPathName();
+            it.stepDir = out.getChildFile ("phaseb").getChildFile (pb).getChildFile (".tmp-" + fmtTag (ir.desc) + "_" + juce::String::toHexString (ir.desc.uniqueId).toLowerCase() + "_" + ir.desc.version).getFullPathName();
             q.push_back (it); break;
         }
         ++gi; } return q; };
@@ -458,7 +577,7 @@ inline int runWizard (const WizardOptions& wo)
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
         const auto ans = wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
         const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name));
-        auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver)); row->setProperty ("map_fp", se.fp);
+        auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver, fmtTag (ir.desc))); row->setProperty ("format", fmtTag (ir.desc)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
         if (wo.plan) row->setProperty ("identifier", ir.desc.fileOrIdentifier);   // 14 Oct (WaveShell census): the AU type,subtype,manufacturer - plan only
         juce::String st, why = d.why;
@@ -468,7 +587,7 @@ inline int runWizard (const WizardOptions& wo)
         juce::String paceWhy; const bool pw = ! wizroute::loadsNothing (d) && (wo.plan || ! paceSupport) && paceWrapped (ir.desc, paceWhy);
         row->setProperty ("pace", pw ? paceWhy : juce::String());
         const auto ls = wizroute::loadsNothing (d) ? wizroute::LicenceSkip::none
-                      : wizroute::licenceSkip (licenceMem.count (wizroute::pluginId (uid, ver).toLowerCase()) > 0, pw, pw && ! paceSupport && ilokUsb(), paceSupport);
+                      : wizroute::licenceSkip (licenceMem.count (wizroute::pluginId (uid, ver, fmtTag (ir.desc)).toLowerCase()) > 0, pw, pw && ! paceSupport && ilokUsb(), paceSupport);
         const auto hw = wizroute::needsSoundHardware (d.route) ? hardwareStop (ir.desc) : juce::String();
         if (ls != wizroute::LicenceSkip::none) { st = "needs_licence"; why = wizroute::licenceSkipWhy (ls); row->setProperty ("licence_skip", ls == wizroute::LicenceSkip::remembered ? "remembered" : "pace_no_ilok"); }
         else if (hw.isNotEmpty()) { st = "needs_hardware"; why = hw; }   // 15 Oct: UAD without a UAD-2 device, APB without its unit - on every route that measures or reads sound, not loaded
@@ -483,7 +602,7 @@ inline int runWizard (const WizardOptions& wo)
                 if (gate.stop.isNotEmpty()) { st = gate.stop.contains (uad::kNotConnected) ? "needs_hardware" : "needs_licence"; why = gate.stop; break; }
                 // 14 Oct: no load here - a read-back already done (quick_checks.json, by plugin id) is reused; the rest wait for Checking
                 row->setProperty ("from_version", ans.entry->version());
-                const auto qc = quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver)), {});
+                const auto qc = quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver, fmtTag (ir.desc))), {});
                 if (qc.isObject() && qc.getProperty ("from_version", "").toString() == ans.entry->version())
                 {
                     const bool pass = (bool) qc.getProperty ("pass", false); const auto rbWhy = qc.getProperty ("why", "").toString(); row->setProperty ("readback", rbWhy);
@@ -581,12 +700,12 @@ inline int runWizard (const WizardOptions& wo)
             if (rb.pass && ! rb.near.empty()) { row->setProperty ("matched_with_tolerance", true); row->setProperty ("near_matches", nearV); }
             if (qshell.isNotEmpty() && (qk == ChildResult::Kind::timedOut || shells.isBad (qshell)) && qk != ChildResult::Kind::exited)
             { st = "waves_skipped"; why = wizroute::wavesSkippedWhy (qshell, shells.why (qshell).isNotEmpty() ? shells.why (qshell) : juce::String ("did not load")); }
-            else if (window) { st = "needs_licence"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }
+            else if (window) { st = "needs_licence"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver, fmtTag (ir.desc))); }
             else
             {
                 {   auto* c = new juce::DynamicObject(); c->setProperty ("from_version", q.entry->version()); c->setProperty ("pass", rb.pass); c->setProperty ("why", rb.why);
                     if (rb.pass && ! rb.near.empty()) c->setProperty ("near_matches", nearV);
-                    quickCache.getDynamicObject()->setProperty (wizroute::pluginId (uid, ver), juce::var (c)); quickCacheF.replaceWithText (juce::JSON::toString (quickCache)); }
+                    quickCache.getDynamicObject()->setProperty (wizroute::pluginId (uid, ver, fmtTag (ir.desc)), juce::var (c)); quickCacheF.replaceWithText (juce::JSON::toString (quickCache)); }
                 if (! wizapp::needsMeasuring (wizard::Match::sameControls, rb.pass)) { st = "ready_from_version"; why = "the version " + q.entry->version() + " profile: " + rb.why; }
                 else { st = "queued"; why = "the version " + q.entry->version() + " profile does not fit (" + rb.why + "): measure this version"; toMap.push_back ({ q.i, q.d, row }); }
             }
@@ -621,12 +740,12 @@ inline int runWizard (const WizardOptions& wo)
                 say ("WIZARD: " + shell + " " + shells.why (shell) + " - its other Waves plugins are skipped this scan (check Waves Central)");
             if (shell.isNotEmpty() && (r.kind == ChildResult::Kind::timedOut || shells.isBad (shell)) && ! r.cleanExit())
             { early[d.name] = "waves_skipped"; earlyWhy[d.name] = wizroute::wavesSkippedWhy (shell, shells.why (shell).isNotEmpty() ? shells.why (shell) : juce::String ("did not load")); say ("  " + d.name + ": " + earlyWhy[d.name]); prog.finished (d.name, true); return; }
-            if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version)); early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
+            if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version, fmtTag (d))); early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
             const auto ps = paramsOfList (r.out);
             if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
             const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
             const auto cat = wizard::wizardCategory (d.name, catalogue);
-            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat)) + "\n");
+            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat, fmtTag (d))) + "\n");
             store[uid + "|" + d.version] = { fp, cat };
             if (! catNames.count (d.name)) prog.finished (d.name, false);   // 14 Oct: a plugin whose signature reads follow is done after them
             say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12));
@@ -869,10 +988,25 @@ inline int runWizard (const WizardOptions& wo)
             else if (st != "ready" && st != "pending_review")   // A: nothing to send; pending_review: another user already sent it
             { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); s->setProperty ("state", st); s->setProperty ("why", rv.getProperty ("why", {})); skipped.add (juce::var (s)); }
         }
+        // 17 Oct (rulings 3): every entry the upload carries says its format (from its plugin_id: "AudioUnit|..." / "VST3|...")
+        for (auto* list : { &items, &confirmations, &skipped, &crashedList, &needsCategory, &otherCategories, &outOfScopeList, &heldList, &referenceVotes })
+            for (auto& e : *list) if (auto* o = e.getDynamicObject(); o != nullptr && ! o->hasProperty ("format")) o->setProperty ("format", wizard::formatOfPluginId (o->getProperty ("plugin_id").toString()));
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
         M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", withProbeCrashes (crashedList, skipped));
         M->setProperty ("needs_category", needsCategory); M->setProperty ("other_categories", otherCategories); M->setProperty ("out_of_scope", outOfScopeList); M->setProperty ("held", heldList);
+        {   // 17 Oct (rulings 3): the VST3 twins' bridge reads travel as read-back records, each tagged by format (the server judges the bridge)
+            juce::Array<juce::var> br; const auto src = out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge");
+            for (const auto& f : src.findChildFiles (juce::File::findFiles, false, "*.readback.json"))
+            {
+                const auto rec = juce::JSON::parse (f.loadFileAsString());
+                B.getChildFile ("readback").getChildFile ("bridge").createDirectory(); f.copyFileTo (B.getChildFile ("readback").getChildFile ("bridge").getChildFile (f.getFileName()));
+                auto* o = new juce::DynamicObject(); o->setProperty ("product", rec.getProperty ("product", {})); o->setProperty ("format", rec.getProperty ("format", {}));
+                o->setProperty ("plugin_id", rec.getProperty ("plugin_id", {})); o->setProperty ("twin_plugin_id", rec.getProperty ("twin_plugin_id", {})); o->setProperty ("file", "readback/bridge/" + f.getFileName());
+                br.add (juce::var (o));
+            }
+            M->setProperty ("bridge_reads", br);
+        }
         {   // THE RUN (13 Oct, partial uploads): the run id, what this upload is (checkpoint / sent_early / finished), the run's queue and every
             // queued plugin's state now - the server merges by run id + plugin and decides the reward from the merged run, never from this
             auto* R = new juce::DynamicObject(); R->setProperty ("run_id", wo.runId); R->setProperty ("kind", runKind); M->setProperty ("run", juce::var (R));

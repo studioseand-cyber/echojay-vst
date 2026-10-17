@@ -9952,8 +9952,8 @@ void testWizardCategories()
                && ejmap::wizapp::scanWarning() == "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."
                && ! ejmap::wizapp::tellsATime (ejmap::wizapp::scanWarning())
                && step1.indexOf ("if (ls != wizroute::LicenceSkip::none) { st = \"needs_licence\";") >= 0 && ! step1.contains ("quickCheck (") && step1.length() > 1000
-               && run.contains ("if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version));")
-               && run.contains ("if (window) { st = \"needs_licence\"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver)); }")
+               && run.contains ("if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version, fmtTag (d)));")
+               && run.contains ("if (window) { st = \"needs_licence\"; why = rb.why; wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, ver, fmtTag (ir.desc))); }")
                && run.contains ("if (sig.getProperty (\"why\", \"\").toString().startsWith (\"a window\")) wizroute::rememberLicenceWindow (licenceMemF, pid);")
                && run.contains ("if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty (\"plugin_id\", \"\").toString());")
                && run.contains ("if (wizroute::paceOptionalVendor (dd.manufacturerName)) return false;")
@@ -10032,7 +10032,7 @@ void testWizardCategories()
                && check2.contains ("if (! wizapp::scanCounts (categorise::outOfScope (typeOf (ir.desc), name, {}) + wizroute::surroundLayout (name), pendingLoad.count (name) > 0)) continue;")   // 15 Oct: surround variants are not counted either
                && check2.contains ("for (const auto& n : settled) prog.alreadyDone (n);")
                && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") >= 0 && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") < quickLoop.indexOf ("quickCheck (qopt")
-               && quickLoop.contains ("quickCacheF.replaceWithText") && step1.contains ("quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver)), {})")
+               && quickLoop.contains ("quickCacheF.replaceWithText") && step1.contains ("quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver, fmtTag (ir.desc))), {})")
                && run.contains ("if (wizapp::orphaned (getppid())) { ::kill (0, SIGINT); return; }")
                && app.contains ("~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }"),
                "wizard WZ-SCAN-2: the DB step loads nothing; one count without the out-of-scope-by-type (69 of 1285 draws 5.4%); read-back checks stoppable + cached; orphan engines stop (read: " + juce::String ((int) read) + ")");
@@ -10904,7 +10904,7 @@ void testWizardCategories()
                && app.contains ("if (jobsNow.empty() && ! doneLine.isEmpty())") && wizapp::betweenPluginsWords() == "Starting the next plugin..."
                && wizapp::liveWords (wizapp::Live::live).isEmpty() && wizapp::pluginsDoneWords (43) == "43 plugins done" && wizapp::pluginsDoneWords (1) == "1 plugin done"
                && wizapp::waveHeight (0, 0.0, false) == 2.0f && wizapp::waveHeight (0, 250.0, true) != wizapp::waveHeight (0, 600.0, true)
-               && run.contains ("it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);") && run.contains ("getChildFile (\".tmp-AudioUnit_\"")
+               && run.contains ("it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);") && run.contains ("getChildFile (\".tmp-\" + fmtTag (ir.desc) + \"_\"")
                && app.contains ("jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty (\"heartbeat_ms\", (juce::int64) 0);")
                && app.contains ("const bool live = ! pausing && ! finishing && wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs) == wizapp::Live::live;"),
                "wizard WZ-LIVE-1: steps within a plugin move the bar (3 of 10 -> 30%, capped 95%), one decimal never back, a line per job, 'N plugins done', the wave on the heartbeat (2 min slow, 15 min stuck)");
@@ -12275,7 +12275,7 @@ int main (int, char**)
                && run.indexOf ("readback::guardedVst3") < run.indexOf ("runProbeCall") && run.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)")
                && run.contains ("const auto stem = format + \"_\"") && run.contains ("if (pv.isNotEmpty()) installed = pv;") && run.contains ("readback::record (map, ws, got, installed)")
                && red.contains ("readback::pickMap (mapsOf[product], version, fmt)")
-               && probe.contains ("in the bundle)\\tversion\\t%s\\n\", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8());")
+               && probe.contains ("in the bundle)\\tversion\\t%s\\tuid\\t%08x\\tvendor\\t%s\\n\", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8(), (unsigned int) d.uniqueId, d.manufacturerName.toRawUTF8());")
                && mainRb.contains ("else if (k == \"--format\") format = v; else if (k == \"--at\") atFile = cwdFile (v);") && mainRb.contains ("runReadbackSweep (o, maps, ns, format, at, allow)"),
                "wizard WZ-RBSWEEP-4: --format VST3 reads VST3 maps (scan-cache products through the guard, a bundle it cannot check held, the probe's installed version); --at reads only the listed controls at their targets plus the given norms");
     }
@@ -12345,7 +12345,7 @@ int main (int, char**)
                && run.contains ("if (it->second.name.trim() != n.trim()) { said (\"the parameter at index \"")
                && run.contains ("if (std::any_of (hold.begin(), hold.end(), [&] (double h) { return std::abs (h - at) <= trust::HOLD_OUT_REACH + 1e-9; })) continue;")
                && run.contains ("if (r.kind == ChildResult::Kind::uiShown) { say (\"REPAIR: \"") && run.contains ("the display is empty at every setting")
-               && ! run.contains ("Library/ejmap/maps") && mainAr.contains ("return ejmap::cert::runAnchorRepair (o, maps, juce::JSON::parse (planFile.loadFileAsString()), step);")
+               && ! run.contains ("Library/ejmap/maps") && mainAr.contains ("return ejmap::cert::runAnchorRepair (o, maps, juce::JSON::parse (planFile.loadFileAsString()), step, refine);")
                && mainAr.contains ("if (o.out == juce::File() ||"),
                "wizard WZ-REPAIR-1: anchors rebuilt on a grid that leaves out the read-back's settings, one unit, a moving display, 4+ readings; a missing control added only under its own name; the map read unchanged; guard + licence gate before the load");
     }
@@ -12370,6 +12370,118 @@ int main (int, char**)
                && rbs.contains ("guardedPlugins (names, false, \"READBACK\", nullptr, &allow)") && rbs.contains ("\"READBACK\", nullptr, &allow) :")
                && mainRb.contains ("else if (k == \"--allow-licence-bound-list\") allowFile = cwdFile (v); }"),
                "wizard WZ-GUARD-2: only the products on --allow-licence-bound-list pass the guard (AU and VST3); the rest stay guarded");
+    }
+    // WZ-TRUST-17 THE TIME UNIT SWITCH (Kathy, 17 Oct, rulings 3): a display in seconds against a map kept in ms is x1000 (and ms against
+    // s is /1000); the map's own unit decides, so a map without a unit is judged as before
+    {
+        using namespace ejmap::trust;
+        const std::vector<Anchor> ms { { 200.0, 0.0 }, { 70000.0, 1.0 } };
+        const double n = (26750.0 - 200.0) / 69800.0;
+        const auto inMs = judgeObservation (ms, n, "26.75 s", "ms"), noUnit = judgeObservation (ms, n, "26.75 s"), wrong = judgeObservation (ms, n, "30.10 s", "ms");
+        const std::vector<Anchor> sec { { 0.1, 0.0 }, { 10.0, 1.0 } };
+        const auto inS = judgeObservation (sec, (0.7 - 0.1) / 9.9, "700 ms", "s");
+        const auto map = juce::JSON::parse (R"J({"identity":{"name":"V","version":"1","format":"VST3"},"controls":{"Decay":{"name":"Decay","index":0,"kind":"anchored","unit":"ms","anchors":[[200,0],[70000,1]]}}})J");
+        Readings r; r["Decay"] = { { n, "26.75 s" }, { (900.0 - 200.0) / 69800.0, "900 ms" } };
+        const auto rb = creditMap (map, { { "x", r } }).at ("Decay");
+        check (inMs.pass && ! noUnit.pass && wrong.judged && ! wrong.pass && inS.pass && rb.proven() && rb.judged == 2
+               && displayIsSeconds ("26.75 s") && displayIsSeconds ("1.2s") && ! displayIsSeconds ("120 ms") && ! displayIsSeconds ("Bass") && ! displayIsSeconds ("10 Hz") && ! displayIsSeconds ("-3 dB")
+               && timeScale ("", "26.75 s") == 1.0 && timeScale ("ms", "26.75 s") == 1000.0 && timeScale ("s", "700 ms") == 0.001 && timeScale ("ms", "700 ms") == 1.0,
+               "wizard WZ-TRUST-17: a seconds display against a map in ms is x1000 (ms against s /1000), decided by the map's own unit; a map without a unit is judged as before");
+    }
+    // WZ-STEPS-1 STEPPED DISPLAYS (Kathy, 17 Oct, rulings 3: API-550A): a continuous parameter whose display moves in steps is mapped as
+    // steps (each step's read norm range), judged at the step its norm falls in (between two read ranges either neighbour is right),
+    // dialled at a step's middle (the anchors are the middles); rounding of a continuous display (jumps of one digit) is not steps
+    {
+        using namespace ejmap::trust;
+        std::vector<Reading> api; const double vals[] = { -12, -12, -12, -12, -9, -9, -9, -9, -6, -6, -6, -6, -4, -4, -4, -4, -2, -2, -2, -2, 0, 0, 0, 0 };
+        for (int i = 0; i < 24; ++i) api.push_back ({ i / 23.0, juce::String ((int) vals[i]) + " dB" });
+        std::vector<Reading> rounding; for (int i = 0; i < 24; ++i) rounding.push_back ({ i / 23.0, juce::String ((int) (i / 3)) + " dB" });   // 0,0,0,1,1,1,...: jumps of 1
+        std::vector<Reading> cont; for (int i = 0; i < 24; ++i) cont.push_back ({ i / 23.0, juce::String (i * 0.37, 2) + " dB" });
+        const auto st = detectSteps (api);
+        const auto ctl = ejmap::cert::repair::repairedMap (juce::JSON::parse (R"J({"identity":{"name":"API","format":"AudioUnit","version":"1"},"controls":{}})J"), "Low Gain", 3,
+                                                           anchorsFromReadings (api), juce::JSON::parse ("{}"), st).getProperty ("controls", {}).getProperty ("Low Gain", {});
+        const auto steps = stepsOf (ctl);
+        const auto in = judgeStep (steps, 0.05, "-12 dB"), between = judgeStep (steps, (st[0].hi + st[1].lo) / 2, "-9 dB"), wrongStep = judgeStep (steps, 0.05, "-9 dB"), out = judgeStep (steps, 1.2, "0 dB");
+        const auto mapS = juce::JSON::parse (juce::String (R"J({"identity":{"name":"API","format":"AudioUnit","version":"1"},"controls":{"Low Gain":)J") + juce::JSON::toString (ctl, true) + "}}");
+        Readings rr; rr["Low Gain"] = { { steps[1].mid(), "-9 dB" }, { steps[3].mid(), "-4 dB" }, { steps[5].mid(), "0 dB" } };
+        const auto credit = creditMap (mapS, { { "x", rr } }); const auto rb = credit.count ("Low Gain") ? credit.at ("Low Gain") : ControlReadback();   // a lookup that cannot abort the suite
+        const auto ws = ejmap::readback::plan (mapS);
+        check (st.size() == 6 && std::abs (st[0].value + 12.0) < 1e-9 && std::abs (st[0].hi - 3 / 23.0) < 1e-9 && detectSteps (rounding).empty() && detectSteps (cont).empty()
+               && ctl.getProperty ("kind", "").toString() == "steps" && ctl.getProperty ("steps", {}).size() == 6 && ctl.getProperty ("anchors", {}).size() == 6
+               && std::abs ((double) ctl.getProperty ("anchors", {})[0][1] - steps[0].mid()) < 1e-9 && steps.size() == 6
+               && in.judged && in.pass && between.pass && wrongStep.judged && ! wrongStep.pass && ! out.judged && rb.proven() && rb.judged == 3
+               && ws.size() == 1 && ws[0].norms.size() == 3 && std::abs (ws[0].norms[0] - steps[1].mid()) < 1e-9,
+               "wizard WZ-STEPS-1: a stepped display is mapped as its steps (anchors = the middles), judged at the step its norm falls in (either neighbour between ranges), read back at step middles; rounding or a continuous display is not steps");
+    }
+    // WZ-REPAIR-2 THE ADAPTIVE GRID (Kathy, 17 Oct, rulings 3): one finer round (step / 4) only for a control whose held-out read-back failed,
+    // around each failing setting and each slope jump, the held-out settings still left out; the round adds to the repaired anchors
+    {
+        using namespace ejmap::trust;
+        std::vector<Anchor> a; for (int k = 0; k <= 80; ++k) { const double x = k * 0.0125; if (std::abs (x - 0.875) < 1e-9 || std::abs (x - 0.25) < 1e-9 || std::abs (x - 0.5) < 1e-9 || std::abs (x - 0.75) < 1e-9) continue; a.push_back ({ x * 100.0 + (x > 0.6 + 1e-9 ? 50.0 : 0.0), x }); }   // a lasting jump between 0.6 and 0.6125
+        const auto rn = refineNorms (a, { 0.875 }, 0.0125, { 0.875 });
+        auto has = [&] (double x) { return std::any_of (rn.begin(), rn.end(), [&] (double y) { return std::abs (x - y) < 1e-6; }); };
+        const auto m = mergeAnchors (a, { { 0.871875, "87.2" }, { 0.878125, "87.8" } });
+        const auto mBad = mergeAnchors (a, { { 0.871875, "87.2 dB" }, { 0.878125, "87.8 ms" } });
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
+        const auto run = rbs.fromFirstOccurrenceOf ("inline int runAnchorRepair", false, false);
+        check (has (0.865625) && has (0.88125) && ! has (0.875) && ! has (0.871875) && ! has (0.8625) && has (0.603125) && rn.size() >= 6 && JUMP_FACTOR == 2.0
+               && m.ok && m.anchors.size() == a.size() + 2 && std::is_sorted (m.anchors.begin(), m.anchors.end(), [] (const Anchor& x, const Anchor& y) { return x.norm < y.norm; })
+               && ! mBad.ok && mergeAnchors ({}, {}).ok == false
+               && run.contains ("if (failed.empty()) { say (\"REPAIR: \" + desc.name + \" / \" + n + \" - its held-out read-back passed (or none was taken): not refined\"); continue; }")
+               && run.contains ("norms = trust::refineNorms (a, failed, step, ho);") && run.contains ("trust::mergeAnchors (trust::anchorsOf (curControl), rs)")
+               && run.contains ("if (cur.getProperty (\"kind\", \"\").toString() != \"anchored\")") && run.indexOf ("runAnchorRepair (") < 0,
+               "wizard WZ-REPAIR-2: one finer round only for a control whose held-out read-back failed, around its failures and slope jumps, the held-out settings left out, added to the repaired anchors; never repeated");
+    }
+    // WZ-VST3-1 THE WIZARD'S VST3 LANE (Kathy, 17 Oct, rulings 3): VST3 bundles found loading nothing (a WaveShell reported, not
+    // enumerated); a VST3 whose class name is an installed AU's is a twin (bridge-read, never measured), one with no twin is measured as
+    // its own plugin (listed to Phase B by EJ_VST3_EXTRAS; unset = the AU registry alone); ids, stems and uploads tagged by format;
+    // the PACE check reads the .vst3 bundle (one not there is held)
+    {
+        using namespace ejmap::cert;
+        juce::String twin;
+        const auto lt = vst3Lane ("pro-q 3", { "Pro-Q 3", "Saturn 2" }, twin); const auto t1 = twin; const auto lm = vst3Lane ("Only VST3", { "Pro-Q 3" }, twin);
+        const auto picks = bridgeControls ({ { 0, "Bypass" }, { 3, "Band 1 Frequency" }, { 4, "Band 1 Gain" }, { 9, "Output Gain" } }, { { 10, "Band 1 Gain" }, { 11, "Band 1 Frequency" }, { 12, "Bypass" } });
+        std::vector<std::pair<int, juce::String>> many; for (int i = 0; i < 30; ++i) many.push_back ({ i, "Band " + juce::String (i) + " Gain" });
+        const auto tmp = juce::File::createTempFile ("v3lane"); tmp.createDirectory();
+        tmp.getChildFile ("Acme/Thing.vst3").createDirectory(); tmp.getChildFile ("Loose.vst3").createDirectory(); tmp.getChildFile ("Waves/WaveShell1-VST3 14.vst3").createDirectory();
+        const auto vb = installedVst3Bundles ({ tmp.getFullPathName() });
+        auto findB = [&] (const juce::String& n) -> const Vst3Bundle* { for (const auto& b : vb) if (b.name == n) return &b; return nullptr; };
+        const auto xf = tmp.getChildFile ("x.json"); xf.replaceWithText (R"J([{"name":"Only VST3","file":"/x/Only.vst3","uid":"ba5f7ab2","version":"1.0.0","vendor":"Acme"}])J");
+        const auto before = vst3Extras().size();
+        setenv ("EJ_VST3_EXTRAS", xf.getFullPathName().toRawUTF8(), 1); const auto ex = vst3Extras(); unsetenv ("EJ_VST3_EXTRAS");
+        juce::PluginDescription gone; gone.pluginFormatName = "VST3"; gone.fileOrIdentifier = "/nonexistent/X.vst3"; juce::String gw;
+        juce::PluginDescription here; here.pluginFormatName = "VST3"; here.fileOrIdentifier = tmp.getChildFile ("Loose.vst3").getFullPathName(); juce::String hw;
+        const bool goneHeld = paceHeld (gone, {}, gw), hereHeld = paceHeld (here, {}, hw);
+        tmp.deleteRecursively();
+        const juce::String line = "vst3 class: \"Pro-Q 3\" (asked \"FabFilter Pro-Q 3\", 1 class(es) in the bundle)\tversion\t3.2.3.0\tuid\tba5f7ab2\tvendor\tFabFilter\n";
+        const auto wr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto stage = wr.fromFirstOccurrenceOf ("// THE VST3s (Kathy, 17 Oct, rulings 3)", false, false).upToFirstOccurrenceOf ("prog.setPlugins", false, false);
+        const auto cd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (lt == "bridge" && t1 == "Pro-Q 3" && lm == "measure" && twin.isEmpty()
+               && picks.size() == 2 && picks[0].name == "Band 1 Frequency" && picks[0].au == 3 && picks[0].v3 == 11 && picks[1].v3 == 10   // Bypass: no role; Output Gain: not in the VST3
+               && bridgeControls (many, many).size() == 12
+               && findB ("Thing") != nullptr && findB ("Thing")->vendor == "Acme" && ! findB ("Thing")->shell && findB ("Loose") != nullptr && findB ("Loose")->vendor.isEmpty()
+               && findB ("WaveShell1-VST3 14") != nullptr && findB ("WaveShell1-VST3 14")->shell
+               && before == 0 && ex.size() == 1 && ex[0].desc.pluginFormatName == "VST3" && ex[0].uidKey == "VST3|ba5f7ab2" && ex[0].desc.name == "Only VST3" && vst3Extras().empty()
+               && goneHeld && gw.contains ("cannot be checked") && ! hereHeld
+               && ejmap::readback::vst3ClassOf (line) == "Pro-Q 3" && ejmap::readback::vst3UidOf (line) == "ba5f7ab2" && ejmap::readback::vst3VersionOf (line) == "3.2.3.0"
+               && ejmap::readback::vst3FieldOf (line, "vendor") == "FabFilter"
+               && ejmap::wizroute::pluginId ("BA5F7AB2", "3.2.3.0", "VST3") == "VST3|ba5f7ab2|3.2.3.0" && ejmap::wizroute::pluginId ("61453c50", "3.2.3") == "AudioUnit|61453c50|3.2.3"
+               && ejmap::wizard::formatOfPluginId ("VST3|a|1") == "VST3" && ejmap::wizard::formatOfPluginId ("AudioUnit|a|1") == "AudioUnit" && ejmap::wizard::formatOfPluginId ("x").isEmpty()
+               && ejmap::wizard::paramMap ("P", "V", "AB", "1", "fp", { { 0, "Gain" } }, "eq", "VST3").getProperty ("identity", {}).getProperty ("format", "").toString() == "VST3"
+               && [&] { const int run = stage.indexOf ("runChild (");   // each check present AND before the load (a missing one is not "before")
+                        for (const char* k : { "if (licMem.count (bundleKey)) { vrow (b.name, {}, \"needs_licence\", wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered)); continue; }",
+                                               "if (pace && ! paceOk) { vrow (b.name, {}, \"needs_licence\", wizroute::licenceSkipWhy (wizroute::LicenceSkip::paceNoIlok)); continue; }",
+                                               "if (apb::isApbProduct (d.name, d.manufacturerName))" })
+                        { const int at = stage.indexOf (k); if (at < 0 || at > run) return false; }
+                        return run > 0; } () && stage.contains ("if (b.shell) {")
+               && stage.contains ("if (vst3Lane (d.name, auNames, twin) == \"bridge\")") && stage.contains ("bridgeRead (opt, au, d, ps,")
+               && stage.contains ("setenv (\"EJ_VST3_EXTRAS\", xf.getFullPathName().toRawUTF8(), 1);") && stage.contains ("plugins.push_back ({ d, echojay::identityKeyForDescription (d), \"VST3|\" + uid });")
+               && stage.contains ("if (! wo.plan &&") && wr.contains ("rec.getDynamicObject()->setProperty (\"purpose\", \"bridge\");") && wr.contains ("M->setProperty (\"bridge_reads\", br);")
+               && wr.contains ("o->setProperty (\"format\", wizard::formatOfPluginId (o->getProperty (\"plugin_id\").toString()));")
+               && wr.contains ("for (const auto& r : registryAudioUnits())") && ! cd.contains ("\"AudioUnit_\" + uidHex") && ! cd.contains ("\"AudioUnit|\" + uidHex")
+               && cd.contains ("inline std::vector<InstalledRecord> installedPlugins() { auto out = registryAudioUnits(); for (auto& x : vst3Extras()) out.push_back (std::move (x)); return out; }"),
+               "wizard WZ-VST3-1: VST3 bundles found loading nothing, twins bridge-read, the rest measured as their own plugin (EJ_VST3_EXTRAS; unset = AU only); ids / stems / uploads tagged by format; the .vst3 PACE check holds what it cannot read");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

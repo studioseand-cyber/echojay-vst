@@ -209,11 +209,13 @@ inline juce::String wizardCategory (const juce::String& name, const juce::var& c
     for (const auto& x : t) if (x == "eq" || x == "equalizer" || x == "equaliser") return "eq";
     return {};
 }
+// the format a plugin_id names (17 Oct, rulings 3: uploads tagged by format); "" when it names none
+inline juce::String formatOfPluginId (const juce::String& pid) { return pid.startsWith ("VST3|") ? juce::String ("VST3") : pid.startsWith ("AudioUnit|") ? juce::String ("AudioUnit") : juce::String(); }
 // the wizard's own parameter map (no human or model mapping: identity, the parameter list and the join key), written to <store>/maps/<fp>.json
 inline juce::var paramMap (const juce::String& name, const juce::String& vendor, const juce::String& uid, const juce::String& version, const juce::String& fp,
-                           const std::vector<std::pair<int, juce::String>>& params, const juce::String& category)
+                           const std::vector<std::pair<int, juce::String>>& params, const juce::String& category, const juce::String& format = "AudioUnit")
 {
-    auto* id = new juce::DynamicObject(); id->setProperty ("format", "AudioUnit"); id->setProperty ("uid", uid.toLowerCase()); id->setProperty ("name", name); id->setProperty ("vendor", vendor);
+    auto* id = new juce::DynamicObject(); id->setProperty ("format", format); id->setProperty ("uid", uid.toLowerCase()); id->setProperty ("name", name); id->setProperty ("vendor", vendor);   // 17 Oct: format = AudioUnit or VST3
     id->setProperty ("version", version); id->setProperty ("param_count", (int) params.size());
     juce::Array<juce::var> ps; for (const auto& [i, n] : params) { auto* p = new juce::DynamicObject(); p->setProperty ("index", i); p->setProperty ("name", n); ps.add (juce::var (p)); }
     auto* m = new juce::DynamicObject(); m->setProperty ("fp", fp); m->setProperty ("schema", "ej_param_map/wizard-0"); m->setProperty ("identity", juce::var (id));
@@ -358,6 +360,7 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (ready) parts.add (plural (ready, "plugin ready", "plugins ready"));
     if (get ("measured")) parts.add (plural (get ("measured"), "newly measured, ready to send", "newly measured, ready to send"));
     if (get ("queued")) parts.add (juce::String (get ("queued")) + " to measure");
+    if (get ("bridge_read")) parts.add (plural (get ("bridge_read"), "VST3 read beside its AU", "VST3s read beside their AU"));   // 17 Oct: the VST3 lane
     if (get ("measuring")) parts.add (juce::String (get ("measuring")) + " measuring");
     if (get ("needs_licence")) parts.add (plural (get ("needs_licence"), "needs a licence", "need a licence"));
     if (get ("needs_hardware")) parts.add (plural (get ("needs_hardware"), "needs its hardware (UAD / APB) connected", "need their hardware (UAD / APB) connected"));
