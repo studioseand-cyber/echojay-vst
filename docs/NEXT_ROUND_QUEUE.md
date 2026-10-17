@@ -1408,3 +1408,22 @@ pass on today's build.
     nested: the sweep releases the lock before `archVerdict` takes it), so it was not worth
     restarting a running build for. The fix is the same shape as archVerdict's: sweep into a local
     map with no lock held, then install it under the lock.
+
+---
+
+## item 12 - fold the plan-consistency sim into the rig as a REPORTING row (17 Oct)
+
+`tools/plan_consistency_sim.sh` exists and runs (Sean's 7.4(B): "three different plans for the same
+request tonight ... add a consistency sim"). What it is not yet is part of a pass anybody runs
+without remembering to, and a leg that is not in the gate is a leg that will rot - this tree has
+written that down once already about U1.
+
+The shape it needs: a row in the rig's live half that drives one goal N times, tallies the shapes
+(pick ask / one add / rebuild), PRINTS the tally in the report, and cannot fail the gate - because
+the plan is the server's and a red there would be a red on something no change in the plugin can
+fix. The rig has no "reporting row" concept today; `scenSkip` is the closest and it means something
+else. So this needs a third verdict word - something like NOTE - and the scorecard taught to carry
+it, which is why it is a queued item and not a patch tonight.
+
+Its first use after that is the one Sean actually asked for: watch whether a tweak request on a rack
+that already holds plugins stays an adjustment, and raise it with B when it does not.
