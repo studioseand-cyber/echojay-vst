@@ -459,7 +459,14 @@ inline void runTextAtNormsMulti (juce::AudioPluginInstance& p, const juce::Strin
     for (const auto& part : juce::StringArray::fromTokens (spec, ";", ""))
     {
         if (part.trim().isEmpty()) continue;
-        const auto idxS = part.upToFirstOccurrenceOf (":", false, false).trim(), normsS = part.fromFirstOccurrenceOf (":", false, false);
+        auto idxS = part.upToFirstOccurrenceOf (":", false, false).trim(); const auto normsS = part.fromFirstOccurrenceOf (":", false, false);
+        if (idxS.startsWithChar ('@'))   // 17 Oct (VST3 SPEED): "@<url-escaped name>" - the parameter found by its name in this load (no list call first)
+        {
+            const auto want = juce::URL::removeEscapeChars (idxS.substring (1)).trim(); int found = -1; const auto ps = p.getParameters();
+            for (int i = 0; i < ps.size(); ++i) if (ps[i] != nullptr && clean (ps[i]->getName (128)).trim() == want) { found = i; break; }   // the same form the list prints
+            if (found < 0) { std::printf ("missing\tname\t%s\n", want.toRawUTF8()); continue; }
+            idxS = juce::String (found);
+        }
         if (! idxS.containsOnly ("0123456789") || idxS.isEmpty() || normsS.isEmpty()) { std::printf ("refused malformed spec part '%s'\n", part.toRawUTF8()); return; }
         std::vector<float> ns; for (const auto& t : juce::StringArray::fromTokens (normsS, ",", "")) ns.push_back ((float) t.getDoubleValue());
         work.push_back ({ idxS.getIntValue(), ns });

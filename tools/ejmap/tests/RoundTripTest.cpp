@@ -10727,6 +10727,46 @@ int main (int, char**)
                && cd.contains ("inline std::vector<InstalledRecord> installedPlugins() { auto out = registryAudioUnits(); for (auto& x : vst3Extras()) out.push_back (std::move (x)); return out; }"),
                "wizard WZ-VST3-1: VST3 bundles found loading nothing, VST3-only products listed to Phase B by EJ_VST3_EXTRAS (unset = AU only); stems / identities tagged by format; the .vst3 PACE check holds what it cannot read");
     }
+    // WZ-VST3-2 (cert branch: the shared parts of VST3 SPEED, Kathy, 17 Oct) - the identity from moduleinfo.json (JUCE's uid from the CID),
+    // else the identity cache (by bundle path + version, failures too), else ONE load; AU twins with no load; the probe finds a parameter
+    // by name ("@<name>") in the same load
+    {
+        using namespace ejmap::cert;
+        const auto tmp = juce::File::createTempFile ("v3speed"); tmp.createDirectory();
+        auto mk = [&] (const juce::String& rel) { const auto b = tmp.getChildFile (rel); b.getChildFile ("Contents/Resources").createDirectory(); return b; };
+        const auto meta = mk ("School EQ.vst3"), plain = mk ("FabFilter Pro-Q 3.vst3"), failing = mk ("Broken.vst3"), cached = mk ("Kept.vst3"), only = mk ("Lonely.vst3");
+        meta.getChildFile ("Contents/Resources/moduleinfo.json").replaceWithText (R"J({
+  "Name": "School EQ", // a JSON5 comment
+  "Factory Info": { "Vendor": "Tokyo Dawn", "URL": "http://www.tokyodawn.net", },
+  "Classes": [
+    { "CID": "ABCDEF019182FAEB4D62796A5363716C", "Category": "Audio Module Class", "Name": "School EQ", "Version": "1.2.0", },
+    { "CID": "ABCDEF01AAAAAAAA4D62796A5363716C", "Category": "Component Controller Class", "Name": "School EQ Controller", "Version": "1.2.0", },
+  ],
+})J");
+        Vst3IdentityCache cache (tmp.getChildFile ("ledger/vst3_identity.json"));
+        Vst3Identity kept; kept.name = "Kept"; kept.version = "2.0"; kept.uid = 0x1234; kept.source = "load";
+        cache.put (Vst3IdentityCache::key (cached, "2.0"), { kept });
+        cache.put (Vst3IdentityCache::key (failing, "1.0"), {}, "crashed", "the VST3 did not load (signal)");
+        const Vst3IdentityCache reread (tmp.getChildFile ("ledger/vst3_identity.json"));
+        std::vector<Vst3Bundle> bs { { "School EQ", "1.2.0", "", meta }, { "FabFilter Pro-Q 3", "3.23", "", plain }, { "Broken", "1.0", "", failing }, { "Kept", "2.0", "", cached },
+                                     { "Lonely", "1.0", "", only }, { "WaveShell1-VST3 14", "14", "Waves", tmp.getChildFile ("WaveShell1-VST3 14.vst3"), true } };
+        const std::vector<std::pair<juce::String, juce::String>> aus { { "School EQ", "Tokyo Dawn Labs" }, { "Pro-Q 3", "FabFilter" }, { "Kept", "Acme" } };
+        const auto plan = vst3IdentityPlan (bs, aus, reread);
+        auto row = [&] (const juce::String& n) -> const Vst3PlanRow& { for (const auto& r : plan) if (r.b.name == n) return r; return plan.front(); };
+        const auto ids = vst3IdentitiesFromModuleInfo (meta);
+        tmp.deleteRecursively();
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_sweep.h").loadFileAsString();
+        check (vst3UidFromCid ("ABCDEF019182FAEB4D62796A5363716C") == (int) 0x00b836cc && vst3UidFromCid ("abcdef019182faeb4d62796a5363716c") == (int) 0x00b836cc && vst3UidFromCid ("1234") == 0
+               && ids.size() == 1 && ids[0].name == "School EQ" && ids[0].version == "1.2.0" && ids[0].vendor == "Tokyo Dawn" && ids[0].uid == (int) 0x00b836cc && ids[0].source == "moduleinfo"
+               && row ("School EQ").source == "moduleinfo" && row ("School EQ").twin == "School EQ"
+               && row ("FabFilter Pro-Q 3").source == "load" && row ("FabFilter Pro-Q 3").twin == "Pro-Q 3"
+               && row ("Broken").source == "cache_failed" && row ("Kept").source == "cache" && row ("Kept").ids.size() == 1 && row ("Kept").ids[0].uid == 0x1234 && row ("Kept").ids[0].source == "cache"
+               && row ("Kept").twin == "Kept" && row ("Lonely").source == "load" && row ("Lonely").twin.isEmpty() && row ("WaveShell1-VST3 14").source == "shell"
+               && reread.get (Vst3IdentityCache::key (failing, "1.0")).getProperty ("state", "").toString() == "crashed" && ! reread.has (Vst3IdentityCache::key (cached, "2.1"))
+               && auTwinByBundleName ("FabFilter Pro-Q 3", aus) == "Pro-Q 3" && auTwinByBundleName ("Pro-Q 3", aus) == "Pro-Q 3" && auTwinByBundleName ("Acme Pro-Q 3", aus).isEmpty()
+               && rbs.contains ("if (idxS.startsWithChar ('@'))") && rbs.contains ("clean (ps[i]->getName (128)).trim() == want") && rbs.contains ("std::printf (\"missing\\tname\\t%s\\n\", want.toRawUTF8()); continue;"),
+               "wizard WZ-VST3-2: identity from moduleinfo (JUCE's uid from the CID), the cache (failures too) or ONE load then cached; twins with no load (class name, vendor-prefixed bundle name); the probe finds a parameter by name");
+    }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
 }

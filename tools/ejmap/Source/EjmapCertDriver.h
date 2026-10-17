@@ -1557,6 +1557,83 @@ inline std::vector<InstalledRecord> vst3Extras()
 }
 inline std::vector<InstalledRecord> installedPlugins() { auto out = registryAudioUnits(); for (auto& x : vst3Extras()) out.push_back (std::move (x)); return out; }
 
+// A VST3's IDENTITY WITHOUT A LOAD (Kathy, 17 Oct, "VST3 SPEED"). JUCE's own description of a VST3 from its moduleinfo.json
+// (juce_VST3PluginFormatImpl.h createPluginDescriptions): name = the class Name, version = the class Version, vendor = Factory Info
+// Vendor, uniqueId = the hash over the CID's four 32-bit words (h = h * 31 + word, the 32 hex digits read in order). Checked on Kathy's
+// Mac against the scan cache's loaded uids: 212 of 212 equal
+inline int vst3UidFromCid (const juce::String& cid)
+{
+    const auto h = cid.retainCharacters ("0123456789abcdefABCDEF");
+    if (h.length() != 32) return 0;
+    juce::uint32 v = 0;
+    for (int i = 0; i < 4; ++i) v = v * 31u + (juce::uint32) h.substring (8 * i, 8 * i + 8).getHexValue64();
+    return (int) v;
+}
+struct Vst3Identity { juce::String name, version, vendor, source; int uid = 0; };   // source: "moduleinfo", "cache", "load"
+// moduleinfo.json is JSON5 (trailing commas, // comments): cleaned before the parse
+inline std::vector<Vst3Identity> vst3IdentitiesFromModuleInfo (const juce::File& bundle)
+{
+    std::vector<Vst3Identity> out;
+    const auto f = bundle.getChildFile ("Contents/Resources/moduleinfo.json"); if (! f.existsAsFile()) return out;
+    juce::StringArray lines; lines.addLines (f.loadFileAsString());
+    for (auto& l : lines)   // a // outside a string (an even number of quotes before it) starts a comment; "http://..." inside one does not
+        for (int c = l.indexOf ("//"); c >= 0; c = l.indexOf (c + 2, "//"))
+        { int q = 0; for (int i = 0; i < c; ++i) if (l[i] == '"' && (i == 0 || l[i - 1] != '\\')) ++q; if (q % 2 == 0) { l = l.substring (0, c); break; } }
+    auto text = lines.joinIntoString ("\n");
+    for (int i = text.length() - 1; i > 0; --i)   // ",}" / ",]" (whitespace between): the comma goes
+        if (text[i] == '}' || text[i] == ']') { int j = i - 1; while (j > 0 && juce::CharacterFunctions::isWhitespace (text[j])) --j; if (text[j] == ',') text = text.substring (0, j) + text.substring (j + 1); }
+    const auto root = juce::JSON::parse (text);   // held by name
+    const auto vendor = root.getProperty ("Factory Info", {}).getProperty ("Vendor", "").toString();
+    if (const auto* cs = root.getProperty ("Classes", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            if (c.getProperty ("Category", "").toString() != "Audio Module Class") continue;
+            Vst3Identity id; id.name = c.getProperty ("Name", "").toString(); id.version = c.getProperty ("Version", "").toString().trim();
+            id.vendor = vendor.isNotEmpty() ? vendor : c.getProperty ("Vendor", "").toString(); id.uid = vst3UidFromCid (c.getProperty ("CID", "").toString()); id.source = "moduleinfo";
+            if (id.name.isNotEmpty() && id.uid != 0) out.push_back (id);
+        }
+    return out;
+}
+// THE IDENTITY CACHE (Kathy, 17 Oct): what a load (or the metadata) said about a bundle, kept by bundle path + its version, so a bundle
+// is loaded for its identity at most once ever - a failure is kept too (a bundle that crashed is not loaded again at that version)
+struct Vst3IdentityCache
+{
+    juce::File file; juce::var root;
+    static juce::String key (const juce::File& bundle, const juce::String& bundleVersion) { return bundle.getFullPathName() + "|" + bundleVersion; }
+    explicit Vst3IdentityCache (const juce::File& f) : file (f) { root = juce::JSON::parse (f.loadFileAsString()); if (! root.isObject()) root = juce::var (new juce::DynamicObject()); }
+    bool has (const juce::String& k) const { return root.hasProperty (juce::Identifier (k)); }
+    juce::var get (const juce::String& k) const { return root.getProperty (juce::Identifier (k), {}); }
+    void put (const juce::String& k, const std::vector<Vst3Identity>& ids, const juce::String& state = "ok", const juce::String& why = {})
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty ("state", state); if (why.isNotEmpty()) o->setProperty ("why", why);
+        juce::Array<juce::var> cs; for (const auto& i : ids) { auto* c = new juce::DynamicObject(); c->setProperty ("name", i.name); c->setProperty ("version", i.version); c->setProperty ("vendor", i.vendor);
+                                                               c->setProperty ("uid", juce::String::toHexString (i.uid).toLowerCase()); c->setProperty ("source", i.source); cs.add (juce::var (c)); }
+        o->setProperty ("classes", juce::var (cs)); o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
+        root.getDynamicObject()->setProperty (juce::Identifier (k), juce::var (o));
+        file.getParentDirectory().createDirectory(); file.replaceWithText (juce::JSON::toString (root));
+    }
+    std::vector<Vst3Identity> classes (const juce::String& k) const
+    {
+        std::vector<Vst3Identity> out; const auto e = get (k);
+        if (const auto* cs = e.getProperty ("classes", {}).getArray())
+            for (const auto& c : *cs) { Vst3Identity i; i.name = c.getProperty ("name", "").toString(); i.version = c.getProperty ("version", "").toString(); i.vendor = c.getProperty ("vendor", "").toString();
+                                        i.uid = (int) (juce::int64) c.getProperty ("uid", "").toString().getHexValue64(); i.source = "cache"; out.push_back (i); }
+        return out;
+    }
+};
+// a bundle's name matches an AudioUnit's when equal, or equal once the AU's vendor is taken off the front ("FabFilter Pro-Q 3" = "Pro-Q 3"
+// by FabFilter) - the no-moduleinfo twin rule, used only to decide that the bridge read (which loads the VST3 anyway) gives the identity
+inline juce::String auTwinByBundleName (const juce::String& bundleName, const std::vector<std::pair<juce::String, juce::String>>& aus)   // (AU name, AU vendor)
+{
+    const auto b = bundleName.trim();
+    for (const auto& [n, v] : aus)
+    {
+        if (b.equalsIgnoreCase (n.trim())) return n;
+        if (v.trim().isNotEmpty() && b.startsWithIgnoreCase (v.trim() + " ") && b.substring (v.trim().length() + 1).trim().equalsIgnoreCase (n.trim())) return n;
+    }
+    return {};
+}
+
 // THE VST3 BUNDLES ON THIS MAC (17 Oct, rulings 3), loading nothing: every *.vst3 under the two VST3 folders (vendor sub-folders too).
 // The name is the bundle's CFBundleName (else its file name), the version CFBundleShortVersionString (else CFBundleVersion), the vendor
 // the sub-folder it sits in. A WaveShell bundle hosts many classes, which only a load can list: it is reported, not enumerated
@@ -1592,6 +1669,39 @@ inline std::vector<Vst3Bundle> installedVst3Bundles (const juce::StringArray& ro
     };
     for (const auto& r : roots) walk (juce::File (r), {}, 0);
     return out;
+}
+
+// THE IDENTITY PLAN (Kathy, 17 Oct, "VST3 SPEED"), loading nothing: per bundle, where its identity comes from - "shell" (reported),
+// "cache" (an earlier run's answer at this bundle version), "cache_failed" (an earlier load failed at this version: not loaded again),
+// "moduleinfo" (the bundle's own metadata), or "load" (none of these: one --list-params, then cached). The AU twin is decided here too:
+// by class name for an identity in hand, by bundle name (vendor prefix allowed) for a bundle still to load
+struct Vst3PlanRow { Vst3Bundle b; juce::String source, key, twin; std::vector<Vst3Identity> ids; };
+inline std::vector<Vst3PlanRow> vst3IdentityPlan (const std::vector<Vst3Bundle>& bundles, const std::vector<std::pair<juce::String, juce::String>>& aus, const Vst3IdentityCache& cache)
+{
+    std::vector<Vst3PlanRow> out;
+    for (const auto& b : bundles)
+    {
+        Vst3PlanRow r; r.b = b; r.key = Vst3IdentityCache::key (b.bundle, b.version);
+        if (b.shell) r.source = "shell";
+        else if (cache.has (r.key)) { r.source = cache.get (r.key).getProperty ("state", "").toString() == "ok" ? "cache" : "cache_failed"; r.ids = cache.classes (r.key); }
+        else { r.ids = vst3IdentitiesFromModuleInfo (b.bundle); r.source = r.ids.empty() ? "load" : "moduleinfo"; }
+        for (const auto& id : r.ids) { for (const auto& [n, v] : aus) if (n.trim().equalsIgnoreCase (id.name.trim())) { r.twin = n; break; } if (r.twin.isNotEmpty()) break; }
+        if (r.source == "load") r.twin = auTwinByBundleName (b.name, aus);
+        out.push_back (r);
+    }
+    return out;
+}
+inline int runVst3IdentityPlan (const juce::File& ledger, bool list)
+{
+    std::vector<std::pair<juce::String, juce::String>> aus; for (const auto& r : registryAudioUnits()) aus.push_back ({ r.desc.name, r.desc.manufacturerName });
+    const Vst3IdentityCache cache (ledger.getChildFile ("vst3_identity.json"));
+    const auto plan = vst3IdentityPlan (installedVst3Bundles(), aus, cache);
+    std::map<juce::String, int> n; int classes = 0, twins = 0, loadTwins = 0;
+    for (const auto& r : plan) { ++n[r.source]; classes += (int) r.ids.size(); if (r.twin.isNotEmpty()) { ++twins; if (r.source == "load") ++loadTwins; } if (list) std::cout << r.source << "\t" << r.b.name << "\t" << r.twin << "\n"; }
+    std::cout << "VST3-PLAN: " << plan.size() << " bundle(s), nothing loaded: " << n["moduleinfo"] << " identified from moduleinfo.json, " << n["cache"] << " from the identity cache, "
+              << n["cache_failed"] << " remembered as failing (not loaded again), " << n["shell"] << " WaveShell (reported), " << n["load"] << " need ONE identity load (then cached; "
+              << loadTwins << " of them are AU twins by bundle name, whose load is the bridge read's own parameter list); " << classes << " class(es) known; " << twins << " AU twin(s)" << std::endl;
+    return 0;
 }
 
 // QUARANTINED AT SCAN (ruled 2 Oct): the ledger's quarantine, each bundle resolved to the AudioUnits it registers and
