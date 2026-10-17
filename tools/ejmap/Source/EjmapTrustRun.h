@@ -81,7 +81,7 @@ inline void loadRecords (const juce::File& root, const juce::String& tag, std::m
         const auto rec = readJson (f); if (! rec.isObject()) return;
         const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString(); if (product.isEmpty()) return;
         auto& pd = by[product];
-        auto rs = trust::readingsOfRecord (rec); if (! rs.empty()) { pd.readings.push_back ({ tag, std::move (rs) }); pd.metas.push_back (trust::metaOfRecord (rec)); }
+        auto rs = trust::readingsOfRecord (rec); if (! rs.empty()) { pd.readings.push_back ({ tag, std::move (rs) }); pd.metas.push_back (trust::metaOfRecord (rec, f.getFileName())); }
         if (const auto* rm = rec.getProperty ("roles_by_measurement", {}).getArray())
             for (const auto& x : *rm)
             {
@@ -266,15 +266,15 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[r.category].insert (r.product);
     out.getChildFile ("maps").createDirectory();
     const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
-    std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0, supersededReadings = 0, supersededControls = 0;
+    std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0, supersededReadings = 0, supersededControls = 0, otherFormat = 0, snappedReadings = 0;
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         auto m = readJson (f); if (! m.isObject()) continue;
         const auto name = m.getProperty ("identity", {}).getProperty ("name", "").toString(), cat = m.getProperty ("category", "").toString();
         static const ProductData none;
         const auto it = by.find (name); const auto& pd = it != by.end() ? it->second : none;
-        const auto rb = trust::creditMap (m, pd.readings, pd.metas);
-        for (const auto& [ctl, r] : rb) if (r.superseded > 0) { supersededReadings += r.superseded; ++supersededControls; }
+        const auto rb = trust::creditMap (m, pd.readings, pd.metas, &otherFormat);
+        for (const auto& [ctl, r] : rb) { if (r.superseded > 0) { supersededReadings += r.superseded; ++supersededControls; } snappedReadings += r.snapped; }
         const auto fpKey = m.getProperty ("fp", "").toString();
         const auto measured = human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured;
         const bool certified = (cat == "compressor" && compCert.count (name)) || (v1Pass.count (cat) && v1Pass[cat].count (name)) || (cat == "amp_sim" && v1Pass["saturation"].count (name))
@@ -292,7 +292,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                         {
                             auto* o = new juce::DynamicObject(); o->setProperty ("checked", r.judged); o->setProperty ("failed", r.failed); o->setProperty ("pass", r.proven());
                             if (r.worst.isNotEmpty()) o->setProperty ("worst", r.worst);
-                            o->setProperty ("source", r.source); if (r.superseded > 0) o->setProperty ("superseded", r.superseded); cobj->setProperty ("readback", juce::var (o));
+                            o->setProperty ("source", r.source); if (r.superseded > 0) o->setProperty ("superseded", r.superseded); if (r.snapped > 0) o->setProperty ("snapped", r.snapped); cobj->setProperty ("readback", juce::var (o));
                             ++creditedControls; if (r.failed > 0) ++failedControls;
                         }
         out.getChildFile ("maps").getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (m));
@@ -320,7 +320,8 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                   << human.size() << " map(s) with answers applied\n";
     }
     std::cout << "TRUST-LEVELS: " << rows.size() << " map(s); read-back credited on " << creditedControls << " control(s) from the measuring runs ("
-              << failedControls << " of them with a failed reading); " << supersededReadings << " older failed reading(s) on " << supersededControls << " control(s) set aside by a newer clean read-back (the recency rule); nothing loaded, nothing sent\n" << table (counts, { "maps", "certified", "mapped", "unsure" });
+              << failedControls << " of them with a failed reading); " << supersededReadings << " older failed reading(s) on " << supersededControls << " control(s) set aside by a newer clean read-back within " << trust::RECENCY_REACH << " of their setting (the recency rule); "
+              << snappedReadings << " reading(s) judged at the step the plugin took; " << otherFormat << " reading(s) not used on a map of another (or an unstated) format; nothing loaded, nothing sent\n" << table (counts, { "maps", "certified", "mapped", "unsure" });
     return 0;
 }
 

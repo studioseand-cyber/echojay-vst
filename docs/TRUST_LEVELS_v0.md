@@ -456,3 +456,64 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 - **Can't test on this Mac:** 378 (UAD 332, demo 28, silent 9, APB / hardware 6, licence 3).
 - **Inputs:** the maps are Kathy's store with the 4 re-mapped products (AudioTrack s, ValhallaVintageVerb, Meaw Chain, TB_Sibalance_v4) swapped for their 17 Oct maps (scratch only). The cert data is Sean's cert 5, the smoke cert, the overnight cert and the wizard's 15 Oct folder, plus Kathy's answers.
 - **The review list:** 877 rows on 106 maps. 16 rows (7 maps) where one yes counts; 108 rows (9 maps) in pairs.
+
+## 10. Kathy's three rulings, 17 Oct ("START"). Built and pinned; nothing loaded, nothing sent; no server change
+
+### 10.1 The recency reach (pin WZ-TRUST-12)
+- **The choice.** Kathy offered two forms: a set-aside only within ±0.1 of the failure's setting, or offering the control only over its proven range. **Built: the ±0.1 rule.**
+  - A proven range would be a new served field that nothing reads today: Sean's server does not serve it and EchoJay's dialler does not clamp to it. Until both do, a "mapped" control would still be dialled over its full range, so the label would claim more than the dial honours.
+  - The ±0.1 rule is local to the judge and errs on the side of "unsure". It can be revisited when a range field exists on both sides.
+- **The rule.** A failed reading is set aside only when a NEWER source, on the map's own version and format, read the control back cleanly at 2+ settings **and** one of that source's readings lands within 0.1 (normalised, either side, inclusive) of the failure's setting. A failure the newer reads did not come near stands, as does an undated one.
+  - `EjmapTrust.h RECENCY_REACH`.
+- **Effect on Kathy's Mac.** Set-aside readings went from 238 on 45 controls to 143 on 25.
+  - 10 AudioUnit maps fall from mapped to unsure. Each now carries a top-tenth failure that the 25/50/75 % reads never came near: VComp (s/m) Input, Q1 (m) Band 1 Frq, API-550A (s/m) Low Gain, F6-RTA (s/m) Band 1 Freq, REQ 2 (s) Band6 Frq, LinEQ Lowband (s) Band2 Frq, AMEK EQ 250 HF Freq 1.
+  - A read-back at the failure's own norm would settle each one (guarded, one load per product). It has not been run.
+
+### 10.2 Stepped controls (pin WZ-RBSWEEP-3)
+- **The rule.** A write the plugin snaps to its own step is judged at the value it TOOK (the probe's `getValue`), not at the value asked. Readings at one taken value are one setting: three writes that all stayed at 0.5 are one reading, never a read-back.
+  - The read-back sweep keeps snapped writes as `snappedAt {taken: text}` plus `snapped_from {taken: written}`.
+  - `readingsOfRecord` reads them and the credit counts them (`readback.snapped`).
+  - The app's mapping sweep (MainComponent submitMap) already judged at `getValue`. It now counts each taken value once and records `readback.snapped` (EjmapSchema emits `snapped`).
+- **`ejmap --readback-rederive --maps <dir> --from <cert> --out <cert>`** rebuilds the sweep records from the raw probe output kept in `<from>/phaseb/readback/raw`. Nothing is loaded. Each record keeps its reading's own `measuredAt`, and `--out` may not be `--from`.
+  - The overnight cert: 116 records rebuilt, 106 controls with snapped writes, 70 controls read that were not read before.
+  - Every one of the 3,337 previously read controls kept its `displayAt` byte-for-byte. Where a landed write and a snapped write took the same value, the landed write is kept in `displayAt` (Lindell 80 High Frequency).
+- **Effect.**
+  - Lindell 50 Channel (Low Freq + Low Gain) and Lindell 69 Channel (High Freq + High Gain) become mapped.
+  - **Harris Doyle Natalus DSCEQ stays unsure, and not for a stepped reason.** Its 12 stepped controls now read back, but the gain it needs (High / Low Mid Gain) was declined by the mapper ("flat both ways - unbuildable"), so the map does not carry it. This is the same kind of gap as J37 and SSLGChannel (s).
+  - TB_Sibalance_v4: its AudioUnit map stays mapped (Range). Its VST3 map falls under 10.3.
+
+### 10.3 One format per map (pin WZ-TRUST-14)
+- **The rule.** A map is judged only by readings in its own format. An AudioUnit reading neither proves nor fails a VST3 map. A source whose format is not stated proves nothing.
+- **Where the format comes from.** The record's `format` or `plugin.format`, else its `plugin_id` ("AudioUnit|..."), else the file name its writer gave it ("AudioUnit_<uid>_<ver>", "eq.VST3_..."). Nothing is guessed: in particular, not "the probe hosts AudioUnits".
+  - The read-back sweep now writes `format` itself.
+- **Effect.** Every reading on Kathy's Mac is an AudioUnit reading, so **no VST3 map is mapped any more**.
+  - 36 VST3 maps fall to unsure: 29 of them have a mapped AU map, 1 an unsure one, and 6 have no AU map in the store (EchoBoy, EchoBoy Jr, Little PrimalTap, Little Radiator, Sie-Q, Decapitator).
+  - ValhallaVintageVerb's VST3 map no longer fails on AU displays; it is unread.
+  - No AudioUnit map lost a level to an unstated format.
+- **Open for Kathy:**
+  1. 34 VST3 maps are still **certified**, because certification (and measured roles) are matched by product name across formats. The ruling as worded covers readings only, so this was left alone.
+  2. The probe can host VST3 (since 22 Sep). A VST3 read-back (`--readback-sweep` planning from VST3 maps) would read these maps directly. Soundtoys, kHs and SSL stay behind the guard.
+
+### 10.4 Recount, Kathy's count rule (held out), 17 Oct after the three rulings
+
+| category | certified | mapped | unsure | testable |
+|---|---|---|---|---|
+| eq | 12 | 46 | 86 | 144 |
+| compressor | 60 | 27 | 35 | 122 |
+| saturation | 40 | 20 | 49 | 109 |
+| channel_strip | 0 | 17 | 78 | 95 |
+| reverb | 33 | 40 | 19 | 92 |
+| delay | 1 | 10 | 31 | 42 |
+| amp_sim | 15 | 3 | 24 | 42 |
+| limiter | 25 | 5 | 9 | 39 |
+| de-esser | 0 | 13 | 12 | 25 |
+| transient_shaper | 0 | 4 | 15 | 19 |
+| pitch | 0 | 0 | 8 | 8 |
+| gate | 4 | 0 | 4 | 8 |
+| **total** | **190** | **185** | **370** | **745** |
+
+- **Can't test on this Mac:** 378 (UAD 332, demo 28, silent 9, APB / hardware 6, licence 3). Unchanged.
+- **The path:** 190 / 229 / 326 → (the reach + the format) 190 / 183 / 372 → (the stepped re-derive) 190 / 185 / 370.
+  - Mapped falls by 44: 10 AudioUnit maps to the reach and 36 VST3 maps to the format rule, with 2 gained from the stepped rule.
+- **Inputs:** as 9's recount, with the overnight cert's sweep records replaced by their re-derived copies (`--readback-rederive`, scratch). `recount.sh` takes the cert as `CERT_OVERNIGHT`.
+- **The review list:** the same 877 rows. 9 rows' `read_back` is now false, because their read-back came from the other format. No row's "a yes counts" changed.

@@ -3,8 +3,12 @@
   read-back (EjmapTrust.h readbackTargets -> write -> read -> restore) for maps that have none yet, headless, one probe load per map:
     - every anchored control at its three targets (25 / 50 / 75 % of its anchors' span), every mode control at two of its labels;
     - EchoJayProbe --text-at-norms-multi (one load, each control put back after its reads);
-    - a reading counts only where the write LANDED and the probe's parameter at that index carries the map's control name: a control whose
-      name differs here (another version, another build) is reported and left out, never judged against the wrong anchors.
+    - a reading counts only on the probe's parameter at that index that carries the map's control name: a control whose name differs
+      here (another version, another build) is reported and left out, never judged against the wrong anchors;
+    - a write that LANDED is read at the norm written (displayAt); a write the plugin SNAPPED to its own step (Kathy, 17 Oct) is read at
+      the value it took, getValue (snappedAt { taken: text }, snapped_from { taken: written }); readings at one taken value count once.
+  ejmap --readback-rederive --maps <maps folder> --from <cert> --out <cert>: the same records rebuilt from the raw probe output kept in
+  <from>/phaseb/readback/raw (nothing loaded); each keeps its product's version and measuredAt.
   Writes <out>/phaseb/readback/sweep/<stem>.readback.json (ej_readback_sweep/1: product, version, controls[].displayAt { norm: text }), the
   shape --trust-levels already reads as a record (trustrun::loadRecords -> trust::readingsOfRecord), so the judging stays in one place.
   THE GUARD first (guardedPlugins: licence-bound dropped, said, never loaded), then the session's licence gate per product. Resumable: a
@@ -68,7 +72,7 @@ inline const juce::var* pickMap (const std::vector<MapFile>& cands, const juce::
     return best != nullptr ? &best->map : nullptr;
 }
 
-struct Read { double norm = 0.0; bool landed = false; juce::String text; };
+struct Read { double norm = 0.0; bool landed = false; juce::String text; double taken = -1.0; };   // taken: the probe's getValue after the write (-1 = not printed)
 struct Got { juce::String name; std::vector<Read> reads; };
 // the probe's --text-at-norms-multi output: "textat ... index <i> name <n> ..." then "at <norm> landed|unlanded getValue .. text <t>"
 inline std::map<int, Got> parse (const juce::String& out)
@@ -82,6 +86,7 @@ inline std::map<int, Got> parse (const juce::String& out)
         {
             Read r; r.norm = t[1].getDoubleValue(); r.landed = t[2] == "landed";
             const int ti = t.indexOf ("text"); if (ti >= 0 && ti + 1 < t.size()) r.text = t[ti + 1];
+            const int gi = t.indexOf ("getValue"); if (gi >= 0 && gi + 1 < t.size()) r.taken = t[gi + 1].getDoubleValue();
             g[cur].reads.push_back (r);
         }
     }
@@ -93,6 +98,7 @@ inline juce::var record (const juce::var& map, const std::vector<Want>& ws, cons
 {
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_readback_sweep/1"); o->setProperty ("product", map.getProperty ("identity", {}).getProperty ("name", ""));
+    o->setProperty ("format", map.getProperty ("identity", {}).getProperty ("format", ""));   // the probe loads the format the picked map is (AudioUnit)
     o->setProperty ("version", installedVersion); o->setProperty ("map_version", map.getProperty ("identity", {}).getProperty ("version", ""));
     o->setProperty ("map_fp", map.getProperty ("fp", ""));
     juce::Array<juce::var> cs, refused;
@@ -102,11 +108,21 @@ inline juce::var record (const juce::var& map, const std::vector<Want>& ws, cons
         auto said = [&] (const juce::String& why) { auto* r = new juce::DynamicObject(); r->setProperty ("name", w.name); r->setProperty ("index", w.index); r->setProperty ("why", why); refused.add (juce::var (r)); };
         if (it == got.end()) { said ("the probe returned nothing for this index"); continue; }
         if (it->second.name.trim() != w.name.trim()) { said ("the parameter at this index is '" + it->second.name + "' here"); continue; }
-        auto* da = new juce::DynamicObject(); int landed = 0, unlanded = 0;
-        for (const auto& r : it->second.reads) { if (! r.landed) { ++unlanded; continue; } da->setProperty (juce::String (r.norm, 6), r.text); ++landed; }
-        if (landed == 0) { said ("no write landed (" + juce::String (unlanded) + " tried)"); continue; }
+        auto* da = new juce::DynamicObject(); auto* sa = new juce::DynamicObject(); auto* sf = new juce::DynamicObject();
+        int landed = 0, unlanded = 0, snapped = 0; std::vector<double> seen;
+        for (const auto& r : it->second.reads) if (r.landed && trust::firstAtTaken (seen, r.norm)) { da->setProperty (juce::String (r.norm, 6), r.text); ++landed; }
+        for (const auto& r : it->second.reads)   // then the snapped writes: a value a landed write already read is not read again
+        {
+            if (r.landed) continue;
+            ++unlanded;
+            if (r.taken < 0.0 || r.text.trim().isEmpty() || ! trust::firstAtTaken (seen, r.taken)) continue;   // no value printed, or one already read
+            sa->setProperty (juce::String (r.taken, 6), r.text); sf->setProperty (juce::String (r.taken, 6), r.norm); ++snapped;
+        }
+        if (landed + snapped == 0) { said ("no write landed (" + juce::String (unlanded) + " tried)"); continue; }
         auto* c = new juce::DynamicObject(); c->setProperty ("name", w.name); c->setProperty ("index", w.index); c->setProperty ("kind", w.kind);
-        c->setProperty ("displayAt", juce::var (da)); if (unlanded > 0) c->setProperty ("unlanded", unlanded); cs.add (juce::var (c));
+        c->setProperty ("displayAt", juce::var (da)); if (unlanded > 0) c->setProperty ("unlanded", unlanded);
+        if (snapped > 0) { c->setProperty ("snappedAt", juce::var (sa)); c->setProperty ("snapped_from", juce::var (sf)); }
+        cs.add (juce::var (c));
     }
     o->setProperty ("controls", cs); o->setProperty ("not_read", refused);
     return juce::var (o);
@@ -162,6 +178,40 @@ inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir,
         ++done; credited += n;
     }
     say ("READBACK: done - " + juce::String (done) + " read (" + juce::String (credited) + " controls), " + juce::String (skipped) + " already read, " + juce::String (refused) + " not read (said above); nothing judged here - --trust-levels judges");
+    return 0;
+}
+
+// THE RE-DERIVE (17 Oct, the stepped rule): every record in <from>/phaseb/readback/sweep rebuilt by readback::record from the raw probe
+// output kept beside it, against the map the sweep picks (pickMap, the record's own installed version). Nothing is loaded; measuredAt
+// is the original reading's, so the recency rule sees the reading's time, not this command's
+inline int runReadbackRederive (const juce::File& mapsDir, const juce::File& from, const juce::File& out)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto inDir = from.getChildFile ("phaseb").getChildFile ("readback");
+    const auto outDir = out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("sweep"); outDir.createDirectory();
+    if (outDir == inDir.getChildFile ("sweep")) { say ("REDERIVE: --out must not be --from (the originals are kept)"); return 2; }
+    std::map<juce::String, std::vector<readback::MapFile>> mapsOf;
+    for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        const auto m = juce::JSON::parse (f.loadFileAsString()); const auto n = m.getProperty ("identity", {}).getProperty ("name", "").toString();
+        if (n.isNotEmpty()) mapsOf[n].push_back ({ m, f.getLastModificationTime().toMilliseconds() });
+    }
+    int done = 0, refused = 0, snappedControls = 0;
+    for (const auto& f : inDir.getChildFile ("sweep").findChildFiles (juce::File::findFiles, false, "*.readback.json"))
+    {
+        const auto old = juce::JSON::parse (f.loadFileAsString());
+        const auto product = old.getProperty ("product", "").toString(), version = old.getProperty ("version", "").toString();
+        const auto rawFile = inDir.getChildFile ("raw").getChildFile (f.getFileName().upToLastOccurrenceOf (".json", false, false) + ".txt");
+        const auto* picked = mapsOf.count (product) ? readback::pickMap (mapsOf[product], version) : nullptr;
+        if (picked == nullptr || ! rawFile.existsAsFile()) { say ("REDERIVE: " + product + " - " + (picked == nullptr ? "no AudioUnit map" : "no raw output") + "; not rebuilt"); ++refused; continue; }
+        auto rec = readback::record (*picked, readback::plan (*picked), readback::parse (rawFile.loadFileAsString()), version);
+        rec.getDynamicObject()->setProperty ("measuredAt", old.getProperty ("measuredAt", ""));
+        rec.getDynamicObject()->setProperty ("rederived_from", f.getFullPathName());
+        for (const auto& c : *rec.getProperty ("controls", {}).getArray()) if (c.hasProperty ("snappedAt")) ++snappedControls;
+        outDir.getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
+        ++done;
+    }
+    say ("REDERIVE: " + juce::String (done) + " record(s) rebuilt from raw (" + juce::String (snappedControls) + " control(s) with snapped writes), " + juce::String (refused) + " not rebuilt; nothing loaded");
     return 0;
 }
 
