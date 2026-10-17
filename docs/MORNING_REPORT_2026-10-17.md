@@ -73,6 +73,26 @@ on the same raw prefix and are independent proof that your step 8 was real.
 
 ---
 
+## What the runner could NOT test, and why you are the instrument for it
+
+**The Link half of the live pass.** The live rows that drive a REAL model and then read the Link's
+sidecar ran 3 of 5 on `A4-live`, and the two failures are the measuring equipment, not the build.
+When the rig registers a Link component and asks the host to instantiate it, macOS resolves the
+AudioUnit by its IDENTIFIER, and the identifier belongs to the component INSTALLED in
+`~/Library/Audio/Plug-Ins/Components` - last night's `ship_2026-10-16b`. So the V2 under test was
+tonight's binary and the Link answering it was yesterday's, which has neither the dial-pending wait
+nor the card composition that row asserts. I proved it by size: the two binaries differ, and the
+runner now prints both figures and SKIPS those rows rather than passing or failing them, because a
+new V2 talking to an old Link is a configuration that never ships and a verdict from it would be
+about nothing. `A3-live` - the same add on the plugin's OWN rack, where no second component is
+involved - held 5 of 5 against the real model.
+
+That is `NEXT_ROUND_QUEUE` **item 0b**: host the Link BY PATH in the rig, so the runner tests what
+it was handed. Until then step 1 of the recheck below is the only proof of the Link side, and it is
+your eyes on it.
+
+---
+
 ## A short Logic recheck, only tonight's failures (about 6 minutes)
 
 Agent mode **Ask**, the project with the Mix Bus and the Kick's Link, something playing.
