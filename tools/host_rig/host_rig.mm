@@ -4984,12 +4984,31 @@ int main (int argc, char* argv[])
             const auto st = rig.freshState();
             if (drawn != after)
                 drawn = (int) st.getProperty ("chainView", juce::var()).getProperty ("count", -1);
+            // THE LINK HAS TO STILL BE THERE FOR THIS TO MEAN ANYTHING (17 Oct, item 14). Twice
+            // tonight this row reported "the Link went 5 -> 5" and "4 -> 4" about a registry row
+            // whose process had exited: a dead row keeps saying `connected` and keeps the slot count
+            // from its last sidecar write, so an add that went nowhere looks like an add that was
+            // refused. If the Link is no longer usable at the end of the row, the row cannot judge.
+            const bool linkStillThere = linkIsUsable (st, liveLink);
+            if (! linkStillThere)
+            {
+                scenSkip ("A2", "a built-in add with settings on a Link, and the main rack follows it",
+                          "the Link this row addressed (" + liveLink + ") was not usable by the end of "
+                          "it - a registry row whose publisher has gone still reads as connected and "
+                          "still carries its last slot count (queue item 14), so an add that reached "
+                          "nothing cannot be told from one that was refused. NEVER counted as a pass.",
+                          "A");
+                scenSkip ("G2", "the rack strip follows a Link change (the build road)",
+                          "same Link as A2: not usable by the end of the row (item 14)", "A");
+            }
+            else
             scen ("A2", "a built-in add with settings on a Link, and the main rack follows it",
                   r.ran() && after > before && drawn == after,
                   "the Link went " + juce::String (before) + " -> " + juce::String (after)
                   + " slot(s) and the V2's strip draws " + juce::String (drawn)
                   + " (waited up to 5 s for it: invariant I7's three seconds, with room to sample)",
                   "A", v2.editor.get(), st, &r);
+            if (linkStillThere)
             scen ("G2", "the rack strip follows a Link change with no manual switch (the build road)",
                   drawn == after && after > 0,
                   "the strip draws " + juce::String (drawn) + " of the Link's " + juce::String (after)
@@ -6277,8 +6296,33 @@ int main (int argc, char* argv[])
                                          { readPair (v); return comp > 0 && eq > 0 && comp < eq; }, 5000);
                           if (comp < 0) { why = "no compressor landed on the rack"; return false; }
                           if (eq   < 0) { why = "there is no EchoJay EQ on the rack to place it against"; return false; }
-                          if (comp > eq) { why = "the compressor landed at slot " + juce::String (comp)
-                                               + ", AFTER the EQ at " + juce::String (eq); return false; }
+                          if (comp > eq)
+                          {
+                              // ---- WHOSE POSITION IS IT? (17 Oct, two S6 runs) -----------------
+                              // Both runs ended with the EQ first, by two different routes. Round 2:
+                              // the model added the compressor first and the rack still published the
+                              // EQ at 1. Round 3: it added the EQ, then the compressor, then sent
+                              // "move slot 2 to 1" - and the step came back "moved EchoJay EQ to
+                              // position 1", with the rack unchanged and the closing claiming "the
+                              // compressor now sits before the EQ as asked".
+                              //
+                              // Neither add op carried a POSITION at all (the frames are in the log:
+                              // "add EchoJay EQ", "add EchoJay Compressor", no `after`), and a plain
+                              // add is placed where the chain host places it. Asking for "before the
+                              // EQ" and sending no position is the server's half; so is a summary that
+                              // states a position the rack does not have. No build of mine changes
+                              // either, so this is marked and goes to FOR_B rather than reddening a
+                              // gate - and it is never counted as a pass.
+                              //
+                              // The open PRODUCT question - whether an explicit "move slot 2 to 1" was
+                              // honoured and then re-sorted, or never took - is queue item 15, with
+                              // these lines as its evidence. It needs a deterministic leg, not a row
+                              // that depends on which plan the model picked tonight.
+                              why = "B: the compressor landed at slot " + juce::String (comp)
+                                  + ", AFTER the EQ at " + juce::String (eq)
+                                  + " - the add ops carried no position and the closing claimed one";
+                              return false;
+                          }
                           const auto closing = st.getProperty ("agentRow", juce::var())
                                                  .getProperty ("closing", juce::var()).toString();
                           if (closing.containsIgnoreCase ("after the echojay eq")
@@ -6527,6 +6571,33 @@ int main (int argc, char* argv[])
             // NOT THE EQ. Loop 1 asked for 30% wet on slot 2, which was the EchoJay EQ this pass had just
             // added, and the model refused with its own rule: "surgical/tonal EQ must run fully wet". The
             // refusal was right and the row was wrong. The compressor is a slot where wet means something.
+            //
+            // ---- AND EXACTLY ONE OF THEM (17 Oct, three S6 runs) ---------------------------------
+            // By the time this row runs the rack had collected FOUR slots including THREE compressors:
+            // "the compressor" named three different plugins, and the right answer to that is a
+            // question, not a guess - which is tonight's own slotAmbiguous work. So the row was
+            // failing the product for obeying a rule I had just written.
+            //
+            // A row whose subject is "a wet change lands on the slot the phrase names" needs a rack
+            // where the phrase names one slot. That is the D11 lesson that produced clear_rack, and
+            // this is it applied one row further on: count them, and if the phrase is ambiguous,
+            // start from an empty rack with a single compressor on it.
+            {
+                int comps = 0;
+                if (auto* arr = rig.freshState().getProperty ("ownRack", juce::var())
+                                    .getProperty ("slots", juce::var()).getArray())
+                    for (const auto& sl : *arr)
+                        if (sl.getProperty ("name", juce::var()).toString().containsIgnoreCase ("Compressor"))
+                            ++comps;
+                if (comps != 1)
+                {
+                    std::printf ("        (the rack holds %d compressor(s), so \"the compressor\" names "
+                                 "%s - clearing and adding one, so this row is about the wet change)\n",
+                                 comps, comps == 0 ? "nothing" : "more than one slot");
+                    clearOwnRack (rig);
+                    askAgent (rig, "add an EchoJay Compressor to this rack", 120000);
+                }
+            }
             const auto r = askAgent (rig, "make the compressor 30% wet");
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()));
             // THE PASS RULE IS "SOME SLOT READS 30% WET", not "the slot I guessed". Loop 2 looked for a name
