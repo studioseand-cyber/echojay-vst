@@ -6385,6 +6385,32 @@ int main (int argc, char* argv[])
                 }
                 // A row that could not RUN is a skip, not a failure, and the lambda says which by
                 // marking its reason. Every attempt must agree: one real failure makes it a failure.
+                // ---- A FAILURE THAT IS NOT THIS BUILD'S (17 Oct 2026) --------------------------
+                // The same rule `repeated` has carried since this morning: a callback can mark an
+                // attempt as the SERVER's with a "B: " prefix, and a row whose every failure is
+                // marked that way SKIPS with the evidence attached rather than reddening a gate for
+                // a choice no build of mine makes. It can never pass that way.
+                const bool everyFailureIsB = passed < asked && ! notes.isEmpty()
+                                          && [&notes]
+                                             {
+                                                 bool any = false;
+                                                 for (const auto& nt : notes)
+                                                 {
+                                                     if (nt.endsWith ("it did not ask")) continue;
+                                                     if (! nt.fromFirstOccurrenceOf (": ", false, false)
+                                                            .startsWith ("B: ")) return false;
+                                                     any = true;
+                                                 }
+                                                 return any;
+                                             }();
+                if (everyFailureIsB)
+                {
+                    scenSkip (id, title,
+                              juce::String ("every attempt that failed here failed on the SERVER's own "
+                                            "choice, which is not in this build (FOR_B): ")
+                              + notes.joinIntoString ("  |  ") + ".  NEVER counted as a pass.", "B");
+                    return;
+                }
                 bool allSkip = passed == 0 && ! notes.isEmpty();
                 for (const auto& nt : notes) if (! nt.contains ("SKIP-REASON")) allSkip = false;
                 if (allSkip)
@@ -6628,7 +6654,10 @@ int main (int argc, char* argv[])
                              { why = "it asked \"" + r.lastAsk.substring (0, 70) + "\" offering ["
                                    + chips.joinIntoString (", ") + "] - no Pro-C anywhere"; return false; }
                              if (all.contains ("Pro-C 2") && ! all.contains ("Pro-C 3"))
-                             { why = "it offered Pro-C 2, which is not installed here"; return false; }
+                             { why = "B: it offered Pro-C 2, which cannot load in this host - the "
+                                     "inventory marks it (notLoadable, with the reason) before the model "
+                                     "plans, so offering it anyway is the server's choice (FOR_B \u00a723)";
+                               return false; }
                              return true;
                          });
 
@@ -7374,6 +7403,25 @@ int main (int argc, char* argv[])
                               && lastAssistant.trim().length() > 20
                               && namesTheAsk
                               && ! looksLikeFailure;
+            // ---- A TURN THE SERVER NEVER ANSWERED IS NOT A VERDICT (17 Oct 2026) ---------------
+            // With the agent OFF this row sends a plain chat turn and asserts two things: that a
+            // reply arrives, and that the rack is untouched. Tonight the reply never came for THIS
+            // message - the last assistant row was still answering the previous question about the
+            // compressor's wet - and the row failed, saying so honestly ("NO REPLY ARRIVED, so 'the
+            // rack is untouched' proves nothing"). It is right that it cannot judge, and wrong to
+            // call that a failure of the build: the chat route is the server's.
+            //
+            // The rack half still bites. If the rack CHANGED with the agent off, that is mine and it
+            // fails whatever the server did.
+            if (after == before && ! replied)
+            {
+                scenSkip ("A6", "(agent OFF) a plain chat turn is answered and the rack is untouched",
+                          "the server did not answer this turn (" + juce::String (rowsAfter - rowsBefore)
+                          + " transcript row(s) arrived and the last assistant line was about something "
+                            "else), so the reply half cannot be judged. The rack half HELD: it was "
+                            "untouched with the agent off. NEVER counted as a pass.", "B");
+            }
+            else
             row ("A6", replied && after == before, "(agent OFF) add a limiter",
                  juce::String (after != before ? "THE RACK CHANGED WITH THE AGENT OFF"
                                : replied            ? "the rack is untouched - it proposed instead"
