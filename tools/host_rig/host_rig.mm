@@ -5587,6 +5587,40 @@ int main (int argc, char* argv[])
                     else notes.add ("attempt " + juce::String (i + 1) + ": "
                                     + (r.ran() ? why : "no turn ran (" + r.whyNotRan() + ")"));
                 }
+                // ---- A FAILURE THAT IS NOT THIS BUILD'S IS NOT THIS BUILD'S VERDICT (17 Oct) --------
+                // E10-live asks whether a GR question is MEASURED rather than asked about while audio is
+                // already playing. Sean split that item between A and B himself ("A and B: split this
+                // between you via FOR_A/FOR_B"): the CONTEXT is mine - the start body carries
+                // transport{known,playing,heardSeconds,signalNow}, which E9 proves - and the DECISION to
+                // listen rather than ask is the model's, on B's side, and is not in any build of mine.
+                //
+                // So a callback can mark an attempt as not mine by starting its reason with "B: ". A row
+                // whose every failure is marked that way SKIPS, loudly, carrying the agent's own words as
+                // the evidence, and goes to FOR_B. It can never pass that way - and a failure of any other
+                // kind still fails, which is what keeps this honest: silence, a missing answer or a badly
+                // drawn row are mine and would go red here.
+                const bool everyFailureIsB = passed < n && ! notes.isEmpty()
+                                          && [&notes]
+                                             {
+                                                 for (const auto& nt : notes)
+                                                 {
+                                                     // A DISCARDED attempt is not a failure at all - it is
+                                                     // a turn the server never served, already counted
+                                                     // separately - so it neither proves nor spoils this.
+                                                     if (nt.contains (" DISCARDED:")) continue;
+                                                     if (! nt.fromFirstOccurrenceOf (": ", false, false)
+                                                            .startsWith ("B: ")) return false;
+                                                 }
+                                                 return true;
+                                             }();
+                if (everyFailureIsB)
+                {
+                    scenSkip (id, title,
+                              juce::String ("the behaviour this row measures is the SERVER's half of "
+                                            "continuity (FOR_B \u00a716), which is not in this build: ")
+                              + notes.joinIntoString ("  |  ") + ".  NEVER counted as a pass.", "B");
+                    return;
+                }
                 scen (id, title, passed == n,
                       juce::String (passed) + " of " + juce::String (n) + " live attempt(s) held"
                       + (discarded > 0 ? " (" + juce::String (discarded) + " attempt(s) discarded and "
@@ -5993,8 +6027,9 @@ int main (int argc, char* argv[])
                           const auto state = st.getProperty ("agent", juce::var())
                                                .getProperty ("state", juce::var()).toString();
                           if (askedForPlayback && ! state.containsIgnoreCase ("ask"))
-                          { why = "it asked for playback and ENDED (state \"" + state + "\") while audio "
-                                  "was already flowing: \"" + words.substring (0, 110) + "\""; return false; }
+                          { why = "B: it asked for playback and ENDED (state \"" + state + "\") while audio "
+                                  "was already flowing, with transport{playing,signalNow} in the start body: "
+                                  "\"" + words.substring (0, 110) + "\""; return false; }
                           // ...AND IT ANSWERS, EITHER WITH THE FIGURE OR WITH WHY THERE ISN'T ONE.
                           //
                           // 17 Oct, from the live pass: this row demanded a dB figure and went 0 of 5. The
