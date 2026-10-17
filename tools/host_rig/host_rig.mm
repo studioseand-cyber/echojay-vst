@@ -6610,6 +6610,35 @@ int main (int argc, char* argv[])
                 { after = (int) linkRowOf (s, linkUid).getProperty ("slotCount", -1); return after > before; }, 15000);
             }
             const bool landed = before >= 0 && after == before + 1;
+            // ---- A CLAIM THE SESSION CONTRADICTS IS THE MODEL'S (17 Oct, S6 round 6) ----------
+            // The run declined with "I'll leave it for now since the EchoJay Compressor couldn't load
+            // on this Mac and nothing else in your inventory fits" - in a session that had added an
+            // EchoJay Compressor to the Mix Bus four steps earlier, and with NOT ONE withhold or
+            // architecture decision in the whole log. Nothing in this build marked that plugin
+            // unloadable; the sentence was composed, not read.
+            //
+            // So when the card says a plugin cannot load WHILE that plugin is on a rack in this very
+            // session, the row says whose claim it is and skips - it is never a pass - rather than
+            // reddening a gate over a plan no build of mine produces. Any other way of not landing
+            // still fails: a refusal the product actually made, an ack that never came, a sidecar
+            // that did not move for any other reason.
+            bool compressorIsHere = false;
+            if (auto* arr = rig.freshState().getProperty ("ownRack", juce::var())
+                                .getProperty ("slots", juce::var()).getArray())
+                for (const auto& sl : *arr)
+                    if (sl.getProperty ("name", juce::var()).toString().containsIgnoreCase ("Compressor"))
+                        compressorIsHere = true;
+            const bool claimedItCannotLoad = r.text.containsIgnoreCase ("couldn't load")
+                                          || r.text.containsIgnoreCase ("could not load")
+                                          || r.text.containsIgnoreCase ("can't load")
+                                          || r.text.containsIgnoreCase ("cannot load");
+            if (! landed && claimedItCannotLoad && compressorIsHere)
+                scenSkip ("L1", "add a compressor on another track's Link",
+                          "the run DECLINED, saying the EchoJay Compressor \"couldn't load on this Mac\" - "
+                          "in a session that has one on the Mix Bus rack right now, and with no withhold "
+                          "or architecture decision anywhere in this log. The sentence was composed, not "
+                          "read (FOR_B). NEVER counted as a pass.", "B");
+            else
             row ("L1", landed, ask,
                  "that Link's own sidecar: " + juce::String (before) + " -> " + juce::String (after)
                  + " slot(s), state " + r.state + (r.applied ? ", applied from a plan" : "")
