@@ -33,7 +33,7 @@ namespace ejmap::certv1
 {
 
 struct Part { juce::String name, state, why; };   // state: pass | fail | not_tested
-struct Result { juce::String category, product, pluginId; bool pass = false; std::vector<Part> parts;
+struct Result { juce::String category, product, pluginId, format; bool pass = false; std::vector<Part> parts;   // format: what the draft was measured in (17 Oct, rulings 2: certification counts only for that format)
     // the parts a certified product offers: every part that passed (an EQ band's gain / freq, a delay's mix ...); never a failed one
     juce::StringArray certifiedParts() const { juce::StringArray c; if (pass) for (const auto& p : parts) if (p.state == "pass" && p.name != "acceptance" && ! p.name.containsChar (':')) c.add (p.name); return c; }   // "band 2: gain" is a sub-check, "band 2" the offered band
     juce::String why() const

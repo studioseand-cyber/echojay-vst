@@ -517,3 +517,54 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
   - Mapped falls by 44: 10 AudioUnit maps to the reach and 36 VST3 maps to the format rule, with 2 gained from the stepped rule.
 - **Inputs:** as 9's recount, with the overnight cert's sweep records replaced by their re-derived copies (`--readback-rederive`, scratch). `recount.sh` takes the cert as `CERT_OVERNIGHT`.
 - **The review list:** the same 877 rows. 9 rows' `read_back` is now false, because their read-back came from the other format. No row's "a yes counts" changed.
+
+## 11. Rulings 2, 17 Oct (Kathy). Built, pinned and run on this Mac (guarded); nothing sent; no server change
+
+### 11.1 Certification by format (pin WZ-TRUST-15)
+- **The rule.** Certification counts only for the format it was measured in.
+  - Publish list: a product takes its format from the published profiles, `--trust-levels --certified-profiles <dir>` (the v3 publish zip unpacked: `~/Desktop/EJMAP_TRUST_17oct/published_v3`). A listed product with no profile stating a format certifies nothing; the run says which.
+  - v1 drafts and multiband: from the draft's `plugin_id` or file name.
+- **Effect.** All 47 published profiles are AudioUnit. Certified 190 → 156: the 34 VST3 maps lose it.
+  - 11 of those 34 are UAD or demo, so under the count rule they now sit on the held line. Testable 745 → 734, held 378 → 389.
+
+### 11.2 The VST3 read-back (pin WZ-RBSWEEP-4)
+- **`ejmap --readback-sweep --format VST3`** plans from the VST3 map.
+  - Its products come from the ledger's `scan-cache.xml` (read only), through the same guard. PACE is checked on the .vst3 bundle, and a bundle that cannot be checked is held.
+  - The installed version is the one the probe's VST3 class reports. The probe now prints `\tversion\t<v>` on its `vst3 class:` line; the scan cache's version (4 Aug) is not used.
+- **Run on this Mac** (scratch ledger, maps read only, output `~/Desktop/EJMAP_TRUST_17oct/rulings2_cert`).
+  - 70 VST3 products: the 36 that fell under the format rule plus the 34 certified ones.
+  - **The guard dropped 65**: UAD 10, SSL 13, Soundtoys 7, kHs 5, and 30 PACE-wrapped bundles (Melda, Slate VBC, Antares, Newfangled, FG-X 2 and others).
+  - 5 were read (342 controls), and every installed version equals its map's.
+  - Mapped: Heatwave (Drive), Quantum (Attack Volume), TB_Sibalance_v4 VST3 (Range).
+  - Still unsure: Solid Bus Comp, whose threshold role is from measurement but whose map carries no Threshold control (the J37 kind of gap), and Spectre (drive role not identified).
+
+### 11.3 The read-back at each old failure's own setting (pin WZ-TRUST-16)
+- **The settings.** The credited copy keeps each standing failure's norm (`readback.failed_at`). `--readback-sweep --at <json>` reads only the listed controls, at their three targets plus those norms.
+- **Run on the 10 AudioUnit maps** (all past the guard; same folder). Every failure reproduced on this Mac, at the installed version (= the map's), so all 10 stay unsure:
+  - VComp (s/m) Input -21.3 dB at 0.033;
+  - Q1 (m) Band 1 Frq 6411 / 8661 / 11701 / 13601 at 0.833..0.9375;
+  - API-550A (s/m) Low Gain -12 / +12 dB at 0.05 / 0.95;
+  - F6-RTA (s/m), REQ 2 (s) 11701 at 0.917; LinEQ Lowband (s) 11585; AMEK EQ 250 18.0 kHz at 0.875.
+- These are the maps' anchors being off at the ends of the range, not stale readings. A re-map (or anchor repair) is what moves them.
+
+### 11.4 Recount, Kathy's count rule, 17 Oct after rulings 2
+
+| category | certified | mapped | unsure | testable |
+|---|---|---|---|---|
+| eq | 9 | 46 | 88 | 143 |
+| compressor | 52 | 27 | 43 | 122 |
+| saturation | 33 | 21 | 52 | 106 |
+| channel_strip | 0 | 17 | 78 | 95 |
+| reverb | 26 | 40 | 23 | 89 |
+| delay | 1 | 10 | 31 | 42 |
+| amp_sim | 13 | 3 | 25 | 41 |
+| limiter | 19 | 5 | 12 | 36 |
+| de-esser | 0 | 14 | 11 | 25 |
+| transient_shaper | 0 | 5 | 14 | 19 |
+| pitch | 0 | 0 | 8 | 8 |
+| gate | 3 | 0 | 5 | 8 |
+| **total** | **156** | **188** | **390** | **734** |
+
+- **Can't test on this Mac:** 389 (UAD 341, demo 30, silent 9, APB / hardware 6, licence 3).
+- **Reproduce:** `EXTRA_CERT=$PWD/rulings2_cert CERTIFIED_PROFILES=$PWD/published_v3/EJMAP_PUBLISH_COMPRESSORS_v3 CERT_OVERNIGHT=$PWD/overnight_cert_rederived ./recount.sh <ejmap> <out>`, run in `~/Desktop/EJMAP_TRUST_17oct`.
+- **The review page** (`~/Desktop/EJMAP_REVIEW`, and the admin handover's sample) is regenerated: 912 rows on 110 maps. The 35 new rows are on 4 VST3 maps that are no longer certified (MReverbMB, MReverb, MAmp, SSL Native X-Saturator v6). The morning list is kept as `review_items.17oct-morning.json`; the answers file is untouched.

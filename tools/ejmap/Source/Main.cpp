@@ -861,16 +861,20 @@ namespace
             }
             if (a == "--readback-sweep")   // 16 Oct (Kathy, overnight): the read-back-only sweep - guarded, one load per map, maps folder read only
             {
-                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File maps, names;
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File maps, names, atFile; juce::String format = "AudioUnit";
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
-                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--maps") maps = cwdFile (v); else if (k == "--names") names = cwdFile (v); }
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--maps") maps = cwdFile (v); else if (k == "--names") names = cwdFile (v);
+                    else if (k == "--format") format = v; else if (k == "--at") atFile = cwdFile (v); }   // 17 Oct (rulings 2): VST3 maps; the read-back at given settings
+                if (format != "AudioUnit" && format != "VST3") { std::cerr << "ejmap --readback-sweep: --format is AudioUnit or VST3" << std::endl; return 2; }
+                const auto at = atFile == juce::File() ? juce::var() : juce::JSON::parse (atFile.loadFileAsString());
+                if (atFile != juce::File() && ! at.isObject()) { std::cerr << "ejmap --readback-sweep: --at must be a JSON object {product: {control: [norms]}}" << std::endl; return 2; }
                 // no default for --out: the results go where the caller says, never into a cert folder by accident
                 if (o.out == juce::File() || ! maps.isDirectory() || ! names.existsAsFile()) { std::cerr << "usage: ejmap --readback-sweep --maps <folder> --names <file> --out <cert> [--probe <path>] [--ejmap-ledger <dir>]" << std::endl; return 2; }
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
                 juce::StringArray ns; ns.addLines (names.loadFileAsString()); ns.trim(); ns.removeEmptyStrings(); ns.removeDuplicates (false);
                 ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
-                return ejmap::cert::runReadbackSweep (o, maps, ns);
+                return ejmap::cert::runReadbackSweep (o, maps, ns, format, at);
             }
             if (a == "--readback-rederive")   // 17 Oct (Kathy, stepped controls): the read-back records rebuilt from the kept raw probe output - nothing loaded
             {
@@ -888,12 +892,13 @@ namespace
             }
             if (a == "--trust-levels")   // 16 Oct (Kathy): read-back credit from the measuring runs, the role rule, the level per map - nothing loaded
             {
-                juce::File maps, outD, list, quarantine, human; juce::StringArray certs, wizards, helds; juce::String reviewFirst;
+                juce::File maps, outD, list, quarantine, human, profiles; juce::StringArray certs, wizards, helds; juce::String reviewFirst;
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--maps") maps = cwdFile (v); else if (k == "--out") outD = cwdFile (v); else if (k == "--cert") certs.add (cwdFile (v).getFullPathName());
                     else if (k == "--wizard") wizards.add (cwdFile (v).getFullPathName()); else if (k == "--certified") list = cwdFile (v); else if (k == "--held") helds.add (cwdFile (v).getFullPathName());
-                    else if (k == "--quarantine") quarantine = cwdFile (v); else if (k == "--human") human = cwdFile (v); else if (k == "--review-first") reviewFirst = v; }
-                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD, human, reviewFirst);
+                    else if (k == "--quarantine") quarantine = cwdFile (v); else if (k == "--human") human = cwdFile (v); else if (k == "--review-first") reviewFirst = v;
+                    else if (k == "--certified-profiles") profiles = cwdFile (v); }
+                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD, human, reviewFirst, profiles);
             }
             if (a == "--self-guard")   // 16 Oct (Kathy): the guard alone, for scripts - prints KEEP / DROP per name, loads nothing; exit 3 if anything dropped
             {

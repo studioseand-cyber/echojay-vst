@@ -103,7 +103,7 @@ inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, cons
     return v;
 }
 // a control is read back when at least 2 readings were judged and none failed; one failure is a failed read-back (said, kept)
-struct ControlReadback { int judged = 0, failed = 0, superseded = 0, snapped = 0; juce::String worst, source; bool proven() const { return judged >= 2 && failed == 0; } };   // superseded: old failures a newer clean read-back set aside; snapped: readings judged at the step the plugin took
+struct ControlReadback { int judged = 0, failed = 0, superseded = 0, snapped = 0; juce::String worst, source; std::vector<double> failedAt; bool proven() const { return judged >= 2 && failed == 0; } };   // failedAt: the norm of every failure that stands (17 Oct, rulings 2: the read-back at each failure's own setting)   // superseded: old failures a newer clean read-back set aside; snapped: readings judged at the step the plugin took
 // THE STEPPED-CONTROL RULE (Kathy, 17 Oct: Lindell 50 / 69, Harris Doyle, TB_Sibalance): a plugin that snaps a write to its own step
 // (0.25 -> 0.2222 on a 1/9 grid) is judged at the value it TOOK (getValue), not the one asked; readings at one taken value are one
 // setting, so they count once - three writes that all stayed at 0.5 are one reading, never a read-back
@@ -533,6 +533,7 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
         {
             if (s.v.judged && ! s.v.pass && setAside (s)) { ++cr.superseded; continue; }
             addReading (cr, s.v, sources[s.si].first); if (s.v.judged && s.snapped) ++cr.snapped;
+            if (s.v.judged && ! s.v.pass && std::none_of (cr.failedAt.begin(), cr.failedAt.end(), [&] (double n) { return std::abs (n - s.norm) < 1e-6; })) cr.failedAt.push_back (s.norm);
         }
         if (cr.judged == 0 && cr.superseded == 0) out.erase (name);
     }
