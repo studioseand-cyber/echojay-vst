@@ -4,7 +4,7 @@
  * ONE MODULE, TWO HOSTS. The operator console tab (public/js/admin-plugin-review.js in echojay-saas, key 'plugin-review', mounted by
  * admin-shell.js like admin-community.js) and the local page today (tools/ejmap/review/index.html, served by review_server.py). Both
  * hand it a ctx with el() and api2(); the routes are the only difference:
- *     GET   <base>            -> { schema: "ejmap_role_review/1", generated_at, items: [...], answers: { <id>: answer } }
+ *     GET   <base>            -> { schema: "ejmap_role_review/1", generated_at, first_category?, items: [...], answers: { <id>: answer } }
  *     POST  <base>  { id, verdict, role?, section? } -> { ok: true, answer | null, counts }
  *           verdict: "yes" (the suggestion) | "role" (the role + section picked in the dropdown) | "no" (not the suggestion, no role given) |
  *                    "other" (not a main control) | "unsure" (counts neither way: the needs-measuring / ask-Sean list) | "clear"
@@ -36,7 +36,8 @@
 
   // ---------------------------------------------------------------- pure --
   /** Cards: items grouped by map fp, "counts now" maps first, then by plugin name. */
-  function group(items, onlyCountsNow) {
+  /** Cards: the ones where a yes counts now first; within them the review file's first_category (Kathy, 17 Oct: EQ), then by name. */
+  function group(items, onlyCountsNow, firstCategory) {
     var by = {}, order = [];
     items.forEach(function (it) {
       if (onlyCountsNow && !it.yes_makes_mapped) return;
@@ -44,7 +45,8 @@
       by[it.fp].items.push(it);
     });
     var cards = order.map(function (fp) { var c = by[fp]; c.countsNow = c.items.some(function (i) { return i.yes_makes_mapped; }); return c; });
-    cards.sort(function (a, b) { return (b.countsNow - a.countsNow) || String(a.plugin).localeCompare(String(b.plugin)); });
+    var first = function (c) { return firstCategory && c.category === firstCategory ? 1 : 0; };
+    cards.sort(function (a, b) { return (b.countsNow - a.countsNow) || (first(b) - first(a)) || String(a.plugin).localeCompare(String(b.plugin)); });
     return cards;
   }
   /** The counts the header shows, from the items and the answers alone (the server computes the same). */
@@ -166,7 +168,7 @@
         t.appendChild(tb); w.appendChild(t); u.appendChild(w); list.appendChild(u);
       }
       var rest = state.items.filter(function (i) { var a = state.answers[i.id]; return !(a && a.verdict === 'unsure'); });
-      group(rest, state.onlyNow).forEach(function (c) { list.appendChild(card(ctx, c, state, answer)); });
+      group(rest, state.onlyNow, state.firstCategory).forEach(function (c) { list.appendChild(card(ctx, c, state, answer)); });
       status.textContent = state.items.length ? '' : 'Nothing to review.';
     }
     function next(tr) {
@@ -193,7 +195,7 @@
       if (ev.key === 'r') { ev.preventDefault(); var sel = tr.querySelector('select'); if (sel) { sel.focus(); try { sel.showPicker(); } catch (e) {} } }
     });
     return ctx.api2(base).then(function (d) {
-      state.items = (d && d.items) || []; state.answers = (d && d.answers) || {};
+      state.items = (d && d.items) || []; state.answers = (d && d.answers) || {}; state.firstCategory = (d && d.first_category) || '';
       if (!state.items.some(function (i) { return i.yes_makes_mapped; })) state.onlyNow = false;
       render(); var first = list.querySelector('tr.rv-row'); if (first) first.focus();
     }).catch(function (e) { status.textContent = (ctx.describeError ? ctx.describeError(e, 'The review') : 'The review could not load: ' + e.message); });

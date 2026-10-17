@@ -9,6 +9,9 @@ const items = [
   { id: 'B|Thr', fp: 'B', plugin: 'Alpha', category: 'compressor', control: 'Thr', suggested_role: 'threshold', yes_makes_mapped: false },
 ];
 const g = R.__test.group(items, true), all = R.__test.group(items, false);
+const mixed = items.concat([{ id: 'C|Gain', fp: 'C', plugin: 'Zeta EQ', category: 'eq', control: 'Gain', suggested_role: 'gain', yes_makes_mapped: true }]);
+assert.deepStrictEqual(R.__test.group(mixed, false, 'eq').map((c) => c.fp), ['C', 'A', 'B']);   // EQ counts-now first, then by name
+assert.deepStrictEqual(R.__test.group(mixed, false).map((c) => c.fp), ['A', 'C', 'B']);         // no first_category: by name
 assert.strictEqual(g.length, 1); assert.strictEqual(all.length, 2); assert.strictEqual(all[0].fp, 'A');   // counts-now first
 const c = R.__test.counts(items, { 'A|Mix': { verdict: 'yes' }, 'B|Thr': { verdict: 'no' } });
 assert.deepStrictEqual([c.answered, c.countsNowMaps, c.mapsMappedByAnswers, c.maps], [2, 1, 1, 2]);
@@ -54,7 +57,7 @@ function call(method, body, session, query) {
   const picked = await call('POST', { id: 'B|Thr', verdict: 'role', role: 'makeup', section: 'Comp' }, admin);
   assert.strictEqual(picked.body.answer.role, 'makeup'); assert.strictEqual(picked.body.answer.section, 'Comp'); assert.strictEqual(picked.body.answer.suggested_role, 'threshold');
   await call('POST', { id: 'B|Thr', verdict: 'clear' }, admin);
-  const got = await call('GET', null, admin); assert.strictEqual(got.body.items.length, 3); assert.strictEqual(got.body.answers['A|Mix'].verdict, 'yes');
+  const got = await call('GET', null, admin); assert.strictEqual(got.body.items.length, 3); assert.strictEqual(got.body.first_category, ''); assert.strictEqual(got.body.answers['A|Mix'].verdict, 'yes');
   const ex = await call('GET', null, admin, { export: '1' }); assert.strictEqual(ex.body.schema, 'ejmap_human_checks/1'); assert.strictEqual(ex.body.answers.length, 1);
   await call('POST', { id: 'A|Mix', verdict: 'clear' }, admin);
   assert.strictEqual(Object.keys((await call('GET', null, admin)).body.answers).length, 0);

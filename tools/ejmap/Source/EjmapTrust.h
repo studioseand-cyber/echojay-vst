@@ -103,7 +103,7 @@ inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, cons
     return v;
 }
 // a control is read back when at least 2 readings were judged and none failed; one failure is a failed read-back (said, kept)
-struct ControlReadback { int judged = 0, failed = 0; juce::String worst, source; bool proven() const { return judged >= 2 && failed == 0; } };
+struct ControlReadback { int judged = 0, failed = 0, superseded = 0; juce::String worst, source; bool proven() const { return judged >= 2 && failed == 0; } };   // superseded: old failures a newer clean read-back set aside
 inline void addReading (ControlReadback& r, const Verdict& v, const juce::String& source)
 {
     if (! v.judged) return;
@@ -398,35 +398,91 @@ inline Readings readingsOfRecord (const juce::var& rec)
     readingsWalk (rec, out);
     return out;
 }
-// credit one map from the readings of its product's records (any version): per control, every reading judged against THIS map
-inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, const std::vector<std::pair<juce::String, Readings>>& sources)
+// WHEN AND ON WHAT VERSION a record read its displays (17 Oct, the recency rule): fixtures carry version + sampledAt, Phase B rows and
+// profiles plugin.version + measured.date, the read-back sweep version + measuredAt. Time 0 = the record does not say
+struct SourceMeta { juce::String version; juce::int64 atMs = 0; };
+inline juce::int64 stampMs (const juce::String& s)
+{
+    const auto t = s.trim(); if (t.isEmpty()) return 0;
+    if (t.length() >= 15 && t[8] == 'T' && t.substring (0, 8).containsOnly ("0123456789"))   // 20261016T232136 (nowStamp)
+        return juce::Time (t.substring (0, 4).getIntValue(), t.substring (4, 6).getIntValue() - 1, t.substring (6, 8).getIntValue(),
+                           t.substring (9, 11).getIntValue(), t.substring (11, 13).getIntValue(), t.substring (13, 15).getIntValue(), 0, true).toMilliseconds();
+    if (t.length() == 10 && t[4] == '-' && t[7] == '-')                                       // 2026-10-04: the start of that day
+        return juce::Time (t.substring (0, 4).getIntValue(), t.substring (5, 7).getIntValue() - 1, t.substring (8, 10).getIntValue(), 0, 0, 0, 0, true).toMilliseconds();
+    return juce::Time::fromISO8601 (t).toMilliseconds();
+}
+inline SourceMeta metaOfRecord (const juce::var& rec)
+{
+    SourceMeta m;
+    m.version = rec.getProperty ("version", rec.getProperty ("plugin", {}).getProperty ("version", "")).toString();
+    m.atMs = stampMs (rec.getProperty ("measuredAt", rec.getProperty ("sampledAt", rec.getProperty ("measured", {}).getProperty ("date", ""))).toString());
+    return m;
+}
+// THE MAP'S CONTROLS, both formats (17 Oct): the controls block, plus the older role-keyed params block (CLA-76, PuigChild 670) for any
+// control the controls block does not carry - a params entry with an anchor table is read back as an anchored control
+struct MapControl { juce::String name; juce::var c; };   // the map's own objects are never written (a var copy shares them)
+inline std::vector<MapControl> mapControls (const juce::var& map)
+{
+    std::vector<MapControl> out; std::set<juce::String> names;
+    if (const auto* co = map.getProperty ("controls", {}).getDynamicObject())
+        for (const auto& p : co->getProperties())
+        {
+            const auto n = p.value.getProperty ("name", p.name.toString()).toString();
+            names.insert (n); out.push_back ({ n, p.value });
+        }
+    if (const auto* po = map.getProperty ("params", {}).getDynamicObject())
+        for (const auto& p : po->getProperties())
+        {
+            const auto& c = p.value; const auto n = c.getProperty ("name", "").toString();
+            if (n.isEmpty() || names.count (n) || anchorsOf (c).size() < 2) continue;
+            auto* o = new juce::DynamicObject(); o->setProperty ("name", n); o->setProperty ("index", c.getProperty ("index", -1)); o->setProperty ("kind", "anchored");
+            o->setProperty ("anchors", c.getProperty ("anchors", {})); o->setProperty ("from", "params"); out.push_back ({ n, juce::var (o) }); names.insert (n);
+        }
+    return out;
+}
+// credit one map from the readings of its product's records (any version): per control, every reading judged against THIS map.
+// THE RECENCY RULE (Kathy, 17 Oct): a control's failed reading is set aside when a NEWER source on the map's own version read the
+// control back at 2+ settings with none failing; an old failure stands only if nothing newer contradicts it (an undated one stands)
+inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, const std::vector<std::pair<juce::String, Readings>>& sources,
+                                                          const std::vector<SourceMeta>& metas = {})
 {
     std::map<juce::String, ControlReadback> out;
-    const auto* co = map.getProperty ("controls", {}).getDynamicObject(); if (co == nullptr) return out;
-    for (const auto& p : co->getProperties())
+    const auto mapVersion = map.getProperty ("identity", {}).getProperty ("version", "").toString();
+    for (const auto& [name, c] : mapControls (map))
     {
-        const auto& c = p.value; const auto name = c.getProperty ("name", p.name.toString()).toString();
-        if (c.getProperty ("kind", "").toString() == "mode")
-        {   // a stepped control: the reading at a norm must show the label the map has nearest that norm
-            const auto* lo = c.getProperty ("labels", {}).getDynamicObject(); if (lo == nullptr) continue;
-            for (const auto& [tag, rs] : sources)
-                if (const auto it = rs.find (name); it != rs.end())
-                    for (const auto& r : it->second)
-                    {
-                        juce::String best; double bd = 1e9;
-                        for (const auto& l : lo->getProperties()) { const double d = std::abs ((double) l.value - r.norm); if (d < bd) { bd = d; best = l.name.toString(); } }
-                        if (bd > 0.02 || r.display.trim().isEmpty()) continue;   // not at one of the map's own positions: nothing to compare
-                        Verdict v; v.judged = true; v.pass = r.display.trim().equalsIgnoreCase (best.trim());
-                        v.why = "norm " + juce::String (r.norm, 3) + ": the map's label '" + best + "', the display read '" + r.display.trim() + "'";
-                        addReading (out[name], v, tag);
-                    }
-            continue;
-        }
-        if (c.getProperty ("kind", "").toString() != "anchored") continue;
+        const bool mode = c.getProperty ("kind", "").toString() == "mode";
+        if (! mode && c.getProperty ("kind", "").toString() != "anchored") continue;
+        const auto* lo = c.getProperty ("labels", {}).getDynamicObject(); if (mode && lo == nullptr) continue;
         const auto a = anchorsOf (c);
-        for (const auto& [tag, rs] : sources)
-            if (const auto it = rs.find (name); it != rs.end())
-                for (const auto& r : it->second) addReading (out[name], judgeObservation (a, r.norm, r.display), tag);
+        std::vector<std::pair<size_t, Verdict>> vs;   // (source, verdict)
+        for (size_t si = 0; si < sources.size(); ++si)
+            if (const auto it = sources[si].second.find (name); it != sources[si].second.end())
+                for (const auto& r : it->second)
+                {
+                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display) }); continue; }
+                    // a stepped control: the reading at a norm must show the label the map has nearest that norm
+                    juce::String best; double bd = 1e9;
+                    for (const auto& l : lo->getProperties()) { const double d = std::abs ((double) l.value - r.norm); if (d < bd) { bd = d; best = l.name.toString(); } }
+                    if (bd > 0.02 || r.display.trim().isEmpty()) continue;   // not at one of the map's own positions: nothing to compare
+                    Verdict v; v.judged = true; v.pass = r.display.trim().equalsIgnoreCase (best.trim());
+                    v.why = "norm " + juce::String (r.norm, 3) + ": the map's label '" + best + "', the display read '" + r.display.trim() + "'";
+                    vs.push_back ({ si, v });
+                }
+        juce::int64 newestClean = 0;   // the newest source on this map's version that read this control back cleanly at 2+ settings
+        if (metas.size() == sources.size())
+            for (size_t si = 0; si < sources.size(); ++si)
+            {
+                if (metas[si].atMs <= 0 || metas[si].version != mapVersion) continue;
+                int pass = 0, fail = 0; for (const auto& [s, v] : vs) if (s == si && v.judged) (v.pass ? pass : fail)++;
+                if (pass >= 2 && fail == 0) newestClean = std::max (newestClean, metas[si].atMs);
+            }
+        auto& cr = out[name];
+        for (const auto& [si, v] : vs)
+        {
+            if (v.judged && ! v.pass && newestClean > 0 && metas[si].atMs > 0 && metas[si].atMs < newestClean) { ++cr.superseded; continue; }
+            addReading (cr, v, sources[si].first);
+        }
+        if (cr.judged == 0 && cr.superseded == 0) out.erase (name);
     }
     return out;
 }

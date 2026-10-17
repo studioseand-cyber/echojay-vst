@@ -1,6 +1,6 @@
 /**
  * GET   /api/v2/admin/plugin-review
- *         -> { schema: "ejmap_role_review/1", generated_at, items: [...], answers: { <id>: answer } }
+ *         -> { schema: "ejmap_role_review/1", generated_at, first_category, items: [...], answers: { <id>: answer } }
  * GET   /api/v2/admin/plugin-review?export=1
  *         -> { schema: "ejmap_human_checks/1", items_generated_at, answers: [answer...] }   (what EJ Map's --trust-levels --human reads)
  * POST  /api/v2/admin/plugin-review  { id, verdict, role?, section? }
@@ -68,7 +68,7 @@ module.exports = async function handler(req, res) {
       const { doc, answers } = await readAll();
       if (req.query && req.query.export === '1')
         return res.status(200).json({ schema: 'ejmap_human_checks/1', items_generated_at: doc.generated_at || null, answers: Object.values(answers) });
-      return res.status(200).json({ schema: doc.schema, generated_at: doc.generated_at || null, items: doc.items || [], answers });
+      return res.status(200).json({ schema: doc.schema, generated_at: doc.generated_at || null, first_category: doc.first_category || '', items: doc.items || [], answers });
     }
     const body = typeof req.body === 'string' ? parse(req.body) : req.body;
     if (!body || typeof body.id !== 'string' || !VERDICTS.has(body.verdict)) return res.status(400).json({ error: 'bad_body' });

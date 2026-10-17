@@ -6,6 +6,7 @@
   "schema": "ejmap_role_review/1",
   "generated_at": "2026-10-16T17:36:44.786+01:00",
   "source": "ejmap --trust-levels",
+  "first_category": "eq",               // optional (17 Oct): this category's cards come first among the "counts now" ones (--review-first <category>)
   "items": [
     {
       "id": "<map fp>|<control name>",

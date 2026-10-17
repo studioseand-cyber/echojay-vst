@@ -6,7 +6,7 @@
 
 Standard library only; listens on 127.0.0.1 alone; nothing leaves this Mac. Every answer is written to --answers at once
 (atomic replace), in the format the admin's import reads (ejmap_human_checks/1), and EJ Map's --trust-levels --human reads.
-    GET  /api/review                        -> { schema, generated_at, items, answers: { id: answer } }
+    GET  /api/review                        -> { schema, generated_at, first_category, items, answers: { id: answer } }
     POST /api/review { id, verdict, role?, section? } -> { ok, answer, counts }
          verdict: yes (the suggestion) | role (picked role + section) | no | other (not a main control) | unsure (counts neither way) | clear
 """
@@ -51,7 +51,7 @@ def make_handler(items_path, answers_path):
         def do_GET(self):
             if self.path.split('?')[0] == '/api/review':
                 rv, hc, by = self.state()
-                return self.send(200, {'schema': rv.get('schema'), 'generated_at': rv.get('generated_at'), 'items': rv.get('items', []), 'answers': by})
+                return self.send(200, {'schema': rv.get('schema'), 'generated_at': rv.get('generated_at'), 'first_category': rv.get('first_category', ''), 'items': rv.get('items', []), 'answers': by})
             files = {'/': ('index.html', 'text/html; charset=utf-8'), '/admin-plugin-review.js': ('admin-plugin-review.js', 'text/javascript'),
                      '/review.css': ('review.css', 'text/css')}
             f = files.get(self.path.split('?')[0])

@@ -28,10 +28,9 @@ struct Want { int index = -1; juce::String name, kind; std::vector<double> norms
 inline std::vector<Want> plan (const juce::var& map)
 {
     std::vector<Want> out;
-    const auto* co = map.getProperty ("controls", {}).getDynamicObject(); if (co == nullptr) return out;
-    for (const auto& p : co->getProperties())
+    for (const auto& [name, c] : trust::mapControls (map))   // both formats: the controls block and the older params block (17 Oct)
     {
-        const auto& c = p.value; Want w; w.index = (int) c.getProperty ("index", -1); w.name = c.getProperty ("name", p.name.toString()).toString();
+        Want w; w.index = (int) c.getProperty ("index", -1); w.name = name;
         w.kind = c.getProperty ("kind", "").toString(); if (w.index < 0) continue;
         if (w.kind == "anchored") for (const auto& t : trust::readbackTargets (trust::anchorsOf (c))) w.norms.push_back (t.norm);
         else if (w.kind == "mode")
@@ -51,6 +50,22 @@ inline juce::String specOf (const std::vector<Want>& ws)
     juce::StringArray parts;
     for (const auto& w : ws) { juce::StringArray ns; for (double n : w.norms) ns.add (juce::String (n, 6)); parts.add (juce::String (w.index) + ":" + ns.joinIntoString (",")); }
     return parts.joinIntoString (";");
+}
+
+// WHICH MAP (17 Oct: the overnight run read Meaw Chain / TB_Sibalance / Valhalla against their newer VST3 map): the probe loads the
+// AudioUnit, so its map is the AudioUnit map of the INSTALLED version, else the newest AudioUnit map; a VST3 map is never used
+struct MapFile { juce::var map; juce::int64 modMs = 0; };
+inline const juce::var* pickMap (const std::vector<MapFile>& cands, const juce::String& installedVersion)
+{
+    const MapFile* best = nullptr; int bestRank = -1;
+    for (const auto& c : cands)
+    {
+        const auto id = c.map.getProperty ("identity", {});
+        if (id.getProperty ("format", "").toString() != "AudioUnit") continue;
+        const int rank = id.getProperty ("version", "").toString() == installedVersion ? 1 : 0;
+        if (rank > bestRank || (rank == bestRank && c.modMs > best->modMs)) { best = &c; bestRank = rank; }
+    }
+    return best != nullptr ? &best->map : nullptr;
 }
 
 struct Read { double norm = 0.0; bool landed = false; juce::String text; };
@@ -110,13 +125,12 @@ inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir,
     const auto raw = opt.out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("raw"); raw.createDirectory();
     // THE GUARD before anything loads (Kathy, 16 Oct): licence-bound products are dropped here and never reach the probe
     const auto kept = guardedPlugins (names, false, "READBACK");
-    std::map<juce::String, juce::var> mapOf;   // product -> its map (the newest file when there are several)
-    std::map<juce::String, juce::Time> ageOf;
+    std::map<juce::String, std::vector<readback::MapFile>> mapsOf;   // product -> every map file it has (readback::pickMap chooses)
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         const auto m = juce::JSON::parse (f.loadFileAsString()); const auto n = m.getProperty ("identity", {}).getProperty ("name", "").toString();
         if (n.isEmpty() || ! names.contains (n)) continue;
-        if (! ageOf.count (n) || f.getLastModificationTime() > ageOf[n]) { mapOf[n] = m; ageOf[n] = f.getLastModificationTime(); }
+        mapsOf[n].push_back ({ m, f.getLastModificationTime().toMilliseconds() });
     }
     const auto untilMs = juce::String (std::getenv ("EJ_RUNALL_UNTIL_MS") != nullptr ? std::getenv ("EJ_RUNALL_UNTIL_MS") : "").getLargeIntValue();
     int done = 0, skipped = 0, refused = 0, credited = 0;
@@ -125,8 +139,9 @@ inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir,
     {
         if (phasebStop() != 0) { say ("READBACK: stopped - the rest run on the resume"); return 130; }
         if (untilMs > 0 && juce::Time::currentTimeMillis() >= untilMs) { say ("READBACK: the run's hour reached - the rest run on the resume"); return 130; }
-        if (! mapOf.count (desc.name)) { say ("READBACK: " + desc.name + " - no map in the folder"); ++refused; continue; }
-        const auto& map = mapOf[desc.name];
+        const auto* picked = mapsOf.count (desc.name) ? readback::pickMap (mapsOf[desc.name], desc.version) : nullptr;
+        if (picked == nullptr) { say ("READBACK: " + desc.name + " - no AudioUnit map in the folder"); ++refused; continue; }
+        const auto map = *picked;
         const auto stem = "AudioUnit_" + juce::String::toHexString (desc.uniqueId).toLowerCase() + "_" + desc.version;
         const auto recFile = outDir.getChildFile (stem + ".readback.json");
         if (recFile.existsAsFile()) { ++skipped; continue; }   // resumable
