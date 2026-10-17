@@ -1703,12 +1703,31 @@ int main (int argc, char* argv[])
         const juce::File installed { "/Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay Link.component"
                                      "/Contents/MacOS/EchoJay Link" };
         if (! given.existsAsFile() || ! installed.existsAsFile()) return false;
-        const bool differs = given.getSize() != installed.getSize();
-        std::printf ("  the Link we were given is %lld bytes; the INSTALLED one is %lld - %s\n",
-                     (long long) given.getSize(), (long long) installed.getSize(),
-                     differs ? "DIFFERENT BINARIES, so AU hosting will load the installed one and every "
+        // ---- IDENTITY IS CONTENT, NOT SIZE (17 Oct 2026, and this cost two runs) ---------------
+        //
+        // The first cut compared getSize(), and today the two Link binaries are EXACTLY the same
+        // length - 33173968 bytes - while being different builds: UUID 3DA1BAB8 in build-guards
+        // against 14DBCBC3 installed. So the test said "the same binary, so the Link rows are about
+        // this build", the rows ran, and I9c and A2 went red on the artefact the test exists to
+        // catch. A false negative in a verifier is worse than no verifier, because it is believed.
+        //
+        // This tree has the lesson written down once already, about LTO-folded strings: identity is
+        // proved by the UUID or by the content, never by a proxy that can coincide. An MD5 of the
+        // two files costs about a tenth of a second, once, at startup.
+        const auto hashOf = [] (const juce::File& f) -> juce::String
+        {
+            juce::FileInputStream in (f);
+            if (! in.openedOk()) return {};
+            return juce::MD5 (in).toHexString();
+        };
+        const auto a = hashOf (given), b = hashOf (installed);
+        const bool differs = a.isNotEmpty() && b.isNotEmpty() && a != b;
+        std::printf ("  the Link we were given hashes %s (%lld bytes); the INSTALLED one hashes %s - %s\n",
+                     a.substring (0, 12).toRawUTF8(), (long long) given.getSize(),
+                     b.substring (0, 12).toRawUTF8(),
+                     differs ? "DIFFERENT BUILDS, so AU hosting will load the installed one and every "
                                "Link row about this build's behaviour SKIPS (item 0b)"
-                             : "the same binary, so the Link rows are about this build");
+                             : "the same build, so the Link rows are about this build");
         return differs;
     }();
     const bool linkMixedBuild = gLinkIsMixedBuild;
@@ -5344,7 +5363,17 @@ int main (int argc, char* argv[])
             // from its last sidecar write, so an add that went nowhere looks like an add that was
             // refused. If the Link is no longer usable at the end of the row, the row cannot judge.
             const bool linkStillThere = linkIsUsable (st, liveLink);
-            if (! linkStillThere)
+            if (gLinkIsMixedBuild)
+            {
+                scenSkip ("A2", "a built-in add with settings on a Link, and the main rack follows it",
+                          "the Link that AU hosting loaded is the INSTALLED binary, not the one this run "
+                          "was given (item 0b): this row asserts that an add with settings lands on a "
+                          "Link AND that the V2's strip follows it, and in a mixed pairing those two "
+                          "halves come from different builds. NEVER counted as a pass.", "A");
+                scenSkip ("G2", "the rack strip follows a Link change (the build road)",
+                          "same Link as A2: a mixed pairing (item 0b)", "A");
+            }
+            else if (! linkStillThere)
             {
                 scenSkip ("A2", "a built-in add with settings on a Link, and the main rack follows it",
                           "the Link this row addressed (" + liveLink + ") was not usable by the end of "
