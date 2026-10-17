@@ -789,6 +789,69 @@ int main()
                "stopped and the text goes down the composer's own road (Sean's #21, unchanged)");
     }
 
+    // ---- W1-W4: AN AGENT STOP READS AS WORDS, IN BOTH DIRECTIONS (17 Oct 2026) ------------------
+    //
+    // What Sean read on 17b: "The agent stopped: result toolu_01VtSXwQ7CTqLmVPLGMUao8n is over 8 KB;
+    // send the compact summary shape (CONTRACT_AGENT_TOOLS section 5)". A guard that only checked
+    // the happy wording would have passed all week, so this is held BOTH ways: the known codes get
+    // their sentence, and a sentence carrying machinery is refused even when the code is unknown.
+    {
+        const auto tooBig = EJAgentClient::plainStopLine ("result_too_large",
+            "result toolu_01VtSXwQ7CTqLmVPLGMUao8n is over 8 KB; send the compact summary shape "
+            "(CONTRACT_AGENT_TOOLS section 5)");
+        check (! tooBig.contains ("toolu_") && ! tooBig.containsIgnoreCase ("CONTRACT_")
+               && ! tooBig.containsIgnoreCase ("8 KB") && tooBig.containsIgnoreCase ("too big")
+               && tooBig.containsIgnoreCase ("less at a time"),
+               "W1 result_too_large reads as words: no tool id, no byte limit, no contract reference, "
+               "and it says what to do next");
+
+        const auto unknownClean = EJAgentClient::plainStopLine ("some_new_code",
+                                                                "The widget shelf fell over.");
+        check (unknownClean == "The widget shelf fell over.",
+               "W2 an unknown code with a plain sentence keeps the server's own words");
+
+        const auto unknownDirty = EJAgentClient::plainStopLine ("some_new_code",
+            "result toolu_01ABC is over 8 KB; see CONTRACT_AGENT_TOOLS section 5");
+        check (! unknownDirty.contains ("toolu_") && ! unknownDirty.containsIgnoreCase ("CONTRACT_")
+               && unknownDirty.isNotEmpty(),
+               "W3 ...but an unknown code whose text carries a tool id or a contract reference is "
+               "REPLACED, not dressed up");
+
+        const auto empty = EJAgentClient::plainStopLine ("", "");
+        check (empty.isNotEmpty() && ! empty.containsIgnoreCase ("error."),
+               "W4 no code and no text still produces a sentence, not a blank or \"an error\"");
+    }
+
+    // ---- W5: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ------------------------
+    // The executor's own gate, asked directly with a result the size of Sean's machine: 420 entries
+    // of the shape 17b sent. It must come back inside the contract's 8 KB.
+    {
+        juce::Array<juce::var> bad;
+        for (int i = 0; i < 420; ++i)
+        {
+            auto* e = new juce::DynamicObject();
+            e->setProperty ("name", "Seeded Unloadable " + juce::String (i + 1));
+            e->setProperty ("loadable", false);
+            e->setProperty ("why", "is installed but its VST3 has no arm64 build, so it cannot run in this host");
+            bad.add (juce::var (e));
+        }
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("what", "inventory");
+        o->setProperty ("notLoadable", juce::var (bad));
+        juce::var big (o);
+        const auto beforeBytes = (int) juce::JSON::toString (big, true).getNumBytesAsUTF8();
+        // The BASE compactResult - the one the client calls through ToolExecutor&, and the one a
+        // fixture executor inherits. ExecutorRead overrides it with fitUnder8K; this proves the
+        // floor, which is what protects a run when some other executor is in the seat.
+        FakeExecutor fx;
+        const auto after = fx.compactResult (big);
+        const auto afterBytes = (int) juce::JSON::toString (after, true).getNumBytesAsUTF8();
+        check (beforeBytes > 8192 && afterBytes <= 8192,
+               "W5 a result the size of his machine's unloadable list (" + juce::String (beforeBytes)
+               + " bytes) is compacted under the contract's 8 KB (" + juce::String (afterBytes)
+               + ") by the base gate every executor inherits");
+    }
+
     // ---- A8 LIVES LAST, BECAUSE IT STOPS A RUN (16 Oct 2026) ------------------------------------
     // When this block sat in the middle of the file the legs after it were testing the leftovers: W1b
     // fed its frames into the stopped session and waited for a post that could never come, and
