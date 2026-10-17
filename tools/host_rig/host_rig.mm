@@ -6557,11 +6557,28 @@ int main (int argc, char* argv[])
             const int before = (int) rowBefore.getProperty ("slotCount", -1);
             const auto name = rowBefore.getProperty ("name", juce::var()).toString();
             const auto ask = "add a compressor on " + (name.isNotEmpty() ? name : linkUid);
-            const auto r = askAgent (rig, ask);
+            auto r = askAgent (rig, ask);
             // the Link publishes its own rack; wait for the sidecar to catch up rather than reading at once
             int after = before;
             rig.until ([&] (const juce::var& s)
             { after = (int) linkRowOf (s, linkUid).getProperty ("slotCount", -1); return after > before; }, 15000);
+            // ---- ONE RETRY WHEN THE LINK NEVER ANSWERED (17 Oct, S6 round 5) ------------------
+            // The card said it in its own words: "the rack never acknowledged it within 8 s - it may
+            // be gone, or its track may be disabled". The Link was neither; it was busy, most likely
+            // still settling the rack an earlier row had rebuilt (queue item 13's five-second
+            // unanswered read is the same window from the other side). This row's subject is that an
+            // add on another track's Link LANDS - not that it lands on the first attempt inside an
+            // eight-second window - so a missed ack is tried once more and a failure then means it
+            // stayed unacknowledged. The ack window itself is queue item 16.
+            if (after <= before && r.text.containsIgnoreCase ("never acknowledged"))
+            {
+                std::printf ("        (the Link did not acknowledge within its 8 s window - asking once "
+                             "more before judging; the window itself is queue item 16)\n");
+                Rig::pump (2000);
+                r = askAgent (rig, ask);
+                rig.until ([&] (const juce::var& s)
+                { after = (int) linkRowOf (s, linkUid).getProperty ("slotCount", -1); return after > before; }, 15000);
+            }
             const bool landed = before >= 0 && after == before + 1;
             row ("L1", landed, ask,
                  "that Link's own sidecar: " + juce::String (before) + " -> " + juce::String (after)
@@ -6800,10 +6817,39 @@ int main (int argc, char* argv[])
                           << (int) l.getProperty ("slotCount", -1);
                 return c;
             };
+            // ---- A LINK LEAVING IS NOT A RACK BEING EDITED (17 Oct, S6 round 5) --------------
+            // The census was compared as one STRING, so when the Vox_Lead Link's registry row went
+            // away mid-row the line read "A RACK CHANGED: own=1 88_7even Vox_Lead_01=1 ... -> own=1
+            // ..." - a rack DISAPPEARING, not a slot being added anywhere. The claim this row makes
+            // is that nothing was added to any rack, so it compares the racks present in BOTH reads
+            // and names any that came or went instead of counting them as an edit.
+            auto censusMap = [&] (const juce::var& st)
+            {
+                std::map<juce::String, int> m;
+                m["own"] = ownSlotCount (st);
+                if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                        m[l.getProperty ("name", juce::var()).toString()]
+                            = (int) l.getProperty ("slotCount", -1);
+                return m;
+            };
             const auto censusBefore = rackCensus (rig.freshState());
+            const auto mapBefore    = censusMap (rig.freshState());
             const auto r = askAgent (rig, "add a compressor on the Trombone bus", 120000, /*answerAsks*/ false);
             const auto censusAfter = rackCensus (rig.freshState());
-            const bool safe    = censusAfter == censusBefore;   // EVERY rack, not just the open one
+            const auto mapAfter    = censusMap (rig.freshState());
+            juce::String grew, cameOrWent;
+            for (const auto& [name, before] : mapBefore)
+            {
+                const auto it = mapAfter.find (name);
+                if (it == mapAfter.end()) { cameOrWent << (cameOrWent.isEmpty() ? "" : ", ") << name << " left"; continue; }
+                if (it->second > before)
+                    grew << (grew.isEmpty() ? "" : ", ") << name << " " << before << " -> " << it->second;
+            }
+            for (const auto& [name, after] : mapAfter)
+                if (mapBefore.find (name) == mapBefore.end())
+                    cameOrWent << (cameOrWent.isEmpty() ? "" : ", ") << name << " appeared";
+            const bool safe = grew.isEmpty();   // EVERY rack that was there before, not just the open one
             const bool itAsked = r.sawAsk;
             // IT MUST SAY SOMETHING ABOUT THE TRACK, by either road. Requiring a STRUCTURED ask was too
             // narrow: the model answers this two ways, both honest - sometimes a talk(ask) with the real
@@ -6817,7 +6863,7 @@ int main (int argc, char* argv[])
                                 || said.containsIgnoreCase ("no track")   || said.containsIgnoreCase ("not linked")
                                 || said.containsIgnoreCase ("which track");
             row ("L5", safe && explained, "add a compressor on the Trombone bus (no such track)",
-                 juce::String (! safe ? "A RACK CHANGED: " + censusBefore + " -> " + censusAfter
+                 juce::String (! safe ? "A RACK GREW: " + grew + "  (" + censusBefore + " -> " + censusAfter + ")"
                                : explained ? (itAsked ? "it asked which track and touched nothing"
                                                       : "it said plainly it cannot see that track, and touched nothing")
                                            : "nothing changed, but it NEVER SAID WHY - silence is not a refusal")

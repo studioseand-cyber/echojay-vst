@@ -1521,3 +1521,31 @@ would mean a plain add is placed by role rather than by arrival.
 The leg to write: a known rack, a `move` op through the same door the agent uses, and an assertion on
 the published order AND on the step's wording. Deterministic, in the mock, no model involved - which
 is the only way to tell a product rule from a plan.
+
+---
+
+## item 16 - the 8-second chain-command ack window, and what the plugin says when it expires (17 Oct)
+
+S6 round 5's L1 ("add a compressor on 88_7even Kick_2_01") came back with the Link's sidecar
+unchanged and this on the card:
+
+> "the rack never acknowledged it within 8 s - it may be gone, or its track may be disabled"
+
+The Link was neither gone nor disabled: it was a live out-of-process link_host that answered other
+rows before and after. The likeliest cause is that it was still settling a rack an earlier row had
+rebuilt - which is item 13's "slot read unanswered after 5.0 s" seen from the other side of the same
+channel.
+
+Two questions, both ours:
+
+1. **Is 8 s the right window, and should a missed ack be retried once before it is reported?** A
+   person watching a chain get built and then being told their track may be disabled has been told
+   something false about their session. A retry inside the plugin, bounded and logged, would turn
+   most of these into a slightly slower success.
+2. **The wording when it does expire.** "it may be gone, or its track may be disabled" is a guess
+   presented as two possibilities, and neither was true here. If the registry says the row is live
+   and the pid is alive, the honest sentence is that the rack did not answer in time and the edit was
+   not made - no speculation about the track.
+
+The runner now retries once in that one row, so a single missed window does not fail a gate, and
+says in the log that it did. That is a measurement, not a fix; the fix is above.
