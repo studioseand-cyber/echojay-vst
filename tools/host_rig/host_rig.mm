@@ -1205,6 +1205,15 @@ static juce::var linkRowOf (const juce::var& st, const juce::String& uid)
     return {};
 }
 
+/** THE LINKS THIS RUN LAUNCHED ITSELF (17 Oct 2026).
+
+    Filled when the out-of-process link_hosts come up, and the strongest fact the runner has: these
+    processes are started by the rig and live for the whole run, so a row that addresses one of them
+    is addressing something that is certainly there. Rows created and abandoned DURING a run - T3's
+    second instance and its kin - leave registry rows that are connected, named and carry a slot
+    count from their last sidecar write, which no check of those three fields can see through. */
+static juce::StringArray gLaunchedLinkUids;
+
 /** IS THIS A LINK A ROW CAN BE ABOUT? (17 Oct 2026, found by the gate's SECOND S6 run.)
 
     The registry outlives the processes listed in it. The second run picked a uid left behind by an
@@ -1231,6 +1240,26 @@ static bool linkIsUsable (const juce::var& st, const juce::String& uid)
     a row must report as a skip rather than guess around. */
 static juce::String usableLinkUid (const juce::var& st, bool preferKick, juce::String* nameOut = nullptr)
 {
+    // THE ONES THIS RUN LAUNCHED COME FIRST. They are the only Links the runner can prove are alive,
+    // and preferring them is what stops A2 from addressing a row left behind by a row that ran
+    // earlier in this very pass - "the Link went 5 -> 5" over a rack whose live mirror held 2.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const bool launchedOnly = (pass == 0);
+        if (launchedOnly && gLaunchedLinkUids.isEmpty()) continue;
+        juce::String pick, pickName;
+        if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+            for (const auto& l : *arr)
+            {
+                const auto u = l.getProperty ("uid", juce::var()).toString();
+                if (launchedOnly && ! gLaunchedLinkUids.contains (u)) continue;
+                if (! linkIsUsable (st, u)) continue;
+                const auto n = l.getProperty ("name", juce::var()).toString();
+                if (preferKick && n.containsIgnoreCase ("Kick")) { if (nameOut != nullptr) *nameOut = n; return u; }
+                if (pick.isEmpty()) { pick = u; pickName = n; }
+            }
+        if (pick.isNotEmpty()) { if (nameOut != nullptr) *nameOut = pickName; return pick; }
+    }
     juce::String any, anyName;
     if (auto* arr = st.getProperty ("links", juce::var()).getArray())
         for (const auto& l : *arr)
@@ -1881,6 +1910,7 @@ int main (int argc, char* argv[])
                     if (lp->uid.isNotEmpty() && (int) st.getProperty ("slotCount", 0) > 0) break;
                 }
                 const auto st = lp->state();
+                if (lp->uid.isNotEmpty()) gLaunchedLinkUids.addIfNotAlreadyThere (lp->uid);
                 std::printf ("  link_host \"%s\": uid=%s  slots=%d [%s]  pid=%s\n",
                              lp->label.toRawUTF8(),
                              lp->uid.isEmpty() ? "(none yet)" : lp->uid.toRawUTF8(),
