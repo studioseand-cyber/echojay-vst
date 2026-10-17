@@ -1568,6 +1568,32 @@ int main (int argc, char* argv[])
     // written the way that cannot do it.
     const juce::File v2Comp   { juce::String (argv[1]) };
     const juce::File linkComp { juce::String (argv[2]) };
+    // ---- IS THE LINK WE WERE GIVEN THE LINK THAT WILL LOAD? (17 Oct 2026, item 0b) ------------
+    //
+    // registerAU registers this bundle's factory and then asks JUCE to instantiate the IDENTIFIER,
+    // and in a fresh process the system's INSTALLED component wins that lookup. So when the bundle
+    // handed to this runner differs from the one in ~/Library, every Link row is hosting the
+    // installed binary and no Link-side verdict about THIS build means anything.
+    //
+    // Measured by the binary's own size rather than asserted: two different builds of this plugin
+    // are never the same number of bytes, and a row that cannot tell which binary it is talking to
+    // must not claim to have tested one. Printed once, loudly, and the rows that assert THIS
+    // build's Link behaviour skip with it.
+    const bool linkMixedBuild = [&linkComp]
+    {
+        const auto given = linkComp.getChildFile ("Contents/MacOS")
+                               .getChildFile (linkComp.getFileNameWithoutExtension());
+        const juce::File installed { "/Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay Link.component"
+                                     "/Contents/MacOS/EchoJay Link" };
+        if (! given.existsAsFile() || ! installed.existsAsFile()) return false;
+        const bool differs = given.getSize() != installed.getSize();
+        std::printf ("  the Link we were given is %lld bytes; the INSTALLED one is %lld - %s\n",
+                     (long long) given.getSize(), (long long) installed.getSize(),
+                     differs ? "DIFFERENT BINARIES, so AU hosting will load the installed one and every "
+                               "Link row about this build's behaviour SKIPS (item 0b)"
+                             : "the same binary, so the Link rows are about this build");
+        return differs;
+    }();
     const int mockPort = juce::String (argv[3]).getIntValue();
     const juce::File v2vst3  { argc > 4 ? juce::String (argv[4]) : juce::String() };
 
@@ -5593,7 +5619,19 @@ int main (int argc, char* argv[])
                 scenSkip ("A3-live", "live: add a third party, dialled and confirmed", tp.why, "A");
 
             // ---- A4 live: the same on a Link -----------------------------------------------------
-            if (tp.ok && ! linkUid.isEmpty())
+            // NOT ON A MIXED BUILD (item 0b): if the Link that will load is the INSTALLED binary
+            // rather than the one built here, this row is about neither build - the V2 is new, the
+            // Link is old, and nothing ships in that shape. It skips, loudly, with the sizes that
+            // prove it, rather than failing the gate for a runner defect.
+            if (tp.ok && ! linkUid.isEmpty() && linkMixedBuild)
+                scenSkip ("A4-live", "live: the same add, on a Link",
+                          "the Link that AU hosting loads here is the INSTALLED binary, not the one this "
+                          "run built (item 0b: registerAU registers a factory and JUCE instantiates the "
+                          "IDENTIFIER, so the system's component wins in a fresh process). A V2 from this "
+                          "build talking to a Link from the last one is a configuration that never ships, "
+                          "so a verdict from it would be about nothing. A3-live proves the own rack; the "
+                          "Logic smoke test covers the Link. NEVER counted as a pass.", "A");
+            else if (tp.ok && ! linkUid.isEmpty())
                 repeated ("A4-live", "live: the same add, on a Link",
                           "Add " + tp.name + " to the Kick's rack and set its " + tp.paramName,
                           [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
@@ -5615,8 +5653,19 @@ int main (int argc, char* argv[])
                                   }, 15000);
                               const auto words = r.stepWords + " " + r.text;
                               if (! landed.containsIgnoreCase (tp.paramName))
-                              { why = "the Link's landed field still has no " + tp.paramName
-                                    + " fifteen seconds after the run: \"" + landed.substring (0, 110) + "\""; return false; }
+                              {
+                                  // ITEM 0b: on a mixed build the Link hosting this add is the
+                                  // INSTALLED one, which has neither this build's dial-pending wait
+                                  // nor its card composition - so an empty ledger here says nothing
+                                  // about the code under test.
+                                  why = linkMixedBuild
+                                      ? juce::String ("the Link hosting this is the INSTALLED binary, not "
+                                                      "the one built here (item 0b) - an empty ledger "
+                                                      "proves nothing about this build")
+                                      : ("the Link's landed field still has no " + tp.paramName
+                                         + " fifteen seconds after the run: \"" + landed.substring (0, 110) + "\"");
+                                  return false;
+                              }
                               if (words.containsIgnoreCase ("did NOT take")) { why = "the run said it did not take"; return false; }
                               return true;
                           });
