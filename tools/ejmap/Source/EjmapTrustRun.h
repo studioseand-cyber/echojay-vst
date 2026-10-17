@@ -253,6 +253,17 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
     return items;
 }
 
+// THE BRIDGE'S CONTROLS AND SETTINGS (17 Oct, "ALL DAWs"): the AU map's role controls are the ones that meet its category's needs (the
+// same rule the level uses); the bridge reads each at five settings across its range (plus the read-back's own 25/50/75 %)
+inline juce::StringArray roleControlsOf (const juce::var& map, const trust::Measured& measured)
+{
+    const auto cat = map.getProperty ("category", "").toString(); const auto R = trust::rolesOf (map, measured);
+    juce::StringArray out;
+    for (const auto& need : trust::needsFor (cat)) { const auto c = trust::meetNeed (need, R, cat); if (c.isEmpty()) return {}; for (const auto& n : c) out.addIfNotAlreadyThere (n); }
+    return out;
+}
+inline std::vector<double> bridgeNorms() { return { 0.1, 0.3, 0.5, 0.7, 0.9 }; }
+
 // CERTIFICATION BY FORMAT (Kathy, 17 Oct, rulings 2): certification counts only for the format it was measured in. The publish list
 // names products; the published profiles (--certified-profiles: the folder the publish zip unpacks to) say each one's format. A listed
 // product with no profile here, or one whose profile does not state its format, certifies nothing (said)
@@ -289,6 +300,8 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     out.getChildFile ("maps").createDirectory();
     const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
     std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0, supersededReadings = 0, supersededControls = 0, otherFormat = 0, snappedReadings = 0;
+    struct Entry { juce::var m; juce::String file, name, cat, fmt, version, heldWhy, bridgedFrom, bridgeWhy; trust::Level L; trust::Measured measured; const ProductData* pd = nullptr; trust::Bridge bridge; };
+    std::vector<Entry> entries;
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         auto m = readJson (f); if (! m.isObject()) continue;
@@ -306,7 +319,6 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         const auto heldWhy = heldWhyFor (held, name);
         const auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
         if (L.level == "unsure" && L.why.startsWith ("role not identified")) review.addArray (reviewItems (m, measured, rb));
-        ++counts[cat][L.level]; ++counts[cat]["maps"];
         // the credited copy: each judged control carries its read-back, as the sweep writes it
         if (auto* co = m.getProperty ("controls", {}).getDynamicObject())
             for (const auto& [ctl, r] : rb)
@@ -322,11 +334,54 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                             ++creditedControls; if (r.failed > 0) ++failedControls;
                         }
         out.getChildFile ("maps").getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (m));
-        auto* o = new juce::DynamicObject(); o->setProperty ("fp", m.getProperty ("fp", "")); o->setProperty ("product", name); o->setProperty ("category", cat);
-        o->setProperty ("version", m.getProperty ("identity", {}).getProperty ("version", "")); o->setProperty ("level", L.level); o->setProperty ("why", L.why);
-        juce::Array<juce::var> d; for (const auto& x : L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d)); rows.add (juce::var (o));
+        entries.push_back ({ m, f.getFileName(), name, cat, fmt, m.getProperty ("identity", {}).getProperty ("version", "").toString(), heldWhy, {}, {}, L, measured, &pd, {} });
+    }
+    // THE FORMAT BRIDGE (Kathy, 17 Oct, "ALL DAWs"): a VST3 below its AU twin (same product, same version) inherits the twin's certified /
+    // mapped level only when trust::bridgeFor finds every role control displaying the same values in both formats at 3+ shared settings.
+    // The plan for the guarded run that takes those readings is written beside the levels (bridge_plan.json, bridge_names.txt)
+    int bridged = 0, bridgeRefused = 0; auto* plan = new juce::DynamicObject(); juce::StringArray planNames;
+    auto rank = [] (const juce::String& l) { return l == "certified" ? 2 : l == "mapped" ? 1 : 0; };
+    for (auto& e : entries)
+    {
+        if (e.fmt != "VST3" || e.heldWhy.isNotEmpty()) continue;
+        const Entry* twin = nullptr;
+        for (const auto& a : entries)
+            if (a.fmt == "AudioUnit" && a.name == e.name && trust::versionKey (a.version) == trust::versionKey (e.version) && (twin == nullptr || rank (a.L.level) > rank (twin->L.level))) twin = &a;
+        if (twin == nullptr || rank (twin->L.level) <= rank (e.L.level)) continue;
+        const auto roles = roleControlsOf (twin->m, twin->measured);
+        e.bridge = trust::bridgeFor (twin->m, e.m, roles, e.pd->readings, e.pd->metas);
+        if (e.bridge.ok)
+        {
+            e.L.level = twin->L.level; e.L.why = "bridged from the AU map " + twin->m.getProperty ("fp", "").toString().substring (0, 12) + ": " + e.bridge.why;
+            e.L.dialable = roles; e.bridgedFrom = twin->m.getProperty ("fp", "").toString(); ++bridged; continue;
+        }
+        e.bridgeWhy = e.bridge.why; ++bridgeRefused;
+        auto* pc = new juce::DynamicObject();
+        for (const auto& [n, c] : trust::mapControls (twin->m))
+        {
+            if (! roles.contains (n)) continue;
+            juce::Array<juce::var> ns;
+            if (c.getProperty ("kind", "").toString() == "mode") { if (const auto* lo = c.getProperty ("labels", {}).getDynamicObject()) for (const auto& l : lo->getProperties()) if (ns.size() < 5) ns.add (juce::String ((double) l.value, 6)); }
+            else for (double x : bridgeNorms()) ns.add (juce::String (x, 6));
+            pc->setProperty (n, juce::var (ns));
+        }
+        plan->setProperty (e.name, juce::var (pc)); planNames.addIfNotAlreadyThere (e.name);
+    }
+    for (const auto& e : entries)
+    {
+        ++counts[e.cat][e.L.level]; ++counts[e.cat]["maps"];
+        auto* o = new juce::DynamicObject(); o->setProperty ("fp", e.m.getProperty ("fp", "")); o->setProperty ("product", e.name); o->setProperty ("category", e.cat);
+        o->setProperty ("format", e.fmt);   // 17 Oct (NEXT 1): the counts split by format
+        o->setProperty ("version", e.version); o->setProperty ("level", e.L.level); o->setProperty ("why", e.L.why);
+        if (e.bridgedFrom.isNotEmpty()) o->setProperty ("bridged_from", e.bridgedFrom);
+        if (e.bridgeWhy.isNotEmpty()) o->setProperty ("bridge_refused", e.bridgeWhy);
+        juce::Array<juce::var> d; for (const auto& x : e.L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d)); rows.add (juce::var (o));
     }
     out.getChildFile ("trust_levels.json").replaceWithText (juce::JSON::toString (juce::var (rows)));
+    out.getChildFile ("bridge_plan.json").replaceWithText (juce::JSON::toString (juce::var (plan)));
+    out.getChildFile ("bridge_names.txt").replaceWithText (planNames.joinIntoString ("\n") + (planNames.isEmpty() ? "" : "\n"));
+    std::cout << "TRUST-LEVELS: format bridge - " << bridged << " VST3 map(s) inherit their AU twin's level; " << bridgeRefused
+              << " below their twin without a bridge yet (bridge_plan.json lists their role controls for the guarded read-back)\n";
     {   // the review list (schema ejmap_role_review/1), the same file the local page and the admin page read
         auto* rv = new juce::DynamicObject(); rv->setProperty ("schema", "ejmap_role_review/1"); rv->setProperty ("generated_at", juce::Time::getCurrentTime().toISO8601 (true));
         rv->setProperty ("source", "ejmap --trust-levels");

@@ -72,7 +72,7 @@ inline juce::String specOf (const std::vector<Want>& ws)
 
 // WHICH MAP (17 Oct: the overnight run read Meaw Chain / TB_Sibalance / Valhalla against their newer VST3 map): the probe loads the
 // AudioUnit, so its map is the AudioUnit map of the INSTALLED version, else the newest AudioUnit map; a VST3 map is never used
-struct MapFile { juce::var map; juce::int64 modMs = 0; };
+struct MapFile { juce::var map; juce::int64 modMs = 0; juce::String file; };   // file: the map's file name (the anchor repair writes its copy under it)
 inline const juce::var* pickMap (const std::vector<MapFile>& cands, const juce::String& installedVersion, const juce::String& format = "AudioUnit")
 {
     const MapFile* best = nullptr; int bestRank = -1;
@@ -116,7 +116,8 @@ inline juce::String vst3VersionOf (const juce::String& out)
 }
 // THE VST3 CANDIDATES (17 Oct, rulings 2): the scan cache's VST3 entries for these names, through the same guard as the AudioUnits -
 // the guard memory and vendor rules by name, the PACE check on the .vst3 bundle (one that cannot be checked is held, never assumed clear)
-inline std::vector<juce::PluginDescription> guardedVst3 (const juce::StringArray& names, const juce::File& scanCache, const juce::String& tag, juce::StringArray* dropped = nullptr)
+inline std::vector<juce::PluginDescription> guardedVst3 (const juce::StringArray& names, const juce::File& scanCache, const juce::String& tag, juce::StringArray* dropped = nullptr,
+                                                         const juce::StringArray* allowNames = nullptr)
 {
     const auto mem = selfguard::loadMemory (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/self_guard_windows.json"));
     std::vector<juce::PluginDescription> ds; juce::StringArray found;
@@ -131,7 +132,8 @@ inline std::vector<juce::PluginDescription> guardedVst3 (const juce::StringArray
             if (! bundle.exists()) pw = "the bundle " + d.fileOrIdentifier + " is not on this Mac, so its PACE state cannot be checked: held";
             else if (cert::isPaceWrapped (bundle)) pw = "PACE-wrapped (" + bundle.getFileName() + ")"; else pace = false;
             const auto v = selfguard::judge (d.name, d.manufacturerName, "VST3|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version, pace, pw, mem);
-            if (v.drop) { std::cout << tag << ": GUARD dropped " << d.name << " (" << v.why << ")" << std::endl; if (dropped) dropped->add (d.name + "\t" + v.why); continue; }
+            if (v.drop && ! (allowNames != nullptr && allowNames->contains (d.name))) { std::cout << tag << ": GUARD dropped " << d.name << " (" << v.why << ")" << std::endl; if (dropped) dropped->add (d.name + "\t" + v.why); continue; }
+            if (v.drop) std::cout << tag << ": GUARD let through (the allow list): " << d.name << " (" << v.why << ")" << std::endl;
             ds.push_back (d);
         }
     for (const auto& n : names) if (! found.contains (n)) std::cout << tag << ": no VST3 in the scan cache: " << n << std::endl;
@@ -178,20 +180,21 @@ inline juce::var record (const juce::var& map, const std::vector<Want>& ws, cons
 namespace ejmap::cert
 {
 
-inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir, const juce::StringArray& names, const juce::String& format = "AudioUnit", const juce::var& at = {})
+inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir, const juce::StringArray& names, const juce::String& format = "AudioUnit", const juce::var& at = {},
+                             const juce::StringArray& allow = {})
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("READBACK: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
     const auto outDir = opt.out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("sweep"); outDir.createDirectory();
     const auto raw = opt.out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("raw"); raw.createDirectory();
     // THE GUARD before anything loads (Kathy, 16 Oct): licence-bound products are dropped here and never reach the probe
-    const auto kept = format == "VST3" ? readback::guardedVst3 (names, opt.ledger.getChildFile ("scan-cache.xml"), "READBACK") : guardedPlugins (names, false, "READBACK");
+    const auto kept = format == "VST3" ? readback::guardedVst3 (names, opt.ledger.getChildFile ("scan-cache.xml"), "READBACK", nullptr, &allow) : guardedPlugins (names, false, "READBACK", nullptr, &allow);
     std::map<juce::String, std::vector<readback::MapFile>> mapsOf;   // product -> every map file it has (readback::pickMap chooses)
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         const auto m = juce::JSON::parse (f.loadFileAsString()); const auto n = m.getProperty ("identity", {}).getProperty ("name", "").toString();
         if (n.isEmpty() || ! names.contains (n)) continue;
-        mapsOf[n].push_back ({ m, f.getLastModificationTime().toMilliseconds() });
+        mapsOf[n].push_back ({ m, f.getLastModificationTime().toMilliseconds(), f.getFileName() });
     }
     const auto untilMs = juce::String (std::getenv ("EJ_RUNALL_UNTIL_MS") != nullptr ? std::getenv ("EJ_RUNALL_UNTIL_MS") : "").getLargeIntValue();
     int done = 0, skipped = 0, refused = 0, credited = 0;
@@ -260,6 +263,123 @@ inline int runReadbackRederive (const juce::File& mapsDir, const juce::File& fro
         ++done;
     }
     say ("REDERIVE: " + juce::String (done) + " record(s) rebuilt from raw (" + juce::String (snappedControls) + " control(s) with snapped writes), " + juce::String (refused) + " not rebuilt; nothing loaded");
+    return 0;
+}
+
+// THE ANCHOR REPAIR (Kathy, 17 Oct, NEXT 2/3): the named controls' anchor tables rebuilt from their own displays, one guarded probe load
+// per product, on a grid that leaves out every setting the read-back will judge (trust::repairGrid). A control the map lacks is added
+// from the plan's index, but only if the probe's parameter there carries that name. The repaired copy of the map is written to
+// <out>/maps/<its file> (the map store is never written); each control carries trust "repair" and a "repair" block saying how.
+//   ejmap --anchor-repair --maps <dir> --plan <file.json> --out <dir> [--grid 0.0125] [--probe ..] [--ejmap-ledger ..]
+//   plan: { product: { "format": "AudioUnit"|"VST3", "controls": { name: { "index": n (a control the map lacks), "hold_out": [norms] } } } }
+namespace repair
+{
+inline juce::var repairedMap (const juce::var& map, const juce::String& name, int index, const trust::Rebuilt& r, const juce::var& how)
+{
+    auto copy = juce::JSON::parse (juce::JSON::toString (map));   // a deep copy: the map that was read is never changed
+    auto* co = copy.getProperty ("controls", {}).getDynamicObject();
+    if (co == nullptr) { copy.getDynamicObject()->setProperty ("controls", juce::var (new juce::DynamicObject())); co = copy.getProperty ("controls", {}).getDynamicObject(); }
+    juce::Identifier key (name); juce::var prev;
+    for (const auto& p : co->getProperties()) if (p.value.getProperty ("name", p.name.toString()).toString() == name) { key = p.name; prev = p.value; }
+    auto* c = new juce::DynamicObject();
+    c->setProperty ("name", name); c->setProperty ("index", index); c->setProperty ("kind", "anchored");
+    juce::Array<juce::var> as; double lo = r.anchors.front().value, hi = lo;
+    for (const auto& a : r.anchors) { as.add (juce::var (juce::Array<juce::var> { a.value, a.norm })); lo = std::min (lo, a.value); hi = std::max (hi, a.value); }
+    c->setProperty ("range", juce::var (juce::Array<juce::var> { lo, hi }));
+    c->setProperty ("unit", prev.isObject() && ! prev.getProperty ("unit", {}).isVoid() ? prev.getProperty ("unit", {}) : (r.unit.isEmpty() ? juce::var() : juce::var (r.unit)));
+    c->setProperty ("anchors", juce::var (as)); c->setProperty ("trust", "repair");
+    auto h = juce::JSON::parse (juce::JSON::toString (how));
+    if (auto* ho = h.getDynamicObject()) { if (prev.isObject()) ho->setProperty ("previous_anchors", prev.getProperty ("anchors", {}).size()); else ho->setProperty ("added", true); }
+    c->setProperty ("repair", h);
+    co->setProperty (key, juce::var (c));
+    juce::Array<juce::var> rc; if (const auto* a = copy.getProperty ("repaired_controls", {}).getArray()) rc = *a; rc.addIfNotAlreadyThere (name);
+    copy.getDynamicObject()->setProperty ("repaired_controls", juce::var (rc));
+    return copy;
+}
+} // namespace repair
+
+inline int runAnchorRepair (const SweepOptions& opt, const juce::File& mapsDir, const juce::var& plan, double step)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("REPAIR: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const auto* po = plan.getDynamicObject(); if (po == nullptr) { say ("REPAIR: the plan is not an object"); return 2; }
+    for (const auto* sub : { "maps", "repair", "raw" }) opt.out.getChildFile (sub).createDirectory();
+    std::map<juce::String, std::vector<readback::MapFile>> mapsOf;
+    for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        const auto m = juce::JSON::parse (f.loadFileAsString()); const auto n = m.getProperty ("identity", {}).getProperty ("name", "").toString();
+        if (n.isNotEmpty()) mapsOf[n].push_back ({ m, f.getLastModificationTime().toMilliseconds(), f.getFileName() });
+    }
+    int built = 0, refused = 0;
+    for (const auto* fmt : { "AudioUnit", "VST3" })
+    {
+        juce::StringArray names; for (const auto& p : po->getProperties()) if (p.value.getProperty ("format", "AudioUnit").toString() == fmt) names.add (p.name.toString());
+        if (names.isEmpty()) continue;
+        // THE GUARD before anything loads, as every other load we run
+        const auto kept = juce::String (fmt) == "VST3" ? readback::guardedVst3 (names, opt.ledger.getChildFile ("scan-cache.xml"), "REPAIR") : guardedPlugins (names, false, "REPAIR");
+        for (const auto& desc : kept)
+        {
+            if (phasebStop() != 0) { say ("REPAIR: stopped"); return 130; }
+            if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("REPAIR: " + desc.name + " - " + gate.stop); ++refused; continue; }
+            const auto* picked = mapsOf.count (desc.name) ? readback::pickMap (mapsOf[desc.name], desc.version, fmt) : nullptr;
+            if (picked == nullptr) { say ("REPAIR: " + desc.name + " - no " + juce::String (fmt) + " map"); ++refused; continue; }
+            juce::String file; for (const auto& mf : mapsOf[desc.name]) if (&mf.map == picked) file = mf.file;
+            const auto ctrls = plan.getProperty (desc.name, {}).getProperty ("controls", {});
+            std::map<juce::String, std::pair<int, std::vector<double>>> want;   // name -> (index, hold-out)
+            juce::StringArray parts;
+            std::map<juce::String, int> inMap; for (const auto& [n, c] : trust::mapControls (*picked)) inMap[n] = (int) c.getProperty ("index", -1);
+            if (const auto* co = ctrls.getDynamicObject())
+                for (const auto& p : co->getProperties())
+                {
+                    const auto n = p.name.toString(); const int idx = inMap.count (n) ? inMap[n] : (int) p.value.getProperty ("index", -1);
+                    if (idx < 0) { say ("REPAIR: " + desc.name + " / " + n + " - not in the map and the plan gives no index"); ++refused; continue; }
+                    std::vector<double> ho; if (const auto* h = p.value.getProperty ("hold_out", {}).getArray()) for (const auto& x : *h) ho.push_back (x.toString().getDoubleValue());
+                    want[n] = { idx, ho };
+                    juce::StringArray ns; for (double x : trust::repairGrid (step, ho)) ns.add (juce::String (x, 6));
+                    parts.add (juce::String (idx) + ":" + ns.joinIntoString (","));
+                }
+            if (want.empty()) continue;
+            const auto stem = juce::String (fmt) + "_" + juce::String::toHexString (desc.uniqueId).toLowerCase() + "_" + desc.version;
+            juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms-multi", parts.joinIntoString (";") };
+            const auto r = runProbeCall (args, opt.timeoutMs);
+            opt.out.getChildFile ("raw").getChildFile (stem + ".repair.txt").replaceWithText (r.out, false, false, "\n");
+            if (r.kind == ChildResult::Kind::uiShown) { say ("REPAIR: " + desc.name + ": a window appeared - stopped, nothing written"); return 5; }
+            const auto got = readback::parse (r.out);
+            const juce::String callWhy = r.kind == ChildResult::Kind::timedOut ? "the probe timed out after " + juce::String (opt.timeoutMs / 1000) + " s (--timeout)"
+                                       : r.kind == ChildResult::Kind::signaled ? juce::String ("the probe died (signal)") : r.kind == ChildResult::Kind::exited && r.code != 0 ? "the probe exited " + juce::String (r.code) : juce::String();
+            auto map = *picked; auto* rec = new juce::DynamicObject(); rec->setProperty ("product", desc.name); rec->setProperty ("format", fmt);
+            rec->setProperty ("version", desc.version); rec->setProperty ("measuredAt", nowStamp()); auto* res = new juce::DynamicObject();
+            for (const auto& [n, w] : want)
+            {
+                const auto it = got.find (w.first);
+                auto said = [&] (const juce::String& why) { say ("REPAIR: " + desc.name + " / " + n + " - " + why); res->setProperty (n, "not built: " + why); ++refused; };
+                if (it == got.end()) { said ("the probe returned nothing for index " + juce::String (w.first) + (callWhy.isNotEmpty() ? ": " + callWhy : juce::String())); continue; }
+                if (it->second.name.trim() != n.trim()) { said ("the parameter at index " + juce::String (w.first) + " is '" + it->second.name + "' here"); continue; }
+                std::vector<trust::Reading> rs; auto hold = w.second; for (double f : { 0.25, 0.5, 0.75 }) hold.push_back (f);
+                int empty = 0;
+                for (const auto& x : it->second.reads)
+                {
+                    if (x.text.trim().isEmpty()) { ++empty; continue; }
+                    const double at = x.landed ? x.norm : x.taken; if (at < 0.0) continue;
+                    if (std::any_of (hold.begin(), hold.end(), [&] (double h) { return std::abs (h - at) <= trust::HOLD_OUT_REACH + 1e-9; })) continue;   // a snap onto a held-out setting is not an anchor
+                    rs.push_back ({ at, x.text, ! x.landed });
+                }
+                if (rs.empty() && empty > 0) { said ("the display is empty at every setting (" + juce::String (empty) + " reads): the plugin prints no text for it"); continue; }
+                const auto rb = trust::anchorsFromReadings (rs);
+                if (! rb.ok) { said (rb.why); continue; }
+                auto* how = new juce::DynamicObject(); how->setProperty ("source", "anchor-repair"); how->setProperty ("grid_step", step);
+                juce::Array<juce::var> hv; for (double x : w.second) hv.add (x); how->setProperty ("held_out", juce::var (hv));
+                how->setProperty ("version", desc.version); how->setProperty ("measuredAt", rec->getProperty ("measuredAt"));
+                map = repair::repairedMap (map, n, w.first, rb, juce::var (how));
+                res->setProperty (n, rb.why); ++built;
+                say ("REPAIR: " + desc.name + " / " + n + " - " + rb.why + (inMap.count (n) ? "" : " (added: the map lacked it)"));
+            }
+            rec->setProperty ("result", juce::var (res));
+            opt.out.getChildFile ("repair").getChildFile (stem + ".repair.json").replaceWithText (juce::JSON::toString (juce::var (rec)));
+            if (map.hasProperty ("repaired_controls")) opt.out.getChildFile ("maps").getChildFile (file).replaceWithText (juce::JSON::toString (map));
+        }
+    }
+    say ("REPAIR: done - " + juce::String (built) + " control(s) rebuilt, " + juce::String (refused) + " not (said above); the map store was not written");
     return 0;
 }
 

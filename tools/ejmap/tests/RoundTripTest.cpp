@@ -10306,7 +10306,7 @@ int main (int, char**)
         const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
         const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
         check (tagOf (pickMap (c1, "0.4.45")) == "au-installed" && tagOf (pickMap (c2, "0.4.45")) == "au-b" && tagOf (pickMap (c3, "0.4.45")) == "none"
-               && rbs.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)") && rbs.contains ("const juce::String& format = \"AudioUnit\", const juce::var& at = {})"),
+               && rbs.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)") && rbs.contains ("const juce::String& format = \"AudioUnit\", const juce::var& at = {},"),
                "wizard WZ-RBSWEEP-2: the read-back uses the AudioUnit map of the installed version, else the newest AudioUnit map, never a VST3 map (the default sweep; --format VST3 is WZ-RBSWEEP-4)");
         check (trr.contains ("rv->setProperty (\"first_category\", firstCategory);") && trr.contains ("return now ? (x.getProperty (\"category\", \"\").toString() == firstCategory ? 0 : 1) : 2;")
                && trr.contains ("std::stable_sort (v.begin(), v.end(), [&] (const juce::var& a, const juce::var& b) { return tier (a) < tier (b); });"),
@@ -10392,7 +10392,7 @@ int main (int, char**)
                && cs != nullptr && cs->size() == 3 && thr.getProperty ("displayAt", {}).getDynamicObject() != nullptr && thr.getProperty ("displayAt", {}).getDynamicObject()->getProperties().size() == 2
                && (int) thr.getProperty ("unlanded", 0) == 1 && rec.getProperty ("not_read", {}).size() == 1 && rec.getProperty ("not_read", {})[0].getProperty ("name", "").toString() == "Gone"
                && rb.count ("Threshold") && rb.at ("Threshold").proven() && rb.count ("Freq") && ! rb.at ("Freq").proven() && rb.count ("Mode") && rb.at ("Mode").proven() && ! rb.count ("Gone")
-               && run.indexOf ("guardedPlugins (names, false, \"READBACK\")") >= 0 && run.indexOf ("guardedPlugins (names, false, \"READBACK\")") < run.indexOf ("runProbeCall")
+               && run.indexOf ("guardedPlugins (names, false, \"READBACK\", nullptr, &allow)") >= 0 && run.indexOf ("guardedPlugins (names, false, \"READBACK\", nullptr, &allow)") < run.indexOf ("runProbeCall")
                && run.indexOf ("if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say (\"READBACK: \" + desc.name + \" - \" + gate.stop); ++refused; continue; }") >= 0
                && run.indexOf ("licenceGate (opt, desc)") < run.indexOf ("runProbeCall") && run.contains ("if (recFile.existsAsFile()) { ++skipped; continue; }")
                && run.contains ("EJ_RUNALL_UNTIL_MS") && run.contains ("if (r.kind == ChildResult::Kind::uiShown)") && mainRb.contains ("if (o.out == juce::File() ||") && ! mainRb.contains ("Library/ejmap/cert"),
@@ -10538,13 +10538,105 @@ int main (int, char**)
                && all.size() == 2 && all[0].norms.size() == 3
                && tagOf (pickMap (cands, "1.0", "VST3")) == "v3" && tagOf (pickMap (cands, "1.0")) == "au" && vst3VersionOf (out) == "1.4.5 (R6)" && vst3VersionOf ("probe: x\n").isEmpty()
                && kept.size() == 1 && kept[0].name == "Keep" && dropped.size() == 2 && dropped.joinIntoString ("|").contains ("not on this Mac") && dropped.joinIntoString ("|").contains ("Soundtoys")
-               && run.contains ("const auto kept = format == \"VST3\" ? readback::guardedVst3 (names, opt.ledger.getChildFile (\"scan-cache.xml\"), \"READBACK\") : guardedPlugins (names, false, \"READBACK\");")
+               && run.contains ("const auto kept = format == \"VST3\" ? readback::guardedVst3 (names, opt.ledger.getChildFile (\"scan-cache.xml\"), \"READBACK\", nullptr, &allow) : guardedPlugins (names, false, \"READBACK\", nullptr, &allow);")
                && run.indexOf ("readback::guardedVst3") < run.indexOf ("runProbeCall") && run.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)")
                && run.contains ("const auto stem = format + \"_\"") && run.contains ("if (pv.isNotEmpty()) installed = pv;") && run.contains ("readback::record (map, ws, got, installed)")
                && red.contains ("readback::pickMap (mapsOf[product], version, fmt)")
                && probe.contains ("in the bundle)\\tversion\\t%s\\n\", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8());")
-               && mainRb.contains ("else if (k == \"--format\") format = v; else if (k == \"--at\") atFile = cwdFile (v); }") && mainRb.contains ("runReadbackSweep (o, maps, ns, format, at)"),
+               && mainRb.contains ("else if (k == \"--format\") format = v; else if (k == \"--at\") atFile = cwdFile (v);") && mainRb.contains ("runReadbackSweep (o, maps, ns, format, at, allow)"),
                "wizard WZ-RBSWEEP-4: --format VST3 reads VST3 maps (scan-cache products through the guard, a bundle it cannot check held, the probe's installed version); --at reads only the listed controls at their targets plus the given norms");
+    }
+    // WZ-BRIDGE-1 THE FORMAT BRIDGE (Kathy, 17 Oct, "ALL DAWs"): a VST3 inherits its AU twin's level only when every role control shows
+    // the same display in both formats at 3+ shared settings, on the same version; any mismatch, too few points, a control the VST3 lacks
+    // or another version refuses it
+    {
+        using namespace ejmap::trust;
+        auto M = [] (const char* fmt, const char* ver, const char* ctl) {
+            return juce::JSON::parse (juce::String (R"J({"identity":{"name":"P","format":")J") + fmt + R"J(","version":")J" + ver + R"J("},"category":"compressor","controls":{")J"
+                                      + ctl + R"J(":{"name":")J" + ctl + R"J(","index":0,"kind":"anchored","anchors":[[-60,0],[0,1]]}}})J"); };
+        const auto au = M ("AudioUnit", "1.4.5", "Threshold"), v3 = M ("VST3", "1.4.5 (R666666666)", "Threshold"), v3other = M ("VST3", "1.5.0", "Threshold"), v3lacks = M ("VST3", "1.4.5", "Thresh");
+        auto R = [] (std::initializer_list<std::pair<double, const char*>> xs) { Readings r; for (const auto& [n, d] : xs) r["Threshold"].push_back ({ n, d }); return r; };
+        const SourceMeta mAU { "1.4.5", 1, "AudioUnit" }, mV3 { "1.4.5 (R666666666)", 1, "VST3" }, mV3b { "1.4.5", 1, "VST3" };
+        const auto three = R ({ { 0.1, "-54.0 dB" }, { 0.5, "-30.0 dB" }, { 0.9, "-6.0 dB" } });
+        const auto ok = bridgeFor (au, v3, { "Threshold" }, { { "a", three }, { "v", R ({ { 0.1, "-54.0" }, { 0.5, "-30.0" }, { 0.9, "-6.1" } }) } }, { mAU, mV3 });
+        const auto off = bridgeFor (au, v3, { "Threshold" }, { { "a", three }, { "v", R ({ { 0.1, "-54.0" }, { 0.5, "-30.0" }, { 0.9, "-3.0" } }) } }, { mAU, mV3 });
+        const auto two = bridgeFor (au, v3, { "Threshold" }, { { "a", three }, { "v", R ({ { 0.1, "-54.0" }, { 0.5, "-30.0" }, { 0.7, "-18.0" } }) } }, { mAU, mV3 });
+        const auto ver = bridgeFor (au, v3other, { "Threshold" }, { { "a", three }, { "v", three } }, { mAU, { "1.5.0", 1, "VST3" } });
+        const auto lacks = bridgeFor (au, v3lacks, { "Threshold" }, { { "a", three }, { "v", three } }, { mAU, mV3b });
+        const auto sameFmt = bridgeFor (au, v3, { "Threshold" }, { { "a", three }, { "b", three } }, { mAU, mAU });   // two AU sources are not a bridge
+        const auto noRoles = bridgeFor (au, v3, {}, { { "a", three }, { "v", three } }, { mAU, mV3 });
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (ok.ok && ok.controls.size() == 1 && ok.controls[0].points == 3 && ok.controls[0].matched == 3 && ! off.ok && off.why.contains ("VST3 '-3.0'") && ! two.ok && two.why.contains ("2 paired")
+               && ! ver.ok && ver.why.startsWith ("another version") && ! lacks.ok && lacks.why.contains ("has no control") && ! sameFmt.ok && ! noRoles.ok
+               && versionKey ("1.4.5 (R666666666)") == "1.4.5" && versionKey ("1.3.5.0") == "1.3.5" && versionKey ("5.4.3.17500") == "5.4.3.17500" && versionKey ("1.0") == "1.0" && BRIDGE_MIN_POINTS == 3
+               && trr.contains ("if (e.fmt != \"VST3\" || e.heldWhy.isNotEmpty()) continue;")
+               && trr.contains ("a.fmt == \"AudioUnit\" && a.name == e.name && trust::versionKey (a.version) == trust::versionKey (e.version)")
+               && trr.contains ("if (twin == nullptr || rank (twin->L.level) <= rank (e.L.level)) continue;")
+               && trr.contains ("e.bridge = trust::bridgeFor (twin->m, e.m, roles, e.pd->readings, e.pd->metas);") && trr.contains ("if (e.bridge.ok)")
+               && trr.contains ("e.L.level = twin->L.level;") && trr.contains ("o->setProperty (\"format\", e.fmt);")
+               && trr.contains ("out.getChildFile (\"bridge_plan.json\")") && trr.contains ("inline std::vector<double> bridgeNorms() { return { 0.1, 0.3, 0.5, 0.7, 0.9 }; }"),
+               "wizard WZ-BRIDGE-1: a VST3 inherits its AU twin's level only on 3+ matching paired settings per role control at the same version; a mismatch, too few points, a missing control, another version or one format alone refuses it; rows carry their format");
+    }
+    // WZ-REPAIR-1 THE ANCHOR REPAIR (Kathy, 17 Oct, NEXT 2/3): a control's anchors rebuilt from its own display on a grid that leaves out
+    // every setting the read-back judges (25/50/75 % and the held-out norms); one unit family, a display that moves, 4+ readings; a missing
+    // control added by index only when the probe's parameter carries its name; the map read is never changed; the guard before the load
+    {
+        using namespace ejmap::trust;
+        const auto g = repairGrid (0.0125, { 0.95, 0.036 });
+        auto has = [&] (double x) { return std::any_of (g.begin(), g.end(), [&] (double y) { return std::abs (x - y) < 1e-9; }); };
+        auto Rd = [] (std::initializer_list<std::pair<double, const char*>> xs) { std::vector<Reading> r; for (const auto& [n, d] : xs) r.push_back ({ n, d }); return r; };
+        const auto good = anchorsFromReadings (Rd ({ { 0.0, "800.0 Hz" }, { 0.3, "1.2 kHz" }, { 0.6, "3.2 kHz" }, { 1.0, "25.6 kHz" } }));
+        const auto mixed = anchorsFromReadings (Rd ({ { 0.0, "-10 dB" }, { 0.3, "-5 dB" }, { 0.6, "10 ms" }, { 1.0, "0 dB" } }));
+        const auto flat = anchorsFromReadings (Rd ({ { 0.0, "3.9 dB" }, { 0.3, "3.9 dB" }, { 0.6, "3.9 dB" }, { 1.0, "3.9 dB" } }));
+        const auto few = anchorsFromReadings (Rd ({ { 0.0, "1" }, { 1.0, "2" } }));
+        const auto word = anchorsFromReadings (Rd ({ { 0.0, "Off" }, { 0.3, "1" }, { 0.6, "2" }, { 1.0, "3" } }));
+        const auto map = juce::JSON::parse (R"J({"identity":{"name":"P","format":"AudioUnit","version":"1"},"controls":{"Freq":{"name":"Freq","index":3,"kind":"anchored","unit":"Hz","anchors":[[0,0],[1,1]]}}})J");
+        const auto before = juce::JSON::toString (map);
+        auto how = juce::JSON::parse (R"J({"source":"anchor-repair"})J");
+        const auto fixed = ejmap::cert::repair::repairedMap (map, "Freq", 3, good, how);
+        const auto added = ejmap::cert::repair::repairedMap (map, "Threshold", 0, good, how);
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
+        const auto run = rbs.fromFirstOccurrenceOf ("inline int runAnchorRepair", false, false);
+        const auto mainAr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--anchor-repair\")", false, false).upToFirstOccurrenceOf ("if (a == \"--readback-rederive\")", false, false);
+        check (! has (0.25) && ! has (0.5) && ! has (0.75) && ! has (0.95) && ! has (0.0375) && has (0.0) && has (1.0) && has (0.9375) && has (0.9625) && has (0.0125) && HOLD_OUT_REACH == 0.004
+               && good.ok && good.anchors.size() == 4 && std::abs (good.anchors[1].value - 1200.0) < 1e-9 && good.unit == "Hz"
+               && ! mixed.ok && mixed.why.contains ("changes unit") && ! flat.ok && flat.why.contains ("does not move") && ! few.ok && ! word.ok && word.why.contains ("no number")
+               && juce::JSON::toString (map) == before
+               && fixed.getProperty ("controls", {}).getProperty ("Freq", {}).getProperty ("anchors", {}).size() == 4 && fixed.getProperty ("controls", {}).getProperty ("Freq", {}).getProperty ("trust", "").toString() == "repair"
+               && fixed.getProperty ("controls", {}).getProperty ("Freq", {}).getProperty ("unit", "").toString() == "Hz"
+               && (int) fixed.getProperty ("controls", {}).getProperty ("Freq", {}).getProperty ("repair", {}).getProperty ("previous_anchors", 0) == 2
+               && (bool) added.getProperty ("controls", {}).getProperty ("Threshold", {}).getProperty ("repair", {}).getProperty ("added", false)
+               && added.getProperty ("repaired_controls", {}).size() == 1
+               && run.indexOf ("guardedPlugins (names, false, \"REPAIR\")") >= 0 && run.indexOf ("guardedPlugins (names, false, \"REPAIR\")") < run.indexOf ("runProbeCall")
+               && run.indexOf ("licenceGate (opt, desc)") < run.indexOf ("runProbeCall")
+               && run.contains ("if (it->second.name.trim() != n.trim()) { said (\"the parameter at index \"")
+               && run.contains ("if (std::any_of (hold.begin(), hold.end(), [&] (double h) { return std::abs (h - at) <= trust::HOLD_OUT_REACH + 1e-9; })) continue;")
+               && run.contains ("if (r.kind == ChildResult::Kind::uiShown) { say (\"REPAIR: \"") && run.contains ("the display is empty at every setting")
+               && ! run.contains ("Library/ejmap/maps") && mainAr.contains ("return ejmap::cert::runAnchorRepair (o, maps, juce::JSON::parse (planFile.loadFileAsString()), step);")
+               && mainAr.contains ("if (o.out == juce::File() ||"),
+               "wizard WZ-REPAIR-1: anchors rebuilt on a grid that leaves out the read-back's settings, one unit, a moving display, 4+ readings; a missing control added only under its own name; the map read unchanged; guard + licence gate before the load");
+    }
+    // WZ-GUARD-2 THE ALLOW LIST (17 Oct, Sean's pack): products named in --allow-licence-bound-list pass the guard, said; every other product
+    // stays guarded (the AU and the VST3 guard alike)
+    {
+        const auto tmp = juce::File::createTempFile ("allow"); tmp.createDirectory(); tmp.getChildFile ("Keep.vst3").createDirectory();
+        const auto kp = tmp.getChildFile ("Keep.vst3").getFullPathName();
+        tmp.getChildFile ("scan-cache.xml").replaceWithText ("<EJMAP_SCAN_CACHE>"
+            "<PLUGIN name=\"EchoBoy\" format=\"VST3\" manufacturer=\"Soundtoys\" version=\"5\" file=\"" + kp + "\" uniqueId=\"1c\" isInstrument=\"0\" fileTime=\"0\" infoUpdateTime=\"0\" numInputs=\"2\" numOutputs=\"2\" isShell=\"0\"/>"
+            "<PLUGIN name=\"Decapitator\" format=\"VST3\" manufacturer=\"Soundtoys\" version=\"5\" file=\"" + kp + "\" uniqueId=\"1d\" isInstrument=\"0\" fileTime=\"0\" infoUpdateTime=\"0\" numInputs=\"2\" numOutputs=\"2\" isShell=\"0\"/>"
+            "</EJMAP_SCAN_CACHE>");
+        const juce::StringArray allow { "EchoBoy" };
+        std::cout.setstate (std::ios::failbit);
+        const auto k = ejmap::readback::guardedVst3 ({ "EchoBoy", "Decapitator" }, tmp.getChildFile ("scan-cache.xml"), "T", nullptr, &allow);
+        std::cout.clear(); tmp.deleteRecursively();
+        const auto sg = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSelfGuardRun.h").loadFileAsString();
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
+        const auto mainRb = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--readback-sweep\")", false, false).upToFirstOccurrenceOf ("if (a == \"--anchor-repair\")", false, false);
+        check (k.size() == 1 && k[0].name == "EchoBoy"
+               && sg.contains ("const bool allowed = allowLicenceBound || (allowNames != nullptr && allowNames->contains (r.desc.name));") && sg.contains ("if (v.drop && ! allowed) {")
+               && rbs.contains ("guardedPlugins (names, false, \"READBACK\", nullptr, &allow)") && rbs.contains ("\"READBACK\", nullptr, &allow) :")
+               && mainRb.contains ("else if (k == \"--allow-licence-bound-list\") allowFile = cwdFile (v); }"),
+               "wizard WZ-GUARD-2: only the products on --allow-licence-bound-list pass the guard (AU and VST3); the rest stay guarded");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
