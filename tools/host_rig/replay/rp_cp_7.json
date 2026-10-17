@@ -13,20 +13,14 @@
  "rounds": [
   {
    "round": 1,
-   "session": "ag_2qng_bgBkcZ259w2i5hP0w",
+   "session": "",
    "frames": [
     {
      "event": "round",
      "sessionId": "ag_2qng_bgBkcZ259w2i5hP0w",
      "round": 1,
      "ofSoftCap": 20
-    }
-   ]
-  },
-  {
-   "round": 2,
-   "session": "ag_2qng_bgBkcZ259w2i5hP0w",
-   "frames": [
+    },
     {
      "event": "round",
      "sessionId": "ag_2qng_bgBkcZ259w2i5hP0w",
@@ -49,8 +43,16 @@
     {
      "event": "plan",
      "round": 2,
-     "items": 1,
-     "heading": "The plan"
+     "items": [
+      {
+       "id": "toolu_01QsRjGXZQCXMkv46doGQY4M",
+       "summary": "add FabFilter Pro-C 2 - FabFilter Pro-C 2 will need setting by hand (no map to dial it with)",
+       "why": "",
+       "approval": "ask_first"
+      }
+     ],
+     "heading": "The plan",
+     "itemsSource": "rebuilt from this response's tool_calls - the log records the plan frame's item COUNT (1), not the array"
     },
     {
      "event": "message",
@@ -65,8 +67,8 @@
    ]
   },
   {
-   "round": 3,
-   "session": "ag_2qng_bgBkcZ259w2i5hP0w",
+   "round": 2,
+   "session": "",
    "frames": [
     {
      "event": "round",

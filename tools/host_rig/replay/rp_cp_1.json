@@ -8,20 +8,14 @@
  "rounds": [
   {
    "round": 1,
-   "session": "ag_XtInJnh7Pd52pkayTMew5g",
+   "session": "",
    "frames": [
     {
      "event": "round",
      "sessionId": "ag_XtInJnh7Pd52pkayTMew5g",
      "round": 1,
      "ofSoftCap": 20
-    }
-   ]
-  },
-  {
-   "round": 2,
-   "session": "ag_XtInJnh7Pd52pkayTMew5g",
-   "frames": [
+    },
     {
      "event": "round",
      "sessionId": "ag_XtInJnh7Pd52pkayTMew5g",
@@ -48,8 +42,16 @@
     {
      "event": "plan",
      "round": 2,
-     "items": 1,
-     "heading": "The user named this plugin, so I'll add it directly with the threshold set."
+     "items": [
+      {
+       "id": "toolu_013jsGSHSv2yckKP6hMk2FTs",
+       "summary": "add Renaissance Axx",
+       "why": "",
+       "approval": "ask_first"
+      }
+     ],
+     "heading": "The user named this plugin, so I'll add it directly with the threshold set.",
+     "itemsSource": "rebuilt from this response's tool_calls - the log records the plan frame's item COUNT (1), not the array"
     },
     {
      "event": "message",
@@ -64,8 +66,8 @@
    ]
   },
   {
-   "round": 3,
-   "session": "ag_XtInJnh7Pd52pkayTMew5g",
+   "round": 2,
+   "session": "",
    "frames": [
     {
      "event": "round",

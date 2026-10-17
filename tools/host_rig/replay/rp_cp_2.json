@@ -8,20 +8,14 @@
  "rounds": [
   {
    "round": 1,
-   "session": "ag_sjzxaXUG_aLR2XIzSBdqKg",
+   "session": "",
    "frames": [
     {
      "event": "round",
      "sessionId": "ag_sjzxaXUG_aLR2XIzSBdqKg",
      "round": 1,
      "ofSoftCap": 20
-    }
-   ]
-  },
-  {
-   "round": 2,
-   "session": "ag_sjzxaXUG_aLR2XIzSBdqKg",
-   "frames": [
+    },
     {
      "event": "round",
      "sessionId": "ag_sjzxaXUG_aLR2XIzSBdqKg",
@@ -44,8 +38,16 @@
     {
      "event": "plan",
      "round": 2,
-     "items": 1,
-     "heading": "The plan"
+     "items": [
+      {
+       "id": "toolu_013YYqJAVYyLjRToSm7qVUSj",
+       "summary": "add Renaissance Axx",
+       "why": "",
+       "approval": "ask_first"
+      }
+     ],
+     "heading": "The plan",
+     "itemsSource": "rebuilt from this response's tool_calls - the log records the plan frame's item COUNT (1), not the array"
     },
     {
      "event": "message",
@@ -61,8 +63,8 @@
    ]
   },
   {
-   "round": 3,
-   "session": "ag_sjzxaXUG_aLR2XIzSBdqKg",
+   "round": 2,
+   "session": "",
    "frames": [
     {
      "event": "round",

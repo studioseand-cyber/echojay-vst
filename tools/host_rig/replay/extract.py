@@ -90,9 +90,25 @@ for _d, t, body in records(LOG):
     if (g := pats['post'].search(body)):
         if g.group(1) == 'start' and cur['startBytes'] is None: cur['startBytes'] = int(g.group(2) or 0)
         if g.group(1) == 'stop': cur['actions'].append({'at': t, 'what': 'server_stop'})
+        if g.group(1) == 'step':
+            # the response to THIS post is the next group of frames
+            cur['rounds'].append({'round': len(cur['rounds']) + 1, 'session': '', 'frames': []})
+        continue
+    # ---- A `round` FRAME IS NOT AN HTTP RESPONSE (17 Oct 2026, found by the first RED capture) ----
+    # The first cut grouped frames by `round` frame, and four replay rows then failed with "the
+    # agent's stream ended early" - because a response that ends on a bare `message` has no terminal
+    # frame and the client is right to reject it. The real server emits SEVERAL rounds in ONE
+    # response: after the tap at 08:13:40 the /step reply carried round 4 (a message) and round 5
+    # (the tool_call, the plan and the await) together, with no POST in between.
+    #
+    # So the boundary is the POST, which the log records, and the `round` frames ride INSIDE the
+    # response they arrived in. This is the difference between replaying the session and replaying my
+    # idea of it - the same lesson the whole round is built on, one layer down.
     if (g := pats['round'].search(body)):
-        cur['rounds'].append({'round': int(g.group(2)), 'session': g.group(1), 'frames':
-                              [{'event':'round','sessionId':g.group(1),'round':int(g.group(2)),'ofSoftCap':20}]})
+        if not cur['rounds']:
+            cur['rounds'].append({'round': int(g.group(2)), 'session': g.group(1), 'frames': []})
+        cur['rounds'][-1]['frames'].append(
+            {'event':'round','sessionId':g.group(1),'round':int(g.group(2)),'ofSoftCap':20})
         continue
     if not cur['rounds']:
         cur['rounds'].append({'round': 1, 'session': '', 'frames': []})

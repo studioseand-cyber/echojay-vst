@@ -749,11 +749,44 @@ int main()
         // about the build: it failed from this morning until the gate ran the whole suite tonight.
         // What must be true is that NO STEP answered the ask and the last thing posted is the stop.
         juce::ignoreUnused (p2);
-        check (! r.client.interceptTyped ("maybe") && r.posts.back().first == "/api/agent/stop"
+        // ---- AND SEAN'S ITEM 5 (17 Oct 2026) MOVED IT AGAIN, THE OTHER WAY --------------------
+        //
+        // He typed "cl1b" into "Which CL 1B do you have loaded?" - three chips, allowFreeText
+        // false - and the run was STOPPED and restarted on that text as a goal. His ruling: *"A
+        // name answers the ask (fuzzy match to installed plugins); only a sentence is a new
+        // instruction."*
+        //
+        // So the test under this ask is no longer "does the text name a chip" but "is the text a
+        // SENTENCE". "maybe" is neither a plugin name nor a sentence, so it is an ANSWER - which is
+        // also the only reading that keeps his standing blocker ("a typed reply must never be
+        // silently dropped") true for a one-word reply to a yes/no question.
+        check (r.client.interceptTyped ("maybe") && ! r.client.askPending()
+               && r.client.state() != EJAgentClient::State::Stopped,
+               "A5 allowFreeText:false + a text that is NOT a sentence = the ANSWER (Sean's item 5: "
+               "only a sentence is a new instruction; a one-word reply is a reply)");
+    }
+
+    // ---- A5c: AND A SENTENCE UNDER THE SAME ASK STILL STOPS THE RUN (#21 intact) ---------------
+    // Named A5c because an A5b already exists 400 lines up ("a tap that is not one of the offered
+    // labels is ignored") - the same id collision this harness had once before with tc_12, and a
+    // duplicate id makes a scorecard lie about which leg ran.
+    // The half of #21 that item 5 did NOT change, asserted on its own so the two rules cannot be
+    // confused again: chips on screen, tap-only, and a verb-led instruction typed into it.
+    {
+        r.client.dismiss();
+        r.client.start ("louder?", "chat_1");
+        r.round (5);
+        pumpMs (10);
+        r.round (6);
+        r.tool (R"({"id":"tc_11s","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
+        r.await ({ "tc_11s" });
+        pumpMs (10);
+        check (! r.client.interceptTyped ("add a compressor to this rack")
+               && r.posts.back().first == "/api/agent/stop"
                && ! r.client.askPending()
                && r.client.state() == EJAgentClient::State::Stopped,
-               "A5 allowFreeText:false + text that names no choice = a NEW INSTRUCTION: the run is "
-               "stopped and the text goes down the composer's own road (Sean's #21)");
+               "A5c ...while a SENTENCE typed into the same question is a NEW INSTRUCTION: the run is "
+               "stopped and the text goes down the composer's own road (Sean's #21, unchanged)");
     }
 
     // ---- A8 LIVES LAST, BECAUSE IT STOPS A RUN (16 Oct 2026) ------------------------------------

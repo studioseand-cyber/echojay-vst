@@ -48,15 +48,34 @@ for path in sorted(glob.glob(os.path.join(D, "rp_cp_*.json"))):
                 continue
             merged.append(fr)
         r["frames"] = merged
-    # the quoted prose, with its provenance attached to the frame itself
-    msg_seen = {}
+    # ---- THE QUOTE GOES WHERE THE DEFECT HAPPENED, FOUND BY SHAPE (17 Oct 2026) --------------
+    # Keyed by round number, the first cut put the "Added ... to the Mix Bus" sentence on the LAST
+    # response - so the bubble appeared after the await instead of during it, and RP4 passed on a
+    # build that draws it early. The round numbers move every time the grouping is corrected; the
+    # shape does not:
+    #   * the premature "Added ..." bubble belongs in the response that WAITS (it has a plan and an
+    #     await), because that is the whole claim - it said "added" while the add was waiting;
+    #   * the duplicate-closing bubble belongs in the response that FINISHES (it has the done
+    #     frame), because the closing it repeats is that frame's summary.
+    # IDEMPOTENT, because this script is run again every time the extractor improves. A quote left
+    # from a previous run would pin the placement that run chose - which is exactly how the "Added"
+    # sentence stayed on the done response after the placement rule was fixed.
     for r in d["rounds"]:
         for fr in r["frames"]:
-            if fr.get("event") == "message":
-                n = msg_seen.get(r["round"], 0); msg_seen[r["round"]] = n + 1
-                key = (sid, r["round"], n)
-                if key in QUOTED and not fr.get("text"):
-                    fr["text"], fr["textSource"] = QUOTED[key]
+            if fr.pop("textSource", None) is not None: fr["text"] = ""
+    want = {k[0]: v for k, v in QUOTED.items()}
+    if sid in want:
+        text, source = want[sid]
+        wantsWait = "Added" in text
+        for r in d["rounds"]:
+            kinds = [f.get("event") for f in r["frames"]]
+            fits = ("await" in kinds and "plan" in kinds) if wantsWait else ("done" in kinds)
+            if not fits: continue
+            for fr in r["frames"]:
+                if fr.get("event") == "message" and not fr.get("text"):
+                    fr["text"], fr["textSource"] = text, source
+                    break
+            break
     # the tool args the executor needs, rebuilt from the call's own summary
     for r in d["rounds"]:
         for fr in r["frames"]:
@@ -71,6 +90,28 @@ for path in sorted(glob.glob(os.path.join(D, "rp_cp_*.json"))):
                 fr.setdefault("args", {}).update({"op": "build", "summary": s})
             elif fr.get("name") == "look":
                 fr.setdefault("args", {}).update({"what": "inventory" if "inventor" in s else "rack"})
+    # ---- A PLAN FRAME WITHOUT ITS ITEMS IS NOT A PLAN FRAME (17 Oct 2026) --------------------
+    # The log records `frame plan round=5 items=1 heading="The plan"` - the item COUNT, not the
+    # array - so the first replay served a plan frame with no items, the client's item loop never
+    # ran, and RP2 PASSED on a build that has the defect. The one frame the whole row is about was
+    # the one frame I served empty.
+    #
+    # The items are recoverable without inventing anything: contract 3 says the plan lists the
+    # round's ask-first items, and the round's tool_calls are in the log with their ids, summaries
+    # and approvals. So the array is rebuilt from them, newest-last, trimmed to the logged count,
+    # and marked `itemsSource` so nobody mistakes a reconstruction for a recording.
+    for r in d["rounds"]:
+        calls = [f for f in r["frames"] if f.get("event") == "tool_call"]
+        for fr in r["frames"]:
+            if fr.get("event") != "plan": continue
+            it = fr.get("items")
+            want = len(it) if isinstance(it, list) else int(it or 0)
+            askers = [c for c in calls if (c.get("approval") or "ask_first") == "ask_first"]
+            pick = (askers or calls)[:want] if want else (askers or calls)
+            fr["items"] = [{"id": c.get("id"), "summary": c.get("summary", ""),
+                            "why": "", "approval": c.get("approval") or "ask_first"} for c in pick]
+            fr["itemsSource"] = ("rebuilt from this response's tool_calls - the log records the plan "
+                                 "frame's item COUNT (%d), not the array" % want)
     json.dump(d, open(path, "w"), indent=1)
     msgs = sum(1 for r in d["rounds"] for f in r["frames"] if f.get("event") == "message")
     quoted = sum(1 for r in d["rounds"] for f in r["frames"] if f.get("textSource"))

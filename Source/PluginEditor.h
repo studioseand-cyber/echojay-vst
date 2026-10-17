@@ -3712,14 +3712,34 @@ private:
             never draw it on another tab." Set by the editor to switchToTab(Chain). */
         std::function<void()> onEditorNeedsChainTab;
 
-        void showInline(int i)
+        /** @param deliberate  true when a PERSON or the agent asked for this editor (the pop-out
+                                 button, "EDIT THIS PLUGIN", the rig's open_slot). false for the
+                                 selection-driven opens the panel does to keep itself consistent. */
+        void showInline(int i, bool deliberate = false)
         {
             // ---- THE EDITOR BOX BELONGS ON THE CHAIN TAB (17 Oct 2026, Sean's item 7) ----------
-            // He watched a slot editor draw itself over the CHAT tab. This panel does not know which
-            // tab is in front - it is a child that is laid out wherever it is put - so it asks the
-            // window to be on the rack before it opens anything. One call, at the single door every
-            // editor open comes through (showInline, which openPopoutForSelected also passes).
-            if (onEditorNeedsChainTab) onEditorNeedsChainTab();
+            //
+            // He watched a slot editor draw itself over the CHAT tab, and his instruction was to
+            // switch to CHAIN whenever the editor opens or is triggered.
+            //
+            // MY FIRST CUT ASKED FOR THE TAB ON EVERY CALL, and ui_guard caught what that does: a
+            // tap on the chat's own target pill re-selects a channel, the panel re-opens its editor
+            // to stay consistent with the new selection, and the window JUMPED OUT OF THE CHAT to
+            // the rack. "Never draw it on another tab" is not "move him whenever I feel like it".
+            //
+            // So the two kinds of open are told apart. A deliberate one - his press, or the agent's
+            // request - asks for the Chain tab and then opens. A selection-driven one does not move
+            // him at all, and if this panel is not on screen it does not open an editor either:
+            // nothing is drawn on another tab because nothing is created.
+            if (deliberate)
+            {
+                if (onEditorNeedsChainTab) onEditorNeedsChainTab();
+            }
+            else if (! isShowing())
+            {
+                closeAllEditors();
+                return;
+            }
             closeAllEditors();
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
 
@@ -3779,7 +3799,7 @@ private:
             {
                 // No statusText: the PANE's placement-driven caption says
                 // it (2 Sep rule); the strip line duplicated the sentence.
-                openPopoutForSelected();
+                openPopoutForSelected (deliberate);
                 repaint();
                 return;
             }
@@ -4082,7 +4102,10 @@ private:
             layoutGuard = false;
         }
 
-        void selectSlot(int i)
+        /** @param deliberate  true when this selection came from a press on the block (the slot
+                                 double-click, which is how a person opens an editor) or from the
+                                 rig/agent asking for it - item 7's tab switch follows it. */
+        void selectSlot(int i, bool deliberate = false)
         {
             selectedIdx = i;
             if (onSelectSlot) onSelectSlot(i);
@@ -4112,7 +4135,7 @@ private:
                 }
             }
             if (inlineSlot != i || inlineEditor == nullptr)
-                showInline(i);
+                showInline(i, deliberate);
             popBtn.setVisible(selectedIdx >= 0);
             // Header may have appeared/disappeared with the new selection —
             // re-run layout so the clip container is re-asserted at the new
@@ -4123,13 +4146,14 @@ private:
 
         // Fallback: open the selected slot's editor in a floating window at
         // native size (closes the inline editor first — one at a time).
-        void openPopoutForSelected()
+        void openPopoutForSelected (bool deliberate = true)
         {
             if (selectedIdx < 0 || selectedIdx >= (int)slotInfos.size() || !onCreateEditor)
                 return;
             // ...and the floating road too: the pane behind it is the rack's, and its caption and
-            // its failure note are drawn there (item 7).
-            if (onEditorNeedsChainTab) onEditorNeedsChainTab();
+            // its failure note are drawn there (item 7). Deliberate by default: the pop-out button
+            // is a press, and showInline's Float branch passes its own answer through.
+            if (deliberate && onEditorNeedsChainTab) onEditorNeedsChainTab();
             int i = selectedIdx;
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
@@ -4237,7 +4261,10 @@ private:
                 // selectSlot already opens - so selecting first keeps one code path for both.
                 bl->onOpen = [this, ci]
                 {
-                    selectSlot(ci);
+                    // A DOUBLE-CLICK ON THE BLOCK IS A PERSON ASKING (item 7): this is the road the
+                    // mouse takes and the road the rig's open_slot takes, so it carries the tab with
+                    // it. A selection that happens for any other reason does not move him.
+                    selectSlot (ci, /*deliberate*/ true);
                     if (remote) { if (onEditRequest) onEditRequest(ci); }
                 };
                 bl->onBypass = [this, ci] { if (onBypassSlot) onBypassSlot(ci); };

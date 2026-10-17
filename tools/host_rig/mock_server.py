@@ -444,6 +444,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "replay_missing", "detail": str(e)}, 500)
             with STATE["lock"]:
                 rp = STATE.setdefault("replayRounds", {})
+                # A /start IS ROUND ONE (17 Oct 2026). The counter was global per fixture, and two
+                # rows replay rp_cp_8 and two replay rp_cp_4 - so the second row of each pair was
+                # served the responses the first one had not used, and reported "the turn produced
+                # nothing" about a session that produces plenty. A run begins at its first response.
+                if self.path.startswith("/api/agent/start"):
+                    rp[replay] = 0
                 n = rp.get(replay, 0)
                 rp[replay] = n + 1
                 # so the /step POSTs that follow keep reading THIS fixture

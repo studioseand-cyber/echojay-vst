@@ -13,7 +13,7 @@
  "rounds": [
   {
    "round": 1,
-   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -43,7 +43,7 @@
   },
   {
    "round": 2,
-   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -74,7 +74,7 @@
   },
   {
    "round": 3,
-   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -105,7 +105,7 @@
   },
   {
    "round": 4,
-   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "session": "",
    "frames": [
     {
      "event": "round",

@@ -4,7 +4,7 @@
   "at": "08:05:13",
   "goal": "Add Renaissance Axx with threshold at -20 dB",
   "target": "(this instance's own rack)",
-  "rounds": 4,
+  "rounds": 2,
   "actions": 1
  },
  {
@@ -12,7 +12,7 @@
   "at": "08:06:37",
   "goal": "Add Renaissance Axx with threshold at -20 dB",
   "target": "bb411b8240 (a Link)",
-  "rounds": 4,
+  "rounds": 2,
   "actions": 1
  },
  {
@@ -20,7 +20,7 @@
   "at": "08:12:38",
   "goal": "Add a compressor",
   "target": "bb411b8240 (a Link)",
-  "rounds": 2,
+  "rounds": 1,
   "actions": 2
  },
  {
@@ -28,7 +28,7 @@
   "at": "08:13:12",
   "goal": "cl1b",
   "target": "bb411b8240 (a Link)",
-  "rounds": 7,
+  "rounds": 4,
   "actions": 3
  },
  {
@@ -36,7 +36,7 @@
   "at": "08:18:30",
   "goal": "build a new chain on the kick",
   "target": "bb411b8240 (a Link)",
-  "rounds": 2,
+  "rounds": 1,
   "actions": 2
  },
  {
@@ -44,7 +44,7 @@
   "at": "08:20:09",
   "goal": "set the pre-gain to 2 dB",
   "target": "bb411b8240 (a Link)",
-  "rounds": 3,
+  "rounds": 2,
   "actions": 0
  },
  {
@@ -52,7 +52,7 @@
   "at": "08:22:34",
   "goal": "Add Pro-C 2 to this rack",
   "target": "(this instance's own rack)",
-  "rounds": 4,
+  "rounds": 2,
   "actions": 2
  },
  {
@@ -60,7 +60,7 @@
   "at": "08:24:18",
   "goal": "Add kHs Transient Shaper",
   "target": "bb411b8240 (a Link)",
-  "rounds": 5,
+  "rounds": 4,
   "actions": 4
  },
  {
@@ -68,7 +68,7 @@
   "at": "08:27:36",
   "goal": "how much gain reduction is the compressor doing?",
   "target": "(this instance's own rack)",
-  "rounds": 5,
+  "rounds": 4,
   "actions": 0
  },
  {
@@ -76,7 +76,7 @@
   "at": "08:29:04",
   "goal": "Add a transient shaper to the kick with attack at +6 dB",
   "target": "bb411b8240 (a Link)",
-  "rounds": 3,
+  "rounds": 1,
   "actions": 0
  }
 ]

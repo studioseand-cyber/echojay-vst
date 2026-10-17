@@ -291,4 +291,12 @@ if grep -qE "skipped\)" "$S/ej_gate26_s6.log"; then
 fi
 echo "S6 OK"
 
-echo "GATE GREEN"; else echo "GATE RED"; fi
+echo "GATE GREEN"; else
+  # ---- A RED GATE MUST EXIT RED (17 Oct 2026) ---------------------------------------------------
+  # It printed "GATE RED" and exited 0, so every caller that trusted the exit code was told the gate
+  # had passed. Today's chain only refused to install because a SECOND check - counting S6's verdict
+  # lines, added this morning after a red half got past a `grep -q` - disagreed with it. Two
+  # independent checks saved an install that one of them was actively lying about.
+  echo "GATE RED"
+  exit 1
+fi

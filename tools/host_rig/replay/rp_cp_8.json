@@ -13,7 +13,7 @@
  "rounds": [
   {
    "round": 1,
-   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -37,8 +37,16 @@
     {
      "event": "plan",
      "round": 1,
-     "items": 1,
-     "heading": "The plan"
+     "items": [
+      {
+       "id": "toolu_01NtPkaFKVynoH2qmJwPkzXP",
+       "summary": "add kHs Transient Shaper",
+       "why": "",
+       "approval": "ask_first"
+      }
+     ],
+     "heading": "The plan",
+     "itemsSource": "rebuilt from this response's tool_calls - the log records the plan frame's item COUNT (1), not the array"
     },
     {
      "event": "message",
@@ -54,7 +62,7 @@
   },
   {
    "round": 2,
-   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -100,7 +108,7 @@
   },
   {
    "round": 3,
-   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -134,7 +142,7 @@
   },
   {
    "round": 4,
-   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "session": "",
    "frames": [
     {
      "event": "round",

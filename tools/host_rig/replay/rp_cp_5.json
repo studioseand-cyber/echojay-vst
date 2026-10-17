@@ -13,7 +13,7 @@
  "rounds": [
   {
    "round": 1,
-   "session": "ag_e_uiCKBbBksT0RhZbvX0Xw",
+   "session": "",
    "frames": [
     {
      "event": "round",
@@ -37,8 +37,16 @@
     {
      "event": "plan",
      "round": 1,
-     "items": 1,
-     "heading": "The plan"
+     "items": [
+      {
+       "id": "toolu_01GZcJnwWP2s8HT6jzmCZYFW",
+       "summary": "build 2 slots: EchoJay EQ, EchoJay Compressor",
+       "why": "",
+       "approval": "ask_first"
+      }
+     ],
+     "heading": "The plan",
+     "itemsSource": "rebuilt from this response's tool_calls - the log records the plan frame's item COUNT (1), not the array"
     },
     {
      "event": "message",
