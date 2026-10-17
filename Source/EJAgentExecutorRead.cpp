@@ -502,11 +502,11 @@ juce::var ExecutorRead::levelsVar (const RackRead& r, const echojay::LevelTally:
 // the number an agent needs to know whether it has covered the list.
 juce::var ExecutorRead::inventoryVar (const juce::StringArray& names)
 {
-    return inventoryPage (names, {}, 0, kInventoryPage);
+    return inventoryPage (names, {}, 0, kInventoryPage, juce::var());
 }
 
 juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce::String& match,
-                                       int offset, int limit)
+                                       int offset, int limit, juce::var notLoadable)
 {
     juce::StringArray hit;
     if (match.isEmpty()) hit = all;
@@ -540,6 +540,49 @@ juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce:
     o->setProperty ("limit",  lim);
     if (match.isNotEmpty()) o->setProperty ("match", match);
     o->setProperty ("names", juce::var (arr));
+
+    // ---- WHAT CANNOT LOAD, PAGE-SCOPED AND BOUNDED (17 Oct 2026, FOR_B §25) ---------------------
+    //
+    // 17b put EVERY unloadable plugin in this result, appended AFTER fitUnder8K had run - so on
+    // Sean's machine, where 357 of 1,323 installed bundles have no arm64 slice, look(inventory)
+    // came back about 49 KB and the server refused it in round 1 of every run. The rig has one or
+    // two and never saw it.
+    //
+    // Three changes, and the third is the one that matters:
+    //   * only the entries whose names are ON THIS PAGE, because that is what the model is looking
+    //     at and all it can act on;
+    //   * the reason capped, and at most twelve of them, so the field has a ceiling that does not
+    //     depend on anyone's plugin folder;
+    //   * `notLoadableTotal` carries the SCALE as a number instead of as bytes - the model can say
+    //     "357 of your plugins will not run here" without being sent 357 of anything;
+    //   * and all of it added HERE, before the single 8 KB gate below, which is the actual bug: a
+    //     field added after the gate is a field no gate measures.
+    if (! notLoadable.isVoid())
+    {
+        juce::Array<juce::var> onThisPage;
+        int totalBad = 0;
+        if (auto* bad = notLoadable.getArray())
+        {
+            totalBad = bad->size();
+            for (const auto& e : *bad)
+            {
+                if (onThisPage.size() >= 12) break;
+                const auto nm = e.getProperty ("name", juce::var()).toString();
+                if (nm.isEmpty() || ! arr.contains (juce::var (nm))) continue;
+                auto* t = new juce::DynamicObject();
+                t->setProperty ("name", nm);
+                t->setProperty ("why", capped (e.getProperty ("why", juce::var()).toString(), 72));
+                onThisPage.add (juce::var (t));
+            }
+        }
+        if (totalBad > 0) o->setProperty ("notLoadableTotal", totalBad);
+        if (! onThisPage.isEmpty())
+        {
+            o->setProperty ("notLoadable", juce::var (onThisPage));
+            o->setProperty ("notLoadableNote", "these are on this page and cannot run here - say so "
+                                               "and offer a working alternative of the same role");
+        }
+    }
 
     // `count` is NOT the page length. Before paging existed this function set count = names.size() BEFORE
     // fitUnder8K halved the array, so every caller that has ever read `count` read the number of plugins
@@ -732,19 +775,10 @@ void ExecutorRead::look (const ToolCall& call, Done done)
         // missing argument and an argument that says the default are the same request.
         const int offset = (int) argNumber (call, "offset", 0.0);
         const int limit  = (int) argNumber (call, "limit",  (double) kInventoryPage);
-        auto page = inventoryPage (names, match.trim(), offset, limit);
-        // MARKED, NOT HIDDEN: the model is told what will not load here and why, so it can say so
-        // before it proposes an add rather than after the rack refuses one (Sean's item 3).
-        if (src_.notLoadable)
-            if (auto* o = page.getDynamicObject())
-            {
-                const auto bad = src_.notLoadable();
-                o->setProperty ("notLoadable", bad);
-                if (auto* arr = bad.getArray(); arr != nullptr && ! arr->isEmpty())
-                    o->setProperty ("notLoadableNote",
-                                    "these are installed but cannot run in this host - say so and offer "
-                                    "a working alternative of the same role instead of proposing them");
-            }
+        // MARKED, NOT HIDDEN (item 3) - and handed to inventoryPage so it is inside the 8 KB gate
+        // rather than appended after it, which is the defect FOR_B §25 is about.
+        auto page = inventoryPage (names, match.trim(), offset, limit,
+                                   src_.notLoadable ? src_.notLoadable() : juce::var());
         // A filter that matched nothing is a RESULT, not a failure - "you have no de-essers" is an answer the
         // agent can act on, and a failure here would send it round again on the same question.
         done (ToolOutcome::success (page));

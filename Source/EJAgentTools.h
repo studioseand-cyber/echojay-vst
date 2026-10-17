@@ -226,6 +226,31 @@ public:
         cannot tell a name from a sentence without knowing what is installed, so it asks here. */
     virtual juce::StringArray installedPluginNames() { return {}; }
 
+    /** Shrink a result that is too big to send, keeping its shape (17 Oct 2026).
+
+        Contract section 5 caps a result at 8 KB and the server rejects a larger one with
+        `result_too_large`. The executor already trims every result it builds; this exists for the
+        case the client meets at the last moment - an oversized result in hand, about to be posted -
+        so that the ANSWER gets smaller instead of the run dying. The default drops the largest
+        arrays and marks `truncated`; ExecutorRead overrides it with the gate it already owns. */
+    virtual juce::var compactResult (juce::var v)
+    {
+        auto bytes = [] (const juce::var& x) { return (int) juce::JSON::toString (x, true).getNumBytesAsUTF8(); };
+        if (bytes (v) <= 8192) return v;
+        if (auto* o = v.getDynamicObject())
+            for (int pass = 0; pass < 12 && bytes (v) > 8192; ++pass)
+            {
+                juce::Identifier biggest; int n = 0;
+                for (const auto& p : o->getProperties())
+                    if (auto* a = p.value.getArray()) if (a->size() > n) { n = a->size(); biggest = p.name; }
+                if (n <= 1) break;
+                auto* a = o->getProperty (biggest).getArray();
+                a->removeRange (a->size() / 2, a->size() - a->size() / 2);
+                o->setProperty ("truncated", true);
+            }
+        return v;
+    }
+
     // The opening read sent as `context` on /api/agent/start: channel (role,
     // name, uid), the rack in one line per slot, the inventory shortlist.
     virtual juce::var startContext() = 0;

@@ -171,6 +171,11 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
     pendingAsk_ = {}; pendingAskId_.clear();
     playback_ = {}; playbackStepId_.clear();
     errorMessage_.clear(); doneSummary_.clear(); errorRetryable_ = false; costUsd_ = 0.0;
+    // A NEW RUN OWNS NO OLD BODY (17 Oct 2026). These held the last posted body so Retry could
+    // resend it; left standing across a start they are a loaded gun pointing at the next message,
+    // which is the second half of what Sean saw - his next message failing with the PREVIOUS run's
+    // tool id.
+    lastBody_.clear(); lastPath_.clear(); lastErrorCode_.clear();
     refusedTypedLine_.clear();
     sessionId_.clear(); round_ = 0; ofSoftCap_ = 0; awaitTimeoutMs_ = 0;
     planHeading_.clear(); doneReason_.clear();
@@ -225,6 +230,28 @@ void EJAgentClient::markUnfinishedStopped()
 void EJAgentClient::retry()
 {
     if (state_ != State::Failed || ! errorRetryable_ || lastBody_.isEmpty() || lastPath_.isEmpty()) return;
+    // ---- NEVER RESEND THE BYTES THAT WERE REFUSED FOR BEING THOSE BYTES (17 Oct 2026) ----------
+    //
+    // Sean's screenshot: Retry failed with the SAME tool id as the original, and so did his next
+    // message. This function re-posts `lastBody_` verbatim, which is exactly right for a 500 or a
+    // timeout - the server never saw it - and exactly wrong when the server DID see it and rejected
+    // its content. `result_too_large` is that case: the same bytes will be refused forever, and each
+    // press looks to him like the plugin not listening.
+    //
+    // A content rejection is not retryable by repetition. The body is dropped and so is the run's
+    // claim on it; he is told the honest thing instead, and the next message starts clean.
+    if (lastErrorCode_ == "result_too_large" || lastErrorCode_ == "too_large_to_send"
+        || lastErrorCode_ == "invalid_result")
+    {
+        log ("RETRY refused: the last failure was \"" + lastErrorCode_ + "\", which is about the CONTENT "
+             "of that body - resending the same bytes would be refused the same way. Dropping it.");
+        lastBody_.clear(); lastPath_.clear();
+        errorRetryable_ = false;
+        errorMessage_ = "That answer was too long to send, so trying again would fail the same way. "
+                        "Ask me again and I will fetch less at a time.";
+        changed();
+        return;
+    }
     log ("RETRY " + lastPath_);
     ++generation_;
     errorMessage_.clear(); errorRetryable_ = false;
@@ -291,6 +318,35 @@ juce::String EJAgentClient::matchTypedToChoice (const juce::String& typedIn) con
     the chips are the server's guess and the inventory is the fact.
 
     Returns the installed name it matched, so the log can say which, or empty.                     */
+/** The server's error, in words a person can act on (17 Oct 2026).
+
+    One sentence: what happened, then what to do about it. The server's own text is kept for Details
+    by the caller - this never throws it away, it just stops it being the headline. Anything with a
+    tool id, a byte count or a contract reference in it is replaced rather than dressed up; anything
+    unrecognised falls back to the server's sentence with the machinery stripped out of it. */
+juce::String EJAgentClient::plainStopLine (const juce::String& code, const juce::String& serverText)
+{
+    const auto c = code.trim().toLowerCase();
+    if (c == "result_too_large" || c == "too_large_to_send")
+        return "That answer was too big to send in one go. Ask me again and I will fetch less at a time.";
+    if (c == "round_failed")        return "I could not reach the assistant just then. Try again.";
+    if (c == "model_unavailable")   return "The assistant is busy. Try again in a moment.";
+    if (c == "agent_mode_off")      return "Agent mode is switched off on the server, so I cannot run this.";
+    if (c == "rate_limited")        return "Too many requests just now. Try again in a moment.";
+    if (c == "invalid_result" || c == "bad_request")
+        return "I sent something the assistant could not read. Try again.";
+    if (c == "stopped")             return "Stopped.";
+
+    // An unknown code: use the server's words, but never its machinery. A sentence carrying a tool
+    // id, a byte limit or a document reference is not a sentence for this window.
+    auto t = serverText.trim();
+    const bool hasMachinery = t.contains ("toolu_") || t.containsIgnoreCase ("CONTRACT_")
+                           || t.containsIgnoreCase ("8 KB") || t.contains ("_too_") || t.contains ("{");
+    if (t.isEmpty() || hasMachinery)
+        return "Something went wrong at the assistant's end and I stopped. Try again.";
+    return t;
+}
+
 juce::String EJAgentClient::typedNamesAnInstalledPlugin (const juce::String& typed) const
 {
     auto squash = [] (const juce::String& in)
@@ -853,8 +909,21 @@ void EJAgentClient::onFrame (int generation, Frame f)
         }
         case FrameKind::Error:
         {
-            errorMessage_ = f.errorMessage.isNotEmpty() ? f.errorMessage : (f.errorCode.isNotEmpty() ? f.errorCode : juce::String ("The agent reported an error."));
+            // ---- A STOP IN PLAIN WORDS, NEVER CONTRACT TEXT OR A TOOL ID (17 Oct 2026) ---------
+            //
+            // What Sean read on his screen tonight: "The agent stopped: result
+            // toolu_01VtSXwQ7CTqLmVPLGMUao8n is over 8 KB; send the compact summary shape
+            // (CONTRACT_AGENT_TOOLS section 5)". Three things wrong with it in a musician's chat -
+            // a tool id, a byte limit, and a reference to a document he has never seen - and not one
+            // word about what he can do next.
+            //
+            // The server's own sentence is kept, verbatim, under Details (rawError below), because
+            // the next person debugging this needs it. The LINE says what happened and what to do.
+            errorMessage_ = plainStopLine (f.errorCode, f.errorMessage);
+            rawErrorDetail_ = f.errorMessage;
             errorRetryable_ = f.retryable;
+            lastErrorCode_  = f.errorCode;   // so retry() can tell "the server never saw it" from
+                                             // "the server saw it and refused its content"
             log ("frame error code=" + f.errorCode + " retryable=" + juce::String (f.retryable ? 1 : 0) + " \"" + errorMessage_ + "\"");
             flushRoundTalk();
             markUnfinishedStopped();
@@ -1107,9 +1176,40 @@ void EJAgentClient::postStepIfComplete()
     }
     awaitSeen_ = false;                       // one step per await, never two
     flushRoundTalk();
-    for (const auto& r : results)             // contract 4: a result over 8 KB is rejected with result_too_large
-        if (r.ok && juce::JSON::toString (r.result, true).getNumBytesAsUTF8() > 8192)
-            log ("WARNING result " + r.id + " exceeds 8 KB - the server will reject it (the executor must send the summary shape)");
+    // ---- AN OVERSIZED RESULT IS SHRUNK, NOT SENT AND REGRETTED (17 Oct 2026) -------------------
+    //
+    // This used to LOG A WARNING and post it anyway - "the server will reject it" - and on Sean's
+    // machine it did, in round 1 of every run: look(inventory) came back over 8 KB because 357 of
+    // his 1,323 plugins cannot load and 17b put every one of them in the result. The warning was
+    // right and useless. A line in a log that predicts the failure it is about to cause is not a
+    // guard; it is a comment.
+    //
+    // So the last gate before the wire actually acts: the executor compacts the result (the same
+    // fitUnder8K it uses everywhere else), the compacted bytes go out, and the log says what it did
+    // and by how much. The run continues with a smaller answer, which is the whole point of the
+    // contract's shape.
+    for (auto& r : results)
+        if (r.ok)
+        {
+            const auto before = (int) juce::JSON::toString (r.result, true).getNumBytesAsUTF8();
+            if (before <= 8192) continue;
+            r.result = executor_.compactResult (r.result);
+            const auto after = (int) juce::JSON::toString (r.result, true).getNumBytesAsUTF8();
+            log ("result " + r.id + " was " + juce::String (before) + " bytes, over the 8 KB the contract "
+                 "allows - compacted to " + juce::String (after) + " before sending (it is the ANSWER that "
+                 "gets smaller, never the run that dies)");
+            if (after > 8192)
+            {
+                // Still too big: send the failure the model can act on rather than bytes the server
+                // will refuse. It names the tool, not the limit, because the model chooses the next
+                // move from the sentence.
+                r = failedResult (r.id, "too_large_to_send",
+                                  "that answer was too long to send even after shortening - ask for less of "
+                                  "it at a time (a narrower match, or a smaller limit)");
+                log ("result " + r.id + " is STILL over 8 KB after compacting - sending a short failure "
+                     "instead, so the round can continue");
+            }
+        }
     log ("STEP round=" + juce::String (round_) + " results=" + juce::String ((int) results.size()));
     post ("/api/agent/step", buildStepBody (sessionId_, round_, results));
 }

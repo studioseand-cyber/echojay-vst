@@ -227,8 +227,11 @@ public:
     //   limit  (int,    optional, default kInventoryPage, capped at kInventoryPageMax)
     // and the result carries total / offset / limit / returned / hasMore / names, with `count` keeping its
     // pre-paging meaning (== total, the whole list) and `truncated` keeping its (names are only a slice).
+    /** @param notLoadable  [{name, loadable:false, why}] for the WHOLE machine, or void. Folded in
+                              page-scoped and capped, and counted in `notLoadableTotal`, BEFORE the
+                              8 KB gate - 17 Oct 2026, FOR_B §25. */
     static juce::var inventoryPage (const juce::StringArray& all, const juce::String& match,
-                                    int offset, int limit);
+                                    int offset, int limit, juce::var notLoadable = juce::var());
     static constexpr int kInventoryPage    = 60;
     static constexpr int kInventoryPageMax = 200;
     // THE 8 KB GATE: trims `names`-style arrays and long strings until the JSON fits, marking truncated:true.
@@ -254,6 +257,8 @@ protected:
         for ExecutorDo's same-role alternatives (D22). One accessor, both callers. */
     juce::StringArray installedPluginNames() override
     { return src_.inventory ? src_.inventory() : juce::StringArray{}; }
+    /** The gate this class already owns, offered to the client for a last-moment oversize. */
+    juce::var compactResult (juce::var v) override { return fitUnder8K (std::move (v)); }
     /** What cannot load here, as [{name, loadable:false, why}] - empty when nothing is marked. */
     juce::var notLoadableHere() const { return src_.notLoadable ? src_.notLoadable() : juce::var(); }
 

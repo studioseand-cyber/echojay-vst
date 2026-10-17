@@ -289,6 +289,19 @@ private:
     Playback playback_;
     juce::String playbackStepId_;
     juce::String lastPath_, lastBody_;
+    /** The last error frame's code, so retry() can tell a failure the server never saw (a 500, a
+        timeout - resend it) from one it saw and refused for its content (result_too_large - never
+        resend it). 17 Oct 2026, from Sean's screenshot of Retry failing with the same tool id. */
+    juce::String lastErrorCode_;
+    /** The server's own error sentence, kept for Details while the drawn line stays plain. */
+    juce::String rawErrorDetail_;
+public:
+    /** The server's error code and text, turned into one sentence a musician can act on. Static so
+        the guard can hold it in both directions without a client. */
+    static juce::String plainStopLine (const juce::String& code, const juce::String& serverText);
+    /** The server's own words for Details, empty when there were none. */
+    const juce::String& rawErrorDetail() const noexcept { return rawErrorDetail_; }
+private:
     juce::String errorMessage_, doneSummary_;
     bool errorRetryable_ = false;
     double costUsd_ = 0.0;
