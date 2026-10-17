@@ -1214,6 +1214,28 @@ static juce::var linkRowOf (const juce::var& st, const juce::String& uid)
     count from their last sidecar write, which no check of those three fields can see through. */
 static juce::StringArray gLaunchedLinkUids;
 
+/** EVERY CHIP ON SCREEN, from the two places they are published (17 Oct 2026).
+
+    `steps[].chips` is a COMMA-JOINED STRING, not an array, and three rows read it with getArray():
+    B3-live typed an answer naming no chip because it never saw one, and A8-live reported an ask
+    "offering []" about an ask that was offering plenty. A reader that silently returns nothing for a
+    field of the wrong type is the defect this round keeps finding, in its fourth costume.
+
+    `agent.askLabels` is the pending ask's own labels, pipe-joined - what the card draws - and is the
+    authoritative source while a question waits. The step strings are kept as a second source for a
+    row that reads them after the ask has been answered. */
+static juce::StringArray chipsOnScreen (const juce::var& st)
+{
+    juce::StringArray out;
+    const auto labels = agentVarOf (st).getProperty ("askLabels", juce::var()).toString();
+    for (const auto& l : juce::StringArray::fromTokens (labels, "|", "")) if (l.trim().isNotEmpty()) out.add (l.trim());
+    if (auto* arr = st.getProperty ("agentRow", juce::var()).getProperty ("steps", juce::var()).getArray())
+        for (const auto& sv : *arr)
+            for (const auto& c : juce::StringArray::fromTokens (sv.getProperty ("chips", juce::var()).toString(), ",", ""))
+                if (c.trim().isNotEmpty()) out.addIfNotAlreadyThere (c.trim());
+    return out;
+}
+
 /** TRUE when the Link that AU hosting will load is NOT the bundle this run was given (item 0b).
 
     Set once at startup by comparing the two binaries' sizes - two builds of this plugin are never
@@ -6437,18 +6459,8 @@ int main (int argc, char* argv[])
                              // step's chips string as a second source and the plugin name only as a last
                              // resort - and a free-text ask has neither, which is the case this row is
                              // really about.
-                             juce::String answer;
-                             const auto labels = agentVarOf (st).getProperty ("askLabels", juce::var()).toString();
-                             if (labels.isNotEmpty())
-                                 answer = juce::StringArray::fromTokens (labels, "|", "")[0].trim();
-                             if (answer.isEmpty())
-                                 if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
-                                     for (const auto& sv : *arr)
-                                     {
-                                         const auto chips = sv.getProperty ("chips", juce::var()).toString();
-                                         if (chips.isNotEmpty())
-                                             answer = juce::StringArray::fromTokens (chips, ",", "")[0].trim();
-                                     }
+                             const auto onScreen = chipsOnScreen (st);
+                             juce::String answer = onScreen.isEmpty() ? juce::String() : onScreen[0];
                              if (answer.isEmpty()) answer = "the EchoJay Transient";
                              rig.send (echojay::rig::cmd::sendChat, args1 ("text", answer), 15000);
                              juce::String answered;
@@ -6610,12 +6622,7 @@ int main (int argc, char* argv[])
                          "Add Pro-C 2 to this rack",
                          [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                          {
-                             juce::StringArray chips;
-                             if (auto* arr = st.getProperty ("agentRow", juce::var())
-                                               .getProperty ("steps", juce::var()).getArray())
-                                 for (const auto& sv : *arr)
-                                     if (auto* ch = sv.getProperty ("chips", juce::var()).getArray())
-                                         for (const auto& c : *ch) chips.add (c.toString());
+                             const auto chips = chipsOnScreen (st);
                              const auto all = chips.joinIntoString (" | ") + " " + r.lastAsk;
                              if (! all.containsIgnoreCase ("Pro-C"))
                              { why = "it asked \"" + r.lastAsk.substring (0, 70) + "\" offering ["
@@ -6629,12 +6636,7 @@ int main (int argc, char* argv[])
                          "Add Pro-C 3 to this rack",
                          [&] (const AgentOutcome&, const juce::var& st, juce::String& why)
                          {
-                             juce::StringArray chips;
-                             if (auto* arr = st.getProperty ("agentRow", juce::var())
-                                               .getProperty ("steps", juce::var()).getArray())
-                                 for (const auto& sv : *arr)
-                                     if (auto* ch = sv.getProperty ("chips", juce::var()).getArray())
-                                         for (const auto& c : *ch) chips.add (c.toString());
+                             const auto chips = chipsOnScreen (st);
                              int proC = 0;
                              for (const auto& c : chips) if (c.containsIgnoreCase ("Pro-C")) ++proC;
                              if (proC > 1)
