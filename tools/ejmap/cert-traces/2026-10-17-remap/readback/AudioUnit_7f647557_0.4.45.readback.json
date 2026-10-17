@@ -1,0 +1,59 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Meaw Chain",
+  "version": "0.4.45",
+  "map_version": "0.4.45",
+  "map_fp": "aceab85e6fcb3fec4d9bc3ab7ea9b47bfdb63f9fbbe62ad6ff4e146f828d45d3",
+  "controls": [
+    {
+      "name": "On",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Blend",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25 %",
+        "0.500000": "50 %",
+        "0.750000": "75 %"
+      }
+    },
+    {
+      "name": "Output Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "6.0 dB"
+      }
+    },
+    {
+      "name": "Auto-Gain",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Input Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "6.0 dB"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T084014"
+}

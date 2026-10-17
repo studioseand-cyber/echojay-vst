@@ -1,0 +1,110 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "PuigChild 670 (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "5fec0361b345b7bc9ef589cf4fa2e47da878123f91c5df86d48b7c179829123e",
+  "controls": [
+    {
+      "name": "Link",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Left/Right",
+        "0.500000": "Linked"
+      }
+    },
+    {
+      "name": "Mains",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "60Hz",
+        "0.500000": "Off",
+        "0.750000": "50Hz"
+      }
+    },
+    {
+      "name": "Left Input",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "15",
+        "0.500000": "10",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "Left Threshold",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Left Time Constant",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "Left Output",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "9.0 dB"
+      }
+    },
+    {
+      "name": "Right Input",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "15",
+        "0.500000": "10",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "Right Threshold",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Right Time Constant",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "Right Output",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "9.0 dB"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T084014"
+}

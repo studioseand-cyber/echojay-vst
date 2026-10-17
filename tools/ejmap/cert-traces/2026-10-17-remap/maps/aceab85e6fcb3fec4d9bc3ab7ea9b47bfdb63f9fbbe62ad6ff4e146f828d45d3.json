@@ -1,0 +1,455 @@
+{
+  "fp": "aceab85e6fcb3fec4d9bc3ab7ea9b47bfdb63f9fbbe62ad6ff4e146f828d45d3",
+  "schema": "2.4",
+  "identity": {
+    "format": "AudioUnit",
+    "uid": "7f647557",
+    "name": "Meaw Chain",
+    "vendor": "Safari Pedals",
+    "version": "0.4.45",
+    "param_count": 5
+  },
+  "category": "channel_strip",
+  "mode": "fast",
+  "params": {
+  },
+  "controls": {
+    "On": {
+      "name": "On",
+      "index": 0,
+      "kind": "mode",
+      "range": [
+        0.0,
+        0.0
+      ],
+      "unit": null,
+      "labels": {
+        "Off": 0.0,
+        "On": 1.0
+      },
+      "caseInsensitiveOk": true,
+      "trust": "setread",
+      "readback": {
+        "checked": 2,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Blend": {
+      "name": "Blend",
+      "index": 1,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        100.0
+      ],
+      "unit": "pct",
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          5.0,
+          0.050000000745058
+        ],
+        [
+          10.0,
+          0.100000001490116
+        ],
+        [
+          15.0,
+          0.150000005960464
+        ],
+        [
+          20.0,
+          0.200000002980232
+        ],
+        [
+          25.0,
+          0.25
+        ],
+        [
+          30.0,
+          0.300000011920929
+        ],
+        [
+          35.0,
+          0.350000023841858
+        ],
+        [
+          40.0,
+          0.400000005960464
+        ],
+        [
+          45.0,
+          0.449999988079071
+        ],
+        [
+          50.0,
+          0.5
+        ],
+        [
+          55.0,
+          0.550000011920929
+        ],
+        [
+          60.0,
+          0.600000023841858
+        ],
+        [
+          65.0,
+          0.649999976158142
+        ],
+        [
+          70.0,
+          0.699999988079071
+        ],
+        [
+          75.0,
+          0.75
+        ],
+        [
+          80.0,
+          0.800000011920929
+        ],
+        [
+          85.0,
+          0.850000023841858
+        ],
+        [
+          90.0,
+          0.899999976158142
+        ],
+        [
+          95.0,
+          0.949999988079071
+        ],
+        [
+          100.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Output Gain": {
+      "name": "Output Gain",
+      "index": 2,
+      "kind": "anchored",
+      "range": [
+        -12.0,
+        12.0
+      ],
+      "unit": "db",
+      "anchors": [
+        [
+          -12.0,
+          0.0
+        ],
+        [
+          -10.800000190734863,
+          0.050000000745058
+        ],
+        [
+          -9.600000381469727,
+          0.100000001490116
+        ],
+        [
+          -8.399999618530273,
+          0.150000005960464
+        ],
+        [
+          -7.199999809265137,
+          0.200000002980232
+        ],
+        [
+          -6.0,
+          0.25
+        ],
+        [
+          -4.800000190734863,
+          0.300000011920929
+        ],
+        [
+          -3.599999904632568,
+          0.350000023841858
+        ],
+        [
+          -2.400000095367432,
+          0.400000005960464
+        ],
+        [
+          -1.200000047683716,
+          0.449999988079071
+        ],
+        [
+          0.0,
+          0.5
+        ],
+        [
+          1.200000047683716,
+          0.550000011920929
+        ],
+        [
+          2.400000095367432,
+          0.600000023841858
+        ],
+        [
+          3.599999904632568,
+          0.649999976158142
+        ],
+        [
+          4.800000190734863,
+          0.699999988079071
+        ],
+        [
+          6.0,
+          0.75
+        ],
+        [
+          7.199999809265137,
+          0.800000011920929
+        ],
+        [
+          8.399999618530273,
+          0.850000023841858
+        ],
+        [
+          9.600000381469727,
+          0.899999976158142
+        ],
+        [
+          10.800000190734863,
+          0.949999988079071
+        ],
+        [
+          12.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Auto-Gain": {
+      "name": "Auto-Gain",
+      "index": 3,
+      "kind": "mode",
+      "range": [
+        0.0,
+        0.0
+      ],
+      "unit": null,
+      "labels": {
+        "Off": 0.0,
+        "On": 1.0
+      },
+      "caseInsensitiveOk": true,
+      "trust": "setread",
+      "readback": {
+        "checked": 2,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Input Gain": {
+      "name": "Input Gain",
+      "index": 4,
+      "kind": "anchored",
+      "range": [
+        -12.0,
+        12.0
+      ],
+      "unit": "db",
+      "anchors": [
+        [
+          -12.0,
+          0.0
+        ],
+        [
+          -10.800000190734863,
+          0.050000000745058
+        ],
+        [
+          -9.600000381469727,
+          0.100000001490116
+        ],
+        [
+          -8.399999618530273,
+          0.150000005960464
+        ],
+        [
+          -7.199999809265137,
+          0.200000002980232
+        ],
+        [
+          -6.0,
+          0.25
+        ],
+        [
+          -4.800000190734863,
+          0.300000011920929
+        ],
+        [
+          -3.599999904632568,
+          0.350000023841858
+        ],
+        [
+          -2.400000095367432,
+          0.400000005960464
+        ],
+        [
+          -1.200000047683716,
+          0.449999988079071
+        ],
+        [
+          0.0,
+          0.5
+        ],
+        [
+          1.200000047683716,
+          0.550000011920929
+        ],
+        [
+          2.400000095367432,
+          0.600000023841858
+        ],
+        [
+          3.599999904632568,
+          0.649999976158142
+        ],
+        [
+          4.800000190734863,
+          0.699999988079071
+        ],
+        [
+          6.0,
+          0.75
+        ],
+        [
+          7.199999809265137,
+          0.800000011920929
+        ],
+        [
+          8.399999618530273,
+          0.850000023841858
+        ],
+        [
+          9.600000381469727,
+          0.899999976158142
+        ],
+        [
+          10.800000190734863,
+          0.949999988079071
+        ],
+        [
+          12.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    }
+  },
+  "groups": [],
+  "skips": [
+    {
+      "semantic": "input_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "output_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "threshold_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "ratio",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "freq_hz",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "gain_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "range_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "depth_pct",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "width_pct",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "balance",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "hold_ms",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    }
+  ],
+  "declines": [],
+  "evidence": {
+    "noise_mask": [],
+    "readback": {
+    },
+    "visual_confirmed": [],
+    "audio_probe": {
+    },
+    "rehearsal": null,
+    "screenshots": {
+      "labelled": "",
+      "full": ""
+    },
+    "assist_turns": 0,
+    "duration_s": 0
+  },
+  "provenance": {
+    "tester_id": "",
+    "machine_id": "cd9ef69f-9660-4f2d-8d58-dbd0af2e6ea2",
+    "ejmap_version": "0.1.0 (ad50ddbb)",
+    "extractor_version": "5",
+    "apply_header_sha": "cb9ec96432be8aba29ee57fa7d39fabfc25c75e6753a37574ebaa0676c9f44d5",
+    "plugin_version": "0.4.45",
+    "host_os": "Mac OSX 15.7.5",
+    "at": "2026-10-17T08:13:28.196+01:00"
+  }
+}

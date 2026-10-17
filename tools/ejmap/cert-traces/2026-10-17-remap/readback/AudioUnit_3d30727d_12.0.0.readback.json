@@ -1,0 +1,89 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "CLA-76 (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "49ccce6d17b9338b07bff81b7de10e43b1cb7089a95076bc8f44697b715b27d4",
+  "controls": [
+    {
+      "name": "Input",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-32.4",
+        "0.550000": "-21.6",
+        "0.775000": "-10.8"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-32.4",
+        "0.550000": "-21.6",
+        "0.775000": "-10.8"
+      }
+    },
+    {
+      "name": "Attack",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "4.00",
+        "0.750000": "5.50"
+      }
+    },
+    {
+      "name": "Release",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "4.00",
+        "0.750000": "5.50"
+      }
+    },
+    {
+      "name": "Ratio",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.187500": "12",
+        "0.375000": "8",
+        "0.562500": "8"
+      }
+    },
+    {
+      "name": "Analog",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.125000": "50Hz",
+        "0.250000": "50Hz",
+        "0.375000": "60Hz"
+      }
+    },
+    {
+      "name": "Meter",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "GR",
+        "0.500000": "In"
+      }
+    },
+    {
+      "name": "Comp Off",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cmp On",
+        "1.000000": "Cmp Off"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T084006"
+}
