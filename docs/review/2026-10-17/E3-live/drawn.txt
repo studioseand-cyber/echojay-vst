@@ -1,0 +1,8 @@
+scenario E3-live
+captured 2026-10-17T07:09:53.467+01:00
+  [user] How much gain reduction is Renaissance Axx (s) doing?
+  [assistant] I checked the Mix Bus rack and it only has one slot loaded - EchoJay Compressor - there's no Renaissance Axx (or any other Renaissance plugin) in this chain. Since it isn't present here, I can't give you a gain reduction reading for it; if it's running elsewhere in your session let me know which track and I can take a look there.
+  run row: status=Done changes=0 steps=1 zones=[11:1 step]
+  opening: I checked the Mix Bus rack and it only has one slot loaded - EchoJay Compressor - there's no Renaissance Axx (or any other Renaissance plugin) in this chain. Since it isn't present here, I can't give you a gain reduction reading for it; if it's running elsewhere in your session let me know which track and I can take a look there.
+  closing: 
+    step "read the rack" [done] right="" detail="" chips=[]

@@ -2,7 +2,41 @@
 
 ## Installed
 
-**(filled in when the chain finishes - see "The night's chain" below.)**
+**Yes - `ship_2026-10-17a`, at 07:26.** All four bundles, both slices, and the identity proof is in
+`ship_2026-10-17a/INSTALLED.txt`: every UUID in `~/Library` matches the one in the ship folder.
+
+    EchoJay V2.component    D86CE45A-7E9B-3454-A956-DA65D40C44EB (arm64)
+    EchoJay Link.component  14DBCBC3-A1B1-3A9A-9DBD-263CA8BF0F2C (arm64)
+    EchoJay V2.vst3         1C1AC5D3-0E5A-3DC5-92AB-97F0C6851183 (arm64)
+    EchoJay Link.vst3       311ACA28-6634-36B6-BE5C-9A8891F1EE59 (arm64)
+
+AUHostingService was killed twice after the copy, as the standing rule says.
+
+**And one thing you should know before you open Logic, because I am not going to bury it.** The
+install fired on a check of mine that was wrong. S6 prints **two** verdict lines - the live rig and
+the mock - and my gate script read `grep -q "host_rig: GREEN"`. The live half was green (68 passed,
+0 failed) and the mock half was **red on one row, `A2`**, and the check matched the first line, said
+"S6 GREEN" and installed. A verifier that can only answer yes is not a verifier. It now counts the
+verdict lines and requires every one of them to be green, and the night's scripts are kept in
+`tools/night_2026-10-17/` so the next round starts from the fixed one.
+
+A2 asserts that a built-in add with settings on a Link lands and the main window's strip follows it.
+It passed against the `build/` tree at 01:30 and failed against `build-guards` twice, and the
+difference is **which Link answered**: all night, AU hosting loaded the Link INSTALLED in
+`~/Library` - last night's `ship_2026-10-16b` - rather than the one under test (that is item 0b, and
+it is why `A4-live` skips). 16b's Link has neither this build's dial-pending wait nor its card
+composition, which is exactly what A2 reads. The install has now replaced that component with
+tonight's, so I reran the mock half with both halves of the pair from the same build.
+
+**It came back GREEN: 0 failed, 113 passed, 11 skipped**, at 07:39. So S6 is green on both halves of
+this build - the live rig at 68 passed / 0 failed (07:22) and the mock at 113 passed / 0 failed
+(07:39) - and the install stands. The two halves ran twenty minutes apart on the same source (no
+product file has changed since S1), and A2 itself ended as a loud SKIP rather than a pass: the Link
+it addressed had gone by the end of the row, which is item 14 and is said in those words in
+`ship_2026-10-17a/GREEN.txt`. It is not counted as a pass anywhere.
+
+What I am NOT claiming: that A2's behaviour was proved tonight. It was not. Step 1 of the recheck
+below is the only honest proof of the Link side, and that is your eyes on it.
 
 ---
 
@@ -70,6 +104,19 @@ on the same raw prefix and are independent proof that your step 8 was real.
   fixed mid-build.
 - **The chain ack naming the slot an add created** - item 9, which would turn the honest
   "I cannot tell which of these copies I just added" into an exact answer.
+- **Four things the gate itself found overnight**, each with its log lines: **item 13** a Link that
+  looks gone to the agent for seconds after its rack is rebuilt; **item 14** a dead Link staying in
+  the registry until the registry is full - read by your rack picker, the Link list, and the agent's
+  idea of which tracks are reachable; **item 15** whether `move slot 2 to 1` moved anything, and
+  whether the step names the plugin that moved or the one at the destination; **item 16** the
+  8-second chain-command ack window and the sentence when it expires, which told me twice that a
+  live track "may be gone, or its track may be disabled".
+- **Item 12**, the plan-consistency sim becoming a row that REPORTS rather than passes or fails, and
+  **item 17**, a cosmetic one: the server-side skip names one FOR_B section for every row.
+
+None of these was started tonight. Each would have been a change to shipping code made at four in
+the morning against a behaviour I could not watch in a host, and the rule you set for the night was
+that an item which cannot go green safely gets backed out and queued with its reason.
 
 ---
 
@@ -160,3 +207,16 @@ Agent mode **Ask**, the project with the Mix Bus and the Kick's Link, something 
    doing?" **PASS:** it listens and answers with a figure. If it asks you to play, reply "im playing
    it": **PASS:** it resumes the SAME question (gain reduction), not loudness. This half depends on
    B's change as well as mine; if it still drifts, that is FOR_B §16 and the evidence is in it.
+
+   My half is in and proved by row E9: every start body now carries the last six turns of chat and
+   `transport{known, playing, heardSeconds, signalNow}`. The deciding - listen rather than ask - is
+   B's, and the row that measures it, `E10-live`, skipped as the server's tonight with the agent's
+   own sentence attached. So if step 8 still goes wrong this morning, nothing about it is a surprise
+   and the evidence is already written down.
+
+9. **Three sentences to disbelieve, if you see them** (all three are the server's, all three are in
+   FOR_B with the logs). A placement claim - "the compressor now sits before the EQ as asked" - when
+   the rack shows otherwise (§20). A refusal justified by "the EchoJay Compressor couldn't load on
+   this Mac" when one is sitting on the Mix Bus (§21). And the literal word **"undefined"** in a
+   sentence in the chat (§19). If any of them appears, it is not your Mac and it is not the install -
+   it is a sentence written without checking the fact it asserts, and B has all three.

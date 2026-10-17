@@ -1,0 +1,10 @@
+scenario B4-live
+captured 2026-10-17T05:38:11.169+01:00
+  [user] Add a compressor to this rack
+  [assistant] 
+  run row: status=Waiting for your answer changes=1 steps=3 zones=[12,4:Playing now,4:Skip the measurement,7:Stop]
+  opening: 
+  closing: 
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "add EchoJay Compressor" [done] right="auto-applied" detail="added EchoJay Compressor first; read back 4 slot(s) on the rack; read back EchoJay Compressor: threshold -18 dB, ratio 2.5:1, attack 15 ms, release 120 ms, knee 3 dB, makeup 0 dB, mix 100" chips=[]
+    step "ask" [running] right="your answer?" detail="" chips=[Playing now, Skip the measurement]

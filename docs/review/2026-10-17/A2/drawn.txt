@@ -1,12 +1,13 @@
 scenario A2
-captured 2026-10-17T01:21:04.131+01:00
+captured 2026-10-17T07:25:47.978+01:00
   [user] rig: does the box clear?
   [assistant] mock reply, sent quickly.
   [user] rig-midreply-marker
   [assistant] mock reply held back so the window could be closed mid-reply, then finished.
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
-  [user] rig-badop-marker: do the impossible
   [user] rig-linkadd-marker: add a compressor to the kick
+  [user] rig-linkadd-marker: add a compressor to the kick
+  [user] rig-badop-marker: do the impossible
   [user] rig-builtinset-marker: add the compressor
   [assistant] Added the EchoJay Compressor.
   [assistant] Added the EchoJay Compressor.

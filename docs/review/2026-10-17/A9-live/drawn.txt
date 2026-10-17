@@ -1,0 +1,9 @@
+scenario A9-live
+captured 2026-10-17T07:08:44.743+01:00
+  [user] Add Pro-C 3 to this rack
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=2 zones=[4:EchoJay Compressor,7:Stop]
+  opening: 
+  closing: 
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "ask" [running] right="your answer?" detail="" chips=[EchoJay Compressor]

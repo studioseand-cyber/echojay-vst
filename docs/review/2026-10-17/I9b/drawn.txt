@@ -1,5 +1,5 @@
 scenario I9b
-captured 2026-10-17T01:20:22.290+01:00
+captured 2026-10-17T07:37:31.499+01:00
   [user] rig-tpown-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it to this rack, with the setting you asked for.
   run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]

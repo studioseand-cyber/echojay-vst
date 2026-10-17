@@ -1,5 +1,5 @@
 scenario A3
-captured 2026-10-17T01:13:51.984+01:00
+captured 2026-10-17T07:31:06.898+01:00
   [assistant] The chain changed after I matched the level. Tap Listen and I'll match it again.
   [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
   [assistant] Added it to this rack, with the setting you asked for.

@@ -1549,3 +1549,13 @@ Two questions, both ours:
 
 The runner now retries once in that one row, so a single missed window does not fail a gate, and
 says in the log that it did. That is a measurement, not a fix; the fix is above.
+
+---
+
+## item 17 - the server-side skip names one FOR_B section for every row (17 Oct, cosmetic but misleading)
+
+`repeated()`'s "every failure is the server's" skip prints a fixed sentence: *"the behaviour this row
+measures is the SERVER's half of continuity (FOR_B §16)"*. It is right for E10-live and wrong for
+C2-live, whose section is §20 - and will be wrong for the next one too. The row should carry its own
+section, as a parameter next to its title. Corrected by hand in `ship_2026-10-17a/GREEN.txt` so the
+record does not mislead.

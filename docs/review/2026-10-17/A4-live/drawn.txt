@@ -1,0 +1,15 @@
+scenario A4-live
+captured 2026-10-17T02:05:25.152+01:00
+  [assistant] Stopped.
+  [user] Add Renaissance Axx (s) to the Kick's rack and set its Threshold
+  [assistant] Stopped.
+  run row: status=Waiting for your answer changes=0 steps=7 zones=[3,4:EchoJay Compressor,7:Stop]
+  opening: Stopped.
+  closing: 
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "add Renaissance Axx (s) - on 88_7even Kick_2_02" [failed] right="not applied" detail="This is on 88_7even Kick_2_02's channel, not the one you have open." chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "ask" [running] right="your answer?" detail="" chips=[EchoJay Compressor]

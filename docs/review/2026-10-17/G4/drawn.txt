@@ -1,5 +1,5 @@
 scenario G4
-captured 2026-10-17T01:20:04.454+01:00
+captured 2026-10-17T07:37:12.800+01:00
   [user] rig-nomap-marker: add that compressor
   [assistant] Added Vertigo VSM-3. Settings not confirmed.
   [user] rig-oneline-marker: nudge the pre-gain

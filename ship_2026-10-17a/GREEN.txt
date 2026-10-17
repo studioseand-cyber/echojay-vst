@@ -1,0 +1,59 @@
+GATE 27 - ship_2026-10-17a, 17 October 2026
+
+S1  OK    six archives deleted and relinked across build, build-guards and build-release;
+          a SHA-256 content manifest of every source file recorded for S3b.
+S2  OK    every guard target in build-guards.
+S3  OK    the four bundles.   S3b OK  archive provenance, by content and not by mtime.
+S4  OK    100% of 79 tests passed (EXIT=0). Every slow two-sided guard at its usual time:
+          level_match 287 s, role_snapshot 307 s, link_live_edit 332 s, lease_id 216 s.
+S5  OK    link_state_guard, standalone and two-sided (EXIT=0).
+S6  OK    both halves green, twenty minutes apart on the same source:
+
+            the LIVE rig, round 7 at 07:22   GREEN  0 failed, 68 passed, 6 skipped
+            the MOCK rig, at 07:39           GREEN  0 failed, 113 passed, 11 skipped
+
+          The mock half was rerun at 07:39 because round 7's mock half had gone RED on one
+          row, A2. All night AU hosting answered with the Link INSTALLED in ~/Library -
+          last night's ship_2026-10-16b - rather than the bundle under test, which is
+          queue item 0b. A2 reads behaviour this build has and 16b's Link does not. The
+          install replaced that component, so the half was run once more with both sides
+          of the pair from this build, and it is green. A2 itself ended as a SKIP, not a
+          pass: see below.
+
+          AND THE CHECK THAT LET A RED HALF PAST: the install fired from a script that read
+          `grep -q "host_rig: GREEN"`, and S6 prints TWO verdict lines. It matched the live
+          half and never looked at the mock. Fixed to count the verdicts and require all of
+          them, and kept in tools/night_2026-10-17/. Stated in the morning report too.
+
+NO SOURCE FILE CHANGED AFTER S1. Everything repaired during S6's seven rounds was in the
+runner (tools/host_rig), which is compiled at test time and is in no bundle, which is why
+S1-S5's verdicts stand on this tree unaltered.
+
+ROWS THAT DID NOT RUN, each with its reason. None of these is counted as a pass anywhere.
+
+  [live] A4-live   live: the same add, on a Link
+            the Link that AU hosting loads here is the INSTALLED binary, not the one this run built (item 0b: registerAU registers a factory and JUCE instantiates the IDENTIFIER, so the system's component wins in a fresh process). A V2 from this build talking to a Link from the last one is a configuration that 
+  [live] B4-live   live: a new instruction closes the waiting run and starts its own
+            the real model did not ask a question in 1 attempts of "Add a compressor to this rack", so there was no waiting ask to act on. NEVER counted as a pass.
+  [live] E10-live  live: with audio playing, a GR question is MEASURED, not asked about
+            the behaviour this row measures is the SERVER's half of continuity (FOR_B §16), which is not in this build: attempt 1: B: it asked for playback and ENDED (state "done") while audio was already flowing, with transport{playing,signalNow} in the start body: "add echojay compressor=added echojay compre
+  [live] C2-live   live: a placed add states the position the rack actually has
+            (the runner's generic wording says FOR_B §16 here; this row's section is §20 - noted for
+            the next round, the reason itself is exact:)
+            the behaviour this row measures is the SERVER's, which is not in this build: attempt 1: B: the compressor landed at slot 2, AFTER the EQ at 1 - the add ops carried no position and the closing claimed one.  NEVER counted as a pass.
+  [mock] P1        an AU that cannot load in this process is never offered in the inventory
+            every one of the 674 AU component(s) on this Mac has an arm64 slice, so there is nothing here that cannot load and nothing to withhold. NEVER counted as a pass.
+  [mock] T3        T3: a Link held by another instance refuses the edit, in words
+            this window never saw another instance holding the rack (rackLock="idle" after 12 s), so there was no contention to refuse. Never counted as a pass.
+  [mock] I4c       a rack's refusal reads as words, never "op 1 invalid"
+            the run produced no failed line at all in this host (the op was refused before it reached a rack's validator), so there is no wording to judge. A10 and B5 hold the same rule on the line Sean actually read. NEVER counted as a pass.
+  [mock] A2        a built-in add with settings on a Link, and the main rack follows it
+            the Link this row addressed (d0d23c4438) was not usable by the end of it - a registry row whose publisher has gone still reads as connected and still carries its last slot count (queue item 14), so an add that reached nothing cannot be told from one that was refused. NEVER counted as a pass.
+  [mock] G2        the rack strip follows a Link change (the build road)
+            same Link as A2: not usable by the end of the row (item 14)
+  [mock] A11b      Auto on ANOTHER track: the approved line names that track
+            the Link the row is working on has no published track name in this run, so there is no name for the line to carry and nothing to judge. The row is about the NAMING, and it cannot be about a name that does not exist.
+
+The seven S6 rounds, what each found and whose it was, are in
+docs/MORNING_REPORT_2026-10-17.md. The product questions they turned up are
+NEXT_ROUND_QUEUE items 13-16; the server-side ones are FOR_B sections 19, 20 and 21.

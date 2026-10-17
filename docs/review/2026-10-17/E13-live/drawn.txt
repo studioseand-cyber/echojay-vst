@@ -1,0 +1,13 @@
+scenario E13-live
+captured 2026-10-17T07:04:57.322+01:00
+  [user] What is the loudness of this rack?
+  [assistant] I'm only getting about a second of audio each time, which isn't enough for an integrated loudness reading - it doesn't seem to be sustaining playback on this end. I can't get a reliable loudness figure right now; you may want to check that the mix bus is actually playing continuously, or just read it off your own meters for now.
+  run row: status=Done changes=0 steps=6 zones=[11:6 steps]
+  opening: I'm only getting about a second of audio each time, which isn't enough for an integrated loudness reading - it doesn't seem to be sustaining playback on this end. I can't get a reliable loudness figure right now; you may want to check that the mix bus is actually playing continuously, or just read it off your own meters for now.
+  closing: 
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
