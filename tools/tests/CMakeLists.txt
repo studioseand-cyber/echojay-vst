@@ -522,7 +522,12 @@ set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_S
 # RELIABILITY is proved by the dedicated pass, whose report is kept beside the matrix's. EJ_LIVE_REPEATS
 # is read by the rig and printed in its report, so a report never hides which of the two it was.
 add_test(NAME host_rig COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
-set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 2700 RUN_SERIAL TRUE
+# TIMEOUT 3900, NOT 2700 (17 Oct 2026). The replay rows - six of Sean's own sessions from 08:05-08:30,
+# served back frame for frame - added real multi-round runs to the matrix, and the live half came in at
+# 1243 s with the mock half at 2114 s. The mock TIMED OUT against its 1800 s bound in the gate, which
+# reads as a product hang and is nothing of the kind: the suite grew. A bound is still a bound - 65
+# minutes, which is roughly double the slowest honest run - so a genuine hang is still killed.
+set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 3900 RUN_SERIAL TRUE
                      SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
                      ENVIRONMENT "EJ_LIVE_REPEATS=1")
 
@@ -537,7 +542,7 @@ set_tests_properties(host_rig PROPERTIES LABELS "rig" TIMEOUT 2700 RUN_SERIAL TR
 # never carried the rack's pre-gain), and it was running only when a human remembered to run the rig without
 # EJ_RIG_LIVE - which is to say, not in the gate. A leg that is not in the gate is a leg that will rot.
 add_test(NAME host_rig_mock COMMAND bash ${CMAKE_SOURCE_DIR}/tools/host_rig/build_and_run.sh)
-set_tests_properties(host_rig_mock PROPERTIES LABELS "rig" TIMEOUT 1800 RUN_SERIAL TRUE
+set_tests_properties(host_rig_mock PROPERTIES LABELS "rig" TIMEOUT 3900 RUN_SERIAL TRUE
                      SKIP_RETURN_CODE 77 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
                      ENVIRONMENT "EJ_RIG_LIVE=;EJ_RIG_TOKEN=")
 

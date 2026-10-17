@@ -6906,8 +6906,31 @@ int main (int argc, char* argv[])
             }
         }
 
+        // ---- THE L-ROWS CANNOT CROSS TWO BUILDS (17 Oct 2026, item 0b) -----------------------
+        // L1, L2 and L3 send an edit from THIS build's V2 to a Link and then read that Link's own
+        // sidecar. In a mixed run the two halves are different builds, which is a pairing that never
+        // ships - and tonight's S6 proved what that costs: L1 went red with "that Link's own
+        // sidecar: 1 -> -1" and a model sentence inventing a reason for it. A4-live, A2, G2, T2w and
+        // I9c already skip on this one measured fact; these three were the stragglers.
+        const bool lRowsCanRun = ! gLinkIsMixedBuild;
+        if (gLinkIsMixedBuild)
+        {
+            for (const auto* pair : { "L1|add a compressor on another track's Link",
+                                      "L2|a build on another track's Link",
+                                      "L3|a Link's OUT, set from the V2" })
+            {
+                const juce::String p { pair };
+                scenSkip (p.upToFirstOccurrenceOf ("|", false, false).toRawUTF8(),
+                          p.fromFirstOccurrenceOf ("|", false, false).toRawUTF8(),
+                          "the Link that AU hosting loaded is the INSTALLED binary, not the one this run "
+                          "was given (item 0b): this row sends an edit from THIS build's V2 and reads the "
+                          "LINK's own sidecar, so in a mixed pairing the two halves of its claim come from "
+                          "different builds. NEVER counted as a pass.", "A");
+            }
+        }
+
         // ---- L1: the same, on ANOTHER track's Link --------------------------
-        if (linkIsUsable (rig.freshState(), linkUid))
+        if (lRowsCanRun && linkIsUsable (rig.freshState(), linkUid))
         {
             const auto rowBefore = linkRowOf (Rig::state(), linkUid);
             const int before = (int) rowBefore.getProperty ("slotCount", -1);
@@ -7107,7 +7130,7 @@ int main (int argc, char* argv[])
         // failed on the SAME binary for two different server-side reasons - 12:34 pass, 14:01 fail on
         // check(level_landed), 14:42 fail on a round that produced nothing, 15:05 pass. One run of a flaky
         // row tells you about that run. The rows are named L2#1..L2#N so a log says which attempt did what.
-        if (linkIsUsable (rig.freshState(), linkUid))
+        if (lRowsCanRun && linkIsUsable (rig.freshState(), linkUid))
         {
             const char* rep = ::getenv ("EJ_RIG_L2_REPEAT");
             const int reps = juce::jlimit (1, 10, rep != nullptr ? juce::String (rep).getIntValue() : 1);
@@ -7170,7 +7193,7 @@ int main (int argc, char* argv[])
 
 
         // ---- L3: a Link's OUT ------------------------------------------------
-        if (linkIsUsable (rig.freshState(), linkUid))
+        if (lRowsCanRun && linkIsUsable (rig.freshState(), linkUid))
         {
             const double before = (double) linkRowOf (Rig::state(), linkUid).getProperty ("gainDb", 0.0);
             const auto name = linkRowOf (Rig::state(), linkUid).getProperty ("name", juce::var()).toString();
