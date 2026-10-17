@@ -336,11 +336,11 @@ bool EJAgentClient::typedLooksLikeNewInstruction (const juce::String& typedIn)
     // person who types "ok: add a compressor" alike. So the verb is looked for at the start AND
     // after the first colon, and nowhere else - scanning every word would make "I don't want you to
     // add anything" an instruction to add.
-    auto verbAt = [&kVerbs] (const juce::StringArray& ws) -> bool
+    auto verbAt = [] (const juce::StringArray& ws) -> bool
     {
         if (ws.isEmpty()) return false;
         const auto first = ws[0].toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
-        for (const char* v : kVerbs) if (first == v) return true;
+        for (const char* v : kVerbs) if (first == v) return true;   // kVerbs is static: no capture
         return false;
     };
     if (verbAt (words)) return true;
