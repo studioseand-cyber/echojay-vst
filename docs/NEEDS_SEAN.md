@@ -326,6 +326,48 @@ Two of its five attempts also died with *"stream ended without a terminal frame 
 stream ended early"* - B's server, the same family as §52 - and those were discarded and retried
 rather than counted, which is the rule for a turn the server never served.
 
+### D22. Your "a plugin the user NAMES is still used as named" ruling has an exception now
+
+On 15 October you ruled that the remembered no-load list must never stop a plugin the user asked for
+by name: *"a plugin the user NAMES is still used as named"*. It is written into the inventory source
+in those words, and it is why **kHs Transient Shaper was tried again this morning** - you asked for
+it by name, so the add path did not consult the list, and it failed to instantiate for the second
+time with the same OS error.
+
+Your item 3 today reads the other way: *"kHs (failed before) was tried again. Mark not loadable up
+front from the live inventory."* Those two cannot both hold, so I have taken today's as the newer
+ruling and narrowed yesterday's rather than deleting it:
+
+- a plugin that has **failed to load in this session** is refused up front, by name or not, with a
+  plain sentence saying so and (B's half) working alternatives of the same role as chips;
+- the mark still clears the moment it loads for real, so signing into iLok gets it back;
+- and a plugin that has never failed is still used exactly as named, which is what yesterday's rule
+  was protecting.
+
+If you meant something narrower - for instance "refuse it up front unless I name it twice" - say so
+and it changes in one place.
+
+### D23. What "replay the exact frames" could and could not mean this morning
+
+Your method for this round was to replay this morning's real sessions rather than write rows from
+shapes I imagine, and it worked: the tap-then-Apply defect is one line, and it was invisible to the
+rig because the rig's scripted add carries no `plan` frame while the real one does.
+
+Two parts of "exact" were not in my logs, and I want you to know which:
+
+- **The start bodies.** The log records `POST /api/agent/start bytes=5699` and not the bytes. The
+  fixtures therefore carry the goal, the target, the checkpoint and the chat the run belonged to -
+  everything the client assembled the body FROM - but not the body itself.
+- **The prose.** `message` frames were logged as "unknown event skipped" with no text, and two of
+  your items are about those exact sentences. The two you QUOTED are in the fixtures with a
+  `textSource` field saying they are your words rather than a recording; every other message frame
+  is empty, which is honest.
+
+Both are fixed at the source: the client now logs an unknown frame's text (160 characters) and the
+protocol carries it, so the next replay is exact in both respects. Everything else in the fixtures -
+frame order, tool-call ids, approval modes, plan frames, ask cards with their real choices, done
+summaries, and your presses and typed answers with their timings - is lifted from the log.
+
 ---
 
 ## Needs your eyes (nothing is blocked on these)
