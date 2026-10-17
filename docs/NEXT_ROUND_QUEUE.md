@@ -1580,3 +1580,14 @@ per-path, which is per-format, so the information exists and only the shape of t
 
 Until then the inventory marks the name, and FOR_B §23 tells B to treat that mark as the stronger
 signal.
+
+## 19. RP8K end to end, both directions (17 Oct 2026, owed)
+`EJ_RIG_BIG_INVENTORY=1 EJ_RIG_ONLY=RP8K` against **ship_2026-10-17b/EchoJay V2.component** must go
+RED (that build appends the whole unloadable list after the gate), and against this tree's bundle
+GREEN. No product rebuild is needed for the red half - the 17b bundle is in its ship folder. About
+17 minutes a pass, machine to itself. Runs before the full gate.
+
+## 20. EJ_RIG_ONLY must skip the WORK, not just the reporting (measured 17 Oct)
+A filtered single-row pass costs 16m 21s, because the filter suppresses a row's verdict and nothing
+else. The matrix needs named blocks whose setup is skipped when no row in them is wanted. Until
+then QUICK's row step is sixteen minutes whatever is asked for.

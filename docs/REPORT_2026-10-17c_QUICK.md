@@ -90,6 +90,26 @@ switch can look broken when it is not. The proof either way is the same line in 
 also the marker bottom-right: `source=file` and the URL on screen means you are on 3215,
 blank means production.
 
+## Red then green, on your folder
+
+| | the input | what the product's own `inventoryPage` produced |
+|---|---|---|
+| **SZ3 (17b's shape)** | your 1,013 installed names, 357 of them unable to run here | **49,186 bytes** — over the contract's 8 KB, which is the run you lost |
+| **SZ2 (now)** | the same input | **2,702 bytes** — total 1013, returned 60, notLoadableTotal 357 |
+
+SZ3 is written to **fail if 17b's shape ever fits**, so SZ2's green cannot turn out to be an
+artefact of the input; SZ2a fails if the snapshot is missing, so neither leg can pass on nothing.
+`agent_client_guard` is GREEN, 127 ok.
+
+**RP8K's own first green did not count, and that is worth saying plainly.** It measured a 568-byte
+result and passed, because it had seeded the 357 names that cannot load and left the inventory
+itself at the rig's one plugin — a comfortable number from half an input, which is the third time
+in one evening a row did that. It now runs only in a process started with `EJ_RIG_BIG_INVENTORY=1`
+(which seeds your 1,013 names into the catalogue, opt-in so it cannot change what the model picks
+in the live rows), skips loudly without it, and asserts the scale it measured rather than only the
+size. The end-to-end pair — 17b's own bundle for red, this tree for green, about 17 minutes a pass
+— runs before tomorrow's full gate.
+
 ## What this tier did not test, said plainly
 
 **This is not a gate.** QUICK ran the S4 guards and nothing else. The matrix rows — including
