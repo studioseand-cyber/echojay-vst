@@ -1214,6 +1214,20 @@ static juce::var linkRowOf (const juce::var& st, const juce::String& uid)
     count from their last sidecar write, which no check of those three fields can see through. */
 static juce::StringArray gLaunchedLinkUids;
 
+/** TRUE when the Link that AU hosting will load is NOT the bundle this run was given (item 0b).
+
+    Set once at startup by comparing the two binaries' sizes - two builds of this plugin are never
+    the same number of bytes - and printed there with both figures. Any row whose claim is about
+    THIS build's Link behaviour must skip when it is true: a V2 from one build talking to a Link
+    from another is a configuration that never ships, so a verdict from it is about nothing.
+
+    17 Oct: made a file-static because the first version was a local in main() and only A4-live
+    could ask it. T2w ("an edit lands on a Link whose OWN window is open") and I9c (the mirrored
+    card) then went red in a mixed run on exactly that artefact, and I9c's own guess at it - reading
+    the previous build's card WORDING - could not fire when the figure was missing altogether. One
+    fact, measured once, asked by every row that needs it. */
+static bool gLinkIsMixedBuild = false;
+
 /** IS THIS A LINK A ROW CAN BE ABOUT? (17 Oct 2026, found by the gate's SECOND S6 run.)
 
     The registry outlives the processes listed in it. The second run picked a uid left behind by an
@@ -1682,7 +1696,7 @@ int main (int argc, char* argv[])
     // are never the same number of bytes, and a row that cannot tell which binary it is talking to
     // must not claim to have tested one. Printed once, loudly, and the rows that assert THIS
     // build's Link behaviour skip with it.
-    const bool linkMixedBuild = [&linkComp]
+    gLinkIsMixedBuild = [&linkComp]
     {
         const auto given = linkComp.getChildFile ("Contents/MacOS")
                                .getChildFile (linkComp.getFileNameWithoutExtension());
@@ -1697,6 +1711,7 @@ int main (int argc, char* argv[])
                              : "the same binary, so the Link rows are about this build");
         return differs;
     }();
+    const bool linkMixedBuild = gLinkIsMixedBuild;
     const int mockPort = juce::String (argv[3]).getIntValue();
     const juce::File v2vst3  { argc > 4 ? juce::String (argv[4]) : juce::String() };
 
@@ -4268,7 +4283,19 @@ int main (int argc, char* argv[])
                 int after = before;
                 rig.until ([&] (const juce::var&)
                 { after = (int) kick.state().getProperty ("slotCount", -1); return after > before; }, 25000);
-                if (! opened)
+                // A MIXED RUN CANNOT ANSWER THIS EITHER (17 Oct, item 0b). The claim is that an
+                // edit from the V2 lands on a Link whose own window is open - both halves of that
+                // sentence are code, and in a mixed run they come from different builds. It skipped
+                // in the two runs before this one for a different reason (no editor opened) and then
+                // went red the moment one did, which is how it got here.
+                if (gLinkIsMixedBuild)
+                    scenSkip ("T2w", "T2: an edit lands on a Link whose OWN window is open",
+                              "the Link that AU hosting loaded is the INSTALLED binary, not the one "
+                              "this run was given (item 0b) - an edit between a V2 from this build and "
+                              "a Link from another is a pairing that never ships, so neither a landing "
+                              "nor a refusal would be a verdict on anything. NEVER counted as a pass.",
+                              "A");
+                else if (! opened)
                     scenSkip ("T2w", "T2: an edit lands on a Link whose OWN window is open",
                               "the Link's own process would not open an editor this run (\""
                               + ack.getProperty ("note", juce::var()).toString() + "\"), so there is no "
@@ -5201,9 +5228,14 @@ int main (int argc, char* argv[])
             // measurement artefact as a product failure, so it SKIPS and says exactly that. The
             // card's fix is proved on the own rack by I9b, and the Link half is on the Logic smoke
             // test for Sean to read with his own eyes.
-            const bool linkLooksLikeAnOlderBuild = plugFig.isNotEmpty() && ! cardHasIt
-                                                && card.contains ("Applied automatically")
-                                                && ! card.containsIgnoreCase ("threshold -");
+            // THE MEASURED FACT FIRST (17 Oct). The wording test below was a guess at the same
+            // thing and it cannot fire when the figure is missing ALTOGETHER, which is what a mixed
+            // run produces - so this row went red on an artefact twice today. gLinkIsMixedBuild is
+            // the two binaries compared by size at startup; nothing about it is inferred.
+            const bool linkLooksLikeAnOlderBuild = gLinkIsMixedBuild
+                                                || (plugFig.isNotEmpty() && ! cardHasIt
+                                                    && card.contains ("Applied automatically")
+                                                    && ! card.containsIgnoreCase ("threshold -"));
             if (linkLooksLikeAnOlderBuild)
                 scenSkip ("I9c", "the Link's mirrored card carries the plugin's figure too",
                           "the Link in this run is NOT the Link this build produced: its card reads \""
