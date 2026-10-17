@@ -572,6 +572,50 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                          added.joinIntoString (", ").toRawUTF8(),
                          refused.isEmpty() ? "" : (", refused [" + refused.joinIntoString (", ") + "]").toRawUTF8());
         }
+        // ---- HIS WHOLE INVENTORY, OPT-IN, BECAUSE RP8K's FIRST GREEN WAS GREEN FOR THE WRONG
+        //      REASON (17 Oct 2026) ----------------------------------------------------------------
+        //
+        // RP8K seeded the 357 names that CANNOT load - the small half of the problem - and left the
+        // inventory itself at this rig's one plugin. It then measured a 568-byte result and passed.
+        // That is a comfortable number from an input that had only half arrived, which is the very
+        // fault the row's own comment warns about, arriving a third time in a new costume.
+        //
+        // The size the contract cares about is the size of 1,013 NAMES. So the catalogue can hold
+        // them - and ONLY in a process started with EJ_RIG_BIG_INVENTORY=1, because a rig whose
+        // world holds a thousand plugins would change the answer of every live row that picks one.
+        if (::getenv ("EJ_RIG_BIG_INVENTORY") != nullptr)
+        {
+            const auto snapFile = juce::File (__FILE__).getParentDirectory()
+                                      .getChildFile ("fixtures/real_inventory_2026-10-17.json");
+            const auto snap = juce::JSON::parse (snapFile.loadFileAsString());
+            int bigAdded = 0, wanted = 0;
+            if (auto* arr = snap.getProperty ("names", juce::var()).getArray())
+            {
+                wanted = arr->size();
+                for (const auto& n : *arr)
+                {
+                    const auto nm = n.toString();
+                    if (nm.isEmpty() || nm == desc.name) continue;
+                    juce::PluginDescription d;
+                    d.name = d.descriptiveName = nm;
+                    d.pluginFormatName = "VST3";
+                    d.category = "Effect";
+                    d.manufacturerName = "snapshot of Sean's Mac 17 Oct 2026";
+                    d.version = "1.0";
+                    // NOWHERE ON DISK, ON PURPOSE: these entries exist to be COUNTED and NAMED,
+                    // never instantiated. The path sits inside the isolated root so nothing can
+                    // mistake one for an installed bundle, and no row in this mode adds a plugin.
+                    d.fileOrIdentifier = echojay::userStateHome().getChildFile ("not-installed")
+                                             .getChildFile (nm + ".vst3").getFullPathName();
+                    d.uniqueId = d.deprecatedUid = (int) nm.hashCode();
+                    d.isInstrument = false;
+                    d.numInputChannels = d.numOutputChannels = 2;
+                    if (auto* child = d.createXml().release()) { entries.addChildElement (child); ++bigAdded; }
+                }
+            }
+            std::printf ("  catalogue: EJ_RIG_BIG_INVENTORY - added %d of his %d installed plugin names\n",
+                         bigAdded, wanted);
+        }
         entriesFile.replaceWithText (entries.toString());
         std::printf ("  catalogue: kept %d existing entr(ies) and added %s\n", kept, desc.name.toRawUTF8());
     }
@@ -4857,6 +4901,10 @@ int main (int argc, char* argv[])
             const auto snapFile = juce::File (__FILE__).getParentDirectory()
                                       .getChildFile ("fixtures/real_inventory_2026-10-17.json");
             const auto snap = juce::JSON::parse (snapFile.loadFileAsString());
+            // THIS ROW NEEDS ITS OWN PROCESS. The inventory's SIZE is its subject, and the size
+            // comes from the 1,013 names in the catalogue, which only EJ_RIG_BIG_INVENTORY=1 puts
+            // there (see the seeding at construction and why it is not the default).
+            const bool bigInv = ::getenv ("EJ_RIG_BIG_INVENTORY") != nullptr;
             juce::StringArray badNames, badWhys;
             if (auto* arr = snap.getProperty ("notLoadable", juce::var()).getArray())
                 for (const auto& e : *arr)
@@ -4901,7 +4949,14 @@ int main (int argc, char* argv[])
             std::printf ("        (seeded %d of his %d unloadable plugins into %s)\n",
                          seeded, badNames.size(), failedFile.getFullPathName().toRawUTF8());
 
-            if (seeded < 100)
+            if (! bigInv)
+                scenSkip ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB on HIS inventory",
+                          "this process was not started with EJ_RIG_BIG_INVENTORY=1, so the catalogue "
+                          "holds this rig's handful of plugins rather than his 1,013. A small result "
+                          "about one plugin cannot test the size of an answer about a thousand - the "
+                          "row's first run passed on exactly that, 568 bytes from half an input. Run "
+                          "it as its own pass: EJ_RIG_BIG_INVENTORY=1 EJ_RIG_ONLY=RP8K.", "A");
+            else if (seeded < 100)
                 scenSkip ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB on HIS inventory",
                           "the seed did not land (" + juce::String (seeded) + " entries readable in "
                           + failedFile.getFileName() + ", from a snapshot of " + juce::String (badNames.size())
@@ -4917,6 +4972,7 @@ int main (int argc, char* argv[])
 
                 // WHAT THE PLUGIN POSTED, measured by the thing that received it.
                 int worst = 0, inventoryBytes = -1;
+                int invTotal = -1, invReturned = -1, invNotLoadable = -1;
                 juce::String keys, worstId;
                 if (const auto req = lastRequestTo (mockPort, "/api/agent/step"); req.isObject())
                 {
@@ -4929,19 +4985,37 @@ int main (int argc, char* argv[])
                             juce::StringArray ks;
                             if (auto* ka = rr.getProperty ("keys", juce::var()).getArray())
                                 for (const auto& k : *ka) ks.add (k.toString());
-                            if (ks.contains ("names")) { inventoryBytes = b; keys = ks.joinIntoString (","); }
+                            if (ks.contains ("names"))
+                            {
+                                inventoryBytes = b; keys = ks.joinIntoString (",");
+                                const auto nums = rr.getProperty ("nums", juce::var());
+                                invTotal       = (int) nums.getProperty ("total", juce::var (-1));
+                                invReturned    = (int) nums.getProperty ("returned", juce::var (-1));
+                                invNotLoadable = (int) nums.getProperty ("notLoadableTotal", juce::var (-1));
+                            }
                         }
                 }
                 const bool fits   = inventoryBytes >= 0 && inventoryBytes <= 8192;
                 const bool hasTot = keys.contains ("notLoadableTotal");
-                scen ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB on HIS inventory (357 unloadable)",
-                      fits && hasTot,
+                // THE SCALE IT MEASURED, NOT JUST THE SIZE. 8 KB is only a verdict about his
+                // machine if the answer was ABOUT his machine: a thousand names in the catalogue,
+                // a page of them returned, and the rest declared rather than sent.
+                const bool atScale = invTotal >= 500;
+                const bool paged   = invReturned > 0 && invReturned < invTotal;
+                scen ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB on HIS inventory (1,013 names, 357 unloadable)",
+                      fits && hasTot && atScale && paged,
                       juce::String ("with ") + juce::String (seeded) + " of his unloadable plugins seeded, "
                       "the inventory result the plugin POSTED was "
                       + (inventoryBytes < 0 ? juce::String ("never seen (no step body carried a `names` result)")
                                             : juce::String (inventoryBytes) + " bytes"
                                               + (fits ? " - inside the contract's 8 KB"
                                                       : " - OVER THE CONTRACT'S 8 KB, which is the error he read"))
+                      + "; total " + juce::String (invTotal) + ", returned " + juce::String (invReturned)
+                      + ", notLoadableTotal " + juce::String (invNotLoadable)
+                      + (atScale ? "" : juce::String (" - NOT AT SCALE: an inventory of ") + juce::String (invTotal)
+                                        + " cannot test the size of an answer about his 1,013, so this is not a pass")
+                      + (paged || ! atScale ? "" : juce::String (" - NOT PAGED: it returned all ")
+                                        + juce::String (invReturned) + " names, so nothing was summarised")
                       + "; keys [" + keys + "]"
                       + (hasTot ? "" : "; notLoadableTotal MISSING, so the model cannot know the scale "
                                        "without being sent the bytes")

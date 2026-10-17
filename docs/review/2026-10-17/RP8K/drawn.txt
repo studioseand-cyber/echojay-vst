@@ -1,0 +1,8 @@
+scenario RP8K
+captured 2026-10-17T22:06:27.243+01:00
+  [user] Add a compressor to this rack  [rig-replay:rp_8k]
+  [assistant] I read the inventory.
+  run row: status=Done changes=0 steps=1 zones=[11:1 step]
+  opening: I read the inventory.
+  closing: 
+    step "read the inventory" [done] right="" detail="" chips=[]

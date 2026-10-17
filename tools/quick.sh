@@ -90,7 +90,18 @@ fi
 say "rows in $(mins $(( $(date +%s) - R0 )))  (exit $RRC)"
 
 say ""; say "---- 4. install ----"
-if [ "$LOGIC_OPEN" = "1" ]; then
+# ---- RE-CHECK, AND AN OPT-OUT (17 Oct 2026, 22:15) -------------------------------------------
+# Two faults, both found the same evening. (1) The Logic check ran at the START of the pass; run 3
+# took sixteen minutes, Sean opened Logic in the middle of it, and the install step went ahead on a
+# sixteen-minute-old answer. A condition read once and acted on later is the "uncontrolled timing"
+# fault this tree has written down three times, so it is read again HERE, next to the copy.
+# (2) His rule while he is testing is that he is TOLD BEFORE EACH INSTALL so he can close Logic, and
+# the script had no way to run without installing. NO_INSTALL=1 is that way.
+if pgrep -x "Logic Pro" > /dev/null; then LOGIC_OPEN=1; fi
+if [ "${NO_INSTALL:-0}" = "1" ]; then
+  say "NOT INSTALLED: NO_INSTALL=1 was asked for. The bundles are in build-guards; install with"
+  say "  bash tools/install_local.sh build-guards   (Logic closed)"
+elif [ "$LOGIC_OPEN" = "1" ]; then
   say "NOT INSTALLED: Logic Pro is open. Close it and run tools/quick.sh again."
 elif [ "$GRC" -ne 0 ] || [ "$RRC" -ne 0 ]; then
   say "NOT INSTALLED: something above is red, and QUICK installs only on green."

@@ -1,5 +1,5 @@
 scenario A1
-captured 2026-10-17T20:11:00.556+01:00
+captured 2026-10-17T21:31:20.523+01:00
   [user] rig-builtinset-marker: add the compressor
   [assistant] Added the EchoJay Compressor.
   run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]

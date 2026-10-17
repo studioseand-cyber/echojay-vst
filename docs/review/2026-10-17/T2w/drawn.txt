@@ -1,5 +1,5 @@
 scenario T2w
-captured 2026-10-17T11:59:00.242+01:00
+captured 2026-10-17T21:23:47.037+01:00
   [user] rig: does the box clear?
   [assistant] mock reply, sent quickly.
   [user] rig-midreply-marker

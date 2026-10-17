@@ -1,5 +1,5 @@
 scenario D1
-captured 2026-10-17T19:58:36.909+01:00
+captured 2026-10-17T21:18:59.123+01:00
   [user] rig-undo-marker: set the pre gain to 3 dB, then undo it
   [assistant] Set the pre-gain to 3 dB, then undid it.
   run row: status=Done changes=2 steps=2 zones=[11:2 changes,8:Undo all]

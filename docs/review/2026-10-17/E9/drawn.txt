@@ -1,6 +1,6 @@
 scenario E9
-captured 2026-10-17T20:10:36.989+01:00
-  [user] rig-onestep-marker: mark-34661
+captured 2026-10-17T21:30:56.973+01:00
+  [user] rig-onestep-marker: mark-54726
   [assistant] Set the pre-gain to 5 dB.
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.

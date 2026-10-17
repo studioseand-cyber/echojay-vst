@@ -1,5 +1,5 @@
 scenario F2
-captured 2026-10-17T19:58:06.400+01:00
+captured 2026-10-17T21:18:28.684+01:00
   [user] rig-row-marker: set the pre gain, twice (then I close the window)
   [assistant] Stopped.
   [user] rig-classifyhold-marker: how does this kick sound

@@ -113,11 +113,18 @@ class Handler(BaseHTTPRequestHandler):
         results = []
         for r in (body.get("results") or []):
             if not isinstance(r, dict): continue
+            res = r.get("result") if isinstance(r.get("result"), dict) else {}
+            # ---- AND ITS SCALARS, SO A ROW CAN ASSERT THE SCALE IT MEASURED (17 Oct 2026) --------
+            # RP8K's first green read 568 bytes and passed, because `keys` and `bytes` alone cannot
+            # tell a small answer about a thousand plugins from a small answer about one. The numbers
+            # that say which it was - total, returned, hasMore, notLoadableTotal - are scalars, so
+            # they are recorded verbatim and the row asserts on them.
             results.append({"id": r.get("id", ""), "ok": bool(r.get("ok", True)),
                             "bytes": len(json.dumps(r.get("result") if "result" in r else r,
                                                     separators=(",", ":"))),
-                            "keys": sorted(list((r.get("result") or {}).keys()))[:14]
-                                    if isinstance(r.get("result"), dict) else []})
+                            "keys": sorted(list(res.keys()))[:14],
+                            "nums": {k: v for k, v in list(res.items())[:40]
+                                     if isinstance(v, (int, float, bool))}})
         with STATE["lock"]:
             STATE["requests"].append({"path": path, "atMs": int(time.time() * 1000),
                                       "chatId": body.get("chatId", ""),

@@ -35,6 +35,7 @@
 #include "EJAgentProtocol.h"
 #include "EJAgentTools.h"
 #include "EJAgentClient.h"
+#include "EJAgentExecutorRead.h"   // SZ2/SZ3 call the product's own inventoryPage
 #include "EJAgentPanel.h"
 #include <cmath>
 #include <cstdio>
@@ -868,6 +869,70 @@ int main()
                "SZ1 a result the size of his machine's unloadable list (" + juce::String (beforeBytes)
                + " bytes) is compacted under the contract's 8 KB (" + juce::String (afterBytes)
                + ") by the base gate every executor inherits");
+    }
+
+    // ---- SZ2/SZ3: THE PRODUCT'S OWN INVENTORY BUILDER, ON HIS MACHINE'S LIST (17 Oct 2026) -----
+    //
+    // SZ1 proves the FLOOR - the base gate any executor inherits. It does not touch the function
+    // that actually built the 25 KB body his Logic session died on, and it uses synthetic entries.
+    // So these two legs call `ExecutorRead::inventoryPage` itself, with the snapshot of HIS folder
+    // that tools/host_rig/fixtures holds: 1,013 installed names, 357 of them unable to run here.
+    //
+    // AND BOTH DIRECTIONS, because a size test that cannot fail is not a test (the rule this tree
+    // has written down once already). SZ3 reconstructs the 17b shape on the SAME input - the page
+    // plus the whole unloadable list appended after the gate, which is exactly what 17b posted -
+    // and FAILS if that does not break the limit. If a future change makes the old shape fit, SZ2's
+    // green stops meaning anything, and SZ3 is what says so.
+    {
+        const auto snapFile = juce::File (__FILE__).getParentDirectory().getParentDirectory()
+                                  .getChildFile ("host_rig/fixtures/real_inventory_2026-10-17.json");
+        const auto snap = juce::JSON::parse (snapFile.loadFileAsString());
+        juce::StringArray names;
+        if (auto* arr = snap.getProperty ("names", juce::var()).getArray())
+            for (const auto& n : *arr) names.add (n.toString());
+        juce::Array<juce::var> bad;
+        if (auto* arr = snap.getProperty ("notLoadable", juce::var()).getArray())
+            for (const auto& e : *arr)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("name", e.getProperty ("name", juce::var()));
+                o->setProperty ("loadable", false);
+                o->setProperty ("why", e.getProperty ("why", juce::var()));
+                bad.add (juce::var (o));
+            }
+        // The fixture is the test's input, so its absence is a RED, not a quiet pass on nothing -
+        // the lesson from RP8K's first run (a comfortable number from an input that never arrived).
+        check (names.size() > 900 && bad.size() > 300,
+               "SZ2a the snapshot of his folder is readable and is the size it claims ("
+               + juce::String (names.size()) + " names, " + juce::String (bad.size())
+               + " unable to load) - without it the two legs below would measure nothing");
+
+        using echojay::agent::ExecutorRead;
+        const auto page = ExecutorRead::inventoryPage (names, {}, 0, ExecutorRead::kInventoryPage,
+                                                       juce::var (bad));
+        const auto pageBytes = (int) juce::JSON::toString (page, true).getNumBytesAsUTF8();
+        const int  total     = (int) page.getProperty ("total", juce::var (-1));
+        const int  returned  = (int) page.getProperty ("returned", juce::var (-1));
+        const int  notTotal  = (int) page.getProperty ("notLoadableTotal", juce::var (-1));
+        check (pageBytes <= 8192 && total == names.size() && returned > 0 && returned < total
+               && notTotal == bad.size(),
+               "SZ2 look(inventory) on HIS 1,013 plugins is " + juce::String (pageBytes)
+               + " bytes - inside the contract's 8 KB - and still says the scale: total "
+               + juce::String (total) + ", returned " + juce::String (returned)
+               + ", notLoadableTotal " + juce::String (notTotal));
+
+        // The 17b shape: the same page with the whole list appended AFTER the size check.
+        juce::var old = page.clone();
+        if (auto* o = old.getDynamicObject())
+        {
+            o->setProperty ("notLoadable", juce::var (bad));
+            o->removeProperty ("notLoadableTotal");
+        }
+        const auto oldBytes = (int) juce::JSON::toString (old, true).getNumBytesAsUTF8();
+        check (oldBytes > 8192,
+               "SZ3 the shape 17b posted for the same folder is " + juce::String (oldBytes)
+               + " bytes, over the limit - so SZ2's green is a fix and not an artefact of the input"
+               + " (the run he lost was this, " + juce::String (oldBytes / 1024) + " KB)");
     }
 
     // ---- RC1/RC2: A STUCK CHAT RECOVERS - no old result is ever posted again (17 Oct 2026) -----

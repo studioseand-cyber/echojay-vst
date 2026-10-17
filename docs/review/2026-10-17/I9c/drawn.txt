@@ -1,5 +1,5 @@
 scenario I9c
-captured 2026-10-17T12:06:24.433+01:00
+captured 2026-10-17T21:31:19.596+01:00
   [user] rig-tpown-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it to this rack, with the setting you asked for.
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
