@@ -18,7 +18,8 @@
       "suggested_role": "mix",           // the question is "<section> -> <role>" (e.g. "Gate -> Threshold"), or the role alone           // threshold | ratio | attack | release | makeup | output | gain | freq | q | mix | delay_time | decay | predelay | drive | ceiling
       "why": "the name says mix; the display shows no unit",   // or "one of several <role> candidates"
       "read_back": true,                 // the control's writes already read back (a yes alone can then count)
-      "yes_makes_mapped": true           // one yes on this row moves the map to "mapped"
+      "yes_makes_mapped": true,          // one yes on this row moves the map to "mapped"
+      "counts_with": "<id>"              // optional (17 Oct): the partner row; yes on BOTH moves the map to "mapped" (an EQ band's freq + gain)
     }
   ]
 }

@@ -238,6 +238,18 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
         o->setProperty ("yes_makes_mapped", L.level == "mapped");
         items.add (juce::var (o));
     }
+    // A PAIR THAT COUNTS (17 Oct: an EQ needs a band's freq AND gain, so no single yes maps it): two rows of different roles whose yeses
+    // together make the map "mapped" name each other in counts_with; the page counts the map once both are yes
+    for (int i = 0; i < items.size(); ++i)
+        for (int j = i + 1; j < items.size(); ++j)
+        {
+            auto& a = items.getReference (i); auto& b = items.getReference (j);
+            if ((bool) a.getProperty ("yes_makes_mapped", false) || (bool) b.getProperty ("yes_makes_mapped", false) || a.hasProperty ("counts_with") || b.hasProperty ("counts_with")) continue;
+            const auto ra = a.getProperty ("suggested_role", "").toString(), rb2 = b.getProperty ("suggested_role", "").toString(); if (ra == rb2) continue;
+            auto both = measured; both.roles[ra].clear(); both.roles[ra].add (a.getProperty ("control", "").toString()); both.roles[rb2].clear(); both.roles[rb2].add (b.getProperty ("control", "").toString());
+            if (trust::levelFor (m, false, "", rb, both).level != "mapped") continue;
+            a.getDynamicObject()->setProperty ("counts_with", b.getProperty ("id", "")); b.getDynamicObject()->setProperty ("counts_with", a.getProperty ("id", ""));
+        }
     return items;
 }
 
@@ -296,15 +308,15 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         if (firstCategory.isNotEmpty())
         {
             rv->setProperty ("first_category", firstCategory);
-            auto tier = [&] (const juce::var& x) { const bool now = (bool) x.getProperty ("yes_makes_mapped", false); return now ? (x.getProperty ("category", "").toString() == firstCategory ? 0 : 1) : 2; };
+            auto tier = [&] (const juce::var& x) { const bool now = (bool) x.getProperty ("yes_makes_mapped", false) || x.hasProperty ("counts_with"); return now ? (x.getProperty ("category", "").toString() == firstCategory ? 0 : 1) : 2; };
             std::vector<juce::var> v; for (const auto& x : review) v.push_back (x);
             std::stable_sort (v.begin(), v.end(), [&] (const juce::var& a, const juce::var& b) { return tier (a) < tier (b); });
             review.clearQuick(); for (const auto& x : v) review.add (x);
         }
         rv->setProperty ("items", juce::var (review));
         out.getChildFile ("review_items.json").replaceWithText (juce::JSON::toString (juce::var (rv)));
-        int wouldMap = 0; for (const auto& x : review) if ((bool) x.getProperty ("yes_makes_mapped", false)) ++wouldMap;
-        std::cout << "TRUST-LEVELS: " << review.size() << " control(s) for the human check (" << wouldMap << " where a yes alone makes the map mapped); "
+        int wouldMap = 0, inPairs = 0; for (const auto& x : review) { if ((bool) x.getProperty ("yes_makes_mapped", false)) ++wouldMap; if (x.hasProperty ("counts_with")) ++inPairs; }
+        std::cout << "TRUST-LEVELS: " << review.size() << " control(s) for the human check (" << wouldMap << " where a yes alone makes the map mapped, " << inPairs << " in pairs where two yeses do); "
                   << human.size() << " map(s) with answers applied\n";
     }
     std::cout << "TRUST-LEVELS: " << rows.size() << " map(s); read-back credited on " << creditedControls << " control(s) from the measuring runs ("

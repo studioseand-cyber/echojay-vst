@@ -10282,6 +10282,24 @@ int main (int, char**)
                && trr.contains ("std::stable_sort (v.begin(), v.end(), [&] (const juce::var& a, const juce::var& b) { return tier (a) < tier (b); });"),
                "wizard WZ-TRUST-10: --review-first names the first category in the review file and orders its counts-now rows first, then the other counts-now rows, then the rest");
     }
+    // WZ-TRUST-11 A PAIR THAT COUNTS (17 Oct): an EQ needs a band's freq AND gain, so no single yes maps it; two rows whose yeses together
+    // make the map "mapped" name each other in counts_with (and --review-first orders a pair as counts now)
+    {
+        using namespace ejmap::trust;
+        const auto eq = juce::JSON::parse (R"J({"fp":"Q","identity":{"name":"Q EQ","version":"1"},"category":"eq","controls":{
+            "Freq":{"name":"Freq","index":0,"kind":"anchored","anchors":[[100,0],[10000,1]]},
+            "Gain":{"name":"Gain","index":1,"kind":"anchored","anchors":[[-12,0],[12,1]]}}})J");
+        Readings r; r["Freq"] = { { 0.25, "2575" }, { 0.75, "7525" } }; r["Gain"] = { { 0.25, "-6.0" }, { 0.75, "6.0" } };
+        const auto rb = creditMap (eq, { { "cert", r } });
+        const auto items = ejmap::trustrun::reviewItems (eq, {}, rb);
+        juce::String fw, gw; bool alone = false;
+        for (const auto& x : items) { if ((bool) x.getProperty ("yes_makes_mapped", false)) alone = true;
+            if (x.getProperty ("control", "").toString() == "Freq") fw = x.getProperty ("counts_with", "").toString(); if (x.getProperty ("control", "").toString() == "Gain") gw = x.getProperty ("counts_with", "").toString(); }
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (items.size() == 2 && ! alone && fw == "Q|Gain" && gw == "Q|Freq" && levelFor (eq, false, "", rb).level == "unsure"
+               && trr.contains ("const bool now = (bool) x.getProperty (\"yes_makes_mapped\", false) || x.hasProperty (\"counts_with\");"),
+               "wizard WZ-TRUST-11: an EQ's freq and gain rows, neither enough alone, name each other in counts_with; a pair orders as counts now");
+    }
     // WZ-MBV1-3 EVERY PART MUST HOLD (17 Oct, the overnight run on Kathy's Mac): OTT's threshold display is 0-100, not dB, so its
     // threshold is "not tested" - no OTT band is certified; C4 (m) from the same run still certifies all four (the files are read)
     {

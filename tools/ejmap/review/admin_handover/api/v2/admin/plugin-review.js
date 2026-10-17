@@ -35,13 +35,19 @@ const ROLES = new Set(['threshold', 'ratio', 'attack', 'release', 'makeup', 'out
 
 function parse(x) { if (x && typeof x === 'object') return x; try { return JSON.parse(x); } catch (e) { return null; } }
 
+function isYes(it, answers) {
+  const a = it && answers[it.id];
+  return !!(a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || ''))));
+}
+// 17 Oct: a row counts now alone (yes_makes_mapped) or with its partner (counts_with: an EQ band's freq and gain need two yeses)
 function counts(items, answers) {
-  const nowMaps = new Set(), mapped = new Set(); let answered = 0;
+  const nowMaps = new Set(), mapped = new Set(), byId = new Map(items.map((i) => [i.id, i])); let answered = 0;
   for (const it of items) {
     const a = answers[it.id];
     if (a && a.verdict && a.verdict !== 'unsure') answered++;
-    const isSuggestion = a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || '')));
-    if (it.yes_makes_mapped) { nowMaps.add(it.fp); if (isSuggestion) mapped.add(it.fp); }
+    if (it.yes_makes_mapped || it.counts_with) nowMaps.add(it.fp);
+    if (it.yes_makes_mapped && isYes(it, answers)) mapped.add(it.fp);
+    if (it.counts_with && isYes(it, answers) && isYes(byId.get(it.counts_with), answers)) mapped.add(it.fp);
   }
   return { items: items.length, answered, countsNowMaps: nowMaps.size, mapsMappedByAnswers: mapped.size };
 }

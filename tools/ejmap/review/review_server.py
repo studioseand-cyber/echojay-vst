@@ -28,14 +28,19 @@ def save_atomic(path, obj):
     with os.fdopen(fd, 'w') as f: json.dump(obj, f, indent=1)
     os.replace(tmp, path)
 
+def is_yes(it, answers):
+    a = answers.get(it['id']) if it else None
+    return bool(a and (a.get('verdict') == 'yes' or (a.get('verdict') == 'role' and a.get('role') == it['suggested_role'] and a.get('section', '') == it.get('section', ''))))
+
 def counts(items, answers):
-    now_maps, mapped, answered = set(), set(), 0
+    # 17 Oct: a row counts now alone (yes_makes_mapped) or with its partner (counts_with: an EQ band's freq and gain need two yeses)
+    now_maps, mapped, answered, by_id = set(), set(), 0, {i['id']: i for i in items}
     for it in items:
         a = answers.get(it['id'])
         if a and a.get('verdict') and a.get('verdict') != 'unsure': answered += 1
-        if it.get('yes_makes_mapped'):
-            now_maps.add(it['fp'])
-            if a and (a.get('verdict') == 'yes' or (a.get('verdict') == 'role' and a.get('role') == it['suggested_role'] and a.get('section', '') == it.get('section', ''))): mapped.add(it['fp'])
+        if it.get('yes_makes_mapped') or it.get('counts_with'): now_maps.add(it['fp'])
+        if it.get('yes_makes_mapped') and is_yes(it, answers): mapped.add(it['fp'])
+        if it.get('counts_with') and is_yes(it, answers) and is_yes(by_id.get(it['counts_with']), answers): mapped.add(it['fp'])
     return {'items': len(items), 'answered': answered, 'countsNowMaps': len(now_maps), 'mapsMappedByAnswers': len(mapped)}
 
 def make_handler(items_path, answers_path):
