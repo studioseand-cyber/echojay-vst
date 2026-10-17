@@ -7462,10 +7462,20 @@ int main (int argc, char* argv[])
                  + (ok ? "" : "  <- THE DRAG WAS NOT UNDOABLE"));
         }
 
-        // ---- F2: an op this build does not have -----------------------------
+        // ---- F2r: an op this build does not have ----------------------------
+        //
+        // TWO MINUTES WAS NOT ENOUGH FOR A REFUSAL (17 Oct 2026). This read askAgent's default
+        // 120 s bound and came back "state streaming" - the model was still thinking about an op
+        // that does not exist when the row looked, which says nothing about whether the run loops.
+        // The claim is that it STOPS rather than looping, so the bound has to be long enough that
+        // "still going" is evidence: four minutes, which is the same order as L2's 300 s build.
+        //
+        // AND THE ID: this row was called "F2" while a SCENARIO called F2 already exists (the
+        // transcript-order one). Two different checks under one name in one scorecard is the fault
+        // I named this morning about A5b - a report that cannot say which leg ran. Renamed F2r.
         {
-            const auto r = askAgent (rig, "set the rack's tilt to 3");
-            row ("F2", r.settled, "set the rack's tilt to 3 (an op that does not exist)",
+            const auto r = askAgent (rig, "set the rack's tilt to 3", 240000);
+            row ("F2r", r.settled, "set the rack's tilt to 3 (an op that does not exist)",
                  "state " + r.state + ", it stopped rather than looping"
                  + (r.failDetail.isNotEmpty() ? ", user line: " + r.failDetail.substring (0, 120) : ""), &r);
         }
