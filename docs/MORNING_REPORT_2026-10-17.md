@@ -73,6 +73,47 @@ on the same raw prefix and are independent proof that your step 8 was real.
 
 ---
 
+## The gate, and the six S6 rounds it took to get an honest verdict
+
+**S1-S5 passed first time and have not been rerun since**: the six archives deleted and relinked
+across three trees, the guard suite at **79 of 79**, the four bundles, the archive-provenance check,
+and the standalone two-sided link guard. Every slow guard came in at its usual time (`level_match`
+287 s, `role_snapshot` 307 s, `link_live_edit` 332 s), which is how I know nothing was fighting it
+for the machine.
+
+**S6 - the live rig - took six rounds, and every red it found but one was in the measuring
+equipment.** That is worth saying plainly because it is the night's main lesson and it cost the small
+hours. The rows that failed were not failing about the product:
+
+| round | what went red | whose it was |
+|---|---|---|
+| 1 | `E10-live`, `C7`, `L3` | E10 is your item 2's server half; C7 had three compressors on one rack; L3's Link was briefly unreachable after a rebuild |
+| 2 | `C1-live`, `B1-live`, `A4-live`, `A2`, five L-rows | the runner holding a uid for a Link that had exited, and two rows reading a field my own fix had moved |
+| 3 | `B3-live`, `C2-live`, `C7` | B3 typed an answer naming no chip - which the rules say must start a new run; C2 is FOR_B §20 |
+| 4 | `C9`, `A2` | "add 3 dB" read as a destination instead of a change; A2 on a dead registry row |
+| 5 | `L1`, `L5` | a missed 8 s ack treated as final; a Link LEAVING counted as a rack being edited |
+| 6 | *(the install round)* | |
+
+**What that actually produced, which is the useful part:** four product questions I would not have
+found any other way, all queued with their evidence -
+
+- **item 13**: a Link looks GONE to the agent for a few seconds after its rack is rebuilt. The agent
+  told the runner "88_7even Kick_2_01 isn't reachable from this session right now (it shows as
+  gone)" about a track that was there, seconds after a chain was built on it.
+- **item 14**: a dead Link stays in the registry until the registry is FULL, because the reaper's
+  only caller is a claimant that finds the table full. Everything that reads `connected` - your rack
+  picker, the Link list, and what the agent is told about reachable tracks - reads those rows.
+- **item 15**: did `move slot 2 to 1` move anything? The step came back "moved EchoJay EQ to position
+  1" for an op that addressed the compressor, and the rack did not change.
+- **item 16**: the 8-second chain-command ack window, and the sentence when it expires - "it may be
+  gone, or its track may be disabled" was false about your session both times I saw it.
+
+And two more for B, in FOR_B: **§19**, the word "undefined" reaching the chat in a sentence the
+plugin cannot compose; **§20**, an add asked for a position that carries none, then a summary
+claiming it landed there.
+
+---
+
 ## What the runner could NOT test, and why you are the instrument for it
 
 **The Link half of the live pass.** The live rows that drive a REAL model and then read the Link's
