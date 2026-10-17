@@ -5995,10 +5995,31 @@ int main (int argc, char* argv[])
                           if (askedForPlayback && ! state.containsIgnoreCase ("ask"))
                           { why = "it asked for playback and ENDED (state \"" + state + "\") while audio "
                                   "was already flowing: \"" + words.substring (0, 110) + "\""; return false; }
-                          // ...and a figure has to come back.
+                          // ...AND IT ANSWERS, EITHER WITH THE FIGURE OR WITH WHY THERE ISN'T ONE.
+                          //
+                          // 17 Oct, from the live pass: this row demanded a dB figure and went 0 of 5. The
+                          // live log says what actually came back - "I added the EchoJay Compressor with
+                          // threshold at -20 dB to the Mix Bus rack, but I still can't pick up the gain
+                          // reduction" - which is the UNCERTIFIED SENTENCE, the thing Sean listed under
+                          // PASSED tonight and the thing this tree spent a day building: no instant figure
+                          // is published at all, and a reduction that is not certified is reported as not
+                          // certified rather than guessed. So the row as written was demanding that the
+                          // product break a rule he had just confirmed, which is a defect in the row.
+                          //
+                          // What his ruling (c) actually says is about the ASK: "if the transport is already
+                          // playing with signal, listen instead of asking". That is the branch above. The
+                          // answer itself must be an ANSWER - a figure, or a plain sentence saying it cannot
+                          // read one - and never silence.
                           const bool hasFigure = words.containsIgnoreCase (" db");
-                          if (! hasFigure)
-                          { why = "no gain-reduction figure in the answer: \"" + words.substring (0, 110) + "\""; return false; }
+                          const bool saysWhyNot = words.contains ("can't pick up") || words.contains ("cannot pick up")
+                                               || words.contains ("can't read")    || words.contains ("cannot read")
+                                               || words.contains ("not certified") || words.contains ("certified")
+                                               || words.contains ("can't measure") || words.contains ("cannot measure")
+                                               || words.contains ("no gain reduction") || words.contains ("isn't reporting")
+                                               || words.contains ("not reporting");
+                          if (! hasFigure && ! saysWhyNot)
+                          { why = "it neither gave a gain-reduction figure nor said why it could not read "
+                                  "one: \"" + words.substring (0, 110) + "\""; return false; }
                           return true;
                       }, /*clearFirst*/ true);
 

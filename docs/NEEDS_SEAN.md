@@ -293,6 +293,39 @@ directory that exists is retried once, because a transient failure is not an unw
 taking the fallback is now logged loudly with its reason, so a split channel reads as a line in the log
 rather than as a Link that never appeared.
 
+### D20. The 5-attempt live pass was stopped after its 13 live rows, so the GATE could start
+
+**Decided at 02:37, because the install is the hard requirement and the clock is the binding
+constraint.** The joint live pass runs the thirteen LIVE rows first - the ones that need the real
+model and five attempts each - and then re-runs the 39 deterministic scenarios against the real
+model at model speed. All thirteen live verdicts were in; the remaining 39 had already been GREEN in
+PHASE B against the mock half an hour earlier, and finishing them would have cost about 45 minutes
+before the gate - which is what the install is gated on - even started.
+
+So the live rig was stopped, the chain moved to the gate, and the live verdicts are in
+`night_live.log` and in the morning report. If you would rather the pass always run to the end even
+at the cost of the install, say so and the chain's order changes; I read your "don't give up on the
+install" as ranking the install above the second half of a pass whose first half had already
+reported.
+
+### D21. `E10-live` was demanding a figure the product is right to withhold
+
+The row I wrote for your item 2 asserted that "how much gain reduction is it doing" comes back with
+a dB figure, and it went **0 of 5**. The live log says what the agent actually said: *"I added the
+EchoJay Compressor with threshold at -20 dB to the Mix Bus rack, but I still can't pick up the gain
+reduction"* - which is the **uncertified sentence**, the behaviour you listed under PASSED tonight
+and the thing this tree spent a day building: no instant figure is published, and a reduction that
+is not certified is reported as not certified rather than guessed.
+
+The row was therefore demanding that the product break a rule you had just confirmed. Your ruling
+(c) is about the ASK - *"if the transport is already playing with signal, listen instead of
+asking"* - and that half is unchanged and still fails the row. What the answer must be is an
+ANSWER: a figure, **or** a plain sentence saying why there is not one. Never silence.
+
+Two of its five attempts also died with *"stream ended without a terminal frame ... The agent's
+stream ended early"* - B's server, the same family as §52 - and those were discarded and retried
+rather than counted, which is the rule for a turn the server never served.
+
 ---
 
 ## Needs your eyes (nothing is blocked on these)
