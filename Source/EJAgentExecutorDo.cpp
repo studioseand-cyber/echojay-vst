@@ -99,6 +99,54 @@ juce::var ExecutorDo::startContext()
     return base;
 }
 
+/** THE LOADABLE PLUGINS OF THE SAME ROLE (17 Oct 2026, D22's chips).
+
+    His ruling asks for alternatives "of the same role", which the plugin can answer better than the
+    model can: the scan already carries a category per entry and the no-load list already says what
+    must be left out. Up to four names, the role taken from the plugin that will not load, and
+    EchoJay's own built-in of that role first when there is one - it is the only one certain to load.  */
+juce::var ExecutorDo::alternativesOfSameRole (const juce::String& failingName) const
+{
+    // The role is read from the failing plugin's own name, against the vocabulary a rack is built
+    // from. A category index would be better and the scan has one, but it is not on the Sources this
+    // executor is given, and inventing a route to it at speed is how a fix becomes a defect. The
+    // names people and plugins actually use carry the role plainly enough for four chips.
+    static const char* kRoles[] = { "transient", "shaper", "compressor", "limiter", "gate",
+                                    "de-ess", "deess", "eq", "equaliser", "equalizer", "reverb",
+                                    "delay", "echo", "chorus", "saturat", "tape", "clipper",
+                                    "exciter", "widener", "imager", "pitch", "tuner" };
+    const auto low = failingName.toLowerCase();
+    juce::StringArray roles;
+    for (const char* r : kRoles) if (low.contains (r)) roles.add (r);
+
+    const auto all = const_cast<ExecutorDo*> (this)->installedPluginNames();
+    juce::StringArray wontLoad;
+    if (auto* arr = notLoadableHere().getArray())
+        for (const auto& e : *arr) wontLoad.add (e.getProperty ("name", juce::var()).toString());
+
+    juce::StringArray picked;
+    auto consider = [&] (const juce::String& n)
+    {
+        if (n.isEmpty() || picked.size() >= 4) return;
+        if (n.equalsIgnoreCase (failingName)) return;
+        for (const auto& bad : wontLoad) if (n.equalsIgnoreCase (bad)) return;
+        picked.addIfNotAlreadyThere (n);
+    };
+    // EchoJay's own first: they are the only plugins certain to load in this host.
+    for (int pass = 0; pass < 2; ++pass)
+        for (const auto& n : all)
+        {
+            const bool mine = n.startsWithIgnoreCase ("EchoJay");
+            if ((pass == 0) != mine) continue;
+            if (roles.isEmpty()) { consider (n); continue; }
+            const auto nl = n.toLowerCase();
+            for (const auto& r : roles) if (nl.contains (r)) { consider (n); break; }
+        }
+    juce::Array<juce::var> out;
+    for (const auto& n : picked) out.add (juce::var (n));
+    return juce::var (out);
+}
+
 juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) const
 {
     const auto op = argString (call, "op").trim().toLowerCase();
@@ -207,6 +255,40 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
         auto* o = addOp (op);
         const auto name = argString (call, "name");
         if (name.isEmpty()) { refusal = "an " + op + " needs the plugin's name"; return {}; }
+        // ---- A PLUGIN THAT FAILED BEFORE IS OFFERED, NOT ATTEMPTED (17 Oct 2026, D22) ------------
+        //
+        // His ruling, after kHs Transient Shaper failed twice in one session: *"plugin that failed to
+        // load before -> say so up front, offer [Try anyway] plus the loadable alternatives of the
+        // same role as chips. Never try it silently, never refuse outright."*
+        //
+        // So this is not a refusal and not an attempt: it is a question, raised before the load. The
+        // plugin's half is to stop here and hand back everything the question needs - the plain
+        // sentence, the raw reason for Details, and the alternatives - with `tryAnywayOffer` so the
+        // server knows to draw [Try anyway] beside them (FOR_B §22). The answer comes back as the
+        // same add carrying `tryAnyway: true`, and then it loads exactly as named, which is the
+        // "never refuse outright" half.
+        //
+        // The call's own `confirm` counts as that answer too: a tapped pick already means "this one".
+        if (! (bool) argVar (call, "tryAnyway") && ! (bool) argVar (call, "confirm"))
+        {
+            const auto failedBefore = ChainHost::loadFailedPluginNames();
+            juce::String matched;
+            for (const auto& n : failedBefore)
+                if (n.equalsIgnoreCase (name.trim()) || n.containsIgnoreCase (name.trim())
+                    || name.containsIgnoreCase (n))
+                    matched = n;
+            if (matched.isNotEmpty())
+            {
+                const auto raw   = ChainHost::loadFailureReasonFor (matched);
+                const auto plain = ChainHost::plainLoadFailureText (raw);
+                loadOfferName_  = matched;
+                loadOfferPlain_ = matched + " " + plain;
+                loadOfferRaw_   = raw;
+                refusal = loadOfferPlain_ + ". I can try it anyway, or use one of the plugins here "
+                          "that do load.";
+                return {};
+            }
+        }
         o->setProperty ("name", name);
         if (op == "replace") { if (! needSlot (o)) return {}; }
         else { bool p = false; const int after = argInt (call, "after", p); if (p) o->setProperty ("after", after); }
@@ -487,6 +569,30 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     const auto edits = translate (call, refusal);
     if (refusal.isNotEmpty() || edits.getArray() == nullptr || edits.getArray()->isEmpty())
     {
+        // ---- THE [TRY ANYWAY] OFFER GOES OUT AS A QUESTION'S MATERIAL (17 Oct 2026, D22) --------
+        // Not a plain failure: his ruling is "never try it silently, never refuse outright", so the
+        // result carries what the question needs - the sentence, the raw reason for Details, the
+        // offer flag, and the loadable plugins of the same ROLE as the one that will not load. B
+        // draws [Try anyway] plus those as chips; the answer returns as this same add with
+        // `tryAnyway: true`, and then it is loaded exactly as named.
+        if (loadOfferName_.isNotEmpty())
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("code", "load_failed_before");
+            o->setProperty ("message", loadOfferPlain_);
+            o->setProperty ("plugin", loadOfferName_);
+            o->setProperty ("rawReason", loadOfferRaw_);     // Details, never the line
+            o->setProperty ("tryAnywayOffer", true);
+            o->setProperty ("tryAnywayArg", "tryAnyway");
+            o->setProperty ("alternatives", alternativesOfSameRole (loadOfferName_));
+            o->setProperty ("note", "say this first, offer [Try anyway] and these alternatives as chips, "
+                                    "and never load it again without tryAnyway:true");
+            const auto sentence = loadOfferPlain_ + ". I can try it anyway, or use one of the plugins "
+                                                    "here that do load.";
+            loadOfferName_.clear(); loadOfferPlain_.clear(); loadOfferRaw_.clear();
+            done (ToolOutcome::failureWithResult ("load_failed_before", sentence, juce::var (o)));
+            return;
+        }
         // THE SENTENCE REACHES THE MODEL UNPARAPHRASED (contract section 4.3). Nothing rewrites it here.
         done (ToolOutcome::failure ("bad_request", refusal.isNotEmpty() ? refusal
                                                                        : juce::String ("that change carried nothing to do")));

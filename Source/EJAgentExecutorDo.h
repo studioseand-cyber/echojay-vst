@@ -149,6 +149,18 @@ public:
     static constexpr int kLandPollMs    = 250;
     static constexpr int kLandWaitMaxMs = 20000;
 private:
+    // ---- THE [TRY ANYWAY] OFFER (17 Oct 2026, D22) --------------------------------------------
+    // Set when an add names a plugin that has already failed to load in this session. The translate
+    // step stops before the op is built and these carry the question's material out to the result:
+    // the plain sentence a person reads, the raw reason for Details, and the plugin's own name so
+    // the alternatives can be of the same ROLE. Cleared on the next add.
+    // mutable because translate() is const - it builds a description of the edit and makes no
+    // change, and this is a note about the question it is declining to ask on its own.
+    mutable juce::String loadOfferName_, loadOfferPlain_, loadOfferRaw_;
+    /** The loadable plugins that do the same job as the one that will not load (D22's chips). */
+    juce::var alternativesOfSameRole (const juce::String& failingName) const;
+
+private:
     /** Resolve the call's `channel` into the uid to act on, applying the cross-channel confirmation gate.
         Returns false when it has already answered `done` (unknown channel, or confirmation needed), so
         every caller shares one gate instead of re-implementing it per op. */

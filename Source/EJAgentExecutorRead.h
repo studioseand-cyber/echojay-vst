@@ -162,6 +162,15 @@ struct Sources
     std::function<bool()> transportKnown, transportPlaying;
     std::function<int()>  chainRevision;
     std::function<juce::StringArray()> inventory;   // installed plugin names; empty = unknown
+    /** The installed plugins that CANNOT load in this host, each with the reason, as
+        [{name, why}] (17 Oct 2026, Sean's item 3).
+
+        Until today the inventory simply REMOVED them, which hid two things: the agent could not say
+        "that one will not load here" because it could not see them, and a plugin the user NAMED went
+        down the add path, which does not consult the list - so Pro-C 2 went behind an Apply and
+        failed on its missing arm64 slice, and kHs Transient Shaper was proposed a second time after
+        failing once in the same session. Marked, not hidden. */
+    std::function<juce::var()> notLoadable;
 
     /** ---- THE RECENT CHAT, SO A REPLY CONTINUES THE JOB IT ANSWERS (16 Oct 2026, Sean) ---------
         The last few turns of this conversation, oldest first, as [{role, text}].
@@ -239,6 +248,14 @@ public:
         LevellingRead levelling;
     };
     const Checkpoint* checkpoint (const juce::String& token) const;
+
+protected:
+    /** Everything this machine has installed, for the client's name-vs-sentence test (item 5) and
+        for ExecutorDo's same-role alternatives (D22). One accessor, both callers. */
+    juce::StringArray installedPluginNames() override
+    { return src_.inventory ? src_.inventory() : juce::StringArray{}; }
+    /** What cannot load here, as [{name, loadable:false, why}] - empty when nothing is marked. */
+    juce::var notLoadableHere() const { return src_.notLoadable ? src_.notLoadable() : juce::var(); }
 
 protected:   // ExecutorDo is a subclass and item 6(b) needs the channel resolver, the "channels that
              // exist" sentence and the read sources to route and gate a cross-channel edit. These were

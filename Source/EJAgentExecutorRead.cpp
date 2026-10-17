@@ -733,6 +733,18 @@ void ExecutorRead::look (const ToolCall& call, Done done)
         const int offset = (int) argNumber (call, "offset", 0.0);
         const int limit  = (int) argNumber (call, "limit",  (double) kInventoryPage);
         auto page = inventoryPage (names, match.trim(), offset, limit);
+        // MARKED, NOT HIDDEN: the model is told what will not load here and why, so it can say so
+        // before it proposes an add rather than after the rack refuses one (Sean's item 3).
+        if (src_.notLoadable)
+            if (auto* o = page.getDynamicObject())
+            {
+                const auto bad = src_.notLoadable();
+                o->setProperty ("notLoadable", bad);
+                if (auto* arr = bad.getArray(); arr != nullptr && ! arr->isEmpty())
+                    o->setProperty ("notLoadableNote",
+                                    "these are installed but cannot run in this host - say so and offer "
+                                    "a working alternative of the same role instead of proposing them");
+            }
         // A filter that matched nothing is a RESULT, not a failure - "you have no de-essers" is an answer the
         // agent can act on, and a failure here would send it round again on the same question.
         done (ToolOutcome::success (page));
@@ -1266,6 +1278,26 @@ Sources bindToProcessor (EchoJayProcessor& proc)
                             + " plugin(s) that did not load here (" + wontLoad.joinIntoString (", ")
                             + ") - they are not offered in a pick until they load").toRawUTF8());
         return names;
+    };
+    // ---- WHAT CANNOT LOAD, AND WHY, BEFORE THE AGENT PLANS (17 Oct 2026, Sean's item 3) --------
+    // Two sources, both already known to the plugin and neither reaching the model until now: the
+    // session's remembered load failures (ChainHost::loadFailedPluginNames, each with the reason it
+    // failed with) and the architecture verdict the rack's own validator uses - the one that said
+    // "FabFilter Pro-C 2 is installed but its VST3 has no arm64 build" AFTER he had pressed Apply.
+    s.notLoadable = [p] () -> juce::var
+    {
+        juce::Array<juce::var> out;
+        auto add = [&out] (const juce::String& name, const juce::String& why)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("name", name);
+            o->setProperty ("loadable", false);
+            o->setProperty ("why", why);
+            out.add (juce::var (o));
+        };
+        for (const auto& e : p->getChainHost().installedButCannotLoad())
+            add (e.first, e.second);
+        return juce::var (out);
     };
     s.linkRack = [p] (const juce::String& uid)
     {

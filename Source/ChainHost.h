@@ -2160,6 +2160,29 @@ public:
                                   const juce::String& why);
     static void clearLoadFailure(const juce::String& name, const juce::String& format);
     static juce::StringArray loadFailedPluginNames();
+
+    /** WHAT IS INSTALLED HERE AND CANNOT RUN, each with the sentence that says why (17 Oct 2026).
+
+        Sean's item 3: *"CAN'T-LOAD STILL OFFERED: Pro-C 2 went behind an Apply, then failed (no
+        arm64); kHs (failed before) was tried again. Mark not loadable up front from the live
+        inventory."*
+
+        Both halves of the answer already existed and neither reached the agent. The architecture
+        verdict is what the rack's own validator used to refuse Pro-C 2 - AFTER he had approved it -
+        and the remembered load failures are what made kHs's second attempt avoidable. One list, so
+        the inventory the model reads can mark them before it plans.
+
+        Pairs of {name, why}. The name is the one a person sees; the clause completes "<name> ..."  */
+    std::vector<std::pair<juce::String, juce::String>> installedButCannotLoad() const;
+
+    /** The OS's load failure, in a person's words. Raw text belongs under Details (item 10).
+
+        What he read this morning, on the line itself: *"kHs Transient Shaper didn't load (An OS
+        error occurred during initialisation of the plug-in (-1)) and I have no built-in equivalent
+        for it"*. The parenthesis is JUCE quoting CoreAudio, and it tells a musician nothing except
+        that something is broken. The sentence is translated here, once, at the seam every caller
+        passes through; the raw string is never thrown away, it moves to Details. */
+    static juce::String plainLoadFailureText (const juce::String& raw);
     static juce::String loadFailureReasonFor(const juce::String& name);
     void maybeReloadEntriesCache();
 

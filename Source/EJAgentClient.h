@@ -134,6 +134,7 @@ public:
         in both directions - "MTransient" must never read as an instruction, "Set the pre-gain to
         2 dB" must never read as an answer. See the note on the definition. */
     static bool typedLooksLikeNewInstruction (const juce::String& typed);
+    juce::String typedNamesAnInstalledPlugin (const juce::String& typed) const;
 
     // ---- the plan card -------------------------------------------------------
     std::vector<const Step*> planLines() const;             // this round's ask_first steps still awaiting a decision

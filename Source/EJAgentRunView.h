@@ -95,8 +95,26 @@ struct RunView
     void dropClosingIfItRepeatsTheOpening()
     {
         if (closing.trim().isEmpty() || opening.trim().isEmpty()) return;
-        if (closing.trim() == opening.trim())
-            closing.clear();
+        const auto a = closing.trim(), b = opening.trim();
+        if (a == b) { closing.clear(); return; }
+        // ---- AND WHEN THE BUBBLE HAS A SENTENCE OF ITS OWN IN FRONT (17 Oct 2026, item 6) -------
+        //
+        // Last night's cut compared the two for EQUALITY, and he read the closing twice again this
+        // morning: *"the bubble still repeats the closing when the bubble has extra text before
+        // it"*. The bubble was "Done - I've set it up on the kick." followed by the summary, so the
+        // strings differed by one sentence and the repeat survived the test that was meant to catch
+        // it.
+        //
+        // What must not happen is the same sentence appearing twice on screen, so that is what is
+        // asked: does the bubble already END WITH the closing (the ordinary shape - prose, then the
+        // summary), or CONTAIN it as a whole line? Either way the row drops its copy and the bubble
+        // keeps the words, which is the one he reads first.
+        //
+        // Deliberately not "contains the text anywhere": a closing of "Done." would then be dropped
+        // because the bubble happens to contain that word. The test is a whole line or the tail.
+        if (b.endsWith (a)) { closing.clear(); return; }
+        for (const auto& line : juce::StringArray::fromLines (b))
+            if (line.trim() == a) { closing.clear(); return; }
     }
     juce::String statusWord;    // "Working" | "Waiting for your OK" | ... (the mockup's words)
     juce::String modeBadge;     // "ASK" | "AUTO"

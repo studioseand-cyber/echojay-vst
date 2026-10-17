@@ -145,6 +145,61 @@ juce::StringArray ChainHost::loadFailedPluginNames()
     return out;
 }
 
+juce::String ChainHost::plainLoadFailureText (const juce::String& raw)
+{
+    const auto low = raw.toLowerCase();
+    // The three shapes this Mac produces, in the order they are met. Each sentence completes
+    // "<plugin> ..." and says what the person can do about it, which the raw text never does.
+    if (low.contains ("os error") || low.contains ("osstatus") || low.contains ("initialisation")
+        || low.contains ("initialization") || low.contains ("(-1)"))
+        return "won't load on this Mac - it failed to start up here";
+    if (low.contains ("licen") || low.contains ("ilok") || low.contains ("authoris")
+        || low.contains ("authoriz") || low.contains ("trial") || low.contains ("activation"))
+        return "won't load on this Mac - it looks like a licence or iLok problem";
+    if (low.contains ("arm64") || low.contains ("architecture") || low.contains ("x86"))
+        return "won't run in this host - it has no Apple-silicon build";
+    if (low.contains ("timed out") || low.contains ("timeout"))
+        return "won't load on this Mac - it took too long to start and was given up on";
+    if (raw.trim().isEmpty()) return "won't load on this Mac";
+    // Something new: say the plain half and let Details carry the rest rather than invent a cause.
+    return "won't load on this Mac";
+}
+
+std::vector<std::pair<juce::String, juce::String>> ChainHost::installedButCannotLoad() const
+{
+    std::vector<std::pair<juce::String, juce::String>> out;
+    auto note = [&out] (const juce::String& name, const juce::String& why)
+    {
+        if (name.trim().isEmpty() || why.trim().isEmpty()) return;
+        for (const auto& e : out) if (e.first.equalsIgnoreCase (name)) return;   // one line per plugin
+        out.emplace_back (name, why);
+    };
+    // 1. THIS SESSION'S FAILURES, with the reason they failed with. kHs Transient Shaper's entry
+    //    this morning read "An OS error occurred during initialisation of the plug-in (-1)" - the
+    //    OS's sentence, which is not a person's, so it is translated here and kept verbatim for
+    //    Details by the caller that wants it.
+    for (const auto& n : loadFailedPluginNames())
+    {
+        const auto raw = loadFailureReasonFor (n);
+        note (n, plainLoadFailureText (raw));
+    }
+    // 2. THE ARCHITECTURE VERDICT, over every scanned row rather than the filtered feed. The feed
+    //    already hides a withheld row, and that is exactly how "FabFilter Pro-C 2" could be offered
+    //    while its VST3 was unrunnable: the AU row passed the filter, the add resolved the VST3, and
+    //    the validator refused it at the last moment.
+    {
+        std::lock_guard<std::mutex> lock (pluginsMutex_);
+        for (const auto& d : knownPlugins_.getTypes())
+        {
+            const auto r = withholdReasonLocked (d);
+            if (! isWithheld (r)) continue;
+            const auto why = withholdReasonText (r);
+            if (why.isNotEmpty()) note (d.name, why);
+        }
+    }
+    return out;
+}
+
 juce::String ChainHost::loadFailureReasonFor(const juce::String& name)
 {
     const auto f = getLoadFailedFile();

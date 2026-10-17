@@ -19633,6 +19633,25 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
     }
     // messages intentionally empty — won't appear in sidebar until first send
 
+    // ---- AND THE EMPTY ONES DO NOT PILE UP (17 Oct 2026, Sean's item 11) ---------------------
+    // "Empty 'New chat' entries pile up in the list (8 on 10-16). Don't keep a chat with no
+    // message." The guard at the top of this function covers the case where the CURRENT chat is
+    // already empty, but every new chat is minted empty and only filtered from the sidebar - so a
+    // morning of pressing the button left eight records behind ("chat 1792187914011 (latest of 8)"
+    // in this morning's log). Filtering a thing from view is not the same as not keeping it.
+    //
+    // So the empties are swept before the new one is added: any chat with no messages that is not
+    // the one being created. The sweep is local, like addChat itself, and nothing is persisted for
+    // a chat until its first message anyway.
+    {
+        int swept = 0;
+        for (const auto& old : workspace.getChats())
+            if (old.messages.empty() && old.id != c.id && old.id != currentChatId)
+            { workspace.removeChat (old.id); ++swept; }
+        if (swept > 0)
+            EchoJay_NSLog (("EJChat: swept " + juce::String (swept) + " empty chat record(s) before "
+                            "opening a new one (Sean's item 11)").toRawUTF8());
+    }
     workspace.addChat(c);
     // No mutation sync yet — nothing to persist until a message is added
 
@@ -19653,8 +19672,34 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
                    + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
     processorRef.chatRoles.clear();
     processorRef.chatContents.clear();
-    // A new chat never owns an in-flight stream, so any thinking row on
-    // screen belongs elsewhere and must not follow us here.
+    // ---- AND IT NEVER OWNS AN IN-FLIGHT RUN EITHER (17 Oct 2026, Sean's item 1) ---------------
+    //
+    // The two lines below suppressed the thinking ROW and left the RUN alive, which is a distinction
+    // only the code can see. His morning: kHs failed on the Kick's Link, the server asked a question,
+    // and that ask was still pending when he pressed New chat and aimed it at the Mix Bus. His next
+    // sentence went into the old run - same session id - and was answered about the Kick's CL 1B,
+    // with the old run's closing and failed step drawn into the new chat.
+    //
+    // A new chat is a new conversation. Anything still waiting belongs to the one being left, so it
+    // is STOPPED here, through the same stop() the Stop button calls, and the pending ask is cleared
+    // with it - otherwise the next typed line is read as an answer to a question nobody can see any
+    // more. The agent's target follows the new chat's binding, so the fresh run works on what the
+    // person is looking at rather than on what the last one happened to hold.
+    if (auto* ag = agentClient())
+    {
+        if (ag->isActive() || ag->askPending())
+        {
+            EchoJay_NSLog (("EJAgent: New chat pressed while a run was live (state "
+                            + juce::String (EJAgentClient::stateName (ag->state()))
+                            + (ag->askPending() ? ", an ask pending" : "")
+                            + ") - stopping it: a new chat never inherits the last one's run "
+                              "(Sean's item 1, 17 Oct)").toRawUTF8());
+            ag->stop();
+        }
+    }
+    // The agent's target follows the chat's binding, through the one function that owns it - the
+    // same call every other target change goes through, so the log line reads the same.
+    syncAgentTarget();
     noteStageSuppressedIfForeign();
     clearStageStatus();
     sidebarDebugText = "";

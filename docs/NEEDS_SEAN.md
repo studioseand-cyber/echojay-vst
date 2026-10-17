@@ -326,7 +326,29 @@ Two of its five attempts also died with *"stream ended without a terminal frame 
 stream ended early"* - B's server, the same family as §52 - and those were discarded and retried
 rather than counted, which is the rule for a turn the server never served.
 
-### D22. Your "a plugin the user NAMES is still used as named" ruling has an exception now
+### D22. RULED, 17 Oct: a plugin that failed before is OFFERED WITH A WARNING, never tried silently
+
+His words: *"plugin that failed to load before -> say so up front, offer [Try anyway] plus the
+loadable alternatives of the same role as chips. Never try it silently, never refuse outright."*
+
+So neither of the two things I had considered. Not a silent retry (which is what happened this
+morning - kHs was asked for by name, the add path did not consult the no-load list, and it failed a
+second time with the same OS error), and not a refusal either (which is what my first cut of item 3
+did, and would have taken away a plugin that might work after an iLok sign-in). It is a question,
+with his options on it.
+
+**How it is built, and which half is whose.** The plugin never attempts a remembered-failure load
+unless the call says to: the add comes back NOT APPLIED with a plain sentence ("kHs Transient Shaper
+didn't load on this Mac last time"), the raw reason kept for Details, and - in the result the model
+reads - `tryAnywayOffer: true` plus `alternatives: [...]`, the loadable plugins of the same role.
+B turns that into the ask with **[Try anyway]** and those alternatives as chips (FOR_B §22). When
+the answer comes back as the same add carrying `tryAnyway: true`, the plugin loads it exactly as
+named, which is the "never refuse outright" half.
+
+The older ruling it narrows is still in the file beneath this one, because it was right about the
+thing it was protecting: a plugin that has never failed is used exactly as named, with no question.
+
+### D22b. The ruling this replaced (15 Oct): "a plugin the user NAMES is still used as named"
 
 On 15 October you ruled that the remembered no-load list must never stop a plugin the user asked for
 by name: *"a plugin the user NAMES is still used as named"*. It is written into the inventory source

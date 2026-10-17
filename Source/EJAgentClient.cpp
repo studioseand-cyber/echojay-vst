@@ -282,6 +282,38 @@ juce::String EJAgentClient::matchTypedToChoice (const juce::String& typedIn) con
     "MTransient", "the EchoJay Transient", "elysia museq" are answers: no leading verb, or too short
     to be a sentence. Deliberately narrow in both directions - a bare plugin name can never be read
     as an instruction, and a verb-led sentence is never quietly consumed as an answer.                */
+/** Does this typed text NAME a plugin this machine has? (17 Oct 2026, Sean's item 5.)
+
+    Fuzzy, because the chips spell a product's full name ("Tube-Tech CL 1B") and a person types what
+    they call it ("cl1b"). Both sides are reduced to letters and digits, lower case, and a hit is one
+    containing the other. Three characters minimum, so "a" or "eq" cannot claim to be a name; and
+    the comparison is against what is INSTALLED, not against the chips, which is the whole point -
+    the chips are the server's guess and the inventory is the fact.
+
+    Returns the installed name it matched, so the log can say which, or empty.                     */
+juce::String EJAgentClient::typedNamesAnInstalledPlugin (const juce::String& typed) const
+{
+    auto squash = [] (const juce::String& in)
+    {
+        juce::String out;
+        for (auto c : in) if (juce::CharacterFunctions::isLetterOrDigit (c)) out << juce::String::charToString (c).toLowerCase();
+        return out;
+    };
+    const auto want = squash (typed);
+    if (want.length() < 3) return {};
+    // A sentence is not a name, however many plugin words it happens to contain: "add a compressor
+    // to the kick" squashes to something that contains "compressor", and taking that as a name would
+    // undo #21. The sentence test runs first and wins.
+    if (juce::StringArray::fromTokens (typed.trim(), " ", "").size() >= 4) return {};
+    for (const auto& installed : const_cast<EJAgentClient*> (this)->executor_.installedPluginNames())
+    {
+        const auto have = squash (installed);
+        if (have.length() < 3) continue;
+        if (have.contains (want) || want.contains (have)) return installed;
+    }
+    return {};
+}
+
 bool EJAgentClient::typedLooksLikeNewInstruction (const juce::String& typedIn)
 {
     const auto t = typedIn.trim();
@@ -361,10 +393,34 @@ bool EJAgentClient::interceptTyped (const juce::String& typed)
         //                        NEW INSTRUCTION, which is Sean's #21 exactly ("What now?" with
         //                        [Stop here, Try once more] and "Add Pro-C 2" typed into it).
         //   no choices at all    talkAskOf has already forced the flag true: typing is the only road.
-        if (! pendingAsk_.labels.isEmpty() && ! pendingAsk_.allowFreeText)
+        // ---- A NAME IS AN ANSWER; ONLY A SENTENCE IS A NEW INSTRUCTION (17 Oct 2026, item 5) -----
+        //
+        // This branch used to read: choices on screen + allowFreeText false + no chip matched =>
+        // NEW INSTRUCTION, stop the run. It cost him a run this morning on the clearest possible
+        // answer. The server asked "Which CL 1B do you have loaded - which one should I add?" with
+        // three chips, he typed **cl1b**, and the run was stopped and restarted on that text as a
+        // goal. His ruling: *"A name answers the ask (fuzzy match to installed plugins); only a
+        // sentence is a new instruction."*
+        //
+        // So the test is the one he named, and in his order:
+        //   * the text names a plugin this machine HAS -> it is an answer, whatever the flag says
+        //     (the chips spelled it "Tube-Tech CL 1B"; he typed what a person types);
+        //   * the text is a SENTENCE (verb-led, three words or more) -> a new instruction, which is
+        //     #21 intact: "Add Pro-C 2" typed into "What now?" still stops the run;
+        //   * anything else -> an answer, because a reply that is not an instruction is a reply, and
+        //     a dropped answer is the one outcome both of his rulings forbid.
+        if (const auto named = typedNamesAnInstalledPlugin (typed); named.isNotEmpty())
         {
-            log ("typed text \"" + typed.trim() + "\" matches none of the " + juce::String (pendingAsk_.labels.size())
-                 + " choice(s) and the server asked for a tap (allowFreeText false) - taking it as a NEW "
+            log ("typed text \"" + typed.trim() + "\" names an installed plugin (\"" + named
+                 + "\") - that is an ANSWER to this ask, not a new instruction, even though it matches "
+                   "none of the " + juce::String (pendingAsk_.labels.size()) + " chip(s) (Sean's item 5)");
+            answerAsk (typed.trim(), true);
+            return true;
+        }
+        if (! pendingAsk_.labels.isEmpty() && typedLooksLikeNewInstruction (typed))
+        {
+            log ("typed text \"" + typed.trim() + "\" is a SENTENCE and matches none of the "
+                 + juce::String (pendingAsk_.labels.size()) + " choice(s) - taking it as a NEW "
                    "INSTRUCTION: this run is stopped and the text starts its own (Sean's #21)");
             stop();
             return false;
@@ -715,7 +771,32 @@ void EJAgentClient::onFrame (int generation, Frame f)
                     else if (s->status == Step::Status::Pending)
                         s->status = Step::Status::AwaitingApproval;
                 }
-                else if (s->status == Step::Status::Pending) s->status = Step::Status::AwaitingApproval;
+                // ---- THE PLAN FRAME MUST NOT UNDO THE TAP (17 Oct 2026, Sean's item 2, third time) --
+                //
+                // This line read `else if (s->status == Pending) s->status = AwaitingApproval;` and that
+                // is the whole defect. The tool_call frame had just set the step to Pending BECAUSE THE
+                // TAP APPROVED IT ("the tapped pick IS the approval", a few lines above, which logged
+                // itself and set autoApplied) - and then the plan frame, which marks every item ask_first
+                // by contract, flipped it straight back to waiting. The flag said auto-applied and the
+                // status said "ask him again", so the card drew Apply and he pressed it, three nights
+                // running, on a fix that was working.
+                //
+                // Found by replaying the real session rather than by reading: B2b's scripted add carries
+                // NO plan frame, so this line never ran in the rig and the row passed every time. The
+                // real round 5 carries tool_call + plan + await together, and that is the difference.
+                //
+                // An auto-applied step keeps its status, in both modes. The Auto branch above already
+                // said that for its own reason; this is the same sentence for the tap.
+                else if (s->status == Step::Status::Pending && ! s->autoApplied)
+                    s->status = Step::Status::AwaitingApproval;
+                else if (s->autoApplied && s->status == Step::Status::AwaitingApproval)
+                {
+                    // ...and if the plan frame arrived FIRST, the tap's approval still wins when the
+                    // tool_call catches up: the status is corrected here rather than left stale.
+                    s->status = Step::Status::Pending;
+                    log ("the plan frame would have put the auto-applied step \"" + s->label.substring (0, 50)
+                         + "\" back to waiting - it keeps the tap's approval (Sean's item 2)");
+                }
                 s->approved = true;
             }
             log ("frame plan round=" + juce::String (f.planRound) + " items=" + juce::String ((int) f.planItems.size()) + " heading=\"" + planHeading_ + "\"");

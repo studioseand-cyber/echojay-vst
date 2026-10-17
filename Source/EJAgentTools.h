@@ -142,6 +142,17 @@ struct ToolOutcome
     static ToolOutcome failureFor (const juce::String& code, const juce::String& message,
                                    const juce::String& userLine)
     { ToolOutcome o; o.ok = false; o.errorCode = code; o.errorMessage = message; o.userMessage = userLine; return o; }
+    /** A failure that carries STRUCTURE for the server to act on (17 Oct 2026, D22).
+
+        A plugin that failed to load before is neither applied nor refused: the step comes back not
+        applied with the plain sentence, and the result object carries the material the question
+        needs - `tryAnywayOffer`, the raw reason for Details, and the loadable alternatives of the
+        same role - so the ask can be drawn with [Try anyway] beside them. A bare `failure` would
+        have left the model to invent the options. */
+    static ToolOutcome failureWithResult (const juce::String& code, const juce::String& message,
+                                          juce::var result)
+    { ToolOutcome o; o.ok = false; o.errorCode = code; o.errorMessage = message;
+      o.userMessage = message; o.result = std::move (result); return o; }
 };
 
 struct PlaybackReading
@@ -205,6 +216,15 @@ public:
     // and the line is composed in the client, so this is the seam. Returns the names a `build` call would
     // take OFF that rack, in rack order, and nothing for any other op or when nothing would go.
     virtual juce::StringArray buildWouldRemove (const ToolCall& call) { juce::ignoreUnused (call); return {}; }
+
+    /** The plugin names this machine has, for deciding whether a typed word is a NAME or a sentence.
+
+        Sean's item 5, 17 Oct 2026: he answered "Which CL 1B do you have loaded?" by typing "cl1b"
+        and the run was STOPPED, because the ask offered three chips, none of them spelled "cl1b",
+        and a text matching no chip was read as a new instruction. His ruling: *"A name answers the
+        ask (fuzzy match to installed plugins); only a sentence is a new instruction."* The client
+        cannot tell a name from a sentence without knowing what is installed, so it asks here. */
+    virtual juce::StringArray installedPluginNames() { return {}; }
 
     // The opening read sent as `context` on /api/agent/start: channel (role,
     // name, uid), the rack in one line per slot, the inventory shortlist.
