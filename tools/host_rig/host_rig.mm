@@ -6021,12 +6021,33 @@ int main (int argc, char* argv[])
                              const auto arow = st.getProperty ("agentRow", juce::var());
                              const auto sidBefore = arow.getProperty ("sessionId", juce::var()).toString();
                              const int  rowsBefore = (int) arow.getProperty ("rows", juce::var());
-                             // Its own first choice when it offered one, else a plugin that is really here.
-                             juce::String answer = "the EchoJay Transient";
-                             if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
-                                 for (const auto& sv : *arr)
-                                     if (auto* ch = sv.getProperty ("chips", juce::var()).getArray())
-                                         if (! ch->isEmpty()) answer = (*ch)[0].toString();
+                             // ---- ITS OWN FIRST CHOICE, AND THIS ROW NEVER FOUND ONE (17 Oct) -------
+                             // `steps[].chips` is published as a COMMA-JOINED STRING, not an array, so
+                             // getArray() returned nullptr every time and the row always typed its
+                             // fallback - "the EchoJay Transient", which names no chip at all. With
+                             // chips on screen, a typed answer naming none of them is a NEW INSTRUCTION
+                             // by the rule this very gate asked for, so the row was failing itself: it
+                             // typed something that MUST start a new run and then complained that no
+                             // answer was recorded.
+                             //
+                             // The ask's own labels are published whole, in `agent.askLabels`, which is
+                             // what the card draws. That is where the answer comes from now, with the
+                             // step's chips string as a second source and the plugin name only as a last
+                             // resort - and a free-text ask has neither, which is the case this row is
+                             // really about.
+                             juce::String answer;
+                             const auto labels = agentVarOf (st).getProperty ("askLabels", juce::var()).toString();
+                             if (labels.isNotEmpty())
+                                 answer = juce::StringArray::fromTokens (labels, "|", "")[0].trim();
+                             if (answer.isEmpty())
+                                 if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                                     for (const auto& sv : *arr)
+                                     {
+                                         const auto chips = sv.getProperty ("chips", juce::var()).toString();
+                                         if (chips.isNotEmpty())
+                                             answer = juce::StringArray::fromTokens (chips, ",", "")[0].trim();
+                                     }
+                             if (answer.isEmpty()) answer = "the EchoJay Transient";
                              rig.send (echojay::rig::cmd::sendChat, args1 ("text", answer), 15000);
                              juce::String answered;
                              rig.until ([&] (const juce::var& stv)
