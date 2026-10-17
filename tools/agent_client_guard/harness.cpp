@@ -505,12 +505,25 @@ int main()
         check (r.client.steps().empty() && r.client.state() == EJAgentClient::State::Connecting && r.posts.back().first == "/api/agent/start", "E1 a new session starts clean");
         r.round (1);
         EJAgentClientTestAccess::feed (r.client, "error", R"({"code":"model_unavailable","message":"The model is busy.","retryable":true})");
-        check (r.client.state() == EJAgentClient::State::Failed && r.client.errorRetryable() && r.client.errorMessage() == "The model is busy."
-               && r.transcript.back().second.contains ("The model is busy."),
-               "E2 an error frame -> Failed, retryable, the message in the transcript");
+        // ---- THE DRAWN LINE IS OURS NOW (17 Oct 2026) -------------------------------------------
+        // This asserted the server's own sentence reached the screen verbatim. After tonight it does
+        // not: Sean read "result toolu_01VtSX... is over 8 KB; send the compact summary shape
+        // (CONTRACT_AGENT_TOOLS section 5)" in his chat, so the LINE is translated and the server's
+        // words are kept for Details. The code still decides, the state and retryability are
+        // unchanged, and the raw text is still available - which is what this now checks.
+        check (r.client.state() == EJAgentClient::State::Failed && r.client.errorRetryable()
+               && r.client.errorMessage().containsIgnoreCase ("busy")
+               && r.client.rawErrorDetail() == "The model is busy."
+               && r.transcript.back().second.containsIgnoreCase ("busy"),
+               "E2 an error frame -> Failed, retryable, a PLAIN line on screen and the server's own "
+               "sentence kept for Details");
         const auto lastBody = r.posts.back().second; const auto lastPath = r.posts.back().first; const auto n = r.posts.size();
         r.client.retry();
-        check (r.posts.size() == n + 1 && r.posts.back().first == lastPath && r.posts.back().second == lastBody, "E3 Retry re-posts the SAME request, byte for byte");
+        // E3 still holds for a failure the server never saw - a 429 like this one, a 500, a timeout -
+        // which is the case Retry exists for. What changed tonight is the OTHER case: a body the
+        // server saw and refused for its content is never resent (W6).
+        check (r.posts.size() == n + 1 && r.posts.back().first == lastPath && r.posts.back().second == lastBody,
+               "E3 Retry re-posts the SAME request byte for byte when the server never saw it (429)");
         r.round (1); r.delta ("Done: the EQ took a 2 dB cut at 300 Hz.");
         EJAgentClientTestAccess::feed (r.client, "done", R"({"reason":"complete","summary":"Cut 2 dB at 300 Hz on the EchoJay EQ.","rounds":2,"costUsd":0.04})");
         check (r.client.state() == EJAgentClient::State::Done && r.client.doneReason() == "complete" && r.client.round() == 2 && std::abs (r.client.costUsd() - 0.04) < 1e-9
@@ -789,7 +802,12 @@ int main()
                "stopped and the text goes down the composer's own road (Sean's #21, unchanged)");
     }
 
-    // ---- W1-W4: AN AGENT STOP READS AS WORDS, IN BOTH DIRECTIONS (17 Oct 2026) ------------------
+    // ---- SL1-SL4: AN AGENT STOP READS AS WORDS, IN BOTH DIRECTIONS (17 Oct 2026) ----------------
+    //
+    // Named SL (stop line) and not W, because W1a-W4 in this same harness are the wait_for_playback
+    // legs - I wrote "W3" and "W4" twice in one scorecard and caught it in the same session in which
+    // I renamed A5b and ROW F2 for exactly that. A duplicate id makes a report unable to say which
+    // leg ran.
     //
     // What Sean read on 17b: "The agent stopped: result toolu_01VtSXwQ7CTqLmVPLGMUao8n is over 8 KB;
     // send the compact summary shape (CONTRACT_AGENT_TOOLS section 5)". A guard that only checked
@@ -802,27 +820,27 @@ int main()
         check (! tooBig.contains ("toolu_") && ! tooBig.containsIgnoreCase ("CONTRACT_")
                && ! tooBig.containsIgnoreCase ("8 KB") && tooBig.containsIgnoreCase ("too big")
                && tooBig.containsIgnoreCase ("less at a time"),
-               "W1 result_too_large reads as words: no tool id, no byte limit, no contract reference, "
+               "SL1 result_too_large reads as words: no tool id, no byte limit, no contract reference, "
                "and it says what to do next");
 
         const auto unknownClean = EJAgentClient::plainStopLine ("some_new_code",
                                                                 "The widget shelf fell over.");
         check (unknownClean == "The widget shelf fell over.",
-               "W2 an unknown code with a plain sentence keeps the server's own words");
+               "SL2 an unknown code with a plain sentence keeps the server's own words");
 
         const auto unknownDirty = EJAgentClient::plainStopLine ("some_new_code",
             "result toolu_01ABC is over 8 KB; see CONTRACT_AGENT_TOOLS section 5");
         check (! unknownDirty.contains ("toolu_") && ! unknownDirty.containsIgnoreCase ("CONTRACT_")
                && unknownDirty.isNotEmpty(),
-               "W3 ...but an unknown code whose text carries a tool id or a contract reference is "
+               "SL3 ...but an unknown code whose text carries a tool id or a contract reference is "
                "REPLACED, not dressed up");
 
         const auto empty = EJAgentClient::plainStopLine ("", "");
         check (empty.isNotEmpty() && ! empty.containsIgnoreCase ("error."),
-               "W4 no code and no text still produces a sentence, not a blank or \"an error\"");
+               "SL4 no code and no text still produces a sentence, not a blank or \"an error\"");
     }
 
-    // ---- W5: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ------------------------
+    // ---- SZ1: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ----------------------
     // The executor's own gate, asked directly with a result the size of Sean's machine: 420 entries
     // of the shape 17b sent. It must come back inside the contract's 8 KB.
     {
@@ -847,9 +865,60 @@ int main()
         const auto after = fx.compactResult (big);
         const auto afterBytes = (int) juce::JSON::toString (after, true).getNumBytesAsUTF8();
         check (beforeBytes > 8192 && afterBytes <= 8192,
-               "W5 a result the size of his machine's unloadable list (" + juce::String (beforeBytes)
+               "SZ1 a result the size of his machine's unloadable list (" + juce::String (beforeBytes)
                + " bytes) is compacted under the contract's 8 KB (" + juce::String (afterBytes)
                + ") by the base gate every executor inherits");
+    }
+
+    // ---- RC1/RC2: A STUCK CHAT RECOVERS - no old result is ever posted again (17 Oct 2026) -----
+    //
+    // His screenshot: the run died on `result_too_large`, he pressed Retry and it failed with THE
+    // SAME tool id, and so did his next message in that chat. Two separate faults behind one
+    // symptom: retry() re-posted the refused bytes verbatim, and the stored body outlived the run.
+    //
+    // RC1 is the retry; RC2 is the next message. Both assert on what was POSTED, because that is the
+    // only place the symptom lives.
+    {
+        r.client.dismiss();
+        r.posts.clear();
+        r.client.start ("read the inventory", "chat_stuck");
+        r.round (1);
+        r.tool (R"({"id":"toolu_STUCK","name":"look","args":{"what":"inventory"},"approval":"free"})");
+        r.await ({ "toolu_STUCK" });
+        pumpMs (30);
+        const auto postsAfterStep = r.posts.size();
+        // the server refuses the CONTENT of that step
+        // A CUSTOM DELIMITER, because the sentence itself contains `)"` - "(CONTRACT_AGENT_TOOLS
+        // section 5)" - which ends an ordinary R"( ... )" literal in the middle of the string.
+        EJAgentClientTestAccess::feed (r.client, "error",
+            R"JSON({"code":"result_too_large","message":"result toolu_STUCK is over 8 KB; send the compact summary shape (CONTRACT_AGENT_TOOLS section 5)","retryable":true})JSON");
+        pumpMs (10);
+
+        // W6: Retry must not put those bytes back on the wire.
+        r.client.retry();
+        pumpMs (20);
+        bool resentOld = false;
+        for (size_t i = postsAfterStep; i < r.posts.size(); ++i)
+            if (r.posts[i].second.contains ("toolu_STUCK")) resentOld = true;
+        check (! resentOld,
+               "RC1 after result_too_large, Retry does NOT resend the refused body (no post carries the "
+               "old tool id again - his screenshot showed exactly that)");
+
+        // ...and it says something a person can act on rather than going quiet.
+        check (r.client.errorMessage().isNotEmpty()
+               && ! r.client.errorMessage().contains ("toolu_")
+               && ! r.client.errorMessage().containsIgnoreCase ("8 KB"),
+               "RC1b ...and the line he is left with is plain, with no tool id and no byte limit");
+
+        // W7: the next message in the same chat starts clean.
+        const auto before = r.posts.size();
+        r.client.start ("add a compressor", "chat_stuck");
+        pumpMs (20);
+        bool carriedOld = false;
+        for (size_t i = before; i < r.posts.size(); ++i)
+            if (r.posts[i].second.contains ("toolu_STUCK")) carriedOld = true;
+        check (! carriedOld && r.posts.size() > before,
+               "RC2 ...and his NEXT message starts a fresh run that carries nothing from the failed one");
     }
 
     // ---- A8 LIVES LAST, BECAUSE IT STOPS A RUN (16 Oct 2026) ------------------------------------
