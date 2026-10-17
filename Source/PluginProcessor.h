@@ -1069,6 +1069,34 @@ public:
         "the card's figure is the plugin's figure" needs both halves from the same place, and the
         mirror's card travels in the sidecar's `settings`. Newlines are flattened so one slot stays
         one field. */
+    /** ---- ONE SLOT'S FACTS, TOGETHER (17 Oct 2026) -------------------------------------------
+        The Link's slots as an ARRAY - {n, name, landed, settings} - instead of two joined strings.
+
+        I9c failed three runs in a row on a comparison between DIFFERENT slots: it read the ledger
+        out of a joined "slot 1 ...|slot 2 ..." string by searching for the control's name, and read
+        the card out of another, so with three Renaissance Axx on one rack it compared slot 1's -30
+        with slot 3's card. The numbers were both right and the row was wrong. A row cannot make that
+        mistake against this. */
+    juce::var linkRackSlotsForRig (const juce::String& uid) const
+    {
+        juce::Array<juce::var> out;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || uid.isEmpty()) return juce::var (out);
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid) return juce::var (out);
+        for (int i = 0; i < (int) rc.slots.size(); ++i)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("n", i + 1);
+            o->setProperty ("name", rc.slots[(size_t) i].name);
+            o->setProperty ("landed", rc.slots[(size_t) i].landedValues);
+            o->setProperty ("settings", rc.slots[(size_t) i].settings.replaceCharacter ('\n', ' '));
+            o->setProperty ("dialPending", rc.slots[(size_t) i].dialPending);
+            out.add (juce::var (o));
+        }
+        return juce::var (out);
+    }
     juce::String linkRackSettingsForRig (const juce::String& uid) const
     {
         int err = 0;

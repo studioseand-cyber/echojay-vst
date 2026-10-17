@@ -37253,6 +37253,9 @@ void EchoJayEditor::publishRigState()
             // is the plugin's figure" needs both halves, and reading a field nobody publishes is how
             // I9c came to report an empty card about a slot that had one.
             l->setProperty ("settings", processorRef.linkRackSettingsForRig (li.uid));
+            // ...and the same facts PER SLOT, so a row cannot compare one slot's number with
+            // another slot's card (I9c did, three runs running, with three Axx on one rack).
+            l->setProperty ("slotsDetail", processorRef.linkRackSlotsForRig (li.uid));
             links.add (juce::var (l));
         }
         o->setProperty ("links", juce::var (links));

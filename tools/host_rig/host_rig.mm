@@ -4117,84 +4117,6 @@ int main (int argc, char* argv[])
                                          || words.containsIgnoreCase ("try again after release")
                                          || words.containsIgnoreCase ("edited in its own window");
                 const auto lockNow = st.getProperty ("rackLock", juce::var()).toString();
-                // ---- T5: A THIRD PARTY IN THE MIRROR SAYS WHERE IT IS (16 Oct 2026, Sean) -----
-                //
-                // His step 4 on the Kick's Link: selecting the Renaissance Axx slot in the MAIN
-                // plugin's mirror drew a red "Failed: Renaissance Axx (s)'s editor could not be
-                // created". Nothing failed - the plugin is loaded and running in ANOTHER PROCESS on
-                // the Link's own track, and a second instance of its editor is not something this
-                // build can conjure. His ruling: don't say "Failed", say where it is.
-                //
-                // The row opens a mirrored third-party slot and reads the panel's own status line.
-                {
-                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
-                    Rig::pump (400);
-                    int tpSlot = -1;
-                    juce::String drawn;
-                    {   // the mirror's drawn slot names, in order, 1-based
-                        const auto names = rig.freshState().getProperty ("chainView", juce::var())
-                                               .getProperty ("slots", juce::var()).toString();
-                        drawn = names;
-                        const auto list = juce::StringArray::fromTokens (names, ",", "");
-                        for (int i = 0; i < list.size(); ++i)
-                            if (list[i].containsIgnoreCase (tp.name.upToFirstOccurrenceOf (" (", false, false)))
-                            { tpSlot = i + 1; break; }
-                    }
-                    if (tpSlot < 1)
-                        scenSkip ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
-                                  "no third-party slot is drawn in the mirror this run (the strip reads ["
-                                  + drawn.substring (0, 90) + "]), so there is nothing to open.", "A");
-                    else
-                    {
-                        rig.send (echojay::rig::cmd::openSlot, args1 ("n", tpSlot), 12000);
-                        juce::String status;
-                        rig.until ([&] (const juce::var& stv)
-                        {
-                            status = stv.getProperty ("chainView", juce::var())
-                                        .getProperty ("status", juce::var()).toString();
-                            return status.isNotEmpty();
-                        }, 8000);
-                        const auto track = linkRowOf (rig.freshState(), linkUid)
-                                               .getProperty ("name", juce::var()).toString();
-                        // THE WORD HE READ, not any use of it. The run found "The write to
-                        // 88_7even Kick_2_01 failed - the rack is not the one this plan was made
-                        // for", a true line about a stale borrow, and called it the editor's red
-                        // "Failed:". The two forms this row is about are the ones the panel writes.
-                        const bool saysFailed = status.trim().startsWithIgnoreCase ("Failed:")
-                                             || status.containsIgnoreCase ("editor could not be created");
-                        const bool saysWhere  = status.containsIgnoreCase ("is running on")
-                                             && (track.isEmpty() || status.contains (track));
-                        // A third party that DOES open inline draws no status at all, and that is a
-                        // pass too: the rule is "never the word Failed about a plugin that is fine".
-                        // THE STATUS LINE HAS OTHER THINGS TO SAY. On the green run it read
-                        // "88_7even Kick_2_01 has not published its rack yet" - a true line about
-                        // the sidecar, left from before the open, and nothing to do with an editor.
-                        // A row cannot judge the note from a line that is not about it: the rule is
-                        // held (never "Failed"), and anything that is neither the note nor a failure
-                        // SKIPS with its text, because the open produced no note to read.
-                        const bool aboutTheOpen = saysWhere || saysFailed || status.trim().isEmpty();
-                        if (! aboutTheOpen)
-                        {
-                            scenSkip ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
-                                      "the panel's status line was about something else when the slot was "
-                                      "opened (\"" + status.substring (0, 90) + "\"), so there is no note to "
-                                      "judge. The rule it does hold - never the word \"Failed\" - was not "
-                                      "broken. NEVER counted as a pass.", "A");
-                        }
-                        else
-                        scen ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
-                              ! saysFailed && (status.trim().isEmpty() || saysWhere),
-                              "opening slot " + juce::String (tpSlot) + " of the mirror [" + drawn.substring (0, 70)
-                              + "] left the panel reading: \"" + status.substring (0, 120) + "\""
-                              + (status.trim().isEmpty() ? "  (empty - it opened inline, which is also fine)"
-                                                         : juce::String())
-                              + "  (RED before this: \"Failed: Renaissance Axx (s)'s editor could not be "
-                              "created\", about a plugin running perfectly on another track)",
-                              "A", v2.editor.get(), rig.freshState());
-                    }
-                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
-                }
-
                 // IF THE LOCK NEVER BECAME VISIBLE, SAY SO RATHER THAN JUDGE THE REFUSAL. A row that
                 // reports "it was not refused" when nothing was holding the rack is testing nothing.
                 if (! lockVisible && ! lockNow.equalsIgnoreCase ("other"))
@@ -4604,6 +4526,96 @@ int main (int argc, char* argv[])
                   "A", v2.editor.get(), st, &r);
         }
 
+        // ---- T5 RUNS LAST OF THE LINK ROWS, BECAUSE OPENING A SLOT LEAVES A SESSION (17 Oct) ------
+        //
+        // A2 failed with "the Link went 5 -> 5 slot(s)" and T5's own status read told me why: "Your
+        // session is still live. The write to 88_7even Kick_2_01 failed - the rack is not the one
+        // this plan was made for". Opening a slot in the mirror starts a remote EDIT session, and
+        // the add A2 sends afterwards is refused against it. A row that leaves state behind belongs
+        // after the rows that need that state clean - the same lesson as A5 and A8 in the client
+        // guard, in a different file.
+        if (! linkUid.isEmpty())
+        {
+            // ---- T5: A THIRD PARTY IN THE MIRROR SAYS WHERE IT IS (16 Oct 2026, Sean) -----
+            //
+            // His step 4 on the Kick's Link: selecting the Renaissance Axx slot in the MAIN
+            // plugin's mirror drew a red "Failed: Renaissance Axx (s)'s editor could not be
+            // created". Nothing failed - the plugin is loaded and running in ANOTHER PROCESS on
+            // the Link's own track, and a second instance of its editor is not something this
+            // build can conjure. His ruling: don't say "Failed", say where it is.
+            //
+            // The row opens a mirrored third-party slot and reads the panel's own status line.
+            {
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
+                Rig::pump (400);
+                int tpSlot = -1;
+                juce::String drawn;
+                {   // the mirror's drawn slot names, in order, 1-based
+                    const auto names = rig.freshState().getProperty ("chainView", juce::var())
+                                           .getProperty ("slots", juce::var()).toString();
+                    drawn = names;
+                    const auto list = juce::StringArray::fromTokens (names, ",", "");
+                    for (int i = 0; i < list.size(); ++i)
+                        if (list[i].containsIgnoreCase (tp.name.upToFirstOccurrenceOf (" (", false, false)))
+                        { tpSlot = i + 1; break; }
+                }
+                if (tpSlot < 1)
+                    scenSkip ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
+                              "no third-party slot is drawn in the mirror this run (the strip reads ["
+                              + drawn.substring (0, 90) + "]), so there is nothing to open.", "A");
+                else
+                {
+                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", tpSlot), 12000);
+                    juce::String status;
+                    rig.until ([&] (const juce::var& stv)
+                    {
+                        status = stv.getProperty ("chainView", juce::var())
+                                    .getProperty ("status", juce::var()).toString();
+                        return status.isNotEmpty();
+                    }, 8000);
+                    const auto track = linkRowOf (rig.freshState(), linkUid)
+                                           .getProperty ("name", juce::var()).toString();
+                    // THE WORD HE READ, not any use of it. The run found "The write to
+                    // 88_7even Kick_2_01 failed - the rack is not the one this plan was made
+                    // for", a true line about a stale borrow, and called it the editor's red
+                    // "Failed:". The two forms this row is about are the ones the panel writes.
+                    const bool saysFailed = status.trim().startsWithIgnoreCase ("Failed:")
+                                         || status.containsIgnoreCase ("editor could not be created");
+                    const bool saysWhere  = status.containsIgnoreCase ("is running on")
+                                         && (track.isEmpty() || status.contains (track));
+                    // A third party that DOES open inline draws no status at all, and that is a
+                    // pass too: the rule is "never the word Failed about a plugin that is fine".
+                    // THE STATUS LINE HAS OTHER THINGS TO SAY. On the green run it read
+                    // "88_7even Kick_2_01 has not published its rack yet" - a true line about
+                    // the sidecar, left from before the open, and nothing to do with an editor.
+                    // A row cannot judge the note from a line that is not about it: the rule is
+                    // held (never "Failed"), and anything that is neither the note nor a failure
+                    // SKIPS with its text, because the open produced no note to read.
+                    const bool aboutTheOpen = saysWhere || saysFailed || status.trim().isEmpty();
+                    if (! aboutTheOpen)
+                    {
+                        scenSkip ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
+                                  "the panel's status line was about something else when the slot was "
+                                  "opened (\"" + status.substring (0, 90) + "\"), so there is no note to "
+                                  "judge. The rule it does hold - never the word \"Failed\" - was not "
+                                  "broken. NEVER counted as a pass.", "A");
+                    }
+                    else
+                    scen ("T5", "a third party in the Link's mirror says where it is, never \"Failed\"",
+                          ! saysFailed && (status.trim().isEmpty() || saysWhere),
+                          "opening slot " + juce::String (tpSlot) + " of the mirror [" + drawn.substring (0, 70)
+                          + "] left the panel reading: \"" + status.substring (0, 120) + "\""
+                          + (status.trim().isEmpty() ? "  (empty - it opened inline, which is also fine)"
+                                                     : juce::String())
+                          + "  (RED before this: \"Failed: Renaissance Axx (s)'s editor could not be "
+                          "created\", about a plugin running perfectly on another track)",
+                          "A", v2.editor.get(), rig.freshState());
+                }
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            }
+
+        }
+
         // ---- E9: WHAT THE START BODY CARRIES (16 Oct 2026, Sean's step 6, rules (a) and (c)) -------
         //
         // His step 6, which he called top priority: he asked how much gain reduction the compressor
@@ -4723,26 +4735,40 @@ int main (int argc, char* argv[])
         {
             const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
                                           + tp.paramName, 120000);
-            juce::String card, landed;
+            // ---- ONE SLOT, BOTH FACTS (17 Oct) ------------------------------------------------
+            // The first three cuts read the ledger out of one joined string and the card out of
+            // another, searching both by the control's name - so with three Renaissance Axx on the
+            // rack it compared slot 1's -30 against slot 3's card and called the build stale three
+            // times. `slotsDetail` carries {n, name, landed, settings} per slot; the row takes the
+            // slot that has BOTH and compares them to each other.
+            juce::String card, landed, whichSlot;
             rig.until ([&] (const juce::var& stv)
             {
                 const auto lr = linkRowOf (stv, linkUid);
-                landed = lr.getProperty ("landed", juce::var()).toString();
-                card   = lr.getProperty ("settings", juce::var()).toString();
-                // BOTH halves, or the row is comparing a card it has not read yet (the first cut
-                // read `settings` off the link row before anything published it, and reported an
-                // empty card about a slot that had one).
-                return landed.containsIgnoreCase (tp.paramName) && card.isNotEmpty();
+                if (auto* arr = lr.getProperty ("slotsDetail", juce::var()).getArray())
+                    for (const auto& sv : *arr)
+                    {
+                        const auto nm = sv.getProperty ("name", juce::var()).toString();
+                        const auto ld = sv.getProperty ("landed", juce::var()).toString();
+                        if (! nm.containsIgnoreCase (tp.name.upToFirstOccurrenceOf (" (", false, false))) continue;
+                        if (! ld.containsIgnoreCase (tp.paramName)) continue;
+                        landed    = ld;
+                        card      = sv.getProperty ("settings", juce::var()).toString();
+                        whichSlot = "slot " + sv.getProperty ("n", juce::var()).toString() + " (" + nm + ")";
+                    }
+                return landed.isNotEmpty() && card.isNotEmpty();
             }, 20000);
             juce::String plugFig;
-            for (const auto& pair : juce::StringArray::fromTokens (landed, ";|", ""))
-                if (pair.containsIgnoreCase (tp.paramName) && pair.contains ("="))
-                    plugFig = pair.fromLastOccurrenceOf ("=", false, false).trim();
+            for (const auto& pair : juce::StringArray::fromTokens (landed, ";", ""))
+                if (pair.upToFirstOccurrenceOf ("=", false, false).trim().containsIgnoreCase (tp.paramName))
+                    plugFig = pair.fromFirstOccurrenceOf ("=", false, false).trim();
             const bool cardHasIt = plugFig.isNotEmpty()
                                 && card.contains (juce::String (plugFig.getDoubleValue(), 0).trim());
             scen ("I9c", "the Link's mirrored card carries the plugin's figure too",
                   r.ran() && plugFig.isNotEmpty() && cardHasIt,
-                  "the Link reads " + tp.paramName + "=" + plugFig + " and its mirrored card reads: \""
+                  "on " + (whichSlot.isEmpty() ? juce::String ("(no slot carried both facts)") : whichSlot)
+                  + " the Link reads " + tp.paramName + "=" + plugFig
+                  + " and that SAME slot's mirrored card reads: \""
                   + card.replaceCharacter ('\n', ' ').substring (0, 110) + "\""
                   + "  (RED before this evening: \"Threshold 0\" on the Mix Bus AND the Kick Link, and "
                   "\"Attack 0, Sustain 0\" for Transient Master - three out of three)",
