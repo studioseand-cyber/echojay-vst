@@ -42,6 +42,7 @@
 // read it rather than copying the wording - the "[interrupted]" tag they used to grep for is gone, and a
 // leg that carried its own copy of a sentence would go red on the next wording change rather than on a bug.
 #include "EchoJayAPI.h"
+#include "LinkShm.h"          // the registry, so the rig can reap rows whose publisher is gone (item 14)
 #include <cmath>
 #include <cstdio>
 
@@ -1889,6 +1890,34 @@ int main (int argc, char* argv[])
             }
         }
         if (linkProcWhy.isNotEmpty()) std::printf ("  (out-of-process Links: %s)\n", linkProcWhy.toRawUTF8());
+    }
+
+    // ---- A REGISTRY WITH NOBODY IN IT BUT THIS RUN (17 Oct 2026) ---------------------------------
+    // Three S6 runs in a row were decided by Links that had already exited. The registry's rows
+    // outlive their processes - reapDeadPublisherSlots is only called by a claimant that finds the
+    // table FULL (queue item 14) - and a dead row keeps saying `connected`, keeps the NAME its host
+    // gave it, and keeps the slot count from its last sidecar write. All three of the facts a row can
+    // check, still true, about a process that is gone: A2 reported "the Link went 5 -> 5" about a rack
+    // whose own live mirror held 2.
+    //
+    // So the rig reaps before it starts, with the product's OWN check - sidecar publisher pid,
+    // kill(pid, 0), failing closed on anything it cannot read - and says how many rows it took. This
+    // is scaffolding of the same kind as clear_rack: it does not change what the product does, it
+    // gives the rows the registry they were written against. The product-side change (reap on a clock
+    // as well as on pressure) is item 14 and belongs to a round with a leg of its own.
+    {
+        int e1 = 0;
+        const auto regDir = LinkShm::resolveDir (e1);
+        int fd = -1, e2 = 0;
+        if (void* reg = LinkShm::openRegistry (regDir, fd, e2))
+        {
+            const int reaped = LinkShm::reapDeadPublisherSlots (reg, regDir);
+            std::printf ("  registry: reaped %d row(s) whose publisher process is gone (%s)\n",
+                         reaped, regDir.toRawUTF8());
+        }
+        else
+            std::printf ("  registry: could not be opened to reap (errno %d) - the Link rows will rely "
+                         "on their usability check alone\n", e2);
     }
 
     leg ("R0: the built bundles load in one host process");
