@@ -5686,10 +5686,41 @@ int main (int argc, char* argv[])
             // so the row can hold the whole claim: the question is answerable AND the change lands on
             // the kick. A run that silently edits another track is a FAILURE here, which is the only
             // way a targeting fault can be caught by a machine rather than by Sean.
-            const auto kickSlots = [&] { return (int) linkRowOf (rig.freshState(), linkUid)
-                                                          .getProperty ("slotCount", -1); };
+            // EVERY KICK, NOT THE ONE I HAPPEN TO HOLD A UID FOR (17 Oct, from the live pass).
+            // This row went 3 of 5 and both failures read "nothing changed anywhere ... The lines were:
+            // read the rack - on 88_7even Kick_2_02" - a line that NAMES A KICK. The rig has TWO kick
+            // Links and the row was comparing against `linkUid`'s name alone, so the model choosing the
+            // other kick - a perfectly good answer to "make the kick punchier" - read as a miss.
+            //
+            // The claim this row defends is Sean's: a goal that names a track must not be answered on a
+            // DIFFERENT track. "Either kick" satisfies it; the mix bus does not. So the measurement is
+            // every link whose name contains the noun the goal used, and the failure branch below - the
+            // own rack grew while no kick did - is untouched, because that is the bug he found.
+            const auto kickNamesIn = [] (const juce::var& st)
+            {
+                juce::StringArray out;
+                if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                    {
+                        const auto n = l.getProperty ("name", juce::var()).toString();
+                        if (n.containsIgnoreCase ("kick")) out.add (n);
+                    }
+                return out;
+            };
+            const auto kickSlotTotal = [] (const juce::var& st)
+            {
+                int total = 0; bool any = false;
+                if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                        if (l.getProperty ("name", juce::var()).toString().containsIgnoreCase ("kick"))
+                        {
+                            const int c = (int) l.getProperty ("slotCount", -1);
+                            if (c >= 0) { total += c; any = true; }   // -1 is "not readable", never a count
+                        }
+                return any ? total : -1;
+            };
             int ownBefore  = ownSlotCount (rig.freshState());
-            int kickBefore = kickSlots();
+            int kickBefore = kickSlotTotal (rig.freshState());
             repeated ("B1-live", "live: a goal that names a track is answered ON that track",
                       "Make the kick punchier",
                       [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
@@ -5707,7 +5738,7 @@ int main (int argc, char* argv[])
                           // WHERE IT LANDED. The own rack is the mix bus; the Kick is a Link. A change
                           // to the mix bus while the Kick is untouched is the fault Sean named.
                           const int ownNow  = ownSlotCount (st);
-                          const int kickNow = kickSlots();
+                          const int kickNow = kickSlotTotal (st);
                           const int wasOwn = ownBefore, wasKick = kickBefore;
                           // EVERY attempt is measured against what the last one left, pass or fail,
                           // so a stale baseline cannot make the next attempt read as a change.
@@ -5736,15 +5767,20 @@ int main (int argc, char* argv[])
                                               .getProperty ("steps", juce::var()).getArray())
                               for (const auto& sv : *arr)
                                   labels << sv.getProperty ("label", juce::var()).toString() << " | ";
-                          const auto kickName = linkRowOf (st, linkUid)
-                                                    .getProperty ("name", juce::var()).toString();
-                          const bool namedTheKick = kickName.isNotEmpty()
-                                                 && labels.containsIgnoreCase (kickName);
+                          const auto kicks = kickNamesIn (st);
+                          bool namedTheKick = false;
+                          for (const auto& kn : kicks)
+                              if (kn.isNotEmpty() && labels.containsIgnoreCase (kn)) namedTheKick = true;
+                          // A line that says "the kick" without spelling the track name out is naming it
+                          // too: the words are the person's, not the registry's.
+                          if (! namedTheKick && labels.containsIgnoreCase ("kick")) namedTheKick = true;
                           if (kickNow <= wasKick && ownNow <= wasOwn
                               && ! r.sawAsk && r.asksAnswered == 0 && ! namedTheKick)
                           {
-                              why = "nothing changed anywhere, it asked nothing, and no line named the "
-                                    "kick. The lines were: " + labels.substring (0, 140);
+                              why = "nothing changed anywhere, it asked nothing, and no line named any "
+                                    "of the " + juce::String (kicks.size()) + " kick track(s) ("
+                                  + kicks.joinIntoString (", ") + "). The lines were: "
+                                  + labels.substring (0, 140);
                               return false;
                           }
                           return true;
@@ -5756,8 +5792,23 @@ int main (int argc, char* argv[])
                       [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                       {
                           const auto arow = st.getProperty ("agentRow", juce::var());
-                          const auto closing = arow.getProperty ("closing", juce::var()).toString();
-                          if (closing.isEmpty()) { why = "the run ended with no closing sentence"; return false; }
+                          // THE SENTENCE, NOT THE FIELD (17 Oct). This row read `closing` alone and
+                          // went 0 OF 5 the moment G7b landed: on a short run the streamed sentence IS
+                          // the summary, so the row now DROPS the duplicate `closing` - which is what
+                          // Sean asked for after reading it twice in Logic - and the field this row was
+                          // watching is legitimately empty. The claim it is making ("the closing never
+                          // claims a figure the rack does not show") is about the sentence the person
+                          // READS, so it reads whichever field carries it, exactly as F4 and G4 do.
+                          //
+                          // Third time this fix has been needed in one night, and the lesson is the same
+                          // every time: a change to WHICH field carries a value breaks every reader that
+                          // names the field instead of the thing. The live pass is the only place this
+                          // one could show up, because the mock's closing never equals its opening.
+                          const auto closingField = arow.getProperty ("closing", juce::var()).toString();
+                          const auto opening      = arow.getProperty ("opening", juce::var()).toString();
+                          const auto closing      = closingField.trim().isNotEmpty() ? closingField : opening;
+                          if (closing.isEmpty()) { why = "the run ended with no closing sentence and no "
+                                                         "opening either - nothing was said at all"; return false; }
                           if (closing.containsIgnoreCase ("Not applied: add"))
                           { why = "the closing says \"Not applied: add\" over something that was added"; return false; }
                           // and nothing in it is a raw id or a sentence for the model
