@@ -11880,11 +11880,14 @@ private:
                 {
                     std::vector<trust::Anchor> a; for (const auto& ap : c.anchors) a.push_back ({ ap.value, ap.normalised });
                     std::sort (a.begin(), a.end(), [] (const trust::Anchor& x, const trust::Anchor& y) { return x.norm < y.norm; });
+                    std::vector<double> taken;   // the stepped rule (17 Oct): judged at the value the plugin took, each taken value once
                     for (const auto& t : trust::readbackTargets (a))
                     {
                         prm->setValueNotifyingHost ((float) t.norm); pump();
-                        const auto v = trust::judgeObservation (a, prm->getValue(), prm->getCurrentValueAsText());
-                        if (v.judged) { ++c.readback.checked; if (! v.pass) { ++c.readback.failed; c.readback.worst = v.why; } }
+                        const double took = prm->getValue();
+                        if (! trust::firstAtTaken (taken, took)) continue;   // the same setting again: one reading, not two
+                        const auto v = trust::judgeObservation (a, took, prm->getCurrentValueAsText());
+                        if (v.judged) { ++c.readback.checked; if (std::abs (took - t.norm) > 1e-4) ++c.readback.snapped; if (! v.pass) { ++c.readback.failed; c.readback.worst = v.why; } }
                     }
                 }
                 else if (c.kind == "mode" && c.labels.size() >= 2)

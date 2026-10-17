@@ -378,7 +378,7 @@ struct NamedControl
         the display read back (EjmapTrust.h judgeObservation). Written by the sweep's one-load read-back ("sweep") or credited from a
         measuring run's readings ("cert", "wizard"). checked == 0: nothing was judged, and nothing is emitted.
     */
-    struct Readback { int checked = 0, failed = 0; juce::String worst, source; };
+    struct Readback { int checked = 0, failed = 0, snapped = 0; juce::String worst, source; };   // snapped: readings judged at the step the plugin took (17 Oct)
     Readback readback;
 
     juce::var toVar() const;
@@ -689,6 +689,7 @@ inline juce::var NamedControl::toVar() const
         rb->setProperty ("checked", readback.checked); rb->setProperty ("failed", readback.failed);
         rb->setProperty ("pass", readback.checked >= 2 && readback.failed == 0);
         if (readback.worst.isNotEmpty()) rb->setProperty ("worst", readback.worst);
+        if (readback.snapped > 0) rb->setProperty ("snapped", readback.snapped);
         rb->setProperty ("source", readback.source);
         o->setProperty ("readback", juce::var (rb));
     }

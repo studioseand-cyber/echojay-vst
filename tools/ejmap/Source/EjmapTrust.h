@@ -103,7 +103,15 @@ inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, cons
     return v;
 }
 // a control is read back when at least 2 readings were judged and none failed; one failure is a failed read-back (said, kept)
-struct ControlReadback { int judged = 0, failed = 0, superseded = 0; juce::String worst, source; bool proven() const { return judged >= 2 && failed == 0; } };   // superseded: old failures a newer clean read-back set aside
+struct ControlReadback { int judged = 0, failed = 0, superseded = 0, snapped = 0; juce::String worst, source; bool proven() const { return judged >= 2 && failed == 0; } };   // superseded: old failures a newer clean read-back set aside; snapped: readings judged at the step the plugin took
+// THE STEPPED-CONTROL RULE (Kathy, 17 Oct: Lindell 50 / 69, Harris Doyle, TB_Sibalance): a plugin that snaps a write to its own step
+// (0.25 -> 0.2222 on a 1/9 grid) is judged at the value it TOOK (getValue), not the one asked; readings at one taken value are one
+// setting, so they count once - three writes that all stayed at 0.5 are one reading, never a read-back
+inline bool firstAtTaken (std::vector<double>& seen, double taken)
+{
+    for (double s : seen) if (std::abs (s - taken) < 1e-6) return false;
+    seen.push_back (taken); return true;
+}
 inline void addReading (ControlReadback& r, const Verdict& v, const juce::String& source)
 {
     if (! v.judged) return;
@@ -358,7 +366,7 @@ inline juce::StringArray meetNeed (const juce::String& need, const Roles& R, con
 // 1b. THE CREDIT FROM EXISTING DATA: every {norm, display} reading in a record, by control name. A fixture's controls[].displayAt
 // ({"0.500": "-12.0 dB"}); a Phase B record's lists of positions under the object that names their control ("control", or for an EQ
 // band "gain_map" -> "gain_control", "freq_map" -> "freq_control", "q_map" -> "q_control"; saturation's "levels" {level: [...]})
-struct Reading { double norm = 0.0; juce::String display; };
+struct Reading { double norm = 0.0; juce::String display; bool snapped = false; };   // snapped: norm is the value the plugin took, not the write
 using Readings = std::map<juce::String, std::vector<Reading>>;   // control name -> readings
 inline void readingsFromList (const juce::var& list, const juce::String& control, Readings& out)
 {
@@ -400,12 +408,20 @@ inline Readings readingsOfRecord (const juce::var& rec)
         for (const auto& c : *cs)
             if (const auto* da = c.getProperty ("displayAt", {}).getDynamicObject())
                 for (const auto& p : da->getProperties()) out[c.getProperty ("name", "").toString()].push_back ({ p.name.toString().getDoubleValue(), p.value.toString() });
+    if (const auto* cs = rec.getProperty ("controls", {}).getArray())   // the read-back sweep's snapped writes (17 Oct): { taken norm: text }
+        for (const auto& c : *cs)
+            if (const auto* sa = c.getProperty ("snappedAt", {}).getDynamicObject())
+                for (const auto& p : sa->getProperties())
+                {
+                    auto& rs = out[c.getProperty ("name", "").toString()]; const double n = p.name.toString().getDoubleValue();
+                    if (std::none_of (rs.begin(), rs.end(), [&] (const Reading& r) { return std::abs (r.norm - n) < 1e-6; })) rs.push_back ({ n, p.value.toString(), true });
+                }
     readingsWalk (rec, out);
     return out;
 }
 // WHEN AND ON WHAT VERSION a record read its displays (17 Oct, the recency rule): fixtures carry version + sampledAt, Phase B rows and
 // profiles plugin.version + measured.date, the read-back sweep version + measuredAt. Time 0 = the record does not say
-struct SourceMeta { juce::String version; juce::int64 atMs = 0; };
+struct SourceMeta { juce::String version; juce::int64 atMs = 0; juce::String format; };   // format: "AudioUnit" / "VST3", "" = the record does not say
 inline juce::int64 stampMs (const juce::String& s)
 {
     const auto t = s.trim(); if (t.isEmpty()) return 0;
@@ -416,9 +432,21 @@ inline juce::int64 stampMs (const juce::String& s)
         return juce::Time (t.substring (0, 4).getIntValue(), t.substring (5, 7).getIntValue() - 1, t.substring (8, 10).getIntValue(), 0, 0, 0, 0, true).toMilliseconds();
     return juce::Time::fromISO8601 (t).toMilliseconds();
 }
-inline SourceMeta metaOfRecord (const juce::var& rec)
+// THE FORMAT a record read (Kathy, 17 Oct: judge each map only by readings from its own format): the record's own "format" or
+// plugin.format, else its plugin_id's leading "AudioUnit|" / "VST3|", else the file name the writer gave it ("AudioUnit_<uid>_<ver>",
+// "eq.VST3_..."); nothing else is guessed - in particular not "the probe only hosts AudioUnits"
+inline juce::String formatOfRecord (const juce::var& rec, const juce::String& fileName = {})
 {
-    SourceMeta m;
+    for (const auto& f : { rec.getProperty ("format", "").toString(), rec.getProperty ("plugin", {}).getProperty ("format", "").toString() })
+        if (f == "AudioUnit" || f == "VST3") return f;
+    const auto pid = rec.getProperty ("plugin_id", rec.getProperty ("plugin", {}).getProperty ("plugin_id", "")).toString();
+    for (const auto* f : { "AudioUnit", "VST3" }) if (pid.startsWith (juce::String (f) + "|") || pid.startsWith (juce::String (f) + ":")) return f;
+    for (const auto* f : { "AudioUnit", "VST3" }) if (fileName.startsWith (juce::String (f) + "_") || fileName.contains ("." + juce::String (f) + "_")) return f;
+    return {};
+}
+inline SourceMeta metaOfRecord (const juce::var& rec, const juce::String& fileName = {})
+{
+    SourceMeta m; m.format = formatOfRecord (rec, fileName);
     m.version = rec.getProperty ("version", rec.getProperty ("plugin", {}).getProperty ("version", "")).toString();
     m.atMs = stampMs (rec.getProperty ("measuredAt", rec.getProperty ("sampledAt", rec.getProperty ("measured", {}).getProperty ("date", ""))).toString());
     return m;
@@ -446,46 +474,65 @@ inline std::vector<MapControl> mapControls (const juce::var& map)
     return out;
 }
 // credit one map from the readings of its product's records (any version): per control, every reading judged against THIS map.
-// THE RECENCY RULE (Kathy, 17 Oct): a control's failed reading is set aside when a NEWER source on the map's own version read the
-// control back at 2+ settings with none failing; an old failure stands only if nothing newer contradicts it (an undated one stands)
+// THE FORMAT RULE (Kathy, 17 Oct): with the sources' metas given, a map is judged only by readings in its own format - an AudioUnit
+// reading never proves (or fails) a VST3 map, and a source that does not say its format proves nothing (ValhallaVintageVerb: the VST3
+// map's Decay is ms, the AU display the bare normalised value).
+// THE RECENCY RULE (Kathy, 17 Oct; tightened the same day): a failed reading is set aside only when a NEWER source on the map's own
+// version read the control back at 2+ settings with none failing AND one of that source's readings lands within RECENCY_REACH (0.1,
+// normalised) of the failure's setting; a failure elsewhere - in the top tenth while the newer reads sat at 25/50/75 % - stands, as
+// does one with no date
+constexpr double RECENCY_REACH = 0.1;
 inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, const std::vector<std::pair<juce::String, Readings>>& sources,
-                                                          const std::vector<SourceMeta>& metas = {})
+                                                          const std::vector<SourceMeta>& metas = {}, int* otherFormat = nullptr)
 {
     std::map<juce::String, ControlReadback> out;
     const auto mapVersion = map.getProperty ("identity", {}).getProperty ("version", "").toString();
+    const auto mapFormat = map.getProperty ("identity", {}).getProperty ("format", "").toString();
+    const bool haveMetas = metas.size() == sources.size() && ! metas.empty();
+    auto ownFormat = [&] (size_t si) { return ! haveMetas || (mapFormat.isNotEmpty() && metas[si].format == mapFormat); };
     for (const auto& [name, c] : mapControls (map))
     {
         const bool mode = c.getProperty ("kind", "").toString() == "mode";
         if (! mode && c.getProperty ("kind", "").toString() != "anchored") continue;
         const auto* lo = c.getProperty ("labels", {}).getDynamicObject(); if (mode && lo == nullptr) continue;
         const auto a = anchorsOf (c);
-        std::vector<std::pair<size_t, Verdict>> vs;   // (source, verdict)
+        struct Seen { size_t si; Verdict v; double norm; bool snapped; };
+        std::vector<Seen> vs;
         for (size_t si = 0; si < sources.size(); ++si)
             if (const auto it = sources[si].second.find (name); it != sources[si].second.end())
                 for (const auto& r : it->second)
                 {
-                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display) }); continue; }
+                    if (! ownFormat (si)) { if (otherFormat != nullptr) ++*otherFormat; continue; }
+                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display), r.norm, r.snapped }); continue; }
                     // a stepped control: the reading at a norm must show the label the map has nearest that norm
                     juce::String best; double bd = 1e9;
                     for (const auto& l : lo->getProperties()) { const double d = std::abs ((double) l.value - r.norm); if (d < bd) { bd = d; best = l.name.toString(); } }
                     if (bd > 0.02 || r.display.trim().isEmpty()) continue;   // not at one of the map's own positions: nothing to compare
                     Verdict v; v.judged = true; v.pass = r.display.trim().equalsIgnoreCase (best.trim());
                     v.why = "norm " + juce::String (r.norm, 3) + ": the map's label '" + best + "', the display read '" + r.display.trim() + "'";
-                    vs.push_back ({ si, v });
+                    vs.push_back ({ si, v, r.norm, r.snapped });
                 }
-        juce::int64 newestClean = 0;   // the newest source on this map's version that read this control back cleanly at 2+ settings
-        if (metas.size() == sources.size())
+        std::vector<size_t> clean;   // the sources on this map's version that read this control back cleanly at 2+ settings, dated
+        if (haveMetas)
             for (size_t si = 0; si < sources.size(); ++si)
             {
                 if (metas[si].atMs <= 0 || metas[si].version != mapVersion) continue;
-                int pass = 0, fail = 0; for (const auto& [s, v] : vs) if (s == si && v.judged) (v.pass ? pass : fail)++;
-                if (pass >= 2 && fail == 0) newestClean = std::max (newestClean, metas[si].atMs);
+                int pass = 0, fail = 0; for (const auto& s : vs) if (s.si == si && s.v.judged) (s.v.pass ? pass : fail)++;
+                if (pass >= 2 && fail == 0) clean.push_back (si);
             }
-        auto& cr = out[name];
-        for (const auto& [si, v] : vs)
+        auto setAside = [&] (const Seen& f)   // a newer clean source read within RECENCY_REACH of this failure's setting
         {
-            if (v.judged && ! v.pass && newestClean > 0 && metas[si].atMs > 0 && metas[si].atMs < newestClean) { ++cr.superseded; continue; }
-            addReading (cr, v, sources[si].first);
+            if (! haveMetas || metas[f.si].atMs <= 0) return false;
+            for (size_t ci : clean)
+                if (metas[ci].atMs > metas[f.si].atMs)
+                    for (const auto& s : vs) if (s.si == ci && s.v.judged && std::abs (s.norm - f.norm) <= RECENCY_REACH + 1e-9) return true;
+            return false;
+        };
+        auto& cr = out[name];
+        for (const auto& s : vs)
+        {
+            if (s.v.judged && ! s.v.pass && setAside (s)) { ++cr.superseded; continue; }
+            addReading (cr, s.v, sources[s.si].first); if (s.v.judged && s.snapped) ++cr.snapped;
         }
         if (cr.judged == 0 && cr.superseded == 0) out.erase (name);
     }

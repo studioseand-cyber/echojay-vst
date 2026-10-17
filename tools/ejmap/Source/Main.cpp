@@ -806,6 +806,14 @@ namespace
                 ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
                 return ejmap::cert::runReadbackSweep (o, maps, ns);
             }
+            if (a == "--readback-rederive")   // 17 Oct (Kathy, stepped controls): the read-back records rebuilt from the kept raw probe output - nothing loaded
+            {
+                juce::File maps, from, out;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--maps") maps = cwdFile (v); else if (k == "--from") from = cwdFile (v); else if (k == "--out") out = cwdFile (v); }
+                if (! maps.isDirectory() || ! from.isDirectory() || out == juce::File()) { std::cerr << "usage: ejmap --readback-rederive --maps <folder> --from <cert> --out <cert>" << std::endl; return 2; }
+                return ejmap::cert::runReadbackRederive (maps, from, out);
+            }
             if (a == "--cert-v1")   // 16 Oct (Kathy): v1 certification of the measurable parts, over the drafts on disk - nothing loaded
             {
                 juce::File cert, outF; for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--cert") cert = cwdFile (v); else if (k == "--out") outF = cwdFile (v); }
