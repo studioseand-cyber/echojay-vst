@@ -10299,6 +10299,17 @@ int main (int, char**)
         check (items.size() == 2 && ! alone && fw == "Q|Gain" && gw == "Q|Freq" && levelFor (eq, false, "", rb).level == "unsure"
                && trr.contains ("const bool now = (bool) x.getProperty (\"yes_makes_mapped\", false) || x.hasProperty (\"counts_with\");"),
                "wizard WZ-TRUST-11: an EQ's freq and gain rows, neither enough alone, name each other in counts_with; a pair orders as counts now");
+        // the section of "Mid Frequency" (17 Oct): the role words come off longest first, so it is MF like "Mid Gain" and the two pair
+        const auto kr = juce::JSON::parse (R"J({"fp":"K","identity":{"name":"K EQ","version":"1"},"category":"eq","controls":{
+            "Input Gain":{"name":"Input Gain","index":0,"kind":"anchored","anchors":[[-12,0],[12,1]]},
+            "Mid Frequency":{"name":"Mid Frequency","index":1,"kind":"anchored","anchors":[[100,0],[10000,1]]},
+            "Mid Gain":{"name":"Mid Gain","index":2,"kind":"anchored","anchors":[[-12,0],[12,1]]}}})J");
+        Readings kr2; kr2["Input Gain"] = { { 0.25, "-6.0" }, { 0.75, "6.0" } }; kr2["Mid Frequency"] = { { 0.25, "2575" }, { 0.75, "7525" } }; kr2["Mid Gain"] = { { 0.25, "-6.0" }, { 0.75, "6.0" } };
+        const auto krb = creditMap (kr, { { "cert", kr2 } });
+        juce::String midF; for (const auto& x : ejmap::trustrun::reviewItems (kr, {}, krb)) if (x.getProperty ("control", "").toString() == "Mid Frequency") midF = x.getProperty ("counts_with", "").toString();
+        check (knownSection (sectionOf ("Mid Frequency")) == "mf" && knownSection (sectionOf ("Low Frequency")) == "lf" && knownSection (sectionOf ("HF Frq")) == "hf"
+               && knownSection (sectionOf ("CompThresh")) == "comp" && knownSection (sectionOf ("Mid Gain")) == "mf" && midF == "K|Mid Gain",
+               "wizard WZ-TRUST-11b: 'Mid Frequency' is in MF (role words off longest first), so it pairs with 'Mid Gain' - not with 'Input Gain'");
     }
     // WZ-MBV1-3 EVERY PART MUST HOLD (17 Oct, the overnight run on Kathy's Mac): OTT's threshold display is 0-100, not dB, so its
     // threshold is "not tested" - no OTT band is certified; C4 (m) from the same run still certifies all four (the files are read)

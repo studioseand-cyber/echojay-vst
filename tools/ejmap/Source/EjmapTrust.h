@@ -207,7 +207,12 @@ inline RoleHit roleOf (const juce::var& c)
 inline juce::String sectionOf (const juce::String& name)
 {
     auto s = " " + name.toLowerCase().replaceCharacters ("_-:()[]", "       ") + " ";
-    for (const auto& r : roleTable()) for (const auto& w : juce::StringArray::fromTokens (r.words, "|", "")) if (w != "^q$" && w.trim().isNotEmpty()) s = s.replace (w.trim(), " ");
+    // the role words come off LONGEST FIRST (17 Oct): "freq" taken before "frequency" left "Mid Frequency" as "mid uency", no section, so
+    // its band never paired with "Mid Gain" (MF). Substrings stay allowed ("CompThresh" -> comp)
+    static const juce::StringArray words = [] { juce::StringArray w; for (const auto& r : roleTable()) for (const auto& x : juce::StringArray::fromTokens (r.words, "|", ""))
+                                                    if (x != "^q$" && x.trim().isNotEmpty()) w.add (x.trim());
+                                                std::stable_sort (w.begin(), w.end(), [] (const juce::String& a, const juce::String& b) { return a.length() > b.length(); }); return w; }();
+    for (const auto& w : words) s = s.replace (w, " ");
     for (const char* u : { " db ", " hz ", " ms ", " khz " }) s = s.replace (u, " ");
     return juce::StringArray::fromTokens (s, " ", "").joinIntoString (" ").trim();
 }
