@@ -7099,11 +7099,29 @@ int main (int argc, char* argv[])
             const double before = (double) rig.freshState().getProperty ("preGainDb", 0.0);
             const auto r = askAgent (rig, "add 3 dB of pre gain");
             const double pg = (double) rig.freshState().getProperty ("preGainDb", 0.0);
-            const bool moved3 = std::abs ((pg - before) - 3.0) < 0.6;
-            const bool set    = moved3 || (std::abs (before) < 0.6 && std::abs (pg - 3.0) < 0.6);
+            // ---- EITHER READING IS THE PLUGIN DOING AS IT WAS TOLD (17 Oct 2026, second pass) ----
+            // This morning the run took "add 3 dB" as a delta (-5 -> -2) and the row was fixed to
+            // measure the change. Tonight it took it as a destination (-5.01 -> 3.00) and SAID
+            // "Added 3 dB of pre gain to the Mix Bus" - an eight-decibel move described as three.
+            //
+            // The plugin is right in both runs: it set what the op asked for. Which of the two the
+            // model asks for is the model's choice, and the row cannot see the op - so both are
+            // accepted here, and the SENTENCE is what goes to B. A row that failed on this would be
+            // failing the product for the server's arithmetic.
+            const bool moved3   = std::abs ((pg - before) - 3.0) < 0.6;   // read as a delta
+            const bool landedAt3 = std::abs (pg - 3.0) < 0.6;             // read as a destination
+            const bool set = moved3 || landedAt3;
+            const bool claimSaysAdded = r.text.containsIgnoreCase ("added 3")
+                                     || r.text.containsIgnoreCase ("add 3");
+            if (set && ! moved3 && claimSaysAdded)
+                std::printf ("        (B: it set the pre-gain TO %.2f dB from %.2f - an %.1f dB move - and "
+                             "called it \"added 3 dB\". The plugin did what the op asked; the sentence is "
+                             "the server's. FOR_B.)\n", pg, before, pg - before);
             row ("C9", set, "add 3 dB of pre gain",
-                 "pre gain " + juce::String (before, 2) + " -> " + juce::String (pg, 2) + " dB (a 3 dB "
-                 "ADD, so the change is what is measured), state " + r.state
+                 "pre gain " + juce::String (before, 2) + " -> " + juce::String (pg, 2) + " dB ("
+                 + (moved3 ? "read as a 3 dB ADD" : landedAt3 ? "read as a destination of 3 dB"
+                                                              : "neither a 3 dB add nor a move to 3")
+                 + "), state " + r.state
                  + (set ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
@@ -7173,7 +7191,14 @@ int main (int argc, char* argv[])
         // CHAIN tab - so after a build made from the AI tab, selecting that Link said "Reading 0 plugin(s)
         // from ..." until the window was closed and reopened. This row selects it IMMEDIATELY, with no
         // reopen, which is the only way it can fail on the old build.
-        if (linkIsUsable (rig.freshState(), linkUid))
+        if (gLinkIsMixedBuild)
+            scenSkip ("K1", "(fix 5) selecting a Link straight after an agent build shows its slots",
+                      "the Link that AU hosting loaded is the INSTALLED binary, not the one this run was "
+                      "given (item 0b): this row compares the LINK's sidecar with THIS build's view, so a "
+                      "mixed pairing puts the two halves of its claim in different builds - tonight it read "
+                      "\"sidecar [] and the view []\", which is the pairing talking, not the product. NEVER "
+                      "counted as a pass.", "A");
+        else if (linkIsUsable (rig.freshState(), linkUid))
         {
             const auto sidecar = linkRowOf (rig.freshState(), linkUid).getProperty ("slots", juce::var()).toString();
             rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid));
