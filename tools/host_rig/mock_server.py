@@ -33,6 +33,7 @@ reply is still "thinking" when the rig closes the window.
 
 Isolation: this binds 127.0.0.1 only and writes nothing outside its own stdout.
 """
+import os
 import argparse, json, sys, threading, time
 import socket
 import struct
@@ -413,6 +414,58 @@ class Handler(BaseHTTPRequestHandler):
         script = SCRIPT.get("agent") or []
         goal = str((body or {}).get("goal") or "")
         sid = str((body or {}).get("sessionId") or "")
+        # ---- REPLAY: THIS MORNING'S REAL FRAMES, SERVED VERBATIM (17 Oct 2026) --------------------
+        # Sean's method for this round: "Replay this morning's real sessions from your logs (the exact
+        # start bodies and frames between 08:05 and 08:30) into the runner, and make each one RED from
+        # the real data before fixing. Rows from synthetic setups don't count for these."
+        #
+        # EJ_REPLAY=<fixture id> makes this route serve tools/host_rig/replay/<id>.json - the frame
+        # sequence the client actually received in Logic, round by round, ids and approvals and plan
+        # frames and all. Nothing here is composed: the file is extracted from the plugin's log by
+        # replay/extract.py, and the two sentences that were never logged carry a `textSource` saying
+        # they are Sean's quotation rather than a recording.
+        # The fixture is named in the GOAL ("rig-replay:rp_cp_4"), for the same reason the scripted
+        # entries are keyed by goal rather than by arrival order: one rig run replays several real
+        # sessions, and an env var can only pick one. EJ_REPLAY stays as a whole-run override.
+        replay = os.environ.get("EJ_REPLAY", "").strip()
+        import re as _re
+        if (m := _re.search(r"rig-replay:([A-Za-z0-9_]+)", goal)):
+            replay = m.group(1)
+        elif sid:
+            with STATE["lock"]:
+                replay = STATE.get("replayBySession", {}).get(sid, replay)
+        if replay:
+            import json as _json
+            fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "replay", replay + ".json")
+            try:
+                with open(fx, encoding="utf-8") as fh: fixture = _json.load(fh)
+            except OSError as e:
+                log(f"agent: REPLAY {replay!r} could not be read ({e}) - refusing to invent frames")
+                return self._json({"error": "replay_missing", "detail": str(e)}, 500)
+            with STATE["lock"]:
+                rp = STATE.setdefault("replayRounds", {})
+                n = rp.get(replay, 0)
+                rp[replay] = n + 1
+                # so the /step POSTs that follow keep reading THIS fixture
+                if sid: STATE.setdefault("replayBySession", {})[sid] = replay
+            rounds = fixture.get("rounds") or []
+            if n >= len(rounds):
+                log(f"agent: REPLAY {replay} is spent after {len(rounds)} round(s) - closing the stream")
+                self._sse_open(); self._sse({"reason": "complete", "rounds": len(rounds),
+                                             "summary": "replay complete"}, "done")
+                return
+            frames = rounds[n].get("frames") or []
+            log(f"agent: REPLAY {replay} round {n + 1}/{len(rounds)} - {len(frames)} frame(s) from "
+                f"the real session (goal {fixture.get('goal')!r}, target {fixture.get('target')!r})")
+            self._sse_open()
+            for f in frames:
+                ev = f.get("event") or "message"
+                data = {k: v for k, v in f.items() if k != "event"}
+                if ev == "round" and data.get("sessionId"):
+                    with STATE["lock"]:
+                        STATE.setdefault("replayBySession", {})[str(data["sessionId"])] = replay
+                self._sse(data, ev)
+            return
         with STATE["lock"]:
             sessions = STATE.setdefault("agentSessions", {})
             entry, idx = None, 0

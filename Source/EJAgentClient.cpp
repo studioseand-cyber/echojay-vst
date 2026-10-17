@@ -758,7 +758,20 @@ void EJAgentClient::onFrame (int generation, Frame f)
             break;
         }
         default:
-            log ("frame unknown event=\"" + f.eventName + "\" skipped");
+            // ---- WHAT IT SAID, NOT JUST THAT IT CAME (17 Oct 2026) ------------------------------
+            // Sean's method for this round is to replay a real session's frames into the runner, and
+            // the one thing I could not replay was the PROSE: `message` frames are skipped here (the
+            // chat stream draws them, the agent parser has no use for them) and the line recorded
+            // only that an unknown frame arrived. Two of his items this morning are about the WORDS
+            // in those bubbles - a run saying "Added Renaissance Axx to the Mix Bus" while the add
+            // was still waiting for Apply, and a bubble repeating the closing - and neither is in
+            // any log I keep. A defect I cannot replay is a defect I have to take on trust.
+            //
+            // So the text comes with it, trimmed to 160 characters: enough to recognise the sentence
+            // in a transcript, short enough that a chatty round does not drown the log.
+            log ("frame unknown event=\"" + f.eventName + "\" skipped"
+                 + (f.text.isNotEmpty() ? " text=\"" + f.text.substring (0, 160).replace ("\n", " / ") + "\""
+                                        : juce::String()));
             break;
     }
 }

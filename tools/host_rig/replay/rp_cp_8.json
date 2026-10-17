@@ -1,0 +1,272 @@
+{
+ "id": "rp_cp_8",
+ "goal": "Add kHs Transient Shaper",
+ "checkpoint": "cp_8",
+ "target": "bb411b8240 (a Link)",
+ "at": "08:24:18",
+ "chat": {
+  "channel": "bb411b8240",
+  "chatId": "1792221749888",
+  "ofN": 10,
+  "at": "08:24:10"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_sRCLcqX4UdljpolMkzlreA",
+     "round": 1,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01NtPkaFKVynoH2qmJwPkzXP",
+     "name": "do",
+     "approval": "ask_first",
+     "mode": "ask",
+     "summary": "add kHs Transient Shaper",
+     "autoApplied": false,
+     "args": {
+      "op": "add",
+      "name": "kHs Transient Shaper"
+     }
+    },
+    {
+     "event": "plan",
+     "round": 1,
+     "items": 1,
+     "heading": "The plan"
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01NtPkaFKVynoH2qmJwPkzXP"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_sRCLcqX4UdljpolMkzlreA",
+     "round": 2,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "tool_call",
+     "id": "tc_q2",
+     "name": "talk",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "ask",
+     "autoApplied": false,
+     "args": {
+      "ask": {
+       "question": "kHs Transient Shaper didn't load on this Mac (an OS error during plug-in init), so it may not be licensed here \u2014 I didn't add it.\nWant to try a different transient shaper from your plugins instead?",
+       "choices": [],
+       "allowFreeText": true
+      }
+     }
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "await",
+     "ids": [
+      "tc_q2"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_sRCLcqX4UdljpolMkzlreA",
+     "round": 3,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01XucbQPth2Z22hQcJBVHmra",
+     "name": "look",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "read the rack",
+     "autoApplied": false,
+     "args": {
+      "what": "rack"
+     }
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01XucbQPth2Z22hQcJBVHmra"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 4,
+   "session": "ag_sRCLcqX4UdljpolMkzlreA",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_sRCLcqX4UdljpolMkzlreA",
+     "round": 4,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "done",
+     "reason": "complete",
+     "rounds": 4,
+     "costUsd": 0.039,
+     "summary": "There's a Tube-Tech CL 1B on slot 1. Play the loudest part of the kick so I can get a gain reduction reading."
+    }
+   ]
+  }
+ ],
+ "actions": [
+  {
+   "at": "08:24:58",
+   "what": "press",
+   "kind": 1,
+   "step": "toolu_01NtPkaFKVynoH2qmJwPkzXP"
+  },
+  {
+   "at": "08:25:18",
+   "what": "load_failed",
+   "plugin": "kHs Transient Shaper",
+   "why": "An OS error occurred during initialisation of the plug-in (-1)"
+  },
+  {
+   "at": "08:25:19",
+   "what": "step_failed",
+   "step": "toolu_01NtPkaFKVynoH2qmJwPkzXP",
+   "code": "not_applied",
+   "detail": "the rack's ack: status=partial, slots now 2\nadd failed: kHs Transient Shaper would not load (\"kHs Transient Shaper\" didn't load (An OS error occurred during initialisation of the plug-in (-1)) and I have no built-in equivalent for it - the chain is missing that stage. Name another plugin for it and I will put it in.)"
+  },
+  {
+   "at": "08:26:32",
+   "what": "typed_answered_ask",
+   "text": "how much gain reduction is the compressor doing?"
+  }
+ ],
+ "states": [
+  {
+   "at": "08:24:18",
+   "from": "done",
+   "to": "connecting"
+  },
+  {
+   "at": "08:24:23",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:24:27",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:24:27",
+   "from": "executing",
+   "to": "awaiting_approval"
+  },
+  {
+   "at": "08:24:58",
+   "from": "awaiting_approval",
+   "to": "executing"
+  },
+  {
+   "at": "08:25:19",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:25:23",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:25:24",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:25:24",
+   "from": "executing",
+   "to": "awaiting_ask"
+  },
+  {
+   "at": "08:26:32",
+   "from": "awaiting_ask",
+   "to": "executing"
+  },
+  {
+   "at": "08:26:32",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:26:32",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:26:34",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:26:34",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:26:34",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:26:37",
+   "from": "streaming",
+   "to": "done"
+  }
+ ],
+ "startBytes": 5641
+}

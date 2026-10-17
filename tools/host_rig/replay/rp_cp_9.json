@@ -1,0 +1,208 @@
+{
+ "id": "rp_cp_9",
+ "goal": "how much gain reduction is the compressor doing?",
+ "checkpoint": "cp_9",
+ "target": "(this instance's own rack)",
+ "at": "08:27:36",
+ "chat": {
+  "channel": "bb411b8240",
+  "chatId": "1792221749888",
+  "ofN": 10,
+  "at": "08:24:10"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_c9kNGbigK6yu_nrqSJc44A",
+     "round": 1,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01JAZuaizMiRkMTsUKqbfjV5",
+     "name": "look",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "read the rack",
+     "autoApplied": false,
+     "args": {
+      "what": "rack"
+     }
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01JAZuaizMiRkMTsUKqbfjV5"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_c9kNGbigK6yu_nrqSJc44A",
+     "round": 2,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_013Fxcv3exkuEqusmFUW2iFW",
+     "name": "check",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "wait for playback",
+     "autoApplied": false
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_013Fxcv3exkuEqusmFUW2iFW"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_c9kNGbigK6yu_nrqSJc44A",
+     "round": 3,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01F8rsAjdoMo3MSyEHiLcVWi",
+     "name": "check",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "check gr on slot 2",
+     "autoApplied": false
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01F8rsAjdoMo3MSyEHiLcVWi"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 4,
+   "session": "ag_c9kNGbigK6yu_nrqSJc44A",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_c9kNGbigK6yu_nrqSJc44A",
+     "round": 4,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "done",
+     "reason": "complete",
+     "rounds": 4,
+     "costUsd": 0.036,
+     "summary": "There are two compressors on the mix bus. Renaissance Axx hasn't been tested with EchoJay yet, so I can't give you an accurate gain reduction figure there - check its own meter. The EchoJay Compressor is doing a light touch, around 3 dB on the loudest hits and about 1 dB typically on what I heard."
+    }
+   ]
+  }
+ ],
+ "actions": [],
+ "states": [
+  {
+   "at": "08:27:36",
+   "from": "done",
+   "to": "connecting"
+  },
+  {
+   "at": "08:27:37",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:27:38",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:27:38",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:27:38",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:27:40",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:27:40",
+   "from": "executing",
+   "to": "listening"
+  },
+  {
+   "at": "08:27:48",
+   "from": "listening",
+   "to": "executing"
+  },
+  {
+   "at": "08:27:48",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:27:49",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:27:51",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:27:51",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:27:52",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:27:53",
+   "from": "streaming",
+   "to": "done"
+  }
+ ],
+ "startBytes": 6219
+}

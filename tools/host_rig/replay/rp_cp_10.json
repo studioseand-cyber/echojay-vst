@@ -1,0 +1,69 @@
+{
+ "id": "rp_cp_10",
+ "goal": "Add a transient shaper to the kick with attack at +6 dB",
+ "checkpoint": "cp_10",
+ "target": "bb411b8240 (a Link)",
+ "at": "08:29:04",
+ "chat": {
+  "channel": "bb411b8240",
+  "chatId": "1792221749888",
+  "ofN": 10,
+  "at": "08:24:10"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_uMLyawmQ5vktPgNypzohig",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_uMLyawmQ5vktPgNypzohig",
+     "round": 1,
+     "ofSoftCap": 20
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "session": "ag_uMLyawmQ5vktPgNypzohig",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_uMLyawmQ5vktPgNypzohig",
+     "round": 2,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "done",
+     "reason": "complete",
+     "rounds": 2,
+     "costUsd": 0.026,
+     "summary": "The only transient shaper you have installed, kHs Transient Shaper, failed to load on this Mac (an OS error during plug-in init), and there's no other transient shaper in your rack or an EchoJay equivalent to use in its place, so I can't add one right now. You may need to reinstall or check its license to get it loading again."
+    }
+   ]
+  }
+ ],
+ "actions": [],
+ "states": [
+  {
+   "at": "08:29:04",
+   "from": "done",
+   "to": "connecting"
+  },
+  {
+   "at": "08:29:05",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:29:12",
+   "from": "streaming",
+   "to": "done"
+  }
+ ],
+ "startBytes": 6215
+}

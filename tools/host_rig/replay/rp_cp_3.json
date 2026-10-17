@@ -1,0 +1,94 @@
+{
+ "id": "rp_cp_3",
+ "goal": "Add a compressor",
+ "checkpoint": "cp_3",
+ "target": "bb411b8240 (a Link)",
+ "at": "08:12:38",
+ "chat": {
+  "channel": "bb411b8240",
+  "chatId": "1792187914011",
+  "ofN": 8,
+  "at": "08:12:32"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_MrU2YSw3QdreMvmigb52cQ",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_MrU2YSw3QdreMvmigb52cQ",
+     "round": 1,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01A7yQyip53FsRgtCrRV9Qso",
+     "name": "talk",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "ask",
+     "autoApplied": false,
+     "args": {
+      "ask": {
+       "question": "Which compressor do you want on the kick?",
+       "choices": [
+        "EchoJay Compressor"
+       ],
+       "allowFreeText": false
+      }
+     }
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01A7yQyip53FsRgtCrRV9Qso"
+     ]
+    }
+   ]
+  }
+ ],
+ "actions": [
+  {
+   "at": "08:13:12",
+   "what": "typed_became_new_run",
+   "text": "cl1b"
+  },
+  {
+   "at": "08:13:12",
+   "what": "server_stop"
+  }
+ ],
+ "states": [
+  {
+   "at": "08:12:38",
+   "from": "done",
+   "to": "connecting"
+  },
+  {
+   "at": "08:12:43",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:12:46",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:12:46",
+   "from": "executing",
+   "to": "awaiting_ask"
+  },
+  {
+   "at": "08:13:12",
+   "from": "awaiting_ask",
+   "to": "stopped"
+  }
+ ],
+ "startBytes": 5666
+}

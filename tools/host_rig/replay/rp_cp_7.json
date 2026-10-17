@@ -1,0 +1,153 @@
+{
+ "id": "rp_cp_7",
+ "goal": "Add Pro-C 2 to this rack",
+ "checkpoint": "cp_7",
+ "target": "(this instance's own rack)",
+ "at": "08:22:34",
+ "chat": {
+  "channel": "bb411b8240",
+  "chatId": "1792221155744",
+  "ofN": 9,
+  "at": "08:18:26"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_2qng_bgBkcZ259w2i5hP0w",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_2qng_bgBkcZ259w2i5hP0w",
+     "round": 1,
+     "ofSoftCap": 20
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "session": "ag_2qng_bgBkcZ259w2i5hP0w",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_2qng_bgBkcZ259w2i5hP0w",
+     "round": 2,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01QsRjGXZQCXMkv46doGQY4M",
+     "name": "do",
+     "approval": "ask_first",
+     "mode": "ask",
+     "summary": "add FabFilter Pro-C 2 - FabFilter Pro-C 2 will need setting by hand (no map to dial it with)",
+     "autoApplied": false,
+     "args": {
+      "op": "add",
+      "name": "FabFilter Pro-C 2"
+     }
+    },
+    {
+     "event": "plan",
+     "round": 2,
+     "items": 1,
+     "heading": "The plan"
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01QsRjGXZQCXMkv46doGQY4M"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "session": "ag_2qng_bgBkcZ259w2i5hP0w",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_2qng_bgBkcZ259w2i5hP0w",
+     "round": 3,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "done",
+     "reason": "complete",
+     "rounds": 3,
+     "costUsd": 0.04,
+     "summary": "Pro-C 2 didn't load here - its VST3 has no arm64 build on this Mac, so I can't add it."
+    }
+   ]
+  }
+ ],
+ "actions": [
+  {
+   "at": "08:22:58",
+   "what": "press",
+   "kind": 1,
+   "step": "toolu_01QsRjGXZQCXMkv46doGQY4M"
+  },
+  {
+   "at": "08:22:58",
+   "what": "step_failed",
+   "step": "toolu_01QsRjGXZQCXMkv46doGQY4M",
+   "code": "not_applied",
+   "detail": "the batch was refused before it started\nop 1 invalid: \"FabFilter Pro-C 2\" is installed but its VST3 has no arm64 build, so it cannot run in this host"
+  }
+ ],
+ "states": [
+  {
+   "at": "08:22:34",
+   "from": "done",
+   "to": "connecting"
+  },
+  {
+   "at": "08:22:34",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:22:47",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:22:47",
+   "from": "executing",
+   "to": "awaiting_approval"
+  },
+  {
+   "at": "08:22:58",
+   "from": "awaiting_approval",
+   "to": "executing"
+  },
+  {
+   "at": "08:22:58",
+   "from": "executing",
+   "to": "connecting"
+  },
+  {
+   "at": "08:22:58",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:22:59",
+   "from": "streaming",
+   "to": "done"
+  }
+ ],
+ "startBytes": 5685
+}

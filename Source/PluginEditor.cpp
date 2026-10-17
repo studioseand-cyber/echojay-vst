@@ -36892,6 +36892,17 @@ void EchoJayEditor::serviceRigHook()
         note = "cleared " + juce::String (had) + " slot(s) and " + juce::String (histDepth)
              + " undo entr(ies), the rack now has " + juce::String (ch.getNumSlots());
     }
+    else if (c.name == echojay::rig::cmd::newChat)
+    {
+        // The product's own "+ New chat", with the channel the row names bound to it, exactly as the
+        // sidebar button does it. No shortcut: if createNewChat leaves a run alive, the row sees that.
+        const auto uid = c.args.getProperty ("uid", juce::var()).toString();
+        const bool wasActive = agentClient() != nullptr && agentClient()->isActive();
+        const auto beforeChat = currentChatId;
+        createNewChat (uid);
+        note = "new chat requested (uid \"" + uid + "\"), chat " + beforeChat + " -> " + currentChatId
+             + (wasActive ? ", a run WAS live when it was pressed" : ", no run was live");
+    }
     else if (c.name == echojay::rig::cmd::reportState)
     {
         note = "state written";

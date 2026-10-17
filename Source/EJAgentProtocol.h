@@ -173,7 +173,16 @@ inline Frame parseFrame (const juce::String& eventName, const juce::String& data
             f.errorMessage = o->getProperty ("message").toString();
             f.retryable    = (bool) o->getProperty ("retryable");
             break;
-        default: break;
+        default:
+            // AN UNKNOWN FRAME STILL CARRIES ITS WORDS (17 Oct 2026). `message` frames are not the
+            // agent parser's business - the chat stream draws them - but their TEXT is what Sean
+            // reads, and two of this round's items are about those exact sentences. Carrying the
+            // text here costs nothing and lets the client log it, which is what makes a session
+            // replayable instead of merely describable. "text" is the field the server sends;
+            // "content" is accepted because an older shape used it.
+            f.text = o->getProperty ("text").toString();
+            if (f.text.isEmpty()) f.text = o->getProperty ("content").toString();
+            break;
     }
     return f;
 }

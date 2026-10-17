@@ -2799,6 +2799,251 @@ int main (int argc, char* argv[])
     //  In mock mode they are SKIPPED and said to be skipped.
     const bool live = liveServerConfigured();
 
+    // =========================================================================================
+    //  THE REPLAY ROWS (17 Oct 2026, Sean's method for this round)
+    // =========================================================================================
+    //  "Five fixes pass in the rig and FAIL in Logic (tap Apply, Pro-C 2 behind Apply, kHs tried,
+    //   B's false 'only transient shaper', New chat carry-over). Replay this morning's real sessions
+    //   from your logs (the exact start bodies and frames between 08:05 and 08:30) into the runner,
+    //   and make each one RED from the real data before fixing. Rows from synthetic setups don't
+    //   count for these."
+    //
+    //  He is right about the cause and the cure. B2b passes because its scripted add carries no
+    //  `plan` frame; the real session's add carries one, and that one frame is the whole difference
+    //  between a tap that applies and a tap that then asks for Apply. A row written from a shape I
+    //  imagined can only ever test the shape I imagined.
+    //
+    //  So: tools/host_rig/replay/*.json are extracted from the plugin's own log by replay/extract.py
+    //  - the frame sequence per round, every tool-call id, every approval mode, every plan frame,
+    //  the done summaries, and the presses and typed answers with their timings. The mock serves a
+    //  fixture verbatim when the goal carries "rig-replay:<id>". Two sentences in those files are
+    //  Sean's quotation rather than a recording, and they say so in a `textSource` field, because
+    //  `message` frames were not logged with their text by the build that ran this morning. They are
+    //  now (EJAgentClient's unknown-frame line), so the next replay is exact.
+    if (! live)
+    {
+        leg ("REPLAY: this morning's real sessions, 08:05-08:30, served frame for frame");
+
+        // The fixture's own goal text, with the marker the mock keys on. The marker is in the GOAL
+        // and not in an env var because one run replays several sessions.
+        auto replayGoal = [] (const char* fixture, const juce::String& realGoal)
+        { return realGoal + "  [rig-replay:" + fixture + "]"; };
+
+        // Everything these rows read, in one place, so a row's evidence and its words agree.
+        auto agentState  = [&] (const juce::var& st) { return agentVarOf (st).getProperty ("state", juce::var()).toString(); };
+        auto askPending  = [&] (const juce::var& st) { return (bool) agentVarOf (st).getProperty ("askPending", false); };
+        auto sessionOf   = [&] (const juce::var& st) { return st.getProperty ("agentRow", juce::var())
+                                                                .getProperty ("sessionId", juce::var()).toString(); };
+        auto screenText  = [&] (const juce::var& st)
+        {
+            juce::String all;
+            if (auto* arr = st.getProperty ("onScreen", juce::var()).getArray())
+                for (const auto& m : *arr) all << m.getProperty ("text", juce::var()).toString() << "\n";
+            return all;
+        };
+
+        // ---- RP1 (item 1): "New chat" must close the open run, not inherit it -------------------
+        // The real session: kHs failed on the Kick's Link, the server then ASKED something (tc_q2),
+        // and that ask was still pending when he pressed New chat, aimed at the Mix Bus and typed
+        // his question. It went into the old run, on the old target.
+        if (! linkUid.isEmpty())
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", linkUid), 8000);
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
+            const auto r1 = askAgent (rig, replayGoal ("rp_cp_8", "Add kHs Transient Shaper"), 90000);
+            // round 2 of the fixture leaves an ask pending, exactly as it did this morning
+            rig.until ([&] (const juce::var& st) { return askPending (st); }, 20000);
+            const auto before = rig.freshState();
+            const auto sidBefore = sessionOf (before);
+            const bool askWasPending = askPending (before);
+
+            // "+ New chat", aimed at the MAIN rack - his exact move
+            const auto ack = rig.send (echojay::rig::cmd::newChat, args1 ("uid", ""), 10000);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            Rig::pump (600);
+            const auto mid = rig.freshState();
+
+            // ...and then his question, typed into the fresh chat
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "how much gain reduction is the compressor doing?"), 15000);
+            Rig::pump (2500);
+            const auto after = rig.freshState();
+            const auto sidAfter = sessionOf (after);
+
+            const bool runClosed   = ! askPending (mid)
+                                  && ! agentState (mid).containsIgnoreCase ("await")
+                                  && ! (bool) agentVarOf (mid).getProperty ("active", false);
+            const bool freshSession = sidAfter != sidBefore;
+            const bool oldRunGone   = ! screenText (after).containsIgnoreCase ("kHs Transient Shaper");
+            scen ("RP1", "REPLAY rp_cp_8: \"New chat\" closes the open run and starts a fresh session",
+                  askWasPending && runClosed && freshSession && oldRunGone,
+                  juce::String ("an ask was pending when New chat was pressed: ")
+                  + (askWasPending ? "yes" : "NO - the fixture did not reproduce the waiting ask")
+                  + "; after New chat the run was " + (runClosed ? "closed" : "STILL OPEN (state \"" + agentState (mid) + "\", askPending " + juce::String ((int) askPending (mid)) + ")")
+                  + "; the typed question went to session \"" + sidAfter.substring (0, 12)
+                  + "\" (before: \"" + sidBefore.substring (0, 12) + "\")"
+                  + (oldRunGone ? "" : "; AND THE OLD RUN IS STILL ON SCREEN (kHs)")
+                  + "; new_chat ack: " + ack.getProperty ("note", juce::var()).toString(),
+                  "A", v2.editor.get(), after, &r1);
+        }
+        else
+            scenSkip ("RP1", "REPLAY rp_cp_8: New chat closes the open run", "no Link in the registry this run", "A");
+
+        // ---- RP2 (item 2): the tap IS the approval, even when a `plan` frame rides with it ------
+        // THE PATH DIFFERENCE, FOUND BY THE REPLAY: round 5 of the real session carries
+        //   tool_call  ... approval=ask_first ... AUTO-APPLIED "add Tube-Tech CL 1B"
+        //   plan       round=5 items=1 heading="The plan"
+        //   await      ids=...
+        // The step was auto-applied by the tap and the PLAN still waited, so he pressed Apply at
+        // 08:13:51. B2b's scripted add has no plan frame, which is why it has always passed.
+        if (! linkUid.isEmpty())
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", linkUid), 8000);
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
+            // answerAsks = true taps the card's own first choice, which is "Tube-Tech CL 1B" in the
+            // real ask - his tap, exactly. approve = false so that if the card then asks for Apply,
+            // the helper RECORDS that and stops, instead of pressing it and hiding the defect.
+            const auto r2 = askAgent (rig, replayGoal ("rp_cp_4", "cl1b"), 90000,
+                                      /*answerAsks*/ true, "Tube-Tech CL 1B", /*approve*/ false);
+            const auto st2 = rig.freshState();
+            const bool tapped      = r2.asksAnswered > 0;
+            const bool waitedAgain = r2.sawApproval;
+            scen ("RP2", "REPLAY rp_cp_4: a tapped pick applies even when a plan frame rides with it",
+                  tapped && ! waitedAgain,
+                  juce::String ("the tap ") + (tapped ? "landed (\"" + r2.lastAsk.substring (0, 40) + "\")"
+                                                      : "NEVER HAPPENED - the fixture did not ask")
+                  + "; after it the card "
+                  + (waitedAgain ? "REACHED AWAITING_APPROVAL and wanted Apply again - what Sean saw "
+                                   "three times, and the plan frame in round 5 is the difference from B2b"
+                                 : "ran the step with no second press")
+                  + " (state \"" + agentState (st2) + "\", applies " + juce::String (r2.applies) + ")",
+                  "A", v2.editor.get(), st2, &r2);
+        }
+        else
+            scenSkip ("RP2", "REPLAY rp_cp_4: a tapped pick applies", "no Link in the registry this run", "A");
+
+        // ---- RP3 (item 5): a typed PLUGIN NAME answers the ask; only a sentence is new ----------
+        // The real line, from the log: `typed text "cl1b" matches none of the 1 choice(s) and the
+        // server asked for a tap (allowFreeText false) - taking it as a NEW INSTRUCTION`. His
+        // ruling: a name answers the ask (fuzzy match to installed plugins); only a sentence is a
+        // new instruction. "cl1b" is a plugin this Mac has, which is the whole point.
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            const auto r3 = askAgent (rig, replayGoal ("rp_cp_3", "Add a compressor"), 60000, /*answerAsks*/ false);
+            rig.until ([&] (const juce::var& st) { return askPending (st); }, 25000);
+            const auto beforeSid = sessionOf (rig.freshState());
+            const int  rowsBefore = (int) rig.freshState().getProperty ("agentRow", juce::var())
+                                               .getProperty ("rows", juce::var());
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", "cl1b"), 15000);
+            Rig::pump (2500);
+            const auto st3 = rig.freshState();
+            const auto sidAfter = sessionOf (st3);
+            const int  rowsAfter = (int) st3.getProperty ("agentRow", juce::var())
+                                            .getProperty ("rows", juce::var());
+            const bool startedNewRun = rowsAfter > rowsBefore || sidAfter != beforeSid
+                                    || agentState (st3).containsIgnoreCase ("stopped");
+            scen ("RP3", "REPLAY rp_cp_3: a typed plugin name answers the waiting ask",
+                  ! startedNewRun,
+                  juce::String ("the ask offered one chip and no free text, he typed \"cl1b\": ")
+                  + (startedNewRun ? "THE RUN WAS STOPPED and the text started its own (state \""
+                                     + agentState (st3) + "\", rows " + juce::String (rowsBefore)
+                                     + " -> " + juce::String (rowsAfter) + ")"
+                                   : "it answered the ask and the run carried on")
+                  + "; a name is not a sentence",
+                  "A", v2.editor.get(), st3, &r3);
+        }
+
+        // ---- RP4 (item 4): nothing says "added" before the ack, and the track is the target ----
+        // rp_cp_2 targeted the Kick's Link. Its round-2 bubble - the sentence Sean quoted - said
+        // "Added Renaissance Axx to the Mix Bus..." while the step was still awaiting Apply.
+        if (! linkUid.isEmpty())
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", linkUid), 8000);
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid), 8000);
+            const auto linkName = linkRowOf (rig.freshState(), linkUid)
+                                      .getProperty ("name", juce::var()).toString();
+            const auto r4 = askAgent (rig, replayGoal ("rp_cp_2", "Add Renaissance Axx with threshold at -20 dB"),
+                                      60000, /*answerAsks*/ true, "yes", /*approve*/ false);
+            rig.until ([&] (const juce::var& st)
+                       { return agentState (st).containsIgnoreCase ("approval"); }, 25000);
+            const auto st4 = rig.freshState();
+            const auto shown = screenText (st4);
+            const bool claimedAdded = shown.containsIgnoreCase ("Added Renaissance Axx")
+                                   || shown.containsIgnoreCase ("I've added")
+                                   || shown.containsIgnoreCase ("I added");
+            const bool namedWrongTrack = shown.containsIgnoreCase ("Mix Bus")
+                                      && linkName.isNotEmpty() && ! shown.containsIgnoreCase (linkName);
+            scen ("RP4", "REPLAY rp_cp_2: nothing claims \"added\" while the add still waits for Apply",
+                  ! claimedAdded && ! namedWrongTrack,
+                  juce::String ("while the card was in \"") + agentState (st4) + "\" the screen said: \""
+                  + shown.substring (0, 150).replace ("\n", " / ") + "\""
+                  + (claimedAdded ? "  <- IT SAYS ADDED, BEFORE THE ACK" : "")
+                  + (namedWrongTrack ? "  <- AND NAMES THE MIX BUS while the target is \"" + linkName + "\"" : ""),
+                  "A", v2.editor.get(), st4, &r4);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        }
+        else
+            scenSkip ("RP4", "REPLAY rp_cp_2: nothing claims added before the ack", "no Link this run", "A");
+
+        // ---- RP5 (item 6): the bubble must not repeat the closing, extra text or not -----------
+        // Last night's fix drops the row's closing when it EQUALS the opening. This morning's bubble
+        // had a sentence of its own in front of the summary, so the equality failed and he read the
+        // closing twice again. rp_cp_4's round 6 carries his quoted bubble, verbatim.
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", ""), 8000);
+            const auto r5 = askAgent (rig, replayGoal ("rp_cp_4", "cl1b"), 90000);
+            rig.until ([&] (const juce::var& st) { return agentState (st) == "done"; }, 60000);
+            const auto st5 = rig.freshState();
+            const auto arow = st5.getProperty ("agentRow", juce::var());
+            const auto closing = arow.getProperty ("closing", juce::var()).toString().trim();
+            const auto shown = screenText (st5);
+            // the sentence drawn twice: once in the bubble, once as the row's closing
+            const bool twice = closing.isNotEmpty() && shown.contains (closing);
+            scen ("RP5", "REPLAY rp_cp_4: the bubble does not repeat the closing when it has extra text",
+                  ! twice,
+                  juce::String ("the row's closing is \"") + closing.substring (0, 70) + "\" and the bubble "
+                  + (twice ? "CONTAINS IT TOO - drawn twice, which is what he read"
+                           : "does not contain it")
+                  + "; bubble: \"" + shown.substring (0, 120).replace ("\n", " / ") + "\"",
+                  "A", v2.editor.get(), st5, &r5);
+        }
+
+        // ---- RP6 (item 10): a plugin that will not load says so in words, raw text under Details -
+        // The real failure, from the log: `add failed: kHs Transient Shaper would not load ("kHs
+        // Transient Shaper" didn't load (An OS error occurred during initialisation of the plug-in
+        // (-1)) ...` - the OS's own sentence, on the line he reads.
+        {
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+            const auto r6 = askAgent (rig, replayGoal ("rp_cp_8", "Add kHs Transient Shaper"), 90000);
+            Rig::pump (1500);
+            const auto st6 = rig.freshState();
+            juce::String lines, details;
+            if (auto* arr = st6.getProperty ("agentRow", juce::var())
+                                .getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    lines   << sv.getProperty ("label",  juce::var()).toString() << " | ";
+                    details << sv.getProperty ("detail", juce::var()).toString() << " | ";
+                }
+            const bool rawOnTheLine = lines.containsIgnoreCase ("An OS error occurred")
+                                   || lines.contains ("(-1)")
+                                   || lines.containsIgnoreCase ("OSStatus");
+            scen ("RP6", "REPLAY rp_cp_8: a plugin that will not load is said plainly, raw text under Details",
+                  ! rawOnTheLine,
+                  juce::String ("the step line(s) read: \"") + lines.substring (0, 150) + "\""
+                  + (rawOnTheLine ? "  <- THE OS'S OWN SENTENCE IS ON THE LINE" : "")
+                  + "; details: \"" + details.substring (0, 90) + "\"",
+                  "A", v2.editor.get(), st6, &r6);
+        }
+    }
+
     // ---- U1: THE UNDO OP, END TO END, WITHOUT THE MODEL (14 Oct 2026) ---------------------------------
     //
     // WHY THIS EXISTS. Sean's ruling 4 gave the agent an undo op. It is built, and agent_round14_guard holds

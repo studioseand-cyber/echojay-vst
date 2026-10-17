@@ -1,0 +1,95 @@
+{
+ "id": "rp_cp_5",
+ "goal": "build a new chain on the kick",
+ "checkpoint": "cp_5",
+ "target": "bb411b8240 (a Link)",
+ "at": "08:18:30",
+ "chat": {
+  "channel": "bb411b8240",
+  "chatId": "1792221155744",
+  "ofN": 9,
+  "at": "08:18:26"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_e_uiCKBbBksT0RhZbvX0Xw",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_e_uiCKBbBksT0RhZbvX0Xw",
+     "round": 1,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_01GZcJnwWP2s8HT6jzmCZYFW",
+     "name": "do",
+     "approval": "ask_first",
+     "mode": "ask",
+     "summary": "build 2 slots: EchoJay EQ, EchoJay Compressor",
+     "autoApplied": false,
+     "args": {
+      "op": "build",
+      "summary": "build 2 slots: EchoJay EQ, EchoJay Compressor"
+     }
+    },
+    {
+     "event": "plan",
+     "round": 1,
+     "items": 1,
+     "heading": "The plan"
+    },
+    {
+     "event": "message",
+     "text": ""
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_01GZcJnwWP2s8HT6jzmCZYFW"
+     ]
+    }
+   ]
+  }
+ ],
+ "actions": [
+  {
+   "at": "08:20:09",
+   "what": "typed_became_new_run",
+   "text": "set the pre-gain to 2 dB"
+  },
+  {
+   "at": "08:20:09",
+   "what": "server_stop"
+  }
+ ],
+ "states": [
+  {
+   "at": "08:18:30",
+   "from": "done",
+   "to": "connecting"
+  },
+  {
+   "at": "08:18:35",
+   "from": "connecting",
+   "to": "streaming"
+  },
+  {
+   "at": "08:18:50",
+   "from": "streaming",
+   "to": "executing"
+  },
+  {
+   "at": "08:18:50",
+   "from": "executing",
+   "to": "awaiting_approval"
+  },
+  {
+   "at": "08:20:09",
+   "from": "awaiting_approval",
+   "to": "stopped"
+  }
+ ],
+ "startBytes": 5758
+}
