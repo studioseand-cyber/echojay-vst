@@ -34276,6 +34276,37 @@ void EchoJayEditor::showChatTargetMenu()
                 pr.chatTargetGroupId.clear();
                 pr.chatTargetGroupName.clear();
                 safeThis->api.setSelectedGroupId ({});
+                // ---- A CHAT BELONGS TO THE TRACK IT CHANGES (17 Oct 2026, Sean's item 12) -------
+                //
+                // "Aiming the chat at another track continues the current chat. Bring the
+                // chat-per-track round forward (file each chat under the track it changed)."
+                //
+                // Two roads aim a conversation at a Link and they behaved differently. Opening a
+                // channel (a strip click, a chat activation, a deep link) goes through
+                // openChannelByUid, which has done the right thing since August: it opens that
+                // channel's latest chat, or holds the channel pending so the first send mints one
+                // bound to it. The ROUTER - this picker - only set the target, so a chat full of
+                // work on the mix bus carried on and its next five turns, about the kick, were filed
+                // under the mix bus.
+                //
+                // So the picker now takes the same road as every other selection when the chat it
+                // would carry over already HAS turns in it: that track's own chat is opened, or a
+                // fresh one is held pending for it. An empty chat is simply pointed at the track,
+                // because there is nothing to file in the wrong place.
+                const bool sameTrack = pr.chatTargetLinkUid == targets[li].uid;
+                if (! sameTrack && ! safeThis->chatMessages.empty())
+                {
+                    EchoJay_NSLog (("EJChat: the chat was aimed at " + targets[li].label
+                                    + " and this one already holds "
+                                    + juce::String ((int) safeThis->chatMessages.size())
+                                    + " turn(s) - opening that track's own chat instead of continuing "
+                                      "here (Sean's item 12)").toRawUTF8());
+                    safeThis->pendingSelectionIsUser_ = true;
+                    safeThis->openChannelByUid (targets[li].uid);
+                    safeThis->chatTargetBtn.setButtonText (safeThis->chatTargetLabel());
+                    safeThis->resized();
+                    return;
+                }
                 pr.chatTargetLinkUid  = targets[li].uid;
                 pr.chatTargetLinkName = targets[li].label;
                 safeThis->chatTargetBtn.setButtonText (safeThis->chatTargetLabel());
