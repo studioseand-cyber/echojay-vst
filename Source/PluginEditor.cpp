@@ -2123,6 +2123,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         return processorRef.createSlotEditorForView(chainViewUid(), i);
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
+    // ITEM 7 (17 Oct 2026): a slot editor only ever draws on the rack's own tab. The panel asks;
+    // switchToTab is the single writer of the visible tab, so nothing else has to be re-asserted.
+    chainListPanel.onEditorNeedsChainTab = [this]
+    {
+        if (currentTab != Tab::Chain)
+        {
+            EchoJay_NSLog ("EJPane(main): a slot editor is opening - switching to the Chain tab "
+                           "(Sean's item 7, 17 Oct)");
+            switchToTab (Tab::Chain);
+        }
+    };
     // MISDIAL REPORT v1: the panel owns the button, the editor owns the popup.
     // The panel holds no API and no knowledge of the record; it reports which
     // slot was asked about and nothing more.
@@ -2500,11 +2511,27 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // and a button that silently does nothing is worse than no button.
     chainListPanel.onBringLinkForward = [this] (const juce::String& trackName)
     {
+        // ---- IT NEVER RETURNS SILENTLY (17 Oct 2026, Sean's item 8: "does nothing") ------------
+        // Both guards below used to `return` with nothing drawn, and a button that answers a press
+        // with no change on screen is indistinguishable from a dead button - which is exactly what
+        // he reported. Each one says what it found instead.
         const auto uid = chainViewUid();
-        if (uid.isEmpty()) return;
+        if (uid.isEmpty())
+        {
+            chainListPanel.statusText = "I can't tell which track's EchoJay to ask - open that "
+                                        "track's EchoJay window from Logic.";
+            chainListPanel.repaint();
+            return;
+        }
         int err = 0;
         const auto dir = LinkShm::resolveDir (err);
-        if (dir.isEmpty()) return;
+        if (dir.isEmpty())
+        {
+            chainListPanel.statusText = "The shared folder EchoJay uses to talk between tracks isn't "
+                                        "available, so I can't ask that window to come forward.";
+            chainListPanel.repaint();
+            return;
+        }
         const int seq = (int) (juce::Time::currentTimeMillis() & 0x7fffffff);
         auto* cmd = new juce::DynamicObject();
         cmd->setProperty ("v", 1);
@@ -32541,6 +32568,10 @@ void EchoJayEditor::syncAgentRunMessage()
 
 void EchoJayEditor::AgentRunBridge::agentChanged()
 {
+    // The run row is the indicator from here on: item 9's "Thinking..." line covered the gap
+    // between Send and the first frame, and two of them at once would be the window disagreeing
+    // with itself again.
+    if (ed.stageStatusIsThinking()) ed.clearStageStatus();
     ed.syncAgentRunMessage();
 }
 
@@ -37424,6 +37455,18 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         agentClient()->setApprovalMode (agentApprovalMode() == AgentApproval::Auto
                                            ? EJAgentClient::ApprovalMode::Auto
                                            : EJAgentClient::ApprovalMode::Ask);
+        // ---- SOMETHING HAPPENS THE MOMENT HE PRESSES SEND (17 Oct 2026, item 9) --------------
+        //
+        // "No 'thinking' indicator after Send (long blank pause). Show it immediately." The card
+        // appears through onLayoutNeeded - which fires when the first FRAME arrives, and this
+        // morning's log has the gap in it: the goal went out at 08:05:14 and the round frame came
+        // back at 08:05:19. Five seconds of nothing, after the box had already emptied, which is
+        // the one combination that reads as a dropped send.
+        //
+        // The stage row is the window's existing "something is happening" line, and the run row
+        // takes over the moment it exists (syncAgentRunMessage clears this), so there is never a
+        // moment with two of them.
+        setStageStatus ("Thinking...");
         agentClient()->start (msg, currentChatId);   // the card appears through onLayoutNeeded
         return;
     }

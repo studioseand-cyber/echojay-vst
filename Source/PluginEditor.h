@@ -2099,6 +2099,9 @@ private:
     void noteStageSuppressedIfForeign();
     void setStageStatus(const juce::String& s);
     void clearStageStatus();
+    /** True while the stage row is item 9's own "Thinking..." line, so the run row can take over
+        from it without clearing a stage message that belongs to something else. */
+    bool stageStatusIsThinking() const { return stageStatusText_.startsWithIgnoreCase ("Thinking"); }
     // Result stage: a local assistant bubble (persisted, block-less).
     // altPrompt (optional) attaches a Suggest-an-alternative pill to the
     // bubble (build failures) - same one-shot machinery as edit cards.
@@ -3704,8 +3707,19 @@ private:
 
         // Open slot i's editor inline in the display area. The current editor
         // (inline or floating) is fully destroyed FIRST — never two at once.
+        /** Called when the window should be showing the rack, because a slot editor is about to be.
+            Item 7, 17 Oct 2026: "whenever the slot editor opens or is triggered, switch to CHAIN;
+            never draw it on another tab." Set by the editor to switchToTab(Chain). */
+        std::function<void()> onEditorNeedsChainTab;
+
         void showInline(int i)
         {
+            // ---- THE EDITOR BOX BELONGS ON THE CHAIN TAB (17 Oct 2026, Sean's item 7) ----------
+            // He watched a slot editor draw itself over the CHAT tab. This panel does not know which
+            // tab is in front - it is a child that is laid out wherever it is put - so it asks the
+            // window to be on the rack before it opens anything. One call, at the single door every
+            // editor open comes through (showInline, which openPopoutForSelected also passes).
+            if (onEditorNeedsChainTab) onEditorNeedsChainTab();
             closeAllEditors();
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
 
@@ -3791,7 +3805,18 @@ private:
 
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = onCreateEditor(i); } catch (...) {}
-            if (!ed) { statusText = "Failed: could not open editor"; repaint(); return; }
+            if (!ed)
+            {
+                // THE THIRD ROAD, which had no note at all (17 Oct 2026). Two of the three failure
+                // paths asked remoteEditorNote; this one - the undecided placement, which is where a
+                // third party on a Link actually lands - said "Failed: could not open editor" about
+                // a plugin that had not failed. It is running, on another track, in another process.
+                const auto note = remoteEditorNote (slotInfos[(size_t) i].name);
+                statusText = note.isNotEmpty() ? note : juce::String ("Failed: could not open editor");
+                bringFwdBtn.setVisible (note.isNotEmpty());
+                resized();
+                repaint(); return;
+            }
 
             // The UNDECIDED state, said aloud (1 Sep 2026) — same wording
             // as the Link's panel; the settle poll's verdict replaces it.
@@ -4102,6 +4127,9 @@ private:
         {
             if (selectedIdx < 0 || selectedIdx >= (int)slotInfos.size() || !onCreateEditor)
                 return;
+            // ...and the floating road too: the pane behind it is the rack's, and its caption and
+            // its failure note are drawn there (item 7).
+            if (onEditorNeedsChainTab) onEditorNeedsChainTab();
             int i = selectedIdx;
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
@@ -4438,7 +4466,20 @@ private:
                 bool isLd  = statusText.startsWith("Loading");
                 g.setColour(isErr ? C::red : isLd ? C::blue2 : C::text2);
                 g.setFont(juce::Font(juce::FontOptions(13.0f)));
-                g.drawText(statusText, area.reduced(16), juce::Justification::centred, true);
+                // ---- ONE LONG SENTENCE NEEDS MORE THAN ONE LINE (17 Oct 2026, Sean's item 8) ----
+                //
+                // His report: a third-party slot on a Link "shows a BLANK area, with no 'running
+                // on ...' message". The message was there. It was drawn by a single-line drawText
+                // with useEllipsis into a display area a few hundred pixels wide - and the note is
+                // "Renaissance Axx is running on 88_7even Kick_2_01, open it in that track's EchoJay
+                // window", which in one line at 13 pt ellipsises down to almost nothing. A sentence
+                // that cannot fit is not a sentence the window has shown him.
+                //
+                // drawFittedText wraps it, up to four lines, and leaves room under it for the
+                // button that belongs to it.
+                auto textArea = area.reduced (16);
+                if (bringFwdBtn.isVisible()) textArea = textArea.withTrimmedBottom (34);
+                g.drawFittedText (statusText, textArea, juce::Justification::centred, 4, 1.0f);
             }
             else if (slotInfos.empty())
             {
@@ -4492,9 +4533,17 @@ private:
             applyBtn.setVisible(editingSession);
             editBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
             editBtn.setVisible(remote && !editingSession && selectedIdx >= 0);
-            // "Bring it forward", under the note it belongs to (its visibility is set where the note
-            // is written, not here: it is about one failed open, not about the view's shape).
-            bringFwdBtn.setBounds (kCardMargin, getHeight() - 30, 150, 22);
+            // ---- "Bring it forward" GOES WITH ITS NOTE (17 Oct 2026, Sean's item 8) -------------
+            // It was at (kCardMargin, getHeight() - 30): the bottom-left of the whole panel, which
+            // is where the rack strip's M and S buttons are - so it was drawn over them, far from
+            // the sentence it answers, and looked like part of the strip. It belongs directly under
+            // the note, inside the display area, centred, which is where the eye already is.
+            {
+                const auto da = displayArea();
+                const int bw = 170, bh = 24;
+                bringFwdBtn.setBounds (da.getCentreX() - bw / 2,
+                                       juce::jmax (da.getY() + 8, da.getBottom() - 16 - bh), bw, bh);
+            }
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
