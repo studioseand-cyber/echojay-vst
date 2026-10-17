@@ -1427,3 +1427,35 @@ it, which is why it is a queued item and not a patch tonight.
 
 Its first use after that is the one Sean actually asked for: watch whether a tweak request on a rack
 that already holds plugins stays an adjustment, and raise it with B when it does not.
+
+---
+
+## item 13 - a Link can look GONE to the agent for a few seconds after its rack is rebuilt (17 Oct, S6)
+
+Found by the gate's own S6 log, not by a row that was looking for it. Row L3 ("turn 88_7even
+Kick_2_01's output down 2 dB") failed, and the agent's card said:
+
+> "88_7even Kick_2_01 isn't reachable from this session right now (it shows as gone), so I can't
+> send the output change to it."
+
+L1, L2 and K1 had just passed against that same Link by name, and H3 passed against it by uid a few
+minutes LATER - so it was not gone, it was briefly unreachable. The lines in between say what
+happened:
+
+```
+EJRackLock: released uid=d684c7e220
+EJBorrow: dial info cleared for uid=d684c7e220 (rack rebuilt or Link gone)
+EJBorrow: slot 1 ("EchoJay Compressor") of d684c7e220 unanswered after 5.0 s - re-requesting once
+EJBorrow: read for d684c7e220 ABANDONED after 0 of 3 slots - the selection is now (none)
+```
+
+L2's build had just rebuilt that rack. So the sequence to look at is: a rebuild clears the borrowed
+dial info, the next read goes unanswered for five seconds, the read is abandoned, and the agent -
+asking the plugin whether that channel is reachable - is told no. A person doing this in Logic would
+be told their track is gone seconds after watching a chain get built on it.
+
+Two things to settle, in this order: whether "unanswered for 5 s after a rebuild" is the Link being
+busy or a lost request; and whether "reachable" should be answered from the registry's own liveness
+(a wall-clock floor, per the standing rule) rather than from whether a borrowed read happened to
+succeed. The row is the second half of the fix: L3 should wait for reachability with a bound and say
+"it stayed unreachable for N s" when it fails, rather than reading one moment and believing it.
