@@ -689,3 +689,44 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 
 - **The path:** 156 / 197 / 381 (§12) → +4 mapped: API-550A s/m (steps), AMEK EQ 250 (adaptive grid), ValhallaVintageVerb VST3 (unit switch) → 156 / 201 / 377.
 - **Reproduce** (in `~/Desktop/EJMAP_TRUST_17oct`): `REPAIRED_MAPS=$PWD/repair2_17oct/maps_final EXTRA_CERT=$PWD/rulings2_cert:$PWD/alldaws_cert:$PWD/repair2_17oct/readback1:$PWD/repair2_17oct/readback2 CERTIFIED_PROFILES=$PWD/published_v3/EJMAP_PUBLISH_COMPRESSORS_v3 CERT_OVERNIGHT=$PWD/overnight_cert_rederived ./recount.sh <ejmap> <out>`.
+
+## 14. VST3 speed and the DAW pause, 17 Oct (Kathy). Built and pinned; nothing sent; tonight's running test not touched
+
+### 14.1 VST3 identity without a load (pin WZ-VST3-2)
+- **Order of sources.** A VST3's identity comes from, in order:
+  1. its own `Contents/Resources/moduleinfo.json`: the "Audio Module Class" entries' Name, Version, Factory Info Vendor, and the uid computed from the CID exactly as JUCE does (`createPluginDescriptions`: the hash over the CID's four 32-bit words, h = h × 31 + word);
+  2. the **identity cache** (`<map store>/vst3_identity.json`, by bundle path + bundle version; failures kept too, so a bundle that crashed is not loaded again at that version);
+  3. only then **one** `--list-params` load, whose answer is cached.
+- **The uid rule is proven.** On this Mac, 212 of 212 moduleinfo uids equal the uids the scan cache got by loading. The only other differences are two version-only ones on our own EchoJay plugins, updated since 4 Aug.
+- **AU twins with no load.** By class name, or for a bundle still to load, by its bundle name with the AU vendor's prefix ("FabFilter Pro-Q 3" = "Pro-Q 3" by FabFilter).
+- **Cheaper bridge reads.**
+  - The AU's parameter list comes from its map in the store when it is mapped.
+  - The VST3 is addressed **by name** when its list is not in hand: the probe's `--text-at-norms-multi` takes `@<escaped name>:norms` and finds the parameter in the same load (`missing` if absent).
+  - A bridge read is never repeated for a version that has one.
+- **Dry check:** `ejmap --vst3-identity-plan [--list] [--ejmap-ledger <dir>]` reports where each bundle's identity comes from. Nothing is loaded.
+- **This Mac (859 bundles):** 213 from moduleinfo (no load), 8 WaveShell, **638 need one identity load on the first run and none after** (428 of those 638 are AU twins by bundle name). 636 bundles are AU twins in all.
+
+| | identity loads | bridge-read loads (636 twins) |
+|---|---|---|
+| before (rulings 3 build), every run | 851 | up to 3 per twin, every run |
+| now, first run | **638** | 3 per twin (2 when the AU is mapped in the store) |
+| now, every later run | **0** | **0** (kept) |
+
+- **Time.** Identity loads timed on 11 guard-allowed VST3s on this Mac: median 0.53 s, mean 1.29 s (0.10-4.70 s). iLok-wrapped plugins usually load slower, so these are a floor.
+  - First run: 213 loads saved, about **2-5 min**.
+  - Every later run: all 851 identity loads saved (**8-18 min**), plus every bridge read already taken.
+  - The plan pass itself (859 bundles, nothing loaded) takes 2.4 s.
+- **Live (scan only, guarded):**
+  - Pro-Q 3 (no moduleinfo): run 1 = 1 identity load + 3 bridge loads, 6.9 s; run 2 = **0 loads**, 2.8 s.
+  - School EQ (moduleinfo): identity with no load, VST3 read by name, 0 differing settings.
+
+### 14.2 The DAW pause (pin WZ-DAW-2; WZ-DAW-1 rewritten)
+- **What tonight's log says** (`~/Library/Application Support/EchoJay Wizard Test/app.log`): `22:29:09 not started: Logic is open`; Carry on at 22:29:11 paused straight back; carried on at 22:30:52.
+  - **The log never recorded which process matched**: it wrote the DAW's name only. The macOS log has no entries from a Logic process in that window.
+  - What the code shows: the 15 Oct rule counted **any process running from inside Logic Pro.app**. That bundle holds 22 executables besides the app itself, among them its Quick Look and thumbnail extensions, which macOS can run for Finder previews of Logic projects with Logic closed.
+  - So it was either Logic itself running with no window (what you quit), or one of those. The old log cannot say which.
+- **Now.**
+  - A DAW is a process that is the **main executable** (`<app>/Contents/MacOS/<CFBundleExecutable>`) of an app whose **bundle id** is a DAW's. Logic is `com.apple.logic10` (a versioned id like `com.steinberg.cubase13` counts; a sub-id like `com.apple.logic10.QuickLookExtension` does not).
+  - Every pause logs pid, bundle id, path and whether it has a window.
+  - **With no window**, the words are: "Logic is still running in the background (even with no window open) - quit it with Cmd-Q or from the Dock and the wizard carries on by itself."
+  - **Carry on anyway** (on the DAW pause only) carries on beside that one DAW process until it quits; a new DAW process pauses again. Its one-line warning: "Measuring while Logic runs can slow both down and change the results - only if you're not using it."

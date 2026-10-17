@@ -826,6 +826,12 @@ namespace
                 ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
                 return ejmap::cert::runAnchorRepair (o, maps, juce::JSON::parse (planFile.loadFileAsString()), step, refine);
             }
+            if (a == "--vst3-identity-plan")   // 17 Oct (Kathy, VST3 SPEED): where each VST3 bundle's identity comes from - nothing loaded, nothing written
+            {
+                juce::File ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap"); bool list = false;
+                for (int j = 1; j < argc; ++j) { if (argAt (argc, argv, j) == "--list") list = true; if (argAt (argc, argv, j) == "--ejmap-ledger" && j + 1 < argc) ledger = cwdFile (argAt (argc, argv, j + 1)); }
+                return ejmap::cert::runVst3IdentityPlan (ledger, list);
+            }
             if (a == "--readback-rederive")   // 17 Oct (Kathy, stepped controls): the read-back records rebuilt from the kept raw probe output - nothing loaded
             {
                 juce::File maps, from, out;

@@ -20,6 +20,7 @@
   --snapshots: every screen (and the bars at each quarter) saved as a PNG of the window's content.
 */
 #include <libproc.h>
+#include <CoreGraphics/CoreGraphics.h>   // 17 Oct: does the DAW have a window (CGWindowList, owner pids only)
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include "EchoJayLogo.h"
@@ -90,15 +91,59 @@ inline double availableMemoryBytes()
     if (host_page_size (mach_host_self(), &page) != KERN_SUCCESS || host_statistics64 (mach_host_self(), HOST_VM_INFO64, (host_info64_t) &st, &cnt) != KERN_SUCCESS) return -1.0;
     return (double) (st.free_count + st.inactive_count + st.purgeable_count) * (double) page;
 }
-// 15 Oct (sharing the Mac): the first open DAW, from every running process's executable path (read only - the DAW is never touched)
-juce::String openDaw()
+// THE OPEN DAW (15 Oct; 17 Oct "DAW PAUSE": by bundle id, main executable only - a helper inside Logic Pro.app is not Logic). Read only: the
+// process list, each outermost .app's Info.plist (CFBundleIdentifier, CFBundleExecutable; cached per app), and whether the DAW's pid owns
+// a normal window (CGWindowList - owner pids and layers, no screen recording). `ignorePid`: the one the user chose to carry on beside
+static bool appInfo (const juce::String& app, juce::String& bundleId, juce::String& exe)
 {
-    int n = proc_listallpids (nullptr, 0); if (n <= 0) return {};
+    static std::map<juce::String, std::pair<juce::String, juce::String>> cache;
+    if (const auto it = cache.find (app); it != cache.end()) { bundleId = it->second.first; exe = it->second.second; return bundleId.isNotEmpty(); }
+    bundleId = {}; exe = {};
+    auto url = CFURLCreateFromFileSystemRepresentation (nullptr, (const UInt8*) app.toRawUTF8(), (CFIndex) app.getNumBytesAsUTF8(), true);
+    if (url != nullptr)
+    {
+        if (auto b = CFBundleCreate (nullptr, url))
+        {
+            if (auto id = CFBundleGetIdentifier (b)) bundleId = juce::String::fromCFString (id);
+            if (auto e = (CFStringRef) CFBundleGetValueForInfoDictionaryKey (b, kCFBundleExecutableKey); e != nullptr && CFGetTypeID (e) == CFStringGetTypeID()) exe = juce::String::fromCFString (e);
+            CFRelease (b);
+        }
+        CFRelease (url);
+    }
+    cache[app] = { bundleId, exe }; return bundleId.isNotEmpty();
+}
+static bool hasWindow (int pid)
+{
+    bool found = false;
+    if (auto list = CGWindowListCopyWindowInfo (kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID))
+    {
+        for (CFIndex i = 0; i < CFArrayGetCount (list) && ! found; ++i)
+        {
+            auto w = (CFDictionaryRef) CFArrayGetValueAtIndex (list, i); int owner = 0, layer = -1;
+            if (auto n = (CFNumberRef) CFDictionaryGetValue (w, kCGWindowOwnerPID)) CFNumberGetValue (n, kCFNumberIntType, &owner);
+            if (auto n = (CFNumberRef) CFDictionaryGetValue (w, kCGWindowLayer)) CFNumberGetValue (n, kCFNumberIntType, &layer);
+            found = owner == pid && layer == 0;   // a document / project window (layer 0); the menu bar and status items are other layers
+        }
+        CFRelease (list);
+    }
+    return found;
+}
+ejmap::wizapp::DawHit openDaw (int ignorePid = 0)
+{
+    ejmap::wizapp::DawHit h;
+    int n = proc_listallpids (nullptr, 0); if (n <= 0) return h;
     std::vector<pid_t> pids ((size_t) n + 32); n = proc_listallpids (pids.data(), (int) (pids.size() * sizeof (pid_t)));
     char path[PROC_PIDPATHINFO_MAXSIZE];
-    for (int i = 0; i < n; ++i) if (pids[(size_t) i] > 0 && proc_pidpath (pids[(size_t) i], path, sizeof (path)) > 0)
-        if (const auto d = ejmap::wizapp::dawFromAppPath (juce::String::fromUTF8 (path)); d.isNotEmpty()) return d;
-    return {};
+    for (int i = 0; i < n; ++i)
+    {
+        const auto pid = pids[(size_t) i]; if (pid <= 0 || pid == ignorePid || proc_pidpath (pid, path, sizeof (path)) <= 0) continue;
+        const auto exec = juce::String::fromUTF8 (path); const auto app = ejmap::wizapp::outermostApp (exec); if (app.isEmpty()) continue;
+        juce::String id, exe; if (! appInfo (app, id, exe)) continue;
+        const auto name = ejmap::wizapp::dawFromBundleId (id);
+        if (name.isEmpty() || ! ejmap::wizapp::isMainExecutable (exec, app, exe)) continue;   // a helper inside the app is not the DAW
+        h.name = name; h.bundleId = id; h.path = exec; h.pid = (int) pid; h.windows = hasWindow ((int) pid); return h;
+    }
+    return h;
 }
 juce::File homeChild (const juce::String& p) { return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (p); }
 
@@ -216,6 +261,8 @@ public:
           e->setColour (juce::CaretComponent::caretColourId, ink); }
         email.setTextToShowWhenEmpty ("Email", juce::Colours::grey); password.setTextToShowWhenEmpty ("Password", juce::Colours::grey); password.setPasswordCharacter ((juce::juce_wchar) 0x2022);
         primary.onClick = [this] { onPrimary(); }; secondary.onClick = [this] { onSecondary(); };
+        addChildComponent (anyway); anyway.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe9ecf2)); anyway.setColour (juce::TextButton::textColourOffId, ink);   // 17 Oct
+        anyway.onClick = [this] { onAnyway(); };
         addChildComponent (resetTestButton); resetTestButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe9ecf2)); resetTestButton.setColour (juce::TextButton::textColourOffId, ink);
         resetTestButton.onClick = [this] { resetTestNow(); };
         addChildComponent (agree); agree.setButtonText (wizapp::consentTick()); agree.setColour (juce::ToggleButton::textColourId, ink); agree.setColour (juce::ToggleButton::tickColourId, accent);
@@ -348,6 +395,8 @@ public:
         }
         if (screen == Screen::scan)   // 14 Oct: the licence-window warning
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 330, getWidth() - 140, 40), juce::Justification::centred, 2); }
+        if (screen == Screen::paused && anyway.isVisible() && dawPaused.isNotEmpty())   // 17 Oct: Carry on anyway's one-line warning
+        { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (12.0f)); g.drawFittedText (wizapp::carryOnAnywayWarning (dawPaused), juce::Rectangle<int> (30, getHeight() - 182, getWidth() - 60, 20), juce::Justification::centred, 1); }
         if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (choiceLine, juce::Rectangle<int> (40, getHeight() - 150, getWidth() - 80, 20), juce::Justification::centred, 1); }
         if (pauseNote.isNotEmpty()) { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (pauseNote, juce::Rectangle<int> (40, getHeight() - 92, getWidth() - 80, 20), juce::Justification::centred, 1); }
@@ -356,6 +405,7 @@ public:
     {
         primary.setBounds (getWidth() / 2 - 110, getHeight() - 70, 220, 40);
         secondary.setBounds (getWidth() / 2 - 110, getHeight() - 116, 220, 36);
+        anyway.setBounds (getWidth() / 2 - 110, getHeight() - 158, 220, 30);   // 17 Oct: above the two, with its warning above it
         email.setBounds (getWidth() / 2 - 160, 250, 320, 38); password.setBounds (getWidth() / 2 - 160, 296, 320, 38);
         agree.setBounds (getWidth() / 2 - 60, getHeight() - 118, 160, 30);
         resetTestButton.setBounds (14, getHeight() - 40, 96, 26);
@@ -363,10 +413,10 @@ public:
 
 private:
     Config cfg; Engine engine; KeepAwake awake;
-    juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
+    juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }, anyway { wizapp::kCarryOnAnyway }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
-    juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0;   // 15 Oct: a pause the DAW caused, and where it carries on
+    juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0; ejmap::wizapp::DawHit dawHit; int dawIgnoredPid = 0;   // 17 Oct: the hit (for the words and the log), the DAW the user chose to carry on beside   // 15 Oct: a pause the DAW caused, and where it carries on
     double shownPctT = 0.0; std::vector<wizapp::JobLine> jobsNow; juce::String doneLine; juce::int64 heartbeatMs = 0;   // 15 Oct (FEELS FROZEN)
     int shownPct = 0; juce::int64 readyStamp = 0;   // 15 Oct: the % shown (never backwards); wizard_state.json's time, for the ready line
     struct Shimmer : juce::Timer { std::function<void()> tick; void timerCallback() override { if (tick) tick(); } } shimmer;
@@ -407,8 +457,8 @@ private:
         if (const auto dv = wizapp::diskVerdict (wizapp::freeBytes (cfg.work), true); ! dv.ok)   // 13 Oct: never start below the floor
         { const auto c = wizapp::diskRefusedCopy (dv.words); title = c.title; text = c.text; showBar = false; primary.setButtonText (c.primary); primary.setVisible (true); diskRefused = true;
           logLine ("refused to start: " + dv.words); resized(); repaint(); return; }
-        if (const auto daw = openDaw(); daw.isNotEmpty())   // 15 Oct: a DAW is open - wait, do not start (it carries on by itself when it closes)
-        { dawPaused = daw; resumeTo = measure ? Screen::measuring : Screen::scan; logLine ("not started: " + daw + " is open");
+        if (const auto hit = openDaw (dawIgnoredPid); hit.any())   // 15 Oct: a DAW is open - wait, do not start (it carries on by itself when it closes)
+        { dawPaused = hit.name; dawHit = hit; resumeTo = measure ? Screen::measuring : Screen::scan; logLine ("not started: " + wizapp::dawLogLine (hit) + " is open");
           juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->show (Screen::paused); }); return; }
         engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();
         engineDir().getChildFile ("checkpoint.json").deleteFile();   // 13 Oct: the last launch's checkpoint was handled then (or is in the outbox)   // the last run's "Done 100%" must not flash on the new screen
@@ -419,7 +469,7 @@ private:
 
     void show (Screen s)
     {
-        screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); email.setVisible (false); password.setVisible (false);
+        screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); anyway.setVisible (false); email.setVisible (false); password.setVisible (false);
         agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true); resetTestButton.setVisible (kTest && wizapp::resetTestShownOn (s));
         autoTicks = 0; lastSnapQuarter = -1.0;
         auto copy = [&] (const wizapp::Copy& c) { title = c.title; text = c.text; primary.setButtonText (c.primary); primary.setVisible (c.primary.isNotEmpty());
@@ -467,9 +517,10 @@ private:
                 {   // 15 Oct: the bar's % (this session's, else the stopped engine's own), never a count
                     const int pct = shownPct > 0 ? shownPct : wizapp::measuringPercent (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()), 0);
                     title = resumeTo == Screen::scan ? juce::String ("Paused") : wizapp::pausedTitle (pct);
-                    text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused) : wizapp::pausedText (kMode, lastSendKept);   // 15 Oct: the DAW's own line
+                    text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
                 }
-                primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true); break;
+                primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true);
+                anyway.setVisible (dawPaused.isNotEmpty()); break;   // 17 Oct: Carry on anyway, beside the DAW
             case Screen::upload:
                 title = "Sending your results"; text = "Just the measurements - no audio, no plugin files, nothing personal.";
                 showBar = true; barValue = 0.0; barLeft = "Sending"; barRight = {}; uploadT0 = juce::Time::getMillisecondCounterHiRes(); break;
@@ -539,7 +590,7 @@ private:
             }
             case Screen::alreadyDone: case Screen::reward: case Screen::noCode: case Screen::betaSaved: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case Screen::measuring: pauseNow ("the Pause button", false); break;
-            case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning
+            case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning (a DAW still open pauses it again)
             default: break;
         }
     }
@@ -650,7 +701,7 @@ private:
     void timerCallback() override
     {
         if (appInterrupted() != 0 && ! quitting) { appInterrupted() = 0; logLine ("Ctrl-C: a pause (no question asked)"); if (requestQuit (false)) juce::JUCEApplication::getInstance()->quit(); }
-        if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastDawCheck >= 2000.0) { lastDawCheck = now; dawWatch (openDaw()); }
+        if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastDawCheck >= 2000.0) { lastDawCheck = now; dawWatch (openDaw (dawIgnoredPid)); }
         if (screen == Screen::scan || screen == Screen::measuring) pollEngine();
         if (screen == Screen::upload) tickUpload();
         if (cfg.autoMode && ! quitting) autoAdvance();
@@ -660,16 +711,26 @@ private:
     }
     // SHARING THE MAC (Kathy, 15 Oct): a DAW opens while the wizard scans or measures -> the same clean pause as the button, with the DAW's
     // name; only a pause the DAW caused carries on by itself, once no DAW has been open for kDawQuietS. The user's own pause never does
-    void dawWatch (const juce::String& daw)
+    void dawWatch (const ejmap::wizapp::DawHit& hit)
     {
+        if (dawIgnoredPid != 0 && kill (dawIgnoredPid, 0) != 0) { logLine ("the DAW carried on beside (pid " + juce::String (dawIgnoredPid) + ") has quit"); dawIgnoredPid = 0; }   // signal 0: only asks whether it lives
+        const auto daw = hit.name;
         if (dawPaused.isEmpty() && (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing && daw.isNotEmpty())
-        { dawPaused = daw; resumeTo = screen; logLine ("paused by itself: " + daw + " is open"); pauseNow (daw + " is open", false); return; }
+        { dawPaused = daw; dawHit = hit; resumeTo = screen; logLine ("paused by itself: " + wizapp::dawLogLine (hit) + " is open"); pauseNow (daw + " is open", false); return; }
         if (screen != Screen::paused || dawPaused.isEmpty()) return;
-        if (daw.isNotEmpty()) { dawQuietSince = -1.0; if (daw != dawPaused) { dawPaused = daw; text = wizapp::dawPausedText (daw); repaint(); } return; }
+        if (daw.isNotEmpty()) { dawQuietSince = -1.0; if (daw != dawPaused || hit.windows != dawHit.windows) { dawPaused = daw; dawHit = hit; text = wizapp::dawPausedText (daw, hit.windows); repaint(); } return; }
         const double now = juce::Time::getMillisecondCounterHiRes();
         if (dawQuietSince < 0.0) { dawQuietSince = now; return; }
         if (now - dawQuietSince >= wizapp::kDawQuietS * 1000.0)
-        { logLine ("carrying on by itself: " + dawPaused + " is closed"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); }
+        { logLine ("carrying on by itself: " + dawPaused + " is closed"); dawPaused.clear(); dawQuietSince = -1.0; anyway.setVisible (false); show (resumeTo); }
+    }
+    // CARRY ON ANYWAY (Kathy, 17 Oct): the user chooses to measure beside the DAW - that process is not paused for again until it quits
+    // (a new DAW process pauses as before); said in the log with what was running
+    void onAnyway()
+    {
+        if (screen != Screen::paused || dawPaused.isEmpty()) return;
+        logLine ("carry on anyway beside " + wizapp::dawLogLine (dawHit)); dawIgnoredPid = dawHit.pid;
+        dawPaused.clear(); dawQuietSince = -1.0; anyway.setVisible (false); show (resumeTo);
     }
     void pollEngine()
     {

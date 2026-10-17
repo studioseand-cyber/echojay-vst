@@ -10758,22 +10758,17 @@ void testWizardCategories()
     {
         using namespace ejmap::wizapp;
         const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
-        check (dawFromAppPath ("/Applications/Logic Pro.app/Contents/MacOS/Logic Pro") == "Logic" && dawFromAppPath ("/Applications/Logic Pro X.app/Contents/MacOS/Logic Pro X") == "Logic"
-               && dawFromAppPath ("/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live") == "Ableton Live" && dawFromAppPath ("/Applications/Pro Tools.app/Contents/MacOS/Pro Tools") == "Pro Tools"
-               && dawFromAppPath ("/Applications/Cubase 13.app/Contents/MacOS/Cubase 13") == "Cubase" && dawFromAppPath ("/Applications/Studio One 6.app/Contents/MacOS/Studio One 6") == "Studio One"
-               && dawFromAppPath ("/Applications/REAPER.app/Contents/MacOS/REAPER") == "Reaper" && dawFromAppPath ("/Applications/FL Studio 2024.app/Contents/MacOS/OsxFL") == "FL Studio"
-               && dawFromAppPath ("/Applications/Bitwig Studio.app/Contents/MacOS/BitwigStudio") == "Bitwig" && dawFromAppPath ("/Applications/Digital Performer 11.app/Contents/MacOS/Digital Performer") == "Digital Performer"
-               && dawFromAppPath ("/Applications/LUNA.app/Contents/MacOS/LUNA") == "LUNA"
-               && dawFromAppPath ("/Applications/Logic Pro.app/Contents/XPCServices/Helper.xpc/Contents/MacOS/Helper") == "Logic"
-               && dawFromAppPath ("/Applications/Safari.app/Contents/MacOS/Safari").isEmpty() && dawFromAppPath ("/Applications/Livestream.app/Contents/MacOS/Livestream").isEmpty()
-               && dawFromAppPath ("/usr/local/bin/reaper").isEmpty() && dawFromAppPath ("/Applications/Logical.app/Contents/MacOS/Logical").isEmpty()
+        check (dawFromBundleId ("com.apple.logic10") == "Logic" && dawFromBundleId ("com.avid.ProTools") == "Pro Tools" && dawFromBundleId ("com.ableton.live") == "Ableton Live"
+               && dawFromBundleId ("com.steinberg.cubase13") == "Cubase" && dawFromBundleId ("com.presonus.studioone6") == "Studio One" && dawFromBundleId ("com.cockos.reaper") == "Reaper"
+               && dawFromBundleId ("com.image-line.flstudio") == "FL Studio" && dawFromBundleId ("com.bitwig.BitwigStudio") == "Bitwig" && dawFromBundleId ("com.motu.DigitalPerformer") == "Digital Performer"
+               && dawFromBundleId ("com.uaudio.luna") == "LUNA" && dawFromBundleId ("com.apple.Safari").isEmpty() && dawFromBundleId ("com.apple.logic10.QuickLookExtension").isEmpty()
                && dawPausedText ("Logic") == "Paused while Logic is open - it carries on by itself when you close it." && ! tellsATime (dawPausedText ("Logic"))
                && app.contains ("if (dawPaused.isEmpty() && (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing && daw.isNotEmpty())")
                && app.contains ("if (screen != Screen::paused || dawPaused.isEmpty()) return;") && app.contains ("if (now - dawQuietSince >= wizapp::kDawQuietS * 1000.0)")
-               && app.contains ("text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused) : wizapp::pausedText (kMode, lastSendKept);")
-               && app.contains ("if (const auto daw = openDaw(); daw.isNotEmpty())   // 15 Oct: a DAW is open - wait, do not start")
-               && app.contains ("proc_pidpath (pids[(size_t) i], path, sizeof (path))") && ! app.contains ("kill (pids"),
-               "wizard WZ-DAW-1: the ten DAWs by their .app (helpers too; Safari / Livestream / Logical not); the calm line; pause by itself, carry on by itself only after its own pause and 10 s quiet; never started with a DAW open; read only");
+               && app.contains ("text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, lastSendKept);")
+               && app.contains ("if (const auto hit = openDaw (dawIgnoredPid); hit.any())   // 15 Oct: a DAW is open - wait, do not start")
+               && app.contains ("proc_pidpath (pid, path, sizeof (path))") && ! app.contains ("kill (pids"),
+               "wizard WZ-DAW-1: the DAWs by bundle id (17 Oct: not by .app path - helpers no longer count); the calm line; pause by itself, carry on by itself only after its own pause and 10 s quiet; never started with a DAW open; read only");
     }
     // WZ-END-1 THE END SCREEN (Kathy, 15 Oct: 774fe72e's run reached the end and said "The free month needs the full run: 351 of 509" - 158 UAD rows
     // it had left unrun): a run that reaches the end with any queued plugin lacking an outcome is NOT uploaded as finished - left.json names
@@ -12455,7 +12450,7 @@ int main (int, char**)
         tmp.deleteRecursively();
         const juce::String line = "vst3 class: \"Pro-Q 3\" (asked \"FabFilter Pro-Q 3\", 1 class(es) in the bundle)\tversion\t3.2.3.0\tuid\tba5f7ab2\tvendor\tFabFilter\n";
         const auto wr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
-        const auto stage = wr.fromFirstOccurrenceOf ("// THE VST3s (Kathy, 17 Oct, rulings 3)", false, false).upToFirstOccurrenceOf ("prog.setPlugins", false, false);
+        const auto stage = wr.fromFirstOccurrenceOf ("// THE VST3s (Kathy, 17 Oct, rulings 3; VST3 SPEED", false, false).upToFirstOccurrenceOf ("prog.setPlugins", false, false);
         const auto cd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
         check (lt == "bridge" && t1 == "Pro-Q 3" && lm == "measure" && twin.isEmpty()
                && picks.size() == 2 && picks[0].name == "Band 1 Frequency" && picks[0].au == 3 && picks[0].v3 == 11 && picks[1].v3 == 10   // Bypass: no role; Output Gain: not in the VST3
@@ -12472,16 +12467,94 @@ int main (int, char**)
                && [&] { const int run = stage.indexOf ("runChild (");   // each check present AND before the load (a missing one is not "before")
                         for (const char* k : { "if (licMem.count (bundleKey)) { vrow (b.name, {}, \"needs_licence\", wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered)); continue; }",
                                                "if (pace && ! paceOk) { vrow (b.name, {}, \"needs_licence\", wizroute::licenceSkipWhy (wizroute::LicenceSkip::paceNoIlok)); continue; }",
-                                               "if (apb::isApbProduct (d.name, d.manufacturerName))" })
+                                               "if (apb::isApbProduct (d0.name, d0.manufacturerName))" })
                         { const int at = stage.indexOf (k); if (at < 0 || at > run) return false; }
-                        return run > 0; } () && stage.contains ("if (b.shell) {")
-               && stage.contains ("if (vst3Lane (d.name, auNames, twin) == \"bridge\")") && stage.contains ("bridgeRead (opt, au, d, ps,")
+                        return run > 0; } () && stage.contains ("if (pr.source == \"shell\") {")
+               && stage.contains ("if (vst3Lane (d.name, auNames, twin) == \"bridge\")") && stage.contains ("bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps,")
                && stage.contains ("setenv (\"EJ_VST3_EXTRAS\", xf.getFullPathName().toRawUTF8(), 1);") && stage.contains ("plugins.push_back ({ d, echojay::identityKeyForDescription (d), \"VST3|\" + uid });")
                && stage.contains ("if (! wo.plan &&") && wr.contains ("rec.getDynamicObject()->setProperty (\"purpose\", \"bridge\");") && wr.contains ("M->setProperty (\"bridge_reads\", br);")
                && wr.contains ("o->setProperty (\"format\", wizard::formatOfPluginId (o->getProperty (\"plugin_id\").toString()));")
                && wr.contains ("for (const auto& r : registryAudioUnits())") && ! cd.contains ("\"AudioUnit_\" + uidHex") && ! cd.contains ("\"AudioUnit|\" + uidHex")
                && cd.contains ("inline std::vector<InstalledRecord> installedPlugins() { auto out = registryAudioUnits(); for (auto& x : vst3Extras()) out.push_back (std::move (x)); return out; }"),
                "wizard WZ-VST3-1: VST3 bundles found loading nothing, twins bridge-read, the rest measured as their own plugin (EJ_VST3_EXTRAS; unset = AU only); ids / stems / uploads tagged by format; the .vst3 PACE check holds what it cannot read");
+    }
+    // WZ-DAW-2 THE DAW CHECK BY BUNDLE ID (Kathy, 17 Oct, "DAW PAUSE": it paused for a Logic with no window): only the MAIN executable of an
+    // app whose bundle id is a DAW's counts (a Quick Look extension or a helper app inside Logic Pro.app does not); the log names pid, bundle
+    // id, path and window state; with no window the words say it runs in the background; "Carry on anyway" (one-line warning) carries on
+    // beside that one process until it quits
+    {
+        using namespace ejmap::wizapp;
+        const juce::String L = "/Applications/Logic Pro.app";
+        DawHit h; h.name = "Logic"; h.bundleId = "com.apple.logic10"; h.path = L + "/Contents/MacOS/Logic Pro"; h.pid = 4242; h.windows = false;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto od = app.fromFirstOccurrenceOf ("ejmap::wizapp::DawHit openDaw (int ignorePid = 0)", false, false).upToFirstOccurrenceOf ("juce::File homeChild", false, false);
+        const auto anyway = app.fromFirstOccurrenceOf ("    void onAnyway()", false, false).upToFirstOccurrenceOf ("\n    }\n", false, false);
+        check (outermostApp (L + "/Contents/MacOS/Logic Pro") == L && outermostApp (L + "/Contents/Helpers/Impulse Response Utility.app/Contents/MacOS/Impulse Response Utility") == L && outermostApp ("/usr/bin/x").isEmpty()
+               && isMainExecutable (L + "/Contents/MacOS/Logic Pro", L, "Logic Pro")
+               && ! isMainExecutable (L + "/Contents/PlugIns/LogicProQuickLookExtension.appex/Contents/MacOS/LogicProQuickLookExtension", L, "Logic Pro")
+               && ! isMainExecutable (L + "/Contents/Helpers/Impulse Response Utility.app/Contents/MacOS/Impulse Response Utility", L, "Logic Pro") && ! isMainExecutable (L + "/Contents/MacOS/Logic Pro", L, "")
+               && dawPausedText ("Logic", false) == "Logic is still running in the background (even with no window open) - quit it with Cmd-Q or from the Dock and the wizard carries on by itself."
+               && dawPausedText ("Logic", true) == "Paused while Logic is open - it carries on by itself when you close it." && dawPausedText ("Logic") == dawPausedText ("Logic", true)
+               && ! carryOnAnywayWarning ("Logic").containsChar ('\n') && carryOnAnywayWarning ("Logic").contains ("Logic") && juce::String (kCarryOnAnyway) == "Carry on anyway"
+               && dawLogLine (h) == "Logic (pid 4242, com.apple.logic10, /Applications/Logic Pro.app/Contents/MacOS/Logic Pro, no window open)"
+               && od.contains ("if (name.isEmpty() || ! ejmap::wizapp::isMainExecutable (exec, app, exe)) continue;") && od.contains ("ejmap::wizapp::dawFromBundleId (id)")
+               && od.contains ("pid == ignorePid") && od.contains ("h.windows = hasWindow ((int) pid);") && ! app.contains ("dawFromAppPath")
+               && app.contains ("logLine (\"paused by itself: \" + wizapp::dawLogLine (hit) + \" is open\")") && app.contains ("logLine (\"not started: \" + wizapp::dawLogLine (hit) + \" is open\")")
+               && anyway.contains ("dawIgnoredPid = dawHit.pid;") && anyway.contains ("logLine (\"carry on anyway beside \" + wizapp::dawLogLine (dawHit));") && anyway.contains ("show (resumeTo);")
+               && app.contains ("dawWatch (openDaw (dawIgnoredPid));") && app.contains ("if (dawIgnoredPid != 0 && kill (dawIgnoredPid, 0) != 0)")
+               && app.contains ("anyway.setVisible (dawPaused.isNotEmpty()); break;") && app.contains ("anyway.setVisible (false); email.setVisible (false);")
+               && app.contains ("g.drawFittedText (wizapp::carryOnAnywayWarning (dawPaused)"),
+               "wizard WZ-DAW-2: a DAW is the main executable of an app with a DAW bundle id (helpers / extensions not); pid, id, path, window in the log; the no-window words; Carry on anyway beside that one process, with its warning");
+    }
+    // WZ-VST3-2 VST3 SPEED (Kathy, 17 Oct): the identity from the bundle's moduleinfo.json (JUCE's own uid from the CID), else an earlier run's
+    // (the identity cache, by bundle path + version, failures too), else ONE load and then cached; AU twins matched with no load (class name,
+    // or the bundle name with the AU vendor's prefix); a bridge read never twice for one version; the VST3 addressed by name when its list
+    // is not in hand, the AU's list from its map in the store when it is mapped
+    {
+        using namespace ejmap::cert;
+        const auto tmp = juce::File::createTempFile ("v3speed"); tmp.createDirectory();
+        auto mk = [&] (const juce::String& rel) { const auto b = tmp.getChildFile (rel); b.getChildFile ("Contents/Resources").createDirectory(); return b; };
+        const auto meta = mk ("School EQ.vst3"), plain = mk ("FabFilter Pro-Q 3.vst3"), failing = mk ("Broken.vst3"), cached = mk ("Kept.vst3"), only = mk ("Lonely.vst3");
+        meta.getChildFile ("Contents/Resources/moduleinfo.json").replaceWithText (R"J({
+  "Name": "School EQ", // a JSON5 comment
+  "Factory Info": { "Vendor": "Tokyo Dawn", "URL": "http://www.tokyodawn.net", },
+  "Classes": [
+    { "CID": "ABCDEF019182FAEB4D62796A5363716C", "Category": "Audio Module Class", "Name": "School EQ", "Version": "1.2.0", },
+    { "CID": "ABCDEF01AAAAAAAA4D62796A5363716C", "Category": "Component Controller Class", "Name": "School EQ Controller", "Version": "1.2.0", },
+  ],
+})J");
+        Vst3IdentityCache cache (tmp.getChildFile ("ledger/vst3_identity.json"));
+        Vst3Identity kept; kept.name = "Kept"; kept.version = "2.0"; kept.uid = 0x1234; kept.source = "load";
+        cache.put (Vst3IdentityCache::key (cached, "2.0"), { kept });
+        cache.put (Vst3IdentityCache::key (failing, "1.0"), {}, "crashed", "the VST3 did not load (signal)");
+        const Vst3IdentityCache reread (tmp.getChildFile ("ledger/vst3_identity.json"));
+        std::vector<Vst3Bundle> bs { { "School EQ", "1.2.0", "", meta }, { "FabFilter Pro-Q 3", "3.23", "", plain }, { "Broken", "1.0", "", failing }, { "Kept", "2.0", "", cached },
+                                     { "Lonely", "1.0", "", only }, { "WaveShell1-VST3 14", "14", "Waves", tmp.getChildFile ("WaveShell1-VST3 14.vst3"), true } };
+        const std::vector<std::pair<juce::String, juce::String>> aus { { "School EQ", "Tokyo Dawn Labs" }, { "Pro-Q 3", "FabFilter" }, { "Kept", "Acme" } };
+        const auto plan = vst3IdentityPlan (bs, aus, reread);
+        auto row = [&] (const juce::String& n) -> const Vst3PlanRow& { for (const auto& r : plan) if (r.b.name == n) return r; return plan.front(); };
+        const auto ids = vst3IdentitiesFromModuleInfo (meta);
+        tmp.deleteRecursively();
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_sweep.h").loadFileAsString();
+        const auto wr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto stage = wr.fromFirstOccurrenceOf ("// THE VST3s (Kathy, 17 Oct, rulings 3; VST3 SPEED", false, false).upToFirstOccurrenceOf ("prog.setPlugins", false, false);
+        const auto picks = roleNamedParams ({ { 0, "Bypass" }, { 3, "Band 1 Gain" }, { 7, "Mode" } });
+        check (vst3UidFromCid ("ABCDEF019182FAEB4D62796A5363716C") == (int) 0x00b836cc && vst3UidFromCid ("abcdef019182faeb4d62796a5363716c") == (int) 0x00b836cc && vst3UidFromCid ("1234") == 0
+               && ids.size() == 1 && ids[0].name == "School EQ" && ids[0].version == "1.2.0" && ids[0].vendor == "Tokyo Dawn" && ids[0].uid == (int) 0x00b836cc && ids[0].source == "moduleinfo"
+               && row ("School EQ").source == "moduleinfo" && row ("School EQ").twin == "School EQ"
+               && row ("FabFilter Pro-Q 3").source == "load" && row ("FabFilter Pro-Q 3").twin == "Pro-Q 3"
+               && row ("Broken").source == "cache_failed" && row ("Kept").source == "cache" && row ("Kept").ids.size() == 1 && row ("Kept").ids[0].uid == 0x1234 && row ("Kept").ids[0].source == "cache"
+               && row ("Kept").twin == "Kept" && row ("Lonely").source == "load" && row ("Lonely").twin.isEmpty() && row ("WaveShell1-VST3 14").source == "shell"
+               && reread.get (Vst3IdentityCache::key (failing, "1.0")).getProperty ("state", "").toString() == "crashed" && ! reread.has (Vst3IdentityCache::key (cached, "2.1"))
+               && auTwinByBundleName ("FabFilter Pro-Q 3", aus) == "Pro-Q 3" && auTwinByBundleName ("Pro-Q 3", aus) == "Pro-Q 3" && auTwinByBundleName ("Acme Pro-Q 3", aus).isEmpty()
+               && picks.size() == 1 && picks[0].name == "Band 1 Gain" && picks[0].v3 == -1
+               && bridgeSpec (picks, true) == "@Band%201%20Gain:0.100000,0.300000,0.500000,0.700000,0.900000" && bridgeSpec (picks, false).startsWith ("3:")
+               && rbs.contains ("if (idxS.startsWithChar ('@'))") && rbs.contains ("clean (ps[i]->getName (128)).trim() == want") && rbs.contains ("std::printf (\"missing\\tname\\t%s\\n\", want.toRawUTF8()); continue;")
+               && stage.contains ("if (pr.source == \"load\")") && stage.indexOf ("runChild (") > stage.indexOf ("if (pr.source == \"load\")")
+               && stage.contains ("idCache.put (pr.key, {}, st, why);") && stage.contains ("ids = { id }; idCache.put (pr.key, ids);")
+               && stage.contains ("if (pr.source == \"cache_failed\")") && stage.contains ("if (bridgeDir.getChildFile (bridgeRecordName (d)).existsAsFile())")
+               && stage.contains ("bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps, bridgeDir, window, &bridgeLoads)") && stage.contains ("vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache)"),
+               "wizard WZ-VST3-2: identity from moduleinfo (JUCE's uid from the CID), the cache (failures too) or ONE load then cached; twins with no load (class name, vendor-prefixed bundle name); one bridge read per version; the VST3 read by name, the AU's list from the store");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

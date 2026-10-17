@@ -344,38 +344,70 @@ inline std::vector<BridgePick> bridgeControls (const std::vector<std::pair<int, 
     }
     return out;
 }
-// one bridge read: the AU twin's parameter list, then both formats at 10 / 30 / 50 / 70 / 90 % on the picked controls (one load each),
-// written as read-back records (ej_readback_sweep/1, "purpose": "bridge", tagged by format) under <dir>
-inline juce::String bridgeRead (const SweepOptions& opt, const juce::PluginDescription& au, const juce::PluginDescription& v3,
-                                const std::vector<std::pair<int, juce::String>>& v3Params, const juce::File& dir, bool& window)
+inline juce::String bridgeRecordName (const juce::PluginDescription& d);
+// the AU's role-named parameters (the trust role table), at most 12 - the bridge's controls when the VST3's own list is not in hand
+inline std::vector<BridgePick> roleNamedParams (const std::vector<std::pair<int, juce::String>>& au, int cap = 12)
 {
-    window = false;
-    const auto lr = runChild ({ opt.probe.getFullPathName(), au.name, au.fileOrIdentifier, juce::String::toHexString (au.uniqueId), "--list-params" }, opt.timeoutMs);
-    if (lr.kind == ChildResult::Kind::uiShown) { window = true; return "a window appeared on the AU twin (licence?) - closed, not clicked"; }
-    const auto auParams = paramsOfList (lr.out);
-    const auto picks = bridgeControls (auParams, v3Params);
+    std::vector<BridgePick> out;
+    for (const auto& [ai, an] : au) { auto* o = new juce::DynamicObject(); o->setProperty ("name", an); if (trust::roleOf (juce::var (o)).role.isNotEmpty()) out.push_back ({ ai, -1, an }); if ((int) out.size() >= cap) break; }
+    return out;
+}
+// the probe spec for one format: indices where known, else "@<escaped name>" (the probe finds it by name in the same load - VST3 SPEED)
+inline juce::String bridgeSpec (const std::vector<BridgePick>& picks, bool vst3Side)
+{
+    juce::StringArray parts;
+    for (const auto& p : picks)
+    {
+        const int idx = vst3Side ? p.v3 : p.au;
+        parts.add ((idx >= 0 ? juce::String (idx) : "@" + juce::URL::addEscapeChars (p.name, false)) + ":0.100000,0.300000,0.500000,0.700000,0.900000");
+    }
+    return parts.joinIntoString (";");
+}
+// one bridge read (VST3 SPEED, 17 Oct): the AU's parameter list from its map in the store when there is one (else one list load), the VST3
+// addressed by name when its own list is not in hand (identity from moduleinfo or the cache); then both formats at 10 / 30 / 50 / 70 / 90 %
+// on the picked controls, one load each, written as read-back records ("purpose": "bridge", tagged by format) under <dir>
+inline juce::String bridgeRead (const SweepOptions& opt, const juce::PluginDescription& au, const juce::PluginDescription& v3,
+                                std::vector<std::pair<int, juce::String>> auParams, const std::vector<std::pair<int, juce::String>>& v3Params,
+                                const juce::File& dir, bool& window, int* loads = nullptr)
+{
+    window = false; auto count = [&] { if (loads != nullptr) ++*loads; };
+    if (auParams.empty())
+    {
+        const auto lr = runChild ({ opt.probe.getFullPathName(), au.name, au.fileOrIdentifier, juce::String::toHexString (au.uniqueId), "--list-params" }, opt.timeoutMs); count();
+        if (lr.kind == ChildResult::Kind::uiShown) { window = true; return "a window appeared on the AU twin (licence?) - closed, not clicked"; }
+        auParams = paramsOfList (lr.out);
+    }
+    const auto picks = v3Params.empty() ? roleNamedParams (auParams) : bridgeControls (auParams, v3Params);
     if (picks.empty()) return "no role-named control in both formats - nothing to read for the bridge";
-    dir.createDirectory();
+    dir.createDirectory(); int read = 0;
     for (const bool isV3 : { false, true })
     {
         const auto& d = isV3 ? v3 : au;
-        std::vector<readback::Want> ws; juce::StringArray parts;
-        for (const auto& p : picks)
-        {
-            readback::Want w; w.index = isV3 ? p.v3 : p.au; w.name = p.name; w.kind = "anchored"; w.norms = { 0.1, 0.3, 0.5, 0.7, 0.9 };
-            juce::StringArray ns; for (double x : w.norms) ns.add (juce::String (x, 6)); parts.add (juce::String (w.index) + ":" + ns.joinIntoString (",")); ws.push_back (w);
-        }
-        const auto r = runProbeCall ({ opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--text-at-norms-multi", parts.joinIntoString (";") }, opt.timeoutMs);
+        const auto r = runProbeCall ({ opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--text-at-norms-multi", bridgeSpec (picks, isV3) }, opt.timeoutMs); count();
         if (r.kind == ChildResult::Kind::uiShown) { window = true; return "a window appeared (licence?) - closed, not clicked"; }
+        const auto got = readback::parse (r.out);
+        std::vector<readback::Want> ws;   // by what the probe read: a name found in this load carries its index here
+        for (const auto& [idx, g] : got) for (const auto& p : picks) if (g.name.trim() == p.name.trim()) { readback::Want w; w.index = idx; w.name = p.name; w.kind = "anchored"; w.norms = { 0.1, 0.3, 0.5, 0.7, 0.9 }; ws.push_back (w); break; }
+        if (isV3) read = (int) ws.size();
         auto* id = new juce::DynamicObject(); id->setProperty ("name", d.name); id->setProperty ("version", d.version); id->setProperty ("format", fmtTag (d));
         auto* mm = new juce::DynamicObject(); mm->setProperty ("identity", juce::var (id));
-        auto rec = readback::record (juce::var (mm), ws, readback::parse (r.out), d.version);
+        auto rec = readback::record (juce::var (mm), ws, got, d.version);
         rec.getDynamicObject()->setProperty ("purpose", "bridge"); rec.getDynamicObject()->setProperty ("measuredAt", nowStamp());
         rec.getDynamicObject()->setProperty ("plugin_id", fmtTag (d) + "|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version);
         rec.getDynamicObject()->setProperty ("twin_plugin_id", fmtTag (isV3 ? au : v3) + "|" + juce::String::toHexString ((isV3 ? au : v3).uniqueId).toLowerCase() + "|" + (isV3 ? au : v3).version);
-        dir.getChildFile (fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId).toLowerCase() + "_" + d.version + ".readback.json").replaceWithText (juce::JSON::toString (rec) + "\n");
+        dir.getChildFile (bridgeRecordName (d)).replaceWithText (juce::JSON::toString (rec) + "\n");
     }
-    return juce::String ((int) picks.size()) + " control(s) read in both formats";
+    return juce::String (read) + " control(s) read in both formats";
+}
+inline juce::String bridgeRecordName (const juce::PluginDescription& d) { return fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId).toLowerCase() + "_" + d.version + ".readback.json"; }
+// the AU's parameter list from its map in the store (the wizard's own map: params [{index, name}]) - empty when the store has none
+inline std::vector<std::pair<int, juce::String>> paramsFromStore (const juce::File& ledger, const std::map<juce::String, StoreEntry>& store, const juce::PluginDescription& d)
+{
+    std::vector<std::pair<int, juce::String>> ps;
+    const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; const auto it = store.find (k); if (it == store.end()) return ps;
+    const auto m = juce::JSON::parse (ledger.getChildFile ("maps").getChildFile (it->second.fp + ".json").loadFileAsString());   // held by name
+    if (const auto* a = m.getProperty ("params", {}).getArray()) for (const auto& p : *a) ps.push_back ({ (int) p.getProperty ("index", -1), p.getProperty ("name", "").toString() });
+    return ps;
 }
 
 inline int runWizard (const WizardOptions& wo)
@@ -427,62 +459,90 @@ inline int runWizard (const WizardOptions& wo)
         plugins.push_back (r);
     }
     auto store = mapStore (opt.ledger);
-    // THE VST3s (Kathy, 17 Oct, rulings 3): found from their bundles (nothing loaded), then each non-shell one loaded ONCE for its identity
-    // (class name, uid, version) and parameter list - after the same licence / PACE / hardware checks an AudioUnit gets. A twin of an
-    // installed AudioUnit is bridge-read (vst3Lane); one with no twin joins the run as its own plugin (its map, its rows, its Phase B).
-    // The VST3-only products are listed for every Phase B child (EJ_VST3_EXTRAS, installedPlugins)
+    // THE VST3s (Kathy, 17 Oct, rulings 3; VST3 SPEED the same day): found from their bundles, identified WITHOUT a load wherever the bundle
+    // says who it is (moduleinfo.json: class name, CID -> the JUCE uid, version, vendor) or an earlier run did (the identity cache, by bundle
+    // path + version, failures too) - vst3IdentityPlan. Only a bundle with neither is loaded, ONCE, and its answer cached. A twin of an
+    // installed AudioUnit is bridge-read (the AU's list from the store when it is mapped, the VST3 by name when its list is not in hand;
+    // never twice for one version); one with no twin joins the run as its own plugin (EJ_VST3_EXTRAS, installedPlugins). The same licence /
+    // PACE / hardware checks as an AudioUnit come before any load
     juce::Array<juce::var> vst3Rows; juce::Array<juce::var> vst3Extras;
     if (! wo.plan && std::getenv ("EJ_WIZARD_NO_VST3") == nullptr)
     {
-        std::map<juce::String, juce::PluginDescription> auByName; juce::StringArray auNames;
-        for (const auto& r : registryAudioUnits()) { auByName[r.desc.name.toLowerCase()] = r.desc; auNames.add (r.desc.name); }
+        std::map<juce::String, juce::PluginDescription> auByName; juce::StringArray auNames; std::vector<std::pair<juce::String, juce::String>> auPairs;
+        for (const auto& r : registryAudioUnits()) { auByName[r.desc.name.toLowerCase()] = r.desc; auNames.add (r.desc.name); auPairs.push_back ({ r.desc.name, r.desc.manufacturerName }); }
         const auto licF = out.getChildFile ("licence_windows.json"); const auto licMem = wizroute::loadLicenceMemory (licF);
         const bool paceOk = juce::File ("/Library/Application Support/PACEAntiPiracy/LicenseSupport").exists() || juce::File ("/Applications/iLok License Manager.app").exists();
+        Vst3IdentityCache idCache (opt.ledger.getChildFile ("vst3_identity.json"));
+        const auto bridgeDir = out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge");
         auto vrow = [&] (const juce::String& product, const juce::String& pid, const juce::String& st, const juce::String& why)
         { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);
           row->setProperty ("state", st); row->setProperty ("why", why); vst3Rows.add (juce::var (row)); return row; };
-        const auto bundlesV3 = installedVst3Bundles();
-        say ("WIZARD: " + juce::String ((int) bundlesV3.size()) + " VST3 bundle(s) found (nothing loaded yet)");
-        for (const auto& b : bundlesV3)
+        const auto plan = vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache);
+        std::map<juce::String, int> by; int identityLoads = 0, bridgeLoads = 0, bridgesKept = 0;
+        for (const auto& pr : plan)
         {
             if (wizardStop() != 0) break;
-            const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase();
-            if (! (wo.only.isEmpty() || std::any_of (wo.only.begin(), wo.only.end(), [&] (const juce::String& o) { return o.equalsIgnoreCase (b.name) || b.name.containsIgnoreCase (o); }))) continue;
-            if (b.shell) { vrow (b.name, {}, "out_of_scope", "a WaveShell VST3 bundle: its plugins are measured through their AudioUnits"); continue; }
+            const auto& b = pr.b; const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase();
+            auto matchesOnly = [&] (const juce::String& n) { return std::any_of (wo.only.begin(), wo.only.end(), [&] (const juce::String& o) { return o.equalsIgnoreCase (n) || n.containsIgnoreCase (o); }); };
+            if (! wo.only.isEmpty() && ! matchesOnly (b.name) && std::none_of (pr.ids.begin(), pr.ids.end(), [&] (const Vst3Identity& i) { return matchesOnly (i.name); })) continue;
+            ++by[pr.source];
+            if (pr.source == "shell") { vrow (b.name, {}, "out_of_scope", "a WaveShell VST3 bundle: its plugins are measured through their AudioUnits"); continue; }
+            if (pr.source == "cache_failed") { const auto e = idCache.get (pr.key); vrow (b.name, {}, e.getProperty ("state", "").toString(), e.getProperty ("why", "").toString() + " (remembered at this version: not loaded again)"); continue; }
             if (skipped.contains (b.name)) { vrow (b.name, {}, "crashed", "the wizard closed while checking it: skipped for good, never retried"); continue; }
             if (licMem.count (bundleKey)) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered)); continue; }
-            juce::PluginDescription d; d.pluginFormatName = "VST3"; d.name = b.name; d.fileOrIdentifier = path; d.version = b.version; d.manufacturerName = b.vendor;
-            juce::String pw; const bool pace = paceHeld (d, {}, pw) && pw.startsWith ("PACE");
+            juce::PluginDescription d0; d0.pluginFormatName = "VST3"; d0.name = b.name; d0.fileOrIdentifier = path; d0.version = b.version; d0.manufacturerName = b.vendor;
+            juce::String pw; const bool pace = paceHeld (d0, {}, pw) && pw.startsWith ("PACE");
             if (pace && ! paceOk) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::paceNoIlok)); continue; }
-            if (apb::isApbProduct (d.name, d.manufacturerName)) { const auto& a = apb::device (apb::assumeFlag()); if (! a.present) { vrow (b.name, {}, "needs_hardware", juce::String (apb::kNotConnected) + " (" + a.how + "); not loaded"); continue; } }
-            const auto r = runChild ({ opt.probe.getFullPathName(), d.name, path, "0", "--list-params" }, opt.timeoutMs);
-            if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licF, bundleKey); vrow (b.name, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); continue; }
-            const auto ps = paramsOfList (r.out); const auto cls = readback::vst3ClassOf (r.out), uid = readback::vst3UidOf (r.out), ver = readback::vst3VersionOf (r.out);
-            if (! r.cleanExit() || ps.empty() || uid.isEmpty()) { vrow (b.name, {}, r.cleanExit() ? "wont_load" : "crashed", "the VST3 did not load (" + (r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); continue; }
-            if (cls.isNotEmpty()) d.name = cls; if (ver.isNotEmpty()) d.version = ver;
-            if (const auto vv = readback::vst3FieldOf (r.out, "vendor"); vv.isNotEmpty()) d.manufacturerName = vv;   // the class's own vendor (the folder is only a guess)
-            d.uniqueId = d.deprecatedUid = (int) (juce::int64) uid.getHexValue64();
-            const auto pid = wizroute::pluginId (uid, d.version, "VST3");
-            juce::String twin;
-            if (vst3Lane (d.name, auNames, twin) == "bridge")
+            if (apb::isApbProduct (d0.name, d0.manufacturerName)) { const auto& a = apb::device (apb::assumeFlag()); if (! a.present) { vrow (b.name, {}, "needs_hardware", juce::String (apb::kNotConnected) + " (" + a.how + "); not loaded"); continue; } }
+            auto ids = pr.ids; std::vector<std::pair<int, juce::String>> ps;
+            if (pr.source == "load")   // neither the bundle nor an earlier run says who it is: ONE load, and its answer (or its failure) is kept
             {
-                bool window = false; const auto& au = auByName[twin.toLowerCase()];
-                juce::String apw; if (! paceOk && paceHeld (au, componentBundles(), apw) && apw.startsWith ("PACE")) { vrow (d.name, pid, "needs_licence", "its AU twin is iLok-protected and this Mac has no iLok: not read"); continue; }
-                const auto why = bridgeRead (opt, au, d, ps, out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge"), window);
-                if (window) wizroute::rememberLicenceWindow (licF, bundleKey);
-                auto* row = vrow (d.name, pid, window ? "needs_licence" : why.endsWith ("in both formats") ? "bridge_read" : "not_measurable", why);
-                row->setProperty ("twin_plugin_id", wizroute::pluginId (juce::String::toHexString (au.uniqueId), au.version, "AudioUnit"));
-                say ("  " + d.name.paddedRight (' ', 30) + " VST3 twin of the AU: " + why); continue;
+                const auto r = runChild ({ opt.probe.getFullPathName(), d0.name, path, "0", "--list-params" }, opt.timeoutMs); ++identityLoads;
+                if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licF, bundleKey); idCache.put (pr.key, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); vrow (b.name, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); continue; }
+                ps = paramsOfList (r.out); const auto cls = readback::vst3ClassOf (r.out), uid = readback::vst3UidOf (r.out), ver = readback::vst3VersionOf (r.out);
+                if (! r.cleanExit() || ps.empty() || uid.isEmpty())
+                { const auto st = r.cleanExit() ? juce::String ("wont_load") : juce::String ("crashed"), why = "the VST3 did not load (" + (r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")";
+                  idCache.put (pr.key, {}, st, why); vrow (b.name, {}, st, why); continue; }
+                Vst3Identity id; id.name = cls.isNotEmpty() ? cls : b.name; id.version = ver.isNotEmpty() ? ver : b.version; id.uid = (int) (juce::int64) uid.getHexValue64(); id.source = "load";
+                id.vendor = readback::vst3FieldOf (r.out, "vendor").isNotEmpty() ? readback::vst3FieldOf (r.out, "vendor") : b.vendor;
+                ids = { id }; idCache.put (pr.key, ids);
             }
-            const auto fp = echojay::fingerprintForDescription (d, (int) ps.size()); const auto cat = wizard::wizardCategory (d.name, catalogue);
-            opt.ledger.getChildFile ("maps").createDirectory();
-            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat, "VST3")) + "\n");
-            store[uid + "|" + d.version] = { fp, cat };
-            plugins.push_back ({ d, echojay::identityKeyForDescription (d), "VST3|" + uid });
-            auto* x = new juce::DynamicObject(); x->setProperty ("name", d.name); x->setProperty ("file", path); x->setProperty ("uid", uid); x->setProperty ("version", d.version); x->setProperty ("vendor", d.manufacturerName);
-            vst3Extras.add (juce::var (x));
-            say ("  " + d.name.paddedRight (' ', 30) + " VST3 with no AU twin: measured as its own plugin (" + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12) + ")");
+            else if (pr.source == "moduleinfo") idCache.put (pr.key, ids);   // the metadata's answer, kept with the rest
+            for (const auto& id : ids)
+            {
+                juce::PluginDescription d = d0; d.name = id.name; d.version = id.version; d.uniqueId = d.deprecatedUid = id.uid; if (id.vendor.isNotEmpty()) d.manufacturerName = id.vendor;
+                const auto uid = juce::String::toHexString (id.uid).toLowerCase(); const auto pid = wizroute::pluginId (uid, d.version, "VST3");
+                juce::String twin;
+                if (vst3Lane (d.name, auNames, twin) == "bridge")
+                {
+                    const auto& au = auByName[twin.toLowerCase()];
+                    const auto twinPid = wizroute::pluginId (juce::String::toHexString (au.uniqueId), au.version, "AudioUnit");
+                    if (bridgeDir.getChildFile (bridgeRecordName (d)).existsAsFile())   // read on an earlier run at this version: not loaded again
+                    { auto* row = vrow (d.name, pid, "bridge_read", "read beside its AU on an earlier run (not loaded again)"); row->setProperty ("twin_plugin_id", twinPid); ++bridgesKept; continue; }
+                    juce::String apw; if (! paceOk && paceHeld (au, componentBundles(), apw) && apw.startsWith ("PACE")) { vrow (d.name, pid, "needs_licence", "its AU twin is iLok-protected and this Mac has no iLok: not read"); continue; }
+                    bool window = false;
+                    const auto why = bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps, bridgeDir, window, &bridgeLoads);
+                    if (window) wizroute::rememberLicenceWindow (licF, bundleKey);
+                    auto* row = vrow (d.name, pid, window ? "needs_licence" : why.endsWith ("in both formats") && ! why.startsWith ("0 ") ? "bridge_read" : "not_measurable", why);
+                    row->setProperty ("twin_plugin_id", twinPid); row->setProperty ("identity_from", id.source);
+                    say ("  " + d.name.paddedRight (' ', 30) + " VST3 twin of the AU (identity: " + id.source + "): " + why); continue;
+                }
+                if (! ps.empty())   // loaded just now: its parameter list is the map (the mapping step need not load it again)
+                {
+                    const auto fp = echojay::fingerprintForDescription (d, (int) ps.size()); const auto cat = wizard::wizardCategory (d.name, catalogue);
+                    opt.ledger.getChildFile ("maps").createDirectory();
+                    opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat, "VST3")) + "\n");
+                    store[uid + "|" + d.version] = { fp, cat };
+                }
+                plugins.push_back ({ d, echojay::identityKeyForDescription (d), "VST3|" + uid });
+                auto* x = new juce::DynamicObject(); x->setProperty ("name", d.name); x->setProperty ("file", path); x->setProperty ("uid", uid); x->setProperty ("version", d.version); x->setProperty ("vendor", d.manufacturerName);
+                vst3Extras.add (juce::var (x));
+                say ("  " + d.name.paddedRight (' ', 30) + " VST3 with no AU twin (identity: " + id.source + "): joins the run as its own plugin");
+            }
         }
+        say ("WIZARD: VST3 - " + juce::String ((int) plan.size()) + " bundle(s); identity from moduleinfo " + juce::String (by["moduleinfo"]) + ", from the cache " + juce::String (by["cache"])
+             + ", loaded " + juce::String (identityLoads) + " (now cached), remembered failing " + juce::String (by["cache_failed"]) + ", WaveShell " + juce::String (by["shell"])
+             + "; bridge reads: " + juce::String (bridgeLoads) + " load(s), " + juce::String (bridgesKept) + " kept from an earlier run");
         const auto xf = out.getChildFile ("vst3_extras.json"); xf.replaceWithText (juce::JSON::toString (juce::var (vst3Extras)) + "\n");
         setenv ("EJ_VST3_EXTRAS", xf.getFullPathName().toRawUTF8(), 1);
     }

@@ -328,24 +328,48 @@ inline ReadyBar readyBar (const juce::var& p, const juce::String& current)
 }
 // THE PAUSE SAYS THE BAR'S % (Kathy, 15 Oct: the pause said "25 measured so far" while the checkpoint said 107 of 509 with a result - two
 // different counts): "Paused at 43%" on the screen, "43% done." in the close question - the same number as the bar, never a count
-// SHARING THE MAC (Kathy, 15 Oct): a DAW open -> the wizard pauses by itself and carries on by itself when it closes. The DAW is read from a
-// running process's executable path - the .app it belongs to - and never touched. Names as the user knows them
-inline juce::String dawFromAppPath (const juce::String& execPath)
+// SHARING THE MAC (Kathy, 15 Oct): a DAW open -> the wizard pauses by itself and carries on by itself when it closes; the DAW is never touched.
+// (17 Oct: identified by bundle id + main executable, below - the 15 Oct rule took any process inside the .app, helpers too)
+// THE DAW CHECK BY BUNDLE ID (Kathy, 17 Oct, "DAW PAUSE": the wizard paused for a Logic with no window). A process is a DAW only when it
+// is the MAIN executable of an app whose bundle id is a DAW's - a helper inside the app (an XPC service, a plug-in host, an agent) has
+// another path and is never a DAW. The pid, path and bundle id go in the log, so a pause always says what it saw
+inline juce::String dawFromBundleId (const juce::String& bundleId)
 {
-    const auto app = execPath.upToFirstOccurrenceOf (".app/", false, true).fromLastOccurrenceOf ("/", false, false).trim();   // the outermost .app
-    if (app.isEmpty() || ! execPath.containsIgnoreCase (".app/")) return {};
-    struct D { const char* prefix; const char* name; };
-    static const D k[] { { "Logic Pro", "Logic" }, { "Pro Tools", "Pro Tools" }, { "Ableton Live", "Ableton Live" }, { "Live", "Ableton Live" }, { "Cubase", "Cubase" },
-                         { "Studio One", "Studio One" }, { "REAPER", "Reaper" }, { "FL Studio", "FL Studio" }, { "Bitwig Studio", "Bitwig" },
-                         { "Digital Performer", "Digital Performer" }, { "LUNA", "LUNA" } };
+    struct D { const char* id; const char* name; };
+    static const D k[] { { "com.apple.logic10", "Logic" }, { "com.apple.logic.pro", "Logic" }, { "com.avid.ProTools", "Pro Tools" }, { "com.ableton.live", "Ableton Live" },
+                         { "com.steinberg.cubase", "Cubase" }, { "com.steinberg.nuendo", "Nuendo" }, { "com.presonus.studioone", "Studio One" }, { "com.cockos.reaper", "Reaper" },
+                         { "com.image-line.flstudio", "FL Studio" }, { "com.bitwig.BitwigStudio", "Bitwig" }, { "com.motu.DigitalPerformer", "Digital Performer" },
+                         { "com.uaudio.luna", "LUNA" } };
+    const auto b = bundleId.trim();
     for (const auto& d : k)
     {
-        const juce::String p (d.prefix);
-        if (p == "Live" ? app == "Live" : (app.startsWithIgnoreCase (p) && (app.length() == p.length() || ! juce::CharacterFunctions::isLetter (app[p.length()])))) return d.name;
+        const juce::String p (d.id);   // the id itself, or a versioned form of it ("com.presonus.studioone6", "com.steinberg.cubase13") - never a sub-id
+        if (b.equalsIgnoreCase (p) || (b.startsWithIgnoreCase (p) && b.length() > p.length() && b.substring (p.length()).containsOnly ("0123456789"))) return d.name;
     }
     return {};
 }
-inline juce::String dawPausedText (const juce::String& daw) { return "Paused while " + daw + " is open - it carries on by itself when you close it."; }
+// the outermost .app a process runs from ("/Applications/Logic Pro.app/Contents/XPCServices/x.xpc/..." -> "/Applications/Logic Pro.app")
+inline juce::String outermostApp (const juce::String& execPath)
+{
+    const int i = execPath.indexOfIgnoreCase (".app/"); return i < 0 ? juce::String() : execPath.substring (0, i + 4);
+}
+// is this process the app's own main executable (<app>/Contents/MacOS/<CFBundleExecutable>)?
+inline bool isMainExecutable (const juce::String& execPath, const juce::String& appPath, const juce::String& bundleExecutable)
+{
+    return appPath.isNotEmpty() && bundleExecutable.isNotEmpty() && execPath == appPath + "/Contents/MacOS/" + bundleExecutable;
+}
+struct DawHit { juce::String name, bundleId, path; int pid = 0; bool windows = false; bool any() const { return name.isNotEmpty(); } };
+inline juce::String dawLogLine (const DawHit& h)
+{
+    return h.name + " (pid " + juce::String (h.pid) + ", " + h.bundleId + ", " + h.path + ", " + (h.windows ? "a window open" : "no window open") + ")";
+}
+inline juce::String dawPausedText (const juce::String& daw, bool windows = true)
+{
+    if (! windows) return daw + " is still running in the background (even with no window open) - quit it with Cmd-Q or from the Dock and the wizard carries on by itself.";
+    return "Paused while " + daw + " is open - it carries on by itself when you close it.";
+}
+inline juce::String carryOnAnywayWarning (const juce::String& daw) { return "Measuring while " + daw + " runs can slow both down and change the results - only if you're not using it."; }
+inline constexpr const char* kCarryOnAnyway = "Carry on anyway";
 inline constexpr double kDawQuietS = 10.0;   // closed for this long before carrying on (a DAW restarting is not a close)
 inline juce::String pausedTitle (int pct) { return "Paused at " + percentWords (pct); }
 inline juce::String percentDoneWords (int pct) { return percentWords (pct) + " done"; }
