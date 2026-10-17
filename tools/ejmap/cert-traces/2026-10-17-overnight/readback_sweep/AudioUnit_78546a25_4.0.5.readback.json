@@ -1,0 +1,176 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "ValhallaVintageVerb",
+  "version": "4.0.5",
+  "map_version": "4.0.5",
+  "map_fp": "788aac47aef61564286ef455e6dbabed9e512b5bd63c0a69d1c27e81cfb112db",
+  "controls": [
+    {
+      "name": "Mix",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "PreDelay",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "Decay",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "Size",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "Attack",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "BassMult",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "BassXover",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "HighShelf",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "HighFreq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "EarlyDiffusion",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "LateDiffusion",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "ModRate",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "ModDepth",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "HighCut",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "LowCut",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25",
+        "0.500000": "0.5",
+        "0.750000": "0.75"
+      }
+    },
+    {
+      "name": "ColorMode",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "0",
+        "0.700000": "0.7"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Bypass",
+      "index": 17,
+      "why": "the probe returned nothing for this index"
+    }
+  ],
+  "measuredAt": "20261017T000923"
+}

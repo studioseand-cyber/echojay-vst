@@ -1,0 +1,314 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "AudioTrack (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "e2d1f489f9aa966527df73e06387296e0c5bdb7655ec6abbe4218b7d29d9f444",
+  "controls": [
+    {
+      "name": "Band 1 - On/Off",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Band 1 - Filter",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band 1 - Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 1 - Freq",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band 1 - Q",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.4",
+        "0.500000": "3.9",
+        "0.750000": "10.8"
+      }
+    },
+    {
+      "name": "Band 2 - On/Off",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Band 2 - Filter",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.500000": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band 2 - Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 2 - Freq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band 2 - Q",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.4",
+        "0.500000": "3.9",
+        "0.750000": "10.8"
+      }
+    },
+    {
+      "name": "Band 3 - Filter",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.500000": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band 3 - Gain",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 3 - Freq",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band 3 - Q",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.4",
+        "0.500000": "3.9",
+        "0.750000": "10.8"
+      }
+    },
+    {
+      "name": "Band 4 - On/Off",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Band 4 - Filter",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band 4 - Gain",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 4 - Freq",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band 4 - Q",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.4",
+        "0.500000": "3.9",
+        "0.750000": "10.8"
+      }
+    },
+    {
+      "name": "Gate Thresh",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-54.0",
+        "0.550000": "-36.0",
+        "0.775000": "-18.0"
+      }
+    },
+    {
+      "name": "Gate Floor",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-54.0",
+        "0.550000": "-36.0",
+        "0.775000": "-18.0"
+      }
+    },
+    {
+      "name": "Gate Attack",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.00",
+        "0.500000": "10.0",
+        "0.750000": "100.0"
+      }
+    },
+    {
+      "name": "Gate Release",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.248437": "10",
+        "0.496875": "97",
+        "0.745312": "958"
+      }
+    },
+    {
+      "name": "Comp Thresh",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-60.0",
+        "0.500000": "-40.0",
+        "0.750000": "-20.0"
+      }
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.50",
+        "0.500000": "4.47",
+        "0.750000": "13.4"
+      }
+    },
+    {
+      "name": "Comp Attack",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.00",
+        "0.500000": "10.0",
+        "0.750000": "100.0"
+      }
+    },
+    {
+      "name": "Comp Release",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.248437": "10",
+        "0.496875": "97",
+        "0.745312": "958"
+      }
+    },
+    {
+      "name": "In Gain",
+      "index": 28,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-19.5",
+        "0.550000": "-10.4",
+        "0.775000": "-4.4"
+      }
+    },
+    {
+      "name": "Out Gain",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "Band Selector",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "Band 2",
+        "0.500000": "Band 3",
+        "0.750000": "Band 3"
+      }
+    },
+    {
+      "name": "PRECISION_SELECTOR",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "Precision X1",
+        "0.500000": "Precision X1",
+        "0.750000": "Precision X2"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000553"
+}

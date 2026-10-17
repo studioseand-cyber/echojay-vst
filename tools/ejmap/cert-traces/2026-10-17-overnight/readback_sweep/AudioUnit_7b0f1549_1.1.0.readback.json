@@ -1,0 +1,448 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Bettermaker EQ232D",
+  "version": "1.1.0",
+  "map_version": "1.1.0",
+  "map_fp": "a7b08cab07e67379e0adb38f8765ef57d1d1761b11531747c04fd84972a5226a",
+  "controls": [
+    {
+      "name": "ENGAGE 1",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "HPF IN 1",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "HPF FREQ 1",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "32 Hz",
+        "0.500000": "61 Hz",
+        "0.750000": "131 Hz"
+      }
+    },
+    {
+      "name": "EQ1 IN 1",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "EQ1 GAIN 1",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.9 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "4.0 dB"
+      }
+    },
+    {
+      "name": "EQ1 Q 1",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.7",
+        "0.500000": "1.3",
+        "0.750000": "2.0"
+      }
+    },
+    {
+      "name": "EQ1 FREQ 1",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "206 Hz",
+        "0.500000": "363 Hz",
+        "0.750000": "575 Hz"
+      }
+    },
+    {
+      "name": "EQ2 IN 1",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "EQ2 GAIN 1",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.9 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "4.0 dB"
+      }
+    },
+    {
+      "name": "EQ2 Q 1",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.7",
+        "0.500000": "1.3",
+        "0.750000": "2.0"
+      }
+    },
+    {
+      "name": "EQ2 FREQ 1",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.1 kHz",
+        "0.500000": "5.0 kHz",
+        "0.750000": "8.5 kHz"
+      }
+    },
+    {
+      "name": "PEQ IN 1",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "LO BOOST 1",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "LO ATTEN 1",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "LO CPS 1",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30 Hz",
+        "0.500000": "60 Hz",
+        "0.750000": "60 Hz"
+      }
+    },
+    {
+      "name": "HI BOOST 1",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "HI ATTEN 1",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "HI BW 1",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "KCS BST 1",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5 kHz",
+        "0.500000": "8 kHz",
+        "0.750000": "10 kHz"
+      }
+    },
+    {
+      "name": "KCS ATT 1",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5 kHz",
+        "0.500000": "10 kHz",
+        "0.750000": "20 kHz"
+      }
+    },
+    {
+      "name": "LVL OUT 1",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.9 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "4.0 dB"
+      }
+    },
+    {
+      "name": "ENGAGE 2",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "HPF IN 2",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "HPF FREQ 2",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "32 Hz",
+        "0.500000": "61 Hz",
+        "0.750000": "131 Hz"
+      }
+    },
+    {
+      "name": "EQ1 IN 2",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "EQ1 GAIN 2",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.9 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "4.0 dB"
+      }
+    },
+    {
+      "name": "EQ1 Q 2",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.7",
+        "0.500000": "1.3",
+        "0.750000": "2.0"
+      }
+    },
+    {
+      "name": "EQ1 FREQ 2",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "206 Hz",
+        "0.500000": "363 Hz",
+        "0.750000": "575 Hz"
+      }
+    },
+    {
+      "name": "EQ2 IN 2",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "EQ2 GAIN 2",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.9 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "4.0 dB"
+      }
+    },
+    {
+      "name": "EQ2 Q 2",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.7",
+        "0.500000": "1.3",
+        "0.750000": "2.0"
+      }
+    },
+    {
+      "name": "EQ2 FREQ 2",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.1 kHz",
+        "0.500000": "5.0 kHz",
+        "0.750000": "8.5 kHz"
+      }
+    },
+    {
+      "name": "PEQ IN 2",
+      "index": 32,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "LO BOOST 2",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "LO ATTEN 2",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "LO CPS 2",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30 Hz",
+        "0.500000": "60 Hz",
+        "0.750000": "60 Hz"
+      }
+    },
+    {
+      "name": "HI BOOST 2",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "HI ATTEN 2",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "HI BW 2",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.5",
+        "0.500000": "7.0",
+        "0.750000": "10.5"
+      }
+    },
+    {
+      "name": "KCS BST 2",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5 kHz",
+        "0.500000": "8 kHz",
+        "0.750000": "10 kHz"
+      }
+    },
+    {
+      "name": "KCS ATT 2",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5 kHz",
+        "0.500000": "10 kHz",
+        "0.750000": "20 kHz"
+      }
+    },
+    {
+      "name": "LVL OUT 2",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.9 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "4.0 dB"
+      }
+    },
+    {
+      "name": "CHANNEL",
+      "index": 42,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "DUAL MONO",
+        "1.000000": "STEREO"
+      }
+    },
+    {
+      "name": "MS MATRIX",
+      "index": 43,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "OFF",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "SNAPSHOT",
+      "index": 44,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "0.333333": "B"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000906"
+}

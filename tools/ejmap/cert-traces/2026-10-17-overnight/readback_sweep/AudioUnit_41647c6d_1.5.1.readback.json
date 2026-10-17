@@ -1,0 +1,619 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "bx_console Focusrite SC",
+  "version": "1.5.1",
+  "map_version": "1.5.1",
+  "map_fp": "769db8c804f9cb9e7a64b69794598ba2b9681c584216916d5573dec4b5c518ef",
+  "controls": [
+    {
+      "name": "Power",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mute",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Setting",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "0.333333": "B"
+      }
+    },
+    {
+      "name": "In Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+5.0 dB"
+      }
+    },
+    {
+      "name": "Virtual Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-103.8 dB",
+        "0.550000": "-92.5 dB",
+        "0.775000": "-81.3 dB"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-90.8 dB",
+        "0.550000": "-70.5 dB",
+        "0.775000": "-50.3 dB"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Out Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-29.9 dB",
+        "0.500000": "-10.0 dB",
+        "0.750000": "0.0 dB"
+      }
+    },
+    {
+      "name": "Monitoring",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Console Channel",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "19",
+        "0.750000": "54"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Stereo Mode",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Analog",
+        "1.000000": "Digital"
+      }
+    },
+    {
+      "name": "HPF On",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LPF On",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "HPF Frequency",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "42.0 Hz",
+        "0.500000": "82.5 Hz",
+        "0.750000": "165.0 Hz"
+      }
+    },
+    {
+      "name": "HPF x3",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LPF Frequency",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "15.0k Hz",
+        "0.500000": "10.1k Hz",
+        "0.750000": "6.2k Hz"
+      }
+    },
+    {
+      "name": "LPF /3",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn HPF Pos",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "0.250000": "Comp"
+      }
+    },
+    {
+      "name": "Dyn Peak EQ Pos",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "0.250000": "Comp"
+      }
+    },
+    {
+      "name": "Dyn LPF Pos",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "0.250000": "Comp"
+      }
+    },
+    {
+      "name": "Dyn LPF Freq",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.5k Hz",
+        "0.500000": "6.0k Hz",
+        "0.750000": "11.0k Hz"
+      }
+    },
+    {
+      "name": "Dyn HPF Freq",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28.0 Hz",
+        "0.500000": "100.0 Hz",
+        "0.750000": "155.0 Hz"
+      }
+    },
+    {
+      "name": "Dyn Peak EQ Gain",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+7.0 dB"
+      }
+    },
+    {
+      "name": "Dyn Peak EQ Freq",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.1k Hz",
+        "0.500000": "1.7k Hz",
+        "0.750000": "2.6k Hz"
+      }
+    },
+    {
+      "name": "Dyn Peak EQ Freq x10",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp On",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Threshold",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-13.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+10.0 dB"
+      }
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.200000": "2.0 : 1",
+        "0.400000": "3.0 : 1",
+        "0.600000": "5.0 : 1"
+      }
+    },
+    {
+      "name": "Comp Release",
+      "index": 28,
+      "kind": "anchored",
+      "displayAt": {
+        "0.225000": "0.2 s",
+        "0.450000": "0.5 s",
+        "0.675000": "1.6 s"
+      }
+    },
+    {
+      "name": "Comp Attack",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "22.7 ms",
+        "0.500000": "45.1 ms",
+        "0.750000": "67.6 ms"
+      }
+    },
+    {
+      "name": "Comp Makeupgain",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "+5.0 dB",
+        "0.500000": "+10.0 dB",
+        "0.750000": "+15.0 dB"
+      }
+    },
+    {
+      "name": "Comp Link",
+      "index": 31,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Mix",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25 %",
+        "0.500000": "50 %",
+        "0.750000": "75 %"
+      }
+    },
+    {
+      "name": "DeEsser On",
+      "index": 33,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser Bandpass Freq",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "300 Hz",
+        "0.500000": "1.6k Hz",
+        "0.750000": "6.5k Hz"
+      }
+    },
+    {
+      "name": "DeEsser Listen",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Threshold",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-27.5 dB",
+        "0.500000": "-15.0 dB",
+        "0.750000": "-2.5 dB"
+      }
+    },
+    {
+      "name": "Gate Range",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "20.0 dB",
+        "0.500000": "40.0 dB",
+        "0.750000": "60.0 dB"
+      }
+    },
+    {
+      "name": "Gate Hold",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "144 ms",
+        "0.500000": "308 ms",
+        "0.750000": "1.50 s"
+      }
+    },
+    {
+      "name": "Gate Release",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.2 s",
+        "0.500000": "0.9 s",
+        "0.750000": "2.6 s"
+      }
+    },
+    {
+      "name": "Gate Attack",
+      "index": 41,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Key",
+      "index": 42,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Key Listen",
+      "index": 43,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate On",
+      "index": 44,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Link",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Expander",
+      "index": 46,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "All EQ On",
+      "index": 47,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LF Gain",
+      "index": 49,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+9.0 dB"
+      }
+    },
+    {
+      "name": "EQ HF Gain",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+9.0 dB"
+      }
+    },
+    {
+      "name": "EQ HF On",
+      "index": 52,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LF On",
+      "index": 53,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LMF Q",
+      "index": 54,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.1",
+        "0.500000": "1.3",
+        "0.750000": "1.8"
+      }
+    },
+    {
+      "name": "EQ LMF Freq",
+      "index": 55,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "80 Hz",
+        "0.500000": "120 Hz",
+        "0.750000": "205 Hz"
+      }
+    },
+    {
+      "name": "EQ LMF Freq x3",
+      "index": 56,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LMF Gain",
+      "index": 57,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+7.0 dB"
+      }
+    },
+    {
+      "name": "EQ HMF Q",
+      "index": 58,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.1",
+        "0.500000": "1.3",
+        "0.750000": "1.8"
+      }
+    },
+    {
+      "name": "EQ HMF Freq",
+      "index": 59,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3k Hz",
+        "0.500000": "2.2k Hz",
+        "0.750000": "3.7k Hz"
+      }
+    },
+    {
+      "name": "EQ HMF Freq x3",
+      "index": 60,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ HMF Gain",
+      "index": 61,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+7.0 dB"
+      }
+    },
+    {
+      "name": "EQ HMF On",
+      "index": 62,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LMF On",
+      "index": 63,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ Position",
+      "index": 64,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Pre Dyn",
+        "1.000000": "Post Dyn"
+      }
+    },
+    {
+      "name": "Meter Position",
+      "index": 65,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Output",
+        "1.000000": "Input"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "EQ LF Freq",
+      "index": 48,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ HF Freq",
+      "index": 50,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T001713"
+}

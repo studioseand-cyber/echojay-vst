@@ -1,0 +1,90 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "EKramer DR (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "4278e9d48ade140b2cc0eb63fe561e1323b8454d39f102b177e8ba83273edcc0",
+  "controls": [
+    {
+      "name": "FX",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1",
+        "0.500000": "2",
+        "0.750000": "4"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Drum Type",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "BD",
+        "0.600000": "OH"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1",
+        "0.500000": "2",
+        "0.750000": "4"
+      }
+    },
+    {
+      "name": "Gate",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235132"
+}

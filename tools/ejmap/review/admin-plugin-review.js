@@ -4,7 +4,7 @@
  * ONE MODULE, TWO HOSTS. The operator console tab (public/js/admin-plugin-review.js in echojay-saas, key 'plugin-review', mounted by
  * admin-shell.js like admin-community.js) and the local page today (tools/ejmap/review/index.html, served by review_server.py). Both
  * hand it a ctx with el() and api2(); the routes are the only difference:
- *     GET   <base>            -> { schema: "ejmap_role_review/1", generated_at, items: [...], answers: { <id>: answer } }
+ *     GET   <base>            -> { schema: "ejmap_role_review/1", generated_at, first_category?, items: [...], answers: { <id>: answer } }
  *     POST  <base>  { id, verdict, role?, section? } -> { ok: true, answer | null, counts }
  *           verdict: "yes" (the suggestion) | "role" (the role + section picked in the dropdown) | "no" (not the suggestion, no role given) |
  *                    "other" (not a main control) | "unsure" (counts neither way: the needs-measuring / ask-Sean list) | "clear"
@@ -12,7 +12,8 @@
  *
  * WHAT A REVIEWER SEES: one card per plugin map; inside, the controls a person could settle - the name says a role the plugin's dial
  * needs, but the unit is missing / wrong, or there are several candidates. Each row: control, unit seen, suggested role, why, whether
- * the control is already read back, and Yes / No. "Counts now" items (yes_makes_mapped) come first: one yes moves that map to mapped.
+ * the control is already read back, and Yes / No. "Counts now" items come first: one yes moves that map to mapped (yes_makes_mapped), or
+ * two yeses do (counts_with names the partner row - an EQ band's freq and gain, 17 Oct).
  * Each row: a role dropdown (section + role, pre-set to the suggestion, plus "Other / not a main control"), Yes, No, Unsure.
  * Keyboard on a row: y / n / u answer and move on; r opens the dropdown; Backspace clears.
  *
@@ -36,26 +37,33 @@
 
   // ---------------------------------------------------------------- pure --
   /** Cards: items grouped by map fp, "counts now" maps first, then by plugin name. */
-  function group(items, onlyCountsNow) {
+  /** Cards: the ones where a yes counts now first; within them the review file's first_category (Kathy, 17 Oct: EQ), then by name. */
+  function countsNow(it) { return !!(it.yes_makes_mapped || it.counts_with); }
+  function group(items, onlyCountsNow, firstCategory) {
     var by = {}, order = [];
     items.forEach(function (it) {
-      if (onlyCountsNow && !it.yes_makes_mapped) return;
+      if (onlyCountsNow && !countsNow(it)) return;
       if (!by[it.fp]) { by[it.fp] = { fp: it.fp, plugin: it.plugin, vendor: it.vendor, version: it.version, category: it.category, items: [] }; order.push(it.fp); }
       by[it.fp].items.push(it);
     });
-    var cards = order.map(function (fp) { var c = by[fp]; c.countsNow = c.items.some(function (i) { return i.yes_makes_mapped; }); return c; });
-    cards.sort(function (a, b) { return (b.countsNow - a.countsNow) || String(a.plugin).localeCompare(String(b.plugin)); });
+    var cards = order.map(function (fp) { var c = by[fp]; c.countsNow = c.items.some(countsNow); return c; });
+    var first = function (c) { return firstCategory && c.category === firstCategory ? 1 : 0; };
+    cards.sort(function (a, b) { return (b.countsNow - a.countsNow) || (first(b) - first(a)) || String(a.plugin).localeCompare(String(b.plugin)); });
     return cards;
   }
+  function isYes(it, answers) { var a = it && answers[it.id]; return !!(a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || '')))); }
   /** The counts the header shows, from the items and the answers alone (the server computes the same). */
   function counts(items, answers) {
-    var answered = 0, unsure = 0, mapsNow = {}, countsNowMaps = {}, countsNowItems = 0;
+    var answered = 0, unsure = 0, mapsNow = {}, countsNowMaps = {}, countsNowItems = 0, byId = {};
+    items.forEach(function (it) { byId[it.id] = it; });
     items.forEach(function (it) {
       var a = answers[it.id];
       if (a && a.verdict && a.verdict !== 'unsure') answered++;
       if (a && a.verdict === 'unsure') unsure++;
       var isSuggestion = a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || '')));
-      if (it.yes_makes_mapped) { countsNowItems++; countsNowMaps[it.fp] = true; if (isSuggestion) mapsNow[it.fp] = true; }
+      if (countsNow(it)) { countsNowItems++; countsNowMaps[it.fp] = true; }
+      if (it.yes_makes_mapped && isSuggestion) mapsNow[it.fp] = true;
+      if (it.counts_with && isSuggestion && isYes(byId[it.counts_with], answers)) mapsNow[it.fp] = true;   // both halves of a pair
     });
     return { items: items.length, answered: answered, unsure: unsure, countsNowItems: countsNowItems, countsNowMaps: Object.keys(countsNowMaps).length,
              mapsMappedByAnswers: Object.keys(mapsNow).length, maps: Object.keys(items.reduce(function (m, i) { m[i.fp] = 1; return m; }, {})).length };
@@ -108,6 +116,7 @@
     roleTd.appendChild(sel); tr.appendChild(roleTd);
     var why = el('td', 'rv-why', it.why);
     if (it.yes_makes_mapped) why.appendChild(el('span', 'rv-tag', 'counts now'));
+    else if (it.counts_with) why.appendChild(el('span', 'rv-tag', 'counts with ' + String(it.counts_with).split('|').slice(1).join('|')));
     if (!it.read_back) why.appendChild(el('span', 'rv-tag rv-tag-dim', 'not read back yet'));
     tr.appendChild(why);
     var td = el('td', 'rv-actions');
@@ -166,7 +175,7 @@
         t.appendChild(tb); w.appendChild(t); u.appendChild(w); list.appendChild(u);
       }
       var rest = state.items.filter(function (i) { var a = state.answers[i.id]; return !(a && a.verdict === 'unsure'); });
-      group(rest, state.onlyNow).forEach(function (c) { list.appendChild(card(ctx, c, state, answer)); });
+      group(rest, state.onlyNow, state.firstCategory).forEach(function (c) { list.appendChild(card(ctx, c, state, answer)); });
       status.textContent = state.items.length ? '' : 'Nothing to review.';
     }
     function next(tr) {
@@ -193,8 +202,8 @@
       if (ev.key === 'r') { ev.preventDefault(); var sel = tr.querySelector('select'); if (sel) { sel.focus(); try { sel.showPicker(); } catch (e) {} } }
     });
     return ctx.api2(base).then(function (d) {
-      state.items = (d && d.items) || []; state.answers = (d && d.answers) || {};
-      if (!state.items.some(function (i) { return i.yes_makes_mapped; })) state.onlyNow = false;
+      state.items = (d && d.items) || []; state.answers = (d && d.answers) || {}; state.firstCategory = (d && d.first_category) || '';
+      if (!state.items.some(countsNow)) state.onlyNow = false;
       render(); var first = list.querySelector('tr.rv-row'); if (first) first.focus();
     }).catch(function (e) { status.textContent = (ctx.describeError ? ctx.describeError(e, 'The review') : 'The review could not load: ' + e.message); });
   }

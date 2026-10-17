@@ -1,0 +1,76 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "SPL De-Esser Dual-Band",
+  "version": "1.15.1",
+  "map_version": "1.15.1",
+  "map_fp": "6803394bfb62727fc9987b68e55ef560a2cfa3045d3c94c992ab38fa06acfa92",
+  "controls": [
+    {
+      "name": "Setting",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "1.000000": "B"
+      }
+    },
+    {
+      "name": "Mode",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Left/Right",
+        "0.333333": "Mid"
+      }
+    },
+    {
+      "name": "Low-Band On",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "High-Band On",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Low S-Reduction",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.50 dB",
+        "0.500000": "8.00 dB",
+        "0.750000": "10.50 dB"
+      }
+    },
+    {
+      "name": "High S-Reduction",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.50 dB",
+        "0.500000": "8.00 dB",
+        "0.750000": "10.50 dB"
+      }
+    },
+    {
+      "name": "Filter",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Male",
+        "1.000000": "Female"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000540"
+}

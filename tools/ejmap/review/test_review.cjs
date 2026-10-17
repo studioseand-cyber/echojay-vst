@@ -9,6 +9,14 @@ const items = [
   { id: 'B|Thr', fp: 'B', plugin: 'Alpha', category: 'compressor', control: 'Thr', suggested_role: 'threshold', yes_makes_mapped: false },
 ];
 const g = R.__test.group(items, true), all = R.__test.group(items, false);
+const mixed = items.concat([{ id: 'C|Gain', fp: 'C', plugin: 'Zeta EQ', category: 'eq', control: 'Gain', suggested_role: 'gain', yes_makes_mapped: true }]);
+assert.deepStrictEqual(R.__test.group(mixed, false, 'eq').map((c) => c.fp), ['C', 'A', 'B']);   // EQ counts-now first, then by name
+assert.deepStrictEqual(R.__test.group(mixed, false).map((c) => c.fp), ['A', 'C', 'B']);         // no first_category: by name
+const pair = [{ id: 'E|F', fp: 'E', plugin: 'Aa EQ', category: 'eq', control: 'F', suggested_role: 'freq', counts_with: 'E|G' },
+              { id: 'E|G', fp: 'E', plugin: 'Aa EQ', category: 'eq', control: 'G', suggested_role: 'gain', counts_with: 'E|F' }];
+const one = R.__test.counts(pair, { 'E|F': { verdict: 'yes' } }), both = R.__test.counts(pair, { 'E|F': { verdict: 'yes' }, 'E|G': { verdict: 'yes' } });
+assert.deepStrictEqual([one.countsNowMaps, one.mapsMappedByAnswers, both.mapsMappedByAnswers, one.countsNowItems], [1, 0, 1, 2]);   // a pair: both yes, or not mapped
+assert.strictEqual(R.__test.group(pair.concat(items), false, 'eq')[0].fp, 'E');                                                     // a pair counts now, EQ first
 assert.strictEqual(g.length, 1); assert.strictEqual(all.length, 2); assert.strictEqual(all[0].fp, 'A');   // counts-now first
 const c = R.__test.counts(items, { 'A|Mix': { verdict: 'yes' }, 'B|Thr': { verdict: 'no' } });
 assert.deepStrictEqual([c.answered, c.countsNowMaps, c.mapsMappedByAnswers, c.maps], [2, 1, 1, 2]);
@@ -54,9 +62,14 @@ function call(method, body, session, query) {
   const picked = await call('POST', { id: 'B|Thr', verdict: 'role', role: 'makeup', section: 'Comp' }, admin);
   assert.strictEqual(picked.body.answer.role, 'makeup'); assert.strictEqual(picked.body.answer.section, 'Comp'); assert.strictEqual(picked.body.answer.suggested_role, 'threshold');
   await call('POST', { id: 'B|Thr', verdict: 'clear' }, admin);
-  const got = await call('GET', null, admin); assert.strictEqual(got.body.items.length, 3); assert.strictEqual(got.body.answers['A|Mix'].verdict, 'yes');
+  const got = await call('GET', null, admin); assert.strictEqual(got.body.items.length, 3); assert.strictEqual(got.body.first_category, ''); assert.strictEqual(got.body.answers['A|Mix'].verdict, 'yes');
   const ex = await call('GET', null, admin, { export: '1' }); assert.strictEqual(ex.body.schema, 'ejmap_human_checks/1'); assert.strictEqual(ex.body.answers.length, 1);
   await call('POST', { id: 'A|Mix', verdict: 'clear' }, admin);
   assert.strictEqual(Object.keys((await call('GET', null, admin)).body.answers).length, 0);
+  // a pair on the route (17 Oct): one yes does not count the map, the second does
+  store.s['dev:ejmap:review:items'] = JSON.stringify({ schema: 'ejmap_role_review/1', generated_at: 'T2', first_category: 'eq', items: pair });
+  const p1 = await call('POST', { id: 'E|F', verdict: 'yes' }, admin), p2 = await call('POST', { id: 'E|G', verdict: 'yes' }, admin);
+  assert.deepStrictEqual([p1.body.counts.mapsMappedByAnswers, p2.body.counts.mapsMappedByAnswers, p2.body.counts.countsNowMaps], [0, 1, 1]);
+  assert.strictEqual((await call('GET', null, admin)).body.first_category, 'eq');
   console.log('test_review: all checks passed');
 })().catch((e) => { console.error('test_review: FAIL', e); process.exit(1); });

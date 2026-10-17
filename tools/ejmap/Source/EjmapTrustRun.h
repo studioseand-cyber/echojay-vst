@@ -6,7 +6,7 @@
         every draft in <cert>/phaseb/<eq|limiter|delay|reverb|saturation|gate>/drafts judged by EjmapCertV1.h; a table per category.
 
     ejmap --trust-levels --maps <maps folder> --cert <folder>... [--wizard <engine folder>]... [--certified <PUBLISH_LIST.txt>]
-                         [--held <outcomes.json | manifest.json>]... [--quarantine <quarantine.json>] --out <folder>
+                         [--held <outcomes.json | manifest.json>]... [--quarantine <quarantine.json>] [--human <answers.json>] [--review-first <category>] --out <folder>
         THE CREDIT: every {norm, display} reading in the measuring runs' records (fixtures' displayAt, Phase B positions), judged
         against each map's own anchors (EjmapTrust.h creditMap); the measured roles (roles_by_measurement: confirmed / found on another
         control; dropped = refuted) and each fixture's picked threshold. THE LEVEL per map (levelFor). Writes <out>/trust_levels.json,
@@ -73,7 +73,7 @@ inline int runCertV1 (const juce::File& cert, const juce::File& outFile)
     return 0;
 }
 
-struct ProductData { std::vector<std::pair<juce::String, trust::Readings>> readings; trust::Measured measured; };
+struct ProductData { std::vector<std::pair<juce::String, trust::Readings>> readings; std::vector<trust::SourceMeta> metas; trust::Measured measured; };   // metas: one per reading source (the recency rule)
 inline void loadRecords (const juce::File& root, const juce::String& tag, std::map<juce::String, ProductData>& by)
 {
     auto take = [&] (const juce::File& f, const juce::String& category)
@@ -81,7 +81,7 @@ inline void loadRecords (const juce::File& root, const juce::String& tag, std::m
         const auto rec = readJson (f); if (! rec.isObject()) return;
         const auto product = rec.getProperty ("product", rec.getProperty ("plugin", {}).getProperty ("name", "")).toString(); if (product.isEmpty()) return;
         auto& pd = by[product];
-        auto rs = trust::readingsOfRecord (rec); if (! rs.empty()) pd.readings.push_back ({ tag, std::move (rs) });
+        auto rs = trust::readingsOfRecord (rec); if (! rs.empty()) { pd.readings.push_back ({ tag, std::move (rs) }); pd.metas.push_back (trust::metaOfRecord (rec)); }
         if (const auto* rm = rec.getProperty ("roles_by_measurement", {}).getArray())
             for (const auto& x : *rm)
             {
@@ -238,11 +238,23 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
         o->setProperty ("yes_makes_mapped", L.level == "mapped");
         items.add (juce::var (o));
     }
+    // A PAIR THAT COUNTS (17 Oct: an EQ needs a band's freq AND gain, so no single yes maps it): two rows of different roles whose yeses
+    // together make the map "mapped" name each other in counts_with; the page counts the map once both are yes
+    for (int i = 0; i < items.size(); ++i)
+        for (int j = i + 1; j < items.size(); ++j)
+        {
+            auto& a = items.getReference (i); auto& b = items.getReference (j);
+            if ((bool) a.getProperty ("yes_makes_mapped", false) || (bool) b.getProperty ("yes_makes_mapped", false) || a.hasProperty ("counts_with") || b.hasProperty ("counts_with")) continue;
+            const auto ra = a.getProperty ("suggested_role", "").toString(), rb2 = b.getProperty ("suggested_role", "").toString(); if (ra == rb2) continue;
+            auto both = measured; both.roles[ra].clear(); both.roles[ra].add (a.getProperty ("control", "").toString()); both.roles[rb2].clear(); both.roles[rb2].add (b.getProperty ("control", "").toString());
+            if (trust::levelFor (m, false, "", rb, both).level != "mapped") continue;
+            a.getDynamicObject()->setProperty ("counts_with", b.getProperty ("id", "")); b.getDynamicObject()->setProperty ("counts_with", a.getProperty ("id", ""));
+        }
     return items;
 }
 
 inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& certDirs, const juce::StringArray& wizardDirs, const juce::File& publishList,
-                           const juce::StringArray& heldFiles, const juce::File& quarantine, const juce::File& out, const juce::File& humanFile = {})
+                           const juce::StringArray& heldFiles, const juce::File& quarantine, const juce::File& out, const juce::File& humanFile = {}, const juce::String& firstCategory = {})
 {
     if (! mapsDir.isDirectory() || out == juce::File()) { std::cerr << "usage: ejmap --trust-levels --maps <folder> --cert <folder>... --out <folder>" << std::endl; return 2; }
     std::map<juce::String, ProductData> by;
@@ -254,14 +266,15 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[r.category].insert (r.product);
     out.getChildFile ("maps").createDirectory();
     const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
-    std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0;
+    std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0, supersededReadings = 0, supersededControls = 0;
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         auto m = readJson (f); if (! m.isObject()) continue;
         const auto name = m.getProperty ("identity", {}).getProperty ("name", "").toString(), cat = m.getProperty ("category", "").toString();
         static const ProductData none;
         const auto it = by.find (name); const auto& pd = it != by.end() ? it->second : none;
-        const auto rb = trust::creditMap (m, pd.readings);
+        const auto rb = trust::creditMap (m, pd.readings, pd.metas);
+        for (const auto& [ctl, r] : rb) if (r.superseded > 0) { supersededReadings += r.superseded; ++supersededControls; }
         const auto fpKey = m.getProperty ("fp", "").toString();
         const auto measured = human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured;
         const bool certified = (cat == "compressor" && compCert.count (name)) || (v1Pass.count (cat) && v1Pass[cat].count (name)) || (cat == "amp_sim" && v1Pass["saturation"].count (name))
@@ -279,7 +292,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                         {
                             auto* o = new juce::DynamicObject(); o->setProperty ("checked", r.judged); o->setProperty ("failed", r.failed); o->setProperty ("pass", r.proven());
                             if (r.worst.isNotEmpty()) o->setProperty ("worst", r.worst);
-                            o->setProperty ("source", r.source); cobj->setProperty ("readback", juce::var (o));
+                            o->setProperty ("source", r.source); if (r.superseded > 0) o->setProperty ("superseded", r.superseded); cobj->setProperty ("readback", juce::var (o));
                             ++creditedControls; if (r.failed > 0) ++failedControls;
                         }
         out.getChildFile ("maps").getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (m));
@@ -290,14 +303,24 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     out.getChildFile ("trust_levels.json").replaceWithText (juce::JSON::toString (juce::var (rows)));
     {   // the review list (schema ejmap_role_review/1), the same file the local page and the admin page read
         auto* rv = new juce::DynamicObject(); rv->setProperty ("schema", "ejmap_role_review/1"); rv->setProperty ("generated_at", juce::Time::getCurrentTime().toISO8601 (true));
-        rv->setProperty ("source", "ejmap --trust-levels"); rv->setProperty ("items", juce::var (review));
+        rv->setProperty ("source", "ejmap --trust-levels");
+        // --review-first <category> (Kathy, 17 Oct: EQ): the rows where a yes counts now, that category's first - in the file and on the page
+        if (firstCategory.isNotEmpty())
+        {
+            rv->setProperty ("first_category", firstCategory);
+            auto tier = [&] (const juce::var& x) { const bool now = (bool) x.getProperty ("yes_makes_mapped", false) || x.hasProperty ("counts_with"); return now ? (x.getProperty ("category", "").toString() == firstCategory ? 0 : 1) : 2; };
+            std::vector<juce::var> v; for (const auto& x : review) v.push_back (x);
+            std::stable_sort (v.begin(), v.end(), [&] (const juce::var& a, const juce::var& b) { return tier (a) < tier (b); });
+            review.clearQuick(); for (const auto& x : v) review.add (x);
+        }
+        rv->setProperty ("items", juce::var (review));
         out.getChildFile ("review_items.json").replaceWithText (juce::JSON::toString (juce::var (rv)));
-        int wouldMap = 0; for (const auto& x : review) if ((bool) x.getProperty ("yes_makes_mapped", false)) ++wouldMap;
-        std::cout << "TRUST-LEVELS: " << review.size() << " control(s) for the human check (" << wouldMap << " where a yes alone makes the map mapped); "
+        int wouldMap = 0, inPairs = 0; for (const auto& x : review) { if ((bool) x.getProperty ("yes_makes_mapped", false)) ++wouldMap; if (x.hasProperty ("counts_with")) ++inPairs; }
+        std::cout << "TRUST-LEVELS: " << review.size() << " control(s) for the human check (" << wouldMap << " where a yes alone makes the map mapped, " << inPairs << " in pairs where two yeses do); "
                   << human.size() << " map(s) with answers applied\n";
     }
     std::cout << "TRUST-LEVELS: " << rows.size() << " map(s); read-back credited on " << creditedControls << " control(s) from the measuring runs ("
-              << failedControls << " of them with a failed reading); nothing loaded, nothing sent\n" << table (counts, { "maps", "certified", "mapped", "unsure" });
+              << failedControls << " of them with a failed reading); " << supersededReadings << " older failed reading(s) on " << supersededControls << " control(s) set aside by a newer clean read-back (the recency rule); nothing loaded, nothing sent\n" << table (counts, { "maps", "certified", "mapped", "unsure" });
     return 0;
 }
 

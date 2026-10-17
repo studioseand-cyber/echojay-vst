@@ -1,0 +1,140 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati VX1 (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "59cc20a8bc76a22ea39095a846810b6db0670ea19d4bb05dcfe2b712af10cac1",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "27.5",
+        "0.500000": "50.0",
+        "0.725000": "72.5"
+      }
+    },
+    {
+      "name": "Air",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Vocal Type",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "Contour 2",
+        "0.750000": "Contour 3",
+        "0.875000": "Contour 3"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-13.5",
+        "0.550000": "-9.0",
+        "0.775000": "-4.5"
+      }
+    },
+    {
+      "name": "Dly",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "325.0",
+        "0.500000": "550.0",
+        "0.750000": "775.0"
+      }
+    },
+    {
+      "name": "Dly Mix",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "27.5",
+        "0.500000": "50.0",
+        "0.725000": "72.5"
+      }
+    },
+    {
+      "name": "Decay",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Vrb Tone",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000854"
+}

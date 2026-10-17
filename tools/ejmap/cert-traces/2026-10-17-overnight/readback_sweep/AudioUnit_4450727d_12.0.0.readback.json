@@ -1,0 +1,108 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "VComp (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "607a30069efa695ab8e4417538b4b4a3dc3918282047a7c27d9cb068603ac4fd",
+  "controls": [
+    {
+      "name": "Input",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.3 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "9.3 dB"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "9.0 dB"
+      }
+    },
+    {
+      "name": "Meter",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "In",
+        "0.500000": "GR"
+      }
+    },
+    {
+      "name": "Analog",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "50%",
+        "0.666667": "50%",
+        "0.833333": "50%"
+      }
+    },
+    {
+      "name": "Limit",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit Level",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6.0",
+        "0.500000": "8.0",
+        "0.750000": "10.0"
+      }
+    },
+    {
+      "name": "Release Limiter",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.166667": "200ms",
+        "0.333333": "200ms",
+        "0.500000": "800ms"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Ratio",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2:1",
+        "0.500000": "3:1",
+        "0.750000": "4:1"
+      }
+    },
+    {
+      "name": "Release Compressor",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.166667": "800ms",
+        "0.333333": "800ms",
+        "0.500000": "1.5s"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000121"
+}

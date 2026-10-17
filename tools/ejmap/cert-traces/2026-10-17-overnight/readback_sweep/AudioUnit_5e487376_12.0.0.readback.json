@@ -1,0 +1,100 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati B72 (m->s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "3b7d428df9541a6081a0f4b9bf8590b350b335dba97783a0430d35d5899ef36f",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output DI",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output Synth",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "-6.3",
+        "0.475000": "-0.6",
+        "0.712500": "5.1"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-13.5",
+        "0.550000": "-9.0",
+        "0.775000": "-4.5"
+      }
+    },
+    {
+      "name": "Tone",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "FX Out",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Insert/Send",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Insert",
+        "1.000000": "Send"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000810"
+}

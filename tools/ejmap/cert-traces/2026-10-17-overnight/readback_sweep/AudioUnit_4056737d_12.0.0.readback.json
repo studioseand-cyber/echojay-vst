@@ -1,0 +1,195 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "JJP-Bass (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "b1653b962fced3d8c8c05951129bc8de75639394df672d63875d4acac1874867",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Input",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "27.5",
+        "0.500000": "50.0",
+        "0.725000": "72.5"
+      }
+    },
+    {
+      "name": "Lows",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Highs",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "+",
+        "1.000000": "-"
+      }
+    },
+    {
+      "name": "Main",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Edge",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Edge Mute",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Attack",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Attack Mute",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Width",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Sub",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Sub Mute",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Presence",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Presence Mute",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Length",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Master",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235449"
+}

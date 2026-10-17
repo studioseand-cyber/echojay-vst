@@ -1,0 +1,203 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "LinEQ Lowband (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "768d190ace26eb918545efc9c5fd89c0552d57829f53dde9da4395a4442bbc68",
+  "controls": [
+    {
+      "name": "Band1 On/Off",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band1 Type",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.250000": "Resonant Low-shelf"
+      }
+    },
+    {
+      "name": "Band1 Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "0.0",
+        "0.750000": "15.0"
+      }
+    },
+    {
+      "name": "Band1 Frq",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "65",
+        "0.500000": "474",
+        "0.750000": "3208"
+      }
+    },
+    {
+      "name": "Band1 Q",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band2 On/Off",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band2 Type",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.750000": "Resonant Hi-pass"
+      }
+    },
+    {
+      "name": "Band2 Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "0.0",
+        "0.750000": "15.0"
+      }
+    },
+    {
+      "name": "Band2 Frq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "65",
+        "0.500000": "474",
+        "0.750000": "3208"
+      }
+    },
+    {
+      "name": "Band2 Q",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band3 On/Off",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band3 Type",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.250000": "Resonant Low-shelf"
+      }
+    },
+    {
+      "name": "Band3 Gain",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "0.0",
+        "0.750000": "15.0"
+      }
+    },
+    {
+      "name": "Band3 Frq",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "65",
+        "0.500000": "474",
+        "0.750000": "3208"
+      }
+    },
+    {
+      "name": "Band3 Q",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Input Gain",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-22.5",
+        "0.500000": "-15.0",
+        "0.750000": "-7.5"
+      }
+    },
+    {
+      "name": "Trim",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.0",
+        "0.500000": "0.0",
+        "0.750000": "1.0"
+      }
+    },
+    {
+      "name": "Scale",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30db",
+        "0.500000": "30db",
+        "0.750000": "12db"
+      }
+    },
+    {
+      "name": "Dither type",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Method",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Normal",
+        "0.666667": "LowRipple"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000043"
+}

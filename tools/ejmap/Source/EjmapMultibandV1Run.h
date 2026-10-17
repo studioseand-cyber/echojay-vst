@@ -208,7 +208,7 @@ inline int runMultibandV1Product (const SweepOptions& opt, const juce::File& rec
     o->setProperty ("crossovers", xo);
     if (window) { say ("MBV1: " + product + ": a window appeared - stopped, nothing written"); return 5; }
     o->setProperty ("processes", processN); o->setProperty ("measuredAt", nowStamp());
-    o->setProperty ("method", "per band: --sweep at {open end, the ladder's predicted setting for 2 / 3 / 4 dB at -12 dBFS} on the band's centre tone; crossovers: 121-tone --response at 25/50/75 % with the band below deep vs open, the split where the cut falls to half; make-up: --response at -30 dBFS, the level step at the band's centre vs the display step");
+    o->setProperty ("method", "per band: --sweep at {open end, the ladder's predicted setting for 2 / 3 / 4 dB at -12 dBFS} on the band's centre tone; crossovers: at the opening position, the frequency where the two neighbouring bands' responses are equal (each soloed, or each compressed alone at its deep end with the cuts scaled by their own depth), 121-tone --response; make-up: --response at -30 dBFS, the level step at the band's centre vs the display step");
     outDir.getChildFile (stem + ".multiband_v1.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("MBV1: " + product + " -> " + juce::String (bandsOut.size()) + " band(s), " + juce::String (xo.size()) + " crossover(s), " + juce::String (processN) + " processes");
     return 0;

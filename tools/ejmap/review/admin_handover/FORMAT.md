@@ -6,6 +6,7 @@
   "schema": "ejmap_role_review/1",
   "generated_at": "2026-10-16T17:36:44.786+01:00",
   "source": "ejmap --trust-levels",
+  "first_category": "eq",               // optional (17 Oct): this category's cards come first among the "counts now" ones (--review-first <category>)
   "items": [
     {
       "id": "<map fp>|<control name>",
@@ -17,7 +18,8 @@
       "suggested_role": "mix",           // the question is "<section> -> <role>" (e.g. "Gate -> Threshold"), or the role alone           // threshold | ratio | attack | release | makeup | output | gain | freq | q | mix | delay_time | decay | predelay | drive | ceiling
       "why": "the name says mix; the display shows no unit",   // or "one of several <role> candidates"
       "read_back": true,                 // the control's writes already read back (a yes alone can then count)
-      "yes_makes_mapped": true           // one yes on this row moves the map to "mapped"
+      "yes_makes_mapped": true,          // one yes on this row moves the map to "mapped"
+      "counts_with": "<id>"              // optional (17 Oct): the partner row; yes on BOTH moves the map to "mapped" (an EQ band's freq + gain)
     }
   ]
 }

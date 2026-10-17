@@ -25,6 +25,7 @@
 #include "EjmapTunerProfile.h"
 #include "EjmapTrustRun.h"   // 16 Oct: --cert-v1, --trust-levels
 #include "EjmapMultibandV1Run.h"   // 16 Oct: --cert-multiband-v1
+#include "EjmapReadbackSweepRun.h"   // 16 Oct: --readback-sweep
 
 #include <map>
 #include <csignal>
@@ -792,6 +793,19 @@ namespace
                 ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
                 return ejmap::cert::runMultibandV1All (o, only);
             }
+            if (a == "--readback-sweep")   // 16 Oct (Kathy, overnight): the read-back-only sweep - guarded, one load per map, maps folder read only
+            {
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File maps, names;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--maps") maps = cwdFile (v); else if (k == "--names") names = cwdFile (v); }
+                // no default for --out: the results go where the caller says, never into a cert folder by accident
+                if (o.out == juce::File() || ! maps.isDirectory() || ! names.existsAsFile()) { std::cerr << "usage: ejmap --readback-sweep --maps <folder> --names <file> --out <cert> [--probe <path>] [--ejmap-ledger <dir>]" << std::endl; return 2; }
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+                juce::StringArray ns; ns.addLines (names.loadFileAsString()); ns.trim(); ns.removeEmptyStrings(); ns.removeDuplicates (false);
+                ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
+                return ejmap::cert::runReadbackSweep (o, maps, ns);
+            }
             if (a == "--cert-v1")   // 16 Oct (Kathy): v1 certification of the measurable parts, over the drafts on disk - nothing loaded
             {
                 juce::File cert, outF; for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1); if (k == "--cert") cert = cwdFile (v); else if (k == "--out") outF = cwdFile (v); }
@@ -800,12 +814,12 @@ namespace
             }
             if (a == "--trust-levels")   // 16 Oct (Kathy): read-back credit from the measuring runs, the role rule, the level per map - nothing loaded
             {
-                juce::File maps, outD, list, quarantine, human; juce::StringArray certs, wizards, helds;
+                juce::File maps, outD, list, quarantine, human; juce::StringArray certs, wizards, helds; juce::String reviewFirst;
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--maps") maps = cwdFile (v); else if (k == "--out") outD = cwdFile (v); else if (k == "--cert") certs.add (cwdFile (v).getFullPathName());
                     else if (k == "--wizard") wizards.add (cwdFile (v).getFullPathName()); else if (k == "--certified") list = cwdFile (v); else if (k == "--held") helds.add (cwdFile (v).getFullPathName());
-                    else if (k == "--quarantine") quarantine = cwdFile (v); else if (k == "--human") human = cwdFile (v); }
-                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD, human);
+                    else if (k == "--quarantine") quarantine = cwdFile (v); else if (k == "--human") human = cwdFile (v); else if (k == "--review-first") reviewFirst = v; }
+                return ejmap::trustrun::runTrustLevels (maps, certs, wizards, list, helds, quarantine, outD, human, reviewFirst);
             }
             if (a == "--self-guard")   // 16 Oct (Kathy): the guard alone, for scripts - prints KEEP / DROP per name, loads nothing; exit 3 if anything dropped
             {

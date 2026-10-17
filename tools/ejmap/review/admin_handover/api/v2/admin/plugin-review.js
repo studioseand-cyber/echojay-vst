@@ -1,6 +1,6 @@
 /**
  * GET   /api/v2/admin/plugin-review
- *         -> { schema: "ejmap_role_review/1", generated_at, items: [...], answers: { <id>: answer } }
+ *         -> { schema: "ejmap_role_review/1", generated_at, first_category, items: [...], answers: { <id>: answer } }
  * GET   /api/v2/admin/plugin-review?export=1
  *         -> { schema: "ejmap_human_checks/1", items_generated_at, answers: [answer...] }   (what EJ Map's --trust-levels --human reads)
  * POST  /api/v2/admin/plugin-review  { id, verdict, role?, section? }
@@ -35,13 +35,19 @@ const ROLES = new Set(['threshold', 'ratio', 'attack', 'release', 'makeup', 'out
 
 function parse(x) { if (x && typeof x === 'object') return x; try { return JSON.parse(x); } catch (e) { return null; } }
 
+function isYes(it, answers) {
+  const a = it && answers[it.id];
+  return !!(a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || ''))));
+}
+// 17 Oct: a row counts now alone (yes_makes_mapped) or with its partner (counts_with: an EQ band's freq and gain need two yeses)
 function counts(items, answers) {
-  const nowMaps = new Set(), mapped = new Set(); let answered = 0;
+  const nowMaps = new Set(), mapped = new Set(), byId = new Map(items.map((i) => [i.id, i])); let answered = 0;
   for (const it of items) {
     const a = answers[it.id];
     if (a && a.verdict && a.verdict !== 'unsure') answered++;
-    const isSuggestion = a && (a.verdict === 'yes' || (a.verdict === 'role' && a.role === it.suggested_role && (a.section || '') === (it.section || '')));
-    if (it.yes_makes_mapped) { nowMaps.add(it.fp); if (isSuggestion) mapped.add(it.fp); }
+    if (it.yes_makes_mapped || it.counts_with) nowMaps.add(it.fp);
+    if (it.yes_makes_mapped && isYes(it, answers)) mapped.add(it.fp);
+    if (it.counts_with && isYes(it, answers) && isYes(byId.get(it.counts_with), answers)) mapped.add(it.fp);
   }
   return { items: items.length, answered, countsNowMaps: nowMaps.size, mapsMappedByAnswers: mapped.size };
 }
@@ -68,7 +74,7 @@ module.exports = async function handler(req, res) {
       const { doc, answers } = await readAll();
       if (req.query && req.query.export === '1')
         return res.status(200).json({ schema: 'ejmap_human_checks/1', items_generated_at: doc.generated_at || null, answers: Object.values(answers) });
-      return res.status(200).json({ schema: doc.schema, generated_at: doc.generated_at || null, items: doc.items || [], answers });
+      return res.status(200).json({ schema: doc.schema, generated_at: doc.generated_at || null, first_category: doc.first_category || '', items: doc.items || [], answers });
     }
     const body = typeof req.body === 'string' ? parse(req.body) : req.body;
     if (!body || typeof body.id !== 'string' || !VERDICTS.has(body.verdict)) return res.status(400).json({ error: 'bad_body' });

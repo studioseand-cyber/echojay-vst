@@ -1,0 +1,167 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "SSLEQ (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "99a011b4ae8dfe43527c857d858eecc5a383915bbcf792004f7f846fcf06fe9f",
+  "controls": [
+    {
+      "name": "HP On/Off",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LF Gain",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.50",
+        "0.500000": "0.00",
+        "0.750000": "8.50"
+      }
+    },
+    {
+      "name": "LMF Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.00",
+        "0.500000": "0.00",
+        "0.750000": "10.00"
+      }
+    },
+    {
+      "name": "HMF Gain",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.00",
+        "0.500000": "0.00",
+        "0.750000": "10.00"
+      }
+    },
+    {
+      "name": "HF Gain",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.50",
+        "0.500000": "0.00",
+        "0.750000": "8.50"
+      }
+    },
+    {
+      "name": "Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "HP Frq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "37",
+        "0.500000": "120",
+        "0.750000": "267"
+      }
+    },
+    {
+      "name": "LF Frq",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "67",
+        "0.500000": "200",
+        "0.750000": "343"
+      }
+    },
+    {
+      "name": "LMF Q",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.25",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "LMF Frq",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.47",
+        "0.500000": "1.00",
+        "0.750000": "1.83"
+      }
+    },
+    {
+      "name": "HMF Q",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.25",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "HMF Frq",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.03",
+        "0.500000": "3.00",
+        "0.750000": "5.50"
+      }
+    },
+    {
+      "name": "HF Frq",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.00",
+        "0.500000": "8.00",
+        "0.750000": "12.67"
+      }
+    },
+    {
+      "name": "Analog",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ IN",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Phase Rev",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "+",
+        "1.000000": "-"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000538"
+}

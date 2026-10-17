@@ -1,0 +1,668 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "H-Reverb (5->5)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "ed3a6a446462b935800b683a237cc25d5bff4840b73dce36e4b7dc3608ff510c",
+  "controls": [
+    {
+      "name": "Predelay Free",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "125",
+        "0.500000": "250",
+        "0.750000": "375"
+      }
+    },
+    {
+      "name": "PreDelay Mode",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Free",
+        "1.000000": "Sync"
+      }
+    },
+    {
+      "name": "Buildup Time",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.031",
+        "0.500000": "0.250",
+        "0.750000": "0.844"
+      }
+    },
+    {
+      "name": "Reverb Size",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.71",
+        "0.500000": "1.00",
+        "0.750000": "1.41"
+      }
+    },
+    {
+      "name": "ReverbTime",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.58",
+        "0.500000": "3.05",
+        "0.750000": "4.53"
+      }
+    },
+    {
+      "name": "ER Model",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3",
+        "0.500000": "5",
+        "0.750000": "8"
+      }
+    },
+    {
+      "name": "ER/Tail Balance",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Dry/Wet",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.0",
+        "0.500000": "0.0",
+        "0.750000": "12.0"
+      }
+    },
+    {
+      "name": "XTime",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "XGain",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-87.0",
+        "0.500000": "-54.0",
+        "0.750000": "-21.0"
+      }
+    },
+    {
+      "name": "Density",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "In Echoes ByPass",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "In Echoes Discrete",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "-42.7",
+        "0.525000": "-28.5",
+        "0.762500": "-14.2"
+      }
+    },
+    {
+      "name": "In Echoes Diffused",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-40.5",
+        "0.550000": "-27.0",
+        "0.775000": "-13.5"
+      }
+    },
+    {
+      "name": "Out Echoes ByPass",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Out Echoes Amount",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "5.00",
+        "0.750000": "7.50"
+      }
+    },
+    {
+      "name": "Out Echoes Size",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Out Echoes Tone",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dynamics On/Off",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dynamics Mode",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Duck",
+        "0.500000": "Comp"
+      }
+    },
+    {
+      "name": "Dynamics Threshold",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-37.5",
+        "0.500000": "-25.0",
+        "0.750000": "-12.5"
+      }
+    },
+    {
+      "name": "Dynamics Recovery",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "94.87",
+        "0.500000": "300.00",
+        "0.750000": "948.68"
+      }
+    },
+    {
+      "name": "Dynamics Range",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-18.0",
+        "0.500000": "-12.0",
+        "0.750000": "-6.0"
+      }
+    },
+    {
+      "name": "ER Filter Gain",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-57.0",
+        "0.500000": "-34.0",
+        "0.750000": "-11.0"
+      }
+    },
+    {
+      "name": "ER Filter Frequency",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1934",
+        "0.500000": "3742",
+        "0.750000": "7238"
+      }
+    },
+    {
+      "name": "EQ LoShelf OnOff",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LoShelf Gain",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-57.0",
+        "0.500000": "-34.0",
+        "0.750000": "-11.0"
+      }
+    },
+    {
+      "name": "EQ LoShelf Freq",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "53",
+        "0.500000": "141",
+        "0.750000": "376"
+      }
+    },
+    {
+      "name": "EQ LoBell OnOff",
+      "index": 31,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ LoBell Gain",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "EQ LoBell Freq",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "171",
+        "0.500000": "490",
+        "0.750000": "1400"
+      }
+    },
+    {
+      "name": "EQ LoBell Q",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "EQ HiBell OnOff",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ HiBell Gain",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "EQ HiBell Freq",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1968",
+        "0.500000": "3873",
+        "0.750000": "7622"
+      }
+    },
+    {
+      "name": "EQ HiBell Q",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "EQ HiShelf OnOff",
+      "index": 39,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ HiShelf Gain",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-57.0",
+        "0.500000": "-34.0",
+        "0.750000": "-11.0"
+      }
+    },
+    {
+      "name": "EQ HiShelf Freq",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "3277",
+        "0.475000": "5370",
+        "0.712500": "8800"
+      }
+    },
+    {
+      "name": "Time Filter Type",
+      "index": 42,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Damping",
+        "0.500000": "Envelope"
+      }
+    },
+    {
+      "name": "Damping LF CutOff",
+      "index": 43,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "119",
+        "0.500000": "283",
+        "0.750000": "673"
+      }
+    },
+    {
+      "name": "Damping LF Ratio",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.57",
+        "0.500000": "1.05",
+        "0.750000": "1.53"
+      }
+    },
+    {
+      "name": "Damping HF Ratio",
+      "index": 45,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.57",
+        "0.500000": "1.05",
+        "0.750000": "1.53"
+      }
+    },
+    {
+      "name": "Damping HF CutOff",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1968",
+        "0.500000": "3873",
+        "0.750000": "7622"
+      }
+    },
+    {
+      "name": "Envelope Attack Time",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Envelope Decay Time",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Filter Type",
+      "index": 49,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Reso Lpf",
+        "1.000000": "Reso Hpf"
+      }
+    },
+    {
+      "name": "Filter Q",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.9",
+        "0.500000": "5.3",
+        "0.750000": "7.6"
+      }
+    },
+    {
+      "name": "Filter Mix",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "F1",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "350",
+        "0.500000": "1225",
+        "0.750000": "4286"
+      }
+    },
+    {
+      "name": "F2",
+      "index": 54,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "350",
+        "0.500000": "1225",
+        "0.750000": "4286"
+      }
+    },
+    {
+      "name": "LFO Free Rate",
+      "index": 55,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.08",
+        "0.500000": "10.04",
+        "0.750000": "15.02"
+      }
+    },
+    {
+      "name": "LFO Rate Mode",
+      "index": 57,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "AM Depth",
+      "index": 59,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "AM Rate",
+      "index": 60,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "FM Mix",
+      "index": 61,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Drive",
+      "index": 62,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Tempo Source",
+      "index": 63,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "INT",
+        "1.000000": "HOST"
+      }
+    },
+    {
+      "name": "Tempo",
+      "index": 64,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "297.50",
+        "0.525000": "535.00",
+        "0.762500": "772.50"
+      }
+    },
+    {
+      "name": "Digital",
+      "index": 66,
+      "kind": "anchored",
+      "displayAt": {
+        "0.125000": "8 Bit",
+        "0.250000": "8 Bit",
+        "0.375000": "12 Bit"
+      }
+    },
+    {
+      "name": "Center Gain",
+      "index": 67,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Front/Rear Balance",
+      "index": 68,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Surround LoShelf Gain",
+      "index": 69,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "-53.5",
+        "0.525000": "-31.7",
+        "0.762500": "-9.8"
+      }
+    },
+    {
+      "name": "Surround LoShelf Freq",
+      "index": 70,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "53",
+        "0.500000": "141",
+        "0.750000": "376"
+      }
+    },
+    {
+      "name": "Surround HiShelf Gain",
+      "index": 71,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-57.0",
+        "0.500000": "-34.0",
+        "0.750000": "-11.0"
+      }
+    },
+    {
+      "name": "Surround HiShelf Freq",
+      "index": 72,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3364",
+        "0.500000": "5657",
+        "0.750000": "9514"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235338"
+}

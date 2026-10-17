@@ -108,6 +108,10 @@
 #include "EjmapPhaseB.h"
 #include "EjmapDrafts.h"
 #include "EjmapRunAll.h"
+#include "EjmapTrustRun.h"    // 16 Oct: the trust levels, v1 certification of the other categories
+#include "EjmapMultibandV1.h"  // 16 Oct: multiband v1
+#include "EjmapSelfGuardRun.h" // 16 Oct: the guard
+#include "EjmapReadbackSweepRun.h" // 16 Oct: the read-back-only sweep
 #include "../../au_instantiate_probe/probe_truepeak.h"   // standalone (std only): the probe's BS.1770 interpolator, pinned here
 #include "../../au_instantiate_probe/probe_noise.h"      // standalone: the --sweep signal=noise generator, pinned here
 
@@ -11954,6 +11958,149 @@ int main (int, char**)
     testLoopOutcomes();
     testCategoriesMerge();
 
+    // WZ-TRUST-8 THE RECENCY RULE (Kathy, 17 Oct): an old failed reading is set aside when a NEWER source on the map's own version reads
+    // the control back cleanly at 2+ settings; it stands when the newer source is another version, older, a single reading, or itself
+    // failing, and when the failure has no date. WZ-TRUST-9 THE OLD FORMAT: a params-only map's role control is credited and planned
+    {
+        using namespace ejmap::trust;
+        const auto map = juce::JSON::parse (R"J({"fp":"F","identity":{"name":"X","version":"1.0"},"category":"compressor","controls":{
+            "Threshold":{"name":"Threshold","index":0,"kind":"anchored","anchors":[[-60,0],[0,1]]}}})J");
+        auto R = [] (std::initializer_list<std::pair<double, const char*>> xs) { Readings r; for (const auto& [n, d] : xs) r["Threshold"].push_back ({ n, d }); return r; };
+        const auto oldFail = R ({ { 0.9, "-2.0" } });                                   // the map says -6: a failure
+        const auto newClean = R ({ { 0.25, "-45.0" }, { 0.5, "-30.0" }, { 0.75, "-15.0" } });
+        const SourceMeta oct4 { "1.0", stampMs ("2026-10-04") }, oct16 { "1.0", stampMs ("20261016T232136") }, other { "0.9", stampMs ("20261016T232136") }, undated { "1.0", 0 };
+        auto run = [&] (std::vector<std::pair<juce::String, Readings>> src, std::vector<SourceMeta> meta) { const auto rb = creditMap (map, src, meta); return rb.at ("Threshold"); };
+        const auto replaced = run ({ { "a", oldFail }, { "b", newClean } }, { oct4, oct16 });
+        const auto otherVer = run ({ { "a", oldFail }, { "b", newClean } }, { oct4, other });
+        const auto newerFail = run ({ { "a", newClean }, { "b", oldFail } }, { oct4, oct16 });
+        const auto oneRead = run ({ { "a", oldFail }, { "b", R ({ { 0.5, "-30.0" } }) } }, { oct4, oct16 });
+        const auto noDate = run ({ { "a", oldFail }, { "b", newClean } }, { undated, oct16 });
+        const auto noMeta = run ({ { "a", oldFail }, { "b", newClean } }, {});
+        const auto newMixed = run ({ { "a", oldFail }, { "b", R ({ { 0.25, "-45.0" }, { 0.5, "-30.0" }, { 0.75, "-3.0" } }) } }, { oct4, oct16 });   // 2 pass + 1 fail: not clean
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (replaced.proven() && replaced.superseded == 1 && replaced.judged == 3 && ! otherVer.proven() && otherVer.failed == 1
+               && ! newerFail.proven() && newerFail.superseded == 0 && ! oneRead.proven() && oneRead.superseded == 0 && oneRead.failed == 1 && ! noDate.proven() && noDate.failed == 1 && ! noMeta.proven()
+               && newMixed.superseded == 0 && newMixed.failed == 2
+               && trr.contains ("const auto rb = trust::creditMap (m, pd.readings, pd.metas);") && trr.contains ("pd.readings.push_back ({ tag, std::move (rs) }); pd.metas.push_back (trust::metaOfRecord (rec));")
+               && stampMs ("20261016T232136") > stampMs ("2026-10-16") && stampMs ("2026-10-16") > stampMs ("2026-10-04") && stampMs ("") == 0
+               && metaOfRecord (juce::JSON::parse (R"J({"plugin":{"version":"2.1"},"measured":{"date":"2026-10-08"}})J")).version == "2.1"
+               && metaOfRecord (juce::JSON::parse (R"J({"version":"1.1.8","sampledAt":"2026-10-04"})J")).atMs == stampMs ("2026-10-04"),
+               "wizard WZ-TRUST-8: a newer clean read-back (same version, 2+ settings) sets an old failure aside; another version, an older or single reading, a newer failure or an undated failure leave it standing");
+        const auto oldFmt = juce::JSON::parse (R"J({"fp":"G","identity":{"name":"CLA","version":"12.0.0"},"category":"compressor","controls":{},
+            "params":{"input_db":{"index":0,"name":"Input","kind":"input_db","anchors":[[-60,0],[0,1]]},"ratio":{"index":1,"name":"Ratio","kind":"ratio"}}})J");
+        const auto before = juce::JSON::toString (oldFmt);
+        Readings rin; rin["Input"] = { { 0.25, "-45 dB" }, { 0.75, "-15 dB" } };
+        const auto rb = creditMap (oldFmt, { { "cert", rin } });
+        const auto ws = ejmap::readback::plan (oldFmt);
+        check (rb.count ("Input") && rb.at ("Input").proven() && ws.size() == 1 && ws[0].name == "Input" && ws[0].index == 0 && ws[0].norms.size() == 3
+               && juce::JSON::toString (oldFmt) == before,
+               "wizard WZ-TRUST-9: an old-format map's params control (anchors, no controls block) is credited and planned for read-back; the map itself is not written");
+    }
+    // WZ-RBSWEEP-2 WHICH MAP (17 Oct): the probe loads the AudioUnit, so the read-back plans from the AudioUnit map of the installed version,
+    // else the newest AudioUnit map - never a VST3 map, however new (Meaw Chain's 0.3.301 VST3 map beside the installed 0.4.45 AU).
+    // WZ-TRUST-10 --review-first: the review file names its first category and orders the counts-now rows of that category first
+    {
+        auto M = [] (const char* fmt, const char* ver, const char* tag) { return juce::JSON::parse (juce::String (R"J({"identity":{"name":"Meaw","format":")J") + fmt + R"J(","version":")J" + ver + R"J("},"tag":")J" + tag + R"J("})J"); };
+        using ejmap::readback::MapFile; using ejmap::readback::pickMap;
+        const std::vector<MapFile> c1 { { M ("VST3", "0.3.301", "vst3"), 300 }, { M ("AudioUnit", "0.4.45", "au-installed"), 100 }, { M ("AudioUnit", "0.3.0", "au-old"), 200 } };
+        const std::vector<MapFile> c2 { { M ("VST3", "0.4.45", "vst3"), 300 }, { M ("AudioUnit", "0.3.0", "au-a"), 100 }, { M ("AudioUnit", "0.3.1", "au-b"), 200 } };
+        const std::vector<MapFile> c3 { { M ("VST3", "0.4.45", "vst3"), 300 } };
+        auto tagOf = [] (const juce::var* m) { return m == nullptr ? juce::String ("none") : m->getProperty ("tag", "").toString(); };
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
+        check (tagOf (pickMap (c1, "0.4.45")) == "au-installed" && tagOf (pickMap (c2, "0.4.45")) == "au-b" && tagOf (pickMap (c3, "0.4.45")) == "none"
+               && rbs.contains ("readback::pickMap (mapsOf[desc.name], desc.version)"),
+               "wizard WZ-RBSWEEP-2: the read-back uses the AudioUnit map of the installed version, else the newest AudioUnit map, never a VST3 map");
+        check (trr.contains ("rv->setProperty (\"first_category\", firstCategory);") && trr.contains ("return now ? (x.getProperty (\"category\", \"\").toString() == firstCategory ? 0 : 1) : 2;")
+               && trr.contains ("std::stable_sort (v.begin(), v.end(), [&] (const juce::var& a, const juce::var& b) { return tier (a) < tier (b); });"),
+               "wizard WZ-TRUST-10: --review-first names the first category in the review file and orders its counts-now rows first, then the other counts-now rows, then the rest");
+    }
+    // WZ-TRUST-11 A PAIR THAT COUNTS (17 Oct): an EQ needs a band's freq AND gain, so no single yes maps it; two rows whose yeses together
+    // make the map "mapped" name each other in counts_with (and --review-first orders a pair as counts now)
+    {
+        using namespace ejmap::trust;
+        const auto eq = juce::JSON::parse (R"J({"fp":"Q","identity":{"name":"Q EQ","version":"1"},"category":"eq","controls":{
+            "Freq":{"name":"Freq","index":0,"kind":"anchored","anchors":[[100,0],[10000,1]]},
+            "Gain":{"name":"Gain","index":1,"kind":"anchored","anchors":[[-12,0],[12,1]]}}})J");
+        Readings r; r["Freq"] = { { 0.25, "2575" }, { 0.75, "7525" } }; r["Gain"] = { { 0.25, "-6.0" }, { 0.75, "6.0" } };
+        const auto rb = creditMap (eq, { { "cert", r } });
+        const auto items = ejmap::trustrun::reviewItems (eq, {}, rb);
+        juce::String fw, gw; bool alone = false;
+        for (const auto& x : items) { if ((bool) x.getProperty ("yes_makes_mapped", false)) alone = true;
+            if (x.getProperty ("control", "").toString() == "Freq") fw = x.getProperty ("counts_with", "").toString(); if (x.getProperty ("control", "").toString() == "Gain") gw = x.getProperty ("counts_with", "").toString(); }
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (items.size() == 2 && ! alone && fw == "Q|Gain" && gw == "Q|Freq" && levelFor (eq, false, "", rb).level == "unsure"
+               && trr.contains ("const bool now = (bool) x.getProperty (\"yes_makes_mapped\", false) || x.hasProperty (\"counts_with\");"),
+               "wizard WZ-TRUST-11: an EQ's freq and gain rows, neither enough alone, name each other in counts_with; a pair orders as counts now");
+        // the section of "Mid Frequency" (17 Oct): the role words come off longest first, so it is MF like "Mid Gain" and the two pair
+        const auto kr = juce::JSON::parse (R"J({"fp":"K","identity":{"name":"K EQ","version":"1"},"category":"eq","controls":{
+            "Input Gain":{"name":"Input Gain","index":0,"kind":"anchored","anchors":[[-12,0],[12,1]]},
+            "Mid Frequency":{"name":"Mid Frequency","index":1,"kind":"anchored","anchors":[[100,0],[10000,1]]},
+            "Mid Gain":{"name":"Mid Gain","index":2,"kind":"anchored","anchors":[[-12,0],[12,1]]}}})J");
+        Readings kr2; kr2["Input Gain"] = { { 0.25, "-6.0" }, { 0.75, "6.0" } }; kr2["Mid Frequency"] = { { 0.25, "2575" }, { 0.75, "7525" } }; kr2["Mid Gain"] = { { 0.25, "-6.0" }, { 0.75, "6.0" } };
+        const auto krb = creditMap (kr, { { "cert", kr2 } });
+        juce::String midF; for (const auto& x : ejmap::trustrun::reviewItems (kr, {}, krb)) if (x.getProperty ("control", "").toString() == "Mid Frequency") midF = x.getProperty ("counts_with", "").toString();
+        check (knownSection (sectionOf ("Mid Frequency")) == "mf" && knownSection (sectionOf ("Low Frequency")) == "lf" && knownSection (sectionOf ("HF Frq")) == "hf"
+               && knownSection (sectionOf ("CompThresh")) == "comp" && knownSection (sectionOf ("Mid Gain")) == "mf" && midF == "K|Mid Gain",
+               "wizard WZ-TRUST-11b: 'Mid Frequency' is in MF (role words off longest first), so it pairs with 'Mid Gain' - not with 'Input Gain'");
+    }
+    // WZ-MBV1-3 EVERY PART MUST HOLD (17 Oct, the overnight run on Kathy's Mac): OTT's threshold display is 0-100, not dB, so its
+    // threshold is "not tested" - no OTT band is certified; C4 (m) from the same run still certifies all four (the files are read)
+    {
+        const auto T = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-17-overnight");
+        auto j = [&] (const char* sub, const char* f) { return juce::JSON::parse (T.getChildFile (sub).getChildFile (f).loadFileAsString()); };
+        const auto ott = ejmap::mbv1::judge (j ("multiband_drafts", "AudioUnit_6155777e_1.3.7.multiband_profile.draft.json"), j ("multiband_v1", "AudioUnit_6155777e_1.3.7.multiband_v1.json"));
+        const auto c4 = ejmap::mbv1::judge (j ("multiband_drafts", "AudioUnit_4e436063_12.0.0.multiband_profile.draft.json"), j ("multiband_v1", "AudioUnit_4e436063_12.0.0.multiband_v1.json"));
+        bool ottThrUntested = ott.bands.size() == 3, ottGainBand1 = false;
+        for (const auto& b : ott.bands) for (const auto& p : b.parts) { if (p.name == "threshold" && p.state != "not_tested") ottThrUntested = false; if (b.band == 1 && p.name == "gain" && p.state == "pass") ottGainBand1 = true; }
+        int c4Pass = 0; for (const auto& b : c4.bands) if (b.pass) ++c4Pass;
+        check (ottThrUntested && ottGainBand1 && ! ott.pass && ott.certifiedParts().isEmpty() && c4.bands.size() == 4 && c4Pass == 4 && c4.pass,
+               "wizard WZ-MBV1-3: a band is certified only when every part holds - OTT (threshold display 0-100, not tested) certifies nothing; C4 (m) from the same night certifies 4 of 4");
+    }
+    // WZ-RBSWEEP-1 THE READ-BACK-ONLY SWEEP (Kathy, 16 Oct, overnight): anchored controls at readbackTargets, mode controls at two labels, one
+    // --text-at-norms-multi load; a reading is kept only where the write landed on the parameter carrying the map's name; the record is the
+    // shape --trust-levels reads, so a control read back right credits the map
+    {
+        using namespace ejmap::readback;
+        const auto map = juce::JSON::parse (R"J({"fp":"F","identity":{"name":"Ess","version":"1.0"},"controls":{
+            "Threshold":{"name":"Threshold","index":0,"kind":"anchored","anchors":[[-80,0],[0,1]]},
+            "Freq":{"name":"Freq","index":1,"kind":"anchored","anchors":[[1000,0],[10000,1]]},
+            "Mode":{"name":"Mode","index":2,"kind":"mode","labels":{"Wide":0.0,"Split":0.5,"Band":1.0}},
+            "Gone":{"name":"Gone","index":3,"kind":"anchored","anchors":[[0,0],[10,1]]},
+            "Bare":{"name":"Bare","index":4,"kind":"plain"}}})J");
+        const auto ws = plan (map);
+        const auto spec = specOf (ws);
+        const juce::String out = "textmulti\tproto\t1\tcontrols\t4\n"
+            "textat\tproto\t1\tindex\t0\tname\tThreshold\tpoints\t3\tinstantiated\t0.5\t-40.0\n"
+            "at\t0.250000\tlanded\tgetValue\t0.25\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t-60.0\n"
+            "at\t0.500000\tunlanded\tgetValue\t0.40\tconfirm_ms\t-1.0\tlanded_by\tnone\ttext\t-48.0\n"
+            "at\t0.750000\tlanded\tgetValue\t0.75\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t-20.0\n"
+            "restored\t0\t0.5\tlanded\n"
+            "textat\tproto\t1\tindex\t1\tname\tFreq\tpoints\t3\tinstantiated\t0\t1000\n"
+            "at\t0.250000\tlanded\tgetValue\t0.25\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t3250 Hz\n"
+            "textat\tproto\t1\tindex\t2\tname\tMode\tpoints\t2\tinstantiated\t0\tWide\n"
+            "at\t0.000000\tlanded\tgetValue\t0\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\tWide\n"
+            "at\t0.500000\tlanded\tgetValue\t0.5\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\tSplit\n"
+            "textat\tproto\t1\tindex\t3\tname\tOther\tpoints\t3\tinstantiated\t0\t0\n"
+            "at\t0.250000\tlanded\tgetValue\t0.25\tconfirm_ms\t1.0\tlanded_by\tvalue\ttext\t2.5\n"
+            "done\n";
+        const auto rec = record (map, ws, parse (out), "1.0");
+        const auto* cs = rec.getProperty ("controls", {}).getArray();
+        const auto thr = cs != nullptr && cs->size() > 0 ? (*cs)[0] : juce::var();
+        const auto rs = ejmap::trust::readingsOfRecord (rec);
+        const auto rb = ejmap::trust::creditMap (map, { { "cert:x", rs } });
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString().fromFirstOccurrenceOf ("inline int runReadbackSweep", false, false);
+        const auto mainRb = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--readback-sweep\")", false, false).upToFirstOccurrenceOf ("if (a == \"--cert-v1\")", false, false);
+        check (ws.size() == 4 && spec == "0:0.250000,0.500000,0.750000;1:0.250000,0.500000,0.750000;2:0.000000,0.500000;3:0.250000,0.500000,0.750000"
+               && cs != nullptr && cs->size() == 3 && thr.getProperty ("displayAt", {}).getDynamicObject() != nullptr && thr.getProperty ("displayAt", {}).getDynamicObject()->getProperties().size() == 2
+               && (int) thr.getProperty ("unlanded", 0) == 1 && rec.getProperty ("not_read", {}).size() == 1 && rec.getProperty ("not_read", {})[0].getProperty ("name", "").toString() == "Gone"
+               && rb.count ("Threshold") && rb.at ("Threshold").proven() && rb.count ("Freq") && ! rb.at ("Freq").proven() && rb.count ("Mode") && rb.at ("Mode").proven() && ! rb.count ("Gone")
+               && run.indexOf ("guardedPlugins (names, false, \"READBACK\")") >= 0 && run.indexOf ("guardedPlugins (names, false, \"READBACK\")") < run.indexOf ("runProbeCall")
+               && run.indexOf ("if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say (\"READBACK: \" + desc.name + \" - \" + gate.stop); ++refused; continue; }") >= 0
+               && run.indexOf ("licenceGate (opt, desc)") < run.indexOf ("runProbeCall") && run.contains ("if (recFile.existsAsFile()) { ++skipped; continue; }")
+               && run.contains ("EJ_RUNALL_UNTIL_MS") && run.contains ("if (r.kind == ChildResult::Kind::uiShown)") && mainRb.contains ("if (o.out == juce::File() ||") && ! mainRb.contains ("Library/ejmap/cert"),
+               "wizard WZ-RBSWEEP-1: the read-back-only sweep plans 3 targets / 2 labels, keeps only landed writes on the map's own parameter, credits through --trust-levels; guard and licence gate before the load, resumable, no default --out");
+    }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
 }

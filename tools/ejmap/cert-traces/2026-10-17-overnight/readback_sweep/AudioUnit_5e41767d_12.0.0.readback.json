@@ -1,0 +1,466 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "AR TG Mastering Live (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "135f66fbd660ee99c32aaccd114489d395edcf4881e87121101d6ac6da35cebd",
+  "controls": [
+    {
+      "name": "Output Gain",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "Inp:On/Off",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Inp:Input",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.0",
+        "0.500000": "0.0",
+        "0.750000": "12.0"
+      }
+    },
+    {
+      "name": "Inp:Pole",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "+",
+        "1.000000": "-"
+      }
+    },
+    {
+      "name": "Inp:Phase 90",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "+90",
+        "0.500000": "0",
+        "0.750000": "-90"
+      }
+    },
+    {
+      "name": "Tone:On/Off",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Band 1 Frequency",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "45",
+        "0.500000": "64",
+        "0.750000": "91"
+      }
+    },
+    {
+      "name": "Tone:Band 1 Gain",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Tone:Band 1 Shape",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LOW",
+        "0.500000": "MED"
+      }
+    },
+    {
+      "name": "Tone:Band 1 On",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Listen 1",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Band 2 Frequency",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "256",
+        "0.500000": "362",
+        "0.750000": "512"
+      }
+    },
+    {
+      "name": "Tone:Band 2 Gain",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Tone:Band 2 Shape",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LOW",
+        "0.250000": "BL"
+      }
+    },
+    {
+      "name": "Tone:Band 2 On",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Listen 2",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Band 3 Frequency",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.45",
+        "0.500000": "2.05",
+        "0.750000": "2.60"
+      }
+    },
+    {
+      "name": "Tone:Band 3 Gain",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Tone:Band 3 Shape",
+      "index": 20,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LOW",
+        "0.500000": "MED"
+      }
+    },
+    {
+      "name": "Tone:Band 3 On",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Listen 3",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Band 4 Frequency",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.8",
+        "0.500000": "8.1",
+        "0.750000": "11.0"
+      }
+    },
+    {
+      "name": "Tone:Band 4 Gain",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Tone:Band 4 Shape",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LOW",
+        "0.250000": "BL"
+      }
+    },
+    {
+      "name": "Tone:Band 4 On",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Listen 4",
+      "index": 27,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Tone:Solo Activate",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:On/Off",
+      "index": 29,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:Mode",
+      "index": 30,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Original",
+        "1.000000": "Limiter"
+      }
+    },
+    {
+      "name": "Limit:Recovery",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "Limit:Mix",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Limit:Ratio",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.8",
+        "0.500000": "50.5",
+        "0.750000": "75.3"
+      }
+    },
+    {
+      "name": "Limit:SC Filter",
+      "index": 34,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:Make Up Gain",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Limit:SC LP On/Off",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:SC LP Frequency",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6250.0",
+        "0.500000": "11500.0",
+        "0.750000": "16750.0"
+      }
+    },
+    {
+      "name": "Limit:SC Bell On/Off",
+      "index": 38,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:SC Bell Frequency",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "550.0",
+        "0.500000": "1000.0",
+        "0.750000": "6500.0"
+      }
+    },
+    {
+      "name": "Limit:SC Bell Gain",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-20.0",
+        "0.500000": "0.0",
+        "0.750000": "20.0"
+      }
+    },
+    {
+      "name": "Limit:SC HP On/Off",
+      "index": 41,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:SC HP Frequency",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "268.8",
+        "0.500000": "512.5",
+        "0.750000": "756.3"
+      }
+    },
+    {
+      "name": "Limit:SC Listen",
+      "index": 43,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limit:Solo Activate",
+      "index": 44,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Fltr:On/Off",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Fltr:LP Freq",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.200000": "10[kHz]",
+        "0.400000": "12[kHz]",
+        "0.600000": "15[kHz]"
+      }
+    },
+    {
+      "name": "Fltr:Presence Frequency",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.2",
+        "0.500000": "2.8",
+        "0.750000": "4.2"
+      }
+    },
+    {
+      "name": "Fltr:Presence Gain",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Fltr:HP Freq",
+      "index": 49,
+      "kind": "anchored",
+      "displayAt": {
+        "0.437500": "63[Hz]",
+        "0.625000": "63[Hz]",
+        "0.812500": "80[Hz]"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T001533"
+}

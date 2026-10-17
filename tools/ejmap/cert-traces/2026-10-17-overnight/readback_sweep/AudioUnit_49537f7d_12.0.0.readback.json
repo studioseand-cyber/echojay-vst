@@ -1,0 +1,182 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "CLA Unplugged (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "f10e6951b443c5d4ed95aef9288785390a11e32d12b5229f68f9f21b0c669eb2",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Balance",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.0",
+        "0.500000": "0.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Bass Color",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Sub"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Treble Color",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Bite"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Compress Color",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Push"
+      }
+    },
+    {
+      "name": "Reverb 1",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Reverb 1 Color",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "Room"
+      }
+    },
+    {
+      "name": "PreDelay 1 On",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Reverb 2",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Reverb 2 Color",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.666667": "Large"
+      }
+    },
+    {
+      "name": "PreDelay 2 On",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Delay",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Delay Color",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "Slap"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Direct",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "On",
+        "1.000000": "Off"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235005"
+}

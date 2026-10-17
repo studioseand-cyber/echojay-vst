@@ -1,0 +1,1414 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Scheps Omni Channel (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "b99e9deb9cb61554a8367ee78059256ee2e7a5428063744e8eb3bd779a495feb",
+  "controls": [
+    {
+      "name": "Invert L",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "+",
+        "1.000000": "-"
+      }
+    },
+    {
+      "name": "Input Gain",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.7",
+        "0.500000": "-12.5",
+        "0.750000": "-0.6"
+      }
+    },
+    {
+      "name": "Input Gain R",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.7",
+        "0.500000": "-12.5",
+        "0.750000": "-0.6"
+      }
+    },
+    {
+      "name": "Output Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.7",
+        "0.500000": "-12.5",
+        "0.750000": "-0.6"
+      }
+    },
+    {
+      "name": "Output Gain R",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.7",
+        "0.500000": "-12.5",
+        "0.750000": "-0.6"
+      }
+    },
+    {
+      "name": "Monitor Gain",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.7",
+        "0.500000": "-12.5",
+        "0.750000": "-0.6"
+      }
+    },
+    {
+      "name": "Monitor Gain R",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.7",
+        "0.500000": "-12.5",
+        "0.750000": "-0.6"
+      }
+    },
+    {
+      "name": "Monitor",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Left",
+        "0.200000": "Stereo"
+      }
+    },
+    {
+      "name": "Limit:Threshold",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-22.5",
+        "0.500000": "-15.0",
+        "0.750000": "-7.5"
+      }
+    },
+    {
+      "name": "VU Select",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "In",
+        "0.500000": "Gr"
+      }
+    },
+    {
+      "name": "Pre:Size",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Saturation On/Off ",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Pre Type",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Odd",
+        "0.500000": "Even"
+      }
+    },
+    {
+      "name": "Pre:Pre Type R",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Odd",
+        "0.500000": "Even"
+      }
+    },
+    {
+      "name": "Pre:Saturation",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Pre:Saturation R",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Pre:Thump",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "+2",
+        "0.500000": "+2",
+        "0.750000": "+4"
+      }
+    },
+    {
+      "name": "Pre:Thump On",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Thump R",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "+2",
+        "0.500000": "+2",
+        "0.750000": "+4"
+      }
+    },
+    {
+      "name": "Pre:HP On/Off R",
+      "index": 29,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:HP Slope",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6db/oct",
+        "0.500000": "12db/oct",
+        "0.750000": "18db/oct"
+      }
+    },
+    {
+      "name": "Pre:HPF Slope R",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6db/oct",
+        "0.500000": "12db/oct",
+        "0.750000": "18db/oct"
+      }
+    },
+    {
+      "name": "Pre:HP Cutoff Frequency",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Pre:HP Cutoff Frequency R",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Pre:LP On/Off R",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:LP Slope",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6db/oct",
+        "0.500000": "12db/oct",
+        "0.750000": "18db/oct"
+      }
+    },
+    {
+      "name": "Pre:LP Slope R",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6db/oct",
+        "0.500000": "12db/oct",
+        "0.750000": "18db/oct"
+      }
+    },
+    {
+      "name": "Pre:LP Cutoff Frequency",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Pre:LP Cutoff Frequency R",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Pre:ST Mode",
+      "index": 40,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Duo"
+      }
+    },
+    {
+      "name": "Gate:Threshold",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-60.0",
+        "0.500000": "-30.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Gate:Threshold R",
+      "index": 45,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-60.0",
+        "0.500000": "-30.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Gate:Floor",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Gate:Floor R",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Gate:Close",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Gate:Close R",
+      "index": 49,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Gate:Attack",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.0",
+        "0.500000": "10.0",
+        "0.750000": "100.0"
+      }
+    },
+    {
+      "name": "Gate:Attack R",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.0",
+        "0.500000": "10.0",
+        "0.750000": "100.0"
+      }
+    },
+    {
+      "name": "Gate:Release",
+      "index": 52,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "10.0",
+        "0.500000": "100.0",
+        "0.750000": "1000.0"
+      }
+    },
+    {
+      "name": "Gate:Release R",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "10.0",
+        "0.500000": "100.0",
+        "0.750000": "1000.0"
+      }
+    },
+    {
+      "name": "Gate:Exp",
+      "index": 54,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Gate",
+        "1.000000": "Exp"
+      }
+    },
+    {
+      "name": "Gate:Exp R",
+      "index": 55,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Gate",
+        "1.000000": "Exp"
+      }
+    },
+    {
+      "name": "Gate:Listen",
+      "index": 56,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate:Listen R",
+      "index": 57,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate:ExtSC",
+      "index": 58,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Int",
+        "1.000000": "Ext"
+      }
+    },
+    {
+      "name": "Gate:HP F R",
+      "index": 62,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Gate:LP On/Off",
+      "index": 63,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate:LP F",
+      "index": 65,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Gate:LP F R",
+      "index": 66,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Gate:Solo Activate",
+      "index": 68,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp:Type R",
+      "index": 72,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "VCA",
+        "0.500000": "FET"
+      }
+    },
+    {
+      "name": "Comp:Ratio",
+      "index": 73,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "2.3:1",
+        "0.475000": "4.7:1",
+        "0.712500": "13.0:1"
+      }
+    },
+    {
+      "name": "Comp:Ratio R",
+      "index": 74,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "2.3:1",
+        "0.475000": "4.7:1",
+        "0.712500": "13.0:1"
+      }
+    },
+    {
+      "name": "Comp:Attack",
+      "index": 75,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.76",
+        "0.500000": "7.75",
+        "0.750000": "34.09"
+      }
+    },
+    {
+      "name": "Comp:Release",
+      "index": 77,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "158.1",
+        "0.500000": "500.0",
+        "0.750000": "1581.1"
+      }
+    },
+    {
+      "name": "Comp:Release R",
+      "index": 78,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "158.1",
+        "0.500000": "500.0",
+        "0.750000": "1581.1"
+      }
+    },
+    {
+      "name": "Comp:Threshold",
+      "index": 79,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "-38.12",
+        "0.475000": "-26.25",
+        "0.712500": "-14.37"
+      }
+    },
+    {
+      "name": "Comp:Mix",
+      "index": 81,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Comp:SC HP F",
+      "index": 83,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Comp:SC HP F R",
+      "index": 84,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Comp:SC Bell G",
+      "index": 85,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Comp:SC Bell G R",
+      "index": 86,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Comp:SC Bell F",
+      "index": 87,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "255",
+        "0.525000": "1175",
+        "0.762500": "5359"
+      }
+    },
+    {
+      "name": "Comp:SC Bell F R",
+      "index": 88,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Comp:SC Shelf G",
+      "index": 89,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Comp:SC Shelf G R",
+      "index": 90,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Comp:SC Shelf F",
+      "index": 91,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Comp:SC Shelf F R",
+      "index": 92,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "Comp:SC Bell On/Off R",
+      "index": 96,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Comp:SC Shelf On/Off R",
+      "index": 98,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Comp:ST Mode",
+      "index": 99,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "ST",
+        "0.500000": "DUO"
+      }
+    },
+    {
+      "name": "Comp:Out Gain",
+      "index": 100,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Comp:Out Gain R",
+      "index": 101,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Comp:ExtSC",
+      "index": 102,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp:SCMon",
+      "index": 103,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp:SCMon R",
+      "index": 104,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp:Solo Activate",
+      "index": 105,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:On/Off",
+      "index": 106,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:1 Threshold",
+      "index": 109,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "DeEsser:1 Threshold R",
+      "index": 110,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "DeEsser:1 Type",
+      "index": 111,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LoShelf",
+        "0.333333": "Bell"
+      }
+    },
+    {
+      "name": "DeEsser:1 Type R",
+      "index": 112,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LoShelf",
+        "0.333333": "Bell"
+      }
+    },
+    {
+      "name": "DeEsser:1 Monitor R",
+      "index": 114,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:1 On/Off",
+      "index": 115,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:1 Frequency",
+      "index": 116,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "DeEsser:1 Frequency R",
+      "index": 118,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "DeEsser:2 Threshold",
+      "index": 119,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "DeEsser:2 Threshold R",
+      "index": 120,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "DeEsser:2 Type",
+      "index": 121,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LoShelf",
+        "0.333333": "Bell"
+      }
+    },
+    {
+      "name": "DeEsser:2 Type R",
+      "index": 122,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "LoShelf",
+        "0.333333": "Bell"
+      }
+    },
+    {
+      "name": "DeEsser:2 Monitor",
+      "index": 123,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:2 Monitor R",
+      "index": 124,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:2 On/Off",
+      "index": 125,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:2 Frequency",
+      "index": 126,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "DeEsser:2 On/Off R",
+      "index": 127,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:2 Frequency R",
+      "index": 128,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "DeEsser:Output",
+      "index": 129,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "DeEsser:Output R",
+      "index": 130,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "DeEsser:DeEsser Range",
+      "index": 131,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "DeEsser:Attack",
+      "index": 132,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.10",
+        "0.500000": "1.00",
+        "0.750000": "10.00"
+      }
+    },
+    {
+      "name": "DeEsser:RefAtt",
+      "index": 133,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.18",
+        "0.500000": "3.16",
+        "0.750000": "56.23"
+      }
+    },
+    {
+      "name": "DeEsser:Release",
+      "index": 134,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.0",
+        "0.500000": "10.0",
+        "0.750000": "100.0"
+      }
+    },
+    {
+      "name": "DeEsser:ExtSC",
+      "index": 135,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEsser:Stereo Mode",
+      "index": 136,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "1.000000": "MS"
+      }
+    },
+    {
+      "name": "EQ:Size",
+      "index": 139,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ:ST Mode",
+      "index": 140,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Duo"
+      }
+    },
+    {
+      "name": "EQ:LF On/Off",
+      "index": 141,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ:LF Filter Type",
+      "index": 142,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "ResShelve",
+        "0.500000": "Shelve"
+      }
+    },
+    {
+      "name": "EQ:LF Q",
+      "index": 143,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:LF Frequency",
+      "index": 144,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:LF Gain",
+      "index": 145,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:Tone Filter Type",
+      "index": 147,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Wide",
+        "0.500000": "Narrow"
+      }
+    },
+    {
+      "name": "EQ:Tone Q",
+      "index": 148,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:Tone Frequency",
+      "index": 149,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:Tone Gain",
+      "index": 150,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:Mid On/Off",
+      "index": 151,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ:Mid Filter Type",
+      "index": 152,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Wide",
+        "0.500000": "Narrow"
+      }
+    },
+    {
+      "name": "EQ:Mid Q",
+      "index": 153,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:Mid Frequency",
+      "index": 154,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:Mid Gain",
+      "index": 155,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:HF On/Off",
+      "index": 156,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ:HF Filter Type",
+      "index": 157,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelve",
+        "1.000000": "Parametric"
+      }
+    },
+    {
+      "name": "EQ:HF Q",
+      "index": 158,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:HF Frequency",
+      "index": 159,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:HF Gain",
+      "index": 160,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:Solo Activate",
+      "index": 161,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ:Link",
+      "index": 162,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ:LF Filter Type R",
+      "index": 164,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "ResShelve",
+        "0.500000": "Shelve"
+      }
+    },
+    {
+      "name": "EQ:LF Q R",
+      "index": 165,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:LF Frequency R",
+      "index": 166,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:LF Gain R",
+      "index": 167,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:Tone On/Off R",
+      "index": 168,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ:Tone Filter Type R",
+      "index": 169,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "ResShelve",
+        "0.500000": "Shelve"
+      }
+    },
+    {
+      "name": "EQ:Tone Q R",
+      "index": 170,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:Tone Frequency R",
+      "index": 171,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:Tone Gain R",
+      "index": 172,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:Mid On/Off R",
+      "index": 173,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ:Mid Filter Type R",
+      "index": 174,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelve",
+        "0.500000": "ResShelve"
+      }
+    },
+    {
+      "name": "EQ:Mid Q R",
+      "index": 175,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:Mid Frequency R",
+      "index": 176,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:Mid Gain R",
+      "index": 177,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "EQ:HF On/Off R",
+      "index": 178,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ:HF Filter Type R",
+      "index": 179,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelve",
+        "1.000000": "Parametric"
+      }
+    },
+    {
+      "name": "EQ:HF Q R",
+      "index": 180,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.53",
+        "0.500000": "1.41",
+        "0.750000": "3.76"
+      }
+    },
+    {
+      "name": "EQ:HF Frequency R",
+      "index": 181,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "200",
+        "0.500000": "1000",
+        "0.750000": "5000"
+      }
+    },
+    {
+      "name": "EQ:HF Gain R",
+      "index": 182,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T001109"
+}

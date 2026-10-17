@@ -1,0 +1,17 @@
+TRUST-LEVELS: 877 control(s) for the human check (16 where a yes alone makes the map mapped, 108 in pairs where two yeses do); 40 map(s) with answers applied
+TRUST-LEVELS: 1123 map(s); read-back credited on 12327 control(s) from the measuring runs (566 of them with a failed reading); 238 older failed reading(s) on 45 control(s) set aside by a newer clean r
+category | certified | mapped | unsure | testable | held
+eq | 12 | 57 | 75 | 144 | 84
+compressor | 60 | 37 | 25 | 122 | 100
+saturation | 40 | 33 | 36 | 109 | 43
+channel_strip | 0 | 15 | 80 | 95 | 30
+reverb | 33 | 43 | 16 | 92 | 22
+delay | 1 | 15 | 26 | 42 | 18
+amp_sim | 15 | 3 | 24 | 42 | 59
+limiter | 25 | 6 | 8 | 39 | 7
+de-esser | 0 | 15 | 10 | 25 | 4
+transient_shaper | 0 | 5 | 14 | 19 | 4
+pitch | 0 | 0 | 8 | 8 | 7
+gate | 4 | 0 | 4 | 8 | 0
+TOTAL 190 229 326 745 held 378
+held: UAD 332, demo 28, silent 9, APB / hardware 6, licence 3

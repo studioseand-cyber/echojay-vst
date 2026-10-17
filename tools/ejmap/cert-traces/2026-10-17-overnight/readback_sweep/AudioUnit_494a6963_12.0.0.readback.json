@@ -1,0 +1,1156 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "CLA MixHub (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "be99aea3ebca14b05147bc6b167ad95254ec722527e646329a01b0d6bd0d5313",
+  "controls": [
+    {
+      "name": "Change Notify Insert",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2498.0",
+        "0.500000": "4999.0",
+        "0.750000": "7499.0"
+      }
+    },
+    {
+      "name": "Pre:On/Off",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Link",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Line",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.0",
+        "0.500000": "0.0",
+        "0.750000": "10.0"
+      }
+    },
+    {
+      "name": "Pre:Line R",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.0",
+        "0.500000": "0.0",
+        "0.750000": "10.0"
+      }
+    },
+    {
+      "name": "Pre:Mic",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "12.5",
+        "0.500000": "25.0",
+        "0.750000": "37.5"
+      }
+    },
+    {
+      "name": "Pre:Mic R",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "12.5",
+        "0.500000": "25.0",
+        "0.750000": "37.5"
+      }
+    },
+    {
+      "name": "Pre:Analog",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Noise",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:Noise R",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:-20dB R",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "-20"
+      }
+    },
+    {
+      "name": "Pre:LP Cutoff Frq",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "10.9",
+        "0.500000": "5.0",
+        "0.750000": "3.6"
+      }
+    },
+    {
+      "name": "Pre:LP Cutoff Frq R",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "10.9",
+        "0.500000": "5.0",
+        "0.750000": "3.6"
+      }
+    },
+    {
+      "name": "Pre:LP On/Off",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre:HP Cutoff Frq",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "33.8",
+        "0.500000": "120.0",
+        "0.750000": "272.4"
+      }
+    },
+    {
+      "name": "Pre:HP Cutoff Frq R",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "33.8",
+        "0.500000": "120.0",
+        "0.750000": "272.4"
+      }
+    },
+    {
+      "name": "Pre:ST Mode",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Duo"
+      }
+    },
+    {
+      "name": "Pre:HP On/Off R",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Eq:On/Off",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Eq:Link",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Eq:ST Mode",
+      "index": 27,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "1.000000": "MS"
+      }
+    },
+    {
+      "name": "Eq:LF Bell On/Off R",
+      "index": 29,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Eq:LF Frequency",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "64",
+        "0.500000": "200",
+        "0.750000": "372"
+      }
+    },
+    {
+      "name": "Eq:LF Frequency R",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "64",
+        "0.500000": "200",
+        "0.750000": "372"
+      }
+    },
+    {
+      "name": "Eq:LF Gain",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:LF Gain R",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:LMF Q",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Eq:LMF Q R",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Eq:LMF Frequency",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.44",
+        "0.500000": "1.00",
+        "0.750000": "1.86"
+      }
+    },
+    {
+      "name": "Eq:LMF Frequency R",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.44",
+        "0.500000": "1.00",
+        "0.750000": "1.86"
+      }
+    },
+    {
+      "name": "Eq:LMF Gain",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:LMF Gain R",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:HMF Q",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Eq:HMF Q R",
+      "index": 43,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Eq:HMF Frequency",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.99",
+        "0.500000": "3.00",
+        "0.750000": "5.59"
+      }
+    },
+    {
+      "name": "Eq:HMF Gain",
+      "index": 45,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:HMF Frequency R",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.99",
+        "0.500000": "3.00",
+        "0.750000": "5.59"
+      }
+    },
+    {
+      "name": "Eq:HMF Gain R",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:HF Bell On/Off",
+      "index": 48,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Eq:HF Frequency",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.89",
+        "0.500000": "8.00",
+        "0.750000": "12.90"
+      }
+    },
+    {
+      "name": "Eq:HF Gain",
+      "index": 52,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:HF Gain R",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Eq:Solo Activate",
+      "index": 54,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:Link",
+      "index": 56,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Ind",
+        "1.000000": "Lnk"
+      }
+    },
+    {
+      "name": "Dyn:Comp Type",
+      "index": 57,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "SSL",
+        "1.000000": "BLUEY"
+      }
+    },
+    {
+      "name": "Dyn:Gate Type",
+      "index": 59,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "GATE",
+        "1.000000": "DUCKER"
+      }
+    },
+    {
+      "name": "Dyn:Gate Type R",
+      "index": 60,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "GATE",
+        "0.500000": "EXPAND"
+      }
+    },
+    {
+      "name": "Dyn:Ratio",
+      "index": 61,
+      "kind": "anchored",
+      "displayAt": {
+        "0.248437": "2.3:1",
+        "0.496875": "5.0:1",
+        "0.745312": "15.6:1"
+      }
+    },
+    {
+      "name": "Dyn:Ratio R",
+      "index": 62,
+      "kind": "anchored",
+      "displayAt": {
+        "0.248437": "2.3:1",
+        "0.496875": "5.0:1",
+        "0.745312": "15.6:1"
+      }
+    },
+    {
+      "name": "Dyn:Comp Threshold",
+      "index": 63,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "-5.00",
+        "0.750000": "-12.50"
+      }
+    },
+    {
+      "name": "Dyn:Comp Threshold R",
+      "index": 64,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "-5.00",
+        "0.750000": "-12.50"
+      }
+    },
+    {
+      "name": "Dyn:Fast Attack",
+      "index": 65,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Fast",
+        "1.000000": "Auto"
+      }
+    },
+    {
+      "name": "Dyn:Fast Attack R",
+      "index": 66,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Fast",
+        "1.000000": "Auto"
+      }
+    },
+    {
+      "name": "Dyn:Comp Release",
+      "index": 67,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.17",
+        "0.500000": "0.40",
+        "0.750000": "1.69"
+      }
+    },
+    {
+      "name": "Dyn:Comp Release R",
+      "index": 68,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.17",
+        "0.500000": "0.40",
+        "0.750000": "1.69"
+      }
+    },
+    {
+      "name": "Dyn:Comp Mix",
+      "index": 69,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Dyn:Comp Mix R",
+      "index": 70,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "28.8",
+        "0.525000": "52.5",
+        "0.762500": "76.3"
+      }
+    },
+    {
+      "name": "Dyn:SC Listen",
+      "index": 71,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:SC Listen R",
+      "index": 72,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:SC EQ",
+      "index": 73,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:Ext SC",
+      "index": 74,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:SC HP Cutoff Frequency R",
+      "index": 76,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "33.8",
+        "0.500000": "120.0",
+        "0.750000": "272.4"
+      }
+    },
+    {
+      "name": "Dyn:SC LP Cutoff Frequency",
+      "index": 77,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "10.9",
+        "0.500000": "5.0",
+        "0.750000": "3.6"
+      }
+    },
+    {
+      "name": "Dyn:SC LP Cutoff Frequency R",
+      "index": 78,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "10.9",
+        "0.500000": "5.0",
+        "0.750000": "3.6"
+      }
+    },
+    {
+      "name": "Dyn:SC Listen Side R",
+      "index": 80,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Dyn:SC LF Filter Type",
+      "index": 81,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Dyn:SC LF Filter Type R",
+      "index": 82,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Dyn:SC LF Gain",
+      "index": 83,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC LF Gain R",
+      "index": 84,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC LF Frequency",
+      "index": 85,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "64",
+        "0.500000": "200",
+        "0.750000": "372"
+      }
+    },
+    {
+      "name": "Dyn:SC LF Frequency R",
+      "index": 86,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "64",
+        "0.500000": "200",
+        "0.750000": "372"
+      }
+    },
+    {
+      "name": "Dyn:SC LMF Gain",
+      "index": 87,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC LMF Gain R",
+      "index": 88,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC LMF Frequency",
+      "index": 89,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.44",
+        "0.500000": "1.00",
+        "0.750000": "1.86"
+      }
+    },
+    {
+      "name": "Dyn:SC LMF Frequency R",
+      "index": 90,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.44",
+        "0.500000": "1.00",
+        "0.750000": "1.86"
+      }
+    },
+    {
+      "name": "Dyn:SC LMF Q",
+      "index": 91,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Dyn:SC LMF Q R",
+      "index": 92,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Dyn:SC HMF Gain",
+      "index": 93,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC HMF Gain R",
+      "index": 94,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC HMF Frequency",
+      "index": 95,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.99",
+        "0.500000": "3.00",
+        "0.750000": "5.59"
+      }
+    },
+    {
+      "name": "Dyn:SC HMF Frequency R",
+      "index": 96,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.99",
+        "0.500000": "3.00",
+        "0.750000": "5.59"
+      }
+    },
+    {
+      "name": "Dyn:SC HMF Q",
+      "index": 97,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Dyn:SC HMF Q R",
+      "index": 98,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.26",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "Dyn:SC HF Filter Type",
+      "index": 99,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Dyn:SC HF Filter Type R",
+      "index": 100,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Dyn:SC HF Gain",
+      "index": 101,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC HF Gain R",
+      "index": 102,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5",
+        "0.500000": "0.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Dyn:SC HF Frequency",
+      "index": 103,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "3.44",
+        "0.500000": "8.00",
+        "0.725000": "12.21"
+      }
+    },
+    {
+      "name": "Dyn:SC HF Frequency R",
+      "index": 104,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.89",
+        "0.500000": "8.00",
+        "0.750000": "12.90"
+      }
+    },
+    {
+      "name": "Dyn:SC Listen Gate",
+      "index": 105,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:SC Listen Comp",
+      "index": 107,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:SC Listen Comp R",
+      "index": 108,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:EQ To Gate",
+      "index": 111,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:EQ To Gate R",
+      "index": 112,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:Filter To Comp R",
+      "index": 114,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:EQ To Comp",
+      "index": 115,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:EQ To Comp R",
+      "index": 116,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:Filter and EQ To DYN R",
+      "index": 118,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:Gate Threshold",
+      "index": 119,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-23.33",
+        "0.500000": "-12.00",
+        "0.750000": "2.00"
+      }
+    },
+    {
+      "name": "Dyn:Gate Threshold R",
+      "index": 120,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-23.33",
+        "0.500000": "-12.00",
+        "0.750000": "2.00"
+      }
+    },
+    {
+      "name": "Dyn:Range",
+      "index": 121,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6.67",
+        "0.500000": "20.00",
+        "0.750000": "33.33"
+      }
+    },
+    {
+      "name": "Dyn:Range R",
+      "index": 122,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6.67",
+        "0.500000": "20.00",
+        "0.750000": "33.33"
+      }
+    },
+    {
+      "name": "Dyn:Hold",
+      "index": 123,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "250.00",
+        "0.500000": "500.00",
+        "0.750000": "750.00"
+      }
+    },
+    {
+      "name": "Dyn:Hold R",
+      "index": 124,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "250.00",
+        "0.500000": "500.00",
+        "0.750000": "750.00"
+      }
+    },
+    {
+      "name": "Dyn:Gate Attack R",
+      "index": 126,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "250.1",
+        "0.500000": "500.1",
+        "0.750000": "750.0"
+      }
+    },
+    {
+      "name": "Dyn:Ducker Release",
+      "index": 127,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1001",
+        "0.500000": "2001",
+        "0.750000": "3000"
+      }
+    },
+    {
+      "name": "Dyn:Ducker Release R",
+      "index": 128,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1001",
+        "0.500000": "2001",
+        "0.750000": "3000"
+      }
+    },
+    {
+      "name": "Dyn:Gate Release",
+      "index": 129,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "0.18",
+        "0.525000": "0.50",
+        "0.762500": "1.75"
+      }
+    },
+    {
+      "name": "Dyn:Gate Release R",
+      "index": 130,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.17",
+        "0.500000": "0.40",
+        "0.750000": "1.67"
+      }
+    },
+    {
+      "name": "Dyn:LP On/Off R",
+      "index": 132,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:HP On/Off",
+      "index": 133,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn:HP On/Off R",
+      "index": 134,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Post:Monitor",
+      "index": 139,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.600000": "Right"
+      }
+    },
+    {
+      "name": "Post:Output",
+      "index": 141,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.0",
+        "0.500000": "-18.0",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Post:Output R",
+      "index": 142,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-33.0",
+        "0.500000": "-18.0",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Post:Pan",
+      "index": 143,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25",
+        "0.500000": "0",
+        "0.750000": "25"
+      }
+    },
+    {
+      "name": "Post:Width",
+      "index": 144,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Post:Extra Width",
+      "index": 145,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Insert::On/Off",
+      "index": 147,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T001302"
+}

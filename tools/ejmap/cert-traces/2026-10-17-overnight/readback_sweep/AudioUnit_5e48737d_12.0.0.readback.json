@@ -1,0 +1,100 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati B72 (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "28233ce8a3d77e59199bc34dbfe9f86fe53e1f31f07622a350d894af7239794d",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Bass Type",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "DI",
+        "1.000000": "Synth"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output DI",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output Synth",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "-14.2",
+        "0.525000": "-9.5",
+        "0.762500": "-4.7"
+      }
+    },
+    {
+      "name": "Tone",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "FX Out",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000803"
+}

@@ -1,0 +1,1238 @@
+{
+  "fp": "f02a14ba19fc68728a0523d99bae2f602e1c70179bbcbb5135d149b8b87da106",
+  "schema": "2.4",
+  "identity": {
+    "format": "VST3",
+    "uid": "839f36b8",
+    "name": "TB_Sibalance_v4",
+    "vendor": "ToneBoosters",
+    "version": "4.2.2",
+    "param_count": 26
+  },
+  "category": "de-esser",
+  "mode": "fast",
+  "params": {
+  },
+  "controls": {
+    "Mode": {
+      "name": "Mode",
+      "index": 0,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        2.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.200000002980232
+        ],
+        [
+          1.0,
+          0.550000011920929
+        ],
+        [
+          2.0,
+          0.850000023841858
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Threshold": {
+      "name": "Threshold",
+      "index": 1,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        24.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.200000047683716,
+          0.050000000745058
+        ],
+        [
+          2.400000095367432,
+          0.100000001490116
+        ],
+        [
+          3.599999904632568,
+          0.150000005960464
+        ],
+        [
+          4.800000190734863,
+          0.200000002980232
+        ],
+        [
+          6.0,
+          0.25
+        ],
+        [
+          7.199999809265137,
+          0.300000011920929
+        ],
+        [
+          8.399999618530273,
+          0.350000023841858
+        ],
+        [
+          9.600000381469727,
+          0.400000005960464
+        ],
+        [
+          10.800000190734863,
+          0.449999988079071
+        ],
+        [
+          12.0,
+          0.5
+        ],
+        [
+          13.199999809265137,
+          0.550000011920929
+        ],
+        [
+          14.399999618530273,
+          0.600000023841858
+        ],
+        [
+          15.600000381469727,
+          0.649999976158142
+        ],
+        [
+          16.799999237060547,
+          0.699999988079071
+        ],
+        [
+          18.0,
+          0.75
+        ],
+        [
+          19.200000762939453,
+          0.800000011920929
+        ],
+        [
+          20.399999618530273,
+          0.850000023841858
+        ],
+        [
+          21.600000381469727,
+          0.899999976158142
+        ],
+        [
+          22.799999237060547,
+          0.949999988079071
+        ],
+        [
+          24.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Range": {
+      "name": "Range",
+      "index": 2,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        30.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.5,
+          0.050000000745058
+        ],
+        [
+          3.0,
+          0.100000001490116
+        ],
+        [
+          4.5,
+          0.150000005960464
+        ],
+        [
+          6.0,
+          0.200000002980232
+        ],
+        [
+          7.5,
+          0.25
+        ],
+        [
+          9.0,
+          0.300000011920929
+        ],
+        [
+          10.5,
+          0.350000023841858
+        ],
+        [
+          12.0,
+          0.400000005960464
+        ],
+        [
+          13.5,
+          0.449999988079071
+        ],
+        [
+          15.0,
+          0.5
+        ],
+        [
+          16.5,
+          0.550000011920929
+        ],
+        [
+          18.0,
+          0.600000023841858
+        ],
+        [
+          19.5,
+          0.649999976158142
+        ],
+        [
+          21.0,
+          0.699999988079071
+        ],
+        [
+          22.5,
+          0.75
+        ],
+        [
+          24.0,
+          0.800000011920929
+        ],
+        [
+          25.5,
+          0.850000023841858
+        ],
+        [
+          27.0,
+          0.899999976158142
+        ],
+        [
+          28.5,
+          0.949999988079071
+        ],
+        [
+          30.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Start freq": {
+      "name": "Start freq",
+      "index": 3,
+      "kind": "anchored",
+      "range": [
+        3000.0,
+        9000.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          3000.0,
+          0.0
+        ],
+        [
+          3300.0,
+          0.050000000745058
+        ],
+        [
+          3600.0,
+          0.100000001490116
+        ],
+        [
+          3900.0,
+          0.150000005960464
+        ],
+        [
+          4200.0,
+          0.200000002980232
+        ],
+        [
+          4500.0,
+          0.25
+        ],
+        [
+          4800.0,
+          0.300000011920929
+        ],
+        [
+          5100.0,
+          0.350000023841858
+        ],
+        [
+          5400.0,
+          0.400000005960464
+        ],
+        [
+          5700.0,
+          0.449999988079071
+        ],
+        [
+          6000.0,
+          0.5
+        ],
+        [
+          6300.0,
+          0.550000011920929
+        ],
+        [
+          6600.0,
+          0.600000023841858
+        ],
+        [
+          6900.0,
+          0.649999976158142
+        ],
+        [
+          7200.0,
+          0.699999988079071
+        ],
+        [
+          7500.0,
+          0.75
+        ],
+        [
+          7800.0,
+          0.800000011920929
+        ],
+        [
+          8100.0,
+          0.850000023841858
+        ],
+        [
+          8400.0,
+          0.899999976158142
+        ],
+        [
+          8700.0,
+          0.949999988079071
+        ],
+        [
+          9000.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Stop freq": {
+      "name": "Stop freq",
+      "index": 4,
+      "kind": "anchored",
+      "range": [
+        10000.0,
+        19000.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          10000.0,
+          0.0
+        ],
+        [
+          10450.0,
+          0.050000000745058
+        ],
+        [
+          10900.0,
+          0.100000001490116
+        ],
+        [
+          11350.0,
+          0.150000005960464
+        ],
+        [
+          11800.0,
+          0.200000002980232
+        ],
+        [
+          12250.0,
+          0.25
+        ],
+        [
+          12700.0,
+          0.300000011920929
+        ],
+        [
+          13150.0,
+          0.350000023841858
+        ],
+        [
+          13600.0,
+          0.400000005960464
+        ],
+        [
+          14050.0,
+          0.449999988079071
+        ],
+        [
+          14500.0,
+          0.5
+        ],
+        [
+          14950.0,
+          0.550000011920929
+        ],
+        [
+          15400.0,
+          0.600000023841858
+        ],
+        [
+          15850.0,
+          0.649999976158142
+        ],
+        [
+          16300.0,
+          0.699999988079071
+        ],
+        [
+          16750.0,
+          0.75
+        ],
+        [
+          17200.0,
+          0.800000011920929
+        ],
+        [
+          17650.0,
+          0.850000023841858
+        ],
+        [
+          18100.0,
+          0.899999976158142
+        ],
+        [
+          18550.0,
+          0.949999988079071
+        ],
+        [
+          19000.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Attack": {
+      "name": "Attack",
+      "index": 5,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        50.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.050000000745058
+        ],
+        [
+          5.0,
+          0.100000001490116
+        ],
+        [
+          8.0,
+          0.150000005960464
+        ],
+        [
+          10.0,
+          0.200000002980232
+        ],
+        [
+          13.0,
+          0.25
+        ],
+        [
+          15.0,
+          0.300000011920929
+        ],
+        [
+          18.0,
+          0.350000023841858
+        ],
+        [
+          20.0,
+          0.400000005960464
+        ],
+        [
+          23.0,
+          0.449999988079071
+        ],
+        [
+          25.0,
+          0.5
+        ],
+        [
+          28.0,
+          0.550000011920929
+        ],
+        [
+          30.0,
+          0.600000023841858
+        ],
+        [
+          33.0,
+          0.649999976158142
+        ],
+        [
+          35.0,
+          0.699999988079071
+        ],
+        [
+          38.0,
+          0.75
+        ],
+        [
+          40.0,
+          0.800000011920929
+        ],
+        [
+          43.0,
+          0.850000023841858
+        ],
+        [
+          45.0,
+          0.899999976158142
+        ],
+        [
+          48.0,
+          0.949999988079071
+        ],
+        [
+          50.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Release": {
+      "name": "Release",
+      "index": 6,
+      "kind": "anchored",
+      "range": [
+        50.0,
+        200.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          50.0,
+          0.0
+        ],
+        [
+          58.0,
+          0.050000000745058
+        ],
+        [
+          65.0,
+          0.100000001490116
+        ],
+        [
+          73.0,
+          0.150000005960464
+        ],
+        [
+          80.0,
+          0.200000002980232
+        ],
+        [
+          88.0,
+          0.25
+        ],
+        [
+          95.0,
+          0.300000011920929
+        ],
+        [
+          103.0,
+          0.350000023841858
+        ],
+        [
+          110.0,
+          0.400000005960464
+        ],
+        [
+          118.0,
+          0.449999988079071
+        ],
+        [
+          125.0,
+          0.5
+        ],
+        [
+          133.0,
+          0.550000011920929
+        ],
+        [
+          140.0,
+          0.600000023841858
+        ],
+        [
+          148.0,
+          0.649999976158142
+        ],
+        [
+          155.0,
+          0.699999988079071
+        ],
+        [
+          163.0,
+          0.75
+        ],
+        [
+          170.0,
+          0.800000011920929
+        ],
+        [
+          178.0,
+          0.850000023841858
+        ],
+        [
+          185.0,
+          0.899999976158142
+        ],
+        [
+          193.0,
+          0.949999988079071
+        ],
+        [
+          200.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "M/S mode": {
+      "name": "M/S mode",
+      "index": 7,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        2.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.200000002980232
+        ],
+        [
+          1.0,
+          0.550000011920929
+        ],
+        [
+          2.0,
+          0.850000023841858
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Audition": {
+      "name": "Audition",
+      "index": 8,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 1": {
+      "name": "C 1",
+      "index": 9,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 2": {
+      "name": "C 2",
+      "index": 10,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 3": {
+      "name": "C 3",
+      "index": 11,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 4": {
+      "name": "C 4",
+      "index": 12,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 5": {
+      "name": "C 5",
+      "index": 13,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 6": {
+      "name": "C 6",
+      "index": 14,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 7": {
+      "name": "C 7",
+      "index": 15,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 8": {
+      "name": "C 8",
+      "index": 16,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 9": {
+      "name": "C 9",
+      "index": 17,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 10": {
+      "name": "C 10",
+      "index": 18,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 11": {
+      "name": "C 11",
+      "index": 19,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 12": {
+      "name": "C 12",
+      "index": 20,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 13": {
+      "name": "C 13",
+      "index": 21,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 14": {
+      "name": "C 14",
+      "index": 22,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 15": {
+      "name": "C 15",
+      "index": 23,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "C 16": {
+      "name": "C 16",
+      "index": 24,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "trust": "setread",
+      "readback": {
+        "checked": 3,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    },
+    "Bypass": {
+      "name": "Bypass",
+      "index": 25,
+      "kind": "mode",
+      "range": [
+        0.0,
+        0.0
+      ],
+      "unit": null,
+      "labels": {
+        "Off": 0.0,
+        "On": 1.0
+      },
+      "caseInsensitiveOk": true,
+      "trust": "setread",
+      "readback": {
+        "checked": 2,
+        "failed": 0,
+        "pass": true,
+        "source": "sweep"
+      }
+    }
+  },
+  "groups": [],
+  "skips": [
+    {
+      "semantic": "threshold_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "sensitivity",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "freq_hz",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "mix_pct",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "output_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "range_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    }
+  ],
+  "declines": [],
+  "evidence": {
+    "noise_mask": [],
+    "readback": {
+    },
+    "visual_confirmed": [],
+    "audio_probe": {
+    },
+    "rehearsal": null,
+    "screenshots": {
+      "labelled": "",
+      "full": ""
+    },
+    "assist_turns": 0,
+    "duration_s": 0
+  },
+  "provenance": {
+    "tester_id": "",
+    "machine_id": "cd9ef69f-9660-4f2d-8d58-dbd0af2e6ea2",
+    "ejmap_version": "0.1.0 (ad50ddbb)",
+    "extractor_version": "5",
+    "apply_header_sha": "cb9ec96432be8aba29ee57fa7d39fabfc25c75e6753a37574ebaa0676c9f44d5",
+    "plugin_version": "4.2.2",
+    "host_os": "Mac OSX 15.7.5",
+    "at": "2026-10-17T08:14:39.661+01:00"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati B72 (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "2f34af23579576f7206a49c133c848fb84ce38326a55b4eb0cef58c5ebba2ede",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Bass Type",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "DI",
+        "1.000000": "Synth"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output DI",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output Synth",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-13.5",
+        "0.550000": "-9.0",
+        "0.775000": "-4.5"
+      }
+    },
+    {
+      "name": "Tone",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "FX Out",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Insert/Send",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Insert",
+        "1.000000": "Send"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000756"
+}

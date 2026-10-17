@@ -1,0 +1,127 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "MannyM TripleD (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "d17dbdff278e7e7e9975e8339ea9751a4538e27ca5c9553038e183253ff7d1ce",
+  "controls": [
+    {
+      "name": "Input Gain",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "DeBoxy Thresh",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "28.8",
+        "0.525000": "52.5",
+        "0.762500": "76.3"
+      }
+    },
+    {
+      "name": "DeBoxy Freq",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "DeBoxy Bypass",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeHarsh Thresh",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "DeHarsh Freq",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "DeHarsh Bypass",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeHarsh Listen",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DeEss Thresh",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "DeEss Freq",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "DeEss Listen",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output Gain",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000057"
+}

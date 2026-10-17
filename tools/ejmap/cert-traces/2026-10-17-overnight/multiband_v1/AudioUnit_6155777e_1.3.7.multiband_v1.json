@@ -1,0 +1,1174 @@
+{
+  "schema": "ej_multiband_v1/1",
+  "product": "OTT",
+  "version": "1.3.7",
+  "plugin_id": "AudioUnit|6155777e|1.3.7",
+  "from_record": "AudioUnit_6155777e_1.3.7.multiband.json",
+  "bands": [
+    {
+      "band": 1,
+      "control": "Thresh L",
+      "tone_hz": 41.0,
+      "tonecheck": [
+        {
+          "asked_db": 2.0,
+          "norm": 0.955849892256276,
+          "gr_db": 2.04,
+          "display": "191.17"
+        },
+        {
+          "asked_db": 3.0,
+          "norm": 0.933774838384414,
+          "gr_db": 3.05,
+          "display": "186.755"
+        },
+        {
+          "asked_db": 4.0,
+          "norm": 0.911699784512551,
+          "gr_db": 4.06,
+          "display": "182.34"
+        }
+      ],
+      "threshold_cells": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -12.0,
+          "gr_db": 27.57
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -18.0,
+          "gr_db": 28.780000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -24.0,
+          "gr_db": 27.91
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -3.0,
+          "gr_db": 21.5
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -30.0,
+          "gr_db": 27.510000000000002
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -36.0,
+          "gr_db": 27.09
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -42.0,
+          "gr_db": 26.59
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -48.0,
+          "gr_db": 26.02
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -54.0,
+          "gr_db": 25.43
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -6.0,
+          "gr_db": 22.48
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -12.0,
+          "gr_db": 27.449999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -18.0,
+          "gr_db": 26.579999999999998
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -24.0,
+          "gr_db": 24.469999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -3.0,
+          "gr_db": 21.489999999999998
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -30.0,
+          "gr_db": 23.710000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -36.0,
+          "gr_db": 22.890000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -42.0,
+          "gr_db": 22.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -48.0,
+          "gr_db": 21.050000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -54.0,
+          "gr_db": 21.600000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -6.0,
+          "gr_db": 22.489999999999998
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -12.0,
+          "gr_db": 23.609999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -18.0,
+          "gr_db": 21.100000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -24.0,
+          "gr_db": 18.510000000000002
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -3.0,
+          "gr_db": 21.109999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -30.0,
+          "gr_db": 17.399999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -36.0,
+          "gr_db": 16.199999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -42.0,
+          "gr_db": 15.119999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -48.0,
+          "gr_db": 18.48
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -54.0,
+          "gr_db": 19.09
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -6.0,
+          "gr_db": 21.109999999999999
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -12.0,
+          "gr_db": 17.23
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -18.0,
+          "gr_db": 13.48
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -24.0,
+          "gr_db": 10.550000000000001
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -3.0,
+          "gr_db": 16.039999999999999
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -30.0,
+          "gr_db": 9.199999999999999
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -36.0,
+          "gr_db": 11.050000000000001
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -42.0,
+          "gr_db": 13.32
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -48.0,
+          "gr_db": 13.32
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -54.0,
+          "gr_db": 13.32
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -6.0,
+          "gr_db": 16.050000000000001
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -12.0,
+          "gr_db": 9.08
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -18.0,
+          "gr_db": 4.67
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -24.0,
+          "gr_db": 2.71
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -3.0,
+          "gr_db": 8.710000000000001
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -30.0,
+          "gr_db": 6.78
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -36.0,
+          "gr_db": 6.83
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -42.0,
+          "gr_db": 6.85
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -48.0,
+          "gr_db": 6.83
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -54.0,
+          "gr_db": 6.85
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -6.0,
+          "gr_db": 8.69
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -3.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -36.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -42.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -48.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -54.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "band": 2,
+      "control": "Thresh M",
+      "tone_hz": 518.0,
+      "tonecheck": [
+        {
+          "asked_db": 2.0,
+          "norm": 0.94261119423843,
+          "gr_db": 0.57,
+          "display": "188.522"
+        },
+        {
+          "asked_db": 3.0,
+          "norm": 0.913916791357645,
+          "gr_db": 1.87,
+          "display": "182.783"
+        },
+        {
+          "asked_db": 4.0,
+          "norm": 0.88522238847686,
+          "gr_db": 3.17,
+          "display": "177.044"
+        }
+      ],
+      "threshold_cells": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -12.0,
+          "gr_db": 26.890000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -18.0,
+          "gr_db": 23.280000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -24.0,
+          "gr_db": 20.649999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -3.0,
+          "gr_db": 24.960000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -30.0,
+          "gr_db": 20.390000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -36.0,
+          "gr_db": 21.120000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -42.0,
+          "gr_db": 23.07
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -48.0,
+          "gr_db": 24.670000000000002
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -54.0,
+          "gr_db": 25.350000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -6.0,
+          "gr_db": 26.41
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -12.0,
+          "gr_db": 25.850000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -18.0,
+          "gr_db": 21.09
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -24.0,
+          "gr_db": 18.170000000000002
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -3.0,
+          "gr_db": 24.960000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -30.0,
+          "gr_db": 17.609999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -36.0,
+          "gr_db": 17.629999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -42.0,
+          "gr_db": 18.199999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -48.0,
+          "gr_db": 18.280000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -54.0,
+          "gr_db": 22.5
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -6.0,
+          "gr_db": 26.41
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -12.0,
+          "gr_db": 21.780000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -18.0,
+          "gr_db": 16.640000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -24.0,
+          "gr_db": 13.33
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -3.0,
+          "gr_db": 22.91
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -30.0,
+          "gr_db": 12.369999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -36.0,
+          "gr_db": 11.630000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -42.0,
+          "gr_db": 13.75
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -48.0,
+          "gr_db": 18.100000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -54.0,
+          "gr_db": 20.210000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -6.0,
+          "gr_db": 23.239999999999998
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -12.0,
+          "gr_db": 15.220000000000001
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -18.0,
+          "gr_db": 9.76
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -24.0,
+          "gr_db": 6.15
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -3.0,
+          "gr_db": 16.879999999999999
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -30.0,
+          "gr_db": 5.73
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -36.0,
+          "gr_db": 9.6
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -42.0,
+          "gr_db": 12.93
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -48.0,
+          "gr_db": 13.48
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -54.0,
+          "gr_db": 13.84
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -6.0,
+          "gr_db": 17.030000000000001
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -12.0,
+          "gr_db": 6.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -18.0,
+          "gr_db": 1.34
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -24.0,
+          "gr_db": 1.76
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -3.0,
+          "gr_db": 8.92
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -30.0,
+          "gr_db": 5.73
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -36.0,
+          "gr_db": 6.5
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -42.0,
+          "gr_db": 6.73
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -48.0,
+          "gr_db": 6.91
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -54.0,
+          "gr_db": 7.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -6.0,
+          "gr_db": 8.970000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -3.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -36.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -42.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -48.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -54.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "band": 3,
+      "control": "Thresh H",
+      "tone_hz": 7305.0,
+      "tonecheck": [
+        {
+          "asked_db": 2.0,
+          "norm": 0.956756759334255,
+          "gr_db": 2.02,
+          "display": "191.351"
+        },
+        {
+          "asked_db": 3.0,
+          "norm": 0.935135139001382,
+          "gr_db": 3.03,
+          "display": "187.027"
+        },
+        {
+          "asked_db": 4.0,
+          "norm": 0.91351351866851,
+          "gr_db": 4.03,
+          "display": "182.703"
+        }
+      ],
+      "threshold_cells": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -12.0,
+          "gr_db": 30.859999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -18.0,
+          "gr_db": 31.309999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -24.0,
+          "gr_db": 30.59
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -3.0,
+          "gr_db": 24.16
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -30.0,
+          "gr_db": 30.16
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -36.0,
+          "gr_db": 29.68
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -42.0,
+          "gr_db": 29.140000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -48.0,
+          "gr_db": 28.550000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -54.0,
+          "gr_db": 28.039999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "0",
+          "level_dbfs": -6.0,
+          "gr_db": 26.969999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -12.0,
+          "gr_db": 30.859999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -18.0,
+          "gr_db": 29.199999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -24.0,
+          "gr_db": 26.73
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -3.0,
+          "gr_db": 24.16
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -30.0,
+          "gr_db": 25.920000000000002
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -36.0,
+          "gr_db": 25.050000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -42.0,
+          "gr_db": 24.129999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -48.0,
+          "gr_db": 23.16
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -54.0,
+          "gr_db": 22.609999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "level_dbfs": -6.0,
+          "gr_db": 26.969999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -12.0,
+          "gr_db": 25.739999999999998
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -18.0,
+          "gr_db": 23.219999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -24.0,
+          "gr_db": 20.399999999999999
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -3.0,
+          "gr_db": 24.16
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -30.0,
+          "gr_db": 19.25
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -36.0,
+          "gr_db": 18.079999999999998
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -42.0,
+          "gr_db": 16.870000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -48.0,
+          "gr_db": 19.09
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -54.0,
+          "gr_db": 19.829999999999998
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "level_dbfs": -6.0,
+          "gr_db": 25.32
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -12.0,
+          "gr_db": 18.050000000000001
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -18.0,
+          "gr_db": 15.31
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -24.0,
+          "gr_db": 12.279999999999999
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -3.0,
+          "gr_db": 17.530000000000001
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -30.0,
+          "gr_db": 10.949999999999999
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -36.0,
+          "gr_db": 11.23
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -42.0,
+          "gr_db": 13.65
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -48.0,
+          "gr_db": 13.65
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -54.0,
+          "gr_db": 13.67
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "level_dbfs": -6.0,
+          "gr_db": 17.890000000000001
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -12.0,
+          "gr_db": 9.25
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -18.0,
+          "gr_db": 6.41
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -24.0,
+          "gr_db": 3.29
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -3.0,
+          "gr_db": 9.109999999999999
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -30.0,
+          "gr_db": 6.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -36.0,
+          "gr_db": 6.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -42.0,
+          "gr_db": 6.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -48.0,
+          "gr_db": 6.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -54.0,
+          "gr_db": 6.97
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "level_dbfs": -6.0,
+          "gr_db": 9.210000000000001
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -3.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -36.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -42.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -48.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -54.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    }
+  ],
+  "crossovers": [],
+  "processes": 12,
+  "measuredAt": "20261017T005853",
+  "method": "per band: --sweep at {open end, the ladder's predicted setting for 2 / 3 / 4 dB at -12 dBFS} on the band's centre tone; crossovers: at the opening position, the frequency where the two neighbouring bands' responses are equal (each soloed, or each compressed alone at its deep end with the cuts scaled by their own depth), 121-tone --response; make-up: --response at -30 dBFS, the level step at the band's centre vs the display step"
+}

@@ -1,0 +1,751 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "bx_console AMEK 200",
+  "version": "1.0.0",
+  "map_version": "1.0.0",
+  "map_fp": "573336cde56062eceb292114815b850852e45bcf76917719d194c0410f54b520",
+  "controls": [
+    {
+      "name": "Power",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mute",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Bank",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "0.333333": "B"
+      }
+    },
+    {
+      "name": "Input Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "V-Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-103.8  dB",
+        "0.550000": "-92.5  dB",
+        "0.775000": "-81.3  dB"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-91  dB",
+        "0.550000": "-70  dB",
+        "0.775000": "-50  dB"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output Gain",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-30.9  dB",
+        "0.500000": "-10.2  dB",
+        "0.750000": "0.0  dB"
+      }
+    },
+    {
+      "name": "Monitoring",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Console Channel",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "19",
+        "0.750000": "54"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Stereo Mode",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Analog",
+        "1.000000": "Digital"
+      }
+    },
+    {
+      "name": "Meter Position",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Output",
+        "1.000000": "Input"
+      }
+    },
+    {
+      "name": "Mono Maker In",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mono Maker",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "63 Hz",
+        "0.500000": "200 Hz",
+        "0.750000": "632 Hz"
+      }
+    },
+    {
+      "name": "Stereo Width In",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Stereo Width",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "50 %",
+        "0.500000": "100 %",
+        "0.750000": "200 %"
+      }
+    },
+    {
+      "name": "Gain Scale",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "50  %",
+        "0.500000": "100  %",
+        "0.750000": "150  %"
+      }
+    },
+    {
+      "name": "Gain Scale Invert",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LF Gain",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+7.5  dB"
+      }
+    },
+    {
+      "name": "LMF Gain",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+7.5  dB"
+      }
+    },
+    {
+      "name": "MF Gain",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+7.5  dB"
+      }
+    },
+    {
+      "name": "HMF Gain",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+7.5  dB"
+      }
+    },
+    {
+      "name": "HF Gain",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+7.5  dB"
+      }
+    },
+    {
+      "name": "LF Frequency",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "22 Hz",
+        "0.500000": "80 Hz",
+        "0.750000": "210 Hz"
+      }
+    },
+    {
+      "name": "LMF Frequency",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "22 Hz",
+        "0.500000": "80 Hz",
+        "0.750000": "210 Hz"
+      }
+    },
+    {
+      "name": "MF Frequency",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "190 Hz",
+        "0.500000": "580 Hz",
+        "0.750000": "1.75kHz"
+      }
+    },
+    {
+      "name": "HMF Frequency",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "515 Hz",
+        "0.500000": "1.80kHz",
+        "0.750000": "6.60kHz"
+      }
+    },
+    {
+      "name": "HF Frequency",
+      "index": 28,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "515 Hz",
+        "0.500000": "1.80kHz",
+        "0.750000": "6.60kHz"
+      }
+    },
+    {
+      "name": "LF Q",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "1.2",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "LMF Q",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "1.2",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "MF Q",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.2",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "HMF Q",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "1.2",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "HF Q",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "1.2",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "LF Band In",
+      "index": 34,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LMF Band In",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "MF Band In",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HMF Band In",
+      "index": 37,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HF Band In",
+      "index": 38,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ On/Off",
+      "index": 39,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ Position",
+      "index": 40,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Pre Dyn",
+        "0.500000": "Post Dyn"
+      }
+    },
+    {
+      "name": "Filter Position",
+      "index": 41,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Input",
+        "0.500000": "Post Dyn"
+      }
+    },
+    {
+      "name": "High Pass Filter",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "112 Hz",
+        "0.500000": "632 Hz",
+        "0.750000": "3.56kHz"
+      }
+    },
+    {
+      "name": "High Pass Filter In",
+      "index": 43,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Low Pass Filter",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "124 Hz",
+        "0.500000": "775 Hz",
+        "0.750000": "4.82kHz"
+      }
+    },
+    {
+      "name": "Low Pass Filter In",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Dyn External Key",
+      "index": 46,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Sidechain Link",
+      "index": 47,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Parallel Mix",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0 %",
+        "0.500000": "50.0 %",
+        "0.750000": "75.0 %"
+      }
+    },
+    {
+      "name": "Comp On/Off",
+      "index": 49,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "1.5",
+        "0.550000": "3.1",
+        "0.775000": "10.5"
+      }
+    },
+    {
+      "name": "Comp Threshold",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.0  dB",
+        "0.500000": "10.0  dB",
+        "0.750000": "15.0  dB"
+      }
+    },
+    {
+      "name": "Comp Timing",
+      "index": 52,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "23.0  ms",
+        "0.500000": "8.0  ms",
+        "0.750000": "2.1  ms"
+      }
+    },
+    {
+      "name": "Comp Output",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-1.0  dB",
+        "0.500000": "+4.0  dB",
+        "0.750000": "+9.0  dB"
+      }
+    },
+    {
+      "name": "Comp Ambience",
+      "index": 54,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limiter On/Off",
+      "index": 55,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Limiter Threshold",
+      "index": 56,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.0  dB",
+        "0.500000": "10.0  dB",
+        "0.750000": "15.0  dB"
+      }
+    },
+    {
+      "name": "Limiter Makeup Gain",
+      "index": 57,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "+5.0  dB",
+        "0.500000": "+10.0  dB",
+        "0.750000": "+15.0  dB"
+      }
+    },
+    {
+      "name": "Limiter Mix",
+      "index": 58,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0 %",
+        "0.500000": "50.0 %",
+        "0.750000": "75.0 %"
+      }
+    },
+    {
+      "name": "Limiter Ambience",
+      "index": 59,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "VCA Clip Headroom",
+      "index": 60,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0  dB",
+        "0.500000": "-6.0  dB",
+        "0.750000": "3.0  dB"
+      }
+    },
+    {
+      "name": "VCA Clip On/Off",
+      "index": 61,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate/Exp On/Off",
+      "index": 62,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate/Expander Mode",
+      "index": 63,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Gate",
+        "1.000000": "Expander"
+      }
+    },
+    {
+      "name": "Expander Ratio",
+      "index": 64,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.5:1",
+        "0.500000": "2.0:1",
+        "0.750000": "2.8:1"
+      }
+    },
+    {
+      "name": "Gate/Exp Range",
+      "index": 65,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.0  dB",
+        "0.500000": "-24.0  dB",
+        "0.750000": "-50.0  dB"
+      }
+    },
+    {
+      "name": "Gate/Exp Thresh",
+      "index": 66,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-57.0  dB",
+        "0.500000": "-42.0  dB",
+        "0.750000": "-27.0  dB"
+      }
+    },
+    {
+      "name": "Gate Hold",
+      "index": 68,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "150 ms",
+        "0.500000": "400 ms",
+        "0.750000": "1.6 s"
+      }
+    },
+    {
+      "name": "Gate/Exp Release",
+      "index": 69,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "150 ms",
+        "0.500000": "400 ms",
+        "0.750000": "1.4 s"
+      }
+    },
+    {
+      "name": "Gate/Exp Release Lin",
+      "index": 70,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate/Exp Attack",
+      "index": 71,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Slower",
+        "0.500000": "Slow"
+      }
+    },
+    {
+      "name": "Gate/Exp Invert",
+      "index": 72,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate/Exp Low Pass Freq",
+      "index": 73,
+      "kind": "anchored",
+      "displayAt": {
+        "0.225000": "329 Hz",
+        "0.450000": "1.09kHz",
+        "0.675000": "3.57kHz"
+      }
+    },
+    {
+      "name": "Gate/Exp Low Pass Resonant Q",
+      "index": 74,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "low Q",
+        "1.000000": "high Q"
+      }
+    },
+    {
+      "name": "Gate/Exp High Pass Freq",
+      "index": 75,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "112 Hz",
+        "0.550000": "369 Hz",
+        "0.775000": "1.21 kHz"
+      }
+    },
+    {
+      "name": "Gate/Exp High Pass Resonant Q",
+      "index": 76,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "low Q",
+        "1.000000": "high Q"
+      }
+    },
+    {
+      "name": "Gate/Exp Key Listen",
+      "index": 77,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Auto Listen",
+      "index": 78,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Gate/Exp Thresh Range",
+      "index": 67,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T001651"
+}

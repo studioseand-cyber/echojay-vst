@@ -339,6 +339,7 @@ Pins WZ-MBV1-1 / -2.
 
 - **Make-up:** offered beside a passing band only when its level step matches the dB display step within 0.5 dB (new, v1).
 - **Only passing bands are offered.** v1 never moves a crossover, ratio or per-band attack / release.
+- **Every part must hold** (17 Oct): a threshold that cannot be tested (a display that is not in dB, e.g. OTT's 0-100) does not certify the band. A crossover is the one part that may be "not applicable" (no crossover control).
 - **Sections that wait for the listening session:** none. The multiband feel ("tame the low end gently") is the server's wording, not a measurement.
 
 ### Results
@@ -353,6 +354,17 @@ Pins WZ-MBV1-1 / -2.
   - the first method tried (a complementary-crossover target) read 0.12..0.28 octave high on the same unit - that assumption was the error, not C4;
   - make-up: a −9 → +9 dB move measured 12.9..17.7 dB, so it is not offered;
   - about 2.5 min a unit for the v1 step, after the 3 min multiband mode.
+- **Overnight on this Mac (17 Oct, ad50ddbb, guarded, scratch only): 12 multibands measured, 10 certify bands.** Traces: `tools/ejmap/cert-traces/2026-10-17-overnight/`.
+
+| unit | bands certified | why the rest are not |
+|---|---|---|
+| C4 (m), C4 (s) | 4 of 4 | - |
+| C6 (m), C6 (s), C6-SideChain (m), C6-SideChain (s) | 4 of 6 | bands 5, 6 (the floating bands): the 2 dB ask measured 1.17 / 1.18 dB |
+| LinMB (m), LinMB (s) | 4 of 5 (1, 2, 3, 5) | band 4: its ladder does not reach 4 dB at -12 dBFS |
+| Lindell MBC | 2 of 3 | band 3: no threshold paired by measurement |
+| Lindell 354E | 0 of 3 | band 1 unpaired; bands 2, 3: the display does not track (-20 dB sits 4.5..10.9 dB off) and the tone check misses |
+| OTT | 0 of 3 | its threshold display is 0-100, not dB: "not tested", so no band certifies (band 2's 2 dB ask also measured 0.57) |
+| DynOne3 | 0 | no bands identified |
 
 ### Profile format (`ej_multiband_profile/1`, v1; the v0 draft fields are kept)
 ```json
@@ -388,3 +400,59 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 3. **A:** can macroBands be sent per region with each request, and can EchoJay measure a slot per region for the self-check?
 4. **Both:** do multiband asks stop at 4 dB of gain reduction (the v1 range test), or go deeper?
 
+
+## 9. Round 3, 17 Oct (Kathy: "NEXT"). Built and pinned; nothing sent; no server change
+
+### The recency rule (pins WZ-TRUST-8)
+- Every reading source carries its plugin version and date: fixtures `version` + `sampledAt`; Phase B rows and profiles `plugin.version` + `measured.date`; the read-back sweep `version` + `measuredAt`.
+- A control's failed reading is **set aside** when a NEWER source, on the map's own version, read the control back at 2+ settings with none failing.
+- An old failure **stands** when the newer source is another version, is older, is a single reading, or itself fails, and when the failure has no date.
+- The credited map's `readback` carries `superseded: n`. The trust run prints the totals: on Kathy's Mac, 238 old failed readings on 45 controls.
+- **For Kathy to judge:** the newer readings are at 25 / 50 / 75 % of the span, while most set-aside failures sit in the top tenth (norm 0.875..0.95), off by 1..5 %. Two are larger: H-Reverb long Buildup Time, 16 %; SSLEQ (s) HF Frq, 12 %. A tighter variant would set a failure aside only when a newer reading lands within 0.1 of its setting.
+
+### The old map format (WZ-TRUST-9)
+- Maps that keep role controls in the role-keyed `params` block (CLA-76 m/s, PuigChild 670 s) are credited and read back from those entries.
+- J37 m/s has no Saturation control in its map, and SSLGChannel (s) HF Frq was declined by the mapper ("getText lied"). Read-back cannot reach either; they need a map that carries the control.
+
+### Which map the read-back uses (WZ-RBSWEEP-2)
+- The read-back uses the AudioUnit map of the installed version, else the newest AudioUnit map; never a VST3 map.
+- The 16-17 Oct overnight run read Meaw Chain, TB_Sibalance_v4 and ValhallaVintageVerb against their VST3 map. The name check refused those readings; they were re-read on 17 Oct.
+- **Open:** trust levels still judge a product's AU readings against its VST3 map too. ValhallaVintageVerb's VST3 map has Decay in ms while the AU display shows the bare normalised value, so it fails. Proposal: carry the format per source and judge a map only by readings in its own format.
+
+### Review pairs and the first category (WZ-TRUST-10, -11)
+- No EQ row could ever "count now": an EQ needs a band's freq AND gain, so a single yes never maps it.
+- Two rows whose yeses together map the map now carry `counts_with` (each names the other). The page, the local server and the admin route count such a map once both are yes.
+- `--trust-levels --review-first eq` writes `first_category` and orders that category's counts-now rows first, in the file and on the page.
+
+### Section of "...Frequency" (WZ-TRUST-11b)
+- `sectionOf` removed role words in table order, so "Mid Frequency" became "mid uency" and never paired with "Mid Gain". The words now come off longest first.
+- This maps 19 more on Kathy's Mac (10 EQ, 9 strips), each by roles measurement confirmed and read back.
+- With that, no EQ map is left where one or two yeses would map it.
+- **Correction:** commit 6e82eb61's message names 8 EQ pairs. That came from an estimate that paired Input Gain with Mid Frequency; the rule rightly refused it. The real pairs were blocked by this section bug.
+
+### Stepped controls (report only, Kathy 17 Oct)
+- Writes "did not land" on Lindell 50 / 69 Channel, Harris Doyle Natalus DSCEQ and TB_Sibalance_v4. **This is not a licence problem.** The plugins snap a write to their own steps (0.25 -> 0.2222 on a 1/9 grid; 0.25 -> 0.2 on a 1/5 grid), and the display shows the snapped value.
+- The maps describe these controls as continuous, and the 25/50/75 % targets fall between steps.
+- Possible fixes: aim at the map's anchor norms nearest 25/50/75 %, or judge at the value the plugin took (getValue) rather than the one asked.
+
+### Recount, Kathy's count rule (held out), 17 Oct
+
+| category | certified | mapped | unsure | testable |
+|---|---|---|---|---|
+| eq | 12 | 57 | 75 | 144 |
+| compressor | 60 | 37 | 25 | 122 |
+| saturation | 40 | 33 | 36 | 109 |
+| channel_strip | 0 | 15 | 80 | 95 |
+| reverb | 33 | 43 | 16 | 92 |
+| delay | 1 | 15 | 26 | 42 |
+| amp_sim | 15 | 3 | 24 | 42 |
+| limiter | 25 | 6 | 8 | 39 |
+| de-esser | 0 | 15 | 10 | 25 |
+| transient_shaper | 0 | 5 | 14 | 19 |
+| pitch | 0 | 0 | 8 | 8 |
+| gate | 4 | 0 | 4 | 8 |
+| **total** | **190** | **229** | **326** | **745** |
+
+- **Can't test on this Mac:** 378 (UAD 332, demo 28, silent 9, APB / hardware 6, licence 3).
+- **Inputs:** the maps are Kathy's store with the 4 re-mapped products (AudioTrack s, ValhallaVintageVerb, Meaw Chain, TB_Sibalance_v4) swapped for their 17 Oct maps (scratch only). The cert data is Sean's cert 5, the smoke cert, the overnight cert and the wizard's 15 Oct folder, plus Kathy's answers.
+- **The review list:** 877 rows on 106 maps. 16 rows (7 maps) where one yes counts; 108 rows (9 maps) in pairs.

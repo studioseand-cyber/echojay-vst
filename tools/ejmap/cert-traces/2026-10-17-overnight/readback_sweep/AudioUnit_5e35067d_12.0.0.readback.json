@@ -1,0 +1,246 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "J37 (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "c27dac6bc728a5920b5995bb993ca875cc2ec683e92a32615ac24fbd6b2ce5b8",
+  "controls": [
+    {
+      "name": "Delay Mode",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Insert",
+        "1.000000": "Send/Return"
+      }
+    },
+    {
+      "name": "Noise Level",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-8.4",
+        "0.550000": "2.4",
+        "0.775000": "13.2"
+      }
+    },
+    {
+      "name": "Speed",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "7.5",
+        "0.500000": "7.5",
+        "0.750000": "15"
+      }
+    },
+    {
+      "name": "Formula",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "811",
+        "0.750000": "815",
+        "0.875000": "815"
+      }
+    },
+    {
+      "name": "Modeled Tracks",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "2+3",
+        "0.750000": "3"
+      }
+    },
+    {
+      "name": "Bias",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "+ 3",
+        "0.750000": "+ 5",
+        "0.875000": "+ 5"
+      }
+    },
+    {
+      "name": "WOW Rate",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "WOW Depth",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-17.5dB",
+        "0.550000": "5.0dB",
+        "0.775000": "27.5dB"
+      }
+    },
+    {
+      "name": "Flutter Rate",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Flutter Depth",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-17.5dB",
+        "0.550000": "5.0dB",
+        "0.775000": "27.5dB"
+      }
+    },
+    {
+      "name": "Input Level",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0dB",
+        "0.500000": "0.0dB",
+        "0.750000": "9.0dB"
+      }
+    },
+    {
+      "name": "Level Link",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output Level",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0dB",
+        "0.500000": "0.0dB",
+        "0.750000": "9.0dB"
+      }
+    },
+    {
+      "name": "Delay HP",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "165.9Hz",
+        "0.550000": "837.7Hz",
+        "0.775000": "4229.8Hz"
+      }
+    },
+    {
+      "name": "Delay LP",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.225000": "80.8Hz",
+        "0.450000": "407.9Hz",
+        "0.675000": "2059.6Hz"
+      }
+    },
+    {
+      "name": "Delay Type",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Slap",
+        "1.000000": "Ping Pong"
+      }
+    },
+    {
+      "name": "Delay Feedback Level L",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "33%",
+        "0.550000": "55%",
+        "0.775000": "78%"
+      }
+    },
+    {
+      "name": "Delay Slap Level L",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-27.0dB",
+        "0.550000": "-18.0dB",
+        "0.775000": "-9.0dB"
+      }
+    },
+    {
+      "name": "Delay Slap Level R",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-27.0dB",
+        "0.550000": "-18.0dB",
+        "0.775000": "-9.0dB"
+      }
+    },
+    {
+      "name": "Delay Feedback Level R",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "29%",
+        "0.525000": "53%",
+        "0.762500": "76%"
+      }
+    },
+    {
+      "name": "Delay Sync",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "Sync"
+      }
+    },
+    {
+      "name": "Delay Time L",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "501",
+        "0.500000": "1001",
+        "0.750000": "1500"
+      }
+    },
+    {
+      "name": "Delay Time R",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "501",
+        "0.500000": "1001",
+        "0.750000": "1500"
+      }
+    },
+    {
+      "name": "Delay Link",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000636"
+}

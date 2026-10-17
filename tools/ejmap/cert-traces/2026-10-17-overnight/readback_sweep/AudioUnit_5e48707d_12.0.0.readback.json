@@ -1,0 +1,129 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati ACG (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "0d7e28b62b5821183030cf5b451af8676750fc0b0dd0dc0efd5e2bc6f1cc55dc",
+  "controls": [
+    {
+      "name": "Meter Switch",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Punch",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "4"
+      }
+    },
+    {
+      "name": "ACG Type",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "ACG 1",
+        "0.500000": "ACG 1",
+        "0.750000": "ACG 2"
+      }
+    },
+    {
+      "name": "Hi",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "3"
+      }
+    },
+    {
+      "name": "Mid",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "5"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-13.5",
+        "0.550000": "-9.0",
+        "0.775000": "-4.5"
+      }
+    },
+    {
+      "name": "Dry/Wet",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "PreDelay",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Excite",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Insert/Send",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Insert",
+        "1.000000": "Send"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000739"
+}

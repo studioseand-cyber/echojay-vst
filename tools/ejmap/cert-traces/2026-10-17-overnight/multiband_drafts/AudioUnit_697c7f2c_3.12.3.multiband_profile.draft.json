@@ -1,0 +1,98 @@
+{
+  "schema": "ej_multiband_profile/0",
+  "spec": "MULTIBAND_PROFILE_PROPOSAL v0.2 PROPOSAL",
+  "status": "DRAFT against MULTIBAND_PROFILE_PROPOSAL v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "DynOne3",
+    "manufacturer": "Leapwing Audio",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|697c7f2c|3.12.3",
+    "version": "3.12.3",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-17",
+    "sample_rate": 48000,
+    "signal": "one tone per band at its centre; vocal-shaped multitone for the whole unit"
+  },
+  "topology": "multiband_offset",
+  "bands": [],
+  "amount": {
+    "topology": "multiband_offset",
+    "controls": "C HMF Threshold, LR MF Threshold, C LF Threshold, C MF Threshold, C LMF Threshold, LR HMF Threshold, LR HF Threshold, C HF Threshold, LR LMF Threshold, LR LF Threshold",
+    "points": [
+      {
+        "offset_db": 0.0,
+        "displays": "-40.0 / -40.0 / -40.0 / -40.0 / -40.0 / -40.0 / -40.0 / -40.0 / -40.0 / -40.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "offset_db": -6.0,
+        "displays": "-46.0 / -46.0 / -46.0 / -46.0 / -46.0 / -46.0 / -46.0 / -46.0 / -46.0 / -46.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "offset_db": -12.0,
+        "displays": "-52.0 / -52.0 / -52.0 / -52.0 / -52.0 / -52.0 / -52.0 / -52.0 / -52.0 / -52.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "offset_db": -18.0,
+        "displays": "-58.0 / -58.0 / -58.0 / -58.0 / -58.0 / -58.0 / -58.0 / -58.0 / -58.0 / -58.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "offset_db": -24.0,
+        "displays": "-60.0 / -60.0 / -60.0 / -60.0 / -60.0 / -60.0 / -60.0 / -60.0 / -60.0 / -60.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      }
+    ],
+    "reference": "the unit as instantiated (open)",
+    "sign": "positive = gain reduction, negative = gain at that level"
+  },
+  "whole_unit_signal": "vocal-shaped multitone (121 tones; pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at -30 / -24 / -18 / -12 / -6 dBFS; gain = total output power over total input power",
+  "instantiate_gain_db_by_level": {
+    "-30": 0.0,
+    "-24": 0.0,
+    "-18": 0.0,
+    "-12": 0.0,
+    "-6": 0.0
+  },
+  "enable_writes": [],
+  "neutral": [],
+  "notes": [
+    "field names are the proposal's (topology, offset_db, in_at_gr, whole_unit_gr_db_by_level): they await Sean's decision (MULTIBAND_PROFILE_PROPOSAL.md)",
+    "offset family: the thresholds' ends clamp the offset (354E at -20 dB): two offsets with the same displays are one position - stop at the last distinct offset"
+  ]
+}

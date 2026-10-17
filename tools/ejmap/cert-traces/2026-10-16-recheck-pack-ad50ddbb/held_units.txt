@@ -1,0 +1,46 @@
+Abbey Road RS124 (m)
+Abbey Road RS124 (s)
+Acme Opticom XLA-3
+bx_opto
+CLA-2A (m)
+CLA-2A (s)
+CLA-3A (m)
+CLA-3A (s)
+CLA-76 (m)
+CLA-76 (s)
+elysia alpha master
+elysia alpha mix
+EMO-D5 (m)
+EMO-D5 (s)
+Kiive XTComp
+Kramer PIE (m)
+Kramer PIE (s)
+Lindell 7X-500
+MaxxVolume (m)
+MaxxVolume (s)
+Millennia TCL-2
+MixWave DW Fearn VT-7
+MV2 (m)
+MV2 (s)
+OneKnob Pressure (m)
+OneKnob Pressure (s)
+Ozone 12 Vintage Compressor
+PuigChild 660 (m)
+PuigChild 670 (s)
+Renaissance Axx (m)
+Renaissance Axx (s)
+RVox (m)
+RVox (s)
+Solid Dynamics
+SSL Blitzer
+SSL Native X-Comp v6
+SSL Native X-ValveComp v6
+Vertigo VSC-2
+AMEK Mastering Compressor
+SPL IRON
+Maag MAGNUM-K
+VBC FG-Grey
+VBC FG-MU
+VBC Rack
+Auto-Tune Vocal Compressor
+Pro Audio DSP DSM V3

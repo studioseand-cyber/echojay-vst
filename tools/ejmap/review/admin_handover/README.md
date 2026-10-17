@@ -5,6 +5,7 @@
 - **Keyboard on a row:** y / n / u answer and move on; r opens the dropdown; Backspace clears.
 - An answer saves at once and counts straight away.
 - Rows marked "counts now" are the ones where a single yes makes that plugin's map dialable ("mapped"). They come first.
+- **17 Oct:** a row may instead carry `counts_with` (its partner's id): Yes on BOTH moves the map to "mapped" (an EQ band's frequency and gain). Pairs show "counts with <control>" and sort with the counts-now rows. The list may name a `first_category` (EJ Map's `--review-first`, e.g. `eq`); that category's counts-now cards come first. Both fields are optional; FORMAT.md has them.
 
 **Where it runs now:** today Kathy uses it locally (`tools/ejmap/review/review_server.py`; answers go to a JSON file). This folder is everything needed to move the same page into the operator console, untouched in layout and data format.
 

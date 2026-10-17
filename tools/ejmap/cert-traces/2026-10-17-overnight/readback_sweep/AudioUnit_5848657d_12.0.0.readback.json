@@ -1,0 +1,442 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "RChannel (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "0bc3648cbad6ee7ea69739b55f8e508fb2ebadd1cb5911f9453d7bbd09724b16",
+  "controls": [
+    {
+      "name": "EQ On/Off",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band1 Gain",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band2 Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band3 Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band4 Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band1 Frq",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band2 Frq",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band3 Frq",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band4 Frq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band1 Q",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band2 Q",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band3 Q",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band4 Q",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band1 Type",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band2 Type",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "1.000000": "Low-RShelf"
+      }
+    },
+    {
+      "name": "Band3 Type",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.500000": "Hi-Shelf"
+      }
+    },
+    {
+      "name": "Band4 Type",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Hi-Shelf"
+      }
+    },
+    {
+      "name": "Band1 On/Off",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band2 On/Off",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band3 On/Off",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Routing",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "EQ->Dyn",
+        "1.000000": "Dyn->EQ"
+      }
+    },
+    {
+      "name": "Comp SC Source",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Int",
+        "1.000000": "Ext"
+      }
+    },
+    {
+      "name": "Comp SC Type",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "HPF",
+        "0.333333": "BPF"
+      }
+    },
+    {
+      "name": "Comp SC Freq",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Comp SC BW",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.08",
+        "0.500000": "4.05",
+        "0.750000": "6.03"
+      }
+    },
+    {
+      "name": "Comp SC Listen",
+      "index": 27,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate SC Source",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Int",
+        "0.500000": "PreEQ"
+      }
+    },
+    {
+      "name": "Gate SC On/Off",
+      "index": 29,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate SC Type",
+      "index": 30,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "HPF",
+        "0.666667": "LPF"
+      }
+    },
+    {
+      "name": "Gate SC Freq",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Gate SC BW",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.08",
+        "0.500000": "4.05",
+        "0.750000": "6.03"
+      }
+    },
+    {
+      "name": "Gate SC Listen",
+      "index": 33,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Threshold slider",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-48.1",
+        "0.550000": "-26.1",
+        "0.775000": "-4.0"
+      }
+    },
+    {
+      "name": "Comp Threshold slider",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-40.5",
+        "0.500000": "-21.0",
+        "0.750000": "-1.5"
+      }
+    },
+    {
+      "name": "Comp Threshold",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-40.5",
+        "0.500000": "-21.0",
+        "0.750000": "-1.5"
+      }
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.79",
+        "0.500000": "2.19",
+        "0.750000": "10.46"
+      }
+    },
+    {
+      "name": "Comp Attack",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.15",
+        "0.500000": "2.24",
+        "0.750000": "33.4"
+      }
+    },
+    {
+      "name": "Comp Release",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28.1",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "ARC",
+      "index": 42,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Auto",
+        "1.000000": "Manual"
+      }
+    },
+    {
+      "name": "ExpGate",
+      "index": 43,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Exp",
+        "1.000000": "Gate"
+      }
+    },
+    {
+      "name": "Gate On/Off",
+      "index": 44,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Thresh",
+      "index": 45,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-48.1",
+        "0.550000": "-26.1",
+        "0.775000": "-4.0"
+      }
+    },
+    {
+      "name": "Gate Floor",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-54.0",
+        "0.550000": "-36.0",
+        "0.775000": "-18.0"
+      }
+    },
+    {
+      "name": "Gate Release",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "47",
+        "0.500000": "224",
+        "0.750000": "1057"
+      }
+    },
+    {
+      "name": "Gain",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "0.0",
+        "0.750000": "15.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000337"
+}

@@ -1,0 +1,40 @@
+ASSIGN: Assign (de-esser): 7 rows, 0 classifier ignores. No proposals: dial-set rows.
+ASSIGN: Sweeping the surface: 0/26
+ASSIGN: Verifying by set-then-read...
+ASSIGN: CONTROLS: 26 named control(s) (1 mode, 0 duplicate name(s) recorded unresolvable, 0 declined with reasons)
+ASSIGN: Review open: SUBMIT writes the map, back returns to the rows.
+ASSIGN: lockstep: 0 twin(s) stamped, 15 candidate pair(s) did not track 1:1 (discarded, nothing emitted)
+ASSIGN: read-back: 26 control(s) checked, 0 failed (kept, marked)
+COLUMNS [map saved] rows 1819 | mapped 7 | sent 0 | onServer yes 1110 diff 0 no 709 unknown 0 | localMaps 7 sentIds 0 serverIds 1799 | mapState ok, asked 1628h ago
+COLUMNS [map saved] VST3|839f36b8|4.2.2 -> mapped YES, sent no, onServer YES
+ASSIGN: MAP SAVED (local only -- press Submit to server to send) f02a14ba19fc68728a0523d99bae2f602e1c70179bbcbb5135d149b8b87da106.json: 0 params, 0 groups, 26 controls, 6 skips, 0 declines, readback 0/0
+      mapped  26 control(s)
+
+SWEEP DONE   7 opened in 1.3 min
+
+  WORK DONE
+      7  mapped
+      0  swept nothing   loaded fine, no usable control; flagged
+
+  DID NOT FINISH
+      0  sweep_timeout   loaded, then the sweep never returned. A dialog does this
+      0  init_failed   the format refused to instantiate
+      0  license_refused   authorisation
+      0  timeout   the LOAD hung
+      0  stale_controls   REFUSED: staged controls were another plugin's
+
+  NOT OFFERED
+      0  skipped: no dial set   a processor the 11 categories do not cover
+      0  skipped: category undecided   the two arms disagreed
+
+  THE FORECAST, CHECKED
+     7 openable, 0 declined before the run started  |  7 opened, 0 withdrawn while walking   (every openable row accounted for)
+
+  7 MAP(S) ARE ON THIS MACHINE AND HAVE REACHED NOBODY.
+     Press "Send All 7" to deliver them. Every map is reported one line each,
+     because a refusal is the only line worth acting on and a count would bury it.
+
+  THIS RUN ONLY: 20261017T081326-e59d. A supervised campaign is many runs, and summing them counts the same declined plugin once per relaunch -- `--sweep-report` reads every run's log and rolls up by plugin instead.
+
+  log: <scratch>/remap/ledger/sweep-20261017T081326-e59d.jsonl
+supervisor: child exited cleanly

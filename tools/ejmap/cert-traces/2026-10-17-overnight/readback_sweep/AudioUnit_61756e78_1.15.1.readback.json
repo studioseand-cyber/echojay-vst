@@ -1,0 +1,66 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "SPL De-Esser",
+  "version": "1.15.1",
+  "map_version": "1.15.1",
+  "map_fp": "857f26a5eabe2f3536d43483f24da1d7e64f756b76767ffe04999b841938eb83",
+  "controls": [
+    {
+      "name": "Setting",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "1.000000": "B"
+      }
+    },
+    {
+      "name": "Mode",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Left/Right",
+        "0.333333": "Mid"
+      }
+    },
+    {
+      "name": "Active",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "S-Reduction",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.00",
+        "0.500000": "10.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Auto Threshold",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Filter",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Male",
+        "1.000000": "Female"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000539"
+}

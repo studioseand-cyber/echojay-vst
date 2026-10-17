@@ -1,0 +1,79 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "L3 UltraMaximizer (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "88df349d2dd8b95b34453f3d464e4e3e0a14c9563c0ae4b601aec67e592c11de",
+  "controls": [
+    {
+      "name": "Release",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.32",
+        "0.500000": "1.00",
+        "0.750000": "3.16"
+      }
+    },
+    {
+      "name": "Out Ceiling",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-22.5",
+        "0.500000": "-15.0",
+        "0.750000": "-7.5"
+      }
+    },
+    {
+      "name": "Threshold",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-22.5",
+        "0.500000": "-15.0",
+        "0.750000": "-7.5"
+      }
+    },
+    {
+      "name": "Quantize",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.437500": "20 Bits",
+        "0.625000": "20 Bits",
+        "0.812500": "18 Bits"
+      }
+    },
+    {
+      "name": "Dither",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "Type1",
+        "0.750000": "Type2",
+        "0.875000": "Type2"
+      }
+    },
+    {
+      "name": "Shaping",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "None",
+        "0.333333": "Moderate"
+      }
+    },
+    {
+      "name": "Profile",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Basic Profile",
+        "0.125000": "Extreme Analog"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235758"
+}

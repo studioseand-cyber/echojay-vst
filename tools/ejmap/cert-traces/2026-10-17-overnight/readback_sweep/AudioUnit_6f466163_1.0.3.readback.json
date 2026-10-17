@@ -1,0 +1,658 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Lindell 50 Channel",
+  "version": "1.0.3",
+  "map_version": "1.0.3",
+  "map_fp": "c28afe43dcf175f6bc3ac10c9e881f2153f61d354a6dd9125a76f46e795305fb",
+  "controls": [
+    {
+      "name": "EQ In",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "FET DS",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Threshold",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-17.50",
+        "0.500000": "-5.00",
+        "0.750000": "7.50"
+      }
+    },
+    {
+      "name": "Output Level",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Cut",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "High Pass Freq",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "34.94",
+        "0.500000": "141.00",
+        "0.750000": "431.33"
+      }
+    },
+    {
+      "name": "Pad",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.00",
+        "0.500000": "-0.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Comp Bypass",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp External Side Chain",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "FET HPF",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "44.5 Hz",
+        "0.550000": "108.3 Hz",
+        "0.775000": "224.0 Hz"
+      }
+    },
+    {
+      "name": "FET Mix",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "TMT Link",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ Post Dyn",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Range",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "15.00",
+        "0.500000": "30.00",
+        "0.750000": "45.00"
+      }
+    },
+    {
+      "name": "Gate External Side Chain",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Fast",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Release",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.063",
+        "0.500000": "0.200",
+        "0.750000": "0.632"
+      }
+    },
+    {
+      "name": "Level",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-30.00",
+        "0.500000": "-10.00",
+        "0.750000": "-0.00"
+      }
+    },
+    {
+      "name": "Gain 125Hz",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 16kHz",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 250Hz",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 500Hz",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "VCA Threshold",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.50",
+        "0.500000": "-5.00",
+        "0.750000": "2.50"
+      }
+    },
+    {
+      "name": "EQ Bypass",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Unity",
+      "index": 27,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band Filter",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "High Shelf",
+      "index": 29,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gain 1kHz",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 31Hz",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 2kHz",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 4kHz",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 63Hz",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "Gain 8kHz",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.00",
+        "0.500000": "-0.00",
+        "0.750000": "6.00"
+      }
+    },
+    {
+      "name": "VCA Gain",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.60",
+        "0.500000": "9.00",
+        "0.750000": "16.50"
+      }
+    },
+    {
+      "name": "VCA Knee",
+      "index": 37,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "SOFT",
+        "1.000000": "HARD"
+      }
+    },
+    {
+      "name": "VCA Type",
+      "index": 39,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Feed Back",
+        "1.000000": "Feed Forward"
+      }
+    },
+    {
+      "name": "FET Input",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "5.00",
+        "0.750000": "7.50"
+      }
+    },
+    {
+      "name": "High Mid Freq",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "5 kHz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "High Mid Gain",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Low Freq",
+      "index": 43,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "100 Hz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Low Gain",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Gate Expander",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Pre Gain",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.50",
+        "0.500000": "9.00",
+        "0.750000": "16.50"
+      }
+    },
+    {
+      "name": "Input Level",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Low Shelf",
+      "index": 48,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Hysteresis",
+      "index": 49,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.00",
+        "0.500000": "10.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Compressor",
+      "index": 50,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "FET",
+        "1.000000": "VCA"
+      }
+    },
+    {
+      "name": "High Freq",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "10 kHz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "High Gain",
+      "index": 52,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "VCA Attack",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "1 ms"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "VCA Release",
+      "index": 54,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.175",
+        "0.500000": "0.500",
+        "0.750000": "1.313"
+      }
+    },
+    {
+      "name": "FET Ceiling",
+      "index": 55,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "10"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Gate Inverted",
+      "index": 56,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Low Mid Freq",
+      "index": 57,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "240 Hz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Low Mid Gain",
+      "index": 58,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "High Pass",
+      "index": 60,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "FET Mode",
+      "index": 61,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "C",
+        "0.500000": "L"
+      }
+    },
+    {
+      "name": "FET Output",
+      "index": 62,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.50",
+        "0.500000": "5.00",
+        "0.750000": "7.50"
+      }
+    },
+    {
+      "name": "Mid Freq",
+      "index": 63,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "800 Hz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Mid Gain",
+      "index": 64,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "VCA Niveau",
+      "index": 65,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp In",
+      "index": 66,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Equalizer",
+      "index": 67,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "50B"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Gate In",
+      "index": 69,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "VCA Ratio",
+      "index": 24,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "VCA Link",
+      "index": 38,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "TMT Channel",
+      "index": 59,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "FET Release",
+      "index": 68,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261016T235853"
+}

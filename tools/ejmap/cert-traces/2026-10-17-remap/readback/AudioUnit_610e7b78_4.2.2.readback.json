@@ -1,0 +1,166 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "TB_Sibalance_v4",
+  "version": "4.2.2",
+  "map_version": "4.2.2",
+  "map_fp": "d206ef67bff2cb7f5514594aeef55bd4e7fa9d34a0a5ba7365d01c8c2c97cb54",
+  "controls": [
+    {
+      "name": "Range",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "7.5",
+        "0.500000": "15.0",
+        "0.750000": "22.5"
+      }
+    },
+    {
+      "name": "Threshold",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6.0",
+        "0.500000": "12.0",
+        "0.750000": "18.0"
+      }
+    },
+    {
+      "name": "Attack",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "25"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Stop freq",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "12250",
+        "0.500000": "14500",
+        "0.750000": "16750"
+      }
+    },
+    {
+      "name": "Start freq",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "4500",
+        "0.500000": "6000",
+        "0.750000": "7500"
+      }
+    },
+    {
+      "name": "Release",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "88",
+        "0.500000": "125",
+        "0.750000": "163"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Mode",
+      "index": 0,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "M/S mode",
+      "index": 3,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 1",
+      "index": 4,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 2",
+      "index": 5,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 3",
+      "index": 6,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 4",
+      "index": 7,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 5",
+      "index": 8,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 6",
+      "index": 9,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 7",
+      "index": 10,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 8",
+      "index": 11,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 9",
+      "index": 12,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Audition",
+      "index": 13,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 10",
+      "index": 14,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 11",
+      "index": 15,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 12",
+      "index": 16,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 13",
+      "index": 17,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 14",
+      "index": 18,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 15",
+      "index": 19,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "C 16",
+      "index": 20,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T084128"
+}
