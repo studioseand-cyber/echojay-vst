@@ -325,8 +325,31 @@ bool EJAgentClient::typedLooksLikeNewInstruction (const juce::String& typedIn)
         "raise", "lower", "turn", "undo", "redo", "open", "close", "clear", "swap", "replace",
         "put", "move", "mute", "unmute", "solo", "reset", "match", "level", "dial", "show"
     };
-    const auto first = words[0].toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
-    for (const char* v : kVerbs) if (first == v) return true;
+    // ---- THE VERB MAY NOT BE THE FIRST WORD (17 Oct 2026, the rig's B4) ----------------------
+    //
+    // This read words[0] alone, and B4 types "rig-row-marker: set the pre-gain" - the rig's own
+    // marker, then the instruction. The first word is not a verb, so with item 5's change in place
+    // the sentence was answered INTO the waiting ask instead of starting its own run, and the row
+    // that exists to hold #21 went red. It was right to.
+    //
+    // A lead-in ending in a colon is not part of the instruction, for the rig's marker and for a
+    // person who types "ok: add a compressor" alike. So the verb is looked for at the start AND
+    // after the first colon, and nowhere else - scanning every word would make "I don't want you to
+    // add anything" an instruction to add.
+    auto verbAt = [&kVerbs] (const juce::StringArray& ws) -> bool
+    {
+        if (ws.isEmpty()) return false;
+        const auto first = ws[0].toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
+        for (const char* v : kVerbs) if (first == v) return true;
+        return false;
+    };
+    if (verbAt (words)) return true;
+    if (t.containsChar (':'))
+    {
+        const auto after = t.fromFirstOccurrenceOf (":", false, false).trim();
+        const auto rest  = juce::StringArray::fromTokens (after, " \t", "");
+        if (rest.size() >= 3 && verbAt (rest)) return true;
+    }
     return false;
 }
 

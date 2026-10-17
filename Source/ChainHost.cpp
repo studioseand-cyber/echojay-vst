@@ -183,20 +183,21 @@ std::vector<std::pair<juce::String, juce::String>> ChainHost::installedButCannot
         const auto raw = loadFailureReasonFor (n);
         note (n, plainLoadFailureText (raw));
     }
-    // 2. THE ARCHITECTURE VERDICT, over every scanned row rather than the filtered feed. The feed
-    //    already hides a withheld row, and that is exactly how "FabFilter Pro-C 2" could be offered
-    //    while its VST3 was unrunnable: the AU row passed the filter, the add resolved the VST3, and
-    //    the validator refused it at the last moment.
-    {
-        std::lock_guard<std::mutex> lock (pluginsMutex_);
-        for (const auto& d : knownPlugins_.getTypes())
-        {
-            const auto r = withholdReasonLocked (d);
-            if (! isWithheld (r)) continue;
-            const auto why = withholdReasonText (r);
-            if (why.isNotEmpty()) note (d.name, why);
-        }
-    }
+    // 2. THE ARCHITECTURE VERDICT - FROM THE CACHE ONLY, NEVER A SWEEP (17 Oct 2026) ------------
+    //
+    // The first cut of this walked every scanned row under pluginsMutex_ and asked
+    // withholdReasonLocked for each, which on a cold cache reads bundles off the disk: 674
+    // components on this Mac. The rig caught it within one pass - rows A4 and G1 went red with "the
+    // Link's sidecar 2 -> -1" and "the V2's strip draws 0", because the registry pass and the mirror
+    // were waiting on a mutex held by a disk sweep. That is queue item 11's hazard exactly, which I
+    // wrote down last night and then walked into.
+    //
+    // The verdicts are already computed for every row the browser and the model feed have shown -
+    // getFilteredPlugins asks isWithheld on each - so reading what is cached costs nothing and
+    // covers everything the agent can actually see. A row nobody has looked at yet is simply not in
+    // this list, which is honest: it has not been judged.
+    for (const auto& e : withheldFromCache())
+        note (e.first, e.second);
     return out;
 }
 
@@ -9527,6 +9528,30 @@ ChainHost::WithholdReason ChainHost::withholdReasonLocked(const juce::PluginDesc
 // FAIL-OPEN, like every other arm of this gate: a name that matches no bundle, or a bundle whose
 // binary cannot be read, is KEPT. A plugin silently missing from the catalogue is worse than one
 // that is offered and refuses, which is the rule the Unreadable case was written under.
+std::vector<std::pair<juce::String, juce::String>> ChainHost::withheldFromCache() const
+{
+    // WHAT IS ALREADY KNOWN, with no disk read and no plugin-list lock held for longer than a map
+    // walk. archCache_ is keyed by bundle path and filled by every verdict anyone has asked for;
+    // blacklistedPaths_ and the oversize list are the other two withholds, both in memory.
+    std::vector<std::pair<juce::String, juce::String>> out;
+    std::map<std::string, juce::String> nameByPath;
+    {
+        std::lock_guard<std::mutex> lock (pluginsMutex_);
+        for (const auto& d : knownPlugins_.getTypes())
+            nameByPath[d.fileOrIdentifier.toStdString()] = d.name;
+    }
+    std::lock_guard<std::mutex> lk (archMutex_);
+    for (const auto& kv : archCache_)
+    {
+        if (kv.second != ArchVerdict::NotLoadable) continue;
+        const auto it = nameByPath.find (kv.first);
+        const auto name = it != nameByPath.end() ? it->second
+                                                 : juce::File (juce::String (kv.first)).getFileNameWithoutExtension();
+        out.emplace_back (name, withholdReasonText (WithholdReason::ArchitectureIncompatible));
+    }
+    return out;
+}
+
 ChainHost::ArchVerdict ChainHost::archVerdictForAuNamed (const juce::String& name) const
 {
    #if JUCE_MAC

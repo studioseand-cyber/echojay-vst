@@ -2183,6 +2183,15 @@ public:
         that something is broken. The sentence is translated here, once, at the seam every caller
         passes through; the raw string is never thrown away, it moves to Details. */
     static juce::String plainLoadFailureText (const juce::String& raw);
+
+    /** The architecture withholds ALREADY KNOWN, read from the cache with no disk access.
+
+        17 Oct 2026: the first cut of installedButCannotLoad asked withholdReasonLocked for every
+        scanned row, which on a cold cache reads 674 bundles off the disk while holding
+        pluginsMutex_ - and the rig went red on two Link rows within one pass, because the registry
+        and the mirror were waiting behind it. This reads what the browser and the feed have already
+        caused to be computed; a row nobody has looked at is simply not in the list. */
+    std::vector<std::pair<juce::String, juce::String>> withheldFromCache() const;
     static juce::String loadFailureReasonFor(const juce::String& name);
     void maybeReloadEntriesCache();
 
