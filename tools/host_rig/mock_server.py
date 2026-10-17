@@ -103,13 +103,31 @@ class Handler(BaseHTTPRequestHandler):
         # only the goal, so the two fields the rules name are recorded verbatim.
         ctx = body.get("context") or {}
         chat = ctx.get("recentChat") or []
+        # ---- EVERY RESULT'S SIZE, BECAUSE 8 KB IS A CONTRACT (17 Oct 2026) ----------------------
+        # Sean's recheck on 17b died in round 1 of every run: the server rejected look(inventory)
+        # with `result_too_large` because the plugin sent more than 8 KB. No rig row could have
+        # caught it - the rig never looked at how BIG a result was, only at what it said, and the
+        # field that grew is a function of HIS plugin folder (357 unloadable of 1,323) rather than
+        # of the code. So the recorder now measures what the plugin posts, per result and per body,
+        # and a row can assert the contract's own limit.
+        results = []
+        for r in (body.get("results") or []):
+            if not isinstance(r, dict): continue
+            results.append({"id": r.get("id", ""), "ok": bool(r.get("ok", True)),
+                            "bytes": len(json.dumps(r.get("result") if "result" in r else r,
+                                                    separators=(",", ":"))),
+                            "keys": sorted(list((r.get("result") or {}).keys()))[:14]
+                                    if isinstance(r.get("result"), dict) else []})
         with STATE["lock"]:
             STATE["requests"].append({"path": path, "atMs": int(time.time() * 1000),
                                       "chatId": body.get("chatId", ""),
                                       "message": (body.get("message") or body.get("goal") or "")[:200],
                                       "recentChatCount": len(chat) if isinstance(chat, list) else 0,
                                       "recentChat": json.dumps(chat)[:1200],
-                                      "transport": json.dumps(ctx.get("transport") or {})[:400]})
+                                      "transport": json.dumps(ctx.get("transport") or {})[:400],
+                                      "bodyBytes": len(json.dumps(body, separators=(",", ":"))),
+                                      "results": results,
+                                      "maxResultBytes": max([r["bytes"] for r in results], default=0)})
 
     # ---- the routes ------------------------------------------------------
     def do_GET(self):

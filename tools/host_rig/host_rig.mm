@@ -4803,6 +4803,95 @@ int main (int argc, char* argv[])
             return all;
         };
 
+        // ---- RP8K (17 Oct evening): A RESULT MUST FIT 8 KB ON A REAL-SIZE INVENTORY ------------
+        //
+        // His recheck of 17b died in round 1 of EVERY run:
+        //   EJAgent: frame error code=result_too_large retryable=1 "result toolu_01VtSXwQ7... is
+        //   over 8 KB; send the compact summary shape (CONTRACT_AGENT_TOOLS section 5)"
+        // and the call two lines above it in his log is `look "read the inventory"`.
+        //
+        // No row could have caught this, for a reason worth writing down: the rig never looked at
+        // how BIG a result was, only at what it said - and the field that grew is a function of HIS
+        // plugin folder rather than of the code. 357 of his 1,323 installed bundles have no arm64
+        // slice; the rig's machine, in its controlled list, has one or two. A test whose input is
+        // the developer's own machine is not a test of the product.
+        //
+        // So this row MAKES the input: several hundred entries written into the no-load file inside
+        // the rig's own isolated state root - the same file and the same shape the product writes -
+        // and then one replayed look(inventory). The assertion is the contract's own number, read
+        // from what the plugin actually POSTED (the mock records every result's bytes), not from
+        // anything the rig computes for itself.
+        {
+            const int kSeeded = 420;
+            const auto root = juce::File (juce::String (::getenv ("ECHOJAY_STATE_HOME") != nullptr
+                                                        ? ::getenv ("ECHOJAY_STATE_HOME") : "/tmp"))
+                                  .getChildFile ("Library/Application Support/EchoJay");
+            root.createDirectory();
+            const auto failedFile = root.getChildFile ("plugin_load_failed.json");
+            {
+                auto* failed = new juce::DynamicObject();
+                for (int i = 0; i < kSeeded; ++i)
+                {
+                    auto* e = new juce::DynamicObject();
+                    const auto nm = "Seeded Unloadable " + juce::String (i + 1);
+                    e->setProperty ("name", nm);
+                    e->setProperty ("format", "VST3");
+                    // His machine's real sentence, so the bytes are his bytes.
+                    e->setProperty ("why", "An OS error occurred during initialisation of the plug-in (-1)");
+                    e->setProperty ("atMs", (double) juce::Time::currentTimeMillis());
+                    failed->setProperty (juce::Identifier (nm.toLowerCase().replaceCharacter (' ', '_')
+                                                           + "|vst3"), juce::var (e));
+                }
+                auto* rootObj = new juce::DynamicObject();
+                rootObj->setProperty ("v", 1);
+                rootObj->setProperty ("failed", juce::var (failed));
+                failedFile.replaceWithText (juce::JSON::toString (juce::var (rootObj), true));
+            }
+            std::printf ("        (seeded %d unloadable plugin(s) into %s - his Mac has 357 of 1,323)\n",
+                         kSeeded, failedFile.getFullPathName().toRawUTF8());
+
+            clearOwnRack (rig);
+            rig.send (echojay::rig::cmd::newChat, args1 ("uid", ""), 10000);
+            rig.send (echojay::rig::cmd::workOn,  args1 ("uid", ""), 8000);
+            const auto r8 = askAgent (rig, replayGoal ("rp_8k", "Add a compressor to this rack"), 90000);
+
+            // WHAT THE PLUGIN POSTED, measured by the thing that received it.
+            int worst = 0, inventoryBytes = -1;
+            juce::String keys, worstId;
+            if (const auto req = lastRequestTo (mockPort, "/api/agent/step"); req.isObject())
+            {
+                worst = (int) req.getProperty ("maxResultBytes", juce::var (0));
+                if (auto* arr = req.getProperty ("results", juce::var()).getArray())
+                    for (const auto& rr : *arr)
+                    {
+                        const int b = (int) rr.getProperty ("bytes", juce::var (0));
+                        if (b >= worst) { worst = b; worstId = rr.getProperty ("id", juce::var()).toString(); }
+                        juce::StringArray ks;
+                        if (auto* ka = rr.getProperty ("keys", juce::var()).getArray())
+                            for (const auto& k : *ka) ks.add (k.toString());
+                        if (ks.contains ("names")) { inventoryBytes = b; keys = ks.joinIntoString (","); }
+                    }
+            }
+            const bool fits   = inventoryBytes >= 0 && inventoryBytes <= 8192;
+            const bool hasTot = keys.contains ("notLoadableTotal");
+            const bool pageScoped = ! keys.contains ("notLoadableNote") || hasTot;
+            scen ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB with several hundred unloadable plugins",
+                  fits && hasTot && pageScoped,
+                  juce::String ("with ") + juce::String (kSeeded) + " unloadable plugins seeded, the "
+                  "inventory result the plugin POSTED was "
+                  + (inventoryBytes < 0 ? juce::String ("never seen (no step body carried a `names` result)")
+                                        : juce::String (inventoryBytes) + " bytes"
+                                          + (fits ? " - inside the contract's 8 KB"
+                                                  : " - OVER THE CONTRACT'S 8 KB, which is the error he read"))
+                  + "; its keys were [" + keys + "]"
+                  + (hasTot ? "" : "; notLoadableTotal is MISSING, so the model cannot know the scale "
+                                   "without the bytes")
+                  + "; the largest result in that body was " + juce::String (worst) + " bytes ("
+                  + worstId + ")",
+                  "A", v2.editor.get(), rig.freshState(), &r8);
+            failedFile.deleteFile();   // the seed is this row's, not the next row's
+        }
+
         // ---- RP1 (item 1): "New chat" must close the open run, not inherit it -------------------
         // The real session: kHs failed on the Kick's Link, the server then ASKED something (tc_q2),
         // and that ask was still pending when he pressed New chat, aimed at the Mix Bus and typed

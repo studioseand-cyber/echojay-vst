@@ -1,0 +1,62 @@
+{
+ "id": "rp_8k",
+ "goal": "Add a compressor to this rack",
+ "target": "(this instance's own rack)",
+ "at": "20:50:27",
+ "checkpoint": "cp_8k",
+ "note": "NOT extracted from a log: this one is BUILT, and says so. Sean's 17b recheck died in round 1 of every run because look(inventory) came back over 8 KB on his machine, and the frames that produced it are the plainest possible - one look, one await. What the fixture cannot carry is the SIZE, which comes from the plugin's own inventory: the row seeds a several-hundred-entry no-load list into the rig's isolated state root so the result is as big as his. The error he saw is in the log verbatim (FOR_B 25); this is its shape.",
+ "rounds": [
+  {
+   "round": 1,
+   "session": "ag_rp8k",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_rp8k",
+     "round": 1,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "tool_call",
+     "id": "toolu_rp8k_look",
+     "name": "look",
+     "approval": "free",
+     "mode": "ask",
+     "summary": "read the inventory",
+     "autoApplied": false,
+     "args": {
+      "what": "inventory"
+     }
+    },
+    {
+     "event": "await",
+     "ids": [
+      "toolu_rp8k_look"
+     ]
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "session": "ag_rp8k",
+   "frames": [
+    {
+     "event": "round",
+     "sessionId": "ag_rp8k",
+     "round": 2,
+     "ofSoftCap": 20
+    },
+    {
+     "event": "done",
+     "reason": "complete",
+     "rounds": 2,
+     "costUsd": 0.0,
+     "summary": "I read the inventory."
+    }
+   ]
+  }
+ ],
+ "actions": [],
+ "states": [],
+ "startBytes": null
+}

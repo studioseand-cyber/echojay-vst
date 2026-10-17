@@ -78,5 +78,13 @@
   "target": "bb411b8240 (a Link)",
   "rounds": 1,
   "actions": 0
+ },
+ {
+  "id": "rp_8k",
+  "at": "20:50:27",
+  "goal": "Add a compressor to this rack",
+  "target": "(this instance's own rack)",
+  "rounds": 2,
+  "actions": 0
  }
 ]
