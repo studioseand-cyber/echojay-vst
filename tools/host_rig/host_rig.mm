@@ -6632,12 +6632,24 @@ int main (int argc, char* argv[])
         }
 
         // ---- C9: the rack's pre gain -----------------------------------------
+        // "ADD 3 dB" IS A DELTA, AND THIS ROW WAS READING IT AS A DESTINATION (17 Oct, S6 round 4).
+        // It asserted the pre gain ends at 3.0, which is only the same thing when the rack starts at
+        // 0 - and by this point in a run it does not. The run it failed said exactly the right thing:
+        // "Added 3 dB of pre gain on the Mix Bus, bringing it from -5 dB to -2 dB". Marking that
+        // wrong would be marking the product wrong for reading the person's words correctly.
+        //
+        // So the row measures the CHANGE, and prints where it started, which is the fact it was
+        // missing. A destination reading is still accepted when the two coincide (a rack at 0), so
+        // nothing that used to pass stops passing.
         {
+            const double before = (double) rig.freshState().getProperty ("preGainDb", 0.0);
             const auto r = askAgent (rig, "add 3 dB of pre gain");
             const double pg = (double) rig.freshState().getProperty ("preGainDb", 0.0);
-            const bool set = std::abs (pg - 3.0) < 0.6;
+            const bool moved3 = std::abs ((pg - before) - 3.0) < 0.6;
+            const bool set    = moved3 || (std::abs (before) < 0.6 && std::abs (pg - 3.0) < 0.6);
             row ("C9", set, "add 3 dB of pre gain",
-                 "pre gain reads " + juce::String (pg, 2) + " dB, state " + r.state
+                 "pre gain " + juce::String (before, 2) + " -> " + juce::String (pg, 2) + " dB (a 3 dB "
+                 "ADD, so the change is what is measured), state " + r.state
                  + (set ? "" : ", card said: " + r.text.substring (0, 140) + r.failDetail), &r);
         }
 
