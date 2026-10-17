@@ -1,5 +1,5 @@
 scenario B2-live
-captured 2026-10-17T06:57:15.833+01:00
+captured 2026-10-17T19:25:51.219+01:00
   [user] Add a compressor to this rack
   [assistant] 
   run row: status=Waiting for your answer changes=0 steps=2 zones=[4:EchoJay Compressor,7:Stop]

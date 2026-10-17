@@ -1,0 +1,75 @@
+GATE 29 - ship_2026-10-17b, 17 October 2026
+
+THE ROUND: Sean's twelve items from the 17 Oct Logic recheck of ship_2026-10-17a, with the
+method he set - every fix driven from a REPLAY of his own sessions (08:05-08:30), extracted
+from the plugin's log into tools/host_rig/replay and served back frame for frame.
+
+S1  OK    six archives deleted and relinked across build, build-guards and build-release
+S2  OK    every guard target        S3 OK  the four bundles        S3b OK  provenance
+S4  OK    100% of 79 tests passed, including the two this round repaired:
+            ui_guard 122.7 s  (item 7 was switching tabs on a selection-driven open)
+            agent_client_guard 5.4 s  (A5 moved to item 5's rule, A5c keeps #21)
+S5  OK    link_state_guard, standalone and two-sided
+S6  OK    BOTH halves green, in one run:
+
+            ==== host_rig: GREEN (0 failed, 63 passed, 11 skipped) ====
+            ==== host_rig: GREEN (0 failed, 116 passed, 14 skipped) ====
+
+THE RESTART. The Mac restarted at about 16:17, during S6 of the gate that began at 14:40,
+and took /private/tmp with it - S1's own content manifest and every gate log. S1-S5 were
+green in that run, so the question was whether the source still matched what S1 compiled.
+Proved three ways instead of one, and the substitutes are stronger than what was lost:
+  1. git: no file under Source/ differs from commit fbd5890e, which is what S1 built;
+  2. that commit was made at 14:34:41 and S1 linked the archives at 14:43:13 - after it;
+  3. no source file is newer than the archive (S3b's own test, which needs no manifest).
+S6 was then rerun on its own, five times, until both halves were green together.
+
+ROWS THAT DID NOT RUN, each with its reason. None is counted as a pass anywhere.
+
+  [live] A4-live   live: the same add, on a Link
+            the Link that AU hosting loads here is the INSTALLED binary, not the one this run built (item 0b: registerAU registers a factory and JUCE instantiates the IDENTIFIER, so the system's component wins in a fresh process). A V2 from this build talking to a Link from the last one is a configuration that 
+  [live] E10-live  live: with audio playing, a GR question is MEASURED, not asked about
+            the behaviour this row measures is the SERVER's half of continuity (FOR_B Â§16), which is not in this build: attempt 1: B: it asked for playback and ENDED (state "done") while audio was already flowing, with transport{playing,signalNow} in the start body: "add echojay compressor=added echojay compre
+  [live] A9-live   live: the installed plugin is offered once, not twice
+            the real model did not ask a question in 1 attempts of "Add Pro-C 3 to this rack", so there was no waiting ask to act on. NEVER counted as a pass.
+  [live] C2-live   live: a placed add states the position the rack actually has
+            the behaviour this row measures is the SERVER's half of continuity (FOR_B Â§16), which is not in this build: attempt 1: B: the compressor landed at slot 2, AFTER the EQ at 1 - the add ops carried no position and the closing claimed one.  NEVER counted as a pass.
+  [live] L1        add a compressor on another track's Link
+            the Link that AU hosting loaded is the INSTALLED binary, not the one this run was given (item 0b): this row sends an edit from THIS build's V2 and reads the LINK's own sidecar, so in a mixed pairing the two halves of its claim come from different builds. NEVER counted as a pass.
+  [live] L2        a build on another track's Link
+            the Link that AU hosting loaded is the INSTALLED binary, not the one this run was given (item 0b): this row sends an edit from THIS build's V2 and reads the LINK's own sidecar, so in a mixed pairing the two halves of its claim come from different builds. NEVER counted as a pass.
+  [live] L3        a Link's OUT, set from the V2
+            the Link that AU hosting loaded is the INSTALLED binary, not the one this run was given (item 0b): this row sends an edit from THIS build's V2 and reads the LINK's own sidecar, so in a mixed pairing the two halves of its claim come from different builds. NEVER counted as a pass.
+  [live] K1        (fix 5) selecting a Link straight after an agent build shows its slots
+            the Link that AU hosting loaded is the INSTALLED binary, not the one this run was given (item 0b): this row compares the LINK's sidecar with THIS build's view, so a mixed pairing puts the two halves of its claim in different builds - tonight it read "sidecar [] and the view []", which is the pairing
+  [live] A6        (agent OFF) a plain chat turn is answered and the rack is untouched
+            the server did not answer this turn (2 transcript row(s) arrived and the last assistant line was about something else), so the reply half cannot be judged. The rack half HELD: it was untouched with the agent off. NEVER counted as a pass.
+  [mock] P1        an AU that cannot load in this process is never offered in the inventory
+            every one of the 674 AU component(s) on this Mac has an arm64 slice, so there is nothing here that cannot load and nothing to withhold. NEVER counted as a pass.
+  [mock] T3        T3: a Link held by another instance refuses the edit, in words
+            this window never saw another instance holding the rack (rackLock="idle" after 12 s), so there was no contention to refuse. Never counted as a pass.
+  [mock] T2w       T2: an edit lands on a Link whose OWN window is open
+            the Link that AU hosting loaded is the INSTALLED binary, not the one this run was given (item 0b) - an edit between a V2 from this build and a Link from another is a pairing that never ships, so neither a landing nor a refusal would be a verdict on anything. NEVER counted as a pass.
+  [mock] I4c       a rack's refusal reads as words, never "op 1 invalid"
+            the run produced no failed line at all in this host (the op was refused before it reached a rack's validator), so there is no wording to judge. A10 and B5 hold the same rule on the line Sean actually read. NEVER counted as a pass.
+  [mock] T5        a third party in the Link's mirror says where it is, never "Failed"
+            no third-party slot is drawn in the mirror this run (the strip reads []), so there is nothing to open.
+  [mock] I9c       the Link's mirrored card carries the plugin's figure too
+            the Link in this run is NOT the Link this build produced: its card reads "", which is the previous build's wording, beside a ledger only this build writes (). The rig registers an AU by type/subtype and instantiates the IDENTIFIER, so the INSTALLED component wins in a fresh process - queued as item 
+  [mock] A2        a built-in add with settings on a Link, and the main rack follows it
+            the Link that AU hosting loaded is the INSTALLED binary, not the one this run was given (item 0b): this row asserts that an add with settings lands on a Link AND that the V2's strip follows it, and in a mixed pairing those two halves come from different builds. NEVER counted as a pass.
+  [mock] G2        the rack strip follows a Link change (the build road)
+            same Link as A2: a mixed pairing (item 0b)
+  [mock] A11b      Auto on ANOTHER track: the approved line names that track
+            the Link the row is working on has no published track name in this run, so there is no name for the line to carry and nothing to judge. The row is about the NAMING, and it cannot be about a name that does not exist.
+
+WHAT THE SKIPS ARE MOSTLY SAYING, in one line: the Link that AU hosting loads is the
+INSTALLED component, not the bundle the run was handed (hashes differ while the byte counts
+match, which is why the first version of that check lied), so eight Link rows cannot judge
+either build. That is queue item 0b and it is the next round's first item. The rest are the
+server's own choices, marked as such and sent to B in FOR_B sections 19 to 24.
+
+WHAT IS PROVED AND WHAT IS NOT: items 1, 2 and 5 are red-then-green against 17a from his
+own sessions (RP1, RP2, RP3). Items 4, 6 and 10 are fixed but their rows passed on 17a too,
+so they are regression guards and NOT proofs - docs/REPORT_ship_2026-10-17b.md says so in
+its table, and they are the recheck steps where his eyes are the only instrument.

@@ -1,0 +1,25 @@
+INSTALLED 2026-10-17 20:13 BST
+
+Every UUID below is the ship folder's and ~/Library's, side by side, for all four bundles
+and both slices. AUHostingService was killed twice after the copy, as the standing rule says.
+
+--- EchoJay V2.component
+  ship   UUID: 7ADFC5C5-AECD-37AB-8E83-A9E2449814FA (x86_64) ship_2026-10-17b/EchoJay V2.component/Contents/MacOS/EchoJay V2
+  ship   UUID: 602E2FA8-9728-328E-9834-0AF4375EB465 (arm64) ship_2026-10-17b/EchoJay V2.component/Contents/MacOS/EchoJay V2
+  live   UUID: 7ADFC5C5-AECD-37AB-8E83-A9E2449814FA (x86_64) /Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay V2.component/Contents/MacOS/EchoJay V2
+  live   UUID: 602E2FA8-9728-328E-9834-0AF4375EB465 (arm64) /Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay V2.component/Contents/MacOS/EchoJay V2
+--- EchoJay Link.component
+  ship   UUID: 799FADEF-C434-3CE5-88CC-236BB274DDD4 (x86_64) ship_2026-10-17b/EchoJay Link.component/Contents/MacOS/EchoJay Link
+  ship   UUID: 3DA1BAB8-0B7E-3031-A6D2-1636EB177674 (arm64) ship_2026-10-17b/EchoJay Link.component/Contents/MacOS/EchoJay Link
+  live   UUID: 799FADEF-C434-3CE5-88CC-236BB274DDD4 (x86_64) /Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay Link.component/Contents/MacOS/EchoJay Link
+  live   UUID: 3DA1BAB8-0B7E-3031-A6D2-1636EB177674 (arm64) /Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay Link.component/Contents/MacOS/EchoJay Link
+--- EchoJay V2.vst3
+  ship   UUID: 60019690-61C6-3B16-8D97-8729CF64D339 (x86_64) ship_2026-10-17b/EchoJay V2.vst3/Contents/MacOS/EchoJay V2
+  ship   UUID: E9DD38DE-5C20-338B-9108-2B2E0E3706AB (arm64) ship_2026-10-17b/EchoJay V2.vst3/Contents/MacOS/EchoJay V2
+  live   UUID: 60019690-61C6-3B16-8D97-8729CF64D339 (x86_64) /Users/SeanD/Library/Audio/Plug-Ins/VST3/EchoJay V2.vst3/Contents/MacOS/EchoJay V2
+  live   UUID: E9DD38DE-5C20-338B-9108-2B2E0E3706AB (arm64) /Users/SeanD/Library/Audio/Plug-Ins/VST3/EchoJay V2.vst3/Contents/MacOS/EchoJay V2
+--- EchoJay Link.vst3
+  ship   UUID: 1D6D9DAD-21EB-39F2-A69A-DFF7A3C040A2 (x86_64) ship_2026-10-17b/EchoJay Link.vst3/Contents/MacOS/EchoJay Link
+  ship   UUID: B3A9F0DF-2A31-32B6-BC1B-13DA3370925C (arm64) ship_2026-10-17b/EchoJay Link.vst3/Contents/MacOS/EchoJay Link
+  live   UUID: 1D6D9DAD-21EB-39F2-A69A-DFF7A3C040A2 (x86_64) /Users/SeanD/Library/Audio/Plug-Ins/VST3/EchoJay Link.vst3/Contents/MacOS/EchoJay Link
+  live   UUID: B3A9F0DF-2A31-32B6-BC1B-13DA3370925C (arm64) /Users/SeanD/Library/Audio/Plug-Ins/VST3/EchoJay Link.vst3/Contents/MacOS/EchoJay Link

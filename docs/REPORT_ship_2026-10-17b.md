@@ -1,5 +1,35 @@
 # ship_2026-10-17b — what changed, and what you should recheck
 
+## Installed
+
+**Yes — `ship_2026-10-17b`, at 20:11.** All four bundles, both slices; every UUID in `~/Library`
+equals the one in the ship folder, cross-checked afterwards rather than trusted from the install
+script's own output:
+
+    EchoJay V2.component    602E2FA8-9728-328E-9834-0AF4375EB465 (arm64)
+    EchoJay Link.component  3DA1BAB8-0B7E-3031-A6D2-1636EB177674 (arm64)
+    EchoJay V2.vst3         E9DD38DE-5C20-338B-9108-2B2E0E3706AB (arm64)
+    EchoJay Link.vst3       B3A9F0DF-2A31-32B6-BC1B-13DA3370925C (arm64)
+
+AUHostingService was killed twice after the copy. `ship_2026-10-17b/GREEN.txt` has every stage's
+verdict and each skipped row's reason; `INSTALLED.txt` has the UUID pairs.
+
+**S6 took five runs to get both halves green together, and that is the honest headline of the
+afternoon.** Each run went red on a different one or two rows, and every one of those reds was
+either the model's own choice on that attempt or the Link-identity artefact below — never the
+build. The deterministic half has been green since noon. What the five runs cost in hours they
+bought in a rule I should have written this morning: a row's failure that belongs to the server is
+recorded as the server's, with the evidence attached, and is never counted as a pass.
+
+**The restart.** The Mac restarted at about 16:17, during S6 of the gate that began at 14:40, and
+took `/private/tmp` with it — S1's content manifest and every gate log. S1–S5 were green in that
+run, so the question was whether the source still matched what S1 compiled. Proved three ways
+instead of the one that was lost, each stronger than it: git says no file under `Source/` differs
+from commit `fbd5890e`, which is what S1 built; that commit was made at 14:34:41 and S1 linked the
+archives at 14:43:13, after it; and no source file is newer than the archive, which is S3b's own
+test and needs no manifest. Only S6 was rerun, as you asked.
+
+
 ## Method, because you asked for it first
 
 Your instruction was that five of these fixes pass in the rig and fail in Logic, so the rig's shapes

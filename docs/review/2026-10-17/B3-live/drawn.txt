@@ -1,9 +1,10 @@
 scenario B3-live
-captured 2026-10-17T06:58:53.889+01:00
+captured 2026-10-17T19:28:08.267+01:00
   [user] Add a compressor to this rack
   [assistant] 
-  run row: status=Waiting for your answer changes=0 steps=2 zones=[4:EchoJay Compressor,4:EchoJay 4-Band Compressor,7:Stop]
+  run row: status=Waiting for your answer changes=0 steps=3 zones=[4:EchoJay Compressor,4:EchoJay 4-Band Compressor,7:Stop]
   opening: 
   closing: 
     step "read the inventory" [done] right="" detail="" chips=[]
+    step "read the rack" [done] right="" detail="" chips=[]
     step "ask" [running] right="your answer?" detail="" chips=[EchoJay Compressor, EchoJay 4-Band Compressor]

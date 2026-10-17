@@ -1,5 +1,5 @@
 scenario E11-live
-captured 2026-10-17T12:50:48.987+01:00
+captured 2026-10-17T19:36:10.781+01:00
   [user] How much gain reduction is the compressor doing?
   [assistant] 
   run row: status=Waiting for your answer changes=0 steps=1 zones=[4:Playing now,4:Skip the measurement,7:Stop]

@@ -1,11 +1,10 @@
 scenario A8-live
-captured 2026-10-17T12:57:45.695+01:00
+captured 2026-10-17T19:38:28.464+01:00
   [user] Add Pro-C 2 to this rack
   [assistant] 
-  run row: status=Waiting for your answer changes=0 steps=4 zones=[3,4:Pro-C 3,4:EchoJay Compressor,7:Stop]
+  run row: status=Waiting for your answer changes=0 steps=3 zones=[3,4:Pro-C 3,4:EchoJay Compressor,7:Stop]
   opening: 
   closing: 
     step "add FabFilter Pro-C 2 - FabFilter Pro-C 2 will need setting by hand (no map to dial it with)" [failed] right="not applied" detail="FabFilter Pro-C 2 is not one this rack can load here" chips=[]
-    step "read the inventory" [done] right="" detail="" chips=[]
     step "read the inventory" [done] right="" detail="" chips=[]
     step "ask" [running] right="your answer?" detail="" chips=[Pro-C 3, EchoJay Compressor]
