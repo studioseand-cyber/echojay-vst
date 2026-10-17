@@ -541,6 +541,123 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
 }
 
 //==============================================================================
+// 2b. THE FORMAT BRIDGE (Kathy, 17 Oct, "ALL DAWs"): a VST3 inherits its AU twin's level (certified or mapped) only when a read-back
+// shows the VST3's role controls display the SAME values as the AU's at the same normalised settings - BRIDGE_MIN_POINTS or more paired
+// points per role control, every one within the read-back tolerance (labels equal for a stepped control) - on the same plugin version.
+// Any mismatch, too few points, a role control the VST3 map lacks, or another version: no inheritance, and the why says which
+constexpr int BRIDGE_MIN_POINTS = 3;
+inline juce::String versionKey (const juce::String& v)   // "1.4.5 (R666666666)" -> "1.4.5"; "1.3.5.0" -> "1.3.5"; "5.4.3.17500" stays
+{
+    auto t = v.trim(); int i = 0; while (i < t.length() && (juce::CharacterFunctions::isDigit (t[i]) || t[i] == '.')) ++i;
+    t = t.substring (0, i); while (t.endsWith (".0") && t.indexOfChar ('.') != t.lastIndexOfChar ('.')) t = t.dropLastCharacters (2);
+    return t;
+}
+struct BridgeControl { juce::String name; int points = 0, matched = 0; juce::String worst; };
+struct Bridge { bool ok = false; juce::String why; std::vector<BridgeControl> controls; };
+// the readings of one format and version, by control: sources whose meta says that format and (by versionKey) that version
+inline std::map<juce::String, std::vector<Reading>> readingsOf (const std::vector<std::pair<juce::String, Readings>>& sources, const std::vector<SourceMeta>& metas,
+                                                                const juce::String& format, const juce::String& version)
+{
+    std::map<juce::String, std::vector<Reading>> out;
+    if (metas.size() != sources.size()) return out;
+    for (size_t i = 0; i < sources.size(); ++i)
+        if (metas[i].format == format && versionKey (metas[i].version) == versionKey (version))
+            for (const auto& [n, rs] : sources[i].second) for (const auto& r : rs) out[n].push_back (r);
+    return out;
+}
+inline Bridge bridgeFor (const juce::var& auMap, const juce::var& v3Map, const juce::StringArray& roleControls,
+                         const std::vector<std::pair<juce::String, Readings>>& sources, const std::vector<SourceMeta>& metas)
+{
+    Bridge b;
+    const auto auV = auMap.getProperty ("identity", {}).getProperty ("version", "").toString(), v3V = v3Map.getProperty ("identity", {}).getProperty ("version", "").toString();
+    if (versionKey (auV).isEmpty() || versionKey (auV) != versionKey (v3V)) { b.why = "another version (AU " + auV + ", VST3 " + v3V + ")"; return b; }
+    if (roleControls.isEmpty()) { b.why = "the AU map's role controls are not identified"; return b; }
+    std::map<juce::String, juce::var> auC, v3C; for (const auto& [n, c] : mapControls (auMap)) auC[n] = c; for (const auto& [n, c] : mapControls (v3Map)) v3C[n] = c;
+    const auto au = readingsOf (sources, metas, "AudioUnit", auV), v3 = readingsOf (sources, metas, "VST3", v3V);
+    juce::StringArray bad;
+    for (const auto& name : roleControls)
+    {
+        BridgeControl bc; bc.name = name;
+        if (! v3C.count (name)) { bc.worst = "the VST3 map has no control '" + name + "'"; bad.add (bc.worst); b.controls.push_back (bc); continue; }
+        const auto a = anchorsOf (auC.count (name) ? auC[name] : juce::var());
+        double lo = 0.0, hi = 0.0; if (! a.empty()) { lo = hi = a.front().value; for (const auto& p : a) { lo = std::min (lo, p.value); hi = std::max (hi, p.value); } }
+        const bool mode = auC.count (name) && auC[name].getProperty ("kind", "").toString() == "mode";
+        std::set<long long> seen;
+        if (au.count (name) && v3.count (name))
+            for (const auto& ra : au.at (name))
+                for (const auto& rv : v3.at (name))
+                {
+                    if (std::abs (ra.norm - rv.norm) > 1e-6) continue;
+                    const auto key = (long long) std::llround (ra.norm * 1e6); if (! seen.insert (key).second) continue;   // one pair per setting
+                    ++bc.points; bool same = false;
+                    double x = 0.0, y = 0.0;
+                    if (mode || ! numberOf (ra.display, x) || ! numberOf (rv.display, y)) same = ra.display.trim().equalsIgnoreCase (rv.display.trim());
+                    else
+                    {
+                        const double span = hi - lo, step = std::max (displayStep (ra.display), displayStep (rv.display));
+                        const double tol = span > 0.0 ? std::min (std::max (step, 0.005 * span), std::max (0.01 * span, step)) : step;
+                        same = std::abs (x - y) <= tol + 1e-9;
+                    }
+                    if (same) ++bc.matched;
+                    else bc.worst = "norm " + juce::String (ra.norm, 3) + ": AU '" + ra.display.trim() + "', VST3 '" + rv.display.trim() + "'";
+                }
+        if (bc.points < BRIDGE_MIN_POINTS) bad.add (name + ": " + juce::String (bc.points) + " paired setting(s), " + juce::String (BRIDGE_MIN_POINTS) + " needed");
+        else if (bc.matched < bc.points) bad.add (name + ": " + bc.worst);
+        b.controls.push_back (bc);
+    }
+    b.ok = bad.isEmpty();
+    b.why = b.ok ? "the VST3 displays what the AU displays on " + roleControls.joinIntoString (", ") + " (same version " + versionKey (auV) + ")" : bad.joinIntoString ("; ");
+    return b;
+}
+
+//==============================================================================
+// 2c. THE ANCHOR REPAIR (Kathy, 17 Oct, NEXT 2/3): a control's anchor table rebuilt from its own display read on a fine grid in one
+// guarded load. The grid leaves out every setting the read-back will judge (HOLD_OUT_REACH either side of each held-out norm, and the
+// read-back's own 25/50/75 %), so the read-back that follows is never a reading of an anchor. Every reading must carry a number in ONE
+// unit family and the values must move; otherwise nothing is built, and the why says so
+constexpr double HOLD_OUT_REACH = 0.004;
+inline std::vector<double> repairGrid (double step, std::vector<double> holdOut)
+{
+    for (double f : { 0.25, 0.5, 0.75 }) holdOut.push_back (f);
+    std::vector<double> g; const int n = (int) std::llround (1.0 / step);
+    for (int k = 0; k <= n; ++k)
+    {
+        const double x = std::min (1.0, k * step);
+        if (std::none_of (holdOut.begin(), holdOut.end(), [&] (double h) { return std::abs (h - x) <= HOLD_OUT_REACH + 1e-9; })) g.push_back (x);
+    }
+    return g;
+}
+inline juce::String unitFamily (const juce::String& display)
+{
+    const auto l = display.toLowerCase();
+    if (l.contains ("hz") || l.trim().endsWith ("k")) return "Hz";
+    if (l.contains ("db")) return "dB";
+    if (l.contains ("ms")) return "ms";
+    if (l.contains ("%")) return "%";
+    if (l.contains (":1")) return ":1";
+    if (l.trim().endsWith ("s") || l.contains (" sec")) return "s";
+    return "";
+}
+struct Rebuilt { bool ok = false; juce::String why, unit; std::vector<Anchor> anchors; };
+inline Rebuilt anchorsFromReadings (std::vector<Reading> rs)
+{
+    Rebuilt r; std::sort (rs.begin(), rs.end(), [] (const Reading& a, const Reading& b) { return a.norm < b.norm; });
+    if (rs.size() < 4) { r.why = juce::String ((int) rs.size()) + " reading(s); 4 needed"; return r; }
+    std::set<juce::String> units;
+    for (const auto& x : rs)
+    {
+        double v = 0.0; if (! numberOf (x.display, v)) { r.why = "the display '" + x.display + "' at norm " + juce::String (x.norm, 4) + " carries no number"; return r; }
+        units.insert (unitFamily (x.display));
+        if (! r.anchors.empty() && std::abs (r.anchors.back().norm - x.norm) < 1e-6) continue;
+        r.anchors.push_back ({ v, x.norm });
+    }
+    if (units.size() > 1) { juce::StringArray u; for (const auto& x : units) u.add (x.isEmpty() ? juce::String ("(none)") : x); r.why = "the display changes unit (" + u.joinIntoString (", ") + ")"; r.anchors.clear(); return r; }
+    double lo = r.anchors.front().value, hi = lo; for (const auto& a : r.anchors) { lo = std::min (lo, a.value); hi = std::max (hi, a.value); }
+    if (hi - lo <= 1e-12) { r.why = "the display does not move (" + rs.front().display.trim() + " throughout)"; r.anchors.clear(); return r; }
+    r.unit = *units.begin(); r.ok = true; r.why = juce::String ((int) r.anchors.size()) + " anchors from the display"; return r;
+}
+
+//==============================================================================
 // 3. THE LEVEL
 struct Level { juce::String level, why; juce::StringArray dialable; };
 inline Level levelFor (const juce::var& map, bool certified, const juce::String& heldWhy, const std::map<juce::String, ControlReadback>& rb,

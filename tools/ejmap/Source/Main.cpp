@@ -795,10 +795,11 @@ namespace
             }
             if (a == "--readback-sweep")   // 16 Oct (Kathy, overnight): the read-back-only sweep - guarded, one load per map, maps folder read only
             {
-                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File maps, names, atFile; juce::String format = "AudioUnit";
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File maps, names, atFile, allowFile; juce::String format = "AudioUnit";
                 for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
                     if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); else if (k == "--maps") maps = cwdFile (v); else if (k == "--names") names = cwdFile (v);
-                    else if (k == "--format") format = v; else if (k == "--at") atFile = cwdFile (v); }   // 17 Oct (rulings 2): VST3 maps; the read-back at given settings
+                    else if (k == "--format") format = v; else if (k == "--at") atFile = cwdFile (v);   // 17 Oct (rulings 2): VST3 maps; the read-back at given settings
+                    else if (k == "--allow-licence-bound-list") allowFile = cwdFile (v); }   // 17 Oct (Sean's pack): these products only pass the guard
                 if (format != "AudioUnit" && format != "VST3") { std::cerr << "ejmap --readback-sweep: --format is AudioUnit or VST3" << std::endl; return 2; }
                 const auto at = atFile == juce::File() ? juce::var() : juce::JSON::parse (atFile.loadFileAsString());
                 if (atFile != juce::File() && ! at.isObject()) { std::cerr << "ejmap --readback-sweep: --at must be a JSON object {product: {control: [norms]}}" << std::endl; return 2; }
@@ -808,7 +809,21 @@ namespace
                 if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
                 juce::StringArray ns; ns.addLines (names.loadFileAsString()); ns.trim(); ns.removeEmptyStrings(); ns.removeDuplicates (false);
                 ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
-                return ejmap::cert::runReadbackSweep (o, maps, ns, format, at);
+                juce::StringArray allow; if (allowFile != juce::File()) { allow.addLines (allowFile.loadFileAsString()); allow.trim(); allow.removeEmptyStrings(); }
+                return ejmap::cert::runReadbackSweep (o, maps, ns, format, at, allow);
+            }
+            if (a == "--anchor-repair")   // 17 Oct (Kathy, NEXT 2/3): the named controls' anchors rebuilt from their own displays - guarded, one load per product, map store never written
+            {
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::File maps, planFile; double step = 0.0125;
+                for (int j = 1; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v);
+                    else if (k == "--maps") maps = cwdFile (v); else if (k == "--plan") planFile = cwdFile (v); else if (k == "--grid") step = v.getDoubleValue();
+                    else if (k == "--timeout") o.timeoutMs = juce::jlimit (30, 1800, v.getIntValue()) * 1000; }
+                if (o.out == juce::File() || ! maps.isDirectory() || ! planFile.existsAsFile() || step <= 0.0 || step > 0.25) { std::cerr << "usage: ejmap --anchor-repair --maps <dir> --plan <file.json> --out <dir> [--grid 0.0125] [--timeout <s>] [--probe <path>] [--ejmap-ledger <dir>]" << std::endl; return 2; }
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+                ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
+                return ejmap::cert::runAnchorRepair (o, maps, juce::JSON::parse (planFile.loadFileAsString()), step);
             }
             if (a == "--readback-rederive")   // 17 Oct (Kathy, stepped controls): the read-back records rebuilt from the kept raw probe output - nothing loaded
             {

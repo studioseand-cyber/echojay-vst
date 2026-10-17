@@ -568,3 +568,57 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 - **Can't test on this Mac:** 389 (UAD 341, demo 30, silent 9, APB / hardware 6, licence 3).
 - **Reproduce:** `EXTRA_CERT=$PWD/rulings2_cert CERTIFIED_PROFILES=$PWD/published_v3/EJMAP_PUBLISH_COMPRESSORS_v3 CERT_OVERNIGHT=$PWD/overnight_cert_rederived ./recount.sh <ejmap> <out>`, run in `~/Desktop/EJMAP_TRUST_17oct`.
 - **The review page** (`~/Desktop/EJMAP_REVIEW`, and the admin handover's sample) is regenerated: 912 rows on 110 maps. The 35 new rows are on 4 VST3 maps that are no longer certified (MReverbMB, MReverb, MAmp, SSL Native X-Saturator v6). The morning list is kept as `review_items.17oct-morning.json`; the answers file is untouched.
+
+## 12. NEXT / ALL DAWs, 17 Oct (Kathy). Built, pinned, run on this Mac (guarded); nothing sent; no server change
+
+### 12.1 Counts split by format (Kathy's count rule; trust_levels.json rows now carry `format`)
+
+| format | certified | mapped | unsure | testable | can't test on this Mac |
+|---|---|---|---|---|---|
+| AudioUnit (Logic) | 156 | 194 | 261 | 611 | 197 (UAD 167, demo 14, silent 7, APB / hardware 6, licence 3) |
+| VST3 | 0 | 3 | 120 | 123 | 192 (UAD 174, demo 16, silent 2) |
+| **all** | **156** | **197** | **381** | **734** | **389** |
+
+- The path: 156 / 188 / 390 (§11) → +7 from the anchor repairs, +2 from J37 (m/s) → 156 / 197 / 381. AMEK EQ 250 on the finer grid would make it 198 / 380 (§12.3).
+- **Reproduce** (in `~/Desktop/EJMAP_TRUST_17oct`): `REPAIRED_MAPS=$PWD/repair_17oct/maps EXTRA_CERT=$PWD/rulings2_cert:$PWD/alldaws_cert:$PWD/repair_17oct/readback_cert CERTIFIED_PROFILES=$PWD/published_v3/EJMAP_PUBLISH_COMPRESSORS_v3 CERT_OVERNIGHT=$PWD/overnight_cert_rederived ./recount.sh <ejmap> <out>`. The script now prints the AU / VST3 split.
+
+### 12.2 The format bridge (pin WZ-BRIDGE-1)
+- **The rule.** A VST3 inherits its AU twin's certified / mapped level only when all of the following hold:
+  - the twin is the same product at the same version (`versionKey`: "1.4.5 (R666666666)" = "1.4.5"; "5.4.3.17500" ≠ "5.4.3");
+  - every role control of the AU map (the controls that meet its category's needs) is in the VST3 map;
+  - each of those controls displays the same value in both formats at **3 or more** shared normalised settings, within the read-back tolerance (labels equal for a stepped control).
+  - Any mismatch, too few points, a missing control or another version means no inheritance, and `bridge_refused` says which.
+- **The plan.** `--trust-levels` writes `bridge_plan.json` and `bridge_names.txt`. The guarded run reads both formats at 10 / 30 / 50 / 70 / 90 %:
+  `--readback-sweep --format AudioUnit|VST3 --at bridge_plan.json`.
+- **On this Mac.** 39 VST3 maps sit below an AU twin at the same version. The guard blocks 37 of them.
+  - The other 2 cannot bridge: Spectre's AU drive role is not identified, and Solid Bus Comp's VST3 Threshold display never moves (it shows 3.9 dB whatever is written).
+  - **0 inherit.** The 33 blocked products with a plan go to Sean (12.4).
+- **Also read** (the VST3s the guard allows, 16): 3 mapped (Heatwave, Quantum, TB_Sibalance_v4). The rest:
+  - held: 6;
+  - role not identified: 5;
+  - ValhallaVintageVerb, which fails on a **judge defect found here, not fixed**: its display switches from ms to "26.75 s", and the judge compares the bare 26.75 against 26750 ms anchors;
+  - Solid Bus Comp, whose VST3 Threshold does not display.
+
+### 12.3 The anchor repair (pin WZ-REPAIR-1): `ejmap --anchor-repair --maps <dir> --plan <json> --out <dir> [--grid 0.0125] [--timeout <s>]`
+- **What it does.** It rebuilds the named controls' anchors from the plugin's own display, in one guarded load per product, on a 1/80 grid.
+  - The grid **leaves out** every setting the read-back then judges: 25 / 50 / 75 % and the old failures' norms, ±0.004. So the read-back is never a reading of an anchor.
+  - A control the map lacks is added by index, only when the probe's parameter there carries its name.
+  - It needs 4 or more readings, one unit family, and a display that moves.
+  - The map store is never written; the repaired copies sit in `~/Desktop/EJMAP_TRUST_17oct/repair_17oct/maps_final`.
+- **The 10 AudioUnit maps.** All 10 failing controls were rebuilt and read back at their failures' own settings. 7 are now mapped:
+  - VComp (s/m) Input;
+  - Q1 (m) Band 1 Frq (the old map had no anchor above 0.95 and a straight line through an exponential);
+  - F6-RTA (s/m) and REQ 2 (s);
+  - LinEQ Lowband (s).
+- **AMEK EQ 250 HF Freq 1.** Its display has a kink at 0.875 (17.5 → 18.0 → 18.8 kHz). On the 1/80 grid it still missed, by 150 Hz (tolerance 126). One finer grid (1/160) was tried for it alone, with the same held-out settings, and all four held-out reads pass. Both runs are kept (`repair_17oct`, `repair_17oct_amek_fine`). **It stays unsure in the count** pending your ruling on the finer grid (12.5).
+- **API-550A (s/m) Low Gain stays unsure.** Its parameter is continuous but its display, like the hardware, moves in steps (-12, -9, -6 … +9, +12 dB). Interpolated anchors can never match a step. It needs a stepped-display representation (a ruling).
+- **The missing role controls:**
+  - **J37 (m) and (s) Saturation:** added, read back → **mapped**.
+  - **Solid Bus Comp Threshold (AU):** added, 78 anchors; the AU is certified already.
+  - **Harris Doyle Mid Gains (4):** the plugin prints **no text** for them at any setting (a 12-step parameter). No display map can be built; it needs an audio measurement.
+
+### 12.4 Sean's pack: `~/Desktop/SEAN_VST3_PACK_17oct.zip`
+- **The plugins:** the 124 guard-blocked VST3s (PACE / iLok 81, SSL 22, Kilohearts 12, Soundtoys 9; UAD 175 left out, since they need the hardware run).
+  - Step 1 reads each back as a VST3.
+  - Steps 2-3 run the bridge on the 33 with a plan, AU and VST3 at the same five settings.
+- **How it runs.** `--allow-licence-bound-list` lifts the guard **only** for the listed products, and stops if a window appears. It uses a scratch copy of his ledger (never `config.json`), stops at 07:00, and resumes on the next run. It only measures; the judging happens here.
