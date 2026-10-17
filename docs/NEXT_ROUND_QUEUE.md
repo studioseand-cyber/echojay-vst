@@ -1459,3 +1459,34 @@ busy or a lost request; and whether "reachable" should be answered from the regi
 (a wall-clock floor, per the standing rule) rather than from whether a borrowed read happened to
 succeed. The row is the second half of the fix: L3 should wait for reachability with a bound and say
 "it stayed unreachable for N s" when it fails, rather than reading one moment and believing it.
+
+---
+
+## item 14 - a dead Link stays in the registry until the registry is FULL (17 Oct, from three S6 runs)
+
+This is the cause of most of tonight's Link-row chaos, and it is a product behaviour, not a runner
+one. `LinkShm::reapDeadPublisherSlots` does exactly the right thing - a row whose sidecar names a
+process that no longer exists is reclaimed, checked with `kill(pid, 0)` and failing closed when the
+pid is unreadable - but its only caller is a claimant that has found the registry FULL. So between
+one run and the next, rows belonging to processes that have exited stay `inUse`, and every reader
+sees them:
+
+- the V2's Link list, and therefore the rack picker;
+- the rig state's `links` array, where they still say `connected` and still carry the slot count
+  from their last sidecar write - which is how row L1 came to ask "add a compressor on 5aabf74ffa"
+  about a rack that nothing was holding, and A2 to report "the Link went 4 -> 4";
+- and, most importantly, what the AGENT is told when it asks which tracks are reachable.
+
+In Logic the shape is: close a project, open another, and the tracks of the first are still offered.
+Sean has not reported that yet, and the reason is probably that his sessions outlive the registry's
+45 rows rarely - but the agent reading a dead row is how item 13's "88_7even Kick_2_01 isn't
+reachable from this session right now" gets written about a track that IS there.
+
+**What to do.** Reap on a clock as well as on pressure: once at startup, and on the registry pass's
+1 Hz timer at a low rate (every Nth tick), so a dead row is gone within seconds rather than when the
+table fills. The check is already written and already fails closed; this is about when it runs.
+Everything that reads `connected` then means what it says.
+
+Tonight's runner-side mitigation, so the rows can be about this run: a Link a row may be ABOUT must
+be connected, named by its host AND have a readable slot count, and the Link rows re-resolve rather
+than hold a uid taken an hour earlier.
