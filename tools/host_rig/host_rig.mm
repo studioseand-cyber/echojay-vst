@@ -4865,9 +4865,17 @@ int main (int argc, char* argv[])
                     badWhys.add  (e.getProperty ("why",  juce::var()).toString());
                 }
 
+            // THE PATH THE PRODUCT ACTUALLY READS (17 Oct 2026). My first two attempts wrote to
+            // "Library/Application Support/EchoJay", which is where auth.json and the Link sidecars
+            // live - but ChainHost's own appSupportDir is userAppData()/EchoJay, and under isolation
+            // userAppData() is $ECHOJAY_STATE_HOME/Library. So the seed went somewhere nothing reads
+            // and the row reported a comfortable 561 bytes for the second time running.
+            //
+            // His real file proves the shape: ~/Library/EchoJay/plugin_load_failed.json, which is
+            // exactly userAppData()/EchoJay on a machine without isolation.
             const auto root = juce::File (juce::String (::getenv ("ECHOJAY_STATE_HOME") != nullptr
                                                         ? ::getenv ("ECHOJAY_STATE_HOME") : "/tmp"))
-                                  .getChildFile ("Library/Application Support/EchoJay");
+                                  .getChildFile ("Library/EchoJay");
             root.createDirectory();
             const auto failedFile = root.getChildFile ("plugin_load_failed.json");
             {
