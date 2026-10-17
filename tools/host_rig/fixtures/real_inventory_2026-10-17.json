@@ -1,0 +1,3168 @@
+{
+ "takenAt": "2026-10-17",
+ "machine": "Sean's Mac (Apple silicon)",
+ "note": "A SNAPSHOT OF HIS MACHINE, not the rig's (his item 3, 17 Oct 2026). The rig's controlled plugin list has a handful of entries and his has 1,323, of which 357 cannot run here at all - and that difference is the whole reason look(inventory) fit 8 KB in every test and broke in round 1 of every run on his Mac. Names and architecture only; nothing was loaded, only each bundle's Mach-O header read (lipo -archs), which is what the plugin's own architecture gate does.",
+ "counts": {
+  "bundles": 1013,
+  "noArm64": 357
+ },
+ "names": [
+  "ADA Flanger",
+  "ADA STD-1 Stereo Tapped Delay",
+  "ADPTR MetricAB",
+  "ADPTR Streamliner",
+  "ADSR Sample Manager",
+  "AL-1",
+  "AMEK EQ 200",
+  "ANA2",
+  "AVOX ARTICULATOR",
+  "AVOX ASPIRE",
+  "AVOX CHOIR",
+  "AVOX DUO",
+  "AVOX MUTATOR",
+  "AVOX PUNCH",
+  "AVOX SYBIL",
+  "AVOX THROAT",
+  "AVOX WARM",
+  "Acme Opticom XLA-3",
+  "Ampeg B15N",
+  "Ampeg SVT3Pro",
+  "Ampeg SVTVR Classic",
+  "Ampeg SVTVR",
+  "Ampeg V4B",
+  "Arcade",
+  "Auto-Key",
+  "Auto-Tune Access",
+  "Auto-Tune Artist",
+  "Auto-Tune EFX+",
+  "Auto-Tune EFX",
+  "Auto-Tune Pro",
+  "Auto-Tune Slice",
+  "Auto-Tune SoundSoap",
+  "Auto-Tune Vocal Compressor",
+  "Auto-Tune Vocal EQ",
+  "Auto-Tune Vocodist",
+  "BASSROOM",
+  "Bass XXL",
+  "Basslane Pro",
+  "Bettermaker EQ232D",
+  "BigKick",
+  "Black Box Analog Design HG-2",
+  "Black Box Analog Design HG-2MS",
+  "C18_Comp_APB",
+  "C673A_Comp_APB",
+  "Chandler GAV19T",
+  "ChickenHead_Comp_APB",
+  "ChopSuey",
+  "ComebackKid",
+  "Compassion",
+  "Cradle The God Particle",
+  "Cymatics Lotus",
+  "DS Thorn",
+  "Dangerous BAX EQ Master",
+  "Dangerous BAX EQ Mix",
+  "DeClick",
+  "DeClip",
+  "DeHum",
+  "DeNoise",
+  "DeniseBassXL",
+  "Diezel Herbert",
+  "Diezel VH4",
+  "Diva",
+  "Dolby Atmos Binaural Settings",
+  "Dolby Atmos Music Panner",
+  "Drawmer 1973",
+  "Driver",
+  "Dualism",
+  "DynOne3",
+  "ENGL E646 VS",
+  "ENGL E765 RT",
+  "ENGL Savage 120",
+  "EQuality",
+  "EQuick",
+  "EQuilibrium",
+  "EchoJay",
+  "Educate EQ",
+  "El_Moo_APB",
+  "Empirical Labs Mike-E Comp",
+  "Essence",
+  "Expurgate",
+  "FM8",
+  "FabFilter Micro",
+  "FabFilter One",
+  "FabFilter Pro-C 2",
+  "FabFilter Pro-C 3",
+  "FabFilter Pro-C",
+  "FabFilter Pro-DS",
+  "FabFilter Pro-G",
+  "FabFilter Pro-L 2",
+  "FabFilter Pro-L",
+  "FabFilter Pro-MB",
+  "FabFilter Pro-Q 2",
+  "FabFilter Pro-Q 3",
+  "FabFilter Pro-Q 4",
+  "FabFilter Pro-Q",
+  "FabFilter Pro-R 2",
+  "FabFilter Pro-R",
+  "FabFilter Saturn 2",
+  "FabFilter Saturn",
+  "FabFilter Simplon",
+  "FabFilter Timeless 2",
+  "FabFilter Timeless 3",
+  "FabFilter Twin 2",
+  "FabFilter Twin 3",
+  "FabFilter Volcano 2",
+  "FabFilter Volcano 3",
+  "Finality Demo",
+  "Friedman BE100",
+  "Friedman DS40",
+  "Fuchs Overdrive Supreme 50",
+  "Fuchs Train II",
+  "Gallien Krueger 800RB",
+  "Gold Clip",
+  "Gullfoss",
+  "Harmony Engine 4x",
+  "HiFAL",
+  "IHeartNY",
+  "Infiltrator",
+  "Insight 2",
+  "Invisible_Limiter",
+  "Invisible_Limiter_G2",
+  "Invisible_Limiter_G3",
+  "Invisible_Limiter_LL",
+  "KNOCK",
+  "Kickstart 2",
+  "Knif Audio Knifonium",
+  "Komplete Kontrol",
+  "Kontakt",
+  "L18_Limiter_APB",
+  "LEVELS",
+  "LOVEND",
+  "LTL Chop Shop EQ",
+  "Lector",
+  "Limitless",
+  "Lindell 254E",
+  "Lindell 354E",
+  "Lindell 50 Buss",
+  "Lindell 50 Channel",
+  "Lindell 6X-500",
+  "Lindell 7X-500",
+  "Lindell 80 Bus",
+  "Lindell 80 Channel",
+  "Lindell ChannelX",
+  "Lindell PEX-500",
+  "Lindell TE-100",
+  "Listento-MIDI",
+  "Listento-Receiver",
+  "Listento",
+  "Low Control",
+  "Lustrous Plates",
+  "MAGICFLOW",
+  "MAGICFLOWZL",
+  "MBMixHead",
+  "MC3_MultiComp_APB",
+  "MINIBUS-Receiver",
+  "MINIBUS-Transmitter-Lite",
+  "MINIBUS-Transmitter",
+  "Maag EQ2",
+  "Maag EQ4",
+  "Maag MAGNUM-K",
+  "Massive X",
+  "Massive",
+  "Master Plan v10",
+  "Melodyne",
+  "Mic Mod",
+  "Millennia NSEQ-2",
+  "Millennia TCL-2",
+  "Mini V3",
+  "MixWave DW Fearn VT-15",
+  "MixWave DW Fearn VT-5",
+  "MixWave DW Fearn VT-7",
+  "MooTube_APB",
+  "MooX_APB",
+  "Multiplicity",
+  "NEOLD BIG AL",
+  "NEOLD V76U73",
+  "Nectar 3 Elements",
+  "Neutron Compressor",
+  "Neutron Equalizer",
+  "Neutron Exciter",
+  "Neutron Transient Shaper",
+  "Neutron",
+  "Nexus",
+  "Noveltech Character",
+  "Noveltech Vocal Enhancer",
+  "OTT",
+  "Omnisphere",
+  "Orange Clip",
+  "Ozone 12 Bass Control",
+  "Ozone 12 Clarity",
+  "Ozone 12 Dynamic EQ",
+  "Ozone 12 Dynamics",
+  "Ozone 12 Equalizer",
+  "Ozone 12 Exciter",
+  "Ozone 12 Imager",
+  "Ozone 12 Impact",
+  "Ozone 12 Low End Focus",
+  "Ozone 12 Master Rebalance",
+  "Ozone 12 Match EQ",
+  "Ozone 12 Maximizer",
+  "Ozone 12 Spectral Shaper",
+  "Ozone 12 Stabilizer",
+  "Ozone 12 Stem EQ",
+  "Ozone 12 Unlimiter",
+  "Ozone 12 Vintage Compressor",
+  "Ozone 12 Vintage EQ",
+  "Ozone 12 Vintage Limiter",
+  "Ozone 12 Vintage Tape",
+  "Ozone 12",
+  "Ozone 9 Dynamic EQ",
+  "Ozone 9 Dynamics",
+  "Ozone 9 Equalizer",
+  "Ozone 9 Exciter",
+  "Ozone 9 Imager",
+  "Ozone 9 Low End Focus",
+  "Ozone 9 Master Rebalance",
+  "Ozone 9 Match EQ",
+  "Ozone 9 Maximizer",
+  "Ozone 9 Spectral Shaper",
+  "Ozone 9 Vintage Compressor",
+  "Ozone 9 Vintage EQ",
+  "Ozone 9 Vintage Limiter",
+  "Ozone 9 Vintage Tape",
+  "Ozone 9",
+  "ParallelAggressor",
+  "Phoscyon2",
+  "Pigments",
+  "PitchFunk",
+  "Pitchwheel",
+  "PluginDoctor",
+  "Portal",
+  "Pro Audio DSP DSM V3",
+  "Purple Audio MC 77",
+  "Quantum",
+  "RX 11 De-click",
+  "RX 11 De-clip",
+  "RX 11 De-hum",
+  "RX 11 De-reverb",
+  "RX 11 Repair Assistant",
+  "RX 11 Voice De-noise",
+  "RX 6 Connect",
+  "RX 6 De-click",
+  "RX 6 De-clip",
+  "RX 6 De-crackle",
+  "RX 6 De-ess",
+  "RX 6 De-hum",
+  "RX 6 De-plosive",
+  "RX 6 De-reverb",
+  "RX 6 Monitor",
+  "RX 6 Mouth De-click",
+  "RX 6 Spectral De-noise",
+  "RX 6 Voice De-noise",
+  "Raum",
+  "Relay",
+  "Repeater",
+  "Ripchord",
+  "RootOne",
+  "Royal_Mu_APB",
+  "Royal_Q_APB",
+  "Rubber Band Compressor V2",
+  "SGear2",
+  "SPAN Plus",
+  "SPL Attacker Plus",
+  "SPL Attacker",
+  "SPL De-Esser Dual-Band",
+  "SPL De-Esser",
+  "SPL De-Verb Plus",
+  "SPL DrumXchanger",
+  "SPL EQ Ranger Plus",
+  "SPL Free Ranger",
+  "SPL HawkEye",
+  "SPL IRON",
+  "SPL Mo-Verb Plus",
+  "SPL Passeq Single",
+  "SPL Passeq",
+  "SPL Transient Designer Plus",
+  "SPL TwinTube",
+  "SPL Vitalizer MK2-T",
+  "SSL 4K B",
+  "SSL 4K E",
+  "SSL Blitzer",
+  "SSL DeEss",
+  "SSL Fusion HF Compressor",
+  "SSL Fusion Stereo Image",
+  "SSL Fusion Transformer",
+  "SSL Fusion Vintage Drive",
+  "SSL Fusion Violet EQ",
+  "SSL G3 MultiBusComp",
+  "SSL Guitarstrip",
+  "SSL LMC+",
+  "SSL Meter",
+  "SSL Native Bus Compressor 2",
+  "SSL Native Channel Strip 2",
+  "SSL Native Drumstrip v6",
+  "SSL Native FlexVerb",
+  "SSL Native Vocalstrip 2",
+  "SSL Native X-Comp v6",
+  "SSL Native X-EQ 2",
+  "SSL Native X-Echo",
+  "SSL Native X-Phase v6",
+  "SSL Native X-Saturator v6",
+  "SSL Native X-ValveComp v6",
+  "SSL SubGen",
+  "SSL X-Delay",
+  "SSL X-Gate",
+  "SSL X-Limit",
+  "Saturation Knob",
+  "Scaler2",
+  "ScalerAudio2",
+  "Schoeps Double MS",
+  "Schoeps Mono Upmix 1to2",
+  "Schoeps Mono Upmix 1to3",
+  "Serum",
+  "Shadow Hills Class A Mastering Comp",
+  "Shadow Hills Mastering Compressor",
+  "SideWidener",
+  "Solid Bus Comp",
+  "Solid Dynamics",
+  "Solid EQ",
+  "SonoBus",
+  "SonoBusInstrument",
+  "SontecEQ",
+  "Spectre",
+  "SpliceBridge",
+  "Stutter Edit 2",
+  "SubLab",
+  "Subloom",
+  "SuperVHS",
+  "Supercharger",
+  "TAL-BassLine-101",
+  "TB_Sibalance_v4",
+  "TDR SlickEQ M",
+  "TR5 Black 76",
+  "TR5 Brickwall Limiter",
+  "TR5 British Channel",
+  "TR5 Bus Compressor",
+  "TR5 CSR Hall",
+  "TR5 CSR Inverse",
+  "TR5 CSR Plate",
+  "TR5 CSR Room",
+  "TR5 Classic Clipper",
+  "TR5 Classic Comp",
+  "TR5 Classic EQ",
+  "TR5 Classic Multi Band Limiter",
+  "TR5 De Esser",
+  "TR5 Dyna-Mu",
+  "TR5 EQ-73",
+  "TR5 EQ-81",
+  "TR5 EQ-PA",
+  "TR5 EQ-PB",
+  "TR5 EQ-PG",
+  "TR5 EQP-1A",
+  "TR5 EQual",
+  "TR5 Leslie",
+  "TR5 Linear Phase EQ",
+  "TR5 Master EQ-432",
+  "TR5 Master Match",
+  "TR5 Metering",
+  "TR5 Mic Room",
+  "TR5 One",
+  "TR5 Opto Comp",
+  "TR5 Precision Comp-Limiter",
+  "TR5 Quad Compressor",
+  "TR5 Quad Image",
+  "TR5 Quad Limiter",
+  "TR5 Saturator X",
+  "TR5 Space Delay",
+  "TR5 Stealth Limiter",
+  "TR5 Suite",
+  "TR5 Sunset Sound Studio Reverb",
+  "TR5 Tape Echo",
+  "TR5 Tape Machine 24",
+  "TR5 Tape Machine 440",
+  "TR5 Tape Machine 80",
+  "TR5 Tape Machine 99",
+  "TR5 VC-670",
+  "TR5 White 2A",
+  "TR5 White Channel",
+  "Tonal Balance Control 2",
+  "TrackComp",
+  "TrackControl",
+  "TrackDS",
+  "TrackGate",
+  "TrackLimit",
+  "TrackMeter",
+  "Transient Master",
+  "Tube-Tech CL 1B",
+  "UnFairchild",
+  "Unfiltered Audio BYOME",
+  "Unfiltered Audio Bass Mint",
+  "Unfiltered Audio Dent 2",
+  "Unfiltered Audio Fault",
+  "Unfiltered Audio G8",
+  "Unfiltered Audio Indent 2",
+  "Unfiltered Audio Instant Delay",
+  "Unfiltered Audio LION",
+  "Unfiltered Audio Sandman Pro",
+  "Unfiltered Audio Sandman",
+  "Unfiltered Audio Silo",
+  "Unfiltered Audio SpecOps",
+  "Unfiltered Audio Triad",
+  "Unfiltered Audio Zip",
+  "ValhallaDelay",
+  "ValhallaVintageVerb",
+  "Venom",
+  "Vertigo VSC-2",
+  "Vertigo VSM-3",
+  "VocALignPro",
+  "Vocal De-Esser",
+  "Vocal Reverb",
+  "WEDGE FORCE Matcha",
+  "WaveShell1-VST3 12.4",
+  "WaveShell1-VST3 12.5",
+  "WaveShell1-VST3 12.6",
+  "WaveShell1-VST3 15.0",
+  "WaveShell2-VST3 12.0",
+  "WaveShell2-VST3 12.1",
+  "WaveShell2-VST3 15.0",
+  "Weiss Deess",
+  "bloom",
+  "bx_2098 EQ",
+  "bx_XL V2",
+  "bx_XL",
+  "bx_bassdude",
+  "bx_blackdist2",
+  "bx_bluechorus2",
+  "bx_boom",
+  "bx_cleansweep Pro",
+  "bx_cleansweep V2",
+  "bx_console AMEK 9099",
+  "bx_console Focusrite SC",
+  "bx_console N",
+  "bx_console SSL 4000 E",
+  "bx_console SSL 4000 G",
+  "bx_console SSL 9000 J",
+  "bx_control V2",
+  "bx_crispyscale",
+  "bx_crispytuner",
+  "bx_delay2500",
+  "bx_digital V2 Mono",
+  "bx_digital V2",
+  "bx_digital V3 mix",
+  "bx_digital V3",
+  "bx_distorange",
+  "bx_dynEQ V2 Mono",
+  "bx_dynEQ V2",
+  "bx_greenscreamer",
+  "bx_hybrid V2 mix",
+  "bx_hybrid V2",
+  "bx_limiter True Peak",
+  "bx_limiter",
+  "bx_masterdesk",
+  "bx_megadual",
+  "bx_megasingle",
+  "bx_metal2",
+  "bx_meter",
+  "bx_oberhausen",
+  "bx_opto Pedal",
+  "bx_opto",
+  "bx_panEQ",
+  "bx_refinement",
+  "bx_rockergain100",
+  "bx_rockrack V3 Player",
+  "bx_rockrack V3",
+  "bx_rooMS",
+  "bx_saturator V2",
+  "bx_shredspread",
+  "bx_solo",
+  "bx_stereomaker",
+  "bx_subfilter",
+  "bx_subsynth",
+  "bx_townhouse Buss Compressor",
+  "bx_tuner",
+  "bx_yellowdrive",
+  "dearVR MONITOR",
+  "dearVR music",
+  "dearVR pro",
+  "elysia alpha master",
+  "elysia alpha mix",
+  "elysia karacter master",
+  "elysia karacter mix",
+  "elysia mpressor",
+  "elysia museq master",
+  "elysia museq mix",
+  "elysia niveau filter",
+  "elysia nvelope",
+  "elysia phils cascade",
+  "fiedler audio stage",
+  "freqinout",
+  "freqtube",
+  "iZotope Nectar",
+  "iZotope Trash 2",
+  "smartdeess",
+  "soothe",
+  "soothe2",
+  "spiff",
+  "EchoJay Link",
+  "EchoJay V2",
+  "2C-Aether-Demo",
+  "ADPTR Hype",
+  "ADPTR Sculpt",
+  "ADPTR StreamLiner",
+  "AMEK EQ 250",
+  "AMEK Mastering Compressor",
+  "Absynth 5",
+  "Audified U73b Compressor",
+  "Bettermaker Bus Compressor DSP",
+  "CamelCrusher",
+  "Captain Beat Audio",
+  "Captain Chords Audio",
+  "Captain Chords MIDI",
+  "Captain Deep Audio",
+  "Captain Deep MIDI",
+  "Captain Melody Audio",
+  "Captain Melody MIDI",
+  "Captain Play Audio",
+  "Captain Play MIDI",
+  "Clarity M",
+  "Console Recall",
+  "Crystallizer",
+  "DS Tantra 2",
+  "DeClick2",
+  "DeClip2",
+  "DeHum2",
+  "DeNoise2",
+  "Decapitator",
+  "Devil-Loc",
+  "Devil-Loc_Deluxe",
+  "Disperser",
+  "EchoBoy",
+  "EchoBoyJr",
+  "EffectRack",
+  "Eiosis AirEQ 5.1",
+  "Eiosis AirEQ",
+  "Eiosis E2Deesser",
+  "Endless Smile",
+  "FG-X 2",
+  "FL Studio",
+  "Faturator",
+  "FilterFreak1",
+  "FilterFreak2",
+  "Fresh Air",
+  "Friedman Buxom Betty",
+  "H3000 Factory",
+  "Harris Doyle Natalus DSCEQ",
+  "Harrison_32Bus",
+  "Harrison_BassFlow",
+  "Harrison_De-Esser",
+  "Harrison_DrumFlow",
+  "Heatwave",
+  "Inf Bass",
+  "Inf EQ",
+  "JUPITER-8",
+  "Kiive Tape Face",
+  "Kiive XTComp",
+  "Knif Audio Soma",
+  "LTL SILVER BULLET mk2",
+  "Lindell 69 Buss",
+  "Lindell 69 Channel",
+  "Lindell 902 De-esser",
+  "Lindell MBC",
+  "Lindell SBC",
+  "LittleAlterBoy",
+  "LittleMicroShift",
+  "LittlePlate",
+  "LittlePrimalTap",
+  "LittleRadiator",
+  "Looptrotter SA2RATE2",
+  "MAGC",
+  "MAmp",
+  "MAnalyzer",
+  "MAutoAlign",
+  "MAutoDynamicEq",
+  "MAutoEqualizer",
+  "MAutoEqualizerLP",
+  "MAutoPitch",
+  "MAutoStereoFix",
+  "MAutoVolume",
+  "MAutopan",
+  "MAutopanMB",
+  "MBandPass",
+  "MBassador",
+  "MBitFun",
+  "MBitFunMB",
+  "MChannelMatrix",
+  "MCharacter",
+  "MChorusMB",
+  "MComb",
+  "MCombMB",
+  "MCompare",
+  "MCompressor",
+  "MConvolutionMB",
+  "MDelayMB",
+  "MDistortionMB",
+  "MDrumEnhancer",
+  "MDrumLeveler",
+  "MDynamicEq",
+  "MDynamics",
+  "MDynamicsMB",
+  "MDynamicsMBLarge",
+  "MEGA Sampler",
+  "MEqualizer",
+  "MEqualizerLP",
+  "MFilter",
+  "MFlanger",
+  "MFlangerMB",
+  "MFreeformAnalogEq",
+  "MFreeformEqualizer",
+  "MFreeformPhase",
+  "MFreqShifter",
+  "MFreqShifterMB",
+  "MGranularMB",
+  "MHarmonizerMB",
+  "MLimiterMB",
+  "MLimiterX",
+  "MLoudnessAnalyzer",
+  "MModernCompressor",
+  "MMorph",
+  "MMultiAnalyzer",
+  "MNoiseGenerator",
+  "MNotepad",
+  "MO-TT",
+  "MOscillator",
+  "MOscilloscope",
+  "MPhaser",
+  "MPhaserMB",
+  "MPhatik",
+  "MPolySaturator",
+  "MPowerSynth",
+  "MRatio",
+  "MRecorder",
+  "MReverb",
+  "MReverbMB",
+  "MRhythmizer",
+  "MRhythmizerMB",
+  "MRingModulator",
+  "MRingModulatorMB",
+  "MRotary",
+  "MSaturator",
+  "MSaturatorMB",
+  "MSpectralDynamics",
+  "MSpectralDynamicsMini",
+  "MSpectralPan",
+  "MStereoExpander",
+  "MStereoGenerator",
+  "MStereoProcessor",
+  "MStereoScope",
+  "MStereoSpread",
+  "MTransformer",
+  "MTransient",
+  "MTransientMB",
+  "MTremolo",
+  "MTremoloMB",
+  "MTuner",
+  "MTurboComp",
+  "MTurboCompMB",
+  "MTurboEQ",
+  "MTurboReverb",
+  "MTurboReverbMB",
+  "MUltraMaximizer",
+  "MUnison",
+  "MUtility",
+  "MVibrato",
+  "MVibratoMB",
+  "MVintageRotary",
+  "MVocoder",
+  "MWaveFolder",
+  "MWaveFolderMB",
+  "MWaveShaper",
+  "MWaveShaperMB",
+  "MWobbler",
+  "MWobblerMB",
+  "MXXX",
+  "MXXX1",
+  "MXXX6out",
+  "MetaTune",
+  "MicroShift",
+  "Mixland Vac Attack",
+  "Multipass",
+  "Murda Melodies",
+  "NEOLD U17",
+  "NEOLD U2A",
+  "NEOLD WARBLE",
+  "NEOLD WUNDERLICH",
+  "Newfangled EQuivocate",
+  "Newfangled Elevate",
+  "Newfangled Punctuate",
+  "Newfangled Saturate",
+  "PanMan",
+  "PhaseMistress",
+  "PrimalTap",
+  "Radiator",
+  "Reaktor 6",
+  "SPL PQ",
+  "Satellite Audio",
+  "Satellite MIDI FX",
+  "Satellite MIDI",
+  "Satellite Sessions",
+  "SerumFX",
+  "SieQ",
+  "Snap Heap",
+  "StandardCLIP",
+  "Storch Filter",
+  "SubBoomBass2",
+  "Suhr PT100",
+  "Suhr SE100",
+  "TBTECH Cenozoix Compressor",
+  "TBTECH Kirchhoff-EQ",
+  "TH-U Slate",
+  "THE OVEN",
+  "THX Spatial Creator",
+  "TOMO Audiolabs LISA",
+  "Tremolator",
+  "UAD 4K Buss Compressor",
+  "UAD 4K Channel Strip",
+  "UAD A-Type Multiband Enhancer",
+  "UAD ADA Flanger",
+  "UAD ADA STD-1 Stereo Tapped Delay",
+  "UAD AKG BX 20",
+  "UAD AMS DMX 15-80 S",
+  "UAD AMS Neve DFC Channel Strip",
+  "UAD AMS RMX16 Expanded",
+  "UAD AMS RMX16",
+  "UAD API 2500",
+  "UAD API 550A",
+  "UAD API 560",
+  "UAD API Preamp",
+  "UAD API Vision Channel Strip Legacy",
+  "UAD API Vision Channel Strip",
+  "UAD Ampeg B15N",
+  "UAD Ampeg SVT3Pro",
+  "UAD Ampeg SVTVR Classic",
+  "UAD Ampeg SVTVR",
+  "UAD Ampex ATR-102",
+  "UAD Antares Auto-Tune Realtime",
+  "UAD Auto-Tune Realtime Access",
+  "UAD Auto-Tune Realtime Advanced",
+  "UAD Auto-Tune Realtime X",
+  "UAD Avalon VT-737sp",
+  "UAD Bermuda Triangle",
+  "UAD Brigade Chorus",
+  "UAD C-Suite C-Axe",
+  "UAD C-Suite C-Max",
+  "UAD C-Suite C-Vox",
+  "UAD CS-1",
+  "UAD Cambridge",
+  "UAD Capitol Chambers",
+  "UAD Century Tube Channel Strip",
+  "UAD Chandler GAV19T",
+  "UAD Chandler Limited Curve Bender",
+  "UAD Chandler Limited Zener Limiter",
+  "UAD Cooper Time Cube",
+  "UAD Dangerous BAX EQ Master",
+  "UAD Dangerous BAX EQ Mix",
+  "UAD Diezel Herbert",
+  "UAD Diezel VH4",
+  "UAD DreamVerb",
+  "UAD Dytronics Cyclosonic Panner",
+  "UAD Dytronics Tri-Stereo Chorus",
+  "UAD EMT 140",
+  "UAD EMT 250",
+  "UAD ENGL E646 VS",
+  "UAD ENGL E765 RT",
+  "UAD ENGL Savage 120",
+  "UAD EP-34 Tape Echo",
+  "UAD Eden WT800",
+  "UAD Empirical Labs Distressor",
+  "UAD Empirical Labs FATSO Jr",
+  "UAD Empirical Labs FATSO Sr",
+  "UAD Eventide H910 Harmonizer",
+  "UAD Fairchild 660",
+  "UAD Fairchild 670 Legacy",
+  "UAD Fairchild 670",
+  "UAD Fender 55 Tweed Deluxe",
+  "UAD Friedman BE100",
+  "UAD Friedman Buxom Betty",
+  "UAD Friedman DS40",
+  "UAD Fuchs Overdrive Supreme 50",
+  "UAD Fuchs Train II",
+  "UAD Galaxy Tape Echo",
+  "UAD Gallien Krueger 800RB",
+  "UAD Harrison 32C SE",
+  "UAD Harrison 32C",
+  "UAD Helios Type 69 Legacy",
+  "UAD Helios Type 69",
+  "UAD Hemisphere Mic Collection",
+  "UAD Hitsville EQ Mastering",
+  "UAD Hitsville EQ",
+  "UAD Hitsville Reverb Chambers",
+  "UAD Ibanez Tube Screamer TS808",
+  "UAD Korg SDD-3000",
+  "UAD LA-6176 Channel Strip",
+  "UAD Lexicon 224",
+  "UAD Lexicon 480L",
+  "UAD Little Labs IBP",
+  "UAD Little Labs VOG",
+  "UAD MDWEQ5-3B",
+  "UAD MDWEQ5-5B",
+  "UAD MXR Flanger-Doubler",
+  "UAD Maag EQ4 MS",
+  "UAD Maag EQ4",
+  "UAD Manley Massive Passive MST",
+  "UAD Manley Massive Passive",
+  "UAD Manley Reference Mic Preamp",
+  "UAD Manley VOXBOX",
+  "UAD Manley Variable Mu",
+  "UAD Marshall Bluesbreaker 1962",
+  "UAD Marshall JMP 2203",
+  "UAD Marshall Plexi Classic",
+  "UAD Marshall Plexi Super Lead 1959",
+  "UAD Marshall Silver Jubilee 2555",
+  "UAD Millennia NSEQ-2",
+  "UAD Moog Multimode Filter SE",
+  "UAD Moog Multimode Filter XL",
+  "UAD Moog Multimode Filter",
+  "UAD Neve 1073 Legacy",
+  "UAD Neve 1073",
+  "UAD Neve 1073SE Legacy",
+  "UAD Neve 1081",
+  "UAD Neve 1081SE",
+  "UAD Neve 1084",
+  "UAD Neve 2254 E Dual",
+  "UAD Neve 2254 E",
+  "UAD Neve 31102",
+  "UAD Neve 31102SE",
+  "UAD Neve 33609 C",
+  "UAD Neve 33609SE",
+  "UAD Neve 88RS Legacy",
+  "UAD Neve 88RS",
+  "UAD Neve Preamp",
+  "UAD OTO Biscuit 8-bit Effects",
+  "UAD Ocean Way Mic Collection 180",
+  "UAD Ocean Way Mic Collection",
+  "UAD Ocean Way Studios",
+  "UAD Oxford Dynamic EQ",
+  "UAD Oxford EQ",
+  "UAD Oxford Envolution",
+  "UAD Oxford Inflator",
+  "UAD Oxford Limiter",
+  "UAD Oxford SuprEsser DS",
+  "UAD Oxide Tape",
+  "UAD Precision Buss Compressor",
+  "UAD Precision Channel Strip",
+  "UAD Precision De-Esser",
+  "UAD Precision Delay Mod L",
+  "UAD Precision Delay Mod",
+  "UAD Precision Enhancer Hz",
+  "UAD Precision Enhancer kHz",
+  "UAD Precision Equalizer",
+  "UAD Precision K-Stereo",
+  "UAD Precision Limiter",
+  "UAD Precision Maximizer",
+  "UAD Precision Multiband",
+  "UAD Precision Reflection Engine",
+  "UAD Pultec EQP-1A Legacy",
+  "UAD Pultec EQP-1A",
+  "UAD Pultec HLF-3C",
+  "UAD Pultec MEQ-5",
+  "UAD Pultec-Pro Legacy",
+  "UAD Pure Plate",
+  "UAD Putnam Mic Collection 180",
+  "UAD Putnam Mic Collection",
+  "UAD Raw",
+  "UAD RealVerb-Pro",
+  "UAD Roland CE-1",
+  "UAD Roland Dimension D",
+  "UAD Roland RE-201",
+  "UAD SPL Transient Designer",
+  "UAD SPL TwinTube",
+  "UAD SPL Vitalizer MK2-T",
+  "UAD SSL E Channel Strip Legacy",
+  "UAD SSL E Channel Strip",
+  "UAD SSL G Bus Compressor Legacy",
+  "UAD SSL G Bus Compressor",
+  "UAD Shadow Hills Class A Mastering Comp",
+  "UAD Shadow Hills Mastering Compressor",
+  "UAD Softube Amp Room Half-Stack",
+  "UAD Softube Bass Amp Room 8x10",
+  "UAD Softube Bass Amp Room",
+  "UAD Softube Metal Amp Room",
+  "UAD Softube Vintage Amp Room",
+  "UAD Softube Vocoder",
+  "UAD Sound Machine Wood Works",
+  "UAD Sphere Mic Collection 180",
+  "UAD Sphere Mic Collection",
+  "UAD Studer A800",
+  "UAD Studio D Chorus",
+  "UAD Suhr PT100",
+  "UAD Suhr SE100",
+  "UAD Summit Audio TLA-100A",
+  "UAD TS Overdrive",
+  "UAD Teletronix LA-2",
+  "UAD Teletronix LA-2A Gray",
+  "UAD Teletronix LA-2A Legacy",
+  "UAD Teletronix LA-2A Silver",
+  "UAD Teletronix LA-3A",
+  "UAD Thermionic Culture Vulture",
+  "UAD Tonelux Tilt Live",
+  "UAD Tonelux Tilt",
+  "UAD Trident A-Range",
+  "UAD Tube-Tech CL 1B mk II",
+  "UAD Tube-Tech CL 1B",
+  "UAD Tube-Tech ME 1B",
+  "UAD Tube-Tech PE 1C",
+  "UAD UA 1176 Rev A",
+  "UAD UA 1176AE",
+  "UAD UA 1176LN Legacy",
+  "UAD UA 1176LN Rev E",
+  "UAD UA 1176SE Legacy",
+  "UAD UA 175-B",
+  "UAD UA 176",
+  "UAD UA 610-A",
+  "UAD UA 610-B",
+  "UAD V76 Preamp",
+  "UAD Valley People Dyna-mite",
+  "UAD Vertigo VSC-2",
+  "UAD Vertigo VSM-3",
+  "UAD bx_digital V2 Mono",
+  "UAD bx_digital V2",
+  "UAD bx_digital V3 mix",
+  "UAD bx_digital V3",
+  "UAD bx_masterdesk Classic",
+  "UAD bx_masterdesk",
+  "UAD bx_refinement",
+  "UAD bx_saturator V2",
+  "UAD bx_subsynth",
+  "UAD bx_tuner",
+  "UAD dbx 160",
+  "UAD elysia alpha master",
+  "UAD elysia alpha mix",
+  "UAD elysia mpressor",
+  "Unfiltered Audio Battalion",
+  "Unfiltered Audio Needlepoint",
+  "Unfiltered Audio Tails",
+  "Unfiltered Audio lo-fi-af",
+  "VBC FG-Grey",
+  "VBC FG-MU",
+  "VBC FG-Red",
+  "VBC Rack",
+  "ValhallaVintageVerbAU64",
+  "VerbSuite Classics",
+  "Virtual Mix Rack",
+  "Virtual Tape Machines",
+  "WEDGE FORCE Hydro",
+  "WEDGE FORCE Keemun",
+  "WEDGE FORCE Oolong",
+  "WS LOWEND",
+  "WaveShell1-AU 15.0",
+  "WaveShell2-AU 15.0",
+  "bx_clipper",
+  "bx_console AMEK 200",
+  "bx_enhancer",
+  "bx_masterdesk Classic",
+  "bx_masterdesk Pro",
+  "bx_masterdesk True Peak",
+  "iZInsight2AUHook",
+  "iZOzone12AUHook",
+  "iZOzone12BassControlAUHook",
+  "iZOzone12ClarityAUHook",
+  "iZOzone12DynamicEQAUHook",
+  "iZOzone12DynamicsAUHook",
+  "iZOzone12EqualizerAUHook",
+  "iZOzone12ExciterAUHook",
+  "iZOzone12ImagerAUHook",
+  "iZOzone12ImpactAUHook",
+  "iZOzone12LowEndFocusAUHook",
+  "iZOzone12MasterRebalanceAUHook",
+  "iZOzone12MatchEQAUHook",
+  "iZOzone12MaximizerAUHook",
+  "iZOzone12SpectralShaperAUHook",
+  "iZOzone12StabilizerAUHook",
+  "iZOzone12StemEQAUHook",
+  "iZOzone12UnlimiterAUHook",
+  "iZOzone12VintageCompressorAUHook",
+  "iZOzone12VintageEQAUHook",
+  "iZOzone12VintageLimiterAUHook",
+  "iZOzone12VintageTapeAUHook",
+  "iZRX11De-clickAUHook",
+  "iZRX11De-clipAUHook",
+  "iZRX11De-humAUHook",
+  "iZRX11De-reverbAUHook",
+  "iZRX11RepairAssistantAUHook",
+  "iZRX11VoiceDe-noiseAUHook",
+  "iZRelayAUHook",
+  "iZTrash2AUHook",
+  "kHs 3-Band EQ",
+  "kHs Bitcrush",
+  "kHs Chorus",
+  "kHs Comb Filter",
+  "kHs Compressor",
+  "kHs Delay",
+  "kHs Distortion",
+  "kHs Dynamics",
+  "kHs Filter",
+  "kHs Formant Filter",
+  "kHs Frequency Shifter",
+  "kHs Gain",
+  "kHs Gate",
+  "kHs Haas",
+  "kHs Ladder Filter",
+  "kHs Limiter",
+  "kHs Phase Distortion",
+  "kHs Phaser",
+  "kHs Pitch Shifter",
+  "kHs Resonator",
+  "kHs Reverb",
+  "kHs Reverser",
+  "kHs Ring Mod",
+  "kHs Stereo",
+  "kHs Tape Stop",
+  "kHs Trance Gate",
+  "kHs Transient Shaper",
+  "Glitch2"
+ ],
+ "notLoadable": [
+  {
+   "name": "ADA Flanger",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ADA STD-1 Stereo Tapped Delay",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ADPTR MetricAB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ADPTR Streamliner",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ADSR Sample Manager",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "AMEK EQ 200",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "AVOX SYBIL",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Acme Opticom XLA-3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ampeg B15N",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ampeg SVT3Pro",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ampeg SVTVR Classic",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ampeg SVTVR",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ampeg V4B",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Arcade",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "BASSROOM",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Bettermaker EQ232D",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Black Box Analog Design HG-2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Black Box Analog Design HG-2MS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "C18_Comp_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "C673A_Comp_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Chandler GAV19T",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ChickenHead_Comp_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ComebackKid",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Compassion",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Cymatics Lotus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "DS Thorn",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Dangerous BAX EQ Master",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Dangerous BAX EQ Mix",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "DeClick",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "DeClip",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "DeHum",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "DeNoise",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Diezel Herbert",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Diezel VH4",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Diva",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "i386 x86_64"
+  },
+  {
+   "name": "Dolby Atmos Binaural Settings",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Dolby Atmos Music Panner",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Driver",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Dualism",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "ENGL E646 VS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ENGL E765 RT",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ENGL Savage 120",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "EQuality",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "EQuick",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "EQuilibrium",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "El_Moo_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Essence",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Expurgate",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Pro-C 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Pro-C",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386 ppc"
+  },
+  {
+   "name": "FabFilter Pro-L",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Pro-Q 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Pro-Q",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386 ppc"
+  },
+  {
+   "name": "FabFilter Pro-R",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Saturn",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Timeless 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Twin 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "FabFilter Volcano 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Finality Demo",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Friedman BE100",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Friedman DS40",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Fuchs Overdrive Supreme 50",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Fuchs Train II",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Gallien Krueger 800RB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Gullfoss",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "IHeartNY",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Insight 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Knif Audio Knifonium",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Kontakt",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "L18_Limiter_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "LEVELS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "LTL Chop Shop EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lector",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell 254E",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell 354E",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell 50 Buss",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Lindell 50 Channel",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Lindell 6X-500",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell 7X-500",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell 80 Bus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Lindell 80 Channel",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Lindell ChannelX",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell PEX-500",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Lindell TE-100",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "MC3_MultiComp_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Maag EQ2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Maag EQ4",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Maag MAGNUM-K",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Massive X",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Millennia NSEQ-2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Millennia TCL-2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Mini V3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "MooTube_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "MooX_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Multiplicity",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "NEOLD BIG AL",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "NEOLD V76U73",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Nectar 3 Elements",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Neutron Compressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Neutron Equalizer",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Neutron Exciter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Neutron Transient Shaper",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Neutron",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Noveltech Character",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Noveltech Vocal Enhancer",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Dynamic EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Dynamics",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Equalizer",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Exciter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Imager",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Low End Focus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Master Rebalance",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Match EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Maximizer",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Spectral Shaper",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Vintage Compressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Vintage EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Vintage Limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9 Vintage Tape",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Ozone 9",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ParallelAggressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "PitchFunk",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Portal",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Pro Audio DSP DSM V3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Purple Audio MC 77",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "RX 6 Connect",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-click",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-clip",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-crackle",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-ess",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-hum",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-plosive",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 De-reverb",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 Monitor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 Mouth De-click",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 Spectral De-noise",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "RX 6 Voice De-noise",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Relay",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Royal_Mu_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Royal_Q_APB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SGear2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "SPAN Plus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Attacker Plus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Attacker",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "SPL De-Esser Dual-Band",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL De-Esser",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL De-Verb Plus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL DrumXchanger",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL EQ Ranger Plus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Free Ranger",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL HawkEye",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL IRON",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Mo-Verb Plus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Passeq Single",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Passeq",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Transient Designer Plus",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL TwinTube",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SPL Vitalizer MK2-T",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Scaler2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ScalerAudio2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Schoeps Double MS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Schoeps Mono Upmix 1to2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Schoeps Mono Upmix 1to3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Shadow Hills Class A Mastering Comp",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Shadow Hills Mastering Compressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SideWidener",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Stutter Edit 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SubLab",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "SuperVHS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Supercharger",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Black 76",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Brickwall Limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 British Channel",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Bus Compressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 CSR Hall",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 CSR Inverse",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 CSR Plate",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 CSR Room",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Classic Clipper",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Classic Comp",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Classic EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Classic Multi Band Limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 De Esser",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Dyna-Mu",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQ-73",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQ-81",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQ-PA",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQ-PB",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQ-PG",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQP-1A",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 EQual",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Leslie",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Linear Phase EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Master EQ-432",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Master Match",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Metering",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Mic Room",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 One",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Opto Comp",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Precision Comp-Limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Quad Compressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Quad Image",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Quad Limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Saturator X",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Space Delay",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Stealth Limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Suite",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Sunset Sound Studio Reverb",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Tape Echo",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Tape Machine 24",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Tape Machine 440",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Tape Machine 80",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 Tape Machine 99",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 VC-670",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 White 2A",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TR5 White Channel",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Tonal Balance Control 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "TrackComp",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "TrackControl",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "TrackDS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "TrackGate",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "TrackLimit",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "TrackMeter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Unfiltered Audio BYOME",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Bass Mint",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Dent 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Fault",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio G8",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Unfiltered Audio Indent 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Instant Delay",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio LION",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Sandman Pro",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Sandman",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Unfiltered Audio Silo",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio SpecOps",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Triad",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Unfiltered Audio Zip",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Venom",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Vertigo VSC-2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Vertigo VSM-3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "VocALignPro",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "WEDGE FORCE Matcha",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "WaveShell1-VST3 12.4",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "WaveShell1-VST3 12.5",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "WaveShell1-VST3 12.6",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "WaveShell2-VST3 12.0",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "WaveShell2-VST3 12.1",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_2098 EQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_XL V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_XL",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "i386"
+  },
+  {
+   "name": "bx_bassdude",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_blackdist2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_bluechorus2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_boom",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_cleansweep Pro",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_cleansweep V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_console AMEK 9099",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_console Focusrite SC",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_console N",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_console SSL 4000 E",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_console SSL 4000 G",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_console SSL 9000 J",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_control V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_crispyscale",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_crispytuner",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_delay2500",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_digital V2 Mono",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "i386"
+  },
+  {
+   "name": "bx_digital V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "i386"
+  },
+  {
+   "name": "bx_digital V3 mix",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_digital V3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_distorange",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_dynEQ V2 Mono",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_dynEQ V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_greenscreamer",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_hybrid V2 mix",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_hybrid V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_limiter True Peak",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_limiter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_masterdesk",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_megadual",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_megasingle",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_metal2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_meter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_oberhausen",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_opto Pedal",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_opto",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_panEQ",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_refinement",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_rockergain100",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_rockrack V3 Player",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_rockrack V3",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_rooMS",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_saturator V2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_shredspread",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_solo",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_stereomaker",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_subfilter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_subsynth",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_townhouse Buss Compressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_tuner",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "bx_yellowdrive",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "dearVR MONITOR",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "dearVR music",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "dearVR pro",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "elysia alpha master",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia alpha mix",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia karacter master",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia karacter mix",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia mpressor",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia museq master",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia museq mix",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia niveau filter",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia nvelope",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "elysia phils cascade",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "fiedler audio stage",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "iZotope Nectar",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "i386 ppc"
+  },
+  {
+   "name": "iZotope Trash 2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "i386 x86_64"
+  },
+  {
+   "name": "soothe",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "soothe2",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "spiff",
+   "format": "VST3",
+   "why": "is installed but its VST3 has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "2C-Aether-Demo",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "AVOX SYBIL",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Absynth 5",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "C18_Comp_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "C673A_Comp_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "CamelCrusher",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386 ppc7400"
+  },
+  {
+   "name": "Captain Beat Audio",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "ChickenHead_Comp_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Clarity M",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "Cymatics Lotus",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Diva",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "i386 x86_64"
+  },
+  {
+   "name": "Dolby Atmos Binaural Settings",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Dolby Atmos Music Panner",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "El_Moo_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Endless Smile",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "i386 x86_64 ppc7400"
+  },
+  {
+   "name": "L18_Limiter_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Lindell PEX-500",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "MC3_MultiComp_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Massive X",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "MooTube_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "MooX_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Reaktor 6",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Royal_Mu_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Royal_Q_APB",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Satellite Audio",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Satellite MIDI FX",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Satellite MIDI",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "Satellite Sessions",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "SerumFX",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "WS LOWEND",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "dearVR MONITOR",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "dearVR pro",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64 i386"
+  },
+  {
+   "name": "iZInsight2AUHook",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "iZRelayAUHook",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "iZTrash2AUHook",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "i386 x86_64"
+  },
+  {
+   "name": "soothe2",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  },
+  {
+   "name": "spiff",
+   "format": "AudioUnit",
+   "why": "is installed but its AudioUnit has no arm64 build, so it cannot run in this host",
+   "archs": "x86_64"
+  }
+ ]
+}

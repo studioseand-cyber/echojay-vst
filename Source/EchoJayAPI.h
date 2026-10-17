@@ -143,6 +143,10 @@ private:
 class EchoJayAPI
 {
 public:
+    /** The base URL in force when it is NOT the built-in host, for the window's own marker; empty
+        on production, so the marker stays silent there (17 Oct 2026, Sean's item 2). */
+    static juce::String currentBaseUrlForDisplay();
+
     EchoJayAPI();
     ~EchoJayAPI();
 

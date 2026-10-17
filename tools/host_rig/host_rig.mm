@@ -1316,6 +1316,26 @@ static void scenSkip (const char* id, const char* title, const juce::String& why
 
 // A row's verdict, in the scorecard's words. Printed in a form the scorecard is written from, so the file
 // and the run cannot disagree.
+/** WHICH ROWS THIS RUN IS FOR (17 Oct 2026, Sean's QUICK tier).
+
+    `EJ_RIG_ONLY=RP8K` or `EJ_RIG_ONLY=A2,G2,RP8K` runs those scenarios and skips the rest with one
+    line saying so. His instruction: "run the S4 guards plus only the matrix rows that touch the
+    change... target under 15 minutes". The whole matrix is 50 minutes; one row is two, and a loop
+    measured in days is the thing being fixed.
+
+    A filtered run is NEVER a gate: the full matrix still runs overnight and before beta, and the
+    scorecard says at the top that it was filtered, so no filtered log can be mistaken for one. */
+static juce::StringArray gOnlyRows;
+static bool gRowsFiltered = false;
+
+static bool rowWanted (const juce::String& id)
+{
+    if (! gRowsFiltered) return true;
+    for (const auto& want : gOnlyRows)
+        if (id.equalsIgnoreCase (want.trim())) return true;
+    return false;
+}
+
 /** One capability row. `r` is the turn behind it, and a row CANNOT PASS without one: see
     AgentOutcome::ran(). Pass nullptr only where there is deliberately no agent turn (A6, which sends a chat
     with the chip off) - and then the row must carry its own evidence that something happened, because the
@@ -1323,6 +1343,7 @@ static void scenSkip (const char* id, const char* title, const juce::String& why
 static void row (const char* id, bool pass, const juce::String& request, const juce::String& detail,
                  const AgentOutcome* r = nullptr)
 {
+    if (! rowWanted (id)) return;   // EJ_RIG_ONLY: not this run's business
     juce::String note;
     if (r != nullptr && ! r->ran())
     {
@@ -1570,6 +1591,7 @@ static void scen (const char* id, const char* title, bool pass, const juce::Stri
                   const char* owner, juce::Component* editor, const juce::var& state,
                   const AgentOutcome* r = nullptr)
 {
+    if (! rowWanted (id)) return;   // EJ_RIG_ONLY: not this run's business
     Scen sc; sc.id = id; sc.title = title; sc.owner = owner; sc.detail = detail;
     if (r != nullptr && ! r->ran())
     {
@@ -1753,6 +1775,16 @@ int main (int argc, char* argv[])
         return differs;
     }();
     const bool linkMixedBuild = gLinkIsMixedBuild;
+    if (const char* only = ::getenv ("EJ_RIG_ONLY"); only != nullptr && *only != 0)
+    {
+        gOnlyRows = juce::StringArray::fromTokens (juce::String (only), ",", "");
+        gOnlyRows.trim(); gOnlyRows.removeEmptyStrings();
+        gRowsFiltered = ! gOnlyRows.isEmpty();
+        if (gRowsFiltered)
+            std::printf ("\n  ######## FILTERED RUN: only [%s] will be reported. This is NOT a gate - the\n"
+                         "           full matrix runs overnight and before beta (Sean's QUICK tier, 17 Oct).\n\n",
+                         gOnlyRows.joinIntoString (", ").toRawUTF8());
+    }
     const int mockPort = juce::String (argv[3]).getIntValue();
     const juce::File v2vst3  { argc > 4 ? juce::String (argv[4]) : juce::String() };
 
@@ -4803,92 +4835,111 @@ int main (int argc, char* argv[])
             return all;
         };
 
-        // ---- RP8K (17 Oct evening): A RESULT MUST FIT 8 KB ON A REAL-SIZE INVENTORY ------------
+        // ---- RP8K: A RESULT MUST FIT 8 KB ON **HIS** INVENTORY (17 Oct 2026) -------------------
         //
         // His recheck of 17b died in round 1 of EVERY run:
-        //   EJAgent: frame error code=result_too_large retryable=1 "result toolu_01VtSXwQ7... is
-        //   over 8 KB; send the compact summary shape (CONTRACT_AGENT_TOOLS section 5)"
+        //   EJAgent: frame error code=result_too_large "result toolu_01VtSXwQ7... is over 8 KB; send
+        //   the compact summary shape (CONTRACT_AGENT_TOOLS section 5)"
         // and the call two lines above it in his log is `look "read the inventory"`.
         //
-        // No row could have caught this, for a reason worth writing down: the rig never looked at
-        // how BIG a result was, only at what it said - and the field that grew is a function of HIS
-        // plugin folder rather than of the code. 357 of his 1,323 installed bundles have no arm64
-        // slice; the rig's machine, in its controlled list, has one or two. A test whose input is
-        // the developer's own machine is not a test of the product.
+        // The rig could not have caught it, and the reason is his item 3: the rig's controlled plugin
+        // list has a handful of entries, his Mac has 1,013 bundles of which 357 cannot run here at
+        // all. So the input comes from HIS MACHINE now - tools/host_rig/fixtures/real_inventory...json,
+        // a snapshot of the names and the architecture verdicts, taken by reading each bundle's
+        // Mach-O header and loading nothing.
         //
-        // So this row MAKES the input: several hundred entries written into the no-load file inside
-        // the rig's own isolated state root - the same file and the same shape the product writes -
-        // and then one replayed look(inventory). The assertion is the contract's own number, read
-        // from what the plugin actually POSTED (the mock records every result's bytes), not from
-        // anything the rig computes for itself.
+        // AND THE FIRST ATTEMPT AT THIS ROW TAUGHT ITS OWN LESSON. It seeded 420 synthetic entries
+        // through a DynamicObject keyed by juce::Identifier with a '|' in it, the keys were dropped,
+        // the plugin read an empty file, and the row reported a 578-byte result - a green-looking
+        // number from an input that never arrived. So the seed is written as TEXT, and the row now
+        // CHECKS THAT ITS OWN INPUT LANDED before it judges anything.
         {
-            const int kSeeded = 420;
+            const auto snapFile = juce::File (__FILE__).getParentDirectory()
+                                      .getChildFile ("fixtures/real_inventory_2026-10-17.json");
+            const auto snap = juce::JSON::parse (snapFile.loadFileAsString());
+            juce::StringArray badNames, badWhys;
+            if (auto* arr = snap.getProperty ("notLoadable", juce::var()).getArray())
+                for (const auto& e : *arr)
+                {
+                    badNames.add (e.getProperty ("name", juce::var()).toString());
+                    badWhys.add  (e.getProperty ("why",  juce::var()).toString());
+                }
+
             const auto root = juce::File (juce::String (::getenv ("ECHOJAY_STATE_HOME") != nullptr
                                                         ? ::getenv ("ECHOJAY_STATE_HOME") : "/tmp"))
                                   .getChildFile ("Library/Application Support/EchoJay");
             root.createDirectory();
             const auto failedFile = root.getChildFile ("plugin_load_failed.json");
             {
-                auto* failed = new juce::DynamicObject();
-                for (int i = 0; i < kSeeded; ++i)
+                juce::String json = "{\n \"v\": 1,\n \"failed\": {\n";
+                for (int i = 0; i < badNames.size(); ++i)
                 {
-                    auto* e = new juce::DynamicObject();
-                    const auto nm = "Seeded Unloadable " + juce::String (i + 1);
-                    e->setProperty ("name", nm);
-                    e->setProperty ("format", "VST3");
-                    // His machine's real sentence, so the bytes are his bytes.
-                    e->setProperty ("why", "An OS error occurred during initialisation of the plug-in (-1)");
-                    e->setProperty ("atMs", (double) juce::Time::currentTimeMillis());
-                    failed->setProperty (juce::Identifier (nm.toLowerCase().replaceCharacter (' ', '_')
-                                                           + "|vst3"), juce::var (e));
+                    const auto key = badNames[i].toLowerCase() + "|VST3";
+                    json << "  " << juce::JSON::toString (juce::var (key)) << ": {"
+                         << "\"name\": "  << juce::JSON::toString (juce::var (badNames[i])) << ", "
+                         << "\"format\": \"VST3\", "
+                         << "\"why\": "   << juce::JSON::toString (juce::var (badWhys[i])) << ", "
+                         << "\"atMs\": "  << juce::String ((double) juce::Time::currentTimeMillis(), 1)
+                         << "}" << (i + 1 < badNames.size() ? "," : "") << "\n";
                 }
-                auto* rootObj = new juce::DynamicObject();
-                rootObj->setProperty ("v", 1);
-                rootObj->setProperty ("failed", juce::var (failed));
-                failedFile.replaceWithText (juce::JSON::toString (juce::var (rootObj), true));
+                json << " }\n}\n";
+                failedFile.replaceWithText (json);
             }
-            std::printf ("        (seeded %d unloadable plugin(s) into %s - his Mac has 357 of 1,323)\n",
-                         kSeeded, failedFile.getFullPathName().toRawUTF8());
+            // DID THE INPUT ARRIVE? Read it back the way the product reads it, before judging.
+            const auto readBack = juce::JSON::parse (failedFile.loadFileAsString());
+            const int seeded = readBack.getProperty ("failed", juce::var()).getDynamicObject() != nullptr
+                             ? (int) readBack.getProperty ("failed", juce::var()).getDynamicObject()
+                                     ->getProperties().size() : 0;
+            std::printf ("        (seeded %d of his %d unloadable plugins into %s)\n",
+                         seeded, badNames.size(), failedFile.getFullPathName().toRawUTF8());
 
-            clearOwnRack (rig);
-            rig.send (echojay::rig::cmd::newChat, args1 ("uid", ""), 10000);
-            rig.send (echojay::rig::cmd::workOn,  args1 ("uid", ""), 8000);
-            const auto r8 = askAgent (rig, replayGoal ("rp_8k", "Add a compressor to this rack"), 90000);
-
-            // WHAT THE PLUGIN POSTED, measured by the thing that received it.
-            int worst = 0, inventoryBytes = -1;
-            juce::String keys, worstId;
-            if (const auto req = lastRequestTo (mockPort, "/api/agent/step"); req.isObject())
+            if (seeded < 100)
+                scenSkip ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB on HIS inventory",
+                          "the seed did not land (" + juce::String (seeded) + " entries readable in "
+                          + failedFile.getFileName() + ", from a snapshot of " + juce::String (badNames.size())
+                          + "): this row's whole subject is the SIZE of a result, so without its input it "
+                            "would report a comfortable number from nothing - which is exactly what its "
+                            "first version did. NEVER counted as a pass.", "A");
+            else
             {
-                worst = (int) req.getProperty ("maxResultBytes", juce::var (0));
-                if (auto* arr = req.getProperty ("results", juce::var()).getArray())
-                    for (const auto& rr : *arr)
-                    {
-                        const int b = (int) rr.getProperty ("bytes", juce::var (0));
-                        if (b >= worst) { worst = b; worstId = rr.getProperty ("id", juce::var()).toString(); }
-                        juce::StringArray ks;
-                        if (auto* ka = rr.getProperty ("keys", juce::var()).getArray())
-                            for (const auto& k : *ka) ks.add (k.toString());
-                        if (ks.contains ("names")) { inventoryBytes = b; keys = ks.joinIntoString (","); }
-                    }
+                clearOwnRack (rig);
+                rig.send (echojay::rig::cmd::newChat, args1 ("uid", ""), 10000);
+                rig.send (echojay::rig::cmd::workOn,  args1 ("uid", ""), 8000);
+                const auto r8 = askAgent (rig, replayGoal ("rp_8k", "Add a compressor to this rack"), 90000);
+
+                // WHAT THE PLUGIN POSTED, measured by the thing that received it.
+                int worst = 0, inventoryBytes = -1;
+                juce::String keys, worstId;
+                if (const auto req = lastRequestTo (mockPort, "/api/agent/step"); req.isObject())
+                {
+                    worst = (int) req.getProperty ("maxResultBytes", juce::var (0));
+                    if (auto* arr = req.getProperty ("results", juce::var()).getArray())
+                        for (const auto& rr : *arr)
+                        {
+                            const int b = (int) rr.getProperty ("bytes", juce::var (0));
+                            if (b >= worst) { worst = b; worstId = rr.getProperty ("id", juce::var()).toString(); }
+                            juce::StringArray ks;
+                            if (auto* ka = rr.getProperty ("keys", juce::var()).getArray())
+                                for (const auto& k : *ka) ks.add (k.toString());
+                            if (ks.contains ("names")) { inventoryBytes = b; keys = ks.joinIntoString (","); }
+                        }
+                }
+                const bool fits   = inventoryBytes >= 0 && inventoryBytes <= 8192;
+                const bool hasTot = keys.contains ("notLoadableTotal");
+                scen ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB on HIS inventory (357 unloadable)",
+                      fits && hasTot,
+                      juce::String ("with ") + juce::String (seeded) + " of his unloadable plugins seeded, "
+                      "the inventory result the plugin POSTED was "
+                      + (inventoryBytes < 0 ? juce::String ("never seen (no step body carried a `names` result)")
+                                            : juce::String (inventoryBytes) + " bytes"
+                                              + (fits ? " - inside the contract's 8 KB"
+                                                      : " - OVER THE CONTRACT'S 8 KB, which is the error he read"))
+                      + "; keys [" + keys + "]"
+                      + (hasTot ? "" : "; notLoadableTotal MISSING, so the model cannot know the scale "
+                                       "without being sent the bytes")
+                      + "; largest result in that body " + juce::String (worst) + " bytes (" + worstId + ")",
+                      "A", v2.editor.get(), rig.freshState(), &r8);
             }
-            const bool fits   = inventoryBytes >= 0 && inventoryBytes <= 8192;
-            const bool hasTot = keys.contains ("notLoadableTotal");
-            const bool pageScoped = ! keys.contains ("notLoadableNote") || hasTot;
-            scen ("RP8K", "REPLAY rp_8k: look(inventory) fits 8 KB with several hundred unloadable plugins",
-                  fits && hasTot && pageScoped,
-                  juce::String ("with ") + juce::String (kSeeded) + " unloadable plugins seeded, the "
-                  "inventory result the plugin POSTED was "
-                  + (inventoryBytes < 0 ? juce::String ("never seen (no step body carried a `names` result)")
-                                        : juce::String (inventoryBytes) + " bytes"
-                                          + (fits ? " - inside the contract's 8 KB"
-                                                  : " - OVER THE CONTRACT'S 8 KB, which is the error he read"))
-                  + "; its keys were [" + keys + "]"
-                  + (hasTot ? "" : "; notLoadableTotal is MISSING, so the model cannot know the scale "
-                                   "without the bytes")
-                  + "; the largest result in that body was " + juce::String (worst) + " bytes ("
-                  + worstId + ")",
-                  "A", v2.editor.get(), rig.freshState(), &r8);
             failedFile.deleteFile();   // the seed is this row's, not the next row's
         }
 

@@ -1331,6 +1331,11 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         };
         for (const auto& e : p->getChainHost().installedButCannotLoad())
             add (e.first, e.second);
+        // SAY HOW MANY, because this is the field that broke his 17b: on his machine it is 357 and
+        // on the rig's controlled list it is one or two, and nothing in any log said so.
+        EchoJay_NSLog (("EJAgent: the inventory marks " + juce::String (out.size())
+                        + " installed plugin(s) as unable to load here (page-scoped and capped in the "
+                          "result; the count rides as notLoadableTotal)").toRawUTF8());
         return juce::var (out);
     };
     s.linkRack = [p] (const juce::String& uid)

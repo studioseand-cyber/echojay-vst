@@ -22820,6 +22820,34 @@ void EchoJayEditor::paint(juce::Graphics& g)
     auto bounds = getLocalBounds();
     g.fillAll(C::bg);
 
+    // ---- WHICH SERVER AM I ON? (17 Oct 2026, Sean's item 2) ----------------------------------
+    //
+    // He said "my Logic now talks to B's local server through ~/Library/EchoJay/dev_base_url.txt",
+    // and his own log from twenty minutes earlier says otherwise: `EJNet: base=https://www.echojay.ai
+    // source=built-in`. The file was not there, so every request went to production - including the
+    // run whose failure he was reporting. Nothing on screen could have told him that, and a log line
+    // once per process is not something you check before each test.
+    //
+    // So: a marker, drawn last so nothing covers it, bottom-right, dim, and SILENT on production -
+    // the normal case stays uncluttered and anything else is visible at a glance. The host only; a
+    // bypass secret is never drawn, exactly as it is never logged.
+    {
+        const auto base = EchoJayAPI::currentBaseUrlForDisplay();
+        if (base.isNotEmpty() && ! base.containsIgnoreCase ("www.echojay.ai"))
+        {
+            auto host = base.fromFirstOccurrenceOf ("//", false, false)
+                            .upToFirstOccurrenceOf ("/", false, false);
+            const auto text = "server: " + (host.isNotEmpty() ? host : base);
+            g.setFont (juce::Font (juce::FontOptions (10.0f)));
+            const int w = 190, h = 14;
+            const auto r = juce::Rectangle<int> (bounds.getRight() - w - 6, bounds.getBottom() - h - 4, w, h);
+            g.setColour (juce::Colour (0xcc0E1020));
+            g.fillRoundedRectangle (r.toFloat(), 3.0f);
+            g.setColour (juce::Colour (0xff22d3ee));
+            g.drawText (text, r, juce::Justification::centredRight, true);
+        }
+    }
+
 
     // === Login Screen ===
     if (currentScreen == Screen::Login) {

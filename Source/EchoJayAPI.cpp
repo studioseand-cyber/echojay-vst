@@ -127,6 +127,21 @@ namespace
 // Base URL for a request: the dev override when one is configured, otherwise
 // whatever the plugin normally talks to. In a release build this is the
 // identity function and the compiler removes it.
+/** The base URL in force, for the window's own marker (17 Oct 2026, Sean's item 2).
+
+    The same resolution transportEndpoint does, without the once-per-process log line: the file
+    override when there is one, otherwise what the build talks to. Host-only use at the call site;
+    the bypass secret is not returned and never drawn. */
+juce::String EchoJayAPI::currentBaseUrlForDisplay()
+{
+    const auto& fo = fileOverride();
+    if (fo.baseUrl.isNotEmpty()) return fo.baseUrl;
+   #if ECHOJAY_DEV_TRANSPORT
+    if (devTransport().baseUrl.isNotEmpty()) return devTransport().baseUrl;
+   #endif
+    return {};   // the built-in host: the marker stays silent on production
+}
+
 juce::String EchoJayAPI::transportEndpoint(const juce::String& configured,
                                            const juce::String& forPath)
 {
