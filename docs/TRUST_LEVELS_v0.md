@@ -622,3 +622,70 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
   - Step 1 reads each back as a VST3.
   - Steps 2-3 run the bridge on the 33 with a plan, AU and VST3 at the same five settings.
 - **How it runs.** `--allow-licence-bound-list` lifts the guard **only** for the listed products, and stops if a window appears. It uses a scratch copy of his ledger (never `config.json`), stops at 07:00, and resumes on the next run. It only measures; the judging happens here.
+
+## 13. Rulings 3, 17 Oct (Kathy). Built, pinned, run on this Mac (guarded); nothing sent; no server change
+
+### 13.1 The adaptive grid (pin WZ-REPAIR-2): `ejmap --anchor-repair ... --refine <first read-back cert>`
+- **The procedure** (one finer round, never repeated):
+  1. Repair on the standard 1/80 grid.
+  2. Held-out read-back.
+  3. Only a control whose held-out read-back **failed** is re-sampled once, four times finer (1/320). The re-sampling goes around each failing setting (one grid step either side) and around each anchor-slope jump (an interval over 2× both neighbours' slopes). The held-out settings stay out.
+  4. A fresh held-out read-back. The control counts only if that passes.
+- **Run on all 13 repaired controls** (`~/Desktop/EJMAP_TRUST_17oct/repair2_17oct`: `pass1`, `readback1`, `pass2`, `readback2`, `maps_final`):
+  - 12 passed on the standard grid and were not refined.
+  - AMEK EQ 250 HF Freq 1 failed. It was refined: 10 finer anchors around 0.875. It passed the fresh read-back and **now counts**.
+
+### 13.2 Stepped displays (pin WZ-STEPS-1)
+- **Detection.** A display is stepped when it has 8+ readings, mostly (60 %+) on plateaus of 3+ equal values, and the jumps between plateaus are larger than its last digit. Rounding of a continuous display (one-digit jumps) is not steps.
+- **The map.** The control becomes `"kind": "steps"`, with `"steps": [[lo, hi, value, display], ...]`: each step's read norm range.
+  - Its `anchors` are the steps' middles, so a dial by anchors lands mid-step: **dial the middle of a step**.
+- **The judge.** A reading is judged at the step its norm falls in. Between two read ranges, either neighbour is right.
+- **The read-back.** Taken at the middles of the steps at 25 / 50 / 75 % of the list.
+- **API-550A (s/m) Low Gain:** 11 steps, read back → **mapped**.
+
+### 13.3 The ms → s unit switch (pin WZ-TRUST-17)
+- **The rule.** A display in seconds against a map control kept in ms is ×1000; ms against s is ÷1000. The map control's own `unit` decides, so a map without one is judged as before.
+- **ValhallaVintageVerb VST3 Decay** ("26.75 s" against anchors in ms) → **mapped**.
+
+### 13.4 The wizard's VST3 lane (pin WZ-VST3-1): "measure once per product on AU, then bridge-read the VST3 twin"
+- **Discovery** loads nothing: every *.vst3 under /Library and ~/Library/Audio/Plug-Ins/VST3, with its name, version and vendor from the bundle.
+  - A WaveShell VST3 is reported, not enumerated; its plugins are measured through their AudioUnits.
+- **Identity.** Each other VST3 is loaded **once**, after the same checks an AudioUnit gets (remembered licence windows, PACE on a Mac with no iLok, an APB unit not connected).
+  - The probe now prints the class's name, version, JUCE uid and vendor. On this Mac, Pro-Q 3 VST3 = `ba5f7ab2` / `3.2.3.0`, the same as its existing VST3 map.
+- **Twin** (an installed AU of the same class name): never measured. **Bridge read** instead:
+  - the role-named controls both formats carry (at most 12), at 10 / 30 / 50 / 70 / 90 %, one load per format;
+  - written as `ej_readback_sweep/1` records with `"purpose": "bridge"`, `format`, `plugin_id` and `twin_plugin_id`;
+  - sent in the bundle (`readback/bridge/`, manifest `bridge_reads`). The server judges the bridge (`trust::bridgeFor`).
+  - Live on this Mac (scan only, `--only "Pro-Q 3"`): 859 VST3 bundles found, 1 loaded; 12 controls × 5 settings read in both formats, **60 / 60 identical**.
+- **No twin.** The VST3 is measured as its own plugin: its own map (`format: VST3`), its own rows (`plugin_id` `VST3|uid|version`) and its own Phase B.
+  - Phase B children find it through `installedPlugins()`, i.e. the AU registry plus `EJ_VST3_EXTRAS`.
+  - **With the variable unset (every cert run, Sean's builds) the list is the AU registry alone, as before.**
+  - Record stems and identities take their format from the plugin (`fmtTag`): 48 hard-coded "AudioUnit" sites in the cert driver now follow the plugin. The tuner (pitch) path stays AU; the wizard does not measure tuners.
+  - No guard-allowed VST3-only product exists on this Mac, so this lane is pinned (fake runner, a VST3 extras file) but not run live.
+- **PACE.** `paceHeld` reads a .vst3 bundle directly; one it cannot find is held, not assumed clear.
+- **Uploads.** Every manifest entry carries `format` (from its plugin_id); rows carry `format`.
+- **Bug caught by the pin.** `vst3Extras()` read its list out of a temporary (dangling), so it returned nothing. Fixed: held by name.
+- **Cost on a tester's Mac.** One load per non-shell VST3 bundle for its identity, plus 3 loads per twin. On this Mac's 859 bundles that adds tens of minutes to the scan unless a server lookup can settle a VST3 by bundle and version first. **For A / Sean:** a VST3 identity cache keyed by bundle path + CFBundleVersion would make it once per install.
+- **`EJ_WIZARD_NO_VST3=1`** turns the lane off (rehearsals).
+
+### 13.5 What Sean's server must accept (not sent; for `FOR_SEAN_server_items`)
+1. **plugin_id `VST3|<uid>|<version>`** everywhere a plugin_id goes (lookup, routes, rows, profiles, outcomes, licence memory). uid = the JUCE VST3 class hash (hex), version = the class version (e.g. `3.2.3.0`). Record stems `VST3_<uid>_<version>`.
+2. **`format` on every contribution entry** (profiles, confirmations, skipped, crashed, needs_category, other_categories, out_of_scope, held, reference votes) and on rows. Wizard parameter maps may carry `identity.format: "VST3"` (schema `ej_param_map/wizard-0`).
+3. **`bridge_reads`** in the contribution manifest (`[{product, format, plugin_id, twin_plugin_id, file}]`) plus the `readback/bridge/*.readback.json` files (schema `ej_readback_sweep/1`, `purpose: "bridge"`). The server applies the bridge rule:
+   - a VST3 inherits its AU twin's level only with 3+ matching paired settings per role control, at the same normalised version (`1.4.5 (R…)` = `1.4.5`; `5.4.3.17500` ≠ `5.4.3`).
+4. **A map control of `kind: "steps"`**: `steps: [[lo, hi, value, display]]`; anchors = step middles. EchoJay dials the middle of the step holding the wanted value, and a read-back is judged at the step.
+5. **Repaired controls:** `trust: "repair"` and a `repair` block (`source`, `grid_step`, `held_out`, `version`, `measuredAt`, `previous_anchors` | `added`, `refined`). Top-level `repaired_controls`.
+6. **Read-back fields:** `readback.snapped`, `readback.failed_at`, `readback.superseded`. Trust rows carry `format`, `bridged_from`, `bridge_refused`.
+7. **The read-back judge's unit rule:** a control's `unit` (ms / s) scales a display in the other time unit.
+8. **Certification by format:** a profile certifies only its own format (`plugin.format`). The 47 published are AudioUnit.
+
+### 13.6 Recount, Kathy's count rule, 17 Oct after rulings 3
+
+| format | certified | mapped | unsure | testable | can't test on this Mac |
+|---|---|---|---|---|---|
+| AudioUnit | 156 | 197 | 258 | 611 | 197 |
+| VST3 | 0 | 4 | 119 | 123 | 192 |
+| **all** | **156** | **201** | **377** | **734** | **389** |
+
+- **The path:** 156 / 197 / 381 (§12) → +4 mapped: API-550A s/m (steps), AMEK EQ 250 (adaptive grid), ValhallaVintageVerb VST3 (unit switch) → 156 / 201 / 377.
+- **Reproduce** (in `~/Desktop/EJMAP_TRUST_17oct`): `REPAIRED_MAPS=$PWD/repair2_17oct/maps_final EXTRA_CERT=$PWD/rulings2_cert:$PWD/alldaws_cert:$PWD/repair2_17oct/readback1:$PWD/repair2_17oct/readback2 CERTIFIED_PROFILES=$PWD/published_v3/EJMAP_PUBLISH_COMPRESSORS_v3 CERT_OVERNIGHT=$PWD/overnight_cert_rederived ./recount.sh <ejmap> <out>`.

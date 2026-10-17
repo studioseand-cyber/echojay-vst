@@ -86,7 +86,18 @@ inline double displayStep (const juce::String& display)
     return std::pow (10.0, -d);
 }
 struct Verdict { bool judged = false, pass = false; double expected = 0.0, read = 0.0; juce::String why; };
-inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, const juce::String& display)
+// THE TIME UNIT SWITCH (Kathy, 17 Oct, rulings 3: ValhallaVintageVerb VST3 shows "700 ms" low in its range and "26.75 s" high): a display
+// in seconds read against a map kept in ms is x1000, and a display in ms against a map kept in s is /1000 - the map's own unit decides
+inline bool displayIsSeconds (const juce::String& d) { const auto l = d.toLowerCase().trim(); return ! l.contains ("ms") && ! l.contains ("hz") && (l.endsWith (" s") || l.endsWith ("sec") || (l.endsWith ("s") && l.length() > 1 && (juce::CharacterFunctions::isDigit (l[l.length() - 2]) || l[l.length() - 2] == ' '))); }
+inline bool displayIsMs (const juce::String& d) { return d.toLowerCase().contains ("ms"); }
+inline double timeScale (const juce::String& mapUnit, const juce::String& display)
+{
+    const auto u = mapUnit.toLowerCase().trim();
+    if (u == "ms" && displayIsSeconds (display)) return 1000.0;
+    if ((u == "s" || u == "sec") && displayIsMs (display)) return 0.001;
+    return 1.0;
+}
+inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, const juce::String& display, const juce::String& mapUnit = {})
 {
     Verdict v;
     if (a.size() < 2) { v.why = "the map has no anchor table for it"; return v; }
@@ -96,7 +107,9 @@ inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, cons
     if (! numberOf (display, v.read)) { v.why = "the display '" + display + "' carries no number"; return v; }
     // the map's anchors are raw parsed floats ("1.2k" was recorded as 1.2): read the display the same way when the anchors are small
     double raw = 0.0; if (std::abs (v.read) >= 1000.0 && hi < 1000.0 && numberOf (display.upToFirstOccurrenceOf ("k", false, true), raw)) v.read = raw;
-    const double span = hi - lo, tol = std::min (std::max (displayStep (display), 0.005 * span), std::max (0.01 * span, displayStep (display)));
+    const double ts = timeScale (mapUnit, display); v.read *= ts;   // rulings 3: "26.75 s" against a map in ms is 26750
+    const double dstep = displayStep (display) * ts;   // the display's last digit, in the map's unit
+    const double span = hi - lo, tol = std::min (std::max (dstep, 0.005 * span), std::max (0.01 * span, dstep));
     v.judged = true; v.pass = std::abs (v.read - v.expected) <= tol + 1e-9;
     v.why = "norm " + juce::String (norm, 3) + ": the map says " + juce::String (v.expected, 3) + ", the display read '" + display.trim() + "'"
             + (v.pass ? "" : " (off by " + juce::String (std::abs (v.read - v.expected), 3) + ", tolerance " + juce::String (tol, 3) + ")");
@@ -451,6 +464,64 @@ inline SourceMeta metaOfRecord (const juce::var& rec, const juce::String& fileNa
     m.atMs = stampMs (rec.getProperty ("measuredAt", rec.getProperty ("sampledAt", rec.getProperty ("measured", {}).getProperty ("date", ""))).toString());
     return m;
 }
+// 2d. STEPPED DISPLAYS (Kathy, 17 Oct, rulings 3: API-550A etc.): a parameter that moves continuously but whose display moves in steps is
+// mapped as steps - each display step's norm range (lo..hi, as read); a reading is judged at the step its norm falls in (between two
+// read ranges, either neighbour is right); the dial goes to the middle of a step (the control's anchors are the steps' middles, so a
+// dial by anchors lands there too). A display is stepped when 8+ readings sit mostly (60 %+) on plateaus of 3+ equal values and the
+// jumps between plateaus are larger than the display's own last digit (rounding plateaus jump by exactly one digit: not stepped)
+struct Step { double lo = 0.0, hi = 0.0, value = 0.0; juce::String display; double mid() const { return 0.5 * (lo + hi); } };
+inline double displayStepValue (const juce::String& d)   // the last printed digit in the number's own units ("17.5 kHz" -> 100)
+{
+    const auto l = d.toLowerCase(); double v = 0.0; numberOf (d, v);
+    const bool k = l.contains ("k") && ! l.contains ("kn"); return displayStep (d) * (k ? 1000.0 : 1.0);
+}
+inline std::vector<Step> detectSteps (std::vector<Reading> rs)
+{
+    std::sort (rs.begin(), rs.end(), [] (const Reading& a, const Reading& b) { return a.norm < b.norm; });
+    std::vector<Step> st; std::vector<int> runLen;
+    for (const auto& r : rs)
+    {
+        double v = 0.0; if (! numberOf (r.display, v)) return {};
+        if (! st.empty() && std::abs (st.back().value - v) < 1e-9) { st.back().hi = r.norm; ++runLen.back(); continue; }
+        st.push_back ({ r.norm, r.norm, v, r.display.trim() }); runLen.push_back (1);
+    }
+    if (rs.size() < 8 || st.size() < 2 || st.size() > 64) return {};
+    int onPlateaus = 0; for (int n : runLen) if (n >= 3) onPlateaus += n;
+    if (onPlateaus < 0.6 * (double) rs.size()) return {};
+    std::vector<double> jumps; for (size_t i = 1; i < st.size(); ++i) jumps.push_back (std::abs (st[i].value - st[i - 1].value));
+    std::sort (jumps.begin(), jumps.end());
+    const double med = jumps[jumps.size() / 2], digit = displayStepValue (rs.front().display);
+    if (med <= 1.5 * digit + 1e-9) return {};   // rounding of a continuous display, not steps
+    return st;
+}
+inline std::vector<Step> stepsOf (const juce::var& control)
+{
+    std::vector<Step> st;
+    if (const auto* a = control.getProperty ("steps", {}).getArray())
+        for (const auto& x : *a)
+            if (const auto* p = x.getArray(); p != nullptr && p->size() >= 4) st.push_back ({ (double) (*p)[0], (double) (*p)[1], (double) (*p)[2], (*p)[3].toString() });
+    std::sort (st.begin(), st.end(), [] (const Step& x, const Step& y) { return x.lo < y.lo; });
+    return st;
+}
+inline Verdict judgeStep (const std::vector<Step>& st, double norm, const juce::String& display)
+{
+    Verdict v; if (st.size() < 2) { v.why = "the map has no steps for it"; return v; }
+    if (norm < st.front().lo - 1e-6 || norm > st.back().hi + 1e-6) { v.why = "norm " + juce::String (norm, 3) + " is outside the map's steps"; return v; }
+    if (! numberOf (display, v.read)) { v.why = "the display '" + display + "' carries no number"; return v; }
+    std::vector<const Step*> ok;
+    for (size_t i = 0; i < st.size(); ++i)
+    {
+        if (norm >= st[i].lo - 1e-6 && norm <= st[i].hi + 1e-6) { ok = { &st[i] }; break; }
+        if (i + 1 < st.size() && norm > st[i].hi && norm < st[i + 1].lo) { ok = { &st[i], &st[i + 1] }; break; }   // between two read ranges
+    }
+    v.judged = true; const double tol = displayStepValue (display) * 0.5 + 1e-9;
+    for (const auto* p : ok) if (std::abs (p->value - v.read) <= tol) { v.pass = true; v.expected = p->value; }
+    if (! v.pass && ! ok.empty()) v.expected = ok.front()->value;
+    v.why = "norm " + juce::String (norm, 3) + ": the map's step '" + (ok.empty() ? juce::String ("?") : ok.front()->display) + (ok.size() > 1 ? "' or '" + ok.back()->display : juce::String())
+            + "', the display read '" + display.trim() + "'";
+    return v;
+}
+
 // THE MAP'S CONTROLS, both formats (17 Oct): the controls block, plus the older role-keyed params block (CLA-76, PuigChild 670) for any
 // control the controls block does not carry - a params entry with an anchor table is read back as an anchored control
 struct MapControl { juce::String name; juce::var c; };   // the map's own objects are never written (a var copy shares them)
@@ -493,7 +564,8 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
     for (const auto& [name, c] : mapControls (map))
     {
         const bool mode = c.getProperty ("kind", "").toString() == "mode";
-        if (! mode && c.getProperty ("kind", "").toString() != "anchored") continue;
+        const bool stepped = c.getProperty ("kind", "").toString() == "steps";   // rulings 3: a stepped display, judged at its step
+        if (! mode && ! stepped && c.getProperty ("kind", "").toString() != "anchored") continue;
         const auto* lo = c.getProperty ("labels", {}).getDynamicObject(); if (mode && lo == nullptr) continue;
         const auto a = anchorsOf (c);
         struct Seen { size_t si; Verdict v; double norm; bool snapped; };
@@ -503,7 +575,8 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
                 for (const auto& r : it->second)
                 {
                     if (! ownFormat (si)) { if (otherFormat != nullptr) ++*otherFormat; continue; }
-                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display), r.norm, r.snapped }); continue; }
+                    if (stepped) { vs.push_back ({ si, judgeStep (stepsOf (c), r.norm, r.display), r.norm, r.snapped }); continue; }
+                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display, c.getProperty ("unit", "").toString()), r.norm, r.snapped }); continue; }
                     // a stepped control: the reading at a norm must show the label the map has nearest that norm
                     juce::String best; double bd = 1e9;
                     for (const auto& l : lo->getProperties()) { const double d = std::abs ((double) l.value - r.norm); if (d < bd) { bd = d; best = l.name.toString(); } }
@@ -655,6 +728,51 @@ inline Rebuilt anchorsFromReadings (std::vector<Reading> rs)
     double lo = r.anchors.front().value, hi = lo; for (const auto& a : r.anchors) { lo = std::min (lo, a.value); hi = std::max (hi, a.value); }
     if (hi - lo <= 1e-12) { r.why = "the display does not move (" + rs.front().display.trim() + " throughout)"; r.anchors.clear(); return r; }
     r.unit = *units.begin(); r.ok = true; r.why = juce::String ((int) r.anchors.size()) + " anchors from the display"; return r;
+}
+
+//==============================================================================
+// the adaptive round's merge: the repaired anchors plus the finer readings (each numeric, one unit family), sorted by norm
+inline Rebuilt mergeAnchors (const std::vector<Anchor>& have, const std::vector<Reading>& fresh)
+{
+    Rebuilt r; std::set<juce::String> units;
+    if (have.size() < 2) { r.why = "the control has no anchors to refine"; return r; }
+    r.anchors = have;
+    for (const auto& x : fresh)
+    {
+        double v = 0.0; if (! numberOf (x.display, v)) { r.why = "the display '" + x.display + "' at norm " + juce::String (x.norm, 4) + " carries no number"; r.anchors.clear(); return r; }
+        units.insert (unitFamily (x.display));
+        if (std::none_of (r.anchors.begin(), r.anchors.end(), [&] (const Anchor& a) { return std::abs (a.norm - x.norm) < 1e-6; })) r.anchors.push_back ({ v, x.norm });
+    }
+    if (units.size() > 1) { r.why = "the finer readings change unit"; r.anchors.clear(); return r; }
+    std::sort (r.anchors.begin(), r.anchors.end(), [] (const Anchor& a, const Anchor& b) { return a.norm < b.norm; });
+    r.unit = units.empty() ? juce::String() : *units.begin(); r.ok = true;
+    r.why = juce::String ((int) (r.anchors.size() - have.size())) + " finer anchors added to " + juce::String ((int) have.size()); return r;
+}
+
+// 2e. THE ADAPTIVE GRID (Kathy, 17 Oct, rulings 3): a control whose held-out read-back FAILED on the standard grid is re-sampled once,
+// four times finer, around each failing setting (within one grid step either side) and around each jump of its anchor slope (an interval
+// whose slope is over JUMP_FACTOR x both neighbours'). The held-out settings stay out; the control counts only if the fresh held-out
+// read-back then passes. One round, never repeated
+constexpr double JUMP_FACTOR = 2.0;
+inline std::vector<double> refineNorms (const std::vector<Anchor>& a, const std::vector<double>& failedAt, double step, std::vector<double> holdOut)
+{
+    for (double f : { 0.25, 0.5, 0.75 }) holdOut.push_back (f);
+    const double fine = step / 4.0; std::vector<double> out;
+    auto add = [&] (double x)
+    {
+        if (x < 0.0 || x > 1.0) return;
+        if (std::any_of (holdOut.begin(), holdOut.end(), [&] (double h) { return std::abs (h - x) <= HOLD_OUT_REACH + 1e-9; })) return;
+        if (std::any_of (a.begin(), a.end(), [&] (const Anchor& p) { return std::abs (p.norm - x) < 1e-6; })) return;
+        if (std::none_of (out.begin(), out.end(), [&] (double y) { return std::abs (y - x) < 1e-6; })) out.push_back (x);
+    };
+    for (double f : failedAt) for (int k = -4; k <= 4; ++k) add (std::round ((f + k * fine) / fine) * fine);
+    std::vector<double> slope; for (size_t i = 1; i < a.size(); ++i) { const double dn = a[i].norm - a[i - 1].norm; slope.push_back (dn > 1e-12 ? std::abs (a[i].value - a[i - 1].value) / dn : 0.0); }
+    for (size_t i = 0; i < slope.size(); ++i)
+    {
+        const double l = i > 0 ? slope[i - 1] : 0.0, r = i + 1 < slope.size() ? slope[i + 1] : 0.0;
+        if (slope[i] > 0.0 && slope[i] > JUMP_FACTOR * std::max (l, r)) for (double x = a[i].norm + fine; x < a[i + 1].norm - 1e-9; x += fine) add (x);
+    }
+    std::sort (out.begin(), out.end()); return out;
 }
 
 //==============================================================================

@@ -29,7 +29,7 @@ inline int runMultibandV1Product (const SweepOptions& opt, const juce::File& rec
     using namespace multiband;
     const auto rec = juce::JSON::parse (recordFile.loadFileAsString());
     const auto product = rec.getProperty ("product", "").toString();
-    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    std::vector<InstalledRecord> hits; for (const auto& r : installedPlugins()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("MBV1: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s): skipped"); return 2; }
     const auto& desc = hits[0].desc;
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("MBV1: " + product + " - " + gate.stop); return kToneLicenceKnownExit; }
