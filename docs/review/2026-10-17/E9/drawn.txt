@@ -1,11 +1,10 @@
 scenario E9
-captured 2026-10-17T00:10:06.153+01:00
-  [user] rig-onestep-marker: mark-3888
+captured 2026-10-17T01:20:20.741+01:00
+  [user] rig-onestep-marker: mark-18531
   [assistant] Set the pre-gain to 5 dB.
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.
   [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
-  [assistant] The chain changed after I matched the level. Tap Listen and I'll match it again.
   run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
   opening: Read the gain reduction.
   closing: 

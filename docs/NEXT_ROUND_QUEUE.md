@@ -1,3 +1,28 @@
+# ITEM 0b — THE RUNNER HOSTS THE *INSTALLED* LINK, NOT THE ONE IT BUILT (found 17 Oct, 01:30)
+
+Four runs of row I9c failed with the same shape: a slot's ledger reading `Threshold=-30` and the SAME
+slot's mirrored card reading "Applied automatically Threshold 0". The sidecars on disk settle it -
+that card text is the PREVIOUS build's wording, written by the previous build's publisher, beside a
+ledger only this build writes.
+
+**The cause.** `registerAU` calls `AudioComponentRegister` with the bundle's type/subtype/manufacturer
+and then asks JUCE to instantiate the *identifier*. Nothing guarantees the just-registered factory
+wins that lookup, and in a fresh `link_host` process the system's INSTALLED component does. So every
+Link row has been hosting whatever is in ~/Library, not the bundle the runner was handed - which is
+the "stale binary via AU hosting" trap this tree has written down before, arriving in the runner
+itself.
+
+**Why it matters more than it looks.** It makes every Link-side verdict unfalsifiable: a fix cannot
+be proved, and a regression cannot be caught. It is also why A2, G2 and I9c kept failing in ways that
+did not match the code.
+
+**The fix.** Host the Link by PATH. JUCE's VST3 host loads a bundle by path deterministically (the
+runner already does this for the V2's lifecycle rows), so `link_host` should take the Link's .vst3 and
+the rig's in-process Links should too, with the AU road kept only where the AU wrapper itself is
+under test. The row that caught it now SKIPS with this reason rather than blaming the product.
+
+---
+
 # ITEM 0 — LINK METERS TO THE MAIN PLUGIN (Sean's ruling, 16 Oct: **the FIRST item of the next round**)
 
 The agent says "this track's meters can't be read from this window" on every Link, which blocks

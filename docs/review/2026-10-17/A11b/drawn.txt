@@ -1,0 +1,19 @@
+scenario A11b
+captured 2026-10-17T01:21:24.456+01:00
+  [user] rig: does the box clear?
+  [assistant] mock reply, sent quickly.
+  [user] rig-midreply-marker
+  [assistant] mock reply held back so the window could be closed mid-reply, then finished.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [user] rig-badop-marker: do the impossible
+  [user] rig-linkadd-marker: add a compressor to the kick
+  [user] rig-builtinset-marker: add the compressor to the kick
+  [user] rig-autoadd-marker: add it
+  [assistant] Added a compressor with a threshold of -18 dB.
+  [assistant] Added a compressor with a threshold of -18 dB.
+  [user] rig-autoadd-marker: add it there
+  [assistant] Added a compressor with a threshold of -18 dB.
+  run row: status=Done changes=0 steps=1 zones=[3,11:1 step]
+  opening: Added a compressor with a threshold of -18 dB.
+  closing: 
+    step "add a compressor with a threshold" [failed] right="not applied" detail="the rack never acknowledged it within 8 s - it may be gone, or its track may be disabled" chips=[]

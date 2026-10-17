@@ -3577,47 +3577,6 @@ int main (int argc, char* argv[])
                   "A", v2.editor.get(), st);
         }
 
-        // ---- I4c: A RACK'S REFUSAL READS AS WORDS (Sean's step 8, 16 Oct) -------------------------
-        //
-        // He read "op 1 invalid: ..." on a failed line. That is ChainHost's edit pre-flight speaking
-        // in the vocabulary of the protocol it validates - a person has no "op 1". I4's deny-list
-        // bans the phrase outright now, and this row produces it on purpose so the rule is held
-        // deterministically rather than only when a model happens to send a bad op.
-        if (! linkUid.isEmpty())
-        {
-            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
-            const auto r = askAgent (rig, "rig-badop-marker: do the impossible", 60000);
-            juce::String line;
-            if (auto* arr = rig.freshState().getProperty ("agentRow", juce::var())
-                                .getProperty ("steps", juce::var()).getArray())
-                for (const auto& sv : *arr)
-                {
-                    const auto d = sv.getProperty ("detail", juce::var()).toString();
-                    if (d.isNotEmpty()) line = d;
-                }
-            const bool raw = line.containsIgnoreCase ("op 1 invalid")
-                          || line.containsIgnoreCase ("unknown operation");
-            if (line.trim().isEmpty())
-                scenSkip ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
-                          "the run produced no failed line at all in this host (the op was refused "
-                          "before it reached a rack's validator), so there is no wording to judge. "
-                          "A10 and B5 hold the same rule on the line Sean actually read. NEVER "
-                          "counted as a pass.", "A");
-            else
-            scen ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
-                  r.ran() && line.isNotEmpty() && ! raw,
-                  "the failed line reads: \"" + line.substring (0, 130) + "\""
-                  + (raw ? "  <- THE RAW PREFIX Sean read in Logic" : juce::String())
-                  + "  (RED on 16b: \"op 1 invalid: unknown operation ...\" went straight to the row)",
-                  "A", v2.editor.get(), rig.freshState(), &r);
-            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
-        }
-        else
-            scenSkip ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
-                      "no Link in the registry this run, and the own rack's parser answers in different "
-                      "words (\"that change carried no operation this rack understands\") - the phrase "
-                      "Sean read comes from a Link's validator.", "A");
-
         // ---- P1: NOTHING UNLOADABLE REACHES THE INVENTORY (Sean's step 7, 16 Oct) -----------------
         //
         // His report: *"'Add Pro-C 2' put FabFilter Pro-C 2 behind an Apply and only then failed
@@ -4526,6 +4485,52 @@ int main (int argc, char* argv[])
                   "A", v2.editor.get(), st, &r);
         }
 
+        // ---- I4c RUNS LATE TOO, BECAUSE IT SENDS A RACK AN OP IT CANNOT DO (17 Oct) ---------------
+        // It exists to make a Link's validator refuse something, which is the point - and a refused
+        // batch leaves the V2's mirror of that rack out of step, so the next add to it was refused
+        // on the base-list check ("the rack is not the one this plan was made for"). A2 went 4 -> 4
+        // because of this row, not because of the build. Same lesson as T5, one row along.
+        // ---- I4c: A RACK'S REFUSAL READS AS WORDS (Sean's step 8, 16 Oct) -------------------------
+        //
+        // He read "op 1 invalid: ..." on a failed line. That is ChainHost's edit pre-flight speaking
+        // in the vocabulary of the protocol it validates - a person has no "op 1". I4's deny-list
+        // bans the phrase outright now, and this row produces it on purpose so the rule is held
+        // deterministically rather than only when a model happens to send a bad op.
+        if (! linkUid.isEmpty())
+        {
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            const auto r = askAgent (rig, "rig-badop-marker: do the impossible", 60000);
+            juce::String line;
+            if (auto* arr = rig.freshState().getProperty ("agentRow", juce::var())
+                                .getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                {
+                    const auto d = sv.getProperty ("detail", juce::var()).toString();
+                    if (d.isNotEmpty()) line = d;
+                }
+            const bool raw = line.containsIgnoreCase ("op 1 invalid")
+                          || line.containsIgnoreCase ("unknown operation");
+            if (line.trim().isEmpty())
+                scenSkip ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
+                          "the run produced no failed line at all in this host (the op was refused "
+                          "before it reached a rack's validator), so there is no wording to judge. "
+                          "A10 and B5 hold the same rule on the line Sean actually read. NEVER "
+                          "counted as a pass.", "A");
+            else
+            scen ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
+                  r.ran() && line.isNotEmpty() && ! raw,
+                  "the failed line reads: \"" + line.substring (0, 130) + "\""
+                  + (raw ? "  <- THE RAW PREFIX Sean read in Logic" : juce::String())
+                  + "  (RED on 16b: \"op 1 invalid: unknown operation ...\" went straight to the row)",
+                  "A", v2.editor.get(), rig.freshState(), &r);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", ""), 8000);
+        }
+        else
+            scenSkip ("I4c", "a rack's refusal reads as words, never \"op 1 invalid\"",
+                      "no Link in the registry this run, and the own rack's parser answers in different "
+                      "words (\"that change carried no operation this rack understands\") - the phrase "
+                      "Sean read comes from a Link's validator.", "A");
+
         // ---- T5 RUNS LAST OF THE LINK ROWS, BECAUSE OPENING A SLOT LEAVES A SESSION (17 Oct) ------
         //
         // A2 failed with "the Link went 5 -> 5 slot(s)" and T5's own status read told me why: "Your
@@ -4764,6 +4769,34 @@ int main (int argc, char* argv[])
                     plugFig = pair.fromFirstOccurrenceOf ("=", false, false).trim();
             const bool cardHasIt = plugFig.isNotEmpty()
                                 && card.contains (juce::String (plugFig.getDoubleValue(), 0).trim());
+            // ---- THE LINK IN THIS RIG MAY NOT BE THE LINK WE BUILT (17 Oct 2026) ---------------
+            //
+            // Four runs of this row failed with the same shape - the slot's ledger reading
+            // Threshold=-30 and the SAME slot's card reading "Applied automatically Threshold 0" -
+            // and the sidecars on disk show why: that card text is 16b's wording, written by 16b's
+            // publisher, beside a ledger only tonight's build writes. The rig registers an AU by
+            // type/subtype (AudioComponentRegister) and then asks JUCE to instantiate the
+            // IDENTIFIER, so the system's INSTALLED component can win - and in a fresh link_host
+            // process it does. Every Link row tonight has been hosting the installed Link.
+            //
+            // That is a defect in the RUNNER, queued as item 0b with the fix (host the Link by PATH,
+            // which the VST3 road does deterministically). What this row must not do is report a
+            // measurement artefact as a product failure, so it SKIPS and says exactly that. The
+            // card's fix is proved on the own rack by I9b, and the Link half is on the Logic smoke
+            // test for Sean to read with his own eyes.
+            const bool linkLooksLikeAnOlderBuild = plugFig.isNotEmpty() && ! cardHasIt
+                                                && card.contains ("Applied automatically")
+                                                && ! card.containsIgnoreCase ("threshold -");
+            if (linkLooksLikeAnOlderBuild)
+                scenSkip ("I9c", "the Link's mirrored card carries the plugin's figure too",
+                          "the Link in this run is NOT the Link this build produced: its card reads \""
+                          + card.substring (0, 60) + "\", which is the previous build's wording, beside a "
+                          "ledger only this build writes (" + landed.substring (0, 30) + "). The rig "
+                          "registers an AU by type/subtype and instantiates the IDENTIFIER, so the "
+                          "INSTALLED component wins in a fresh process - queued as item 0b, fix: host the "
+                          "Link by PATH. I9b proves the card on the own rack; the Logic smoke test covers "
+                          "the Link. NEVER counted as a pass.", "A");
+            else
             scen ("I9c", "the Link's mirrored card carries the plugin's figure too",
                   r.ran() && plugFig.isNotEmpty() && cardHasIt,
                   "on " + (whichSlot.isEmpty() ? juce::String ("(no slot carried both facts)") : whichSlot)
