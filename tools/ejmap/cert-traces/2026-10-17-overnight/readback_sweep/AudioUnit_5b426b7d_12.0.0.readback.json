@@ -1,0 +1,806 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "F6-RTA (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "19044ddadff1867cb848f721680ba16bb8749d453a62291e580577e1fb0c869b",
+  "controls": [
+    {
+      "name": "HPF Mode",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "HPF Q",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "12",
+        "0.500000": "18",
+        "0.750000": "18"
+      }
+    },
+    {
+      "name": "HPF Freq",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "HPF Solo",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LPF On/Off",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LPF Mode",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "LPF Q",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "12",
+        "0.500000": "18",
+        "0.750000": "18"
+      }
+    },
+    {
+      "name": "LPF Freq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "LPF Solo",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 1 On/Off",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 1 Mode",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Band 1 Type",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Low Shelf",
+        "0.500000": "Bell"
+      }
+    },
+    {
+      "name": "Band 1 Freq",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "Band 1 Q",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3",
+        "0.500000": "4.6",
+        "0.750000": "16.6"
+      }
+    },
+    {
+      "name": "Band 1 Gain",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 1 Range",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 1 Threshold",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Band 1 Attack",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.8",
+        "0.500000": "15.8",
+        "0.750000": "88.9"
+      }
+    },
+    {
+      "name": "Band 1 Release",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "Band 1 SC Mode",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Split",
+        "1.000000": "Wide"
+      }
+    },
+    {
+      "name": "Band 1 Solo",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 2 On/Off",
+      "index": 23,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 2 Mode",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Band 2 Type",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Low Shelf",
+        "0.500000": "Bell"
+      }
+    },
+    {
+      "name": "Band 2 Freq",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "Band 2 Q",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3",
+        "0.500000": "4.6",
+        "0.750000": "16.6"
+      }
+    },
+    {
+      "name": "Band 2 Gain",
+      "index": 28,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 2 Range",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 2 Threshold",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Band 2 Attack",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.8",
+        "0.500000": "15.8",
+        "0.750000": "88.9"
+      }
+    },
+    {
+      "name": "Band 2 Release",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "Band 2 SC Mode",
+      "index": 34,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Split",
+        "1.000000": "Wide"
+      }
+    },
+    {
+      "name": "Band 2 Solo",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 3 On/Off",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 3 Mode",
+      "index": 37,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "1.000000": "Sides"
+      }
+    },
+    {
+      "name": "Band 3 Type",
+      "index": 38,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Low Shelf",
+        "1.000000": "High Shelf"
+      }
+    },
+    {
+      "name": "Band 3 Freq",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "Band 3 Q",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3",
+        "0.500000": "4.6",
+        "0.750000": "16.6"
+      }
+    },
+    {
+      "name": "Band 3 Gain",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 3 Range",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 3 Threshold",
+      "index": 43,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Band 3 Attack",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.8",
+        "0.500000": "15.8",
+        "0.750000": "88.9"
+      }
+    },
+    {
+      "name": "Band 3 Release",
+      "index": 45,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "Band 3 SC Source",
+      "index": 46,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Internal",
+        "1.000000": "External"
+      }
+    },
+    {
+      "name": "Band 3 SC Mode",
+      "index": 47,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Split",
+        "1.000000": "Wide"
+      }
+    },
+    {
+      "name": "Band 4 On/Off",
+      "index": 49,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 4 Mode",
+      "index": 50,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Band 4 Type",
+      "index": 51,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Low Shelf",
+        "0.500000": "Bell"
+      }
+    },
+    {
+      "name": "Band 4 Freq",
+      "index": 52,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "Band 4 Q",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3",
+        "0.500000": "4.6",
+        "0.750000": "16.6"
+      }
+    },
+    {
+      "name": "Band 4 Gain",
+      "index": 54,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 4 Range",
+      "index": 55,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 4 Threshold",
+      "index": 56,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "-45.7",
+        "0.475000": "-31.5",
+        "0.712500": "-17.2"
+      }
+    },
+    {
+      "name": "Band 4 Attack",
+      "index": 57,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.8",
+        "0.500000": "15.8",
+        "0.750000": "88.9"
+      }
+    },
+    {
+      "name": "Band 4 Release",
+      "index": 58,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "Band 4 SC Mode",
+      "index": 60,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Split",
+        "1.000000": "Wide"
+      }
+    },
+    {
+      "name": "Band 4 Solo",
+      "index": 61,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 5 On/Off",
+      "index": 62,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 5 Mode",
+      "index": 63,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Band 5 Type",
+      "index": 64,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Low Shelf",
+        "0.500000": "Bell"
+      }
+    },
+    {
+      "name": "Band 5 Freq",
+      "index": 65,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3512"
+      }
+    },
+    {
+      "name": "Band 5 Q",
+      "index": 66,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3",
+        "0.500000": "4.6",
+        "0.750000": "16.6"
+      }
+    },
+    {
+      "name": "Band 5 Gain",
+      "index": 67,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 5 Range",
+      "index": 68,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 5 Threshold",
+      "index": 69,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Band 5 Attack",
+      "index": 70,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.8",
+        "0.500000": "15.8",
+        "0.750000": "88.9"
+      }
+    },
+    {
+      "name": "Band 5 Release",
+      "index": 71,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "Band 5 SC Source",
+      "index": 72,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Internal",
+        "1.000000": "External"
+      }
+    },
+    {
+      "name": "Band 5 Solo",
+      "index": 74,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 6 On/Off",
+      "index": 75,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band 6 Mode",
+      "index": 76,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Band 6 Type",
+      "index": 77,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Low Shelf",
+        "1.000000": "High Shelf"
+      }
+    },
+    {
+      "name": "Band 6 Freq",
+      "index": 78,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "125",
+        "0.525000": "692",
+        "0.762500": "3844"
+      }
+    },
+    {
+      "name": "Band 6 Q",
+      "index": 79,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.3",
+        "0.500000": "4.6",
+        "0.750000": "16.6"
+      }
+    },
+    {
+      "name": "Band 6 Gain",
+      "index": 80,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 6 Range",
+      "index": 81,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band 6 Threshold",
+      "index": 82,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-45.0",
+        "0.500000": "-30.0",
+        "0.750000": "-15.0"
+      }
+    },
+    {
+      "name": "Band 6 Attack",
+      "index": 83,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.8",
+        "0.500000": "15.8",
+        "0.750000": "88.9"
+      }
+    },
+    {
+      "name": "Band 6 Release",
+      "index": 84,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "28",
+        "0.500000": "158",
+        "0.750000": "889"
+      }
+    },
+    {
+      "name": "Band 6 SC Source",
+      "index": 85,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Internal",
+        "1.000000": "External"
+      }
+    },
+    {
+      "name": "Global Release",
+      "index": 88,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "ARC",
+        "1.000000": "Manual"
+      }
+    },
+    {
+      "name": "OUT",
+      "index": 89,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "MIX",
+      "index": 90,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000233"
+}

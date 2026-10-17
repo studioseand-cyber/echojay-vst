@@ -1,0 +1,347 @@
+{
+  "schema": "ej_multiband_profile/0",
+  "spec": "MULTIBAND_PROFILE_PROPOSAL v0.2 PROPOSAL",
+  "status": "DRAFT against MULTIBAND_PROFILE_PROPOSAL v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "OTT",
+    "manufacturer": "Xfer Records",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|6155777e|1.3.7",
+    "version": "1.3.7",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-17",
+    "sample_rate": 48000,
+    "signal": "one tone per band at its centre; vocal-shaped multitone for the whole unit"
+  },
+  "topology": "multiband_global",
+  "bands": [
+    {
+      "band": 1,
+      "lo_hz": 20.0,
+      "hi_hz": 84.0,
+      "centre_hz": 41.0,
+      "threshold_control": "Thresh L",
+      "pairing": "cuts 20-84 Hz (deepest -39.8 dB, centre 43.0789) -> no band holds that centre",
+      "max_gr_db": 28.82,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "gr_db_by_level": {
+            "-12": 27.57,
+            "-18": 28.82,
+            "-24": 27.93,
+            "-30": 27.510000000000002,
+            "-6": 22.469999999999999
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "gr_db_by_level": {
+            "-12": 27.460000000000001,
+            "-18": 26.600000000000001,
+            "-24": 24.5,
+            "-30": 23.719999999999999,
+            "-6": 22.460000000000001
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "gr_db_by_level": {
+            "-12": 23.620000000000001,
+            "-18": 21.129999999999999,
+            "-24": 18.550000000000001,
+            "-30": 17.379999999999999,
+            "-6": 21.120000000000001
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "gr_db_by_level": {
+            "-12": 17.25,
+            "-18": 13.52,
+            "-24": 10.609999999999999,
+            "-30": 9.23,
+            "-6": 16.07
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "gr_db_by_level": {
+            "-12": 9.06,
+            "-18": 4.68,
+            "-24": 2.72,
+            "-30": 6.79,
+            "-6": 8.69
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "band": 2,
+      "lo_hz": 134.0,
+      "hi_hz": 2000.0,
+      "centre_hz": 518.0,
+      "threshold_control": "Thresh M",
+      "pairing": "cuts 134-2000 Hz (deepest -36.0 dB, centre 516.936) -> no band holds that centre",
+      "max_gr_db": 26.890000000000001,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "gr_db_by_level": {
+            "-12": 26.890000000000001,
+            "-18": 23.280000000000001,
+            "-24": 20.649999999999999,
+            "-30": 20.390000000000001,
+            "-6": 26.41
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "gr_db_by_level": {
+            "-12": 25.850000000000001,
+            "-18": 21.09,
+            "-24": 18.170000000000002,
+            "-30": 17.609999999999999,
+            "-6": 26.41
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "gr_db_by_level": {
+            "-12": 21.780000000000001,
+            "-18": 16.640000000000001,
+            "-24": 13.33,
+            "-30": 12.369999999999999,
+            "-6": 23.239999999999998
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "gr_db_by_level": {
+            "-12": 15.220000000000001,
+            "-18": 9.76,
+            "-24": 6.15,
+            "-30": 5.73,
+            "-6": 17.030000000000001
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "gr_db_by_level": {
+            "-12": 6.97,
+            "-18": 1.34,
+            "-24": 1.76,
+            "-30": 5.73,
+            "-6": 8.970000000000001
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "band": 3,
+      "lo_hz": 2668.0,
+      "hi_hz": 20000.0,
+      "centre_hz": 7305.0,
+      "threshold_control": "Thresh H",
+      "pairing": "cuts 2668-20000 Hz (deepest -40.9 dB, centre 7303.54) -> no band holds that centre",
+      "max_gr_db": 31.309999999999999,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "gr_db_by_level": {
+            "-12": 30.859999999999999,
+            "-18": 31.309999999999999,
+            "-24": 30.59,
+            "-30": 30.16,
+            "-6": 26.969999999999999
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "40",
+          "gr_db_by_level": {
+            "-12": 30.859999999999999,
+            "-18": 29.199999999999999,
+            "-24": 26.73,
+            "-30": 25.920000000000002,
+            "-6": 26.969999999999999
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "80",
+          "gr_db_by_level": {
+            "-12": 25.739999999999998,
+            "-18": 23.219999999999999,
+            "-24": 20.390000000000001,
+            "-30": 19.25,
+            "-6": 25.32
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "120",
+          "gr_db_by_level": {
+            "-12": 18.050000000000001,
+            "-18": 15.31,
+            "-24": 12.279999999999999,
+            "-30": 10.949999999999999,
+            "-6": 17.890000000000001
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "160",
+          "gr_db_by_level": {
+            "-12": 9.25,
+            "-18": 6.41,
+            "-24": 3.29,
+            "-30": 6.97,
+            "-6": 9.210000000000001
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "200",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    }
+  ],
+  "amount": {
+    "topology": "multiband_global",
+    "control": "Depth",
+    "points": [
+      {
+        "norm": 0.0,
+        "displays": "0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "norm": 0.2,
+        "displays": "20",
+        "whole_unit_gr_db_by_level": {
+          "-30": -3.02,
+          "-24": -2.84,
+          "-18": -2.22,
+          "-12": -1.05,
+          "-6": 0.14
+        }
+      },
+      {
+        "norm": 0.4,
+        "displays": "40",
+        "whole_unit_gr_db_by_level": {
+          "-30": -5.62,
+          "-24": -5.25,
+          "-18": -3.8,
+          "-12": -1.45,
+          "-6": 0.92
+        }
+      },
+      {
+        "norm": 0.6,
+        "displays": "60",
+        "whole_unit_gr_db_by_level": {
+          "-30": -7.9,
+          "-24": -7.31,
+          "-18": -4.88,
+          "-12": -1.35,
+          "-6": 2.2
+        }
+      },
+      {
+        "norm": 0.8,
+        "displays": "80",
+        "whole_unit_gr_db_by_level": {
+          "-30": -9.94,
+          "-24": -9.08,
+          "-18": -5.55,
+          "-12": -0.85,
+          "-6": 3.81
+        }
+      },
+      {
+        "norm": 1.0,
+        "displays": "100",
+        "whole_unit_gr_db_by_level": {
+          "-30": -11.869999999999999,
+          "-24": -10.6,
+          "-18": -5.91,
+          "-12": -0.06,
+          "-6": 5.57
+        }
+      }
+    ],
+    "reference": "the control at norm 0 (its zero), not the instantiate state",
+    "sign": "positive = gain reduction, negative = gain (upward compression) at that level",
+    "zero_gain_db_by_level": {
+      "-30": -0.01,
+      "-24": -0.01,
+      "-18": -0.01,
+      "-12": -0.01,
+      "-6": -0.01
+    }
+  },
+  "whole_unit_signal": "vocal-shaped multitone (121 tones; pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at -30 / -24 / -18 / -12 / -6 dBFS; gain = total output power over total input power",
+  "instantiate_gain_db_by_level": {
+    "-30": 11.859999999999999,
+    "-24": 10.59,
+    "-18": 5.91,
+    "-12": 0.06,
+    "-6": -5.57
+  },
+  "enable_writes": [],
+  "neutral": [],
+  "notes": [
+    "field names are the proposal's (topology, offset_db, in_at_gr, whole_unit_gr_db_by_level): they await Sean's decision (MULTIBAND_PROFILE_PROPOSAL.md)"
+  ]
+}

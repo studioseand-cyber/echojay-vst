@@ -1,0 +1,170 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Butch Vig Vocals (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "4a87cfd8225cdec39b51af8b6982ada2fc95b4a316a939a1256b5790f86a4b3a",
+  "controls": [
+    {
+      "name": "Input",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.0",
+        "0.500000": "0.0",
+        "0.750000": "12.0"
+      }
+    },
+    {
+      "name": "Lows",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Presence",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Air",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Lo Cut",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "335.8",
+        "0.550000": "557.2",
+        "0.775000": "778.6"
+      }
+    },
+    {
+      "name": "Mid Dip",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "527.5",
+        "0.550000": "685.0",
+        "0.775000": "842.5"
+      }
+    },
+    {
+      "name": "Hi Cut",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.225000": "5676.6",
+        "0.450000": "10153.2",
+        "0.675000": "14629.8"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "23.8",
+        "0.475000": "47.5",
+        "0.712500": "71.3"
+      }
+    },
+    {
+      "name": "DeEsser",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "32.5",
+        "0.550000": "55.0",
+        "0.775000": "77.5"
+      }
+    },
+    {
+      "name": "Focus",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "1",
+        "0.750000": "2",
+        "0.875000": "2"
+      }
+    },
+    {
+      "name": "SolidState",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "32.5",
+        "0.550000": "55.0",
+        "0.775000": "77.5"
+      }
+    },
+    {
+      "name": "Tube",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "32.5",
+        "0.550000": "55.0",
+        "0.775000": "77.5"
+      }
+    },
+    {
+      "name": "Lo Cut Saturation",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "335.8",
+        "0.550000": "557.2",
+        "0.775000": "778.6"
+      }
+    },
+    {
+      "name": "Hi Cut Saturation",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.225000": "5676.6",
+        "0.450000": "10153.2",
+        "0.675000": "14629.8"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.0",
+        "0.500000": "0.0",
+        "0.750000": "12.0"
+      }
+    },
+    {
+      "name": "MeterSelector",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "In",
+        "0.333333": "GR"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T234855"
+}

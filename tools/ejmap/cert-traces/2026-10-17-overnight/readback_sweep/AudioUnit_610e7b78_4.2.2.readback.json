@@ -1,0 +1,131 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "TB_Sibalance_v4",
+  "version": "4.2.2",
+  "map_version": "4.2.2",
+  "map_fp": "f02a14ba19fc68728a0523d99bae2f602e1c70179bbcbb5135d149b8b87da106",
+  "controls": [],
+  "not_read": [
+    {
+      "name": "Threshold",
+      "index": 1,
+      "why": "the parameter at this index is 'Range' here"
+    },
+    {
+      "name": "Range",
+      "index": 2,
+      "why": "the parameter at this index is 'Threshold' here"
+    },
+    {
+      "name": "Start freq",
+      "index": 3,
+      "why": "the parameter at this index is 'M/S mode' here"
+    },
+    {
+      "name": "Stop freq",
+      "index": 4,
+      "why": "the parameter at this index is 'C 1' here"
+    },
+    {
+      "name": "Attack",
+      "index": 5,
+      "why": "the parameter at this index is 'C 2' here"
+    },
+    {
+      "name": "Release",
+      "index": 6,
+      "why": "the parameter at this index is 'C 3' here"
+    },
+    {
+      "name": "Audition",
+      "index": 8,
+      "why": "the parameter at this index is 'C 5' here"
+    },
+    {
+      "name": "C 1",
+      "index": 9,
+      "why": "the parameter at this index is 'C 6' here"
+    },
+    {
+      "name": "C 2",
+      "index": 10,
+      "why": "the parameter at this index is 'C 7' here"
+    },
+    {
+      "name": "C 3",
+      "index": 11,
+      "why": "the parameter at this index is 'C 8' here"
+    },
+    {
+      "name": "C 4",
+      "index": 12,
+      "why": "the parameter at this index is 'C 9' here"
+    },
+    {
+      "name": "C 5",
+      "index": 13,
+      "why": "the parameter at this index is 'Audition' here"
+    },
+    {
+      "name": "C 6",
+      "index": 14,
+      "why": "the parameter at this index is 'C 10' here"
+    },
+    {
+      "name": "C 7",
+      "index": 15,
+      "why": "the parameter at this index is 'C 11' here"
+    },
+    {
+      "name": "C 8",
+      "index": 16,
+      "why": "the parameter at this index is 'C 12' here"
+    },
+    {
+      "name": "C 9",
+      "index": 17,
+      "why": "the parameter at this index is 'C 13' here"
+    },
+    {
+      "name": "C 10",
+      "index": 18,
+      "why": "the parameter at this index is 'C 14' here"
+    },
+    {
+      "name": "C 11",
+      "index": 19,
+      "why": "the parameter at this index is 'C 15' here"
+    },
+    {
+      "name": "C 12",
+      "index": 20,
+      "why": "the parameter at this index is 'C 16' here"
+    },
+    {
+      "name": "C 13",
+      "index": 21,
+      "why": "the parameter at this index is 'Attack' here"
+    },
+    {
+      "name": "C 14",
+      "index": 22,
+      "why": "the parameter at this index is 'Stop freq' here"
+    },
+    {
+      "name": "C 15",
+      "index": 23,
+      "why": "the parameter at this index is 'Start freq' here"
+    },
+    {
+      "name": "C 16",
+      "index": 24,
+      "why": "the parameter at this index is 'Release' here"
+    },
+    {
+      "name": "Bypass",
+      "index": 25,
+      "why": "the probe returned nothing for this index"
+    }
+  ],
+  "measuredAt": "20261017T000730"
+}

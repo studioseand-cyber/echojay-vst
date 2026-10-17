@@ -1,0 +1,160 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "EKramer GT (m->s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "5bc8c87bdb5d8a296c108fad38465f2409cb36680d2e16aedbf1a420926dd5ac",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Treble 1",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "4"
+      }
+    },
+    {
+      "name": "Treble 2",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Mid 1",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "4"
+      }
+    },
+    {
+      "name": "Mid 2",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Depth",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Flange Mix",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Guitar Type",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.125000": "Rthm 1",
+        "0.250000": "Rthm 1",
+        "0.375000": "Rthm 2"
+      }
+    },
+    {
+      "name": "Verb Mix",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "27.5",
+        "0.500000": "50.0",
+        "0.725000": "72.5"
+      }
+    },
+    {
+      "name": "Dly",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "162",
+        "0.500000": "275",
+        "0.750000": "388"
+      }
+    },
+    {
+      "name": "Dly Mix",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235222"
+}

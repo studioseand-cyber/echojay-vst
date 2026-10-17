@@ -1,0 +1,308 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "SSLGChannel (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "7833b384660172b522ac507a68dc115e64655089159ae5d896a825a0a0c42476",
+  "controls": [
+    {
+      "name": "Analog",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "CompThresh",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "-5.0",
+        "0.750000": "-12.5"
+      }
+    },
+    {
+      "name": "CompFast",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "CompRelease",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.17",
+        "0.500000": "0.40",
+        "0.750000": "1.67"
+      }
+    },
+    {
+      "name": "ExpAttack",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "ExpRelease",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.17",
+        "0.500000": "0.40",
+        "0.750000": "1.67"
+      }
+    },
+    {
+      "name": "ExpThresh",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-22.8",
+        "0.500000": "-12.0",
+        "0.750000": "2.2"
+      }
+    },
+    {
+      "name": "ExpRange",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "6.7",
+        "0.500000": "20.0",
+        "0.750000": "33.3"
+      }
+    },
+    {
+      "name": "ExpGate",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Exp",
+        "1.000000": "Gate"
+      }
+    },
+    {
+      "name": "EQBypass",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQDynamic",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DynamicBypass",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "DynaminCHOut",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "FilterSplit",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "HP Frq",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "62",
+        "0.550000": "147",
+        "0.775000": "283"
+      }
+    },
+    {
+      "name": "LP Frq",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "9.7",
+        "0.525000": "4.8",
+        "0.762500": "3.6"
+      }
+    },
+    {
+      "name": "LF Gain",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.5",
+        "0.500000": "0.0",
+        "0.750000": "8.5"
+      }
+    },
+    {
+      "name": "LF Frq",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "67",
+        "0.500000": "200",
+        "0.750000": "343"
+      }
+    },
+    {
+      "name": "LMF div3",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LMF Gain",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.0",
+        "0.500000": "0.0",
+        "0.750000": "10.0"
+      }
+    },
+    {
+      "name": "LMF Frq",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.47",
+        "0.500000": "1.00",
+        "0.750000": "1.83"
+      }
+    },
+    {
+      "name": "LMF Q",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.25",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "HMF Gain",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-10.0",
+        "0.500000": "0.0",
+        "0.750000": "10.0"
+      }
+    },
+    {
+      "name": "HMF Frq",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.03",
+        "0.500000": "3.00",
+        "0.750000": "5.50"
+      }
+    },
+    {
+      "name": "HMF Q",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.25",
+        "0.500000": "1.50",
+        "0.750000": "0.88"
+      }
+    },
+    {
+      "name": "HMF X3",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "HF Gain",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.5",
+        "0.500000": "0.0",
+        "0.750000": "8.5"
+      }
+    },
+    {
+      "name": "Gain",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "VUInOut",
+      "index": 30,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Input",
+        "1.000000": "Output"
+      }
+    },
+    {
+      "name": "PhaseReverse",
+      "index": 31,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "+",
+        "1.000000": "-"
+      }
+    },
+    {
+      "name": "InputLevel",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000445"
+}

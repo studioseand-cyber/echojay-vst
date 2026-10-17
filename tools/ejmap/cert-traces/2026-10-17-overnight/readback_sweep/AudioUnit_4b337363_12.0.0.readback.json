@@ -1,0 +1,137 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "API-550B (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "4f164c683ecc41c7ce2bdf0543118a90e97cc4fdc1b4b3754ef7c8a8e522081e",
+  "controls": [
+    {
+      "name": "High Gain",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "High Freq",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "7.0kHz",
+        "0.500000": "10.0kHz",
+        "0.750000": "12.5kHz"
+      }
+    },
+    {
+      "name": "HF-TYPE",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "High Mid Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "High Mid Freq",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.0kHz",
+        "0.500000": "5.0kHz",
+        "0.750000": "8.0kHz"
+      }
+    },
+    {
+      "name": "Low Mid Gain",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "Low Mid Freq",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "180.0Hz",
+        "0.500000": "240.0Hz",
+        "0.750000": "500.0Hz"
+      }
+    },
+    {
+      "name": "LF-TYPE",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Low Gain",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "Low Freq",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "50.0Hz",
+        "0.500000": "100.0Hz",
+        "0.750000": "200.0Hz"
+      }
+    },
+    {
+      "name": "In",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Analog",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T234831"
+}

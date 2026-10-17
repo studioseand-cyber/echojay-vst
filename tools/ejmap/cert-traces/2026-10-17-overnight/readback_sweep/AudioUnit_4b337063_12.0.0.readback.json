@@ -1,0 +1,135 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "API-550A (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "bdc578da3a0e56c64a3932a95a0049febc4e969c7aa887a80eea18fe83aef7cb",
+  "controls": [
+    {
+      "name": "High Gain",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "High Freq",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "7.0kHz",
+        "0.500000": "10.0kHz",
+        "0.750000": "12.5kHz"
+      }
+    },
+    {
+      "name": "Mid Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "Mid Freq",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.8kHz",
+        "0.500000": "1.5kHz",
+        "0.750000": "3.0kHz"
+      }
+    },
+    {
+      "name": "Low Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "Low Freq",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "100.0Hz",
+        "0.500000": "200.0Hz",
+        "0.750000": "300.0Hz"
+      }
+    },
+    {
+      "name": "Filter",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LF-Type",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "In",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HF-Type",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "Polarity",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Analog",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T234816"
+}

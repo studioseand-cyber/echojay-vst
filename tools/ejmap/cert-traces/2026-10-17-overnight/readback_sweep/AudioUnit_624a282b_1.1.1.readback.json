@@ -1,0 +1,783 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "AMEK EQ 250",
+  "version": "1.1.1",
+  "map_version": "1.1.1",
+  "map_fp": "d2668ba450d34caeb71cb3447b7a20ba65ba7fc08d12475874300619b8def958",
+  "controls": [
+    {
+      "name": "Power",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Input Gain",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+6.0  dB"
+      }
+    },
+    {
+      "name": "Output Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+6.0  dB"
+      }
+    },
+    {
+      "name": "V-Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-100  dB",
+        "0.550000": "-90  dB",
+        "0.775000": "-80  dB"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-98  dB",
+        "0.500000": "-75  dB",
+        "0.750000": "-53  dB"
+      }
+    },
+    {
+      "name": "THD In",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Mid Side",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mono Maker",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "63 Hz",
+        "0.500000": "200 Hz",
+        "0.750000": "632 Hz"
+      }
+    },
+    {
+      "name": "Mono Maker In",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Stereo Width",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "75  %",
+        "0.500000": "100  %",
+        "0.750000": "175  %"
+      }
+    },
+    {
+      "name": "Stereo Width In",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Bank",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "0.333333": "B"
+      }
+    },
+    {
+      "name": "Param Link",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Stereo Mode",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Analog",
+        "1.000000": "Digital"
+      }
+    },
+    {
+      "name": "Monitoring",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Auto Listen",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Auto Listen Band",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "5"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Gain Scale",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "50",
+        "0.500000": "100",
+        "0.750000": "150"
+      }
+    },
+    {
+      "name": "Gain Scale Invert",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LP Freq 1",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "124 Hz",
+        "0.500000": "775 Hz",
+        "0.750000": "4.8 kHz"
+      }
+    },
+    {
+      "name": "LP Bypass 1",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HP Freq 1",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95 Hz",
+        "0.500000": "447 Hz",
+        "0.750000": "2.1 kHz"
+      }
+    },
+    {
+      "name": "HP Bypass 1",
+      "index": 23,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LF Gain 1",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "LMF Gain 1",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "MF Gain 1",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "HMF Gain 1",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "HF Gain 1",
+      "index": 28,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "LF Freq 1",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30.0 Hz",
+        "0.500000": "120.0 Hz",
+        "0.750000": "480.0 Hz"
+      }
+    },
+    {
+      "name": "LMF Freq 1",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30.0 Hz",
+        "0.500000": "120.0 Hz",
+        "0.750000": "480.0 Hz"
+      }
+    },
+    {
+      "name": "MF Freq 1",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "300.0 Hz",
+        "0.500000": "1.2 kHz",
+        "0.750000": "4.8 kHz"
+      }
+    },
+    {
+      "name": "HMF Freq 1",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "800.0 Hz",
+        "0.500000": "3.2 kHz",
+        "0.750000": "12.8 kHz"
+      }
+    },
+    {
+      "name": "HF Freq 1",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "800.0 Hz",
+        "0.500000": "3.2 kHz",
+        "0.750000": "12.8 kHz"
+      }
+    },
+    {
+      "name": "LF Q 1",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "0.5",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "LMF Q 1",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.5",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "MF Q 1",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.5",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "HMF Q 1",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.5",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "HF Q 1",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "0.5",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "LF Bypass 1",
+      "index": 39,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LMF Bypass 1",
+      "index": 40,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "MF Bypass 1",
+      "index": 41,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HMF Bypass 1",
+      "index": 42,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HF Bypass 1",
+      "index": 43,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LF Range 1",
+      "index": 44,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "LMF Range 1",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "MF Range 1",
+      "index": 46,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "HMF Range 1",
+      "index": 47,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "HF Range 1",
+      "index": 48,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "Bypass 1",
+      "index": 49,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LP Freq 2",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "124 Hz",
+        "0.500000": "775 Hz",
+        "0.750000": "4.8 kHz"
+      }
+    },
+    {
+      "name": "LP Bypass 2",
+      "index": 51,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HP Freq 2",
+      "index": 52,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95 Hz",
+        "0.500000": "447 Hz",
+        "0.750000": "2.1 kHz"
+      }
+    },
+    {
+      "name": "HP Bypass 2",
+      "index": 53,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LF Gain 2",
+      "index": 54,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "LMF Gain 2",
+      "index": 55,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "MF Gain 2",
+      "index": 56,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "HMF Gain 2",
+      "index": 57,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "HF Gain 2",
+      "index": 58,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0  dB",
+        "0.500000": "0.0  dB",
+        "0.750000": "+5.0  dB"
+      }
+    },
+    {
+      "name": "LF Freq 2",
+      "index": 59,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30.0 Hz",
+        "0.500000": "120.0 Hz",
+        "0.750000": "480.0 Hz"
+      }
+    },
+    {
+      "name": "LMF Freq 2",
+      "index": 60,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "30.0 Hz",
+        "0.500000": "120.0 Hz",
+        "0.750000": "480.0 Hz"
+      }
+    },
+    {
+      "name": "MF Freq 2",
+      "index": 61,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "300.0 Hz",
+        "0.500000": "1.2 kHz",
+        "0.750000": "4.8 kHz"
+      }
+    },
+    {
+      "name": "HMF Freq 2",
+      "index": 62,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "800.0 Hz",
+        "0.500000": "3.2 kHz",
+        "0.750000": "12.8 kHz"
+      }
+    },
+    {
+      "name": "HF Freq 2",
+      "index": 63,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "800.0 Hz",
+        "0.500000": "3.2 kHz",
+        "0.750000": "12.8 kHz"
+      }
+    },
+    {
+      "name": "LF Q 2",
+      "index": 64,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "0.5",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "LMF Q 2",
+      "index": 65,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.5",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "MF Q 2",
+      "index": 66,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.5",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "HMF Q 2",
+      "index": 67,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.5",
+        "0.500000": "2.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "HF Q 2",
+      "index": 68,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "0.5",
+        "0.550000": "2.0",
+        "0.775000": "3.0"
+      }
+    },
+    {
+      "name": "LF Bypass 2",
+      "index": 69,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LMF Bypass 2",
+      "index": 70,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "MF Bypass 2",
+      "index": 71,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HMF Bypass 2",
+      "index": 72,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "HF Bypass 2",
+      "index": 73,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "LF Range 2",
+      "index": 74,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "LMF Range 2",
+      "index": 75,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "MF Range 2",
+      "index": 76,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "HMF Range 2",
+      "index": 77,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "HF Range 2",
+      "index": 78,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "Bypass 2",
+      "index": 79,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Balance Meter",
+      "index": 85,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "+0.50291"
+      },
+      "unlanded": 2
+    }
+  ],
+  "not_read": [
+    {
+      "name": "TMT Channel",
+      "index": 13,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Correlation Meter",
+      "index": 84,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T001129"
+}

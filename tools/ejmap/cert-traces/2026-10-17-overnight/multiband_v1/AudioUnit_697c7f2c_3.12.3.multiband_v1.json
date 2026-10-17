@@ -1,0 +1,12 @@
+{
+  "schema": "ej_multiband_v1/1",
+  "product": "DynOne3",
+  "version": "3.12.3",
+  "plugin_id": "AudioUnit|697c7f2c|3.12.3",
+  "from_record": "AudioUnit_697c7f2c_3.12.3.multiband.json",
+  "bands": [],
+  "crossovers": [],
+  "processes": 0,
+  "measuredAt": "20261017T005946",
+  "method": "per band: --sweep at {open end, the ladder's predicted setting for 2 / 3 / 4 dB at -12 dBFS} on the band's centre tone; crossovers: at the opening position, the frequency where the two neighbouring bands' responses are equal (each soloed, or each compressed alone at its deep end with the cuts scaled by their own depth), 121-tone --response; make-up: --response at -30 dBFS, the level step at the band's centre vs the display step"
+}

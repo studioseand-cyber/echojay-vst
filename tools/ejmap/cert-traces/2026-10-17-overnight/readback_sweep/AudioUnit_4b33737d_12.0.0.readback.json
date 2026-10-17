@@ -1,0 +1,119 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "API-550B (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "e2380bc47d03e0823d95cb6c6008fe735e0ed1fee7dc053b07d2c9f71116d2dd",
+  "controls": [
+    {
+      "name": "High Gain",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "High Freq",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "7.0kHz",
+        "0.500000": "10.0kHz",
+        "0.750000": "12.5kHz"
+      }
+    },
+    {
+      "name": "High Mid Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "High Mid Freq",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.0kHz",
+        "0.500000": "5.0kHz",
+        "0.750000": "8.0kHz"
+      }
+    },
+    {
+      "name": "Low Mid Gain",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "Low Mid Freq",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "180.0Hz",
+        "0.500000": "240.0Hz",
+        "0.750000": "500.0Hz"
+      }
+    },
+    {
+      "name": "Low Gain",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6 dB",
+        "0.500000": "0 dB",
+        "0.750000": "+6 dB"
+      }
+    },
+    {
+      "name": "Low Freq",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.375000": "50.0Hz",
+        "0.583333": "100.0Hz",
+        "0.791667": "300.0Hz"
+      }
+    },
+    {
+      "name": "In",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Polarity",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T234838"
+}

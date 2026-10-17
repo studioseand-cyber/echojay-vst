@@ -1,0 +1,184 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "JJP-Strings-Keys (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "0275ce341c385444b399db5ac758dcc56ae050f27f26a44e8a4938c25caf6226",
+  "controls": [
+    {
+      "name": "Type",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Synth",
+        "0.333333": "Hi Strings"
+      }
+    },
+    {
+      "name": "Sensitivity 1",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Sensitivity 2",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-13.0",
+        "0.500000": "-9.0",
+        "0.750000": "-4.0"
+      }
+    },
+    {
+      "name": "Lows",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Highs",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Main",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Main Mute",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Space",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Space Mute",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Doubler",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Doubler Mute",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Presence",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Presence Mute",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Girth",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Girth Mute",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Master",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235641"
+}

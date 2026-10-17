@@ -1,0 +1,173 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "CLA Drums (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "150853b72d7c6962be7e21f495a7f2864a176e3297c84083c6734f4a338eff9e",
+  "controls": [
+    {
+      "name": "Drum Mode",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Kick",
+        "0.200000": "Snare"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Phase Reverse",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Balance",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-3.0",
+        "0.500000": "0.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Bass Color",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Sub"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Treble Color",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Bite"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Compress Color",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Push"
+      }
+    },
+    {
+      "name": "Reverb",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Reverb Color",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.666667": "Club"
+      }
+    },
+    {
+      "name": "Gate",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Gate Color",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.500000": "Soft"
+      }
+    },
+    {
+      "name": "Delay",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Delay Color",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "16"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T234925"
+}

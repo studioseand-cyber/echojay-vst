@@ -1,0 +1,282 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "JJP-Drums (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "198072bfa3e608692f3bce8295367450cfe322839cacc103e1248c75c4040c61",
+  "controls": [
+    {
+      "name": "Type",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Kick In",
+        "0.500000": "Snr Top"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Gate",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Lows 1",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30",
+        "0.500000": "50",
+        "0.700000": "70"
+      }
+    },
+    {
+      "name": "Lows 2",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Highs 1",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Highs 2",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30",
+        "0.500000": "50",
+        "0.700000": "70"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Main",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "-20.0",
+        "0.525000": "-13.9",
+        "0.762500": "-2.2"
+      }
+    },
+    {
+      "name": "Main Mute",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Attack",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Attack Mute",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Sustain",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Sustain Mute",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Length",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Length Mute",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Attitude",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Attitude Mute",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Punch",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Tone",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Sub",
+      "index": 23,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Wood",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Wood Mute",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Presence",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Presence Mute",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Verb",
+      "index": 29,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Verb Mute",
+      "index": 30,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Master",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235516"
+}

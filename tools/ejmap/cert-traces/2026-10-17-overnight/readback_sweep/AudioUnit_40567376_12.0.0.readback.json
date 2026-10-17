@@ -1,0 +1,195 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "JJP-Bass (m->s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "f04af7c184c058b0ae3fec33c3b1a486a3e6943c8e0807ae2fec5972f24b7a36",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Input",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "27.5",
+        "0.500000": "50.0",
+        "0.725000": "72.5"
+      }
+    },
+    {
+      "name": "Lows",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "-26.2",
+        "0.475000": "-2.5",
+        "0.712500": "21.3"
+      }
+    },
+    {
+      "name": "Highs",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Main",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Edge",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Edge Mute",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Attack",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Attack Mute",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Width",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Width Mute",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Sub",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Sub Mute",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Presence",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Presence Mute",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Length",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    },
+    {
+      "name": "Length Mute",
+      "index": 20,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Unmute",
+        "1.000000": "Mute"
+      }
+    },
+    {
+      "name": "Master",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-21.0",
+        "0.500000": "-14.6",
+        "0.750000": "-3.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235500"
+}

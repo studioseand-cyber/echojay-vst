@@ -1,0 +1,823 @@
+{
+  "schema": "ej_multiband_v1/1",
+  "product": "Lindell 354E",
+  "version": "1.0.4",
+  "plugin_id": "AudioUnit|6f457234|1.0.4",
+  "from_record": "AudioUnit_6f457234_1.0.4.multiband.json",
+  "bands": [
+    {
+      "band": 2,
+      "control": "Mid Threshold",
+      "tone_hz": 1000.0,
+      "tonecheck": [
+        {
+          "asked_db": 2.0,
+          "norm": 0.663725510239601,
+          "gr_db": 3.78,
+          "display": "0.0dB"
+        },
+        {
+          "asked_db": 3.0,
+          "norm": 0.576973705993671,
+          "why": "no reading at the predicted setting"
+        },
+        {
+          "asked_db": 4.0,
+          "norm": 0.511184226427423,
+          "why": "no reading at the predicted setting"
+        }
+      ],
+      "threshold_cells": [
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 13.130000000000001
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 9.539999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 5.82
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 16.469999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 2.47
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": -2.86
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": -3.33
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": -3.93
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 15.65
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 9.880000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 6.18
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 2.89
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 13.24
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.94
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 1.13
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 1.48
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 4.11
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 9.220000000000001
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 12.380000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 6.41
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 3.13
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 0.87
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 9.710000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.55
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.64
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 0.79
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 2.33
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 6.36
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 8.82
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 3.36
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 1.1
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 0.16
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 6.03
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.18
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.21
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 0.25
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 1.08
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 3.64
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 5.22
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 1.33
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 0.11
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 0.12
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 2.55
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.13
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.15
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 0.18
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 0.23
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 1.45
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 2.09
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ],
+      "makeup": {
+        "control": "Mid Gain",
+        "points": [
+          {
+            "from": "4.0dB",
+            "to": "15.0dB",
+            "measured_delta_db": 0.0,
+            "display_delta_db": 11.0
+          }
+        ]
+      }
+    },
+    {
+      "band": 3,
+      "control": "High Threshold",
+      "tone_hz": 10000.0,
+      "tonecheck": [
+        {
+          "asked_db": 2.0,
+          "norm": 0.838709687033007,
+          "why": "no reading at the predicted setting"
+        },
+        {
+          "asked_db": 3.0,
+          "norm": 0.764261182436009,
+          "why": "no reading at the predicted setting"
+        },
+        {
+          "asked_db": 4.0,
+          "norm": 0.695532664195779,
+          "why": "no reading at the predicted setting"
+        }
+      ],
+      "threshold_cells": [
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 9.83
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 9.109999999999999
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 6.36
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 10.26
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 3.87
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 1.88
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": -0.38
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": -3.02
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": -6.85
+        },
+        {
+          "norm": 0.0,
+          "display": "-20.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 10.369999999999999
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 9.16
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 8.23
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 5.25
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 9.74
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 3.08
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.84
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 2.18
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 5.18
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 6.76
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-14.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 9.800000000000001
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 7.77
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 6.55
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 3.33
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 8.58
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 1.12
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.25
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 1.21
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 3.78
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 5.78
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-8.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 8.56
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 5.45
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 4.14
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 1.45
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 6.5
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.3
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.36
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 0.49
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 2.25
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 4.23
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-2.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 6.39
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 2.53
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 1.87
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": -0.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 3.49
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": -0.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": -0.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": -0.04
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 0.95
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 2.2
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "4.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 3.35
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -3.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -36.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -42.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -48.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -54.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0dB",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ],
+      "makeup": {
+        "control": "High Gain",
+        "points": [
+          {
+            "from": "4.0dB",
+            "to": "15.0dB",
+            "measured_delta_db": 0.0,
+            "display_delta_db": 11.0
+          }
+        ]
+      }
+    }
+  ],
+  "crossovers": [
+    {
+      "control": "Low XOverParameter",
+      "band_below": 1,
+      "band_above": 2,
+      "why": "the band below has no ladder: not measured"
+    },
+    {
+      "control": "High XOverParameter",
+      "band_below": 2,
+      "band_above": 3,
+      "method": "isolated: each neighbour compressed alone at its deep end, the others open; cuts scaled by their own depth",
+      "positions": [
+        {
+          "display": "5000Hz",
+          "measured_hz": 5356.0
+        }
+      ]
+    }
+  ],
+  "processes": 13,
+  "measuredAt": "20261017T005927",
+  "method": "per band: --sweep at {open end, the ladder's predicted setting for 2 / 3 / 4 dB at -12 dBFS} on the band's centre tone; crossovers: at the opening position, the frequency where the two neighbouring bands' responses are equal (each soloed, or each compressed alone at its deep end with the cuts scaled by their own depth), 121-tone --response; make-up: --response at -30 dBFS, the level step at the band's centre vs the display step"
+}

@@ -1,0 +1,130 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "EKramer VC (m->s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "260c7233ee02b670bc73cf7017c50f7ff33048c784114867189d2d1343f8dd2f",
+  "controls": [
+    {
+      "name": "FX",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Dly",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "325",
+        "0.500000": "550",
+        "0.750000": "775"
+      }
+    },
+    {
+      "name": "Dly Mix",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Verb Mix",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Vocal Type",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "Vocal 1",
+        "0.500000": "Vocal 1",
+        "0.750000": "Vocal 2"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Treble 1",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.237500": "-26.2",
+        "0.475000": "-2.5",
+        "0.712500": "21.3"
+      }
+    },
+    {
+      "name": "Treble 2",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235241"
+}

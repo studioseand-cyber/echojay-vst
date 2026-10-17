@@ -1,0 +1,484 @@
+{
+  "schema": "ej_multiband_profile/0",
+  "spec": "MULTIBAND_PROFILE_PROPOSAL v0.2 PROPOSAL",
+  "status": "DRAFT against MULTIBAND_PROFILE_PROPOSAL v0.2 (a proposal): data only, not exported, not published; derived from the record (map_fp: not on a record, null)",
+  "plugin": {
+    "name": "LinMB (s)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4645047d|12.0.0",
+    "version": "12.0.0",
+    "map_fp": null
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-cert) derive-only pass over the record",
+    "date": "2026-10-17",
+    "sample_rate": 48000,
+    "signal": "one tone per band at its centre; vocal-shaped multitone for the whole unit"
+  },
+  "topology": "multiband_offset",
+  "bands": [
+    {
+      "band": 1,
+      "lo_hz": 20.0,
+      "hi_hz": 92.0,
+      "centre_hz": 43.0,
+      "threshold_control": "Band 1 Thresh",
+      "pairing": "cuts 20-84 Hz (deepest -5.6 dB, centre 43.0789) -> band 1",
+      "max_gr_db": 4.89,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "gr_db_by_level": {
+            "-12": 4.84,
+            "-18": 4.88,
+            "-24": 4.89,
+            "-30": 4.84,
+            "-6": 4.74
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "gr_db_by_level": {
+            "-12": 4.84,
+            "-18": 4.87,
+            "-24": 4.85,
+            "-30": 4.81,
+            "-6": 4.75
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "gr_db_by_level": {
+            "-12": 4.73,
+            "-18": 4.66,
+            "-24": 4.47,
+            "-30": 4.2,
+            "-6": 4.67
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "gr_db_by_level": {
+            "-12": 4.08,
+            "-18": 3.64,
+            "-24": 2.97,
+            "-30": 2.11,
+            "-6": 4.29
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "gr_db_by_level": {
+            "-12": 2.29,
+            "-18": 1.06,
+            "-24": 0.11,
+            "-30": 0.05,
+            "-6": 3.03
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "band": 2,
+      "lo_hz": 92.0,
+      "hi_hz": 545.0,
+      "centre_hz": 224.0,
+      "threshold_control": "Band 2 Thresh",
+      "pairing": "cuts 100-532 Hz (deepest -5.2 dB, centre 230.846) -> band 2",
+      "max_gr_db": 5.16,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "gr_db_by_level": {
+            "-12": 4.93,
+            "-18": 5.11,
+            "-24": 5.15,
+            "-30": 5.16,
+            "-6": 4.06
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "gr_db_by_level": {
+            "-12": 4.92,
+            "-18": 5.09,
+            "-24": 5.11,
+            "-30": 5.08,
+            "-6": 4.06
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "gr_db_by_level": {
+            "-12": 4.85,
+            "-18": 4.95,
+            "-24": 4.84,
+            "-30": 4.62,
+            "-6": 4.02
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "gr_db_by_level": {
+            "-12": 4.43,
+            "-18": 4.22,
+            "-24": 3.58,
+            "-30": 2.63,
+            "-6": 3.8
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "gr_db_by_level": {
+            "-12": 2.73,
+            "-18": 1.8,
+            "-24": 0.74,
+            "-30": 0.15,
+            "-6": 2.75
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "band": 3,
+      "lo_hz": 545.0,
+      "hi_hz": 4000.0,
+      "centre_hz": 1476.0,
+      "threshold_control": "Band 3 Thresh",
+      "pairing": "cuts 598-3768 Hz (deepest -5.5 dB, centre 1499.88) -> band 3",
+      "max_gr_db": 5.3,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "gr_db_by_level": {
+            "-12": 4.66,
+            "-18": 5.08,
+            "-24": 5.25,
+            "-30": 5.3,
+            "-6": 3.85
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "gr_db_by_level": {
+            "-12": 4.65,
+            "-18": 5.07,
+            "-24": 5.22,
+            "-30": 5.23,
+            "-6": 3.85
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "gr_db_by_level": {
+            "-12": 4.6,
+            "-18": 4.96,
+            "-24": 5.0,
+            "-30": 4.81,
+            "-6": 3.82
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "gr_db_by_level": {
+            "-12": 4.26,
+            "-18": 4.32,
+            "-24": 3.84,
+            "-30": 2.93,
+            "-6": 3.65
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "gr_db_by_level": {
+            "-12": 2.63,
+            "-18": 1.95,
+            "-24": 1.09,
+            "-30": 0.47,
+            "-6": 2.69
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "band": 4,
+      "lo_hz": 4000.0,
+      "hi_hz": 11071.0,
+      "centre_hz": 6655.0,
+      "threshold_control": "Band 4 Thresh",
+      "pairing": "cuts 3990-11246 Hz (deepest -4.4 dB, centre 6699.12) -> band 4",
+      "max_gr_db": 4.27,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "gr_db_by_level": {
+            "-12": 3.83,
+            "-18": 4.13,
+            "-24": 4.24,
+            "-30": 4.27,
+            "-6": 3.24
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "gr_db_by_level": {
+            "-12": 3.83,
+            "-18": 4.11,
+            "-24": 4.21,
+            "-30": 4.2,
+            "-6": 3.24
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "gr_db_by_level": {
+            "-12": 3.78,
+            "-18": 4.02,
+            "-24": 4.02,
+            "-30": 3.84,
+            "-6": 3.21
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "gr_db_by_level": {
+            "-12": 3.48,
+            "-18": 3.45,
+            "-24": 3.0,
+            "-30": 2.21,
+            "-6": 3.06
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "gr_db_by_level": {
+            "-12": 2.07,
+            "-18": 1.45,
+            "-24": 0.77,
+            "-30": 0.32,
+            "-6": 2.21
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    },
+    {
+      "band": 5,
+      "lo_hz": 11071.0,
+      "hi_hz": 20000.0,
+      "centre_hz": 14880.0,
+      "threshold_control": "Band 5 Thresh",
+      "pairing": "cuts 11914-20000 Hz (deepest -5.9 dB, centre 15435.9) -> band 5",
+      "max_gr_db": 4.91,
+      "in_at_gr": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "gr_db_by_level": {
+            "-12": 4.35,
+            "-18": 4.72,
+            "-24": 4.87,
+            "-30": 4.91,
+            "-6": 3.63
+          }
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "gr_db_by_level": {
+            "-12": 4.34,
+            "-18": 4.71,
+            "-24": 4.83,
+            "-30": 4.84,
+            "-6": 3.62
+          }
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "gr_db_by_level": {
+            "-12": 4.29,
+            "-18": 4.6,
+            "-24": 4.63,
+            "-30": 4.44,
+            "-6": 3.59
+          }
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "gr_db_by_level": {
+            "-12": 3.97,
+            "-18": 3.99,
+            "-24": 3.52,
+            "-30": 2.66,
+            "-6": 3.43
+          }
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "gr_db_by_level": {
+            "-12": 2.42,
+            "-18": 1.76,
+            "-24": 0.97,
+            "-30": 0.41,
+            "-6": 2.51
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "gr_db_by_level": {
+            "-12": 0.0,
+            "-18": 0.0,
+            "-24": 0.0,
+            "-30": 0.0,
+            "-6": 0.0
+          }
+        }
+      ]
+    }
+  ],
+  "amount": {
+    "topology": "multiband_offset",
+    "controls": "Band 1 Thresh, Band 2 Thresh, Band 3 Thresh, Band 4 Thresh, Band 5 Thresh",
+    "points": [
+      {
+        "offset_db": 0.0,
+        "displays": "0.0 / 0.0 / 0.0 / 0.0 / 0.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "offset_db": -6.0,
+        "displays": "-6.0 / -6.0 / -6.0 / -6.0 / -6.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.01,
+          "-12": 0.04,
+          "-6": 0.1
+        }
+      },
+      {
+        "offset_db": -12.0,
+        "displays": "-12.0 / -12.0 / -12.0 / -12.0 / -12.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.02,
+          "-18": 0.05,
+          "-12": 0.14,
+          "-6": 0.44
+        }
+      },
+      {
+        "offset_db": -18.0,
+        "displays": "-18.0 / -18.0 / -18.0 / -18.0 / -18.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.02,
+          "-24": 0.06,
+          "-18": 0.15,
+          "-12": 0.48,
+          "-6": 1.67
+        }
+      },
+      {
+        "offset_db": -24.0,
+        "displays": "-24.0 / -24.0 / -24.0 / -24.0 / -24.0",
+        "whole_unit_gr_db_by_level": {
+          "-30": 0.06,
+          "-24": 0.16,
+          "-18": 0.49,
+          "-12": 1.71,
+          "-6": 3.01
+        }
+      }
+    ],
+    "reference": "the unit as instantiated (open)",
+    "sign": "positive = gain reduction, negative = gain at that level"
+  },
+  "whole_unit_signal": "vocal-shaped multitone (121 tones; pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at -30 / -24 / -18 / -12 / -6 dBFS; gain = total output power over total input power",
+  "instantiate_gain_db_by_level": {
+    "-30": -0.0,
+    "-24": -0.0,
+    "-18": -0.01,
+    "-12": -0.02,
+    "-6": -0.06
+  },
+  "enable_writes": [],
+  "neutral": [],
+  "notes": [
+    "field names are the proposal's (topology, offset_db, in_at_gr, whole_unit_gr_db_by_level): they await Sean's decision (MULTIBAND_PROFILE_PROPOSAL.md)",
+    "offset family: the thresholds' ends clamp the offset (354E at -20 dB): two offsets with the same displays are one position - stop at the last distinct offset"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Sibilance (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "20009dd2cb2a9934d76252f6f35c8fca6ef73f84b4cfc2ba5273986a37236166",
+  "controls": [
+    {
+      "name": "Detection",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Threshold",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-46.7",
+        "0.500000": "-23.3",
+        "0.750000": "-9.4"
+      }
+    },
+    {
+      "name": "Range",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Mode",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Monitor",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000521"
+}

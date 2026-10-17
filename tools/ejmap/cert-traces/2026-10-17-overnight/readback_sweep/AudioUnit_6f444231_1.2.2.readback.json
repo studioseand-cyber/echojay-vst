@@ -1,0 +1,512 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Lindell ChannelX",
+  "version": "1.2.2",
+  "map_version": "1.2.2",
+  "map_fp": "d766c202cef8028fd272fdd3b166833d0861b84b7c58355a3386d2d7bacaed24",
+  "controls": [
+    {
+      "name": "Pre. Input gain",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Pre. Output level",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Pre. Link",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Pre. Hi boost",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Pre. Low boost",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Pre. EQ on",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Pre. Polarity",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Pre. Analog",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Pre. Lowpass frequency",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "112.468Hz",
+        "0.500000": "632.456Hz",
+        "0.750000": "3.6kHz"
+      }
+    },
+    {
+      "name": "Pre. Lowpass slope",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "18dB"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Pre. Low filter on",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Pre. Highpass frequency",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "112.468Hz",
+        "0.500000": "632.456Hz",
+        "0.750000": "3.6kHz"
+      }
+    },
+    {
+      "name": "Pre. Highpass slope",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "18dB"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "Pre. High filter on",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Pre. Bypass",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "In"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Comp. Input",
+      "index": 17,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Comp. Output",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Comp. Attack",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Fast"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Comp. Release",
+      "index": 20,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Fast"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Comp. Mix",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Comp. Continuous Attack",
+      "index": 24,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Comp. Continuous Release",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "Comp. Stereo Link",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25%",
+        "0.500000": "50%",
+        "0.750000": "75%"
+      }
+    },
+    {
+      "name": "EQ Hi attenuation",
+      "index": 32,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Hi boost",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Hi bandwidth",
+      "index": 35,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Low boost",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Low attenuation",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Pad",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0dB",
+        "0.500000": "-10.0dB",
+        "0.750000": "-5.0dB"
+      }
+    },
+    {
+      "name": "EQ Hi attenuation mid",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Hi boost mid",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Hi bandwidth mid",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Low boost mid",
+      "index": 45,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Low attenuation mid",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Pad mid",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0dB",
+        "0.500000": "-10.0dB",
+        "0.750000": "-5.0dB"
+      }
+    },
+    {
+      "name": "EQ Hi attenuation side",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Hi boost side",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Hi bandwidth side",
+      "index": 53,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Low boost side",
+      "index": 54,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Low attenuation side",
+      "index": 56,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.5",
+        "0.500000": "5.0",
+        "0.750000": "7.5"
+      }
+    },
+    {
+      "name": "EQ Pad side",
+      "index": 57,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0dB",
+        "0.500000": "-10.0dB",
+        "0.750000": "-5.0dB"
+      }
+    },
+    {
+      "name": "EQ Mid / Side",
+      "index": 58,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Normal"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "EQ Analog",
+      "index": 59,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "EQ EQ In",
+      "index": 60,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Order",
+      "index": 61,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Pre Comp EQ"
+      },
+      "unlanded": 1
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Pre. Hi frequency",
+      "index": 4,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Pre. Low frequency",
+      "index": 6,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Comp. Ratio",
+      "index": 22,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Comp. SC High Pass Filter",
+      "index": 23,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Hi atten. freq.",
+      "index": 31,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Hi frequency",
+      "index": 34,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Low frequency",
+      "index": 37,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Hi atten. freq. mid",
+      "index": 40,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Hi frequency mid",
+      "index": 43,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Low frequency mid",
+      "index": 46,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Hi atten. freq. side",
+      "index": 49,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Hi frequency side",
+      "index": 52,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "EQ Low frequency side",
+      "index": 55,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261016T235955"
+}

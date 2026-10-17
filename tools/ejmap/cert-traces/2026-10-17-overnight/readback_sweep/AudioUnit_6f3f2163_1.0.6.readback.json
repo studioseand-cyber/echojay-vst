@@ -1,0 +1,397 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Lindell 80 Channel",
+  "version": "1.0.6",
+  "map_version": "1.0.6",
+  "map_fp": "f3b7b88e73efe26633fb22635a6e4fa299502e86b9baee29d87b6e0dfdce5c79",
+  "controls": [
+    {
+      "name": "Pad",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.00",
+        "0.500000": "-0.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "12.50",
+        "0.500000": "35.00",
+        "0.750000": "57.50"
+      }
+    },
+    {
+      "name": "Mute",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output Level",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Level",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-30.00",
+        "0.500000": "-10.00",
+        "0.750000": "-0.00"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Unity",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Recovery",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "0.20",
+        "0.750000": "0.63"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Low Gain",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.00",
+        "0.500000": "-0.00",
+        "0.750000": "8.00"
+      }
+    },
+    {
+      "name": "Low Pass",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.200000": "8 kHz",
+        "0.400000": "10 kHz",
+        "0.600000": "14 kHz"
+      }
+    },
+    {
+      "name": "Gate Hysteresis",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.00",
+        "0.500000": "10.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "High Frequency",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.666667": "12 kHz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "High Gain",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-8.00",
+        "0.500000": "-0.00",
+        "0.750000": "8.00"
+      }
+    },
+    {
+      "name": "Mid High Q",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Fast",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2:1",
+        "0.500000": "3:1",
+        "0.750000": "4:1"
+      }
+    },
+    {
+      "name": "Comp Niveau",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Range",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "15.00",
+        "0.500000": "30.00",
+        "0.750000": "45.00"
+      }
+    },
+    {
+      "name": "Comp In",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Equalizer",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Filter",
+      "index": 23,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate In",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp High Pass Filter",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "44.5 Hz",
+        "0.550000": "108.3 Hz",
+        "0.775000": "224.0 Hz"
+      }
+    },
+    {
+      "name": "Comp Mix",
+      "index": 26,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25 %",
+        "0.500000": "50 %",
+        "0.750000": "75 %"
+      }
+    },
+    {
+      "name": "TMT Link",
+      "index": 27,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mid Gain",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.00",
+        "0.500000": "-0.00",
+        "0.750000": "9.00"
+      }
+    },
+    {
+      "name": "84 Mode",
+      "index": 31,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Expander",
+      "index": 32,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp External Side Chain",
+      "index": 33,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Threshold",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-17.50",
+        "0.500000": "-5.00",
+        "0.750000": "7.50"
+      }
+    },
+    {
+      "name": "Gate External Side Chain",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Fast",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Gain",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.00",
+        "0.500000": "10.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Comp Smash",
+      "index": 38,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Inverted",
+      "index": 39,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Input Level",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Comp Threshold",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-12.50",
+        "0.500000": "-5.00",
+        "0.750000": "2.50"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Low Frequency",
+      "index": 9,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "High Pass",
+      "index": 15,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Comp Recovery",
+      "index": 28,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Mid Frequency",
+      "index": 29,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "TMT Channel",
+      "index": 42,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261016T235820"
+}

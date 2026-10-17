@@ -1,0 +1,68 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "RDeEsser (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "ec698036173716c5e0a3b18d0b884dc84bd6d53f09ff8878ba6b016f1a242d78",
+  "controls": [
+    {
+      "name": "Freq",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3364",
+        "0.500000": "5657",
+        "0.750000": "9514"
+      }
+    },
+    {
+      "name": "FilterType",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "HighPass",
+        "1.000000": "BandPass"
+      }
+    },
+    {
+      "name": "FilterMode",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Split",
+        "1.000000": "WideBand"
+      }
+    },
+    {
+      "name": "Range",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Threshold",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-60.0",
+        "0.500000": "-40.0",
+        "0.750000": "-20.0"
+      }
+    },
+    {
+      "name": "Monitor",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Audio",
+        "1.000000": "SideChain"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000244"
+}

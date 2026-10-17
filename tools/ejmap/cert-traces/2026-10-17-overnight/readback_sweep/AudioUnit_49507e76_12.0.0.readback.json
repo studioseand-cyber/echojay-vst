@@ -1,0 +1,145 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "CLA Vocals (m->s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "608c627d3900afa55cdfe3d00b985668023e9fb63355195f4e9aff2cac9d5f4c",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Bass Color",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Sub"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Treble Color",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Bite"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Compress Color",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.666667": "Spank"
+      }
+    },
+    {
+      "name": "Reverb",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Reverb Color",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "Tight"
+      }
+    },
+    {
+      "name": "Delay",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Delay Color",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.666667": "Eight"
+      }
+    },
+    {
+      "name": "Pitch",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Pitch Color",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "Stereo"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235049"
+}

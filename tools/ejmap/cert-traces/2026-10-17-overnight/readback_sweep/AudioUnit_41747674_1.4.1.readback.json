@@ -1,0 +1,538 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "bx_console SSL 9000 J",
+  "version": "1.4.1",
+  "map_version": "1.4.1",
+  "map_fp": "2e8054b9d1a45d6f8fc76dc2e194ce14613c5f0c581f9a51af65edf8cf32be1f",
+  "controls": [
+    {
+      "name": "Power",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mute",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Setting",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "0.333333": "B"
+      }
+    },
+    {
+      "name": "In Gain",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "5.0 dB"
+      }
+    },
+    {
+      "name": "Virtual Gain",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-103.8 dB",
+        "0.550000": "-92.5 dB",
+        "0.775000": "-81.3 dB"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-90.8 dB",
+        "0.550000": "-70.5 dB",
+        "0.775000": "-50.3 dB"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Out Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-30.9 dB",
+        "0.500000": "-10.2 dB",
+        "0.750000": "0.0 dB"
+      }
+    },
+    {
+      "name": "Monitoring",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "Console Channel",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "19",
+        "0.750000": "54"
+      },
+      "unlanded": 1
+    },
+    {
+      "name": "Stereo Mode",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Analog",
+        "1.000000": "Digital"
+      }
+    },
+    {
+      "name": "HPF On/Off",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "HPF Frequency",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "85 Hz",
+        "0.500000": "230 Hz",
+        "0.750000": "375 Hz"
+      }
+    },
+    {
+      "name": "HPF Freq x3",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LPF On/Off",
+      "index": 14,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "LPF Frequency",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "22.0k Hz",
+        "0.500000": "7.5k Hz",
+        "0.750000": "4.5k Hz"
+      }
+    },
+    {
+      "name": "LPF Freq /3",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Filter Position",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Audio",
+        "1.000000": "In DynSC"
+      }
+    },
+    {
+      "name": "Filter Split",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Post EQ",
+        "1.000000": "Input"
+      }
+    },
+    {
+      "name": "Dyn On/Off",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.248437": "2.2:1",
+        "0.496875": "3.5:1",
+        "0.745312": "6.4:1"
+      }
+    },
+    {
+      "name": "Comp Threshold",
+      "index": 21,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "+2.5 dB",
+        "0.500000": "-5.0 dB",
+        "0.750000": "-12.5 dB"
+      }
+    },
+    {
+      "name": "Comp Release",
+      "index": 22,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.16 s",
+        "0.500000": "0.25 s",
+        "0.750000": "2.00 s"
+      }
+    },
+    {
+      "name": "Comp Attack",
+      "index": 23,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Peak",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Normal",
+        "1.000000": "Peak"
+      }
+    },
+    {
+      "name": "Comp Mix",
+      "index": 25,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0 %",
+        "0.500000": "50.0 %",
+        "0.750000": "75.0 %"
+      }
+    },
+    {
+      "name": "Sidechain Link",
+      "index": 26,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Highpass",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "56.0 Hz",
+        "0.550000": "184.3 Hz",
+        "0.775000": "607.2 Hz"
+      }
+    },
+    {
+      "name": "Gate Expander Mode",
+      "index": 28,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Gate",
+        "1.000000": "Expander"
+      }
+    },
+    {
+      "name": "Gate Invert",
+      "index": 29,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Gate Range",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0 dB",
+        "0.500000": "-20.0 dB",
+        "0.750000": "-32.5 dB"
+      }
+    },
+    {
+      "name": "Gate Threshold",
+      "index": 31,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-18.3 dB",
+        "0.500000": "-9.0 dB",
+        "0.750000": "+2.5 dB"
+      }
+    },
+    {
+      "name": "Gate Hold",
+      "index": 33,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.25 s",
+        "0.500000": "0.50 s",
+        "0.750000": "1.85 s"
+      }
+    },
+    {
+      "name": "Gate Release",
+      "index": 34,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.18 s",
+        "0.500000": "0.35 s",
+        "0.750000": "1.50 s"
+      }
+    },
+    {
+      "name": "Gate Attack",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Dyn External Key",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ On/Off",
+      "index": 37,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ High Gain",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.5 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+7.5 dB"
+      }
+    },
+    {
+      "name": "EQ High Frequency",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.7k Hz",
+        "0.500000": "7.5k Hz",
+        "0.750000": "13.8k Hz"
+      }
+    },
+    {
+      "name": "EQ High Bell",
+      "index": 40,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "EQ High Mid Gain",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+7.5 dB"
+      }
+    },
+    {
+      "name": "EQ High Mid Frequency",
+      "index": 42,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.4k Hz",
+        "0.500000": "3.2k Hz",
+        "0.750000": "4.7k Hz"
+      }
+    },
+    {
+      "name": "EQ High Mid Q",
+      "index": 43,
+      "kind": "anchored",
+      "displayAt": {
+        "0.243750": "2.0",
+        "0.487500": "1.5",
+        "0.731250": "1.0"
+      }
+    },
+    {
+      "name": "EQ High Mid x3",
+      "index": 44,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ Type",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Normal",
+        "1.000000": "E-Mode"
+      }
+    },
+    {
+      "name": "EQ Low Mid Gain",
+      "index": 46,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+5.5 dB"
+      }
+    },
+    {
+      "name": "EQ Low Mid Frequency",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "350 Hz",
+        "0.500000": "1.0k Hz",
+        "0.750000": "1.5k Hz"
+      }
+    },
+    {
+      "name": "EQ Low Mid Q",
+      "index": 48,
+      "kind": "anchored",
+      "displayAt": {
+        "0.243750": "2.0",
+        "0.487500": "1.5",
+        "0.731250": "1.0"
+      }
+    },
+    {
+      "name": "EQ Low Mid /3",
+      "index": 49,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ Low Gain",
+      "index": 50,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-7.5 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+7.5 dB"
+      }
+    },
+    {
+      "name": "EQ Low Frequency",
+      "index": 51,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "85 Hz",
+        "0.500000": "230 Hz",
+        "0.750000": "375 Hz"
+      }
+    },
+    {
+      "name": "EQ Low Bell",
+      "index": 52,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Shelf",
+        "1.000000": "Bell"
+      }
+    },
+    {
+      "name": "EQ Position",
+      "index": 53,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Audio",
+        "1.000000": "In DynSC"
+      }
+    },
+    {
+      "name": "Dyn Position",
+      "index": 54,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Post EQ",
+        "1.000000": "Pre EQ"
+      }
+    },
+    {
+      "name": "Meter Position",
+      "index": 55,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Output",
+        "1.000000": "Input"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Gate Threshold Range",
+      "index": 32,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T001721"
+}

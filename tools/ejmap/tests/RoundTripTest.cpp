@@ -10225,6 +10225,19 @@ int main (int, char**)
                && main.contains ("const auto kept = ejmap::cert::guardedPlugins (ns, false, \"GUARD\", &dropped);"),
                "wizard WZ-GUARD-1: my own loads drop UAD / APB / Soundtoys / kHs / SSL / a remembered window / PACE and keep Waves and the rest; the list step judges every name before a load (cert branch)");
     }
+    // WZ-MBV1-3 EVERY PART MUST HOLD (17 Oct, the overnight run on Kathy's Mac): OTT's threshold display is 0-100, not dB, so its
+    // threshold is "not tested" - no OTT band is certified; C4 (m) from the same run still certifies all four (the files are read)
+    {
+        const auto T = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-17-overnight");
+        auto j = [&] (const char* sub, const char* f) { return juce::JSON::parse (T.getChildFile (sub).getChildFile (f).loadFileAsString()); };
+        const auto ott = ejmap::mbv1::judge (j ("multiband_drafts", "AudioUnit_6155777e_1.3.7.multiband_profile.draft.json"), j ("multiband_v1", "AudioUnit_6155777e_1.3.7.multiband_v1.json"));
+        const auto c4 = ejmap::mbv1::judge (j ("multiband_drafts", "AudioUnit_4e436063_12.0.0.multiband_profile.draft.json"), j ("multiband_v1", "AudioUnit_4e436063_12.0.0.multiband_v1.json"));
+        bool ottThrUntested = ott.bands.size() == 3, ottGainBand1 = false;
+        for (const auto& b : ott.bands) for (const auto& p : b.parts) { if (p.name == "threshold" && p.state != "not_tested") ottThrUntested = false; if (b.band == 1 && p.name == "gain" && p.state == "pass") ottGainBand1 = true; }
+        int c4Pass = 0; for (const auto& b : c4.bands) if (b.pass) ++c4Pass;
+        check (ottThrUntested && ottGainBand1 && ! ott.pass && ott.certifiedParts().isEmpty() && c4.bands.size() == 4 && c4Pass == 4 && c4.pass,
+               "wizard WZ-MBV1-3: a band is certified only when every part holds - OTT (threshold display 0-100, not tested) certifies nothing; C4 (m) from the same night certifies 4 of 4");
+    }
     // WZ-RBSWEEP-1 THE READ-BACK-ONLY SWEEP (Kathy, 16 Oct, overnight): anchored controls at readbackTargets, mode controls at two labels, one
     // --text-at-norms-multi load; a reading is kept only where the write landed on the parameter carrying the map's name; the record is the
     // shape --trust-levels reads, so a control read back right credits the map

@@ -1,0 +1,79 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati DRM (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "ac1ca851cce5927e399a696ad490126794a11e6b64d07029b3ea452e6711100a",
+  "controls": [
+    {
+      "name": "Drum Type",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "BD",
+        "0.333333": "SNR Bot"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Thump",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Snap",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000838"
+}

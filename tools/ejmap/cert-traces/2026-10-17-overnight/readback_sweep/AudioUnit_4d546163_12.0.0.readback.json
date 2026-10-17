@@ -1,0 +1,89 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati GRP (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "35635a80e0b526d4ba27026872ac65e50f2d2a1a6e29f2602a8c35415490499a",
+  "controls": [
+    {
+      "name": "Type",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "DrmLive",
+        "0.333333": "Guitars"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Lows",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Mids",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Highs",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25.0",
+        "0.500000": "50.0",
+        "0.750000": "75.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235307"
+}

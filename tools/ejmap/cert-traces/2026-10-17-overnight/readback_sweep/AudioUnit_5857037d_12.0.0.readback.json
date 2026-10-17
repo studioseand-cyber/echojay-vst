@@ -1,0 +1,136 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "REQ 2 (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "4c470fb2b02a63e911969f62bf22245d7ba67d7d5e946c3b524f90cb85477ce5",
+  "controls": [
+    {
+      "name": "Band1 On/Off",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Band1 Type",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band1 Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band1 Frq",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band1 Q",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Band6 Type",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Hi-Shelf"
+      }
+    },
+    {
+      "name": "Band6 Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0",
+        "0.500000": "0.0",
+        "0.750000": "9.0"
+      }
+    },
+    {
+      "name": "Band6 Frq",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "95",
+        "0.500000": "578",
+        "0.750000": "3513"
+      }
+    },
+    {
+      "name": "Band6 Q",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.58",
+        "0.500000": "1.30",
+        "0.750000": "2.91"
+      }
+    },
+    {
+      "name": "Gain-L (link)",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "Gain-R",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.0",
+        "0.500000": "-6.0",
+        "0.750000": "3.0"
+      }
+    },
+    {
+      "name": "Band1 Type All",
+      "index": 12,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.333333": "Low-Shelf"
+      }
+    },
+    {
+      "name": "Band6 Type All",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bell",
+        "0.666667": "Low-Pass"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000419"
+}

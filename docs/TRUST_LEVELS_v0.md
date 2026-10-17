@@ -339,6 +339,7 @@ Pins WZ-MBV1-1 / -2.
 
 - **Make-up:** offered beside a passing band only when its level step matches the dB display step within 0.5 dB (new, v1).
 - **Only passing bands are offered.** v1 never moves a crossover, ratio or per-band attack / release.
+- **Every part must hold** (17 Oct): a threshold that cannot be tested (a display that is not in dB, e.g. OTT's 0-100) does not certify the band. A crossover is the one part that may be "not applicable" (no crossover control).
 - **Sections that wait for the listening session:** none. The multiband feel ("tame the low end gently") is the server's wording, not a measurement.
 
 ### Results
@@ -353,6 +354,17 @@ Pins WZ-MBV1-1 / -2.
   - the first method tried (a complementary-crossover target) read 0.12..0.28 octave high on the same unit - that assumption was the error, not C4;
   - make-up: a −9 → +9 dB move measured 12.9..17.7 dB, so it is not offered;
   - about 2.5 min a unit for the v1 step, after the 3 min multiband mode.
+- **Overnight on this Mac (17 Oct, ad50ddbb, guarded, scratch only): 12 multibands measured, 10 certify bands.** Traces: `tools/ejmap/cert-traces/2026-10-17-overnight/`.
+
+| unit | bands certified | why the rest are not |
+|---|---|---|
+| C4 (m), C4 (s) | 4 of 4 | - |
+| C6 (m), C6 (s), C6-SideChain (m), C6-SideChain (s) | 4 of 6 | bands 5, 6 (the floating bands): the 2 dB ask measured 1.17 / 1.18 dB |
+| LinMB (m), LinMB (s) | 4 of 5 (1, 2, 3, 5) | band 4: its ladder does not reach 4 dB at -12 dBFS |
+| Lindell MBC | 2 of 3 | band 3: no threshold paired by measurement |
+| Lindell 354E | 0 of 3 | band 1 unpaired; bands 2, 3: the display does not track (-20 dB sits 4.5..10.9 dB off) and the tone check misses |
+| OTT | 0 of 3 | its threshold display is 0-100, not dB: "not tested", so no band certifies (band 2's 2 dB ask also measured 0.57) |
+| DynOne3 | 0 | no bands identified |
 
 ### Profile format (`ej_multiband_profile/1`, v1; the v0 draft fields are kept)
 ```json

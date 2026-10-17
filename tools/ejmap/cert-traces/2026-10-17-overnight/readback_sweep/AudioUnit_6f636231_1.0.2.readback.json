@@ -1,0 +1,107 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Lindell 902 De-esser",
+  "version": "1.0.2",
+  "map_version": "1.0.2",
+  "map_fp": "be766ba827eb806340358b8db09544d2128aa32b17de4cfc9d53532ac12d0009",
+  "controls": [
+    {
+      "name": "In",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Air",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.00",
+        "0.500000": "10.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Mix",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Frequency",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1800",
+        "0.500000": "2500",
+        "0.750000": "4000"
+      }
+    },
+    {
+      "name": "Range",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "5.00",
+        "0.500000": "10.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "External Side Chain",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "In Gain",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Out Gain",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Listen",
+      "index": 8,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Output",
+        "0.500000": "Detector"
+      }
+    },
+    {
+      "name": "Mode HF Only",
+      "index": 9,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000045"
+}

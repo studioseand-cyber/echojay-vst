@@ -1,0 +1,381 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Lindell 69 Channel",
+  "version": "1.0.0",
+  "map_version": "1.0.0",
+  "map_fp": "3637b8b4111ac5b7669d5d8ae8253b2f5bda3c8b20df2f8dfe86daffd69d4310",
+  "controls": [
+    {
+      "name": "Pad",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "THD",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.00",
+        "0.500000": "-0.00",
+        "0.750000": "15.00"
+      }
+    },
+    {
+      "name": "Gain",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.00",
+        "0.500000": "18.00",
+        "0.750000": "33.00"
+      }
+    },
+    {
+      "name": "Mute",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output Level",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Level",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-30.00",
+        "0.500000": "-10.00",
+        "0.750000": "-0.00"
+      }
+    },
+    {
+      "name": "Phase",
+      "index": 6,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Unity",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Exp Range",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.00",
+        "0.500000": "-10.00",
+        "0.750000": "-5.00"
+      }
+    },
+    {
+      "name": "Low Gain",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3.51",
+        "0.500000": "4.66",
+        "0.750000": "7.01"
+      }
+    },
+    {
+      "name": "Comp Attack",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Slow",
+        "0.500000": "Medium"
+      }
+    },
+    {
+      "name": "High Freq",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "10 kHz"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "High Gain",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.500000": "0 dB"
+      },
+      "unlanded": 2
+    },
+    {
+      "name": "TMT Link",
+      "index": 15,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Input",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.25",
+        "0.500000": "2.50",
+        "0.750000": "3.75"
+      }
+    },
+    {
+      "name": "Comp Limit",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Niveau",
+      "index": 19,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp Output",
+      "index": 20,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "1.25",
+        "0.500000": "2.50",
+        "0.750000": "3.75"
+      }
+    },
+    {
+      "name": "Comp In",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Exp Hold",
+      "index": 22,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Exp Mode",
+      "index": 23,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Expander",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "equalizer",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "EQ Post",
+      "index": 25,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Comp High Pass Filter",
+      "index": 27,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "44.5 Hz",
+        "0.550000": "108.3 Hz",
+        "0.775000": "224.0 Hz"
+      }
+    },
+    {
+      "name": "Comp Mix",
+      "index": 28,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25 %",
+        "0.500000": "50 %",
+        "0.750000": "75 %"
+      }
+    },
+    {
+      "name": "Mid Gain",
+      "index": 30,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2.02",
+        "0.500000": "4.66",
+        "0.750000": "8.47"
+      }
+    },
+    {
+      "name": "Mid Mode",
+      "index": 31,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "1.000000": "Boost"
+      }
+    },
+    {
+      "name": "Exp External Side Chain",
+      "index": 32,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Exp Inverted",
+      "index": 33,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Exp Attack",
+      "index": 34,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Slow",
+        "0.500000": "Medium"
+      }
+    },
+    {
+      "name": "Comp External Side Chain",
+      "index": 35,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Exp Threshold",
+      "index": 36,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-27.50",
+        "0.500000": "-15.00",
+        "0.750000": "-2.50"
+      }
+    },
+    {
+      "name": "Comp Smash",
+      "index": 37,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Input Level",
+      "index": 39,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.00",
+        "0.500000": "-0.00",
+        "0.750000": "5.00"
+      }
+    },
+    {
+      "name": "Comp Threshold",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-15.00",
+        "0.500000": "-10.00",
+        "0.750000": "-5.00"
+      }
+    },
+    {
+      "name": "Exp Release",
+      "index": 41,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "0.071",
+        "0.500000": "0.200",
+        "0.750000": "0.566"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Low Freq",
+      "index": 9,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "High Pass",
+      "index": 14,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Comp Ratio",
+      "index": 18,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Comp Release",
+      "index": 26,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Mid Freq",
+      "index": 29,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "TMT Channel",
+      "index": 38,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T000020"
+}

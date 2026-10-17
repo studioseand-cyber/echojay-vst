@@ -1,0 +1,60 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Sibilance (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "8615584ebb096c2fb1ae4bb03a2a3b4a319e111607d624cfec05e0f53d3ff076",
+  "controls": [
+    {
+      "name": "Lookahead",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Detection",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    },
+    {
+      "name": "Threshold",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-46.7",
+        "0.500000": "-23.3",
+        "0.750000": "-9.4"
+      }
+    },
+    {
+      "name": "Range",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-36.0",
+        "0.500000": "-24.0",
+        "0.750000": "-12.0"
+      }
+    },
+    {
+      "name": "Mode",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "25",
+        "0.500000": "50",
+        "0.750000": "75"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000515"
+}

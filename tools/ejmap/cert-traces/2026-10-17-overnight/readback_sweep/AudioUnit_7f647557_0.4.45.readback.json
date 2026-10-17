@@ -1,0 +1,41 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Meaw Chain",
+  "version": "0.4.45",
+  "map_version": "0.3.301",
+  "map_fp": "83aa1dc0f983f9ecd9542b376ebc3a18045b7fc63fc20973f0d9acf456222cf7",
+  "controls": [],
+  "not_read": [
+    {
+      "name": "Input Gain",
+      "index": 0,
+      "why": "the parameter at this index is 'On' here"
+    },
+    {
+      "name": "On",
+      "index": 1,
+      "why": "the parameter at this index is 'Blend' here"
+    },
+    {
+      "name": "Auto-Gain",
+      "index": 2,
+      "why": "the parameter at this index is 'Output Gain' here"
+    },
+    {
+      "name": "Blend",
+      "index": 3,
+      "why": "the parameter at this index is 'Auto-Gain' here"
+    },
+    {
+      "name": "Output Gain",
+      "index": 4,
+      "why": "the parameter at this index is 'Input Gain' here"
+    },
+    {
+      "name": "Bypass",
+      "index": 5,
+      "why": "the probe returned nothing for this index"
+    }
+  ],
+  "measuredAt": "20261017T000107"
+}

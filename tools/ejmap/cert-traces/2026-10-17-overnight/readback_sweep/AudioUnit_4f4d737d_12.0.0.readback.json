@@ -1,0 +1,90 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "EKramer BA (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "aefe7b8f319a8ff3f7086573aea33be7e3d9734afe718cab00bb291c4f719551",
+  "controls": [
+    {
+      "name": "Sensitivity",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Bass Type",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "Bass 1",
+        "0.500000": "Bass 1",
+        "0.750000": "Bass 2"
+      }
+    },
+    {
+      "name": "Compress 1",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Compress 2",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Output 1",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Output 2",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235124"
+}

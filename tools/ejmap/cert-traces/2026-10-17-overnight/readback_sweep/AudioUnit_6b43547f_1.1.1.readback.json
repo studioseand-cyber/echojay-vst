@@ -1,0 +1,321 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Harris Doyle Natalus DSCEQ",
+  "version": "1.1.1",
+  "map_version": "1.1.1",
+  "map_fp": "725577b3f82fb58662e5076aba099c32b1bd05556382d9f1d67316cfb7aa97c6",
+  "controls": [
+    {
+      "name": "Main Power",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Bank",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "A",
+        "0.333333": "B"
+      }
+    },
+    {
+      "name": "EQ In 1",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "High Type 1",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Peak",
+        "1.000000": "Shelf"
+      }
+    },
+    {
+      "name": "High Polarity 1",
+      "index": 7,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "High Mid Polarity 1",
+      "index": 10,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "Low Mid Polarity 1",
+      "index": 13,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "Low Polarity 1",
+      "index": 16,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "Low Cut In 1",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "EQ In 2",
+      "index": 20,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "High Type 2",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Peak",
+        "1.000000": "Shelf"
+      }
+    },
+    {
+      "name": "High Polarity 2",
+      "index": 24,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "High Mid Polarity 2",
+      "index": 27,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "Low Mid Polarity 2",
+      "index": 30,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "Low Polarity 2",
+      "index": 33,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Cut",
+        "0.500000": "Off"
+      }
+    },
+    {
+      "name": "Low Cut In 2",
+      "index": 34,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Channel Link",
+      "index": 36,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Input Gain",
+      "index": 37,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+6.0 dB"
+      }
+    },
+    {
+      "name": "Output Gain",
+      "index": 38,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+6.0 dB"
+      }
+    },
+    {
+      "name": "Gain Range",
+      "index": 39,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Full",
+        "1.000000": "Half"
+      }
+    },
+    {
+      "name": "TX Drive",
+      "index": 40,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "+9.0dBu",
+        "0.550000": "+18.0dBu",
+        "0.775000": "+27.0dBu"
+      }
+    },
+    {
+      "name": "Monitoring",
+      "index": 41,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Stereo",
+        "0.500000": "Mid"
+      }
+    },
+    {
+      "name": "MS Processing",
+      "index": 42,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Mono Maker Freq",
+      "index": 43,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "63.2 Hz",
+        "0.550000": "200.0 Hz",
+        "0.775000": "632.5 Hz"
+      }
+    },
+    {
+      "name": "Stereo Width",
+      "index": 44,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "50 %",
+        "0.500000": "100 %",
+        "0.750000": "200 %"
+      }
+    },
+    {
+      "name": "Stereo Mode",
+      "index": 45,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Analog",
+        "1.000000": "Digital"
+      }
+    },
+    {
+      "name": "Headroom",
+      "index": 47,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0 dB",
+        "0.500000": "0.0 dB",
+        "0.750000": "+6.0 dB"
+      }
+    }
+  ],
+  "not_read": [
+    {
+      "name": "Peak Level 1",
+      "index": 2,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "High Freq 1",
+      "index": 5,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "High Mid Freq 1",
+      "index": 8,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Low Mid Freq 1",
+      "index": 11,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Low Freq 1",
+      "index": 14,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Low Cut Freq 1",
+      "index": 18,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Peak Level 2",
+      "index": 19,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "High Freq 2",
+      "index": 22,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "High Mid Freq 2",
+      "index": 25,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Low Mid Freq 2",
+      "index": 28,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Low Freq 2",
+      "index": 31,
+      "why": "no write landed (3 tried)"
+    },
+    {
+      "name": "Low Cut Freq 2",
+      "index": 35,
+      "why": "no write landed (3 tried)"
+    }
+  ],
+  "measuredAt": "20261017T001513"
+}

@@ -1,0 +1,169 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "J37 (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "eb195d52d2b6d587f0c24f142f68fbbf961a6db55386de953c5a2cbc3649d704",
+  "controls": [
+    {
+      "name": "Speed",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "7.5",
+        "0.500000": "7.5",
+        "0.750000": "15"
+      }
+    },
+    {
+      "name": "Formula",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "811",
+        "0.750000": "815",
+        "0.875000": "815"
+      }
+    },
+    {
+      "name": "Modeled Tracks",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "2",
+        "0.750000": "3"
+      }
+    },
+    {
+      "name": "Bias",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.625000": "+ 3",
+        "0.750000": "+ 5",
+        "0.875000": "+ 5"
+      }
+    },
+    {
+      "name": "WOW Rate",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "WOW Depth",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "-22.5dB",
+        "0.500000": "0.0dB",
+        "0.725000": "22.5dB"
+      }
+    },
+    {
+      "name": "Flutter Rate",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Flutter Depth",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "-17.5dB",
+        "0.550000": "5.0dB",
+        "0.775000": "27.5dB"
+      }
+    },
+    {
+      "name": "Input Level",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0dB",
+        "0.500000": "0.0dB",
+        "0.750000": "9.0dB"
+      }
+    },
+    {
+      "name": "Level Link",
+      "index": 11,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "On"
+      }
+    },
+    {
+      "name": "Output Level",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-9.0dB",
+        "0.500000": "0.0dB",
+        "0.750000": "9.0dB"
+      }
+    },
+    {
+      "name": "Delay HP",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "165.9Hz",
+        "0.550000": "837.7Hz",
+        "0.775000": "4229.8Hz"
+      }
+    },
+    {
+      "name": "Delay LP",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.225000": "80.8Hz",
+        "0.450000": "407.9Hz",
+        "0.675000": "2059.6Hz"
+      }
+    },
+    {
+      "name": "Delay Feedback Level",
+      "index": 18,
+      "kind": "anchored",
+      "displayAt": {
+        "0.325000": "33%",
+        "0.550000": "55%",
+        "0.775000": "78%"
+      }
+    },
+    {
+      "name": "Delay Time",
+      "index": 19,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "501",
+        "0.500000": "1001",
+        "0.750000": "1500"
+      }
+    },
+    {
+      "name": "Delay Sync",
+      "index": 21,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Off",
+        "1.000000": "Sync"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000619"
+}

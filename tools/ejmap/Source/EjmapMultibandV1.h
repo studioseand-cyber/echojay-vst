@@ -212,7 +212,8 @@ inline Result judge (const juce::var& draft, const juce::var& v1)
             br.parts.push_back (gainPart (vb.getProperty ("tonecheck", {})));
             br.parts.push_back (crossoverPart (crossovers, br.band));
             auto state = [&] (const char* n) { for (const auto& p : br.parts) if (p.name == n) return p.state; return juce::String(); };
-            br.pass = state ("identity") == "pass" && state ("range") == "pass" && state ("direction") == "pass" && state ("threshold") != "fail"
+            // every part must HOLD (17 Oct): a threshold "not tested" (a display that is not dB - OTT's 0-100) does not certify the band
+            br.pass = state ("identity") == "pass" && state ("range") == "pass" && state ("direction") == "pass" && state ("threshold") == "pass"
                       && state ("gain") == "pass" && (state ("crossover") == "pass" || state ("crossover") == "not_applicable");
             br.makeupControl = vb.getProperty ("makeup", {}).getProperty ("control", "").toString();
             br.makeupOffered = br.pass && makeupPasses (vb.getProperty ("makeup", {}));

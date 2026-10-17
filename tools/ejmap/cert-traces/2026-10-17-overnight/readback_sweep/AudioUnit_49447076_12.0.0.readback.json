@@ -1,0 +1,145 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "CLA Bass (m->s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "cbd0ce0988dfb03f91e97d04d14afbd5c02fa97fbc387f5931112805772ab922",
+  "controls": [
+    {
+      "name": "Bass Color",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Sub"
+      }
+    },
+    {
+      "name": "Treble Color",
+      "index": 1,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.333333": "Honk"
+      }
+    },
+    {
+      "name": "Compress Color",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Bypass",
+        "0.666667": "Spank"
+      }
+    },
+    {
+      "name": "Distortion Color",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "Growl"
+      }
+    },
+    {
+      "name": "Sub Color",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "1.000000": "ON"
+      }
+    },
+    {
+      "name": "Pitch Color",
+      "index": 5,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Mute",
+        "0.333333": "Chorus"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Bass",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Treble",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Compress",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Sub",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Distortion",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Pitch",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    },
+    {
+      "name": "Output",
+      "index": 13,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-5.0",
+        "0.500000": "0.0",
+        "0.750000": "5.0"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T234915"
+}

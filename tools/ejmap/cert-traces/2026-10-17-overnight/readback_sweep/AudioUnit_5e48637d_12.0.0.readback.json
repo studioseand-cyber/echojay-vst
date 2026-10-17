@@ -1,0 +1,188 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "Maserati GTi (s)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "3495da66cf6b5b4f2c0a5f07d9428b8f361f5ab3643bbe7b0ab589add8faecf4",
+  "controls": [
+    {
+      "name": "Guitar Type",
+      "index": 0,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Clean",
+        "0.250000": "Clean Chorus"
+      }
+    },
+    {
+      "name": "Sensitivity",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-25.0",
+        "0.500000": "0.0",
+        "0.750000": "25.0"
+      }
+    },
+    {
+      "name": "Presence 1",
+      "index": 2,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "-21.2",
+        "0.525000": "2.5",
+        "0.762500": "26.3"
+      }
+    },
+    {
+      "name": "Presence 2",
+      "index": 3,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "2",
+        "0.500000": "3",
+        "0.750000": "3"
+      }
+    },
+    {
+      "name": "Tame",
+      "index": 4,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "FX",
+      "index": 5,
+      "kind": "anchored",
+      "displayAt": {
+        "0.287500": "-14.2",
+        "0.525000": "-9.5",
+        "0.762500": "-4.7"
+      }
+    },
+    {
+      "name": "Delay",
+      "index": 6,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "475",
+        "0.500000": "650",
+        "0.750000": "825"
+      }
+    },
+    {
+      "name": "Mix",
+      "index": 7,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Press",
+      "index": 8,
+      "kind": "anchored",
+      "displayAt": {
+        "0.275000": "27.5",
+        "0.500000": "50.0",
+        "0.725000": "72.5"
+      }
+    },
+    {
+      "name": "Width",
+      "index": 9,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Depth",
+      "index": 10,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Vibro",
+      "index": 11,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Range",
+      "index": 12,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Rate",
+      "index": 14,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Output 1",
+      "index": 15,
+      "kind": "anchored",
+      "displayAt": {
+        "0.300000": "30.0",
+        "0.500000": "50.0",
+        "0.700000": "70.0"
+      }
+    },
+    {
+      "name": "Output 2",
+      "index": 16,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-6.0",
+        "0.500000": "0.0",
+        "0.750000": "6.0"
+      }
+    },
+    {
+      "name": "Meter Switch",
+      "index": 17,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Out",
+        "1.000000": "In"
+      }
+    },
+    {
+      "name": "Insert/Send",
+      "index": 18,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Insert",
+        "1.000000": "Send"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261017T000822"
+}

@@ -1,0 +1,58 @@
+{
+  "schema": "ej_readback_sweep/1",
+  "product": "DeEsser (m)",
+  "version": "12.0.0",
+  "map_version": "12.0.0",
+  "map_fp": "8e345d65e175185f1c1cb3e2122bafbc4115ce86fbe5a13265350c8cccc81d2a",
+  "controls": [
+    {
+      "name": "Threshold",
+      "index": 0,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "-60.0",
+        "0.500000": "-40.0",
+        "0.750000": "-20.0"
+      }
+    },
+    {
+      "name": "Freq",
+      "index": 1,
+      "kind": "anchored",
+      "displayAt": {
+        "0.250000": "3364",
+        "0.500000": "5657",
+        "0.750000": "9514"
+      }
+    },
+    {
+      "name": "SideChain",
+      "index": 2,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "BandPass",
+        "1.000000": "HighPass"
+      }
+    },
+    {
+      "name": "Audio",
+      "index": 3,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "Split",
+        "1.000000": "Wideband"
+      }
+    },
+    {
+      "name": "Monitor",
+      "index": 4,
+      "kind": "mode",
+      "displayAt": {
+        "0.000000": "  Output",
+        "1.000000": "SideChain"
+      }
+    }
+  ],
+  "not_read": [],
+  "measuredAt": "20261016T235056"
+}
