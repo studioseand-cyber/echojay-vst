@@ -1204,6 +1204,50 @@ static juce::var linkRowOf (const juce::var& st, const juce::String& uid)
     return {};
 }
 
+/** IS THIS A LINK A ROW CAN BE ABOUT? (17 Oct 2026, found by the gate's SECOND S6 run.)
+
+    The registry outlives the processes listed in it. The second run picked a uid left behind by an
+    earlier one and four rows then failed about a Link that was not there: L1 asked "add a compressor
+    on 5aabf74ffa" - a bare hash, because the entry had no name - against a rack whose sidecar reads
+    -1, which is the sentinel for "not readable" and not a slot count. The rows were not wrong; they
+    were asking about nothing, which is the one thing a test must never do quietly.
+
+    Three facts, all of which a live Link has and a leftover entry does not: it says it is connected,
+    its host has given it a name, and its slot count is READABLE. -1 is excluded explicitly, because
+    this tree has already been caught twice comparing that sentinel as if it were a number. */
+static bool linkIsUsable (const juce::var& st, const juce::String& uid)
+{
+    if (uid.isEmpty()) return false;
+    const auto l = linkRowOf (st, uid);
+    if (! l.isObject()) return false;
+    return (bool) l.getProperty ("connected", false)
+        && l.getProperty ("name", juce::var()).toString().isNotEmpty()
+        && (int) l.getProperty ("slotCount", -1) >= 0;
+}
+
+/** The uid of a Link that is live NOW - the Kick by preference, which is Sean's ruling so that rows
+    saying "the kick" are about the kick. Empty when the registry holds no usable Link at all, which
+    a row must report as a skip rather than guess around. */
+static juce::String usableLinkUid (const juce::var& st, bool preferKick, juce::String* nameOut = nullptr)
+{
+    juce::String any, anyName;
+    if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+        for (const auto& l : *arr)
+        {
+            const auto u = l.getProperty ("uid", juce::var()).toString();
+            if (! linkIsUsable (st, u)) continue;
+            const auto n = l.getProperty ("name", juce::var()).toString();
+            if (preferKick && n.containsIgnoreCase ("Kick")) { if (nameOut != nullptr) *nameOut = n; return u; }
+            if (any.isEmpty()) { any = u; anyName = n; }
+        }
+    if (nameOut != nullptr && any.isNotEmpty()) *nameOut = anyName;
+    return any;
+}
+
+// Declared here because scen() calls it: a scenario whose only wording offence is the server's is
+// recorded as a skip, and the two live next to each other below.
+static void scenSkip (const char* id, const char* title, const juce::String& why, const char* owner);
+
 // A row's verdict, in the scorecard's words. Printed in a form the scorecard is written from, so the file
 // and the run cannot disagree.
 /** One capability row. `r` is the turn behind it, and a row CANNOT PASS without one: see
@@ -1362,12 +1406,29 @@ static juce::StringArray wordingOffences (const juce::var& state)
         "settings_unapplied", "not_applied", "apply_to"
     };
     juce::StringArray out;
+    // ---- WHOSE WORD IS IT? (17 Oct 2026) ------------------------------------------------------
+    // S6 failed E13-live on I4 for the word "undefined" in a sentence the MODEL streamed: "I'm still
+    // only getting about a second of audio each time, not enough to land a loudness reading...".
+    // "undefined" is a JavaScript value printed into a string - it cannot be composed by this C++ at
+    // all - so it is the server interpolating a variable it did not have, and no build of mine can
+    // make that sentence read better.
+    //
+    // It is still a defect from where Sean sits, so it is never passed over: it is reported with a
+    // "B: " mark, which makes the scenario SKIP with the sentence attached rather than go red, and it
+    // goes to FOR_B. The plugin's OWN compositions - step lines, step details, the card - are judged
+    // exactly as before, whatever the word, because those are mine to fix.
     auto scan = [&out] (const juce::String& where, const juce::String& text)
     {
         if (text.isEmpty()) return;
+        const bool modelsProse = where == "a message" || where == "the opening" || where == "the closing";
         for (const char* b : kBanned)
             if (text.contains (b))
-                out.add (where + ": \"" + b + "\" in \"" + text.substring (0, 90) + "\"");
+            {
+                const bool jsIsm = juce::String (b) == "undefined" || juce::String (b) == "Traceback"
+                                || juce::String (b) == "HTTP 5";
+                out.add (juce::String (modelsProse && jsIsm ? "B: " : "")
+                         + where + ": \"" + b + "\" in \"" + text.substring (0, 90) + "\"");
+            }
     };
     // ---- THIS SCENARIO'S OWN WORDS (16 Oct 2026) ----------------------------------------------
     // The first cut scanned the WHOLE transcript, so one run's leak failed every scenario after it -
@@ -1449,9 +1510,21 @@ static void scen (const char* id, const char* title, bool pass, const juce::Stri
         sc.detail += "  <- NO TURN RAN (" + r->whyNotRan() + ")";
         pass = false;
     }
-    const auto offences = wordingOffences (state);
+    auto offences = wordingOffences (state);
     if (! offences.isEmpty())
     {
+        bool allB = true;
+        for (const auto& o : offences) if (! o.startsWith ("B: ")) allB = false;
+        if (allB)
+        {
+            // Not this build's wording and not a pass either: the row is recorded as a skip whose
+            // reason is the server's own sentence, and it goes to FOR_B.
+            scenSkip (id, title,
+                      "the only wording offence on screen is the SERVER's, in prose this build cannot "
+                      "compose (FOR_B): " + offences.joinIntoString ("; ") + ".  NEVER counted as a pass.",
+                      "B");
+            return;
+        }
         pass = false;
         sc.detail += "  <- I4 (clean wording) FAILED: " + offences.joinIntoString ("; ");
     }
@@ -2407,20 +2480,16 @@ int main (int argc, char* argv[])
     // THE KICK BY PREFERENCE (16 Oct 2026, Sean): with real track names in the registry the rows that
     // say "the kick" can be about the kick. Any connected Link still satisfies the wait - a row must
     // not hang because a name is late - but the Kick is taken when it is there.
+    // AND USABLE, NOT MERELY LISTED (17 Oct): connected, named, with a readable slot count. A
+    // leftover entry from an earlier run satisfies "connected" and nothing else.
     const bool sawLink = rig.until ([&linkUid, &linkName] (const juce::var& s)
     {
-        juce::String anyUid, anyName;
-        if (auto* arr = s.getProperty ("links", juce::var()).getArray())
-            for (const auto& l : *arr)
-            {
-                if (! (bool) l.getProperty ("connected", false)) continue;
-                const auto u = l.getProperty ("uid",  juce::var()).toString();
-                const auto n = l.getProperty ("name", juce::var()).toString();
-                if (u.isEmpty()) continue;
-                if (n.containsIgnoreCase ("Kick")) { linkUid = u; linkName = n; return true; }
-                if (anyUid.isEmpty() || (anyName.isEmpty() && n.isNotEmpty())) { anyUid = u; anyName = n; }
-            }
-        if (anyUid.isNotEmpty()) { linkUid = anyUid; linkName = anyName; }
+        juce::String n;
+        if (const auto kick = usableLinkUid (s, true, &n); kick.isNotEmpty() && n.containsIgnoreCase ("Kick"))
+        { linkUid = kick; linkName = n; return true; }
+        juce::String anyName;
+        if (const auto any = usableLinkUid (s, false, &anyName); any.isNotEmpty())
+        { linkUid = any; linkName = anyName; }
         return false;        // keep looking for the Kick until the bound
     }, 20000);
     if (! sawLink) rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()));
@@ -4877,12 +4946,12 @@ int main (int argc, char* argv[])
         // rather than anything about the product.
         juce::String liveLink;
         {
+            // "connected" ALONE WAS NOT ENOUGH (17 Oct): it is true of an entry whose process is
+            // gone, and this row then reported "the Link went 5 -> 5" about a rack nobody was
+            // holding. Named and readable, like every other Link row now.
             const auto st0 = rig.freshState();
-            if (auto* arr = st0.getProperty ("links", juce::var()).getArray())
-                for (const auto& l : *arr)
-                    if ((bool) l.getProperty ("connected", false) && liveLink.isEmpty())
-                        liveLink = l.getProperty ("uid", juce::var()).toString();
-            if (liveLink.isEmpty()) liveLink = linkUid;
+            liveLink = usableLinkUid (st0, true);
+            if (liveLink.isEmpty() && linkIsUsable (st0, linkUid)) liveLink = linkUid;
         }
         if (! liveLink.isEmpty())
         {
@@ -6157,15 +6226,34 @@ int main (int argc, char* argv[])
                       [&] (const AgentOutcome& r, const juce::var& st, juce::String& why)
                       {
                           int comp = -1, eq = -1;
-                          if (auto* arr = st.getProperty ("ownRack", juce::var())
-                                              .getProperty ("slots", juce::var()).getArray())
-                              for (const auto& sl : *arr)
-                              {
-                                  const auto nm = sl.getProperty ("name", juce::var()).toString();
-                                  const int  n  = (int) sl.getProperty ("n", juce::var());
-                                  if (nm.containsIgnoreCase ("Compressor") && comp < 0) comp = n;
-                                  if (nm.containsIgnoreCase ("EQ") && eq < 0)           eq   = n;
-                              }
+                          // ---- READ ONCE AND THIS ROW IS ABOUT THE PUBLISHER'S TIMING (17 Oct) ----
+                          // It passed in one S6 run and failed in the next 25 minutes later, reporting
+                          // "the compressor landed at slot 2, AFTER the EQ at 1" over a run whose own
+                          // step lines read "added EchoJay Compressor first" and then "added EchoJay
+                          // EQ" - the right thing, in the right order. The rack was still being
+                          // published when the row looked.
+                          //
+                          // Invariant I7 gives the published view three seconds to follow a change, so
+                          // that is what this waits for - the pair present and in order - and judges
+                          // only then. A row that reads a moving value once and believes it is the
+                          // fault this tree has written down three times.
+                          const auto readPair = [&comp, &eq] (const juce::var& v)
+                          {
+                              comp = -1; eq = -1;
+                              if (auto* arr = v.getProperty ("ownRack", juce::var())
+                                                 .getProperty ("slots", juce::var()).getArray())
+                                  for (const auto& sl : *arr)
+                                  {
+                                      const auto nm = sl.getProperty ("name", juce::var()).toString();
+                                      const int  n  = (int) sl.getProperty ("n", juce::var());
+                                      if (nm.containsIgnoreCase ("Compressor") && comp < 0) comp = n;
+                                      if (nm.containsIgnoreCase ("EQ") && eq < 0)           eq   = n;
+                                  }
+                          };
+                          readPair (st);
+                          if (! (comp > 0 && eq > 0 && comp < eq))
+                              rig.until ([&] (const juce::var& v)
+                                         { readPair (v); return comp > 0 && eq > 0 && comp < eq; }, 5000);
                           if (comp < 0) { why = "no compressor landed on the rack"; return false; }
                           if (eq   < 0) { why = "there is no EchoJay EQ on the rack to place it against"; return false; }
                           if (comp > eq) { why = "the compressor landed at slot " + juce::String (comp)
@@ -6348,8 +6436,28 @@ int main (int argc, char* argv[])
                  + (bypassed ? "" : ", card said: " + r.text.substring (0, 160) + r.failDetail), &r);
         }
 
+        // ---- THE LINK ROWS RE-RESOLVE, BECAUSE THE REGISTRY MOVES (17 Oct) -------------------
+        // `linkUid` was taken at the top of a run that lasts the better part of an hour. By the time
+        // L1-L3 and K1 run, the Link it names may have been rebuilt, re-registered under a new uid or
+        // left behind by a dead process. Re-resolving here costs one state read and is the difference
+        // between four rows about the product and four rows about a hash.
+        {
+            const auto stL = rig.freshState();
+            if (! linkIsUsable (stL, linkUid))
+            {
+                juce::String n;
+                if (const auto u = usableLinkUid (stL, true, &n); u.isNotEmpty())
+                {
+                    std::printf ("        (the Link these rows were holding (%s) is no longer usable - "
+                                 "re-resolved to \"%s\" (%s), which is connected, named and readable)\n",
+                                 linkUid.toRawUTF8(), n.toRawUTF8(), u.toRawUTF8());
+                    linkUid = u; linkName = n;
+                }
+            }
+        }
+
         // ---- L1: the same, on ANOTHER track's Link --------------------------
-        if (linkUid.isNotEmpty())
+        if (linkIsUsable (rig.freshState(), linkUid))
         {
             const auto rowBefore = linkRowOf (Rig::state(), linkUid);
             const int before = (int) rowBefore.getProperty ("slotCount", -1);
@@ -6464,7 +6572,7 @@ int main (int argc, char* argv[])
         // failed on the SAME binary for two different server-side reasons - 12:34 pass, 14:01 fail on
         // check(level_landed), 14:42 fail on a round that produced nothing, 15:05 pass. One run of a flaky
         // row tells you about that run. The rows are named L2#1..L2#N so a log says which attempt did what.
-        if (linkUid.isNotEmpty())
+        if (linkIsUsable (rig.freshState(), linkUid))
         {
             const char* rep = ::getenv ("EJ_RIG_L2_REPEAT");
             const int reps = juce::jlimit (1, 10, rep != nullptr ? juce::String (rep).getIntValue() : 1);
@@ -6507,7 +6615,7 @@ int main (int argc, char* argv[])
         // CHAIN tab - so after a build made from the AI tab, selecting that Link said "Reading 0 plugin(s)
         // from ..." until the window was closed and reopened. This row selects it IMMEDIATELY, with no
         // reopen, which is the only way it can fail on the old build.
-        if (linkUid.isNotEmpty())
+        if (linkIsUsable (rig.freshState(), linkUid))
         {
             const auto sidecar = linkRowOf (rig.freshState(), linkUid).getProperty ("slots", juce::var()).toString();
             rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkUid));
@@ -6527,7 +6635,7 @@ int main (int argc, char* argv[])
 
 
         // ---- L3: a Link's OUT ------------------------------------------------
-        if (linkUid.isNotEmpty())
+        if (linkIsUsable (rig.freshState(), linkUid))
         {
             const double before = (double) linkRowOf (Rig::state(), linkUid).getProperty ("gainDb", 0.0);
             const auto name = linkRowOf (Rig::state(), linkUid).getProperty ("name", juce::var()).toString();
