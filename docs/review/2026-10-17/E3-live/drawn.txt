@@ -1,8 +1,11 @@
 scenario E3-live
-captured 2026-10-17T07:09:53.467+01:00
+captured 2026-10-17T13:07:27.185+01:00
   [user] How much gain reduction is Renaissance Axx (s) doing?
-  [assistant] I checked the Mix Bus rack and it only has one slot loaded - EchoJay Compressor - there's no Renaissance Axx (or any other Renaissance plugin) in this chain. Since it isn't present here, I can't give you a gain reduction reading for it; if it's running elsewhere in your session let me know which track and I can take a look there.
-  run row: status=Done changes=0 steps=1 zones=[11:1 step]
-  opening: I checked the Mix Bus rack and it only has one slot loaded - EchoJay Compressor - there's no Renaissance Axx (or any other Renaissance plugin) in this chain. Since it isn't present here, I can't give you a gain reduction reading for it; if it's running elsewhere in your session let me know which track and I can take a look there.
+  [assistant] Looking at this channel's rack, there's no Renaissance Axx loaded here - only an EchoJay Compressor in slot 1. If Renaissance Axx is running on another track, gain reduction can't be read from a Link; you'd need to open that track's own EchoJay window to check its meter there.
+  run row: status=Done changes=0 steps=4 zones=[3,11:4 steps]
+  opening: Looking at this channel's rack, there's no Renaissance Axx loaded here - only an EchoJay Compressor in slot 1. If Renaissance Axx is running on another track, gain reduction can't be read from a Link; you'd need to open that track's own EchoJay window to check its meter there.
   closing: 
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr" [failed] right="not applied" detail="slot 0 is not on the rack (1..1)." chips=[]
     step "read the rack" [done] right="" detail="" chips=[]

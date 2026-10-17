@@ -1,0 +1,8 @@
+scenario RP4
+captured 2026-10-17T12:23:55.034+01:00
+  [user] Add Renaissance Axx with threshold at -20 dB  [rig-replay:rp_cp_2]
+  [assistant] 
+  run row: status=Waiting for your OK changes=0 steps=1 zones=[1,2,7:Stop]
+  opening: 
+  closing: 
+    step "add Renaissance Axx" [awaiting] right="" detail="" chips=[]

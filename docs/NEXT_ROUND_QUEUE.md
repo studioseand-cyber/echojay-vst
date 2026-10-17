@@ -1559,3 +1559,24 @@ measures is the SERVER's half of continuity (FOR_B §16)"*. It is right for E10-
 C2-live, whose section is §20 - and will be wrong for the next one too. The row should carry its own
 section, as a parameter next to its title. Corrected by hand in `ship_2026-10-17a/GREEN.txt` so the
 record does not mislead.
+
+---
+
+## item 18 - "can it load" is a per-FORMAT question, and the inventory answers it per NAME (17 Oct)
+
+Sean's Pro-C 2 is installed twice: an AU that loads and a VST3 with no arm64 slice. The feed is
+name-keyed and collapses the twins, so the name is offered because one build is runnable, and the add
+then resolves the other and is refused at the last moment - which is exactly what he saw behind an
+Apply this morning.
+
+`installedButCannotLoad()` has the same shape of answer, one line per NAME, so it can say
+"FabFilter Pro-C 2 - its VST3 has no arm64 build" about a plugin whose AU is fine. That is better
+than silence and worse than the truth.
+
+What it should be: the verdict carried per format, and the add's own format choice made against it -
+if the AU loads, add the AU, and only say it cannot load when no installed build of it can run here.
+The place to decide is wherever resolveByName picks the descriptor; the arch verdict is already
+per-path, which is per-format, so the information exists and only the shape of the answer is wrong.
+
+Until then the inventory marks the name, and FOR_B §23 tells B to treat that mark as the stronger
+signal.

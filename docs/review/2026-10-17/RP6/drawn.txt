@@ -1,0 +1,10 @@
+scenario RP6
+captured 2026-10-17T12:23:59.325+01:00
+  [user] Add kHs Transient Shaper  [rig-replay:rp_cp_8]
+  [assistant] There's a Tube-Tech CL 1B on slot 1. Play the loudest part of the kick so I can get a gain reduction reading.
+  run row: status=Done changes=0 steps=3 zones=[3,11:3 steps]
+  opening: There's a Tube-Tech CL 1B on slot 1. Play the loudest part of the kick so I can get a gain reduction reading.
+  closing: 
+    step "add kHs Transient Shaper" [failed] right="not applied" detail="kHs Transient Shaper is not one this rack can load here" chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "read the rack" [done] right="" detail="" chips=[]
