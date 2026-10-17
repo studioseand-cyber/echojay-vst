@@ -12039,8 +12039,8 @@ int main (int, char**)
         const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
         const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
         check (tagOf (pickMap (c1, "0.4.45")) == "au-installed" && tagOf (pickMap (c2, "0.4.45")) == "au-b" && tagOf (pickMap (c3, "0.4.45")) == "none"
-               && rbs.contains ("readback::pickMap (mapsOf[desc.name], desc.version)"),
-               "wizard WZ-RBSWEEP-2: the read-back uses the AudioUnit map of the installed version, else the newest AudioUnit map, never a VST3 map");
+               && rbs.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)") && rbs.contains ("const juce::String& format = \"AudioUnit\", const juce::var& at = {})"),
+               "wizard WZ-RBSWEEP-2: the read-back uses the AudioUnit map of the installed version, else the newest AudioUnit map, never a VST3 map (the default sweep; --format VST3 is WZ-RBSWEEP-4)");
         check (trr.contains ("rv->setProperty (\"first_category\", firstCategory);") && trr.contains ("return now ? (x.getProperty (\"category\", \"\").toString() == firstCategory ? 0 : 1) : 2;")
                && trr.contains ("std::stable_sort (v.begin(), v.end(), [&] (const juce::var& a, const juce::var& b) { return tier (a) < tier (b); });"),
                "wizard WZ-TRUST-10: --review-first names the first category in the review file and orders its counts-now rows first, then the other counts-now rows, then the rest");
@@ -12195,6 +12195,89 @@ int main (int, char**)
                && mc.contains ("if (std::abs (took - t.norm) > 1e-4) ++c.readback.snapped;") && sc.contains ("if (readback.snapped > 0) rb->setProperty (\"snapped\", readback.snapped);")
                && redOk && mainRd.contains ("return ejmap::cert::runReadbackRederive (maps, from, out);"),
                "wizard WZ-RBSWEEP-3: a snapped write is judged at the value the plugin took, one taken value counts once (a stuck control is one reading), a value with no getValue is not read; the app's sweep does the same; --readback-rederive rebuilds from raw, keeps the reading's time, never over its source");
+    }
+    // WZ-TRUST-15 CERTIFICATION BY FORMAT (Kathy, 17 Oct, rulings 2): certification counts only in the format it was measured in - the
+    // publish list's products take their format from the published profiles, a v1 draft from its plugin_id / file name; a listed product
+    // with no profile stating a format certifies nothing
+    {
+        using namespace ejmap::trustrun;
+        const auto tmp = juce::File::createTempFile ("certfmt"); tmp.createDirectory();
+        tmp.getChildFile ("A_1.0.json").replaceWithText (R"J({"schema":"ej_comp_profile/1","plugin":{"name":"A","format":"AudioUnit","plugin_id":"AudioUnit|1|1.0"}})J");
+        tmp.getChildFile ("A_1.0.tonecheck.json").replaceWithText (R"J({"plugin":{"name":"A","format":"VST3"}})J");      // a sidecar never certifies
+        tmp.getChildFile ("B_2.0.json").replaceWithText (R"J({"schema":"ej_comp_profile/1","plugin":{"name":"B"}})J");                 // no format stated
+        tmp.getChildFile ("Z_1.json").replaceWithText (R"J({"plugin":{"name":"Z","format":"VST3"}})J");                                // not on the list
+        juce::StringArray unstated;
+        const auto fs = certifiedByFormat ({ "A", "B", "C" }, tmp, unstated);
+        tmp.deleteRecursively();
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        const auto mainTl = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--trust-levels\")", false, false).upToFirstOccurrenceOf ("if (a == \"--self-guard\")", false, false);
+        check (fs.size() == 1 && fs.count ({ "A", "AudioUnit" }) && ! fs.count ({ "A", "VST3" }) && unstated.size() == 2 && unstated.contains ("B") && unstated.contains ("C")
+               && trr.contains ("auto r = certv1::judge (cat, d); r.format = trust::formatOfRecord (d, f.getFileName()); out.push_back (r);")
+               && trr.contains ("r.format = trust::formatOfRecord (d, f.getFileName());") && trr.contains ("v1Pass[r.category].insert ({ r.product, r.format });")
+               && trr.contains ("const std::pair<juce::String, juce::String> key { name, fmt };")
+               && trr.contains ("(cat == \"compressor\" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == \"amp_sim\" && v1Pass[\"saturation\"].count (key))")
+               && trr.contains ("|| (cat == \"compressor\" && v1Pass[\"multiband\"].count (key));")
+               && mainTl.contains ("else if (k == \"--certified-profiles\") profiles = cwdFile (v); }") && mainTl.contains ("outD, human, reviewFirst, profiles);"),
+               "wizard WZ-TRUST-15: certification counts only in the format it was measured in (publish list by its profiles' format, v1 drafts by theirs); a listed product with no stated format certifies nothing");
+    }
+    // WZ-TRUST-16 THE FAILURES' OWN SETTINGS (rulings 2): every failure that stands keeps its norm (failed_at, once each) for the read-back
+    // at that setting; a failure the recency rule set aside is not listed
+    {
+        using namespace ejmap::trust;
+        const auto map = juce::JSON::parse (R"J({"identity":{"name":"X","version":"1.0","format":"AudioUnit"},"controls":{
+            "T":{"name":"T","index":0,"kind":"anchored","anchors":[[-60,0],[0,1]]}}})J");
+        Readings a; a["T"] = { { 0.9, "-2.0" }, { 0.9, "-2.5" }, { 0.05, "-50" }, { 0.5, "-30.0" } };   // 0.9 twice, 0.05 failing, 0.5 passing
+        Readings b; b["T"] = { { 0.25, "-45.0" }, { 0.12, "-52.8" } };                                   // newer, clean, within 0.1 of 0.05 only
+        const auto rb = creditMap (map, { { "old", a }, { "new", b } }, { { "1.0", stampMs ("2026-10-04"), "AudioUnit" }, { "1.0", stampMs ("2026-10-16"), "AudioUnit" } }).at ("T");
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (rb.failedAt.size() == 1 && std::abs (rb.failedAt[0] - 0.9) < 1e-9 && rb.superseded == 1 && rb.failed == 2
+               && trr.contains ("o->setProperty (\"failed_at\", juce::var (fa));"),
+               "wizard WZ-TRUST-16: each standing failure's norm is kept once (failed_at, in the credited copy); a set-aside failure is not");
+    }
+    // WZ-RBSWEEP-4 THE VST3 READ-BACK AND THE READ AT GIVEN SETTINGS (rulings 2): --format VST3 plans from the VST3 map, takes its products
+    // from the scan cache through the guard (a bundle it cannot check is held), and records the version the probe's VST3 class reports;
+    // --at reads only the listed controls, at their three targets plus the given norms
+    {
+        using namespace ejmap::readback;
+        const auto map = juce::JSON::parse (R"J({"identity":{"name":"P","version":"1.0","format":"AudioUnit"},"controls":{
+            "Freq":{"name":"Freq","index":0,"kind":"anchored","anchors":[[0,0],[10,1]]},
+            "Gain":{"name":"Gain","index":1,"kind":"anchored","anchors":[[0,0],[10,1]]}}})J");
+        const auto at = juce::JSON::parse (R"J({"Freq":["0.916667","0.5","0.033333"]})J");
+        const auto ws = plan (map, at), all = plan (map);
+        auto M = [] (const char* fmt, const char* ver, const char* tag) { return juce::JSON::parse (juce::String (R"J({"identity":{"name":"P","format":")J") + fmt + R"J(","version":")J" + ver + R"J("},"tag":")J" + tag + R"J("})J"); };
+        const std::vector<MapFile> cands { { M ("AudioUnit", "1.0", "au"), 100 }, { M ("VST3", "1.0.0", "v3"), 50 } };
+        auto tagOf = [] (const juce::var* m) { return m == nullptr ? juce::String ("none") : m->getProperty ("tag", "").toString(); };
+        const juce::String out = "probe: \"P\" | /x/P.vst3 | uid=1 | arch=arm64 | format=VST3\nvst3 class: \"P\" (asked \"P\", 1 class(es) in the bundle)\tversion\t1.4.5 (R6)\ntextmulti\n";
+        // the guard on a scan cache: a bundle on disk (not PACE) kept, a missing bundle held, a guarded vendor dropped, an AudioUnit ignored
+        const auto tmp = juce::File::createTempFile ("v3guard"); tmp.createDirectory(); tmp.getChildFile ("Keep.vst3").createDirectory();
+        const auto keepPath = tmp.getChildFile ("Keep.vst3").getFullPathName();
+        tmp.getChildFile ("scan-cache.xml").replaceWithText ("<EJMAP_SCAN_CACHE>"
+            "<PLUGIN name=\"Keep\" format=\"VST3\" manufacturer=\"Acme\" version=\"1.0\" file=\"" + keepPath + "\" uniqueId=\"1a\" isInstrument=\"0\" fileTime=\"0\" infoUpdateTime=\"0\" numInputs=\"2\" numOutputs=\"2\" isShell=\"0\"/>"
+            "<PLUGIN name=\"Gone\" format=\"VST3\" manufacturer=\"Acme\" version=\"1.0\" file=\"/nonexistent/Gone.vst3\" uniqueId=\"1b\" isInstrument=\"0\" fileTime=\"0\" infoUpdateTime=\"0\" numInputs=\"2\" numOutputs=\"2\" isShell=\"0\"/>"
+            "<PLUGIN name=\"EchoBoy\" format=\"VST3\" manufacturer=\"Soundtoys\" version=\"5\" file=\"" + keepPath + "\" uniqueId=\"1c\" isInstrument=\"0\" fileTime=\"0\" infoUpdateTime=\"0\" numInputs=\"2\" numOutputs=\"2\" isShell=\"0\"/>"
+            "<PLUGIN name=\"AuOnly\" format=\"AudioUnit\" manufacturer=\"Acme\" version=\"1\" file=\"AudioUnit:Effects/aufx,a,b\" uniqueId=\"1d\" isInstrument=\"0\" fileTime=\"0\" infoUpdateTime=\"0\" numInputs=\"2\" numOutputs=\"2\" isShell=\"0\"/>"
+            "</EJMAP_SCAN_CACHE>");
+        juce::StringArray dropped;
+        std::cout.setstate (std::ios::failbit);
+        const auto kept = guardedVst3 ({ "Keep", "Gone", "EchoBoy", "AuOnly" }, tmp.getChildFile ("scan-cache.xml"), "T", &dropped);
+        std::cout.clear();
+        tmp.deleteRecursively();
+        const auto rbs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReadbackSweepRun.h").loadFileAsString();
+        const auto run = rbs.fromFirstOccurrenceOf ("inline int runReadbackSweep", false, false).upToFirstOccurrenceOf ("inline int runReadbackRederive", false, false);
+        const auto red = rbs.fromFirstOccurrenceOf ("inline int runReadbackRederive", false, false);
+        const auto probe = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/au_instantiate_probe.cpp").loadFileAsString();
+        const auto mainRb = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--readback-sweep\")", false, false).upToFirstOccurrenceOf ("if (a == \"--readback-rederive\")", false, false);
+        check (ws.size() == 1 && ws[0].name == "Freq" && ws[0].norms.size() == 5 && std::abs (ws[0].norms.front() - 0.033333) < 1e-9 && std::abs (ws[0].norms.back() - 0.916667) < 1e-9
+               && all.size() == 2 && all[0].norms.size() == 3
+               && tagOf (pickMap (cands, "1.0", "VST3")) == "v3" && tagOf (pickMap (cands, "1.0")) == "au" && vst3VersionOf (out) == "1.4.5 (R6)" && vst3VersionOf ("probe: x\n").isEmpty()
+               && kept.size() == 1 && kept[0].name == "Keep" && dropped.size() == 2 && dropped.joinIntoString ("|").contains ("not on this Mac") && dropped.joinIntoString ("|").contains ("Soundtoys")
+               && run.contains ("const auto kept = format == \"VST3\" ? readback::guardedVst3 (names, opt.ledger.getChildFile (\"scan-cache.xml\"), \"READBACK\") : guardedPlugins (names, false, \"READBACK\");")
+               && run.indexOf ("readback::guardedVst3") < run.indexOf ("runProbeCall") && run.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)")
+               && run.contains ("const auto stem = format + \"_\"") && run.contains ("if (pv.isNotEmpty()) installed = pv;") && run.contains ("readback::record (map, ws, got, installed)")
+               && red.contains ("readback::pickMap (mapsOf[product], version, fmt)")
+               && probe.contains ("in the bundle)\\tversion\\t%s\\n\", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8());")
+               && mainRb.contains ("else if (k == \"--format\") format = v; else if (k == \"--at\") atFile = cwdFile (v); }") && mainRb.contains ("runReadbackSweep (o, maps, ns, format, at)"),
+               "wizard WZ-RBSWEEP-4: --format VST3 reads VST3 maps (scan-cache products through the guard, a bundle it cannot check held, the probe's installed version); --at reads only the listed controls at their targets plus the given norms");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

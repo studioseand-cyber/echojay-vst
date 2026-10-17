@@ -14,7 +14,13 @@
   THE GUARD first (guardedPlugins: licence-bound dropped, said, never loaded), then the session's licence gate per product. Resumable: a
   product with its record is skipped. Stops between products at the run-all hour (EJ_RUNALL_UNTIL_MS) or on Ctrl-C / 07:00 (phasebStop).
     ejmap --readback-sweep --maps <maps folder> --names <file> --out <cert> [--probe <path>] [--ejmap-ledger <dir>]
+                           [--format VST3] [--at <file.json>]
   The maps folder is only read.
+  --format VST3 (Kathy, 17 Oct, rulings 2): the VST3 maps, read through the probe's VST3 host. The products come from the ledger's
+    scan-cache.xml (read only), through the same guard (PACE checked on the .vst3 bundle; a bundle that cannot be checked is held);
+    the installed version is the one the probe's VST3 class reports ("vst3 class: ... version <v>"), never the scan cache's.
+  --at <file.json> {product: {control: [norms]}} (rulings 2: the read-back at each old failure's own setting): only those controls are
+    read, at their three targets AND the given norms, so a clean newer read-back lands on the failure itself.
 */
 
 #pragma once
@@ -29,11 +35,12 @@ namespace ejmap::readback
 struct Want { int index = -1; juce::String name, kind; std::vector<double> norms; };
 
 // the plan for one map: anchored controls at readbackTargets, mode controls at their first two labels (by norm)
-inline std::vector<Want> plan (const juce::var& map)
+inline std::vector<Want> plan (const juce::var& map, const juce::var& at = {})   // at: {control: [norms]} - only those controls, with those norms added
 {
     std::vector<Want> out;
     for (const auto& [name, c] : trust::mapControls (map))   // both formats: the controls block and the older params block (17 Oct)
     {
+        if (at.isObject() && ! at.hasProperty (name)) continue;
         Want w; w.index = (int) c.getProperty ("index", -1); w.name = name;
         w.kind = c.getProperty ("kind", "").toString(); if (w.index < 0) continue;
         if (w.kind == "anchored") for (const auto& t : trust::readbackTargets (trust::anchorsOf (c))) w.norms.push_back (t.norm);
@@ -44,6 +51,13 @@ inline std::vector<Want> plan (const juce::var& map)
                 std::sort (ns.begin(), ns.end()); ns.erase (std::unique (ns.begin(), ns.end()), ns.end());
                 for (size_t i = 0; i < ns.size() && i < 2; ++i) w.norms.push_back (ns[i]);
             }
+        if (const auto* extra = at.getProperty (name, {}).getArray(); extra != nullptr && ! w.norms.empty())
+            for (const auto& n : *extra)
+            {
+                const double v = n.toString().getDoubleValue();
+                if (std::none_of (w.norms.begin(), w.norms.end(), [&] (double x) { return std::abs (x - v) < 1e-6; })) w.norms.push_back (v);
+            }
+        std::sort (w.norms.begin(), w.norms.end());
         if (! w.norms.empty()) out.push_back (w);
     }
     std::sort (out.begin(), out.end(), [] (const Want& a, const Want& b) { return a.index < b.index; });
@@ -59,13 +73,13 @@ inline juce::String specOf (const std::vector<Want>& ws)
 // WHICH MAP (17 Oct: the overnight run read Meaw Chain / TB_Sibalance / Valhalla against their newer VST3 map): the probe loads the
 // AudioUnit, so its map is the AudioUnit map of the INSTALLED version, else the newest AudioUnit map; a VST3 map is never used
 struct MapFile { juce::var map; juce::int64 modMs = 0; };
-inline const juce::var* pickMap (const std::vector<MapFile>& cands, const juce::String& installedVersion)
+inline const juce::var* pickMap (const std::vector<MapFile>& cands, const juce::String& installedVersion, const juce::String& format = "AudioUnit")
 {
     const MapFile* best = nullptr; int bestRank = -1;
     for (const auto& c : cands)
     {
         const auto id = c.map.getProperty ("identity", {});
-        if (id.getProperty ("format", "").toString() != "AudioUnit") continue;
+        if (id.getProperty ("format", "").toString() != format) continue;   // 17 Oct: the format the probe loads (AudioUnit, or VST3 with --format)
         const int rank = id.getProperty ("version", "").toString() == installedVersion ? 1 : 0;
         if (rank > bestRank || (rank == bestRank && c.modMs > best->modMs)) { best = &c; bestRank = rank; }
     }
@@ -91,6 +105,37 @@ inline std::map<int, Got> parse (const juce::String& out)
         }
     }
     return g;
+}
+
+// the VST3 class line's installed version ("vst3 class: \"X\" (...)\tversion\t1.3.5.0"); empty when the probe did not print one
+inline juce::String vst3VersionOf (const juce::String& out)
+{
+    for (const auto& line : juce::StringArray::fromLines (out))
+        if (line.startsWith ("vst3 class: ") && line.contains ("\tversion\t")) return line.fromLastOccurrenceOf ("\tversion\t", false, false).trim();
+    return {};
+}
+// THE VST3 CANDIDATES (17 Oct, rulings 2): the scan cache's VST3 entries for these names, through the same guard as the AudioUnits -
+// the guard memory and vendor rules by name, the PACE check on the .vst3 bundle (one that cannot be checked is held, never assumed clear)
+inline std::vector<juce::PluginDescription> guardedVst3 (const juce::StringArray& names, const juce::File& scanCache, const juce::String& tag, juce::StringArray* dropped = nullptr)
+{
+    const auto mem = selfguard::loadMemory (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/self_guard_windows.json"));
+    std::vector<juce::PluginDescription> ds; juce::StringArray found;
+    if (auto xml = juce::XmlDocument::parse (scanCache))
+        for (auto* e : xml->getChildWithTagNameIterator ("PLUGIN"))
+        {
+            juce::PluginDescription d; if (! d.loadFromXml (*e) || d.pluginFormatName != "VST3") continue;
+            if (! names.contains (d.name) || found.contains (d.name)) continue;
+            found.add (d.name);
+            const juce::File bundle (d.fileOrIdentifier);
+            juce::String pw; bool pace = true;
+            if (! bundle.exists()) pw = "the bundle " + d.fileOrIdentifier + " is not on this Mac, so its PACE state cannot be checked: held";
+            else if (cert::isPaceWrapped (bundle)) pw = "PACE-wrapped (" + bundle.getFileName() + ")"; else pace = false;
+            const auto v = selfguard::judge (d.name, d.manufacturerName, "VST3|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version, pace, pw, mem);
+            if (v.drop) { std::cout << tag << ": GUARD dropped " << d.name << " (" << v.why << ")" << std::endl; if (dropped) dropped->add (d.name + "\t" + v.why); continue; }
+            ds.push_back (d);
+        }
+    for (const auto& n : names) if (! found.contains (n)) std::cout << tag << ": no VST3 in the scan cache: " << n << std::endl;
+    return ds;
 }
 
 // the record: per control, the readings that landed on the parameter that carries the map's name; everything else is said, not credited
@@ -133,14 +178,14 @@ inline juce::var record (const juce::var& map, const std::vector<Want>& ws, cons
 namespace ejmap::cert
 {
 
-inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir, const juce::StringArray& names)
+inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir, const juce::StringArray& names, const juce::String& format = "AudioUnit", const juce::var& at = {})
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("READBACK: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
     const auto outDir = opt.out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("sweep"); outDir.createDirectory();
     const auto raw = opt.out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("raw"); raw.createDirectory();
     // THE GUARD before anything loads (Kathy, 16 Oct): licence-bound products are dropped here and never reach the probe
-    const auto kept = guardedPlugins (names, false, "READBACK");
+    const auto kept = format == "VST3" ? readback::guardedVst3 (names, opt.ledger.getChildFile ("scan-cache.xml"), "READBACK") : guardedPlugins (names, false, "READBACK");
     std::map<juce::String, std::vector<readback::MapFile>> mapsOf;   // product -> every map file it has (readback::pickMap chooses)
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
@@ -155,14 +200,14 @@ inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir,
     {
         if (phasebStop() != 0) { say ("READBACK: stopped - the rest run on the resume"); return 130; }
         if (untilMs > 0 && juce::Time::currentTimeMillis() >= untilMs) { say ("READBACK: the run's hour reached - the rest run on the resume"); return 130; }
-        const auto* picked = mapsOf.count (desc.name) ? readback::pickMap (mapsOf[desc.name], desc.version) : nullptr;
-        if (picked == nullptr) { say ("READBACK: " + desc.name + " - no AudioUnit map in the folder"); ++refused; continue; }
+        const auto* picked = mapsOf.count (desc.name) ? readback::pickMap (mapsOf[desc.name], desc.version, format) : nullptr;
+        if (picked == nullptr) { say ("READBACK: " + desc.name + " - no " + format + " map in the folder"); ++refused; continue; }
         const auto map = *picked;
-        const auto stem = "AudioUnit_" + juce::String::toHexString (desc.uniqueId).toLowerCase() + "_" + desc.version;
+        const auto stem = format + "_" + juce::String::toHexString (desc.uniqueId).toLowerCase() + "_" + desc.version;
         const auto recFile = outDir.getChildFile (stem + ".readback.json");
         if (recFile.existsAsFile()) { ++skipped; continue; }   // resumable
         if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("READBACK: " + desc.name + " - " + gate.stop); ++refused; continue; }
-        const auto ws = readback::plan (map);
+        const auto ws = readback::plan (map, at.isObject() ? at.getProperty (desc.name, juce::var (new juce::DynamicObject())) : juce::var());
         if (ws.empty()) { say ("READBACK: " + desc.name + " - the map has no anchored or mode control to read back"); ++refused; continue; }
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms-multi", readback::specOf (ws) };
         const auto r = runProbeCall (args, opt.timeoutMs);
@@ -170,11 +215,13 @@ inline int runReadbackSweep (const SweepOptions& opt, const juce::File& mapsDir,
         if (r.kind == ChildResult::Kind::uiShown) { say ("READBACK: " + desc.name + ": a window appeared - stopped, nothing written"); return 5; }
         const auto got = readback::parse (r.out);
         if (got.empty()) { say ("READBACK: " + desc.name + " - the probe read nothing (raw kept: " + stem + ".readback.txt)"); ++refused; continue; }
-        const auto rec = readback::record (map, ws, got, desc.version);
+        auto installed = desc.version;   // a VST3's installed version is the probe's, never the (older) scan cache's
+        if (format == "VST3") { const auto pv = readback::vst3VersionOf (r.out); if (pv.isNotEmpty() && pv != installed) say ("READBACK: " + desc.name + " - installed " + pv + " (the scan cache said " + installed + ")"); if (pv.isNotEmpty()) installed = pv; }
+        const auto rec = readback::record (map, ws, got, installed);
         const int n = rec.getProperty ("controls", {}).size(), nr = rec.getProperty ("not_read", {}).size();
         rec.getDynamicObject()->setProperty ("measuredAt", nowStamp());
         recFile.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
-        say ("READBACK: " + desc.name + " -> " + juce::String (n) + " control(s) read, " + juce::String (nr) + " not read" + (desc.version != map.getProperty ("identity", {}).getProperty ("version", "").toString() ? " (installed " + desc.version + ", map " + map.getProperty ("identity", {}).getProperty ("version", "").toString() + ")" : juce::String()));
+        say ("READBACK: " + desc.name + " -> " + juce::String (n) + " control(s) read, " + juce::String (nr) + " not read" + (installed != map.getProperty ("identity", {}).getProperty ("version", "").toString() ? " (installed " + installed + ", map " + map.getProperty ("identity", {}).getProperty ("version", "").toString() + ")" : juce::String()));
         ++done; credited += n;
     }
     say ("READBACK: done - " + juce::String (done) + " read (" + juce::String (credited) + " controls), " + juce::String (skipped) + " already read, " + juce::String (refused) + " not read (said above); nothing judged here - --trust-levels judges");
@@ -202,8 +249,9 @@ inline int runReadbackRederive (const juce::File& mapsDir, const juce::File& fro
         const auto old = juce::JSON::parse (f.loadFileAsString());
         const auto product = old.getProperty ("product", "").toString(), version = old.getProperty ("version", "").toString();
         const auto rawFile = inDir.getChildFile ("raw").getChildFile (f.getFileName().upToLastOccurrenceOf (".json", false, false) + ".txt");
-        const auto* picked = mapsOf.count (product) ? readback::pickMap (mapsOf[product], version) : nullptr;
-        if (picked == nullptr || ! rawFile.existsAsFile()) { say ("REDERIVE: " + product + " - " + (picked == nullptr ? "no AudioUnit map" : "no raw output") + "; not rebuilt"); ++refused; continue; }
+        const auto fmt = trust::formatOfRecord (old, f.getFileName()).isNotEmpty() ? trust::formatOfRecord (old, f.getFileName()) : juce::String ("AudioUnit");
+        const auto* picked = mapsOf.count (product) ? readback::pickMap (mapsOf[product], version, fmt) : nullptr;
+        if (picked == nullptr || ! rawFile.existsAsFile()) { say ("REDERIVE: " + product + " - " + (picked == nullptr ? "no " + fmt + " map" : juce::String ("no raw output")) + "; not rebuilt"); ++refused; continue; }
         auto rec = readback::record (*picked, readback::plan (*picked), readback::parse (rawFile.loadFileAsString()), version);
         rec.getDynamicObject()->setProperty ("measuredAt", old.getProperty ("measuredAt", ""));
         rec.getDynamicObject()->setProperty ("rederived_from", f.getFullPathName());

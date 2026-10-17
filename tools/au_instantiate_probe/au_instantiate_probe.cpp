@@ -137,7 +137,7 @@ static int runRequest (int argc, char** argv, bool serving)
         const juce::PluginDescription* pick = nullptr;
         for (auto* c : found) if (c->name.trim().equalsIgnoreCase (d.name.trim())) { pick = c; break; }
         if (pick == nullptr && found.size() > 0) pick = found[0];
-        if (pick != nullptr) { const auto keepName = d.name; d = *pick; std::printf ("vst3 class: \"%s\" (asked \"%s\", %d class(es) in the bundle)\n", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size()); }
+        if (pick != nullptr) { const auto keepName = d.name; d = *pick; std::printf ("vst3 class: \"%s\" (asked \"%s\", %d class(es) in the bundle)\tversion\t%s\n", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8()); }   // 17 Oct: the installed version (the read-back sweep's VST3 record)
         else std::printf ("vst3 class: none found in the bundle\n");
         std::fflush (stdout);
     }

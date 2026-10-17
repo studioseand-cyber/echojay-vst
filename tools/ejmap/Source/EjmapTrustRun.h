@@ -35,7 +35,7 @@ inline std::vector<certv1::Result> judgeFolder (const juce::File& cert)
             const auto d = readJson (f); if (! d.isObject()) continue;
             const auto pid = d.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString();
             const auto m = mbv1::judge (d, v1.count (pid) ? v1[pid] : juce::var());
-            certv1::Result r; r.category = "multiband"; r.product = m.product; r.pluginId = m.pluginId; r.pass = m.pass;
+            certv1::Result r; r.category = "multiband"; r.product = m.product; r.pluginId = m.pluginId; r.pass = m.pass; r.format = trust::formatOfRecord (d, f.getFileName());
             for (const auto& b : m.bands) for (const auto& p : b.parts) r.parts.push_back ({ "band " + juce::String (b.band) + ": " + p.name, p.state, p.why });
             for (const auto& b : m.bands) r.parts.push_back ({ "band " + juce::String (b.band), b.pass ? "pass" : (mbv1::passesSoFar (b) ? "not_tested" : "fail"), b.pass ? juce::String() : juce::String (mbv1::passesSoFar (b) ? "passes so far; the v1 measuring decides" : "a part failed") });
             out.push_back (r);
@@ -46,7 +46,7 @@ inline std::vector<certv1::Result> judgeFolder (const juce::File& cert)
         {
             if (cat == "limiter" && ! f.getFileName().contains ("limiter_ceiling")) continue;
             const auto d = readJson (f); if (! d.isObject()) continue;
-            out.push_back (certv1::judge (cat, d));
+            auto r = certv1::judge (cat, d); r.format = trust::formatOfRecord (d, f.getFileName()); out.push_back (r);
         }
     return out;
 }
@@ -253,17 +253,39 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
     return items;
 }
 
+// CERTIFICATION BY FORMAT (Kathy, 17 Oct, rulings 2): certification counts only for the format it was measured in. The publish list
+// names products; the published profiles (--certified-profiles: the folder the publish zip unpacks to) say each one's format. A listed
+// product with no profile here, or one whose profile does not state its format, certifies nothing (said)
+using FormatSet = std::set<std::pair<juce::String, juce::String>>;   // (product, format)
+inline FormatSet certifiedByFormat (const std::set<juce::String>& listed, const juce::File& profilesDir, juce::StringArray& unstated)
+{
+    FormatSet out; std::set<juce::String> seen;
+    for (const auto& f : profilesDir.findChildFiles (juce::File::findFiles, true, "*.json"))
+    {
+        if (f.getFileName().endsWith (".tonecheck.json")) continue;
+        const auto rec = readJson (f); const auto name = rec.getProperty ("plugin", {}).getProperty ("name", rec.getProperty ("product", "")).toString();
+        if (! listed.count (name)) continue;
+        const auto fmt = trust::formatOfRecord (rec, f.getFileName()); if (fmt.isEmpty()) continue;
+        out.insert ({ name, fmt }); seen.insert (name);
+    }
+    for (const auto& n : listed) if (! seen.count (n)) unstated.add (n);
+    return out;
+}
+
 inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& certDirs, const juce::StringArray& wizardDirs, const juce::File& publishList,
-                           const juce::StringArray& heldFiles, const juce::File& quarantine, const juce::File& out, const juce::File& humanFile = {}, const juce::String& firstCategory = {})
+                           const juce::StringArray& heldFiles, const juce::File& quarantine, const juce::File& out, const juce::File& humanFile = {}, const juce::String& firstCategory = {},
+                           const juce::File& certifiedProfiles = {})
 {
     if (! mapsDir.isDirectory() || out == juce::File()) { std::cerr << "usage: ejmap --trust-levels --maps <folder> --cert <folder>... --out <folder>" << std::endl; return 2; }
     std::map<juce::String, ProductData> by;
     for (const auto& c : certDirs) loadRecords (juce::File (c), "cert:" + juce::File (c).getFileName(), by);
     for (const auto& w : wizardDirs) loadRecords (juce::File (w), "wizard", by);
     const auto held = loadHeld (heldFiles, quarantine);
-    const auto compCert = certifiedFromList (publishList);
-    std::map<juce::String, std::set<juce::String>> v1Pass;   // category -> products
-    for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[r.category].insert (r.product);
+    juce::StringArray listedUnstated;
+    const auto compCert = certifiedByFormat (certifiedFromList (publishList), certifiedProfiles, listedUnstated);
+    std::map<juce::String, FormatSet> v1Pass;   // category -> (product, format): the format each draft was measured in
+    for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[r.category].insert ({ r.product, r.format });
+    if (! listedUnstated.isEmpty()) std::cout << "TRUST-LEVELS: " << listedUnstated.size() << " published product(s) with no profile stating its format here - certified for no format: " << listedUnstated.joinIntoString (", ") << "\n";
     out.getChildFile ("maps").createDirectory();
     const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
     std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0, supersededReadings = 0, supersededControls = 0, otherFormat = 0, snappedReadings = 0;
@@ -277,8 +299,10 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         for (const auto& [ctl, r] : rb) { if (r.superseded > 0) { supersededReadings += r.superseded; ++supersededControls; } snappedReadings += r.snapped; }
         const auto fpKey = m.getProperty ("fp", "").toString();
         const auto measured = human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured;
-        const bool certified = (cat == "compressor" && compCert.count (name)) || (v1Pass.count (cat) && v1Pass[cat].count (name)) || (cat == "amp_sim" && v1Pass["saturation"].count (name))
-                               || (cat == "compressor" && v1Pass["multiband"].count (name));   // 16 Oct: a multiband passes per band (mbv1)
+        const auto fmt = m.getProperty ("identity", {}).getProperty ("format", "").toString();
+        const std::pair<juce::String, juce::String> key { name, fmt };   // 17 Oct (rulings 2): certified only in the format it was measured in
+        const bool certified = (cat == "compressor" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == "amp_sim" && v1Pass["saturation"].count (key))
+                               || (cat == "compressor" && v1Pass["multiband"].count (key));   // 16 Oct: a multiband passes per band (mbv1)
         const auto heldWhy = heldWhyFor (held, name);
         const auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
         if (L.level == "unsure" && L.why.startsWith ("role not identified")) review.addArray (reviewItems (m, measured, rb));
@@ -292,7 +316,9 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                         {
                             auto* o = new juce::DynamicObject(); o->setProperty ("checked", r.judged); o->setProperty ("failed", r.failed); o->setProperty ("pass", r.proven());
                             if (r.worst.isNotEmpty()) o->setProperty ("worst", r.worst);
-                            o->setProperty ("source", r.source); if (r.superseded > 0) o->setProperty ("superseded", r.superseded); if (r.snapped > 0) o->setProperty ("snapped", r.snapped); cobj->setProperty ("readback", juce::var (o));
+                            o->setProperty ("source", r.source); if (r.superseded > 0) o->setProperty ("superseded", r.superseded); if (r.snapped > 0) o->setProperty ("snapped", r.snapped);
+                            if (! r.failedAt.empty()) { juce::Array<juce::var> fa; for (double n : r.failedAt) fa.add (juce::String (n, 6)); o->setProperty ("failed_at", juce::var (fa)); }
+                            cobj->setProperty ("readback", juce::var (o));
                             ++creditedControls; if (r.failed > 0) ++failedControls;
                         }
         out.getChildFile ("maps").getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (m));
