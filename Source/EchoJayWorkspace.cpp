@@ -210,7 +210,8 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& displayText,
                                             const juce::String& editTargetUid,
                                             const juce::String& editTargetName,
-                                            const juce::String& figuresJson)
+                                            const juce::String& figuresJson,
+                             const juce::String& agentJson)
 {
     for (auto& c : chats)
     {
@@ -231,6 +232,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.displayText   = displayText;
             m.editTargetUid  = editTargetUid;
             m.editTargetName = editTargetName;
+            m.agentJson      = agentJson;      // the run's card (18 Oct 2026)
             c.messages.push_back(std::move(m));
             c.updatedAt = isoUtcNow();   // B.0: real activity on this chat
             return first;
@@ -259,6 +261,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.displayText   = displayText;
     m.editTargetUid  = editTargetUid;
     m.editTargetName = editTargetName;
+    m.agentJson      = agentJson;
     c.messages.push_back(std::move(m));
     c.updatedAt = isoUtcNow();
     chats.insert(chats.begin(), std::move(c));
@@ -324,6 +327,21 @@ EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String&
                         + juce::String (r.crossChatSuspects)
                         + " cross-chat repeat(s) left for a human").toRawUTF8());
     return r;
+}
+
+void EchoJayWorkspace::updateAssistantAgentJson (const juce::String& chatId,
+                                                 const juce::String& matchContent,
+                                                 const juce::String& agentJson)
+{
+    for (auto& c : chats)
+    {
+        if (c.id != chatId) continue;
+        for (auto& m : c.messages)
+            if (m.role == "assistant" && m.content == matchContent)
+                m.agentJson = agentJson;
+        c.updatedAt = isoUtcNow();
+        return;
+    }
 }
 
 void EchoJayWorkspace::clearEditAltPrompt(const juce::String& chatId,
@@ -903,6 +921,7 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.chainJson = mObj->getProperty("_chain").toString();
                     msg.figuresJson = mObj->getProperty("_figures").toString();
                     msg.gainJson  = mObj->getProperty("_gain").toString();
+                    msg.agentJson = mObj->getProperty("_agent").toString();
                     msg.askJson   = mObj->getProperty("_ask").toString();
                     msg.askAnswered = (bool)mObj->getProperty("_askDone");
                     msg.editJson  = mObj->getProperty("_edit").toString();
@@ -1240,6 +1259,10 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
             mObj->setProperty("_figures",   m.figuresJson);
         if (m.gainJson.isNotEmpty())
             mObj->setProperty("_gain",      m.gainJson);
+        // THE RUN'S CARD (18 Oct 2026). Additive: a reader that does not know `_agent` sees the
+        // prose in `content` and draws the bubble it always drew.
+        if (m.agentJson.isNotEmpty())
+            mObj->setProperty("_agent",     m.agentJson);
         if (m.askJson.isNotEmpty())
         {
             mObj->setProperty("_ask",       m.askJson);

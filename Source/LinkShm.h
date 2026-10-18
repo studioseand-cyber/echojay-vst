@@ -1417,6 +1417,15 @@ struct RackSidecarSlot {
         LAST IN THE STRUCT, after dialPending: RackSidecarSlot is positionally brace-initialised in
         LinkProcessor::publishRackSidecar, and the comments above record that trap biting four
         times. A new field goes at the end and is set by assignment. */
+    /** ---- WHAT THIS SLOT HEARD (18 Oct 2026, Sean's ruling on the GR item) -----------------
+        Every slot measures its own input, third party or not - and for a third party that is the
+        only honest thing EchoJay has: it does not read their gain-reduction meter and does not
+        estimate one. These four travel so a Link's slot can answer the same question as the open
+        rack's. Written only when something was heard; absent reads "nothing was measured". */
+    bool  inLevelsKnown = false, inLevelsKWeighted = false;
+    float inLoudestDb = -200.0f, inTypicalDb = -200.0f;
+    float inLoudestPeakDbtp = -200.0f, inTypicalPeakDbtp = -200.0f;
+    float inWindowSeconds = 0.0f;
     bool  pictureValid = false, grKnown = false, grCertified = false;
     float grDb = 0.0f, grPeakDb = 0.0f, grTypicalDb = 0.0f, grLoudestDb = 0.0f, grHeldDb = 0.0f;
     double grWindowFrames = 0.0;
@@ -2233,6 +2242,17 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         // ---- ITEM 13: THIS SLOT'S MEASUREMENTS (18 Oct 2026) -------------------------------------
         // Each group written only when it HAS a reading, which is the convention every meter field in
         // this file keeps: absent means unavailable, and a floor must never be published as a figure.
+        // the slot's own input measurement (18 Oct 2026): written only when it heard something
+        if (s.inLevelsKnown)
+        {
+            so->setProperty ("inLvl",      true);
+            so->setProperty ("inLoudest",  (double) s.inLoudestDb);
+            so->setProperty ("inTypical",  (double) s.inTypicalDb);
+            so->setProperty ("inLoudTp",   (double) s.inLoudestPeakDbtp);
+            so->setProperty ("inTypTp",    (double) s.inTypicalPeakDbtp);
+            so->setProperty ("inWinSec",   (double) s.inWindowSeconds);
+            if (s.inLevelsKWeighted) so->setProperty ("inLvlK", true);
+        }
         if (s.pictureValid) so->setProperty("picValid", true);
         if (s.grKnown)
         {
@@ -2327,6 +2347,16 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                 // ITEM 13: the measurements. A reader that finds nothing leaves the no-reading
                 // floor in place, so "this Link does not publish meters" and "this slot has not been
                 // heard" are both answerable - and neither reads as a figure.
+                s.inLevelsKnown = so->hasProperty ("inLvl") && (bool) so->getProperty ("inLvl");
+                if (s.inLevelsKnown)
+                {
+                    s.inLoudestDb       = (float)(double) so->getProperty ("inLoudest");
+                    s.inTypicalDb       = (float)(double) so->getProperty ("inTypical");
+                    s.inLoudestPeakDbtp = (float)(double) so->getProperty ("inLoudTp");
+                    s.inTypicalPeakDbtp = (float)(double) so->getProperty ("inTypTp");
+                    s.inWindowSeconds   = (float)(double) so->getProperty ("inWinSec");
+                    s.inLevelsKWeighted = so->hasProperty ("inLvlK") && (bool) so->getProperty ("inLvlK");
+                }
                 s.pictureValid = so->hasProperty("picValid") && (bool) so->getProperty("picValid");
                 s.grKnown      = so->hasProperty("grKnown")  && (bool) so->getProperty("grKnown");
                 s.grCertified  = so->hasProperty("grCert")   && (bool) so->getProperty("grCert");

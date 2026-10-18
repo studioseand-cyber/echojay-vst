@@ -155,6 +155,27 @@ struct Sources
         name and not a fingerprint. */
     std::function<double (const juce::String& pluginName, const juce::String& paramId, double near)> paramStep;
 
+    /** ---- WHAT THE SLOT HEARD (18 Oct 2026, Sean's ruling on the GR item) ---------------------
+        EchoJay does not read a third party's gain-reduction meter and does not estimate one. What
+        it DOES measure is the level arriving at that slot, and that is what check(gr) hands back
+        for a third party: the loudest and the typical, as loudness and as true peak, over the
+        listen window - with the window's own start time, so B can judge for itself whether the
+        reading belongs to the section that was played. B holds the profiles and decides whether a
+        figure may be derived from it; the plugin reports the measurement and makes no claim.
+
+        `loudestDb`/`typicalDb` are the p90/p50 of the gated 100 ms hops; the peaks are the same two
+        percentiles of those hops' true peaks. known=false means nothing was heard, which is a
+        refusal and never a figure. */
+    struct SlotInputLevels
+    {
+        bool  known = false;
+        float loudestDb = -200.0f, typicalDb = -200.0f;          // loudness (K) or RMS, as the tally weighs it
+        float loudestPeakDbtp = -200.0f, typicalPeakDbtp = -200.0f;
+        float windowSeconds = 0.0f;
+        bool  kWeighted = false;
+    };
+    std::function<SlotInputLevels (const juce::String& uid, int slot1Based)> slotInputLevels;
+
     // identity
     std::function<juce::String()> ownName;       // the channel's display name
     std::function<juce::String()> ownKind;       // channel | bus | mix_bus | master
@@ -290,7 +311,15 @@ public:
     // a tool round trip adds its own second or two - so a bound of 6 s covers "the reading is from the
     // section he just played" with room for one missed publish, and still refuses a window from
     // before it. The number is a claim about freshness and belongs where it can be argued with.
-    static constexpr juce::int64 kLinkMeterStaleMs = 6000;
+    // A MEMBER, NOT A CONSTANT, for the reason EJAgentClient::stallTimeoutMs is one: a bound a guard
+    // cannot set is a bound no leg can hold against both of its sides. The shipped value is asserted
+    // by a leg of its own, so lowering it in a harness cannot quietly become lowering it in the
+    // product (18 Oct 2026).
+    juce::int64 linkMeterStaleMs = 6000;
+    /** When the playback window this run waited for began (0 = none in this run). A Link reading
+        stamped at or after it is of THAT section, however long the round trip then took - his
+        ruling, 18 Oct, and a better instrument than the wall clock. */
+    juce::int64 playbackWindowStartedMs_ = 0;
     static constexpr int kMaxResultBytes = 8192;
     static constexpr int kMaxSettingsChars = 160;
     static constexpr int kMaxBands = 6;

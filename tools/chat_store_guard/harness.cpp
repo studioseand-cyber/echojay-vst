@@ -85,6 +85,22 @@ struct EchoJayTabStripTestAccess
         for (const auto& m : e.chatMessages) if (m.role == "user" && m.content == text) ++n;
         return n;
     }
+    /** The run's card as the RECORD holds it, and as the editor would draw it. */
+    static juce::String storedCard (EchoJayEditor& e, const juce::String& id)
+    {
+        auto* c = e.workspace.findChatById (id);
+        if (c == nullptr) return {};
+        for (const auto& m : c->messages) if (m.agentJson.isNotEmpty()) return m.agentJson;
+        return {};
+    }
+    static const EchoJayEditor::ChatMsg* rowWithCard (EchoJayEditor& e)
+    {
+        for (const auto& m : e.chatMessages) if (m.agentData.isNotEmpty()) return &m;
+        return nullptr;
+    }
+    static echojay::agentui::RunView viewOf (EchoJayEditor& e, const EchoJayEditor::ChatMsg& m)
+    { return e.agentRunViewFor (m); }
+    static int rowWidth (EchoJayEditor& e) { return e.agentRowWidth(); }
     static int inStore (EchoJayEditor& e, const juce::String& id, const juce::String& text)
     {
         auto* c = e.workspace.findChatById (id);
@@ -443,6 +459,115 @@ int main()
                "DUP3 ...and it does not grow a copy per switch",
                juce::String (A::onScreen (*ed, goal)) + " on screen, "
                  + juce::String (A::inStore (*ed, chat, goal)) + " in the record");
+    }
+
+    // ---- CARD (18 Oct 2026): A RUN COMES BACK AS A CARD, NOT AS ITS LAST SENTENCE -------------
+    //
+    // *"When I reopen a chat, an agent run comes back as just its last message in a plain bubble. It
+    // should come back exactly as it looked live: the ASK card with every step, the 'You said'
+    // lines, the read-back lines, the red failures, Details, Hide steps, Undo, and the closing.
+    // Save the run card in the chat store and redraw it on reopen (finished runs only, chips shown
+    // as answered, not tappable)."*  And his leg: finish a run, switch chat, switch back, reload,
+    // and the card matches what was on screen.
+    std::printf ("\n-- CARD: the run's card survives a switch, a switch back and a reload --\n");
+    {
+        proc.setProjectName ("test project nafe aitch"); pumpMs (20);
+        A::selectRack (*ed, kickUid); pumpMs (30);
+        A::newChat (*ed); pumpMs (30);
+        const auto cardChat = A::chatId (*ed);
+
+        // A finished run as the row holds it: four steps, an answered ask, a read-back, a failure
+        // with a technical message behind Details, and a closing.
+        juce::String snapshot;
+        {
+            echojay::agentui::RunView v;
+            v.sessionId = "ag_card"; v.statusWord = "Done"; v.finished = true; v.modeBadge = "ASK";
+            v.closing = "Added the CL 1B on the kick - threshold -15, ratio 4.";
+            v.changeCount = 2; v.stepCount = 4; v.stepsOpen = true;
+            using St = EJAgentClient::Step::Status;
+            echojay::agentui::RunStep look;
+            look.id = "tc_look"; look.label = "read the kick's rack"; look.status = (int) St::Done;
+            look.detail = "2 slots";
+            echojay::agentui::RunStep ask;
+            ask.id = "tc_ask"; ask.label = "Which compressor?"; ask.status = (int) St::Done;
+            ask.chips.add ("Tube-Tech CL 1B"); ask.chips.add ("the EchoJay Compressor");
+            ask.answered = "You said: Tube-Tech CL 1B";
+            echojay::agentui::RunStep add;
+            add.id = "tc_add"; add.label = "add Tube-Tech CL 1B"; add.status = (int) St::Done;
+            add.detail = "Added Tube-Tech CL 1B. Read back: threshold -15, ratio 4, attack 10.";
+            add.canUndo = true; add.right = "applied";
+            echojay::agentui::RunStep bad;
+            bad.id = "tc_fail"; bad.label = "set the release"; bad.status = (int) St::Failed;
+            bad.detail = "the release could not be set"; bad.modelDetail = "unknown position \"500\"";
+            bad.hasDetails = true;
+            v.steps = { look, ask, add, bad };
+            v.showUndoAll = true; v.showGotIt = true;     // as a live finished run would have them
+            snapshot = juce::JSON::toString (echojay::agentui::toJson (v), true);
+        }
+        A::store (*ed).appendMessageToChat (cardChat, "assistant",
+                                            "Added the CL 1B on the kick - threshold -15, ratio 4.",
+                                            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, snapshot);
+        check (A::storedCard (*ed, cardChat).isNotEmpty(),
+               "CARD0 PRECONDITION: the record holds the run's card beside its prose");
+
+        // ...switch away, switch back, and reload - his three moves.
+        A::openChat (*ed, made[0].chatId); pumpMs (40);
+        A::openChat (*ed, cardChat); pumpMs (60);
+        A::openChat (*ed, cardChat); pumpMs (60);
+
+        const auto* row = A::rowWithCard (*ed);
+        check (row != nullptr,
+               "CARD1 the reopened chat has a ROW with the run's card on it, not a bare bubble (RED as "
+               "it stood: the snapshot died with the window, so the record held only the last sentence)");
+        if (row != nullptr)
+        {
+            const auto v = A::viewOf (*ed, *row);
+            check (v.steps.size() == 4,
+                   "CARD2 ...with every step back", juce::String ((int) v.steps.size()) + " step(s)");
+            bool said = false, readBack = false, failed = false, details = false;
+            for (const auto& st : v.steps)
+            {
+                if (st.answered.contains ("You said: Tube-Tech CL 1B")) said = true;
+                if (st.detail.contains ("Read back: threshold -15"))    readBack = true;
+                if (st.status == (int) EJAgentClient::Step::Status::Failed) failed = true;
+                if (st.hasDetails && st.modelDetail.isNotEmpty())        details = true;
+            }
+            check (said && readBack && failed && details,
+                   "CARD3 ...the \"You said\" line, the read-back line, the red failure and its Details",
+                   juce::String (said ? "said " : "NO said ") + (readBack ? "readback " : "NO readback ")
+                     + (failed ? "failed " : "NO failed ") + (details ? "details" : "NO details"));
+            check (v.closing.contains ("threshold -15, ratio 4"),
+                   "CARD4 ...and the closing", v.closing.substring (0, 50));
+            // FINISHED RUNS ONLY, CHIPS NOT TAPPABLE: the card is a record, so nothing on it offers
+            // to act on a run that is over.
+            check (v.fromRecord && v.finished && ! v.running && ! v.showStop && ! v.showRetry
+                   && ! v.showUndoAll,
+                   "CARD5 ...drawn as a RECORD: finished, and no Stop, Retry or Undo all - they would "
+                   "act on a run that no longer exists");
+            const auto L = echojay::agentui::layoutRun (v, 0, 0, juce::jmax (220, A::rowWidth (*ed)));
+            int chipZones = 0, applyZones = 0, undoZones = 0, detailZones = 0;
+            for (const auto& z : L.zones)
+            {
+                using H = echojay::agentui::RunHit;
+                if (z.kind == H::Chip)       ++chipZones;
+                if (z.kind == H::ApplyLine)  ++applyZones;
+                if (z.kind == H::Undo)       ++undoZones;
+                if (z.kind == H::Details)    ++detailZones;
+            }
+            check (chipZones == 0 && applyZones == 0 && undoZones == 0,
+                   "CARD6 ...and NOTHING on it is pressable that would act: no chip, no Apply, no Undo",
+                   "chips=" + juce::String (chipZones) + " apply=" + juce::String (applyZones)
+                     + " undo=" + juce::String (undoZones));
+            check (detailZones > 0,
+                   "CARD7 ...while Details IS still pressable, because it is a question about the "
+                   "picture and not about the run", juce::String (detailZones) + " Details zone(s)");
+            check (echojay::agentui::checkRun (v, L, 0, juce::jmax (220, A::rowWidth (*ed))).isEmpty(),
+                   "CARD8 ...and the whole card fits its column - the same self-check the live one passes",
+                   echojay::agentui::checkRun (v, L, 0, juce::jmax (220, A::rowWidth (*ed))));
+        }
+        // and the record still holds exactly one copy of it after all that switching
+        check (A::storedCard (*ed, cardChat).isNotEmpty() && A::inStore (*ed, cardChat, "Add a compressor") <= 1,
+               "CARD9 ...and the switching added nothing to the record");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

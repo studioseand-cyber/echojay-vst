@@ -19,6 +19,17 @@ struct WsMessage {
     juce::String gainJson;   // non-empty on assistant gain-proposal replies; serialised
                              // as _gain. Carries the proposals AND their applied/prevGain
                              // state (mutated on Apply/Undo) so cards reload correctly.
+    /** ---- THE RUN'S CARD, SO A REOPENED CHAT SHOWS WHAT WAS ON SCREEN (18 Oct 2026) --------
+        Sean: *"when I reopen a chat, an agent run comes back as just its last message in a plain
+        bubble. It should come back exactly as it looked live: the ASK card with every step, the
+        'You said' lines, the read-back lines, the red failures, Details, Hide steps, and the
+        closing."*
+
+        This is echojay::agentui::toJson of the finished run - the same snapshot the row has always
+        kept on ChatMsg::agentData and the processor's replay list, which until now died with the
+        window. Serialised as `_agent`, written only when non-empty, so a build that does not know
+        the key reads the message exactly as it does today: the prose, in a bubble. */
+    juce::String agentJson;
     juce::String askJson;    // non-empty on assistant ASK replies (question + tappable
                              // choices, Phase 1b); serialised as _ask
     bool askAnswered = false; // chip tapped (or question superseded); serialised as _askDone
@@ -289,7 +300,13 @@ public:
                              const juce::String& displayText = juce::String(),
                              const juce::String& editTargetUid  = juce::String(),
                              const juce::String& editTargetName = juce::String(),
-                             const juce::String& figuresJson    = juce::String());
+                             const juce::String& figuresJson    = juce::String(),
+                             const juce::String& agentJson      = juce::String());
+    /** The run's card, rewritten in place when a later round adds to it - matched on the visible
+        text, the same rule updateAssistantText follows. */
+    void updateAssistantAgentJson (const juce::String& chatId,
+                                   const juce::String& matchContent,
+                                   const juce::String& agentJson);
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).

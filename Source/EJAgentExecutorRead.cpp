@@ -940,7 +940,23 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // sent him looking for a limit that no longer exists. ITEM 8's rule stands - the answer comes
         // before the rack and the slot - it is just a narrower answer.
         const auto r = targetRack();
-        if (measuringALink (call) && r.valid)
+        // ---- THE PLUGIN'S OWN TRUTH COMES FIRST (18 Oct 2026, after his third report) ------------
+        //
+        // He asked three times why a CL 1B on a Link said "no fresh reading", and the answer was not
+        // freshness at all: NOTHING in this build reads a third party's gain reduction. slotPicture
+        // produces a GR only for an EchoJay device, and grCertified is never set for anything else -
+        // so the honest answer for his CL 1B is the not_certified one below, on a Link or on the open
+        // rack alike. My Link gates were asked FIRST and replaced a true, actionable refusal with a
+        // misleading one. Whether a plugin can be measured at all cannot change between now and a
+        // retry; how old a reading is can. The unchangeable question is answered first - which is
+        // ITEM 8's own rule, applied to the gate I added.
+        const bool slotIsReadable = [&]
+        {
+            if (! r.valid || slotArg < 1 || slotArg > (int) r.slots.size()) return true;   // other gates answer
+            const auto& sl = r.slots[(size_t) slotArg - 1];
+            return sl.builtin || sl.grCertified;
+        }();
+        if (measuringALink (call) && r.valid && slotIsReadable)
         {
             if (! r.meterCapable)
             {
@@ -953,7 +969,13 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             }
             const auto ageMs = r.measuredAtMs > 0 ? (juce::Time::currentTimeMillis() - r.measuredAtMs)
                                                   : (juce::int64) -1;
-            if (ageMs < 0 || ageMs > kLinkMeterStaleMs)
+            // ---- HIS RULE: JUDGED AGAINST THE SECTION HE PLAYED ---------------------------------
+            // A reading stamped at or after the moment wait_for_playback opened its window is OF
+            // that section, however long the round trip then took. The clock is only the fallback,
+            // for a run that never waited for playback at all.
+            const bool insideThePlaybackHeWaitedFor = playbackWindowStartedMs_ > 0
+                                                   && r.measuredAtMs >= playbackWindowStartedMs_;
+            if (! insideThePlaybackHeWaitedFor && (ageMs < 0 || ageMs > linkMeterStaleMs))
             {
                 // A FIGURE WITH NO AGE IS AN ESTIMATE (Sean's 15 Oct ruling, applied to the Link road).
                 auto o = ToolOutcome::failureFor ("link_meters_stale",
@@ -971,7 +993,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
                 return;
             }
         }
-        else if (measuringALink (call))
+        else if (measuringALink (call) && ! r.valid)
         {
             done (notFromALink ("Gain reduction"));      // the rack itself could not be read
             return;
@@ -1002,16 +1024,58 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // wrong and exactly the kind of confident wrong answer this round is about. The refusal is
         // for a THIRD PARTY whose map has not passed the sweep; a device falls through to the
         // playback answer, which is the true one when nothing has been measured.
-        if (! s.builtin && ! s.grCertified)
+        // ---- A THIRD PARTY GETS WHAT WE DO MEASURE (18 Oct 2026, Sean's ruling) ----------------
+        //
+        // *"EchoJay Compressor = its own meter. Certified third-party = Kathy's measured curve.
+        // Anything else = no figure. So your part is small: check gr on a third-party slot returns
+        // that slot's measured INPUT level over the listen window (loudest and typical, rms and
+        // peak, with the window's start time so freshness is judged against the playback), plus the
+        // slot's current read-back. B holds the profiles and decides whether a figure is allowed."*
+        //
+        // So the plugin stops deciding anything here. It does NOT read a third party's gain-reduction
+        // meter, does NOT estimate one, and does not ask whether the plugin is certified - that is
+        // B's question, with Kathy's curve behind it. What it hands back is the measurement it
+        // actually has, named for what it is, with no field that could be mistaken for a reduction.
+        if (! s.builtin)
         {
-            done (ToolOutcome::failureFor ("not_certified",
-                        "gain reduction is not readable for \"" + s.name + "\": it is not an EchoJay device "
-                        "and its parameter map is not certified for gain reduction (it has not passed the "
-                        "EJ Maps compressor sweep). There is no figure to give and an estimate is not "
-                        "acceptable. Say that you cannot measure this one, and do not infer a figure from "
-                        "the slot's input and output levels.",
-                        "I cannot measure gain reduction on " + s.name + " - it is not a plugin EchoJay has "
-                        "measured, so any figure would be a guess."));
+            const auto lv = src_.slotInputLevels ? src_.slotInputLevels (target_, slotArg)
+                                                 : Sources::SlotInputLevels();
+            if (! lv.known)
+            {
+                done (notPlaying ("the input level on slot " + juce::String (slotArg)));
+                return;
+            }
+            auto* io = new juce::DynamicObject();
+            io->setProperty ("slot", slotArg);
+            io->setProperty ("name", s.name);
+            io->setProperty ("measurement", "slot_input_level");
+            io->setProperty ("gainReduction", "not_read");       // said in the payload, not only in prose
+            io->setProperty ("inputLoudestDb", r1 (lv.loudestDb));
+            io->setProperty ("inputTypicalDb", r1 (lv.typicalDb));
+            io->setProperty ("inputLoudestPeakDbtp", r1 (lv.loudestPeakDbtp));
+            io->setProperty ("inputTypicalPeakDbtp", r1 (lv.typicalPeakDbtp));
+            io->setProperty ("inputUnit", lv.kWeighted ? "LUFS" : "dBFS RMS");
+            io->setProperty ("windowSeconds", r1 (lv.windowSeconds));
+            // THE WINDOW'S OWN START, so B judges freshness against the playback rather than a clock
+            // it cannot see (his ruling, same message).
+            if (playbackWindowStartedMs_ > 0)
+                io->setProperty ("windowStartedMs", (double) playbackWindowStartedMs_);
+            if (s.settings.isNotEmpty()) io->setProperty ("readBack", s.settings);
+            if (s.dialSummary.isNotEmpty()) io->setProperty ("readBackSummary", s.dialSummary);
+            io->setProperty ("note", "EchoJay does not read this plugin's gain-reduction meter and does "
+                                     "not estimate one. These are the levels measured AT ITS INPUT over "
+                                     "the listen window, with what the slot is set to. Any reduction "
+                                     "figure must come from the profile for this plugin, not from here.");
+            done (ToolOutcome::successFor (fitUnder8K (juce::var (io)), {},
+                        "slot " + juce::String (slotArg) + " (" + s.name + "): input "
+                        + juce::String (lv.loudestDb, 1) + " loudest / "
+                        + juce::String (lv.typicalDb, 1) + " typical "
+                        + (lv.kWeighted ? "LUFS" : "dBFS") + " over "
+                        + juce::String (lv.windowSeconds, 1) + " s; no GR meter is read for a third party",
+                        "I measured what reaches " + s.name + ": "
+                        + juce::String (lv.loudestDb, 1) + " on the loud parts, "
+                        + juce::String (lv.typicalDb, 1) + " typically. I cannot read its own "
+                          "gain-reduction meter."));
             return;
         }
         // A CERTIFIED slot with no reading yet IS the not-playing case, and that answer is true of it.
@@ -1254,6 +1318,13 @@ const ExecutorRead::Checkpoint* ExecutorRead::checkpoint (const juce::String& to
 void ExecutorRead::beginPlaybackWindow()
 {
     windowOpen_ = true;
+    // ---- WHEN THE SECTION HE PLAYED BEGAN (18 Oct 2026, his ruling) ----------------------------
+    // *"Freshness should be judged against the playback the agent just waited for, not against
+    // 'now'. A reading taken after wait-for-playback started covers the section I played, so it's
+    // the right one to quote even if it's 10 s old when check gr runs."*  He is right, and it is a
+    // better rule than the clock: a Link's reading stamped inside this window IS of that section,
+    // and the thing the 15 Oct ruling forbids is a window from BEFORE it.
+    playbackWindowStartedMs_ = juce::Time::currentTimeMillis();
     // SEAN'S CHECKS 2 AND 3 (15 Oct 2026): the gain-reduction window starts HERE, with the loudness
     // one. It is reset for either target: a listen on a Link still listens through this instance's own
     // rack, and leaving yesterday's peak in place would be the opposite of the fault being fixed.
@@ -1546,6 +1617,51 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     s.paramStep = [p] (const juce::String& pluginName, const juce::String& paramId, double near) -> double
     {
         return p->getChainHost().mappedStepFor (pluginName, paramId, near);
+    };
+    // ---- WHAT A SLOT HEARD (18 Oct 2026, Sean's ruling) -------------------------------------
+    // One road for both racks, as with paramStep: the open rack answers from its own per-slot
+    // tallies, a Link from the measurement it publishes. This is what check(gr) hands back for a
+    // third party - EchoJay does not read their meter and does not estimate one.
+    s.slotInputLevels = [p] (const juce::String& uid, int slot1Based) -> Sources::SlotInputLevels
+    {
+        Sources::SlotInputLevels out;
+        if (slot1Based < 1) return out;
+        if (uid.isEmpty())
+        {
+            const auto lv = p->getChainHost().getSlotLevels (slot1Based - 1);
+            if (! lv.measured || ! lv.in.known) return out;
+            out.known      = true;
+            out.kWeighted  = lv.in.kWeighted;
+            out.loudestDb  = lv.in.p90;
+            out.typicalDb  = lv.in.p50;
+            out.windowSeconds = lv.in.windowSeconds;
+            juce::Array<float> hops;
+            for (int k = 0; k < lv.in.hopTruePeakCount && k < (int) lv.in.hopTruePeakDb.size(); ++k)
+                if (lv.in.hopTruePeakDb[(size_t) k] > -199.0f) hops.add (lv.in.hopTruePeakDb[(size_t) k]);
+            if (! hops.isEmpty())
+            {
+                hops.sort();
+                out.typicalPeakDbtp = hops[hops.size() / 2];
+                out.loudestPeakDbtp = hops[juce::jmin (hops.size() - 1, (hops.size() * 9) / 10)];
+            }
+            else if (lv.in.truePeakDb > -199.0f)
+                out.loudestPeakDbtp = out.typicalPeakDbtp = lv.in.truePeakDb;
+            return out;
+        }
+        int err = 0; const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return out;
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid || slot1Based > (int) rc.slots.size()) return out;
+        const auto& ss = rc.slots[(size_t) (slot1Based - 1)];
+        if (! ss.inLevelsKnown) return out;
+        out.known           = true;
+        out.kWeighted       = ss.inLevelsKWeighted;
+        out.loudestDb       = ss.inLoudestDb;
+        out.typicalDb       = ss.inTypicalDb;
+        out.loudestPeakDbtp = ss.inLoudestPeakDbtp;
+        out.typicalPeakDbtp = ss.inTypicalPeakDbtp;
+        out.windowSeconds   = ss.inWindowSeconds;
+        return out;
     };
     s.slotParam = [p] (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out) -> bool
     {

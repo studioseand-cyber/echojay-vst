@@ -64,6 +64,7 @@ struct FakeHost
     juce::StringArray inventory;
     bool bindInventory = true;
     juce::var notLoadable;              // [{name, loadable:false, why, type?}], void = not bound
+    Sources::SlotInputLevels inLevels;  // 18 Oct: what a slot heard - check(gr)'s answer for a third party
 
     FakeHost()
     {
@@ -75,7 +76,11 @@ struct FakeHost
             SlotRead s; s.n = i + 1; s.name = names[i]; s.builtin = juce::String (names[i]).startsWith ("EchoJay");
             s.wet = i == 2 ? 0.15f : 1.0f; s.settings = i == 1 ? "ratio 4:1, attack 10 ms, release 300 ms" : "";
             s.dialSummary = i == 0 ? "bell 300 Hz -2.0 dB Q 1.4" : ""; s.preTrimDb = i == 1 ? -2.0f : 0.0f;
-            s.pictureValid = i != 2; s.grKnown = i == 1; s.grDb = 2.4f; s.inLufs = -16.0f - i; s.outLufs = -16.5f - i; s.inTpDb = -4.0f; s.outTpDb = -4.5f;
+            // 18 Oct 2026 (his ruling on the GR item): the slot that REPORTS a reduction is a
+            // built-in - the EchoJay Limiter at index 3. A third party never reports one now: it gets
+            // the input measurement instead (the LM6 group), and B derives any figure from the
+            // profile. Slot 2 keeps its in/out levels and settings, which other legs read.
+            s.pictureValid = i != 2; s.grKnown = (i == 1 || i == 3); s.grDb = 2.4f; s.inLufs = -16.0f - i; s.outLufs = -16.5f - i; s.inTpDb = -4.0f; s.outTpDb = -4.5f;
             // SEAN'S CHECKS 2 AND 3 (15 Oct 2026): the slot that reports GR also has a LISTEN WINDOW,
             // so the peak and the typical are proven present and named. Put here rather than on a new
             // fifth slot deliberately: a fifth slot moves "the last slot", the rack's size and the
@@ -91,9 +96,13 @@ struct FakeHost
             // the TYPICAL (median), and the SPIKE max (one transient instant, kept for warnings and
             // never quoted) - "the absolute-max peak (8 dB) is a single transient instant nobody can see
             // on the meter; I see 2-4, hitting 5." The read must preserve spike >= loudest >= typical.
-            if (i == 1)
+            // 18 Oct 2026: the BUILT-IN limiter carries the window too, because his ruling makes a
+            // built-in the only slot that reports a reduction at all. Slot 2's copy stays so the
+            // legs that read its figures keep a subject, and the third-party ROAD is asserted by
+            // the LM6 group - with no GR field in it.
+            if (i == 1 || i == 3)
             {
-                s.grCertified   = true;     // see the note above: a swept third party
+                s.grCertified   = true;     // a built-in is certified by construction
                 s.grPeakDb      = 5.1f;     // the SPIKE max: one transient instant, never quoted
                 s.grLoudestDb   = 4.2f;     // the 95th percentile - THE figure to report
                 s.grTypicalDb   = 2.8f;     // the median - where the needle sits
@@ -127,6 +136,8 @@ struct FakeHost
         s.ownKind = [this] { return own.kind; };
         s.projectName = [] { return juce::String ("Guard Song"); };
         s.ownRack = [this] { return own; };
+        // 18 Oct 2026: the slot's own input measurement, which is what a third-party slot answers with
+        s.slotInputLevels = [this] (const juce::String&, int) { return inLevels; };
         s.linkRack = [this] (const juce::String& uid) { if (uid == link.uid) return link; RackRead r; r.why = "no Link with uid \"" + uid + "\" is in the registry"; return r; };
         s.tracks = [this] { return tracks; };
         s.ownAnalysis = [this] { return ownA; };
@@ -220,9 +231,12 @@ int main()
         // was `grDb`, and `grDb` is the name that kept being quoted as what a compressor is doing -
         // one instant read in the release tail. Retiring the name from look(rack) as well as from
         // check(gr) is deliberate: one quantity with two names is how that mistake survives a fix.
+        // 18 Oct 2026: slot 4 (the built-in limiter) HAS a reading now - his ruling made a built-in
+        // the only slot that reports a reduction, so the fixture's reporting slot moved there. The
+        // no-reading subject is slot 3, which has no picture at all; the rule is unchanged.
         check ((int) s2.getProperty ("wet", {}) == 15 && (int) s0.getProperty ("wet", {}) == 100
-               && ! s3.hasProperty ("grNowDb") && ! s2.hasProperty ("grNowDb")
-               && ! s1.hasProperty ("grDb"),
+               && ! s2.hasProperty ("grNowDb")
+               && ! s1.hasProperty ("grDb") && ! s3.hasProperty ("grDb"),
                "G2d wet is a percentage; a slot with no GR reading carries no grNowDb - and the old "
                "`grDb` name is gone from every slot, so nothing can quote it by habit");
         check (o.result.getProperty ("channel", {}).getProperty ("kind", {}).toString() == "mix_bus" && (int) o.result.getProperty ("revision", {}) == 7
@@ -497,7 +511,10 @@ int main()
     }
     // ---- G10 check(gr) --------------------------------------------------------------------------------------------------------
     {
-        auto o = runCounted (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
+        // SLOT 4, THE BUILT-IN LIMITER (18 Oct 2026). This group asserts the DEVICE contract, and
+        // after his ruling only a built-in reports a reduction; slot 2 is a third party and now
+        // answers with its input measurement (the LM6 group).
+        auto o = runCounted (ex, "check", call ("check", R"({"what":"gr","slot":4})"));
         // ---- SEAN'S CHECKS 2 AND 3 (15 Oct 2026): THE WINDOW, NOT THE INSTANT -------------------
         // His meter showed about 5 dB on the loud parts and the agent reported 0.1, then 2.1. The
         // figure was `grDb` - one float, read at whatever moment the tool call ran, which is the
@@ -509,10 +526,10 @@ int main()
         // grNowDb and grSpikeMaxDb are gone from check(gr) - and this leg, which asserted the
         // momentary figure WAS there, had to move with the ruling. It asserts the opposite now, which
         // is the only form of this check that can fail on a build that leaks one.
-        check (o.ok && (int) o.result.getProperty ("slot", {}) == 2
-               && o.result.getProperty ("name", {}).toString() == "API-2500 (s)"
+        check (o.ok && (int) o.result.getProperty ("slot", {}) == 4
+               && o.result.getProperty ("name", {}).toString() == "EchoJay Limiter"
                && ! o.result.hasProperty ("grNowDb") && ! o.result.hasProperty ("grSpikeMaxDb"),
-               "G10a check(gr, slot 2) names the slot and carries NO instantaneous or single-transient "
+               "G10a check(gr, slot 4) names the slot and carries NO instantaneous or single-transient "
                "figure for anything to quote");
         // ...and the WINDOW is what it leads with: the peak and the typical, by name, with the
         // momentary value kept and labelled. This is the row Sean asked for - "return the peak and a
@@ -552,31 +569,34 @@ int main()
                    + " held " + juce::String (held, 2) + " peak-alias " + juce::String (aliasPeak, 2)
                    + " sentence \"" + sentence + "\"");
         }
-        // ---- G10a3: AN UNCERTIFIED SLOT GETS NO FIGURE AT ALL (Sean's ruling, 15 Oct) -------------
-        // *"NO estimates, ever... check(gr) returns a figure only for those; for anything else it
-        // returns not_certified with no number."* The refusal is new, and a refusal with no test is how
-        // the -200 sentinel came to be printed as a measurement. Proven BOTH ways on one slot: certified
-        // above gives the figures, uncertified here gives a refusal with no number in it.
+        // ---- G10a3, REWRITTEN TO HIS 18 OCT RULING ------------------------------------------------
+        //
+        // This leg asserted that an uncertified third party is refused as `not_certified` with no
+        // number - the 15 Oct contract. His ruling of 18 Oct withdraws the whole certified/uncertified
+        // distinction FROM THE PLUGIN: *"for ANY third-party compressor slot, check gr returns the
+        // measured input level plus the read-back. B holds the profiles and decides whether a figure
+        // is allowed."*  So the enduring truth - the one this leg should have been asserting all along
+        // - is that a third party's answer carries NO reduction figure, whoever asks and whatever the
+        // map says. Certification is no longer the plugin's question, so it is no longer this leg's.
         {
-            fh.own.slots[1].grCertified = false;
+            fh.own.slots[1].grCertified = false;      // and it makes no difference any more
+            fh.inLevels.known = true; fh.inLevels.kWeighted = true;
+            fh.inLevels.loudestDb = -10.5f; fh.inLevels.typicalDb = -15.5f; fh.inLevels.windowSeconds = 6.0f;
             auto nc = run (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
-            // NO FIGURE ANYWHERE - and "no digits" is the WRONG test for that, which I nearly shipped:
-            // this slot is called "API-2500 (s)" and naming the plugin is exactly what the refusal must
-            // do. What must not appear is a MEASUREMENT, so the test is for the unit.
-            const bool noNumber = ! nc.result.hasProperty ("grLoudestDb")
-                               && ! nc.result.hasProperty ("grTypicalDb")
-                               && ! nc.result.hasProperty ("grNowDb")
-                               && ! nc.result.hasProperty ("grHeldDb")
-                               && ! nc.errorMessage.contains (" dB")
-                               && ! nc.userMessage.contains (" dB");
-            check (! nc.ok && nc.errorCode == "not_certified" && noNumber
-                   && nc.errorMessage.containsIgnoreCase ("estimate")
-                   && nc.userMessage.containsIgnoreCase ("guess"),
-                   "G10a3 an UNCERTIFIED slot's gain reduction is refused as not_certified, with no "
-                   "figure anywhere in the answer and no estimate offered  (Sean, 15 Oct: \"no "
-                   "estimates, ever\" - a plausible figure nobody can check is worse than no figure)",
-                   "code=" + nc.errorCode + " msg=\"" + nc.errorMessage.substring (0, 90) + "\"");
+            const bool noReduction = ! nc.result.hasProperty ("grLoudestDb")
+                                  && ! nc.result.hasProperty ("grTypicalDb")
+                                  && ! nc.result.hasProperty ("grNowDb")
+                                  && ! nc.result.hasProperty ("grHeldDb")
+                                  && ! nc.result.hasProperty ("grEstimateDb");
+            check (nc.ok && noReduction
+                   && nc.result.getProperty ("measurement", {}).toString() == "slot_input_level"
+                   && nc.result.getProperty ("gainReduction", {}).toString() == "not_read",
+                   "G10a3 a third-party slot answers with its INPUT measurement and NO reduction "
+                   "figure of any name - certification is B's question now, not the plugin's "
+                   "(his ruling, 18 Oct; this leg asserted the 15 Oct contract and had to move with it)",
+                   "ok=" + juce::String (nc.ok ? 1 : 0) + " " + juce::JSON::toString (nc.result).substring (0, 90));
             fh.own.slots[1].grCertified = true;      // restored: later legs read this slot
+            fh.inLevels = {};
         }
         auto oor = run (ex, "check", call ("check", R"({"what":"gr","slot":9})"));
         check (! oor.ok && oor.errorCode == "unknown_slot" && oor.errorMessage.contains ("1..4"), "G10b slot 9 of 4 -> unknown_slot naming the range");
@@ -813,8 +833,12 @@ int main()
         h.link.valid = true; h.link.meterCapable = true;
         h.link.measuredAtMs = juce::Time::currentTimeMillis();
         h.link.slots.clear();
+        // 18 Oct 2026 (his ruling): the GR-from-a-Link contract belongs to a BUILT-IN, because a
+        // third party no longer reports a reduction at all - it answers with its input measurement
+        // (LM6j below, over the same sidecar road). My first cut of these legs used a CL 1B with
+        // grCertified set by hand, which is a shape the product can no longer produce.
         SlotRead cs;
-        cs.n = 1; cs.name = "Tube-Tech CL 1B"; cs.builtin = false;
+        cs.n = 1; cs.name = "EchoJay Compressor"; cs.builtin = true;
         cs.pictureValid = true; cs.grKnown = true; cs.grCertified = true;
         cs.grDb = 2.1f; cs.grPeakDb = 7.4f; cs.grTypicalDb = 3.2f; cs.grLoudestDb = 5.6f; cs.grHeldDb = 5.1f;
         cs.grWindowFrames = 480.0;
@@ -911,6 +935,175 @@ int main()
                "LM5 an older Link is still declared BEFORE the agent plans a measurement on it");
         check (! (bool) ctx.getProperty ("grReadableOnLink", juce::var (true)),
                "LM5b ...and the flat flag says so too");
+    }
+
+    {
+        // ---- AND THE SAME FROM A LINK (18 Oct 2026, his ruling) -------------------------------
+        // *"Same from a Link, which already measures it, and republish while it moves."*  The input
+        // measurement crosses in the sidecar, so a third party on another track's Link answers
+        // exactly as one on the open rack does - and with no reduction figure either.
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = true;
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();
+        h.link.slots.clear();
+        SlotRead third;
+        third.n = 1; third.name = "Tube-Tech CL 1B"; third.builtin = false;
+        third.settings = "Threshold -15; Ratio 4";
+        h.link.slots.push_back (third);
+        h.inLevels.known = true; h.inLevels.kWeighted = true;
+        h.inLevels.loudestDb = -8.1f; h.inLevels.typicalDb = -13.0f;
+        h.inLevels.loudestPeakDbtp = -2.4f; h.inLevels.typicalPeakDbtp = -6.6f;
+        h.inLevels.windowSeconds = 8.0f;
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        check (o.ok && o.result.getProperty ("measurement", {}).toString() == "slot_input_level"
+               && std::abs ((double) o.result.getProperty ("inputLoudestDb", juce::var (0.0)) + 8.1) < 0.05
+               && o.result.getProperty ("readBack", {}).toString().contains ("Threshold -15"),
+               "LM6j a third party on a LINK answers with the same input measurement and read-back, "
+               "over the sidecar road", juce::JSON::toString (o.result).substring (0, 100));
+    }
+
+    // ---- LM6, REWRITTEN TO HIS RULING (18 Oct 2026, 21:0x) ------------------------------------
+    //
+    // *"EchoJay Compressor = its own meter. Certified third-party = Kathy's measured curve. Anything
+    // else = no figure. So your part is small: check gr on a third-party slot returns that slot's
+    // measured INPUT level over the listen window (loudest and typical, rms and peak, with the
+    // window's start time), plus the slot's current read-back. B holds the profiles and decides
+    // whether a figure is allowed."*
+    //
+    // So the plugin no longer decides anything about certification here, and the old not_certified
+    // leg is replaced rather than kept: it asserted a behaviour his ruling has withdrawn.
+    std::printf ("\n== LM6: a third party gets what EchoJay DOES measure - its input, named as that ==\n");
+    {
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead third;
+        third.n = 1; third.name = "Tube-Tech CL 1B"; third.builtin = false;
+        third.settings = "Threshold -15; Ratio 4; Attack 10; Release 0.5";
+        h.own.slots.push_back (third);
+        h.inLevels.known = true; h.inLevels.kWeighted = true;
+        h.inLevels.loudestDb = -9.4f; h.inLevels.typicalDb = -14.8f;
+        h.inLevels.loudestPeakDbtp = -3.2f; h.inLevels.typicalPeakDbtp = -7.9f;
+        h.inLevels.windowSeconds = 8.0f;
+        ExecutorRead ex (h.sources());
+        ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (o.ok, "LM6 check(gr) on a third-party slot ANSWERS with a measurement (RED as it stood: "
+                     "not_certified and no number at all, which his ruling replaced)",
+               o.ok ? juce::String ("answered") : (o.errorCode + ": " + o.errorMessage.substring (0, 60)));
+        const auto res = o.result;
+        check (std::abs ((double) res.getProperty ("inputLoudestDb", juce::var (0.0)) + 9.4) < 0.05
+               && std::abs ((double) res.getProperty ("inputTypicalDb", juce::var (0.0)) + 14.8) < 0.05,
+               "LM6b ...the loudest and the typical input level",
+               juce::JSON::toString (res).substring (0, 90));
+        check (std::abs ((double) res.getProperty ("inputLoudestPeakDbtp", juce::var (0.0)) + 3.2) < 0.05
+               && std::abs ((double) res.getProperty ("inputTypicalPeakDbtp", juce::var (0.0)) + 7.9) < 0.05,
+               "LM6c ...as loudness AND as true peak, which is what he asked for");
+        check (res.getProperty ("readBack", juce::var()).toString().contains ("Threshold -15"),
+               "LM6d ...with the slot's read-back beside it",
+               res.getProperty ("readBack", juce::var()).toString());
+        check ((double) res.getProperty ("windowStartedMs", juce::var (0.0)) > 0.0
+               && std::abs ((double) res.getProperty ("windowSeconds", juce::var (0.0)) - 8.0) < 0.05,
+               "LM6e ...and the window's own start and length, so freshness is judged against the "
+               "playback rather than a clock B cannot see");
+        // THE NAMING GUARD: nothing in this payload may look like a reduction.
+        const auto flat = juce::JSON::toString (res);
+        check (! flat.contains ("grDb") && ! flat.contains ("grLoudestDb") && ! flat.contains ("grHeldDb")
+               && ! flat.contains ("grEstimate")
+               && res.getProperty ("gainReduction", juce::var()).toString() == "not_read",
+               "LM6f ...and NO field in it could be quoted as gain reduction - the payload says "
+               "gainReduction: not_read rather than leaving prose to carry that", flat.substring (0, 110));
+        check (res.getProperty ("note", juce::var()).toString().containsIgnoreCase ("does not read")
+               && res.getProperty ("note", juce::var()).toString().containsIgnoreCase ("profile"),
+               "LM6g ...and the note sends any figure back to the profile, which is B's to hold");
+    }
+    {
+        // NOTHING HEARD IS A REFUSAL WITH NO NUMBERS IN IT.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead third; third.n = 1; third.name = "Tube-Tech CL 1B"; third.builtin = false;
+        h.own.slots.push_back (third);
+        h.inLevels = {};                                  // nothing measured
+        ExecutorRead ex (h.sources());
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (! o.ok && ! o.userMessage.containsAnyOf ("0123456789"),
+               "LM6h a slot that has heard nothing is refused, with no figure anywhere in the refusal",
+               o.errorCode + ": " + o.userMessage.substring (0, 70));
+    }
+    {
+        // AND AN ECHOJAY DEVICE IS UNTOUCHED: its own meter, as before.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead dev;
+        dev.n = 1; dev.name = "EchoJay Compressor"; dev.builtin = true;
+        dev.pictureValid = true; dev.grKnown = true; dev.grCertified = true;
+        dev.grLoudestDb = 5.6f; dev.grHeldDb = 5.1f; dev.grTypicalDb = 3.2f; dev.grWindowFrames = 480.0;
+        h.own.slots.push_back (dev);
+        ExecutorRead ex (h.sources());
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (o.ok && std::abs ((double) o.result.getProperty ("grLoudestDb", juce::var (0.0)) - 5.6) < 0.05,
+               "LM6i an EchoJay device still answers from its OWN meter, with the loudest figure - the "
+               "ruling changed the third-party road only",
+               juce::JSON::toString (o.result).substring (0, 80));
+    }
+
+    {
+        // HIS RULE: a reading stamped INSIDE the playback the agent waited for is of that section,
+        // however long the round trip then took. An EchoJay device, where there IS a reading.
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = true;
+        h.link.slots.clear();
+        SlotRead dev;
+        dev.n = 1; dev.name = "EchoJay Compressor"; dev.builtin = true;
+        dev.pictureValid = true; dev.grKnown = true; dev.grCertified = true;
+        dev.grLoudestDb = 4.4f; dev.grHeldDb = 4.0f; dev.grWindowFrames = 480.0;
+        h.link.slots.push_back (dev);
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        // The bound in guard time, so "older than the bound but INSIDE the window" is reachable
+        // without a ten-second sleep - the shipped 6 s is asserted by its own leg below.
+        ex.linkMeterStaleMs = 40;
+        ex.beginPlaybackWindow();                      // wait_for_playback opens the window
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();   // measured during it
+        for (int k = 0; k < 20; ++k) { juce::Timer::callPendingTimersSynchronously();
+                                       CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        check (o.ok,
+               "LM7 a reading stamped inside the playback the agent waited for is quoted even when it "
+               "is older than the staleness bound - his ruling: that IS the section he played, not a "
+               "window from before it",
+               o.ok ? juce::String ("answered") : (o.errorCode + ": " + o.errorMessage.substring (0, 60)));
+    }
+    {
+        // ...and a reading from BEFORE the window is still refused, which is the fault that rule
+        // protects: the same ten seconds, on the other side of the line.
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = true;
+        h.link.slots.clear();
+        SlotRead dev;
+        dev.n = 1; dev.name = "EchoJay Compressor"; dev.builtin = true;
+        dev.pictureValid = true; dev.grKnown = true; dev.grCertified = true;
+        dev.grLoudestDb = 4.4f; dev.grWindowFrames = 480.0;
+        h.link.slots.push_back (dev);
+        h.link.measuredAtMs = juce::Time::currentTimeMillis() - 30000;   // before the window
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        check (! o.ok && o.errorCode == "link_meters_stale",
+               "LM7b ...while a reading from BEFORE that window is still refused - the rule moved the "
+               "line, it did not remove it", o.errorCode);
+    }
+    {
+        // AND THE SHIPPED BOUND IS THE ONE THE COMMENT ARGUES FOR, read off a fresh executor so a
+        // harness lowering it cannot quietly become the product lowering it.
+        FakeHost h;
+        ExecutorRead fresh (h.sources());
+        check (fresh.linkMeterStaleMs == 6000,
+               "LM7c and the shipped staleness bound is 6 s - one missed 500 ms publish plus a tool "
+               "round trip", juce::String (fresh.linkMeterStaleMs));
     }
 
     std::printf ("\n==== agent_executor_read_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);

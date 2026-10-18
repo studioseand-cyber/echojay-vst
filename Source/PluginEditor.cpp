@@ -19348,6 +19348,15 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             cm.gainData  = msg.gainJson;   // restore gain proposals + their applied/undone state
             cm.askData   = msg.askJson;    // restore ask chips + answered state
             cm.askAnswered = msg.askAnswered;
+            // ---- THE RUN'S CARD COMES BACK AS A CARD (18 Oct 2026) -------------------------
+            // *"When I reopen a chat, an agent run comes back as just its last message in a plain
+            // bubble."*  The snapshot is in the record now, so the row is rebuilt from it and
+            // drawn by the same drawAgentRunRow the live run used - every step, the You-said
+            // lines, the read-backs, the red failures, Details, Hide steps and the closing. It
+            // gets a run id so the paint pass can address it, and agentRunViewFor marks it a
+            // RECORD, which is what takes the actions off it.
+            cm.agentData = msg.agentJson;
+            if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
             cm.editData    = msg.editJson;    // restore edit card + applied state
             cm.editApplied = msg.editApplied; // (editBaseRevision stays -1: the
             cm.editResult  = msg.editResult;  //  revision guard is same-session only)
@@ -32623,6 +32632,32 @@ echojay::agentui::RunView EchoJayEditor::agentRunViewFor (const ChatMsg& msg) co
     // Here, because this is the one place where the opening - which comes from the ChatMsg and not
     // from the stored JSON - and the closing are both known.
     v.foldProseIntoTheCard();
+    // ---- A CARD FROM THE RECORD IS A RECORD (18 Oct 2026) --------------------------------------
+    //
+    // A row whose run is not the one this window is running is HISTORY: a reopened chat, a run from
+    // a previous session, the row above the one in flight. It draws in full - that is the whole
+    // point of keeping the snapshot - but the controls that would ACT on it are not offered,
+    // because the run they would act on is over. Stop, Retry, Apply all and Undo all go; Details
+    // and Hide steps stay, because those are questions about the picture.
+    //
+    // Decided HERE rather than at the restore, so it is true of every road into this view: the
+    // store, the processor's replay list, and a row that is simply not the live one.
+    const bool live = agentClient() != nullptr && agentClient()->isActive()
+                   && msg.agentRunId == agentRunMsgId_;
+    if (! live)
+    {
+        v.fromRecord  = true;
+        v.running     = false;
+        v.finished    = true;
+        v.showStop    = false;
+        v.showRetry   = false;
+        v.showApplyAll = false;
+        v.showUndoAll = false;
+        v.showGotIt   = false;
+        v.playbackActive = false;
+        for (auto& s : v.steps) { s.applySkip = false; s.canUndo = false; }
+        if (v.statusWord.isEmpty()) v.statusWord = "Done";
+    }
     // The user's press wins over the run's own default (expanded while running, collapsed after).
     if (msg.agentStepsOpen >= 0) v.stepsOpen = msg.agentStepsOpen == 1;
     return v;
@@ -32849,14 +32884,33 @@ void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m)
             agentRecordedInChat_ = m.agentRunId;      // it is already there, in some spelling
             agentRecordedChat_   = currentChatId;
             agentRecordedText_   = stored.content;
+            // ...BUT THE CARD MAY HAVE GROWN SINCE (18 Oct 2026). The prose settles before the run
+            // does - a later round adds steps and read-back lines without changing a word of it - so
+            // the snapshot is rewritten even when the text is the one already there.
+            if (stored.agentJson != m.agentData)
+            {
+                workspace.updateAssistantAgentJson (currentChatId, stored.content, m.agentData);
+                workspace.requestMutationSync();
+            }
             return;
         }
     // The run's own earlier copy, grown by a later round: rewrite it rather than add beside it.
     if (agentRecordedInChat_ == m.agentRunId && agentRecordedChat_ == currentChatId
         && agentRecordedText_.isNotEmpty())
+    {
         workspace.updateAssistantText (currentChatId, agentRecordedText_, whole);
+        workspace.updateAssistantAgentJson (currentChatId, whole, m.agentData);
+    }
     else
-        workspace.appendMessageToChat (currentChatId, "assistant", whole, {}, {}, {}, {}, {}, {}, {});
+    {
+        // ---- THE CARD GOES WITH IT (18 Oct 2026) -------------------------------------------
+        // *"When I reopen a chat, an agent run comes back as just its last message in a plain
+        // bubble. It should come back exactly as it looked live."*  The snapshot the row has kept
+        // all along (every step, the You-said lines, the read-backs, the failures, the closing) is
+        // written beside the prose, so a reopened chat redraws the card instead of quoting it.
+        workspace.appendMessageToChat (currentChatId, "assistant", whole, {}, {}, {}, {}, {}, {}, {},
+                                       {}, {}, {}, {}, m.agentData);
+    }
     agentRecordedInChat_ = m.agentRunId;
     agentRecordedChat_   = currentChatId;
     agentRecordedText_   = whole;

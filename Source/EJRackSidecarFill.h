@@ -74,6 +74,32 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         // HAS one; the dB fields sit at a no-reading floor otherwise). Copied field for field, so the
         // Link publishes exactly what the main plugin would read from its own rack, and no reader has
         // to decide anything the picture has already decided.
+        // ---- WHAT THIS SLOT HEARD (18 Oct 2026) ------------------------------------------------
+        // The per-slot tallies are live for EVERY slot, third party included - they are the one thing
+        // EchoJay measures about a plugin whose meters it cannot read. p90/p50 over the gated 100 ms
+        // hops, and the same two percentiles of those hops' true peaks.
+        {
+            const auto lv = host.getSlotLevels (i);
+            if (lv.measured && lv.in.known)
+            {
+                back.inLevelsKnown     = true;
+                back.inLevelsKWeighted = lv.in.kWeighted;
+                back.inLoudestDb       = lv.in.p90;
+                back.inTypicalDb       = lv.in.p50;
+                back.inWindowSeconds   = lv.in.windowSeconds;
+                juce::Array<float> hops;
+                for (int k = 0; k < lv.in.hopTruePeakCount && k < (int) lv.in.hopTruePeakDb.size(); ++k)
+                    if (lv.in.hopTruePeakDb[(size_t) k] > -199.0f) hops.add (lv.in.hopTruePeakDb[(size_t) k]);
+                if (! hops.isEmpty())
+                {
+                    hops.sort();
+                    back.inTypicalPeakDbtp = hops[hops.size() / 2];
+                    back.inLoudestPeakDbtp = hops[juce::jmin (hops.size() - 1, (hops.size() * 9) / 10)];
+                }
+                else if (lv.in.truePeakDb > -199.0f)
+                    back.inLoudestPeakDbtp = back.inTypicalPeakDbtp = lv.in.truePeakDb;
+            }
+        }
         const auto pic = host.slotPicture (i);
         back.pictureValid  = pic.valid;
         back.grKnown       = pic.grKnown;

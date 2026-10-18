@@ -185,6 +185,16 @@ struct RunView
     /** The line under an ask with nothing to tap: "Type your answer below." Never invented choices -
         the plugin cannot know what B meant to offer - but never a dead end either (16 Oct 2026). */
     juce::String askTypeHint;
+    /** ---- A CARD THAT IS OVER (18 Oct 2026) ---------------------------------------------------
+        TRUE when this view was rebuilt from the chat RECORD rather than from a live client. The card
+        draws the same: every step, the "You said" lines, the read-backs, the red failures, the
+        closing - and Details and Hide steps still work, because those are questions about the
+        PICTURE, not about the run.
+
+        What a record must not offer is a control that would act on a run that no longer exists:
+        Apply, Skip, Undo, Stop, Retry, and a tappable chip. Those are not drawn. A chip's answer
+        still shows, on the step it answered, which is where "You said" already lives. */
+    bool fromRecord = false;
     int  changeCount = 0;       // how many steps landed (the "N changes" button)
     std::vector<RunStep> steps;
 
@@ -738,6 +748,8 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
                 const int kind = kinds[i];
                 const int si   = L.rowStep[i];
                 const auto& rr = L.rows[i];
+                // A RECORD KEEPS DETAILS (a question about the picture) and loses the actions.
+                if (v.fromRecord && (kind == 2 || kind == 4)) continue;
                 if (kind == 2)
                 {
                     const int bw = lineBtnW;
@@ -754,6 +766,7 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
             {
                 const int si = L.rowStep[i];
                 const auto& st = v.steps[(size_t) si];
+                if (v.fromRecord) continue;      // a record's chips are history, not buttons
                 if (st.chips.isEmpty() || ! st.answered.isEmpty()) continue;
                 const int cx = x0 + Metrics::glyphW + Metrics::glyphGap;
                 std::vector<juce::Rectangle<int>> chipRects;

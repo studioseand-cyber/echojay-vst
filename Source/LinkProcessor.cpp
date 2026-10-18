@@ -529,6 +529,10 @@ void LinkProcessor::publishRackSidecar()
             const auto pic = chainHost.slotPicture (i);
             if (pic.grKnown)   digest += pic.grHeldDb * 7.0 + pic.grLoudestDb * 13.0 + (double) pic.grWindowFrames;
             if (pic.hasPeaks()) digest += pic.outTpDb * 3.0 + pic.inTpDb;
+            // AND WHAT THE SLOT HEARD (18 Oct 2026): this is what moves on a third-party rack, which
+            // is every rack his session has had on the Kick - without it the digest was dead weight.
+            if (const auto lv = chainHost.getSlotLevels (i); lv.measured && lv.in.known)
+                digest += lv.in.p90 * 17.0 + lv.in.p50 * 5.0 + (double) lv.in.windowSeconds;
         }
         if (std::abs (digest - lastPublishedMeterDigest_) > 1.0e-6
             && (nowMs - lastMeterPublishMs_) >= kMeterPublishMs)
@@ -547,6 +551,25 @@ void LinkProcessor::publishRackSidecar()
                            "measurements go out while it is measuring, not only when the rack "
                            "changes (item 13, 18 Oct)");
         }
+    }
+    else if (chainHost.getNumSlots() > 0 && nowMs - lastMeterLogMs_ >= 60000.0)
+    {
+        // ---- AND WHEN THERE IS NOTHING TO PUBLISH, SAY SO (18 Oct 2026) -------------------------
+        // He asked three times why this Link sent no measurements, and the honest answer took a
+        // code read to find: a third-party plugin's gain reduction is not measured anywhere in this
+        // build (slotPicture computes GR for an EchoJay device only), so the digest above is
+        // identically zero and cannot move. That is a fact about the RACK, and a rack that cannot be
+        // measured should say it in the log rather than leave the silence to be interpreted.
+        lastMeterLogMs_ = nowMs;
+        int measurable = 0;
+        for (int i = 0; i < chainHost.getNumSlots(); ++i)
+            if (const auto pic = chainHost.slotPicture (i); pic.grKnown || pic.hasPeaks()) ++measurable;
+        if (measurable == 0)
+            EchoJay_NSLog (("EJRackSidecar: nothing to publish - none of this rack's "
+                            + juce::String (chainHost.getNumSlots())
+                            + " slot(s) has a reading of its own (an EchoJay device reports its "
+                              "gain reduction; a third-party plugin's is not measured by this "
+                              "build, so check(gr) on one answers not_certified)").toRawUTF8());
     }
     if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved && !metersMoved)
         return;
