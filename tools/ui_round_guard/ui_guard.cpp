@@ -284,6 +284,23 @@ struct EchoJayTabStripTestAccess
     static void addChat (EchoJayEditor& e, const WsChat& c) { e.workspace.addChat (c); }
     static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
     static void openChat (EchoJayEditor& e, const juce::String& id) { e.loadChatFromWorkspace (id); }
+    // ---- 18 Oct 2026: the chat RECORD write, and the two things it is gated on --------------------
+    static void recordRun (EchoJayEditor& e, const EchoJayEditor::ChatMsg& m) { e.recordAgentRunInChat (m); }
+    /** A finished run's row, built HERE because ChatMsg is the editor's own type - a leg says
+        `auto row = A::makeAgentRow (...)` and never names it. */
+    static EchoJayEditor::ChatMsg makeAgentRow (int runId, const juce::String& content,
+                                                const juce::String& snapshot)
+    {
+        EchoJayEditor::ChatMsg m;
+        m.role = "assistant"; m.agentRunId = runId; m.content = content; m.agentData = snapshot;
+        return m;
+    }
+    static void ownRun (EchoJayEditor& e, int runId, const juce::String& chatId)
+    { e.agentRunMsgId_ = runId; e.agentRunChatId_ = chatId; }
+    static void forgetRecorded (EchoJayEditor& e)
+    { e.agentRecordedInChat_ = 0; e.agentRecordedChat_ = {}; e.agentRecordedText_ = {}; }
+    static int storedMsgs (EchoJayEditor& e, const juce::String& id)
+    { auto* c = e.workspace.findChatById (id); return c == nullptr ? -1 : (int) c->messages.size(); }
     // The sidebar's own folder rows, from the shipped row builder: "<folder id>|<label>".
     static juce::StringArray folders (EchoJayEditor& e)
     {
@@ -1134,6 +1151,129 @@ int main()
             }
 
             EchoJayAlignTestAccess::setLinks (proc, {});
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed) = savedMsgs;
+            A::toChat (*ed); pumpMs (40);
+        }
+
+        // ---- CR (18 Oct 2026, 15:0x): THE RECORD WRITE NEVER TOUCHES ANOTHER CHAT -------------------------
+        //
+        // *"Clicking any chat in the left sidebar appends other chats' messages into the open chat, so chats
+        // are merging. The closing is now saved twice, once with an em dash and once with a hyphen. A chat
+        // aimed at the Kick's Link ended up adding to the Mix Bus. Write once per run, dedupe on normalised
+        // text (dashes, whitespace), never touch other chats, and never change the chat's target. Prove it
+        // with a guard that switches between three chats and checks none of them gains a message."*
+        //
+        // That is this group, in his words: three chats, a FINISHED agent row in hand, and the thing he did -
+        // click from one chat to the next - driven through the shipped loadChatFromWorkspace.
+        {
+            std::printf ("\n== CR: the run's answer goes in ITS chat, once - three chats, none of them gains a message ==\n");
+            const auto savedId   = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+
+            auto makeChat = [&] (const juce::String& id, const juce::String& title,
+                                 const juce::String& uid, const juce::String& track)
+            {
+                WsChat c;
+                c.id = id; c.title = title; c.linkUid = uid; c.trackName = track;
+                c.created = "2026-10-18T14:00:00Z";
+                WsMessage q; q.role = "user"; q.content = "Add a compressor";
+                c.messages.push_back (q);
+                A::addChat (*ed, c);
+            };
+            makeChat ("chat_kick", "Kick",    "lnk_kick", "88_7even");
+            makeChat ("chat_bus",  "Mix Bus", {},         "88_7even");
+            makeChat ("chat_vox",  "Vox",     "lnk_vox",  "88_7even");
+            check (A::storedMsgs (*ed, "chat_kick") == 1 && A::storedMsgs (*ed, "chat_bus") == 1
+                   && A::storedMsgs (*ed, "chat_vox") == 1,
+                   "CR0 PRECONDITION: three chats, one message each");
+
+            // A finished run's row, as a restored chat brings one: content and a snapshot, and NOT this
+            // editor's own run (its id is one no run here minted).
+            const juce::String answer = "Added the bx_townhouse Buss Compressor on the kick - threshold -10 dB.";
+            auto snapshotFor = [] (const juce::String& closing, const juce::String& session)
+            {
+                echojay::agentui::RunView v;
+                v.sessionId = session; v.finished = true; v.statusWord = "Done"; v.closing = closing;
+                return juce::JSON::toString (echojay::agentui::toJson (v), true);
+            };
+            auto row = A::makeAgentRow (9999, answer, snapshotFor (answer, "ag_r"));
+
+            // (a) HIS CLICK-THROUGH. Open each chat in turn with a foreign row in hand.
+            A::ownRun (*ed, 0, {});                  // no run of our own: the state after a reload
+            A::forgetRecorded (*ed);
+            for (const char* id : { "chat_kick", "chat_bus", "chat_vox", "chat_kick" })
+            {
+                A::openChat (*ed, id); pumpMs (20);
+                A::recordRun (*ed, row);             // what agentChanged did on every state change
+            }
+            check (A::storedMsgs (*ed, "chat_kick") == 1 && A::storedMsgs (*ed, "chat_bus") == 1
+                   && A::storedMsgs (*ed, "chat_vox") == 1,
+                   "CR1 switching between three chats with a finished row in hand adds NOTHING to any of them "
+                   "(RED as it stood: every switch appended that row's answer to whichever chat was open - "
+                   "\"chats are merging\")",
+                   "kick=" + juce::String (A::storedMsgs (*ed, "chat_kick"))
+                     + " bus=" + juce::String (A::storedMsgs (*ed, "chat_bus"))
+                     + " vox=" + juce::String (A::storedMsgs (*ed, "chat_vox")));
+            // ...and nothing about those chats moved either.
+            {
+                auto* k = A::chat (*ed, "chat_kick"); auto* b = A::chat (*ed, "chat_bus");
+                check (k != nullptr && b != nullptr && k->linkUid == "lnk_kick" && b->linkUid.isEmpty()
+                       && k->trackName == "88_7even",
+                       "CR1b ...and no chat's TARGET changed - the Kick's chat is still the Kick's "
+                       "(\"never change the chat's target\")");
+            }
+
+            // (b) THE RUN'S OWN CHAT, ONCE. The row is this editor's run and the chat is the one it
+            //     started in: the answer is written, and a second call does not write it again.
+            A::openChat (*ed, "chat_kick"); pumpMs (20);
+            A::ownRun (*ed, row.agentRunId, "chat_kick");
+            A::forgetRecorded (*ed);
+            A::recordRun (*ed, row);
+            check (A::storedMsgs (*ed, "chat_kick") == 2,
+                   "CR2 the run's own chat DOES get the answer - the gates refuse other chats, not the write "
+                   "itself", juce::String (A::storedMsgs (*ed, "chat_kick")));
+            A::recordRun (*ed, row);
+            A::recordRun (*ed, row);
+            check (A::storedMsgs (*ed, "chat_kick") == 2,
+                   "CR2b ...and it is written ONCE per run however often the state changes",
+                   juce::String (A::storedMsgs (*ed, "chat_kick")));
+
+            // (c) THE EM DASH. The same answer, spelled with an em dash, after a reload has emptied the
+            //     editor's memory of what it wrote. This is the second copy he read.
+            A::forgetRecorded (*ed);
+            const auto emDashed = juce::String::fromUTF8 ("Added the bx_townhouse Buss Compressor on the kick \xe2\x80\x94 threshold -10 dB.");
+            auto dashed = A::makeAgentRow (row.agentRunId, emDashed, snapshotFor (emDashed, "ag_r"));
+            A::recordRun (*ed, dashed);
+            check (A::storedMsgs (*ed, "chat_kick") == 2,
+                   "CR3 the SAME answer with an em dash instead of a hyphen is recognised as already recorded "
+                   "(RED as it stood: an exact content match missed it and appended a second copy - \"saved "
+                   "twice, once with an em dash and once with a hyphen\")",
+                   juce::String (A::storedMsgs (*ed, "chat_kick")));
+            check (echojay::agentui::normalisedProse (dashed.content)
+                     == echojay::agentui::normalisedProse (row.content)
+                   && echojay::agentui::normalisedProse ("a  b\n\nc") == "a b c",
+                   "CR3b ...because the key normalises dashes and whitespace, and nothing else");
+            // and a genuinely different answer is NOT swallowed by that comparison
+            A::forgetRecorded (*ed);
+            const juce::String otherAnswer = "Added the bx_townhouse Buss Compressor on the kick - threshold -14 dB.";
+            auto other = A::makeAgentRow (row.agentRunId, otherAnswer, snapshotFor (otherAnswer, "ag_r2"));
+            A::recordRun (*ed, other);
+            check (A::storedMsgs (*ed, "chat_kick") == 3,
+                   "CR3c ...so a different answer is still written - the dedupe is not a filter on answers",
+                   juce::String (A::storedMsgs (*ed, "chat_kick")));
+
+            // (d) AND A CHAT THE STORE DOES NOT KNOW IS NEVER CREATED HERE.
+            A::forgetRecorded (*ed);
+            A::setChatId (*ed, "chat_that_does_not_exist");
+            A::ownRun (*ed, row.agentRunId, "chat_that_does_not_exist");
+            A::recordRun (*ed, row);
+            check (A::chat (*ed, "chat_that_does_not_exist") == nullptr,
+                   "CR4 a chat id the store does not know is NOT created on the fly - that would be a chat with "
+                   "no channel, no title and no target");
+
+            A::ownRun (*ed, 0, {});
+            A::forgetRecorded (*ed);
             A::setChatId (*ed, savedId);
             A::msgs (*ed) = savedMsgs;
             A::toChat (*ed); pumpMs (40);

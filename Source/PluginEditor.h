@@ -2112,6 +2112,8 @@ private:
     /** Which chat that record went into: he can open another chat while a run is finishing, and an
         answer appended to whatever chat happens to be open then is worse than no answer at all. */
     juce::String agentRecordedChat_;
+    /** The chat the CURRENT run's row was born in. Gate (2) of recordAgentRunInChat. */
+    juce::String agentRunChatId_;
     /** Writes the finished run's prose into the chat RECORD, once per run, updated afterwards. */
     void recordAgentRunInChat (const ChatMsg& m);
     // Result stage: a local assistant bubble (persisted, block-less).

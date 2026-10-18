@@ -932,6 +932,33 @@ inline void drawRunGlyph (juce::Graphics& g, juce::Rectangle<int> r, int status,
 
     It is one function because it was two copies of one rule, in two files, and a rule in two places is
     a rule that gets fixed in one. */
+/** ---- THE SAME ANSWER, WRITTEN TWO WAYS (18 Oct 2026, his 15:0x regression) ----------------
+    *"the closing is now saved twice, once with an em dash and once with a hyphen"*.  The record's
+    write matched on the exact text, and the stored copy had come back from the server's prose while
+    the new one had been through ours, so an em dash against a hyphen was enough to miss it and
+    append a second copy.
+
+    So the record compares NORMALISED text: every kind of dash reads as one, runs of whitespace read
+    as one space, and the ends are trimmed. Those are the two things that differ between one copy of
+    a sentence and another here; nothing else is touched, because a comparison that ignored more
+    would start merging answers that really are different. */
+inline juce::String normalisedProse (const juce::String& s)
+{
+    juce::String out;
+    bool lastWasSpace = false;
+    for (int i = 0; i < s.length(); ++i)
+    {
+        auto c = s[i];
+        if (c == 0x2014 || c == 0x2013 || c == 0x2012 || c == 0x2212 || c == 0x2010 || c == 0x2011)
+            c = '-';                                  // em, en, figure, minus, hyphen, non-breaking
+        const bool isSpace = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+        if (isSpace) { if (! lastWasSpace && out.isNotEmpty()) out << ' '; lastWasSpace = true; continue; }
+        lastWasSpace = false;
+        out << c;
+    }
+    return out.trim();
+}
+
 inline void carryAnswersForward (RunView& now, const RunView& before)
 {
     for (size_t i = 0; i < now.steps.size() && i < before.steps.size(); ++i)

@@ -32609,6 +32609,10 @@ void EchoJayEditor::syncAgentRunMessage()
         cm.agentRunId = ++agentRunIdSeq_;
         cm.agentData  = juce::JSON::toString (toJson (seed), true);
         agentRunMsgId_ = cm.agentRunId;
+        // THE CHAT THIS RUN BELONGS TO, remembered at birth. The record write is gated on it: he
+        // can open another chat while a run finishes, and an answer appended to whatever chat
+        // happens to be open then is the "chats are merging" fault of 15:0x.
+        agentRunChatId_ = currentChatId;
         bool haveRecord = false;
         for (auto& e : processorRef.chatHistory)
             if (e.agentJson.isNotEmpty()
@@ -32692,15 +32696,50 @@ void EchoJayEditor::syncAgentRunMessage()
 // assistant entry, and an unchanged one does nothing - so being called on every change is free.
 void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m)
 {
-    if (currentChatId.isEmpty() || m.agentData.isEmpty()) return;
+    // ---- FOUR GATES, ONE PER THING HE READ AT 15:0x (18 Oct 2026) --------------------------
+    //
+    // The first cut of this hung off the run ENDING, which was right, and then wrote whatever row
+    // agentRunMessage() happened to find into whatever chat happened to be open. Both of those are
+    // wrong and together they merged his chats: *"clicking any chat in the left sidebar appends
+    // other chats' messages into the open chat"*, and a transcript carrying another channel's row
+    // is how *"a chat aimed at the Kick's Link ended up adding to the Mix Bus"*.
+    //
+    // (1) THE ROW MUST BE THE RUN THIS EDITOR RAN. A chat loaded from the store brings its own
+    //     agent row with it, and that row's answer is already in that chat's record.
+    if (m.agentRunId == 0 || m.agentRunId != agentRunMsgId_) return;
+    // (2) AND THE CHAT MUST BE THE ONE THE RUN STARTED IN, remembered when the row was born.
+    if (currentChatId.isEmpty() || currentChatId != agentRunChatId_) return;
+    // (3) NEVER CREATE A CHAT. appendMessageToChat makes one on the fly for an id it does not know,
+    //     which would be a chat with no channel, no title and no target - a fifth way to go wrong.
+    if (workspace.findChatById (currentChatId) == nullptr) return;
+    // (4) AND ONLY FOR A RUN THAT IS OVER. A live run's prose is the row's to show; the record gets
+    //     it once, at the end.
+    if (agentClient() == nullptr || agentClient()->isActive()) return;
+
+    if (m.agentData.isEmpty()) return;
     auto v = echojay::agentui::fromJson (juce::JSON::parse (m.agentData));
     v.opening = displayedText (m);
     v.foldProseIntoTheCard();                 // what the CARD says, by the one rule that decides it
     const auto whole = v.closing.trim();
     if (whole.isEmpty()) return;
-    const bool sameRun = agentRecordedInChat_ == m.agentRunId && agentRecordedChat_ == currentChatId;
-    if (sameRun && agentRecordedText_ == whole) return;                 // already in the record
-    if (sameRun && agentRecordedText_.isNotEmpty())
+
+    // ---- ONCE PER RUN, ON NORMALISED TEXT --------------------------------------------------
+    // The dedupe is asked of the RECORD, not of a member variable: a member is empty again after a
+    // reload, which is exactly when the second copy appeared. Dashes and whitespace are normalised
+    // because that is the only way the two copies of one sentence differed (em dash / hyphen).
+    const auto key = echojay::agentui::normalisedProse (whole);
+    auto* chat = workspace.findChatById (currentChatId);
+    for (const auto& stored : chat->messages)
+        if (stored.role == "assistant" && echojay::agentui::normalisedProse (stored.content) == key)
+        {
+            agentRecordedInChat_ = m.agentRunId;      // it is already there, in some spelling
+            agentRecordedChat_   = currentChatId;
+            agentRecordedText_   = stored.content;
+            return;
+        }
+    // The run's own earlier copy, grown by a later round: rewrite it rather than add beside it.
+    if (agentRecordedInChat_ == m.agentRunId && agentRecordedChat_ == currentChatId
+        && agentRecordedText_.isNotEmpty())
         workspace.updateAssistantText (currentChatId, agentRecordedText_, whole);
     else
         workspace.appendMessageToChat (currentChatId, "assistant", whole, {}, {}, {}, {}, {}, {}, {});
