@@ -25,6 +25,9 @@ A and B work in parallel. Each takes one issue at a time and queues the rest in 
 - No batching and no extra scope while Sean is waiting. Write-ups come later.
 - No rig runs or builds that load plugins while Sean is in Logic. Code and guards only.
 - Bigger work (queue items, Kathy's readers) only when nothing from Sean is open.
+- **After a compaction, carry straight on.** Re-read this file, finish the item in hand and report it. Never sit idle
+  waiting for a prompt. (On 18 Oct, A compacted at 12:35 with a finished build and sat for an hour.)
+- **Never hold a finished fix to batch it with the next one.** Install it or make it live, report it, then start the next.
 - Never show codes, tool ids, contract text or OS errors in the chat. Plain sentences only, with OS errors under Details.
 
 ## The setup (already done on Sean's Mac)
