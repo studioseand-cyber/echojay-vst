@@ -85,7 +85,9 @@ entries in the folder the product actually reads. Same fixture, same seeds, two 
 `RED (1 failed, 52 passed, 12 skipped)` — one failure, and it was this row.
 
 The red half is 17b's code, not a reconstruction: the rig registers the AU from the given bundle's
-own factory function, so the installed build is never consulted. Note `truncated` in those keys —
+own factory function, so the installed build is never consulted. That holds for the V2, which the
+rig hosts in its own process; it is *not* true of a Link in a process of its own, which is item 0b
+and part of tonight's I9c story. Note `truncated` in those keys —
 17b's gate *did* run and *did* trim, and the result still went out at 37 KB, because the full
 won't-load list was appended afterwards. That is §25 in one line.
 
@@ -128,7 +130,8 @@ Unzipped to `~/Downloads/SEAN_RECHECK_PACK_16oct`, quarantine cleared, then
 Then: 46 units from `held_units.txt`, 5 steps to run and 27 done or skipped, ETA 2:10, stops at
 07:00, state in `~/Library/ejmap/cert/run_all.json`, log in `~/Library/ejmap/cert/run_all/` and
 `recheck_16oct.log`. It also found **86 tone checks made by a build other than `ad50ddbb`**, so the
-follow-up re-runs those stale checks first — that is the step it spent the first hour in.
+follow-up re-runs those stale checks first — and it cleared them in **15 minutes**, against its own
+40-minute estimate.
 
 ### Two of its steps refused instantly, and that is in Kathy's pack, not your Mac
 
