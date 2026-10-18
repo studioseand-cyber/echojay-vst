@@ -1375,6 +1375,33 @@ void LinkProcessor::soloFabricScan()
                         std::memory_order_relaxed);
 }
 
+// ---- THE PLUGIN'S WINDOW, HERE (18 Oct 2026, Sean's item 3) -------------------------------------
+// The editor comes from this Link's own ChainHost - the same createEditorForSlot the main plugin uses
+// for its own rack - so what opens is THE running plugin, not a second instance of it. A slot with no
+// editor to give (a built-in drawn by us, a plugin whose editor could not be created) says so, and
+// the refusal reaches the user as a sentence rather than as a button that did nothing.
+bool LinkProcessor::showSlotEditorWindow (int slot1Based, juce::String& why)
+{
+    if (slot1Based < 1) { why = "no slot was named"; return false; }
+    const int idx = slot1Based - 1;
+    if (idx >= chainHost.getNumSlots()) { why = "that slot is not on this rack"; return false; }
+    // already open for this slot: raise it, which is what a second press should do
+    if (slotEditorWin_ != nullptr && slotEditorWin_->slot1 == slot1Based)
+    { slotEditorWin_->setVisible (true); slotEditorWin_->toFront (true); return true; }
+    auto* ed = chainHost.createEditorForSlot (idx);
+    if (ed == nullptr) { why = "that plugin would not open an editor here"; return false; }
+    const auto name = chainHost.getSlotInfo (idx).name;
+    slotEditorWin_.reset();          // one at a time, like the main plugin's pop-out
+    slotEditorWin_ = std::make_unique<SlotEditorWindow> (name.isNotEmpty() ? name : juce::String ("Plugin"),
+                                                         ed, slot1Based);
+    // Deleting the window from inside its own close callback is a use-after-free; the reset is posted.
+    slotEditorWin_->onClosed = [this]
+    {
+        juce::MessageManager::callAsync ([this] { slotEditorWin_.reset(); });
+    };
+    return true;
+}
+
 void LinkProcessor::pollControlCommand()
 {
     auto id = chainInstanceId();
@@ -1442,6 +1469,31 @@ void LinkProcessor::pollControlCommand()
     // component can be raised, and that is what happens. If it does not, the honest answer goes back
     // in the ack (`fronted:false`) and the main plugin tells him Logic owns that window. A button
     // that silently does nothing is the thing this avoids.
+    // ---- SHOW THE PLUGIN'S OWN WINDOW (18 Oct 2026, Sean's item 3) -----------------------------
+    //
+    // Additive, and it travels WITH bringEditorToFront in the same command: a Link that predates this
+    // field ignores it and answers `fronted` exactly as before, and this one answers both. The main
+    // plugin reads `shown` first and falls back to `fronted`, so neither side has to know the other's
+    // age - the downgrade rule, in the one place the two processes meet.
+    if (obj->hasProperty ("showSlotEditor"))
+    {
+        const int slot1 = (int) obj->getProperty ("showSlotEditor");
+        juce::String why;
+        const bool shown = showSlotEditorWindow (slot1, why);
+        EchoJay_NSLog (("EJCtrl: showSlotEditor slot " + juce::String (slot1) + " seq="
+                        + juce::String (seq) + " -> "
+                        + (shown ? juce::String ("opened the plugin's window here")
+                                 : "not shown: " + why)).toRawUTF8());
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("v", 1);
+        r->setProperty ("seq", seq);
+        r->setProperty ("shown", shown);
+        if (! shown && why.isNotEmpty()) r->setProperty ("why", why);
+        juce::File (resolvedDir + "ctrl-ack-" + id + ".json")
+            .replaceWithText (juce::JSON::toString (juce::var (r), true));
+        return;                      // one answer per command; the ack is written
+    }
+
     if (obj->hasProperty("bringEditorToFront"))
     {
         bool fronted = false;

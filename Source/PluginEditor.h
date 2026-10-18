@@ -3397,7 +3397,9 @@ private:
             window, and then says which of the two things happened, because nothing in this process
             can make Logic OPEN a window that is closed. */
         juce::TextButton bringFwdBtn { "Bring it forward" };
-        std::function<void (const juce::String& /*note*/)> onBringLinkForward;
+        // The SLOT travels with the press (18 Oct 2026): the window being asked for is that
+        // plugin's, and the Link needs to know which of its slots to open.
+        std::function<void (const juce::String& /*note*/, int /*slotIdx*/)> onBringLinkForward;
 
         // SUGGESTED SETTINGS box content — wraps, scrolls when it overflows
         juce::TextEditor settingsBox;
@@ -3476,6 +3478,9 @@ private:
         // PluginEditor.cpp and invoked by nothing, and its handler was identical to onEditRequest's -
         // beginRemoteEditSession(uid, slotIdx) - which the Edit button and now a slot double-click both
         // use. Two names for one door is how one of them stayed dead; there is one now.
+        /** The remote slot whose window this selection already asked for - so a selection opens it
+            once and a redraw does not. Reset by any slot that draws locally and by a view change. */
+        int          autoShownSlot_ = -1;
         juce::String remoteName;     // the Link's display name, for the note
         bool         remoteOffline = false;
 
@@ -3495,8 +3500,12 @@ private:
         juce::String remoteEditorNote (const juce::String& pluginName) const
         {
             if (remoteName.trim().isEmpty()) return {};
+            // ---- AND NOW THERE IS SOMETHING TO PRESS (18 Oct 2026, Sean's item 3) --------------
+            // The note used to end "open it in that track's EchoJay window", which asked HIM to do
+            // the one thing the button can now do itself: the Link hosts the plugin, so the Link can
+            // open its window. The sentence says what the button does rather than what he must do.
             return pluginName.trim() + " is running on " + remoteName.trim()
-                 + ", open it in that track's EchoJay window";
+                 + " - Bring it forward opens its window there";
         }
         // Rack lock: TRUE while viewing a remote rack this main does not
         // hold — remote edit affordances disable, tooltip says why. Set only
@@ -3611,13 +3620,13 @@ private:
             // just said "this plugin is running on <track>".
             bringFwdBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xcc0E1020));
             bringFwdBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff22d3ee));
-            bringFwdBtn.setTooltip ("Ask that track's EchoJay to bring the plugin's window forward");
+            bringFwdBtn.setTooltip ("Open that plugin's window on its own track");
             bringFwdBtn.setVisible (false);
             addChildComponent (bringFwdBtn);
             bringFwdBtn.onClick = [this]
             {
                 if (onBringLinkForward == nullptr) return;
-                onBringLinkForward (remoteName);
+                onBringLinkForward (remoteName, selectedIdx);
             };
             addChildComponent(popBtn);
 
@@ -3791,9 +3800,20 @@ private:
                     statusText = note.isNotEmpty() ? note
                                                    : juce::String ("Failed: could not open editor");
                     bringFwdBtn.setVisible (note.isNotEmpty());
+                    // ---- "THE EDITOR SHOULD JUST APPEAR" (18 Oct 2026, Sean's item 3) ----------
+                    // Selecting the slot asks for it, once per selection: he selected a slot and read
+                    // a sentence telling him to go and do it himself. The press is still there for
+                    // raising it again, and the once-per-selection guard is why clicking along the
+                    // strip does not fire a window per block.
+                    if (note.isNotEmpty() && autoShownSlot_ != i && onBringLinkForward != nullptr)
+                    {
+                        autoShownSlot_ = i;
+                        onBringLinkForward (remoteName, i);
+                    }
                     resized();
                     repaint(); return;
                 }
+                autoShownSlot_ = -1;          // a slot we CAN draw here resets the one-shot
 
                 statusText.clear();
                 inlineEditor.reset(ed);

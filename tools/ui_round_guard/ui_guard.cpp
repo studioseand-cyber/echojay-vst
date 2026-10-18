@@ -286,6 +286,9 @@ struct EchoJayTabStripTestAccess
     static void openChat (EchoJayEditor& e, const juce::String& id) { e.loadChatFromWorkspace (id); }
     // ---- 18 Oct 2026: the chat RECORD write, and the two things it is gated on --------------------
     static void recordRun (EchoJayEditor& e, const EchoJayEditor::ChatMsg& m) { e.recordAgentRunInChat (m); }
+    /** The press the mirror's note offers: "Bring it forward", with the slot it belongs to. */
+    static void bringForward (EchoJayEditor& e, const juce::String& track, int slotIdx)
+    { if (e.chainListPanel.onBringLinkForward) e.chainListPanel.onBringLinkForward (track, slotIdx); }
     /** A finished run's row, built HERE because ChatMsg is the editor's own type - a leg says
         `auto row = A::makeAgentRow (...)` and never names it. */
     static EchoJayEditor::ChatMsg makeAgentRow (int runId, const juce::String& content,
@@ -1276,6 +1279,43 @@ int main()
             A::forgetRecorded (*ed);
             A::setChatId (*ed, savedId);
             A::msgs (*ed) = savedMsgs;
+            A::toChat (*ed); pumpMs (40);
+        }
+
+        // ---- SW (18 Oct 2026, his item 3): THE COMMAND THAT OPENS THE PLUGIN'S OWN WINDOW ---------------
+        //
+        // *"Chain tab: after the add, the editor area said 'Logic owns that window - open EchoJay on
+        // 88_7even Kick_2_01' and Bring it forward did nothing ... The editor should just appear, and
+        // Bring it forward must work."*
+        //
+        // The WINDOW opens in the Link's process, which no harness here can hold. What IS held here is
+        // the V2's half: the command it writes, and that it names the slot. The Link's half is covered
+        // by its own log line and his retest, and that is said plainly in the commit rather than
+        // implied by a green tick.
+        {
+            std::printf ("\n== SW: Bring it forward asks for THE PLUGIN'S window, by slot ==\n");
+            const auto savedId = A::chatId (*ed);
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            check (dir.isNotEmpty(), "SW0 PRECONDITION: this guard has a shared folder of its own", dir);
+            juce::File (dir + "ctrl-cmd-lnk_kick.json").deleteFile();
+            juce::File (dir + "ctrl-ack-lnk_kick.json").deleteFile();
+            A::openChannel (*ed, "lnk_kick"); pumpMs (40);
+            A::bringForward (*ed, "88_7even Kick_2_01", 2);     // the third block in the strip
+            pumpMs (40);
+            const auto cmd = juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_kick.json").loadFileAsString());
+            check ((int) cmd.getProperty ("showSlotEditor", juce::var (0)) == 3,
+                   "SW1 the command asks for THAT SLOT's editor, 1-based on the wire (RED as it stood: "
+                   "the press carried no slot at all, so the only thing it could ask for was the Link's "
+                   "own Logic window - which Logic had closed)",
+                   juce::JSON::toString (cmd).substring (0, 120));
+            check ((bool) cmd.getProperty ("bringEditorToFront", juce::var (false)),
+                   "SW1b ...and still carries the OLD key beside it, so a Link that predates this build "
+                   "answers exactly as it did before - the downgrade rule, on the wire");
+            check (A::panelStatus (*ed).containsIgnoreCase ("opening it on"),
+                   "SW2 and the press says something at once, rather than leaving the note it was "
+                   "pressed from on screen", A::panelStatus (*ed));
+            juce::File (dir + "ctrl-cmd-lnk_kick.json").deleteFile();
+            A::setChatId (*ed, savedId);
             A::toChat (*ed); pumpMs (40);
         }
 

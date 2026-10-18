@@ -815,6 +815,44 @@ private:
     int  lastAppliedCtrlSeq_ = 0;
     juce::String lastPerSeqAckFile_;   // v9: the previous ctrl-ack-<id>-<seq>.json, removed on the next answer
     void pollControlCommand();
+    /** ---- THE PLUGIN'S OWN WINDOW, OPENED WHERE THE PLUGIN LIVES (18 Oct 2026) --------------
+        Sean, in Logic: *"the editor area said 'Logic owns that window - open EchoJay on
+        88_7even Kick_2_01' and Bring it forward did nothing ... The editor should just appear,
+        and Bring it forward must work."*
+
+        The 16 Oct note was right that the MAIN plugin cannot conjure a second editor for a plugin
+        that lives in this process - and wrong that nothing could be done about it. THIS process
+        hosts the plugin, so this process can open a window for it, whether or not Logic has the
+        Link's own window open. That is what "the editor should just appear" needs, and it is the
+        only road that does not depend on Logic opening anything.
+
+        One window at a time, raised if it is already up, and closing it frees the editor - the
+        same rules the main plugin's own pop-out follows. */
+    struct SlotEditorWindow : juce::DocumentWindow
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        std::function<void()> onClosed;
+        int slot1 = 0;
+
+        SlotEditorWindow (const juce::String& name, juce::AudioProcessorEditor* e, int slot1Based)
+            : juce::DocumentWindow (name, juce::Colour (0xff0A0C18), juce::DocumentWindow::closeButton),
+              editor (e), slot1 (slot1Based)
+        {
+            setUsingNativeTitleBar (true);
+            setContentNonOwned (editor.get(), true);
+            setResizable (false, false);
+            centreWithSize (juce::jmax (200, editor->getWidth()), juce::jmax (120, editor->getHeight()));
+            // Logic keeps plugin windows at a raised level; a normal-level window would open behind it.
+            setAlwaysOnTop (true);
+            setVisible (true);
+            toFront (true);
+        }
+        void closeButtonPressed() override { if (onClosed) onClosed(); else setVisible (false); }
+    };
+    std::unique_ptr<SlotEditorWindow> slotEditorWin_;
+    /** Opens (or raises) the window for one hosted slot. Message thread only - pollControlCommand
+        runs on the Timer, which is where every other command is applied. */
+    bool showSlotEditorWindow (int slot1Based, juce::String& why);
 
     // Session project/genre follow (see projectName/genre above)
     juce::String lastSeenSharedProject_;

@@ -197,7 +197,9 @@ public:
     const char* approvalModeWord() const noexcept { return approvalMode_ == ApprovalMode::Auto ? "auto" : "ask"; }
 
     // Tunables (the guard shortens them)
-    int stallTimeoutMs   = 90'000;   // no bytes on an open stream for this long -> stream_stalled
+    // HIS BOUND, 18 Oct 2026: "30 s with nothing back = a plain sentence with Retry." Measured on
+    // BYTES, so an answer that is still streaming never trips it - only true silence does.
+    int stallTimeoutMs   = 30'000;   // no bytes on an open stream for this long -> stream_stalled
     // FIX 2 (Sean, 14 Oct): 60 s BOUNDED THE WHOLE REQUEST AND WE GAVE UP BEFORE THE SERVER DID.
     // A step that had already delivered round 10's frames died at exactly 60.000 s with "Connection failed.
     // Please check your internet connection." - nothing was wrong with the connection; the round was slow.

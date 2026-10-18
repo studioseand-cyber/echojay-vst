@@ -2510,7 +2510,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // its own editor window, over the control channel it already has, and then says which of the two
     // things happened - because nothing in this process can make Logic OPEN a window that is shut,
     // and a button that silently does nothing is worse than no button.
-    chainListPanel.onBringLinkForward = [this] (const juce::String& trackName)
+    chainListPanel.onBringLinkForward = [this] (const juce::String& trackName, int slotIdx)
     {
         // ---- IT NEVER RETURNS SILENTLY (17 Oct 2026, Sean's item 8: "does nothing") ------------
         // Both guards below used to `return` with nothing drawn, and a button that answers a press
@@ -2538,12 +2538,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         cmd->setProperty ("v", 1);
         cmd->setProperty ("seq", seq);
         cmd->setProperty ("bringEditorToFront", true);
+        // ---- THE PLUGIN'S OWN WINDOW, WHERE THE PLUGIN IS (18 Oct 2026, Sean's item 3) ----------
+        // Both keys travel together: a Link that predates showSlotEditor ignores it and answers
+        // `fronted` as before, and a current one opens the plugin's window and answers `shown`. The
+        // poll below reads `shown` first and falls back, so neither side needs to know the other's
+        // age. The slot is 1-based on the wire, as every slot a model or another process sees is.
+        if (slotIdx >= 0) cmd->setProperty ("showSlotEditor", slotIdx + 1);
         juce::File (dir + "ctrl-ack-" + uid + ".json").deleteFile();
         juce::File (dir + "ctrl-cmd-" + uid + ".json")
             .replaceWithText (juce::JSON::toString (juce::var (cmd), true));
-        chainListPanel.statusText = "Asking " + (trackName.isNotEmpty() ? trackName
-                                                                        : juce::String ("that track"))
-                                  + " to bring it forward...";
+        chainListPanel.statusText = "Opening it on " + (trackName.isNotEmpty() ? trackName
+                                                                              : juce::String ("that track"))
+                                  + "...";
         chainListPanel.repaint();
         // The answer, with a bound: `fronted` true means that Link raised its own window; false
         // means Logic has it closed, and then the only true thing to say is where to open it.
@@ -2560,16 +2566,26 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     const auto v = juce::JSON::parse (ack.loadFileAsString());
                     if (auto* o = v.getDynamicObject(); o != nullptr && (int) o->getProperty ("seq") == seq)
                     {
+                        // `shown` is this build's answer (the plugin's own window opened over
+                        // there); `fronted` is what an older Link answers, and it only ever means
+                        // "Logic had my window open and I raised it". Read in that order so a new
+                        // Link's success is never reported as an old Link's failure.
+                        const bool shown   = (bool) o->getProperty ("shown");
                         const bool fronted = (bool) o->getProperty ("fronted");
-                        safeThis->chainListPanel.statusText = fronted
-                            ? ((trackName.isNotEmpty() ? trackName : juce::String ("that track"))
-                               + " brought its window forward")
-                            : ("Logic owns that window - open EchoJay on "
-                               + (trackName.isNotEmpty() ? trackName : juce::String ("that track"))
-                               + " and the plugin is in its rack");
+                        const auto why     = o->getProperty ("why").toString();
+                        const auto track   = trackName.isNotEmpty() ? trackName : juce::String ("that track");
+                        safeThis->chainListPanel.statusText
+                            = shown   ? ("Its window is open on " + track)
+                            : fronted ? (track + " brought its window forward")
+                            : why.isNotEmpty()
+                                ? ("I couldn't open it on " + track + ": " + why)
+                                : ("I couldn't open it on " + track + " - open EchoJay there and the "
+                                   "plugin is in its rack");
                         safeThis->chainListPanel.repaint();
-                        EchoJay_NSLog (("EJPane(main): bring-forward answered fronted="
-                                        + juce::String (fronted ? "y" : "n")).toRawUTF8());
+                        EchoJay_NSLog (("EJPane(main): show-editor answered shown="
+                                        + juce::String (shown ? "y" : "n") + " fronted="
+                                        + juce::String (fronted ? "y" : "n")
+                                        + (why.isNotEmpty() ? " why=" + why : juce::String())).toRawUTF8());
                         return;
                     }
                 }
@@ -13035,6 +13051,10 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         && processorRef.editSession_.uid != chainViewUid())
         commitAndReleaseEditSession();
 
+    // A DIFFERENT RACK IS A DIFFERENT QUESTION (18 Oct 2026): the one-shot "open that plugin's
+    // window" is per rack as well as per slot, so switching racks and selecting slot 1 again asks
+    // again rather than sitting silent because the LAST rack's slot 1 had been asked for.
+    if (chainListPanel.remoteName != v.name) chainListPanel.autoShownSlot_ = -1;
     chainListPanel.remote        = v.remote;
     chainListPanel.remoteName    = v.name;
     chainListPanel.remoteOffline = v.offline;

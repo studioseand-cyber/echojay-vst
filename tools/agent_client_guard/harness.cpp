@@ -1274,6 +1274,78 @@ int main()
         }
     }
 
+    // ---- TP: A TAP IS NEVER DROPPED IN SILENCE, AND SILENCE HAS A BOUND (18 Oct 2026, item 4) --
+    //
+    // *"Never drop a tap silently, and 30 s with nothing back = a plain sentence with Retry."*
+    {
+        Rig t;
+        t.client.start ("add a compressor", "chat_t");
+        t.round (1);
+        t.tool (R"({"id":"tc_t","name":"talk","args":{"ask":{"question":"Which one?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
+        t.await ({ "tc_t" });
+        pumpMs (10);
+        check (t.client.askPending() && t.client.notice().isEmpty(),
+               "TP0 PRECONDITION: a question is waiting and there is no notice on the row");
+
+        const auto before = t.posts.size();
+        t.client.answerAsk ("Maybe", false);                 // a label the card never offered
+        check (t.posts.size() == before && t.client.askPending(),
+               "TP1 a tap that is none of the offered choices still sends NOTHING and leaves the "
+               "question waiting - the rule A5b wrote, unchanged");
+        check (t.client.notice().isNotEmpty() && t.client.notice().containsIgnoreCase ("not on this question"),
+               "TP1b ...and it is no longer SILENT: the row says why (RED as it stood: a bare return, so "
+               "the chip went down and nothing on screen moved)",
+               t.client.notice().isEmpty() ? juce::String ("(silence)") : t.client.notice());
+        check (t.logHas ("none of the 2 choice(s)"),
+               "TP1c ...and the log names it, with how many choices the card had");
+
+        t.client.clearNotice();
+        t.client.answerAsk ("", false);
+        check (t.client.notice().isNotEmpty() && t.client.askPending(),
+               "TP2 an EMPTY tap says so too rather than vanishing", t.client.notice());
+
+        // The real answer still works, and clears the notice on its way through.
+        t.client.clearNotice();
+        const auto postsBefore = t.posts.size();
+        t.client.answerAsk ("Yes", false);
+        check (t.posts.size() == postsBefore + 1 && ! t.client.askPending(),
+               "TP3 ...and an offered choice still answers the question - the refusals are refusals, "
+               "not a gate on every tap");
+        t.client.answerAsk ("Yes", false);                  // nothing is waiting now
+        check (t.client.notice().containsIgnoreCase ("already answered"),
+               "TP3b a tap that arrives after the question is gone says THAT, which is a different "
+               "sentence from \"not on this question\"", t.client.notice());
+    }
+    {
+        // SILENCE HAS A BOUND, AND IT IS 30 SECONDS. Driven on the client's own clock rather than by
+        // waiting: the guard sets the bound to a few milliseconds, which is the same code path.
+        // THE WATCHDOG'S OWN CADENCE IS PART OF THE TEST: it checks once a SECOND, so a bound of a
+        // few milliseconds would be a bound nothing ever reads - my first cut of this leg pumped
+        // 400 ms against a 40 ms bound and went red on its own clock, not on the product's.
+        Rig t;
+        t.client.stallTimeoutMs = 1200;                      // the 30 s rule, in guard time
+        t.client.start ("add a compressor", "chat_t2");
+        t.round (1);
+        pumpMs (2600);                                       // nothing comes back at all, past two ticks
+        check (t.client.state() == EJAgentClient::State::Failed,
+               "TP4 a stream that goes silent past the bound ENDS, rather than spinning for ever",
+               EJAgentClient::stateName (t.client.state()));
+        check (t.client.errorMessage().containsIgnoreCase ("nothing came back")
+               && ! t.client.errorMessage().containsIgnoreCase ("connection")
+               && ! t.client.errorMessage().contains ("stream_stalled"),
+               "TP4b ...and says so in a plain sentence - no code, no diagnosis of the network (RED as "
+               "it stood: \"The connection went quiet for 90 s\")", t.client.errorMessage());
+        check (t.client.errorRetryable(),
+               "TP4c ...with Retry offered, which is the one thing he can do about it");
+        {
+            // the SHIPPED default, read off a fresh client rather than off the one the leg retuned
+            Rig fresh;
+            check (fresh.client.stallTimeoutMs == 30'000,
+                   "TP4d and the shipped bound is his 30 seconds",
+                   juce::String (fresh.client.stallTimeoutMs));
+        }
+    }
+
     // ---- SZ1: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ----------------------
     // The executor's own gate, asked directly with a result the size of Sean's machine: 420 entries
     // of the shape 17b sent. It must come back inside the contract's 8 KB.

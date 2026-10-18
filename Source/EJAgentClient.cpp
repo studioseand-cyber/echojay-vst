@@ -1305,13 +1305,42 @@ void EJAgentClient::submitPlan()
 // =============================================================================
 //  the ask card
 // =============================================================================
+// ---- A TAP IS NEVER DROPPED IN SILENCE (18 Oct 2026, Sean's item 4) ----------------------------
+//
+// *"Never drop a tap silently."*  Every one of the three refusals below used to be a bare `return`:
+// the chip went down, nothing moved on screen, and a press that does nothing is indistinguishable
+// from a broken build - which is how an afternoon gets spent on the wrong suspect. The BEHAVIOUR is
+// unchanged (a tap that is not one of the offered labels still sends nothing, which is leg A5b's
+// rule), and each refusal now says what it found, in the amber line the row already draws.
 void EJAgentClient::answerAsk (const juce::String& choiceIn, bool typed)
 {
-    if (! askPending()) return;
     const auto choice = choiceIn.trim();
-    if (choice.isEmpty()) return;
+    if (! askPending())
+    {
+        log ("tap \"" + choice + "\" arrived with no question waiting - saying so, not dropping it");
+        refusedTypedLine_ = "That question is already answered.";
+        changed();
+        return;
+    }
+    if (choice.isEmpty())
+    {
+        log ("an EMPTY answer arrived (" + juce::String (typed ? "typed" : "tapped") + ") - saying so");
+        refusedTypedLine_ = "I did not catch that - tap one of the choices or type your answer.";
+        changed();
+        return;
+    }
     const auto id = pendingAskId_;
-    if (! typed && ! pendingAsk_.labels.contains (choice)) return;   // a tap is one of the offered labels, nothing else
+    if (! typed && ! pendingAsk_.labels.contains (choice))
+    {
+        // The server's own chips are the only taps that mean anything; a label from an older card
+        // (a redraw, a reused row) is not an answer to THIS question.
+        log ("tap \"" + choice + "\" is none of the " + juce::String (pendingAsk_.labels.size())
+             + " choice(s) on the card - refused, and said so");
+        refusedTypedLine_ = "That choice is not on this question any more - tap one of the buttons, "
+                            "or type your answer.";
+        changed();
+        return;
+    }
     auto answer = askAnswerVar (choice, typed);                      // {tapped:"<label>"} or {typed:"<text>"}
     // ---- THE TAP IS THE APPROVAL (16 Oct 2026, Sean's step 7) ---------------------------------
     // Remembered here, spent on the step that carries out this pick (see the ToolCall frame). A
@@ -1441,7 +1470,12 @@ void EJAgentClient::timerCallback()
         log ("stall: no frame for " + juce::String (stallTimeoutMs / 1000) + " s in state " + stateName (state_) + " - giving up");
         if (cancel_) cancel_->cancel();
         ++generation_;
-        errorMessage_ = "The connection went quiet for " + juce::String (stallTimeoutMs / 1000) + " s.";
+        // ---- HIS SENTENCE, AT HIS BOUND (18 Oct 2026, item 4) ---------------------------------
+        // *"30 s with nothing back = a plain sentence with Retry."*  The wait was 90 s and the line
+        // read "The connection went quiet for 90 s", which is a diagnosis of the network rather
+        // than a thing he can act on. Retry was already offered (errorRetryable_), and it stays.
+        errorMessage_ = "Nothing came back for " + juce::String (stallTimeoutMs / 1000)
+                      + " seconds, so I stopped waiting.";
         errorRetryable_ = true;
         flushRoundTalk();
         markUnfinishedStopped();
