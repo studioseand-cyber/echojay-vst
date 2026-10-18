@@ -300,6 +300,9 @@ ej_add_guard(borrowkept_harness       SOURCE tools/borrowkept_harness/borrowkept
 ej_add_guard(global_undo_guard        SOURCE tools/global_undo_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(groups_guard             SOURCE tools/groups_guard/harness.cpp                   LABEL fast SCRIBBLE)
 ej_add_guard(ui_guard                 SOURCE tools/ui_round_guard/ui_guard.cpp                LABEL fast SCRIBBLE)
+# 18 Oct 2026: the chat store's whole rule set, in its own binary so it can run BEFORE an install
+# (ui_guard holds the editor legs and its run is ~200 s of real UI waits; this one finishes in seconds).
+ej_add_guard(chat_store_guard         SOURCE tools/chat_store_guard/harness.cpp              LABEL fast)
 # Session A2's agent client + panel legs (docs/AGENT_UI_HOOKS.md section 5): a recorder transport and a fake
 # executor, so it meets no server. First compiled in the 9 Oct merge round.
 ej_add_guard(agent_client_guard       SOURCE tools/agent_client_guard/harness.cpp             LABEL fast)

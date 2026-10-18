@@ -225,6 +225,28 @@ public:
     // Mutation helpers — update in-memory state then call requestMutationSync()
     // to persist (POST first so the change survives the following GET).
     void addChat(WsChat chat);         // prepend to chats list
+
+    /** ---- EVERY CHAT IS FILED, WHOEVER MINTED IT (18 Oct 2026, Sean's rule 1) --------------
+        *"Every chat belongs to ONE project and ONE track: Main (the main rack) or a Link (by
+        uid). A new chat is filed under the open project, in that track's folder, dated today.
+        Never Ungrouped while a project is open. Just now, a new chat on the Mix Bus in 'project
+        nafe aitch' went to Ungrouped."*
+
+        The store cannot know the open project or the viewed channel, so the editor hands it this.
+        appendMessageToChat used to mint a chat with NO trackName, albumId or linkUid when it was
+        handed an id it did not know - a chat with no project (Ungrouped) and no target, which is
+        exactly what he read. Now there is ONE filing rule and both creators go through it. */
+    std::function<void (WsChat&)> fileNewChat;
+
+    /** ---- THE ONE-OFF CLEAN-UP (18 Oct 2026, Sean's rule 4) --------------------------------
+        Repairs what the 14:53 build wrote: a chat with no project adopts the one that is open,
+        and an assistant message that repeats another one in the SAME chat (the em-dash twin) is
+        dropped. Returns how many chats were refiled and how many duplicates went, so the log can
+        say it rather than imply it. It does NOT guess at messages copied BETWEEN chats: nothing in
+        the record distinguishes a copy from a legitimate answer, and deleting on a guess is worse
+        than the mess. Those are named in the log for a human decision. */
+    struct Repair { int refiled = 0, duplicatesDropped = 0, crossChatSuspects = 0; };
+    Repair repairChatFiling (const juce::String& openProject, const juce::String& albumId);
     void addAlbum(WsAlbum album);      // append to albums list
     // Project (song) → album assignment. Removes the project from every
     // album's projectNames first, then adds it to albumId (empty = orphan).

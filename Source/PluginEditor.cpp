@@ -663,6 +663,37 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (changed) repaint();
     };
 
+    // ---- RULE 1: EVERY CHAT IS FILED, WHOEVER MINTS IT (18 Oct 2026) ----------------------------
+    // The store mints one when it is handed an id it does not know (a send into a chat the sync has
+    // not seen), and it used to mint it bare: no project, no channel - UNGROUPED, with nothing for
+    // the chip to point at. The answer lives here, so the store asks for it.
+    workspace.fileNewChat = [this] (WsChat& c)
+    {
+        if (c.trackName.trim().isEmpty())    c.trackName = newChatProjectName();
+        if (c.albumId.isEmpty())             c.albumId   = getCurrentAlbumId();
+        if (c.created.isEmpty())             c.created   = juce::Time::getCurrentTime().toISO8601 (true);
+        if (c.linkUid.isEmpty())
+        {
+            // The chat's own channel first; then the rack ON SCREEN, because his rule is "that
+            // track's folder" and a pinned view is the track he is looking at. "" = Main, which is
+            // a real answer and not a missing one.
+            c.linkUid = effectiveChannelUid();
+            if (c.linkUid.isEmpty()) c.linkUid = chainViewUid();
+            if (c.linkUid.isNotEmpty() && c.linkNameSnap.isEmpty())
+                c.linkNameSnap = channelDisplayLabel (c.linkUid);
+        }
+        if (c.linkUid.isEmpty() && c.groupId.isEmpty()
+            && processorRef.chatTargetGroupId.isNotEmpty())
+        {
+            c.groupId   = processorRef.chatTargetGroupId;
+            c.groupName = processorRef.chatTargetGroupName;
+        }
+        EchoJay_NSLog (("EJChat: filed chat " + c.id + " under project \"" + c.trackName
+                        + "\" on " + (c.linkUid.isNotEmpty() ? ("Link " + c.linkNameSnap)
+                                                              : juce::String ("Main"))
+                        + " (rule 1, 18 Oct)").toRawUTF8());
+    };
+
     workspace.onLoaded = [this]()
     {
         DBG("[EchoJayWorkspace] onLoaded — chats:" << (int)workspace.getChats().size()
@@ -685,6 +716,27 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // conversation mid-session. loadChatFromWorkspace clears the display
         // list first, so the placeholder is replaced, never doubled; a
         // recreate mid-load simply repeats this in the next instance.
+        // ---- RULE 4: THE ONE-OFF CLEAN-UP (18 Oct 2026) --------------------------------------
+        // What the 14:53 build wrote: chats with no project, and the same answer twice in one chat
+        // (an em dash against a hyphen). Run ONCE per editor, before the active chat is rebuilt, so
+        // what he reopens is the repaired store. What it will not do is guess at an answer that
+        // appears in two chats - that is named in the log for a human, never deleted on a guess.
+        if (! repairedStore_)
+        {
+            repairedStore_ = true;
+            const auto rep = workspace.repairChatFiling (newChatProjectName(), getCurrentAlbumId());
+            if (rep.refiled > 0 || rep.duplicatesDropped > 0)
+            {
+                workspace.requestMutationSync();
+                if (sidebarModel)
+                {
+                    sidebarModel->refreshRows (workspace.getChats(), workspace.getAlbums(),
+                                               workspace.getReviews(), workspace.getPinnedProjects(),
+                                               collapsedAlbums, currentChatId);
+                    chatSidebar.updateContent();
+                }
+            }
+        }
         if (!rehydratedFromStore_)
         {
             rehydratedFromStore_ = true;
@@ -19188,6 +19240,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
     {
         if (ch.id != chatId) continue;
 
+        // WHOSE ROWS THE REPLAY LIST HOLDS, read before this line moves the answer (rule 2 below).
+        const auto currentChatIdBefore = currentChatId;
         currentChatId = chatId;
         processorRef.activeChatId = chatId;   // survives editor recreate
         expandAncestorsOf(chatId);            // one-shot: ancestors open NOW,
@@ -19206,6 +19260,11 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             setChatTargetGroup(ch.groupId);
         refreshChannelBannerCache();
         refreshCaptureButtonLabel();   // item 4a: fit on activation, not just on capture
+        // ---- RULE 3: A CHAT KEEPS ITS TARGET (18 Oct 2026) ----------------------------------
+        // *"Reopening it puts the chip back to that track."*  The chip reads the chat's own channel
+        // (effectiveChannelUid), and the transient route was just cleared above - so the only thing
+        // missing was telling the button to redraw itself with the answer.
+        chatTargetBtn.setButtonText (chatTargetLabel());
         resized();
         // ---- 14 OCT 2026 (the rig, loop 2): WHAT THE STORE HAS NOT CAUGHT UP WITH IS NOT DISCARDED ------
         //
@@ -19223,11 +19282,39 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         // agent run the store has not caught up with came back as PLAIN PROSE - its opening and closing
         // as a bubble - instead of as the run's own row. A run is one message; it has to still be one
         // message after a reload.
+        // ---- AND THEY BELONG TO ONE CHAT (18 Oct 2026, Sean's rule 2) -------------------------
+        //
+        // *"A message (mine or the agent's) is saved only into the chat it was sent in. Opening or
+        // switching chats never moves, copies or appends anything. Chats are still showing each
+        // other's messages."*  His 16:27 log names this exact block, growing as he clicked:
+        // "merged 2 row(s)", then 3, 4, 5, 6, 7, 8 - the previous chat's rows carried into whichever
+        // chat he opened, and carried AGAIN on the next switch.
+        //
+        // processorRef.chatHistory is the window-crossing replay list and it holds the rows of the
+        // chat that was OPEN. So they are kept only when the chat being opened is that same chat -
+        // a reopen, which is the case the 14 Oct rule was written for (the rig closed the window
+        // 400 ms after a send). A fresh window has no currentChatId yet and the processor's own
+        // activeChatId says whose rows these are, so that case is kept too. Anything else is
+        // another chat's conversation and is dropped, loudly.
+        const auto rowsBelongTo = currentChatIdBefore.isNotEmpty() ? currentChatIdBefore
+                                                                   : processorRef.activeChatId;
+        const bool rowsAreThisChats = (rowsBelongTo == chatId);
         struct HeldRow { juce::String role, content, agentJson; };
         std::vector<HeldRow> held;
-        for (const auto& m : processorRef.chatHistory)
-            if (m.content.isNotEmpty() || m.agentJson.isNotEmpty())
-                held.push_back ({ m.role, m.content, m.agentJson });
+        if (rowsAreThisChats)
+        {
+            for (const auto& m : processorRef.chatHistory)
+                if (m.content.isNotEmpty() || m.agentJson.isNotEmpty())
+                    held.push_back ({ m.role, m.content, m.agentJson });
+        }
+        else if (! processorRef.chatHistory.empty())
+        {
+            EchoJay_NSLog (("EJStores: dropped " + juce::String ((int) processorRef.chatHistory.size())
+                            + " unsynced row(s) that belong to chat "
+                            + (rowsBelongTo.isNotEmpty() ? rowsBelongTo : juce::String ("(none)"))
+                            + ", NOT to " + chatId + " - a switch never carries one chat's messages "
+                            "into another (Sean's rule 2, 18 Oct)").toRawUTF8());
+        }
 
         chatMessages.clear();
         processorRef.chatHistory.clear();
@@ -19728,6 +19815,9 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
     c.linkUid      = inheritUid;             // "" = main chat, unchanged shape
     c.linkNameSnap = inheritUid.isNotEmpty() ? channelDisplayLabel(inheritUid)
                                              : juce::String();
+    // ONE AUTHOR OF A FILED CHAT (18 Oct 2026, rule 1): whatever this creator knows, the filing
+    // rule completes - project, album, channel, date - so the two creators cannot drift apart.
+    if (workspace.fileNewChat) workspace.fileNewChat (c);
     // 21t-a H2c: a new chat started while a GROUP is the target belongs to that
     // group, exactly as a channel chat inherits its uid. Only when no channel
     // was inherited - the two targets are mutually exclusive by construction
@@ -29230,6 +29320,10 @@ void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
 void EchoJayEditor::appendLocalUserBubble(const juce::String& text)
 {
     if (text.isEmpty()) return;
+    // THE CHAT FIRST (18 Oct 2026, 17:01). This is the agent's road in: the client emits the goal as
+    // a "user" line and the bridge lands here. Writing before the chat exists is what minted a record
+    // under an empty id and lost the Kick chat's answer.
+    ensureChatForSend();
     ChatMsg cm; cm.role = "user"; cm.content = text;
     chatMessages.push_back(cm);
     processorRef.chatHistory.push_back({ "user", text });
@@ -33707,6 +33801,81 @@ juce::String EchoJayEditor::latestChannelChatId(const juce::String& linkUid,
     return workspace.getChats()[(size_t) pick.index].id;
 }
 
+// ---- NOTHING IS SAVED BEFORE THE CHAT IT BELONGS TO EXISTS (18 Oct 2026, 17:01) ----------------
+//
+// Sean, on the clean account: *"The Kick chat's answer is lost ... that question leaked into the Main
+// chat ... the Kick chat doesn't restore its target."*  His own guess was right: *"a run on a Link
+// writes my message into the previously open chat and its reply is gated out (run chat id vs current
+// chat id?)."*
+//
+// The line that named it is in his log: `EJChat: filed chat  under project "..." on Link 88_7even
+// Kick_2_01` - THE ID IS EMPTY. Sending in a Link channel that has no chat record yet leaves
+// currentChatId empty until this ensure step runs, and the AGENT path never ran it: the client emits
+// the goal as a "user" transcript line, the bridge appends it with the id it has (none), and the
+// store - correctly, by its own contract - minted a record under the empty id. From there everything
+// he read follows: the run's row is keyed to "", so the answer's write is refused by the chat gate;
+// and the id-less record is not the one the sidebar opens, so the question appears wherever the
+// previous id pointed - the Main chat.
+//
+// So the ensure step is a FUNCTION, called by every road that is about to write a message: the
+// composer's send, and the agent's first line. The pending-channel branch comes first, because a tap
+// held the target and the send is what mints the record (the Phase C3 contract).
+juce::String EchoJayEditor::ensureChatForSend()
+{
+    // ---- A PENDING CHANNEL BEATS WHATEVER CHAT IS OPEN (18 Oct 2026, 17:01) --------------------
+    //
+    // This is the whole of his items 1-3, and the red-first pass is what found it: selecting a Link
+    // that has no chat yet HOLDS it as pending (openChannelByUid's find-or-create half) and leaves
+    // the previous chat open - his log, at 17:00:47, says so in as many words. So the send landed in
+    // the chat that happened to be open (the Main one: "that question leaked into the Main chat"),
+    // and the run's row was keyed to that chat while the conversation belonged to the Link - which is
+    // the chat gate refusing the answer ("the Kick chat's answer is lost").
+    //
+    // A message is saved into the chat it was SENT IN, and the chat it was sent in is the one for the
+    // target it was sent to. So the pending channel is resolved FIRST, whatever is open: a tap held
+    // the target, and this send is what mints the record (the Phase C3 contract, now with the one
+    // thing it was missing - precedence).
+    if (processorRef.pendingChannelUid.isNotEmpty())
+    {
+        const juce::String uid = processorRef.pendingChannelUid;
+        const juce::String cid = findOrCreateChannelChatId (uid, channelDisplayLabel (uid));
+        currentChatId = cid;
+        processorRef.activeChatId = cid;
+        processorRef.pendingChannelUid.clear();
+        EchoJay_NSLog (("EJChat: the send goes to " + uid + "'s chat " + cid
+                        + " - the channel it was aimed at, not the chat that was open").toRawUTF8());
+        return currentChatId;
+    }
+    if (currentChatId.isNotEmpty()) return currentChatId;
+    // ...and when the window is on a Link with no pending tap (a rack selection, a chat activation),
+    // the chat still belongs to THAT channel: the filing rule answers the same question for both.
+    const auto uid = effectiveChannelUid();
+    if (uid.isNotEmpty())
+    {
+        const juce::String cid = findOrCreateChannelChatId (uid, channelDisplayLabel (uid));
+        currentChatId = cid;
+        processorRef.activeChatId = cid;
+        EchoJay_NSLog (("EJChat: the send mints the chat " + cid + " for the channel in view ("
+                        + uid + ")").toRawUTF8());
+        return currentChatId;
+    }
+
+    WsChat c;
+    c.id        = juce::String (juce::Time::currentTimeMillis());
+    c.title     = "New chat";
+    c.created   = juce::Time::getCurrentTime().toISO8601 (true);
+    if (workspace.fileNewChat) workspace.fileNewChat (c);   // ONE filing rule (rule 1)
+    if (c.trackName.isEmpty()) c.trackName = newChatProjectName();
+    workspace.addChat (c);
+    currentChatId = c.id;
+    processorRef.activeChatId = c.id;
+    processorRef.pendingChannelUid.clear();
+    processorRef.chatTargetLinkUid.clear();
+    processorRef.chatTargetLinkName.clear();
+    refreshChannelBannerCache();
+    return currentChatId;
+}
+
 juce::String EchoJayEditor::findOrCreateChannelChatId(const juce::String& linkUid,
                                                       const juce::String& linkNameNow)
 {
@@ -37966,35 +38135,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         }
     }
 
-    // Phase C3: first send in a PENDING channel mints the record NOW (the
-    // lazy-creation contract: tap held the target, send creates). The
-    // pending state collapses into the real chat before the main-chat
-    // ensure-block below can create a plain chat instead.
-    if (currentChatId.isEmpty() && processorRef.pendingChannelUid.isNotEmpty())
-    {
-        const juce::String uid = processorRef.pendingChannelUid;
-        const juce::String cid = findOrCreateChannelChatId(uid, channelDisplayLabel(uid));
-        currentChatId = cid;
-        processorRef.activeChatId = cid;
-        processorRef.pendingChannelUid.clear();
-    }
-
-    // Ensure we have an active workspace chat to write into
-    if (currentChatId.isEmpty())
-    {
-        WsChat c;
-        c.id        = juce::String(juce::Time::currentTimeMillis());
-        c.title     = "New chat";
-        c.created   = juce::Time::getCurrentTime().toISO8601(true);
-        c.trackName = newChatProjectName();   // never empty → never Ungrouped
-        workspace.addChat(c);
-        currentChatId = c.id;
-        processorRef.activeChatId = c.id;
-        processorRef.pendingChannelUid.clear();
-        processorRef.chatTargetLinkUid.clear();
-        processorRef.chatTargetLinkName.clear();
-        refreshChannelBannerCache();
-    }
+    ensureChatForSend();
 
     // Push user turn to display list - unless the scan hold already recorded this very message.
     if (! alreadyRecorded)

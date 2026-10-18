@@ -2114,6 +2114,8 @@ private:
     juce::String agentRecordedChat_;
     /** The chat the CURRENT run's row was born in. Gate (2) of recordAgentRunInChat. */
     juce::String agentRunChatId_;
+    /** The one-off chat-store repair has run in this editor (18 Oct 2026, rule 4). */
+    bool repairedStore_ = false;
     /** Writes the finished run's prose into the chat RECORD, once per run, updated afterwards. */
     void recordAgentRunInChat (const ChatMsg& m);
     // Result stage: a local assistant bubble (persisted, block-less).
@@ -2439,6 +2441,10 @@ private:
     // 21t-a H2c: the group equivalent (own folder, named after the group)
     juce::String findOrCreateGroupChatId(const juce::String& groupId,
                                          const juce::String& groupNameNow);
+    /** The chat a message is about to be written into, minted if it does not exist yet: the
+        pending channel's, else the channel in view, else a filed main chat. Called by the composer's
+        send AND by the agent's first line - nothing is saved before its chat exists (18 Oct 2026). */
+    juce::String ensureChatForSend();
     juce::String findOrCreateChannelChatId(const juce::String& linkUid,
                                            const juce::String& linkNameNow);
     juce::Rectangle<int> chatBoxRect_;

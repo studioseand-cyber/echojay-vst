@@ -1,4 +1,6 @@
 #include "EchoJayWorkspace.h"
+#include "EJAgentRunView.h"   // normalisedProse: the record compares answers the way the card does
+extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm, as every other unit declares it
 #include <algorithm>
 
 extern void ejTeardownLog(const juce::String& msg);
@@ -239,6 +241,10 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     c.id      = chatId;
     c.title   = "New chat";
     c.created = juce::Time::getCurrentTime().toISO8601(true);
+    // ...AND IT IS FILED, like any other chat (18 Oct 2026, Sean's rule 1). Without this it was
+    // born with no project and no channel, which the sidebar draws as UNGROUPED and no chip can
+    // point at. The editor owns the answer; this is the one place that asks for it.
+    if (fileNewChat) fileNewChat (c);
     WsMessage m;
     m.role      = role;
     m.content   = content;
@@ -257,6 +263,67 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     c.updatedAt = isoUtcNow();
     chats.insert(chats.begin(), std::move(c));
     return true; // first message
+}
+
+EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String& openProject,
+                                                             const juce::String& albumId)
+{
+    Repair r;
+    // (a) a chat with no project takes the open one. Dated chats keep their dates; only the FOLDER
+    //     is repaired, because that is the only thing that was wrong.
+    if (openProject.trim().isNotEmpty())
+        for (auto& c : chats)
+            if (c.trackName.trim().isEmpty())
+            {
+                c.trackName = openProject.trim();
+                if (c.albumId.isEmpty()) c.albumId = albumId;
+                ++r.refiled;
+            }
+    // (b) the em-dash twins: an assistant message whose normalised text repeats an earlier one in
+    //     the SAME chat. Normalised exactly as the record's own write compares them.
+    for (auto& c : chats)
+    {
+        juce::StringArray seen;
+        std::vector<WsMessage> kept;
+        kept.reserve (c.messages.size());
+        for (auto& m : c.messages)
+        {
+            if (m.role == "assistant" && m.content.isNotEmpty())
+            {
+                const auto key = echojay::agentui::normalisedProse (m.content);
+                if (seen.contains (key)) { ++r.duplicatesDropped; continue; }
+                seen.add (key);
+            }
+            kept.push_back (m);
+        }
+        c.messages = std::move (kept);
+    }
+    // (c) and what CANNOT be repaired honestly: the same assistant text in two different chats.
+    //     Counted and named, never deleted - a copy and a real answer read identically here.
+    for (size_t i = 0; i < chats.size(); ++i)
+        for (const auto& m : chats[i].messages)
+        {
+            if (m.role != "assistant" || m.content.length() < 40) continue;
+            const auto key = echojay::agentui::normalisedProse (m.content);
+            for (size_t j = i + 1; j < chats.size(); ++j)
+                for (const auto& n : chats[j].messages)
+                    if (n.role == "assistant"
+                        && echojay::agentui::normalisedProse (n.content) == key)
+                    {
+                        ++r.crossChatSuspects;
+                        EchoJay_NSLog (("EJStores: the same answer sits in chats " + chats[i].id
+                                        + " and " + chats[j].id + " - left alone, because a copy and "
+                                        "a real answer read identically in the record: \""
+                                        + m.content.substring (0, 60) + "...\"").toRawUTF8());
+                    }
+        }
+    if (r.refiled > 0 || r.duplicatesDropped > 0)
+        EchoJay_NSLog (("EJStores: chat store repaired - " + juce::String (r.refiled)
+                        + " chat(s) refiled under \"" + openProject + "\", "
+                        + juce::String (r.duplicatesDropped) + " duplicate answer(s) dropped, "
+                        + juce::String (r.crossChatSuspects)
+                        + " cross-chat repeat(s) left for a human").toRawUTF8());
+    return r;
 }
 
 void EchoJayWorkspace::clearEditAltPrompt(const juce::String& chatId,
