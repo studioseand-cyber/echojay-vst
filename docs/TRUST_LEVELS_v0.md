@@ -803,3 +803,55 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
   - the crash list keeps one entry per plugin;
   - the bridge, the only way a VST3 takes its AU's result, needs the same version on both read-back records.
 
+
+## 16. The ratio law, 19 Oct (Kathy). Built and pinned on cert; the run waits for Sean's Mac (licence-bound); nothing sent; no server change
+
+**The question.** Sean's server works out a certified compressor's GR as (input - T) x (1 - 1/ratio). A profile measured at one ratio may use that maths at another ratio only once a spot check shows the ratio control behaves: the true ratio is the labelled one, and threshold and knee don't move with ratio.
+
+### 16.1 The check: `ejmap --ratio-law --cert <cert> --only <product>... [--dry-run]` (EjmapRatioLawRun.h)
+- **Settings:** the record's ratio control at the lowest, 2:1, 4:1 and the highest ratio. The measured ratio and duplicates are skipped, and nothing outside the control's range is tried.
+- **Positions:** the tone check's g 2 and g 4 picks.
+- **Levels:** T + 6, 9 and 12 dB, above the quiet-reference ladder.
+- **The call:** the tone check's own (`--sweep` at the position, the profile's engage / neutral writes), with only the ratio write swapped. One process per (ratio, position); GR read after settling; the landed ratio read back as the plugin prints it.
+- **Licence gate first;** a window stops that product.
+- **`--dry-run`** prints the plan and the law at the measured ratio from the existing sweep, and loads nothing.
+- **Pack:** `FOR_SEAN_19oct/RATIO_LAW_PACK` (`ratio_law.sh`, `products.txt`: the CL 1B first).
+
+### 16.2 The scoring (EjmapRatioLaw.h; `ejmap --ratio-law-score <results.json>` on our side)
+- **T** is the line through the existing sweep's (input at g dB, g) points for g >= 2 at that position, interpolated between positions.
+- **A point** passes when |measured - (input - T) x (1 - 1/R_label)| <= 0.5 dB. Points less than half a knee above T are excluded, not failed. The knee is `ratio.knee_db`, else 6 dB.
+- **Per ratio:** the effective ratio 1 / (1 - slope), and the threshold shift (the ratio's own line's T minus T); more than 0.5 dB means "moved".
+- **Verdict:**
+  - "verified": every tested ratio passes;
+  - "partial": the safe ratios listed, and `safe_between` (the widest run of adjacent tested ratios that all pass);
+  - "none".
+  - Never past the lowest or highest tested ratio.
+- **Pins:** WZ-RATIO-1 (fake plugins: a true ratio verifies; a moving threshold fails and says how far; a ratio off its label fails with its effective ratio; soft-knee points under the knee are excluded, not failed; partial gives only the safe ones; settings skip the measured ratio and duplicates; T from a sweep point) and WZ-RATIO-2 (the dry run loads nothing; only the ratio write is swapped; licence gate first; the label is read back).
+
+### 16.3 The CL 1B, from its existing sweep (no load)
+- At its measured "6:1" the law misses by **up to 5.19 dB**. Its GR rises at 0.45 / 0.54 dB per dB at the g 2 / g 4 positions; a true 6:1 would be 0.83.
+- The profile already says so: `ratio.curve[0].measured_ratio` 1.74, and `fit.model` ratio 1.5.
+- **The formula over-predicts the CL 1B even at 6:1.** Its own measured curve (in_at_gr) is what passed the tone check.
+
+### 16.4 The profile field (proposed): `ratio_law`
+- **Fields:** `{status: verified | partial | none, tested_ratios, safe_ratios, safe_between, worst_db, knee_db, measured_ratio, effective_ratio {ratio: value}, threshold_shift_db {ratio: dB}, rule}`.
+- **Use:** "verified" lets the maths run between the lowest and highest tested ratios; "partial" only at `safe_ratios` (and inside `safe_between`); "none" only at the measured ratio, if that passes.
+- **The default for a profile without the block: the maths only at its measured ratio.**
+- **Sean's validator (`lib/compProfile.js`) must accept the field before we send a profile carrying it.** Until then no profile carries it.
+
+## 17. The recount with the 18 Oct night run, 19 Oct (data on disk only; nothing loaded, nothing sent)
+| format | certified | mapped | unsure | testable | can't test on this Mac |
+|---|---|---|---|---|---|
+| AudioUnit | 156 | 204 | 250 | 610 | 198 |
+| VST3 | 6 | 32 | 84 | 122 | 193 |
+| **all** | **162** | **236** | **334** | **732** | **391** |
+
+- **Change from 13.6** (156 / 201 / 377 of 734, held 389): certified +6, mapped +35, unsure -43, testable -2, held +2.
+  - **+28 VST3 and +7 AU maps unsure -> mapped:** the night's read-backs, for example EchoBoy Mix, Virtual Tape Machines Input Gain, MDynamicEq band 1.
+  - **+6 VST3 unsure -> certified:** the format bridge, their AU twins' certified level, every role control the same at 3+ settings. FG-X 2, MConvolutionMB and VBC FG-Red are among them.
+  - **Held +2:** SSL Fusion HF Compressor, AU and VST3. Its "needs review" became a licence window, so it now counts as held for licence.
+- **Inputs:** the 13.6 inputs plus the night's engine folder (backup `~/Desktop/WIZARD_RUN_18oct_DONE`) as readings, and its **AU** hold rows only (275).
+  - The VST3 lane's 562 holds are left out. The manifest keys them by product name (Intel-only VST3s carry no plugin id), and the trust run applies holds by name, so they would also hold their AU twins.
+  - A format-aware hold in the trust run is the fix. Not built.
+- **Control:** the unchanged 13.6 recount with the same build reproduces 156 / 201 / 377 of 734, held 389.
+- **Files:** `FOR_SEAN_19oct/trust_levels.json`, `hold_states.json` (391), validated 0 errors.

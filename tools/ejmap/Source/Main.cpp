@@ -26,6 +26,7 @@
 #include "EjmapTrustRun.h"   // 16 Oct: --cert-v1, --trust-levels
 #include "EjmapMultibandV1Run.h"   // 16 Oct: --cert-multiband-v1
 #include "EjmapReadbackSweepRun.h"   // 16 Oct: --readback-sweep
+#include "EjmapRatioLawRun.h"   // 19 Oct: --ratio-law, --ratio-law-score
 
 #include <map>
 #include <csignal>
@@ -782,6 +783,21 @@ namespace
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return ejmap::cert::runSoundCheckAlone (o, names, allow);
             }
+            if (a == "--ratio-law")   // 19 Oct (Kathy): the ratio law spot check - licence-gated; --dry-run loads nothing
+            {
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::StringArray only; juce::File cert; bool dry = false;
+                for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j), v = j + 1 < argc ? argAt (argc, argv, j + 1) : juce::String();
+                    if (k == "--cert" && j + 1 < argc) cert = cwdFile (v); else if (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v); else if (k == "--ejmap-ledger" && j + 1 < argc) o.ledger = cwdFile (v);
+                    else if (k == "--only" && j + 1 < argc) only.add (v); else if (k == "--timeout-s" && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000; else if (k == "--dry-run") dry = true; }
+                if (cert == juce::File()) cert = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                if (o.ledger == juce::File()) o.ledger = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+                o.out = cert; o.certRoot = cert;
+                ejmap::cert::phasebStop() = 0; std::signal (SIGINT, [] (int) { ejmap::cert::phasebStop() = 1; }); std::signal (SIGTERM, [] (int) { ejmap::cert::phasebStop() = 1; });
+                return ejmap::cert::runRatioLawAll (o, cert, only, dry);
+            }
+            if (a == "--ratio-law-score" && i + 1 < argc)   // 19 Oct: the verdict again from a ratio law results file - loads nothing
+                return ejmap::cert::ratioLawScoreFile (cwdFile (argAt (argc, argv, i + 1)));
             if (a == "--cert-multiband-v1")   // 16 Oct (Kathy): v1 multiband measuring over the cert's multiband records - licence-gated, resumable
             {
                 ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION; juce::StringArray only;
