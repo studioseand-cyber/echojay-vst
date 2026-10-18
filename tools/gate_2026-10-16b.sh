@@ -42,6 +42,33 @@
 # NO SOURCE EDIT BETWEEN S1 AND THE END OF S4 (the gate-22 lesson): two guards compile the link side
 # at TEST time, so "the binaries are already compiled" is false.
 set -u
+# ---- SPACE IS A PRECONDITION, AND IT HAS TO BE ASKED FIRST (18 Oct 2026, the night run) ----------
+# The gate ran S1 to the end - three trees, twenty minutes of compiling - and then S2 died on
+#     fatal error: lipo: can't write to output file: ../../guards/remote_ops_guard.lipo
+#     (No space left on device)
+# with 555 MiB free on a full disk. Twenty minutes spent to discover something that was knowable in
+# the first second, and a red whose first line names lipo rather than the disk, which is how an
+# environment failure gets read as a product one.
+#
+# The figure: 70 guard targets at ~50 MB each ARM64, doubled by a universal link, plus one lipo
+# temporary per target, plus the four bundles. 30 GB is the floor, asked for here rather than
+# assumed, and the refusal names what to clear rather than just the number - the same shape as the
+# Logic and load refusals above.
+FREEMB=$(df -m /System/Volumes/Data | awk 'NR==2 {print $4}')
+if [ "${FREEMB:-0}" -lt 30720 ]; then
+  # Printed in MB under a gigabyte: the night this was written the disk had 566 MB, and "0 GB free"
+  # is the one number that tells the reader less than the measurement did.
+  HUMAN=$([ "$FREEMB" -lt 1024 ] && echo "${FREEMB} MB" || echo "$((FREEMB / 1024)) GB")
+  echo "REFUSING TO GATE: only $HUMAN free, and a universal + LTO gate needs 30 GB."
+  echo "  S2 and S3 lipo 70 guard binaries and four bundles; a gate that starts without the room"
+  echo "  spends twenty minutes compiling and then fails on a write, which reads like a regression."
+  echo "  The repo's own regenerable trees, for reference:"
+  du -sh build build-guards build-release build-quick 2>/dev/null | sed 's/^/    /'
+  echo "  Clear space, then run this again. Nothing has been deleted and nothing was built."
+  exit 1
+fi
+echo "disk: $((FREEMB / 1024)) GB free, which is enough for a universal relink (floor 30 GB)"
+
 # ---- THE MACHINE HAS TO BE THIS GATE'S ALONE (the gate-17 lesson, 15 Oct) -------------------------
 # Three guards did not regress 3x together: S4 ran beside Sean's Logic session and these guards
 # LTO-compile a 300 MB archive at TEST time. B's local-server smoke runs are the same hazard from
