@@ -130,6 +130,10 @@ public:
         only accidental publisher. A reopened session restores through the same setStateInformation, so it had the
         same fault by construction. */
     void publishRegistrySnapshot (const char* why);   // message thread: store, mirror, dirty-mark, notify
+    /// Publish (or clear) "this rack is being rebuilt" in this Link's registry row, at once rather than on
+    /// the next heartbeat. 18 Oct 2026, queue items 13/16/21: BUSY is not DEAD, and a build is precisely when
+    /// the heartbeat cannot be trusted to say so.
+    void publishBusy (bool busy);
 
     // Session project name (no UI here): adopted from the shared
     // session_project.json when this instance has none of its own, follows
@@ -370,6 +374,10 @@ private:
     void armLoudnessAfterBuild (const juce::String& via);
     std::vector<ChainSlotSpec> chainModel;
     bool chainBuilding = false;
+    // When the build in flight began, and which command seq has already been told "busy" - so the ack is
+    // written once per command rather than once per 100 ms poll (18 Oct 2026).
+    double chainBuildStartedMs_ = 0.0;
+    int    chainBusyAckedSeq_   = 0;
     // Set in prepareToPlay (host/audio thread), read on the audio thread and by
     // the editor timer — atomic. chainSupported_ = mono OR stereo in/out;
     // chainMono_ = a 1-channel track (needs the stereo up-mix / fold-down).

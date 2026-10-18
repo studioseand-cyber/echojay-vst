@@ -403,7 +403,11 @@ juce::var ExecutorRead::tracksVar (const std::vector<TrackRead>& tracks)
         to->setProperty ("name", t.name);
         to->setProperty ("connected", t.connected);
         to->setProperty ("audio", t.audioFlowing);
-        if (! t.fresh) to->setProperty ("gone", true);
+        // BUSY WINS OVER GONE (18 Oct 2026, queue item 13). They are mutually exclusive on purpose: a rack
+        // that is rebuilding is reachable, it is simply not answering yet, and a reader told both would have
+        // to decide which to believe.
+        if (t.busy)          to->setProperty ("busy", true);
+        else if (! t.fresh)  to->setProperty ("gone", true);
         if (t.channels > 0) to->setProperty ("channels", t.channels);
         if (t.placement == 1) to->setProperty ("placement", "bus"); else if (t.placement == 2) to->setProperty ("placement", "insert");
         if (t.gainDb != 0.0f) to->setProperty ("gainDb", r1 (t.gainDb));
@@ -1251,7 +1255,23 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         {
             TrackRead t;
             t.uid = l.uid; t.name = p->resolveLinkDisplayName (l.uid).isNotEmpty() ? p->resolveLinkDisplayName (l.uid) : l.name;
-            t.connected = l.connected; t.audioFlowing = l.audioFlowing; t.active = l.active; t.fresh = l.heartbeatFresh;
+            t.connected = l.connected; t.audioFlowing = l.audioFlowing; t.active = l.active;
+            // ---- LIVENESS IN TIME, NOT IN POLLS (18 Oct 2026, queue item 13) ---------------------------
+            //
+            // This read `l.heartbeatFresh`, and the field's own comment in PluginProcessor.h has said since
+            // 4 October: "Use heartbeatAgeSeconds, not heartbeatFresh, for any decision about whether the
+            // Link can answer". heartbeatFresh is `staleCycles < 6` - a count of CONSUMER POLLS with no
+            // advance - and refreshLinkRegistry runs on the 1 Hz timer AND from several editor sites, so a
+            // burst of activity (an agent round IS a burst of activity) runs that count up against a Link
+            // that is alive and heartbeating normally. That is how the gate's S6 log came to carry "88_7even
+            // Kick_2_01 isn't reachable from this session right now (it shows as gone)" about a Link that
+            // three rows before and one row after talked to perfectly.
+            //
+            // So: wall clock, one shared floor, and the rack's own BUSY byte for the seconds after a rebuild
+            // when a live Link genuinely cannot answer. A busy rack is not stale and not gone.
+            t.busy  = l.busy;
+            t.fresh = l.busy || (l.heartbeatAgeSeconds >= 0.0f
+                                 && l.heartbeatAgeSeconds <= EchoJayProcessor::kLinkAnsweringWithinS);
             t.channels = l.channels; t.placement = l.placement; t.gainDb = l.gainDb;
             out.push_back (t);
         }

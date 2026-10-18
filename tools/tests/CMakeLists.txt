@@ -423,6 +423,14 @@ ej_add_guard(borrow_migration_guard   SOURCE tools/borrow_migration_guard/harnes
 # presented as -10875 on every third-party AU, Links that "never published", and a frozen chain build. Nothing in
 # the suite asked what a mapping COST, or ran for the thousands of ticks a 30 Hz leak needs to matter.
 ej_add_guard(ring_leak_guard          SOURCE tools/ring_leak_guard/harness.cpp               LABEL fast LINKSIDE)
+# 18 Oct 2026, queue items 21/16/13 (Sean's "item 13, including the chain-command ack you found"). The two
+# halves of one defect, one guard each side of the transport: a chain command that arrives while a Link is
+# rebuilding its rack was neither applied nor answered nor logged, and the main plugin turned that silence into
+# "it may be gone, or its track may be disabled" about a live Link that applied the edit seconds later. The
+# LINKSIDE guard asserts the answer and the kept command; the V2-side guard asserts the waiting and the words,
+# and carries item 13's own leg - a burst of registry refreshes must not make a live Link read as gone.
+ej_add_guard(chain_busy_ack_guard     SOURCE tools/chain_busy_ack_guard/harness.cpp          LABEL fast LINKSIDE)
+ej_add_guard(chain_ack_wait_guard     SOURCE tools/chain_ack_wait_guard/harness.cpp          LABEL fast)
 # ---- 11 Oct 2026, from Sean's in-host pass on ship_2026-10-11b -------------------------------------------
 # chains_view_guard: the CHAINS column over EIGHT frames, with the timer running between them. The header and
 # the AI|CHAINS switch painted inside `if (assistantVisible)`, which chatReplyControlsAllowed() makes false

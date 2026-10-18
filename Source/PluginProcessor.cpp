@@ -2996,6 +2996,11 @@ int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const j
     cmd->setProperty("editOps",    editOps);
     cmd->setProperty("baseSlots",  baseSlots);
     cmd->setProperty("sourceNote", sourceNote);
+    // 18 Oct 2026 (queue item 21): THIS SENDER UNDERSTANDS A "busy" ACK. Declared by the sender rather than
+    // assumed by the Link, because a main plugin from before today reads any status that is not "ok" as a
+    // refusal - so a Link that answered "busy" unasked would turn a queued command into a reported failure in
+    // every older build. awaitChainAck below is the half that waits on it.
+    cmd->setProperty("wantBusyAck", true);
     // 21n ruling 1a (22 Sep 2026): ONE sender. The lease id is resolved HERE from whichever session holds this Link's
     // lease - the borrow session (a borrowed rack) or the edit session (one slot's hosted editor) - so no caller can
     // omit it. The chat-card apply (sendChainEditToLink) passed "" and the Link refused the lease holder's own edit
@@ -3049,6 +3054,11 @@ void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
         juce::String uid; int seq; int waitedMs; int maxMs;
         std::function<void(bool, juce::String, juce::String, int)> cb;
         std::weak_ptr<bool> alive;
+        // 18 Oct 2026 (queue item 21): what the rack has told us WHILE we waited, and how long we are allowed
+        // to go on waiting because of it.
+        bool busyAcked = false;      // it answered "busy" for this seq: it HAS the command
+        int  busyAtMs  = 0;          // when it said so
+        int  hardMaxMs = 0;          // the cap once busy has extended the window
     };
     auto poll = std::make_shared<Poll>(Poll { linkUid, seq, 0, juce::jmax(250, maxWaitMs), std::move(cb), aliveToken_ });
 
@@ -3107,6 +3117,55 @@ void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
                                               : juce::String("the rack took it"), technical, slots);
                     return;
                 }
+                // ---- "busy" IS NOT A VERDICT (18 Oct 2026, queue item 21) -------------------------------
+                //
+                // The Link writes it when a command arrives while that rack is still being rebuilt, and it
+                // KEEPS the command: the build finishes, the next poll applies it for real, and the true
+                // outcome overwrites this file under the same seq. So the only wrong thing to do with it is to
+                // report it - which is exactly what the generic branch below would do, turning a command about
+                // to succeed into "the rack refused it (busy)".
+                //
+                // WAITING IS BOUNDED, AND THE BOUND IS NOT A GUESS: it may wait while the registry still says
+                // this rack is building (the Link publishes that byte before it loads a single plugin), up to
+                // kBusyHardMaxMs in total. The rack's own "I have your command" is what buys the extension,
+                // and the registry is what withdraws it - so a Link that dies mid-build stops the wait within
+                // a heartbeat or two instead of holding the window open to its cap.
+                if (st == "busy")
+                {
+                    if (! poll->busyAcked)
+                    {
+                        poll->busyAcked = true;
+                        poll->busyAtMs  = poll->waitedMs;
+                        poll->hardMaxMs = juce::jmax (poll->maxMs, kChainAckBusyHardMaxMs);
+                        EchoJay_NSLog (("EJLink: chain-ack seq=" + juce::String (poll->seq) + " says the rack is "
+                                        "BUSY rebuilding (" + (why.isNotEmpty() ? why : juce::String ("no reason given"))
+                                        + ") - the wait is extended to " + juce::String (poll->hardMaxMs / 1000)
+                                        + " s while the registry still says it is building").toRawUTF8());
+                    }
+                    const auto ans = linkAnswerability (poll->uid);
+                    const bool stillBuilding = ans.found && (ans.busy || ans.answering);
+                    if (stillBuilding && poll->waitedMs < poll->hardMaxMs)
+                    {
+                        poll->waitedMs += 100;
+                        juce::Timer::callAfterDelay(100, [step] { (*step)(); });
+                        return;
+                    }
+                    // Out of patience, or the rack stopped being there. Either way the edit has NOT been made,
+                    // and the sentence says which of the two happened and nothing it cannot know.
+                    poll->cb(false,
+                             stillBuilding
+                                 ? "the rack was still rebuilding " + juce::String (poll->waitedMs / 1000)
+                                   + " s after the edit was sent, so the edit has not been made yet - it is "
+                                   "queued on that rack, not refused"
+                                 : "the rack took the edit in hand and then stopped answering while it was "
+                                   "rebuilding, so whether it was made is not known here",
+                             "busy ack at " + juce::String (poll->busyAtMs) + " ms, gave up at "
+                             + juce::String (poll->waitedMs) + " ms of " + juce::String (poll->hardMaxMs)
+                             + "; registry: " + (! ans.found ? juce::String ("no row for that uid")
+                                 : juce::String ("busy=") + (ans.busy ? "1" : "0") + " heartbeat "
+                                   + juce::String (ans.ageS, 1) + " s ago"), -1);
+                    return;
+                }
                 if (st.isNotEmpty())
                 {
                     // THE LINK'S OWN REASON, unparaphrased. It is the only account of why, and a caller that
@@ -3126,10 +3185,36 @@ void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
         poll->waitedMs += 100;
         if (poll->waitedMs >= poll->maxMs)
         {
-            poll->cb(false, "the rack never acknowledged it within " + juce::String(poll->maxMs / 1000) + " s - "
-                            "it may be gone, or its track may be disabled",
+            // ---- WHAT WE ACTUALLY KNOW, AND NOT ONE WORD MORE (18 Oct 2026, queue item 16 q2) ------------
+            //
+            // What stood here was "it may be gone, or its track may be disabled": two guesses offered as the
+            // explanation, and on the night this was found NEITHER was true - the rack was a live Link that
+            // answered the rows before and after it. A person told their track may be disabled, about a track
+            // they are looking at, has been told something false by their own plugin.
+            //
+            // The registry knows the difference and is right here to be asked. So the sentence is built from
+            // it: a live row gets "it did not answer in time and the edit was not made" with no speculation
+            // about why; an absent or long-silent row is told as the fact it is.
+            const auto ans = linkAnswerability (poll->uid);
+            const juce::String secs = juce::String (poll->maxMs / 1000);
+            juce::String sentence;
+            if (! ans.found)
+                sentence = "that rack is no longer listed in this session, so the edit was not made";
+            else if (ans.busy)
+                sentence = "the rack is rebuilding its chain and did not get to this edit within " + secs
+                         + " s - the edit was not made";
+            else if (! ans.answering)
+                sentence = "the rack has not answered anything for " + juce::String (ans.ageS, 1)
+                         + " s, so the edit was not made";
+            else
+                sentence = "the rack is there and did not answer within " + secs + " s, so the edit was not "
+                           "made - its chain may still be settling";
+            poll->cb(false, sentence,
                      "no chain-ack-" + poll->uid + ".json with seq " + juce::String(poll->seq)
-                     + " appeared in " + juce::String(poll->maxMs) + " ms", -1);
+                     + " appeared in " + juce::String(poll->maxMs) + " ms; registry: "
+                     + (! ans.found ? juce::String ("no row for that uid")
+                        : juce::String ("connected=") + (ans.connected ? "1" : "0") + " busy="
+                          + (ans.busy ? "1" : "0") + " heartbeat " + juce::String (ans.ageS, 1) + " s ago"), -1);
             return;
         }
         juce::Timer::callAfterDelay(100, [step] { (*step)(); });
@@ -3744,6 +3829,24 @@ juce::String EchoJayProcessor::firstSoloName() const
 // against. With no injection there is no budget, so there is no figure whose change has to be timed, and the
 // reported latency is simply this plugin's own chain - which never depended on which Links were present.
 
+EchoJayProcessor::LinkAnswerability EchoJayProcessor::linkAnswerability (const juce::String& uid) const
+{
+    LinkAnswerability a;
+    if (uid.isEmpty()) return a;
+    for (const auto& li : getLinkSlotInfos())
+        if (li.uid == uid)
+        {
+            a.found = true;
+            a.connected = li.connected;
+            a.busy      = li.busy;
+            a.ageS      = li.heartbeatAgeSeconds;
+            // A row we have never seen climb (-1) is not evidence of life either - the 4 Oct rule, kept.
+            a.answering = a.ageS >= 0.0f && a.ageS <= kLinkAnsweringWithinS;
+            break;
+        }
+    return a;
+}
+
 void EchoJayProcessor::borrowEditorClosed()
 {
     if (! borrowActive()) return;
@@ -3780,16 +3883,12 @@ void EchoJayProcessor::borrowEditorClosed()
     {
         // The Link heartbeats at 1 Hz, so three seconds is three missed beats - comfortably past jitter and well
         // short of the ~6 s the reaper uses. A row we have never seen climb (-1) is not evidence of life either.
-        constexpr float kAnsweringWithinS = 3.0f;
-        bool  found = false, linkAlive = false;
-        float ageS = -1.0f;
-        for (const auto& li : getLinkSlotInfos())
-            if (li.uid == borrowSession_.uid)
-            {
-                found = true; ageS = li.heartbeatAgeSeconds;
-                linkAlive = li.connected && ageS >= 0.0f && ageS <= kAnsweringWithinS;
-                break;
-            }
+        // 18 Oct 2026: the figure and the loop both moved into linkAnswerability, so this decision and the
+        // agent's "is that track reachable" answer cannot drift apart. The constant is unchanged.
+        const auto ans = linkAnswerability (borrowSession_.uid);
+        const bool found = ans.found;
+        const float ageS = ans.ageS;
+        const bool linkAlive = ans.connected && ans.answering;
         if (! linkAlive)
         {
             // ONE PARKING MECHANISM, NOT TWO (4 Oct 2026 ruling). R2 already has the answer for "edits that could
@@ -7519,6 +7618,7 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.gainDb     = snap.gainDb;   // Link's built-in gain (0 from old Links)
         info.placement  = snap.placement;   // 0 unset, 1 bus, 2 insert
         info.dialCapable = snap.dialCapable;
+        info.busy        = snap.busy;   // 18 Oct 2026: the Link's own word that it is rebuilding its rack
         // Fresh = the heartbeat moved within the last ~3s (6 cycles at 2Hz).
         // The row stays LISTED while stale (proven-then-frozen) so the strip
         // can say "gone" distinctly, until the ~30s reap removes it.

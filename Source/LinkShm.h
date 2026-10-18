@@ -198,7 +198,18 @@ struct alignas(64) RegistrySlot
                                //     convenient one. A zero here withholds a
                                //     feature; a zero that meant "capable" would
                                //     hand payloads to binaries that drop them.
-    uint8_t  _pad[2];          //  2  → total 128
+    uint8_t  busyFlag;         //  1  THE RACK IS BEING REBUILT RIGHT NOW (v0.9.1, 18 Oct 2026). Set by the
+                               //     Link from the moment buildChainFromSpec starts until its last slot has
+                               //     loaded, and published immediately rather than on the next heartbeat -
+                               //     because a build is exactly when the heartbeat stalls, and a reader that
+                               //     cannot tell BUSY from DEAD tells a user their track is gone while they
+                               //     are watching its chain get built (queue items 13, 16 and 21).
+                               //     Carved from _pad on the standing convention, and the zero fallback is
+                               //     the SAFE one in the sense that byte 125 demands: an old Link leaves it
+                               //     0, which reads as "not busy", which is the answer every reader has
+                               //     always assumed - so a zero withholds the new distinction and promises
+                               //     nothing. It is NOT "never busy"; it is "this writer cannot say".
+    uint8_t  _pad[1];          //  1  → total 128 (one byte left; read byte 125's note before spending it)
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 // THE FROZEN OFFSETS (21t-g item 1d). Every field, against the value it has had in every shipped binary.
@@ -213,9 +224,10 @@ static_assert(offsetof(RegistrySlot, instanceUid) == 108, "RegistrySlot::instanc
 static_assert(offsetof(RegistrySlot, gainDb)      == 120, "RegistrySlot::gainDb moved");
 static_assert(offsetof(RegistrySlot, placement)   == 124, "RegistrySlot::placement moved");
 static_assert(offsetof(RegistrySlot, dialCapable) == 125, "RegistrySlot::dialCapable moved");
-static_assert(offsetof(RegistrySlot, _pad)        == 126, "RegistrySlot::_pad moved");
+static_assert(offsetof(RegistrySlot, busyFlag)    == 126, "RegistrySlot::busyFlag moved");
+static_assert(offsetof(RegistrySlot, _pad)        == 127, "RegistrySlot::_pad moved");
 static_assert(sizeof(RegistrySlot::displayName) == 40 && sizeof(RegistrySlot::audioFile) == 48
-              && sizeof(RegistrySlot::instanceUid) == 12 && sizeof(RegistrySlot::_pad) == 2,
+              && sizeof(RegistrySlot::instanceUid) == 12 && sizeof(RegistrySlot::_pad) == 1,
               "a RegistrySlot char field changed width - the file is no longer what is in the field");
 
 
@@ -1199,6 +1211,15 @@ inline void setSlotDialCapable(void* regMap, int slotIdx, bool capable)
     regSlots(regMap)[slotIdx].dialCapable = capable ? 1 : 0;
 }
 
+// Publish "this rack is being rebuilt". Written the moment a build starts and cleared the moment it ends, by
+// the Link itself - the one process that knows. Plain byte store, like placement and dialCapable: a single
+// byte is never torn, and a reader that catches the previous value is one poll behind at worst.
+inline void setSlotBusy(void* regMap, int slotIdx, bool busy)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    regSlots(regMap)[slotIdx].busyFlag = busy ? 1 : 0;
+}
+
 struct SlotSnapshot {
     int          idx;
     bool         dialCapable = false;   // 0 from every existing Link; see the field
@@ -1211,6 +1232,9 @@ struct SlotSnapshot {
     bool         active = true;  // capture/meter role on
     float        gainDb = 0.0f;  // Link's built-in gain stage (0 from old writers)
     uint8_t      placement = 0;  // 0 unset/unknown, 1 bus, 2 insert
+    // 18 Oct 2026: the Link says it is rebuilding its rack. FALSE from every old writer, which is the answer
+    // readers already assumed - never read a false here as proof that the rack is idle.
+    bool         busy = false;
 };
 
 inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
@@ -1229,6 +1253,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     out.gainDb        = slot->gainDb;
     out.placement     = slot->placement;
     out.dialCapable   = slot->dialCapable != 0;   // 0 from every old Link
+    out.busy          = slot->busyFlag != 0;      // 0 from every old Link (= "cannot say", read as not busy)
     return true;
 }
 
@@ -1245,7 +1270,7 @@ inline void reapSlot(void* regMap, int i)
 //  the main plugin reads it at compose/apply time to build a targeted
 //  [CURRENT CHAIN] and to staleness-guard v:2 edit sends. Deliberately a
 //  JSON sidecar, NOT a registry extension: RegistrySlot is a fixed 128-byte
-//  layout with 3 spare bytes, rack data is variable-length, and a
+//  layout with ONE spare byte left (18 Oct 2026), rack data is variable-length, and a
 //  registry_v3 would break cross-version compatibility. Old Links simply
 //  never write one — readers treat absence/parse failure as "rack unknown"
 //  (valid=false) and fall back to build-only, never an error.

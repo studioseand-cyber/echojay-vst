@@ -2077,6 +2077,11 @@ public:
                                           // Link cannot announce anything, so
                                           // absence must mean "do not send
                                           // controls", never "check a version".
+        // 18 Oct 2026: the Link says it is REBUILDING its rack (registry byte 126). False from every older
+        // Link, and false never means "idle" - only "this writer cannot say". BUSY IS NOT DEAD: during a
+        // build this plugin's heartbeat stalls, so every reader that judges reachability by the heartbeat
+        // alone calls a busy rack a dead one (queue items 13, 16, 21).
+        bool busy = false;
         bool heartbeatFresh = true;       // heartbeat advanced within ~3s.
         // 4 Oct 2026: seconds since the heartbeat last CLIMBED, by wall clock. -1 = never seen climbing. Use this,
         // not heartbeatFresh, for any decision about whether the Link can answer - see SlotProbeState.
@@ -2117,6 +2122,30 @@ public:
 
     /// Snapshot of currently known slots — message thread only.
     const std::vector<LinkSlotInfo>& getLinkSlotInfos() const { return linkSlotInfos; }
+
+    // ---- CAN THIS LINK ANSWER RIGHT NOW (18 Oct 2026) --------------------------------------------------
+    // ONE floor, named once. The Link heartbeats at 1 Hz, so three seconds is three missed beats: past any
+    // jitter and well short of the ~6 s the reaper uses. borrowEditorClosed derived this figure on 4 Oct and
+    // every decision of this shape must use the same one, measured in TIME - a count of consumer polls says
+    // more about how busy the editor was than about whether the Link is alive (see heartbeatFresh).
+    static constexpr float kLinkAnsweringWithinS = 3.0f;
+    // How long awaitChainAck may go on waiting once the rack has said "busy" and the registry agrees it is
+    // still building. 30 s, and the figure is a judgement about PEOPLE rather than about plugins: a rack of
+    // slow AUs can take longer than this to build, but a user or an agent step left with no answer for half a
+    // minute needs to be told something true now - and what it is told then is that the edit is queued on that
+    // rack, which is the truth and is actionable. The original 8 s window is unchanged for a rack that says
+    // nothing at all.
+    static constexpr int kChainAckBusyHardMaxMs = 30000;
+    struct LinkAnswerability
+    {
+        bool  found     = false;   // a row with this uid is listed at all
+        bool  connected = false;   // ...and its ring is bound (its Active role is on)
+        bool  busy      = false;   // ...and it says it is rebuilding its rack
+        bool  answering = false;   // ...and its heartbeat climbed within kLinkAnsweringWithinS
+        float ageS      = -1.0f;   // seconds since the heartbeat last climbed; -1 = never seen climbing
+    };
+    /// What the REGISTRY says about a Link, for any sentence or decision about reachability. Message thread.
+    LinkAnswerability linkAnswerability (const juce::String& uid) const;
 
     /// One Link plus its Monitor-consistent display label. The label is a
     /// display string only ("Untitled", "Untitled 2", ...); the ADDRESS is

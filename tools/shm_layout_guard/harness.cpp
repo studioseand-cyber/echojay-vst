@@ -60,6 +60,7 @@ int main()
     std::memcpy (golden + 120, &gain,   4);
     golden[124] = 2;    // placement: insert
     golden[125] = 1;    // dialCapable
+    golden[126] = 1;    // busyFlag (18 Oct 2026, carved from _pad)
 
     // Read it through the CURRENT struct, at the 64-byte-aligned offset the mapping produces.
     std::vector<uint8_t> map ((size_t) sizeof (RegistryHeader) + 4u * 128u, 0);
@@ -82,6 +83,25 @@ int main()
     check (std::abs (slot0->gainDb - (-6.5f)) < 0.01f, "gainDb reads back", juce::String (slot0->gainDb, 2));
     check (slot0->placement == 2, "placement reads back", juce::String ((int) slot0->placement));
     check (slot0->dialCapable == 1, "dialCapable reads back", juce::String ((int) slot0->dialCapable));
+    check (slot0->busyFlag == 1, "busyFlag reads back", juce::String ((int) slot0->busyFlag));
+    // ---- AND THE OTHER DIRECTION, which is what the carving convention actually promises ---------------
+    // Every Link built before 18 Oct 2026 leaves byte 126 as the zero it was born with. The fallback has to be
+    // the SAFE answer (byte 125's own note): a zero must read as "this writer cannot say", which readers treat
+    // exactly as they always did - not busy. A reader that took a zero for "proven idle" would be making a
+    // promise no old writer ever made.
+    {
+        uint8_t oldWriter[128];
+        std::memcpy (oldWriter, golden, sizeof (oldWriter));
+        oldWriter[126] = 0;   // an old binary's untouched pad
+        std::vector<uint8_t> m2 ((size_t) sizeof (RegistryHeader) + 128u, 0);
+        std::memcpy (m2.data() + sizeof (RegistryHeader), oldWriter, sizeof (oldWriter));
+        LinkShm::SlotSnapshot snap;
+        const bool read = LinkShm::readSlot (m2.data(), 0, snap);
+        check (read && ! snap.busy && snap.dialCapable && snap.placement == 2,
+               "a slot written by a binary that has never heard of busyFlag reads as NOT busy, with every "
+               "field before it unmoved",
+               read ? juce::String ("busy=") + (snap.busy ? "1" : "0") : juce::String ("readSlot refused"));
+    }
 
     // ---- the stride: slot N is at 64 + N*128, which is what regSlots() + N must produce ------------------
     {

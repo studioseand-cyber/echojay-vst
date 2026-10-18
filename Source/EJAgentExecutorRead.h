@@ -83,6 +83,11 @@ struct TrackRead
 {
     juce::String uid, name;
     bool  connected = false, audioFlowing = false, active = true, fresh = true;
+    // 18 Oct 2026 (queue item 13): the Link's own word that it is REBUILDING its rack. A rebuilding Link
+    // answers nothing for a few seconds, which is indistinguishable from death if you only look at the
+    // heartbeat - and "it shows as gone" about a track whose chain the user is watching being built is the
+    // defect this field exists to end. busy is reported INSTEAD of gone, never alongside it.
+    bool  busy = false;
     int   channels = 0, placement = 0;   // placement 0 unset, 1 bus, 2 insert
     float gainDb = 0.0f;
 };

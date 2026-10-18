@@ -255,6 +255,27 @@ int main()
         check (t.ok && (int) t.result.getProperty ("count", {}) == 2 && t.result.getProperty ("tracks", {}).getArray()->size() == 2, "G4b list_tracks: {count, tracks[]}");
         auto lk = runCounted (ex, "look", call ("look", R"({"what":"channel","channel":"lnk_kick"})"));
         check (lk.ok && lk.result.getProperty ("name", {}).toString() == "Kick" && lk.result.getProperty ("kind", {}).toString() == "channel", "G4c look(channel, <uid>) names the Link");
+        // ---- G4d/G4e BUSY IS NOT GONE (18 Oct 2026, queue item 13) --------------------------------------
+        // A Link rebuilding its rack answers nothing for a few seconds. Reported as `gone`, that became the
+        // agent telling a user "88_7even Kick_2_01 isn't reachable from this session right now (it shows as
+        // gone)" about a track whose chain it had just built. The two flags are mutually exclusive by
+        // construction, so no reader has to decide which to believe.
+        {
+            TrackRead b; b.uid = "lnk_bz"; b.name = "Kick"; b.connected = true; b.busy = true; b.fresh = false;
+            TrackRead g; g.uid = "lnk_gg"; g.name = "Old"; g.connected = true; g.fresh = false;
+            TrackRead h; h.uid = "lnk_hh"; h.name = "Here"; h.connected = true;
+            // THE TEMPORARY-VAR POINTER RULE (18 Sep 2026, a Pro Tools crash): getArray() on a var that
+            // dies at the end of the expression hands back a pointer into the dead object. The first cut of
+            // this leg did exactly that and read rubbish. The var is held.
+            const auto tv = ExecutorRead::tracksVar ({ b, g, h });
+            auto* arr = tv.getArray();
+            const bool shapes = arr != nullptr && arr->size() == 3
+                && (bool) (*arr)[0].getProperty ("busy", {}) && ! (*arr)[0].hasProperty ("gone")
+                && (bool) (*arr)[1].getProperty ("gone", {}) && ! (*arr)[1].hasProperty ("busy")
+                && ! (*arr)[2].hasProperty ("busy") && ! (*arr)[2].hasProperty ("gone");
+            check (shapes, "G4d a rebuilding Link reads busy and NOT gone; a silent one still reads gone; a "
+                           "live one carries neither", juce::JSON::toString (tv, true));
+        }
     }
     // ---- G5 analysis ----------------------------------------------------------------------------------------------------
     {

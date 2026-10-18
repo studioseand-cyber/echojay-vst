@@ -1604,3 +1604,64 @@ while the editor was renewing a lease for a DIFFERENT uid (`da53af5fa3`) through
 first: one process addressed, another leased. Sits with item 16 (the 8 s window and what the plugin
 says when it expires), item 0b (host the Link by PATH, because a fresh process loads the INSTALLED
 Link) and item 13 (a Link looking gone for seconds after its rack is rebuilt). Needs rig time.
+
+## 22. ITEMS 13, 16(q2) AND 21, BUILT (18 Oct 2026) — what is closed and what is still open
+
+Sean, 18 Oct, 08:1x: *"Start item 13 now (Link meters to the main plugin, including the chain-command
+ack you found: the lease renewing a different uid than the command's)."*
+
+**One defect, two sides of the same channel.** A Link that is rebuilding its rack answers nothing for
+a few seconds. The main plugin had no way to tell that from death, so it said the track was gone; and
+the Link had no way to say it, because `pollChainCommand` opened with `if (chainBuilding) return;`
+above even the test for a command file — neither applying, nor answering, nor logging. The sender
+waited its 8 s and reported *"it may be gone, or its track may be disabled"* about a live Link that
+applied the very same command seconds later.
+
+**Built:**
+
+1. **The registry carries BUSY** (`RegistrySlot::busyFlag`, byte 126, carved from `_pad` on the
+   standing convention — one byte left). Published by the Link before it loads a single plugin and
+   cleared when the build ends, plus on every heartbeat snapshot. Zero from every older Link, which
+   reads as "cannot say" and therefore as not busy: no old binary's behaviour changes.
+2. **A command that arrives mid-rebuild is acked `busy` and KEPT**, then applied for real when the
+   build ends. Once per seq, not once per poll. Only for a sender that declares `wantBusyAck` — an
+   older main plugin reads any status but `ok` as a refusal, so it still gets today's silence.
+3. **The waiting side treats `busy` as "I have your command"**, not as a verdict: the window extends
+   while the registry agrees the rack is building, to a 30 s cap, and the real outcome overwrites the
+   busy ack under the same seq. A rack that dies mid-build ends the wait within a heartbeat or two.
+4. **The expiry sentence is built from the registry** instead of guessing (item 16 q2): absent row,
+   rebuilding, silent for N s, or there-and-did-not-answer — each ending with whether the edit was
+   made.
+5. **Reachability is read in TIME** (item 13): `Sources::tracks` reported `fresh` from
+   `heartbeatFresh`, which is `staleCycles < 6` — a count of consumer polls. An agent round is a
+   burst of polls. It now uses `heartbeatAgeSeconds` against one named floor
+   (`EchoJayProcessor::kLinkAnsweringWithinS`, 3 s, the figure borrowEditorClosed derived on 4 Oct),
+   and that function now reads the same helper so the two cannot drift. A track reads `busy`
+   INSTEAD of `gone`, never both.
+
+Guards: `chain_busy_ack_guard` (LINKSIDE, the answering half), `chain_ack_wait_guard` (the waiting
+half, the words, and item 13's own leg — a burst of eight refreshes must not age a live Link),
+`shm_layout_guard` (byte 126 both directions: a 1 reads back, and an old writer's 0 reads as not
+busy with every field before it unmoved), `agent_executor_read_guard` G4d (busy excludes gone).
+
+**STILL OPEN, and item 13's first question is one of them:**
+
+- **Is "unanswered for 5 s after a rebuild" the Link being busy or a lost request?** The borrowed
+  dial read (`EJBorrow: slot 1 ... unanswered after 5.0 s - re-requesting once`, then `ABANDONED
+  after 0 of 3 slots - the selection is now (none)`) is a DIFFERENT channel from the chain command,
+  and it still abandons on a timer rather than on knowing whether the Link is busy. Now that BUSY is
+  in the registry, that read can wait on it with a bound and say "it stayed unreachable for N s"
+  rather than reading one moment and believing it. Needs rig time with a real rebuild in flight.
+- **Item 16 q1: is 8 s the right window, and should a missed ack be retried once inside the
+  plugin?** Untouched. The busy ack makes most of these answer rather than expire, which is the
+  bigger half, but a rack that is slow for some OTHER reason still gets one shot.
+- **Item 14** (a dead Link stays in the registry until the registry is FULL) is untouched and is the
+  other half of "what the agent is told about reachability": a reaped-on-pressure-only registry means
+  `found` can still be true for a process that has exited. The clock-reap is still owed.
+- **The L3 row** should wait for reachability with a bound and report "it stayed unreachable for N s"
+  when it fails. Not written yet: it belongs with the borrowed-read half above.
+- **Item 21's lease observation** is explained, not fixed: the editor was renewing a lease for
+  `da53af5fa3` while the command went to `61cc4c030f`. Those are two different Link PROCESSES, so the
+  lease was never the reason the command went unanswered — the silence was. The lease line stays in
+  the queue as item 16's neighbour only because a lease on the addressed rack is still the thing that
+  decides whether a structural edit is refused, and no row asserts that today.

@@ -2692,6 +2692,17 @@ void LinkProcessor::setGainDb(float db, bool snapSmoothing)
     if (onLinkStateChanged) onLinkStateChanged();   // open editor slider sync
 }
 
+// ---- BUSY, PUBLISHED AT ONCE (18 Oct 2026, queue items 13/16/21) ---------------------------------------
+// Not left to the next snapshot, and the reason is the whole point of the flag: a build is exactly the moment
+// this plugin's message thread stops being punctual (each AU load blocks it), so the next heartbeat may be
+// seconds away - and those are the seconds in which the V2 decides whether this track is reachable. Written
+// where the state changes, so the registry is right before anyone can read it wrong.
+void LinkProcessor::publishBusy (bool busy)
+{
+    if (regMap == nullptr || regSlotIdx < 0) return;
+    LinkShm::setSlotBusy (regMap, regSlotIdx, busy);
+}
+
 void LinkProcessor::publishRegistrySnapshot (const char* why)
 {
     if (regMap == nullptr || regSlotIdx < 0) return;
@@ -2700,6 +2711,7 @@ void LinkProcessor::publishRegistrySnapshot (const char* why)
     LinkShm::setSlotPlacement (regMap, regSlotIdx, (uint8_t) place);
     LinkShm::setSlotDialCapable (regMap, regSlotIdx, true);
     LinkShm::setSlotActive    (regMap, regSlotIdx, linkOn.load (std::memory_order_acquire));
+    LinkShm::setSlotBusy      (regMap, regSlotIdx, chainBuilding);   // 18 Oct 2026: BUSY is not DEAD
     // THE LINE THAT WAS MISSING. There was no registration line carrying a role at all, so "the role did not
     // reach V2" could not be seen in a log - only inferred from what the strip drew. Every snapshot says what it
     // published and why, so the next copied insert answers the question in one grep.
@@ -3045,6 +3057,9 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
         spec.resize((size_t)kMaxChainSlots);
 
     chainBuilding = true;
+    publishBusy (true);          // before a single plugin is loaded - see publishBusy
+    chainBuildStartedMs_ = juce::Time::getMillisecondCounterHiRes();
+    chainBusyAckedSeq_   = 0;
     clearChainInternal();
     notifyChainModel();
 
@@ -3112,6 +3127,7 @@ void LinkProcessor::buildChainFromSpec(std::vector<ChainBuildItem> spec,
         if (*idx >= (int)items->size())
         {
             self->chainBuilding = false;
+            self->publishBusy (false);
             self->updateChainLatency();
             self->notifyChainModel();
             // The Link reports its own dial outcome now. Before this, a
@@ -3452,7 +3468,6 @@ juce::String LinkProcessor::chainInstanceId() const
 
 void LinkProcessor::pollChainCommand()
 {
-    if (chainBuilding) return;                    // one build at a time
     auto id = chainInstanceId();
     if (id.isEmpty()) return;                     // unnamed Link — no identity
 
@@ -3465,6 +3480,52 @@ void LinkProcessor::pollChainCommand()
 
     juce::File cmdFile(resolvedDir + "chain-cmd-" + id + ".json");
     if (!cmdFile.existsAsFile()) return;
+
+    // ---- ONE BUILD AT A TIME, BUT NEVER IN SILENCE (18 Oct 2026, queue items 21, 16 and 13) ---------------
+    //
+    // WHAT THIS LINE USED TO BE. `if (chainBuilding) return;` stood at the top of this function, above even the
+    // test for a command file, so a command that arrived while this rack was being rebuilt was neither applied
+    // nor answered nor logged. The sender waits 8 s for an ack that was never going to be written and then
+    // tells the user, in the agent's own words from the gate's S6 log: *"the rack never acknowledged it within
+    // 8 s - it may be gone, or its track may be disabled"*. Neither was true. The rack was mid-build, from the
+    // row before, and it applied this very command a few seconds later - after its outcome had been reported
+    // as a failure.
+    //
+    // The local path has always done this properly: the Link's own plugin picker answers "A chain build is in
+    // progress" (addPluginByDesc, above). Only the remote road went quiet, and silence is the one answer this
+    // transport has been ruled never to give - the O2 note further down this function says so about a seq that
+    // burned, in those words, three weeks ago.
+    //
+    // SO: ACK "busy", AND DO NOT CONSUME. The command file stays exactly where it is, so the build that is
+    // running finishes and the NEXT poll applies it for real and acks its true outcome. The busy ack is not a
+    // verdict; it is this rack saying "I have your command, I am not free yet", which is the one fact the
+    // waiting side needs in order to wait instead of inventing a reason. Written once per seq, not once per
+    // poll (this runs ~10x a second and a build can take tens of seconds).
+    if (chainBuilding)
+    {
+        const auto v    = juce::JSON::parse (cmdFile.loadFileAsString());
+        const int  bseq = (int) v.getProperty ("seq", 0);
+        const double forMs = chainBuildStartedMs_ > 0.0
+                           ? juce::Time::getMillisecondCounterHiRes() - chainBuildStartedMs_ : 0.0;
+        // ONLY FOR A SENDER THAT ASKED FOR IT, which is what keeps this additive. A main plugin from before
+        // today treats every status that is not "ok" as a refusal and prints the reason, so an unasked-for
+        // busy ack would turn a command that is about to succeed into a reported failure in an OLD V2. The
+        // flag is written by writeChainEditCommand in this same round, so "absent" means "that sender cannot
+        // understand this answer" - and the honest behaviour for it is the one it already has.
+        const bool wantsBusy = (bool) v.getProperty ("wantBusyAck", false);
+        if (wantsBusy && bseq != 0 && bseq != chainBusyAckedSeq_)
+        {
+            chainBusyAckedSeq_ = bseq;
+            EchoJay_NSLog (("EJLink: chain-cmd seq=" + juce::String (bseq) + " arrived while this rack is still "
+                            "building (" + juce::String (forMs / 1000.0, 1) + " s so far) - acked BUSY and KEPT "
+                            "on disk; it is applied when the build ends").toRawUTF8());
+            writeChainAck (bseq, "busy",
+                           { "the rack is still building and has not read this command yet" }, {},
+                           "a rebuild of this rack has been running for "
+                           + juce::String (forMs / 1000.0, 1) + " s; the command is queued, not refused");
+        }
+        return;
+    }
 
     auto v = juce::JSON::parse(cmdFile.loadFileAsString());
     auto* obj = v.getDynamicObject();
