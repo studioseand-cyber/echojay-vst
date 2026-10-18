@@ -29,6 +29,11 @@
 //   T   a typed message under a running agent is refused WITH a line
 //   L   the panel: at every editor width (380..1780) and height cap, no text row is shorter than its wrapped text,
 //       no button overlaps text or leaves the card, chips wrap, and a body taller than its room scrolls
+//   X   the CARD AND THE CHAT, from Sean's 12:05 Logic session (18 Oct 2026): a new run is new from the instant
+//       Send is pressed (runSerial, not the sessionId, which is empty in exactly that window); a question's line is
+//       the question, never the server's bare summary "ask"; an answer is carried onto the ask it answered even
+//       when the server reuses one tool id for two asks; and a card carrying his 4,000-character compressor list
+//       fits its rects at every column width, including one narrower than the old 220 px floor
 //   V   the run ROW at the instant of Send (18 Oct 2026): a live run with nothing back from the server yet still
 //       lays out, with item 9's "Thinking..." line and its Stop - because a row that lays out to nothing is the
 //       blank avatar Sean read in Logic. And the other direction: a real step replaces that line, and a run that
@@ -903,6 +908,130 @@ int main()
                "SL4 no code and no text still produces a sentence, not a blank or \"an error\"");
     }
 
+    // ---- X: THE CARD AND THE CHAT, FROM HIS 12:05 SESSION (18 Oct 2026) -----------------------
+    {
+        using namespace echojay::agentui;
+
+        // ---- X1: WHICH RUN IS THIS -------------------------------------------------------------
+        // His log: run #2's row was handed run #1's key one second before the server answered, so it
+        // adopted run #1's record - the closing showed twice and the old answers came with it. The key
+        // test was "has the sessionId moved", and the sessionId is EMPTY in that window.
+        {
+            Rig w;
+            check (w.client.runSerial() == 0, "X1 PRECONDITION: no run has started yet");
+            w.client.start ("what compressors do I have?", "chat_w");
+            const int first = w.client.runSerial();
+            check (first == 1 && w.client.sessionId().isEmpty(),
+                   "X1 a run is identifiable the moment Send is pressed - runSerial has moved while the "
+                   "sessionId is still empty, which is the whole window the row and the record are born in",
+                   "serial=" + juce::String (first) + " sid=\"" + w.client.sessionId() + "\"");
+            w.round (1);                             // now it has a session
+            const auto sid1 = w.client.sessionId();
+            w.client.start ("Add a compressor", "chat_w");
+            check (w.client.runSerial() == first + 1 && w.client.sessionId().isEmpty(),
+                   "X1b ...and the NEXT run is a different one by the same fact, again before any session "
+                   "exists (RED as it stood: nothing could tell the two apart here, so the second run took "
+                   "the first one's record)",
+                   "serial=" + juce::String (w.client.runSerial()) + " was sid=" + sid1);
+            const int afterStart = w.client.runSerial();
+            w.round (1);
+            w.client.retry();                        // a retry is the SAME run
+            check (w.client.runSerial() == afterStart,
+                   "X1c a retry does NOT move it - a retry is the same run, which is why generation_ (which "
+                   "does move) could not have been used for this");
+            w.client.stop();
+            check (w.client.runSerial() == afterStart, "X1d ...and nor does a stop");
+        }
+
+        // ---- X2: A QUESTION'S LINE IS THE QUESTION ---------------------------------------------
+        // The frame is his, verbatim from the log: name=talk, summary "ask".
+        {
+            const auto asked = parseFrame ("tool_call",
+                R"({"id":"tc_pick_look_ask","name":"talk","summary":"ask","approval":"free","args":{"ask":{"question":"Which compressor shall I use on the kick?","choices":[{"label":"cl1b"},{"label":"the EchoJay Compressor"}]}}})");
+            const auto line = describeCall (asked.call);
+            check (line == "Which compressor shall I use on the kick?",
+                   "X2 the card's line for an ask is the QUESTION, not the server's summary (RED as it "
+                   "stood: the summary shortcut came first and the summary was the word \"ask\")", line);
+            const auto bare = parseFrame ("tool_call",
+                R"({"id":"tc_x","name":"talk","summary":"ask","approval":"free","args":{"text":""}})");
+            check (describeCall (bare.call).isEmpty(),
+                   "X2b ...and a talk whose summary is only the tool's own verb, with nothing else to say, "
+                   "contributes NOTHING rather than the word \"ask\" (\"show the question or nothing\")",
+                   describeCall (bare.call));
+            const auto normal = parseFrame ("tool_call",
+                R"({"id":"tc_y","name":"talk","summary":"I will look at the kick first","approval":"free","args":{"text":"looking"}})");
+            check (describeCall (normal.call) == "I will look at the kick first",
+                   "X2c ...and every other summary still wins, untouched - the server describes its own work "
+                   "better than we can guess",
+                   describeCall (normal.call));
+        }
+
+        // ---- X3: "YOU SAID" BELONGS TO THE ASK IT ANSWERED -------------------------------------
+        // Two asks, ONE id, which is what his server sent. The second must not inherit the first's answer.
+        {
+            RunView before;
+            {
+                RunStep a; a.id = "tc_pick_look_ask"; a.label = "Which compressor?"; a.answered = "You said: cl1b";
+                RunStep look; look.id = "tc_typed_look_1"; look.label = "read the inventory";
+                before.steps = { a, look };
+            }
+            RunView now;
+            {
+                RunStep a; a.id = "tc_pick_look_ask"; a.label = "Which compressor?";
+                RunStep look; look.id = "tc_typed_look_1"; look.label = "read the inventory";
+                RunStep again; again.id = "tc_pick_look_ask"; again.label = "Which one of these?";
+                now.steps = { a, look, again };
+            }
+            carryAnswersForward (now, before);
+            check (now.steps[0].answered == "You said: cl1b",
+                   "X3 the ask that WAS answered keeps its answer", now.steps[0].answered);
+            check (now.steps[2].answered.isEmpty(),
+                   "X3b ...and the NEW ask, which the server gave the same tool id, carries nothing - it has "
+                   "not been answered (RED as it stood: matched by id, so it inherited \"You said: cl1b\" "
+                   "before he had answered it)",
+                   now.steps[2].answered.isEmpty() ? juce::String ("empty") : now.steps[2].answered);
+            // And a list that DID shift carries nothing rather than the wrong thing.
+            RunView shifted;
+            { RunStep look; look.id = "tc_typed_look_1"; RunStep a; a.id = "tc_pick_look_ask"; shifted.steps = { look, a }; }
+            carryAnswersForward (shifted, before);
+            check (shifted.steps[0].answered.isEmpty() && shifted.steps[1].answered.isEmpty(),
+                   "X3c ...and when the ids at a position disagree, nothing is carried at all - the position "
+                   "and the id must both match, so a reordering can never move an answer onto another line");
+        }
+
+        // ---- X4: HIS 4,000-CHARACTER ANSWER, AT EVERY COLUMN WIDTH -----------------------------
+        // The closing is the shape of the one he read at 12:03: four numbers and then 154 plugin names.
+        // 180 px is narrower than the OLD 220 px layout floor, which is the width at which the card was
+        // laid out wider than the column it was drawn into and the text was clipped mid-word.
+        {
+            juce::String closing = "You have 154 compressors: 56 I can set, 98 you'd set by ear, and 17 more "
+                                   "that can't run on this Mac. Plus the EchoJay Compressor.\n\nI can set: ";
+            const char* names[] = { "Acme Opticom XLA-3", "API-2500", "Auto-Tune Vocal Compressor",
+                                    "Bettermaker Bus Compressor DSP", "bx_opto", "bx_townhouse Buss Compressor",
+                                    "C1 comp", "dbx-160", "DPR-402", "elysia alpha master", "kHs Compressor",
+                                    "Kiive XTComp", "Lindell 254E", "MaxxVolume", "MCompressor",
+                                    "Millennia TCL-2", "SSL Native X-Verb", "Shadow Hills Mastering Comp" };
+            for (int rep = 0; rep < 14; ++rep)
+                for (const auto* n : names) closing << n << ", ";
+            check (closing.length() > 3500,
+                   "X4 PRECONDITION: the closing is the size of the one he read ("
+                     + juce::String (closing.length()) + " characters)");
+            RunView v;
+            v.sessionId = "ag_w"; v.closing = closing; v.statusWord = "Done"; v.finished = true;
+            v.modeBadge = "ASK"; v.changeCount = 0; v.stepsOpen = false;
+            for (int width : { 180, 220, 420, 900 })
+            {
+                const auto L  = layoutRun (v, 0, 0, width);
+                const auto why = checkRun (v, L, 0, width);
+                check (why.isEmpty(),
+                       "X4 at " + juce::String (width) + " px the whole answer has room: nothing truncated, "
+                       "nothing outside the column (checkRun, which until today looked at the step rows and "
+                       "never at the closing)",
+                       why.isEmpty() ? juce::String ("clean, height ") + juce::String (L.totalHeight) : why);
+            }
+        }
+    }
+
     // ---- SZ1: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ----------------------
     // The executor's own gate, asked directly with a result the size of Sean's machine: 420 entries
     // of the shape 17b sent. It must come back inside the contract's 8 KB.
@@ -995,6 +1124,30 @@ int main()
                "SZ3 the shape 17b posted for the same folder is " + juce::String (oldBytes)
                + " bytes, over the limit - so SZ2's green is a fix and not an artefact of the input"
                + " (the run he lost was this, " + juce::String (oldBytes / 1024) + " KB)");
+
+        // ---- SZ4: THE CENSUS, ON THE SAME FOLDER (18 Oct 2026, B's FOR_A 76) -------------------
+        //
+        // B: *"with your page cap of 200 it takes eight pages on Sean's 1,577-name Mac (nine plugin
+        // steps)... on Sean's run they named none (total 180)."*  SZ2 is the ordinary page and stays
+        // exactly as it is; this is the server's own sweep over the SAME input, which is the folder
+        // the complaint came from rather than a synthetic one.
+        const auto census = ExecutorRead::inventoryPage (names, {}, 0, 2000, juce::var (bad), true);
+        const auto cBytes = (int) juce::JSON::toString (census, true).getNumBytesAsUTF8();
+        const auto* cNames = census.getProperty ("names", juce::var()).getArray();
+        const auto* cBad   = census.getProperty ("notLoadable", juce::var()).getArray();
+        check (cNames != nullptr && cNames->size() == names.size()
+               && ! (bool) census.getProperty ("hasMore", juce::var())
+               && cBytes > 8192 && cBytes <= ExecutorRead::kCensusMaxBytes,
+               "SZ4 the census page over his " + juce::String (names.size()) + " plugins is ONE page ("
+               + juce::String (cBytes / 1024) + " KB, no hasMore) instead of the "
+               + juce::String ((names.size() + ExecutorRead::kInventoryPageMax - 1) / ExecutorRead::kInventoryPageMax)
+               + " the 200 cap needed - and deliberately outside the 8 KB that still binds every "
+                 "other call",
+               cNames == nullptr ? juce::String ("no names") : juce::String (cNames->size()) + " names");
+        check (cBad != nullptr && cBad->size() == bad.size(),
+               "SZ4b ...and all " + juce::String (bad.size()) + " plugins that cannot run here are NAMED on it "
+               "(RED as it stood: twelve at most and page-scoped, which on this folder named none of them)",
+               cBad == nullptr ? juce::String ("absent") : juce::String (cBad->size()) + " named");
     }
 
     // ---- RC1/RC2: A STUCK CHAT RECOVERS - no old result is ever posted again (17 Oct 2026) -----

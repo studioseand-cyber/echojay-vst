@@ -233,6 +233,15 @@ public:
         case the client meets at the last moment - an oversized result in hand, about to be posted -
         so that the ANSWER gets smaller instead of the run dying. The default drops the largest
         arrays and marks `truncated`; ExecutorRead overrides it with the gate it already owns. */
+    /** How many bytes a result for THIS call may be, before the client compacts it (18 Oct 2026).
+
+        Contract section 5 caps a result at 8 KB and that is still the answer for every call. The one
+        exception is the server's own inventory census (B's FOR_A 76): it stamps its calls
+        `tc_census_<n>`, does not trim their answers, and wants the whole plugin list in ONE step
+        rather than eight. The question is asked of the EXECUTOR because the executor is what built
+        the page and knows the ceiling it built it under; the client only enforces what it is told. */
+    virtual int maxResultBytes (const juce::String& /*callId*/) { return 8192; }
+
     virtual juce::var compactResult (juce::var v)
     {
         auto bytes = [] (const juce::var& x) { return (int) juce::JSON::toString (x, true).getNumBytesAsUTF8(); };

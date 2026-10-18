@@ -2102,6 +2102,13 @@ private:
     /** True while the stage row is item 9's own "Thinking..." line, so the run row can take over
         from it without clearing a stage message that belongs to something else. */
     bool stageStatusIsThinking() const { return stageStatusText_.startsWithIgnoreCase ("Thinking"); }
+    // ---- WHAT THIS RUN HAS ALREADY WRITTEN INTO THE CHAT RECORD (18 Oct 2026) ------------------
+    // A finished run's prose is persisted so a reopened chat shows the answer under the question. A
+    // run can end twice over (a closing, then an undo-all line), so the second write UPDATES the
+    // first by its exact text rather than appending a second answer - which is how the "shows twice"
+    // faults start. Per run, by agentRunId, and empty between runs.
+    int          agentRecordedInChat_ = 0;
+    juce::String agentRecordedText_;
     // Result stage: a local assistant bubble (persisted, block-less).
     // altPrompt (optional) attaches a Suggest-an-alternative pill to the
     // bubble (build failures) - same one-shot machinery as edit cards.

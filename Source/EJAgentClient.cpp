@@ -162,6 +162,7 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
     if (isActive()) stop();
 
     ++generation_;
+    ++runsStarted_;                 // one per START: the only honest "this is a new run" before a sessionId
     if (cancel_) cancel_->cancel();
     cancel_.reset();
     steps_.clear();
@@ -1188,17 +1189,26 @@ void EJAgentClient::postStepIfComplete()
     // fitUnder8K it uses everywhere else), the compacted bytes go out, and the log says what it did
     // and by how much. The run continues with a smaller answer, which is the whole point of the
     // contract's shape.
+    // ---- EXCEPT A CENSUS ANSWER, WHICH THE SERVER ASKED FOR WHOLE (18 Oct 2026, B's FOR_A 76) --
+    //
+    // The server's own inventory sweep stamps its calls `tc_census_<n>` and does not trim their
+    // answers at 8 KB - the whole point is that the list reaches the model in ONE step instead of
+    // eight. This gate ran before the wire and would have halved it right back, so the cap is
+    // raised for those ids only, to the ceiling the executor built the page under. Every other
+    // result is measured and compacted exactly as it was.
     for (auto& r : results)
         if (r.ok)
         {
+            const int cap = executor_.maxResultBytes (r.id);
             const auto before = (int) juce::JSON::toString (r.result, true).getNumBytesAsUTF8();
-            if (before <= 8192) continue;
+            if (before <= cap) continue;
             r.result = executor_.compactResult (r.result);
             const auto after = (int) juce::JSON::toString (r.result, true).getNumBytesAsUTF8();
-            log ("result " + r.id + " was " + juce::String (before) + " bytes, over the 8 KB the contract "
-                 "allows - compacted to " + juce::String (after) + " before sending (it is the ANSWER that "
-                 "gets smaller, never the run that dies)");
-            if (after > 8192)
+            log ("result " + r.id + " was " + juce::String (before) + " bytes, over the "
+                 + juce::String (cap / 1024) + " KB this call is allowed - compacted to "
+                 + juce::String (after) + " before sending (it is the ANSWER that gets smaller, never "
+                 "the run that dies)");
+            if (after > cap)
             {
                 // Still too big: send the failure the model can act on rather than bytes the server
                 // will refuse. It names the tool, not the limit, because the model chooses the next
@@ -1206,8 +1216,8 @@ void EJAgentClient::postStepIfComplete()
                 r = failedResult (r.id, "too_large_to_send",
                                   "that answer was too long to send even after shortening - ask for less of "
                                   "it at a time (a narrower match, or a smaller limit)");
-                log ("result " + r.id + " is STILL over 8 KB after compacting - sending a short failure "
-                     "instead, so the round can continue");
+                log ("result " + r.id + " is STILL over " + juce::String (cap / 1024) + " KB after "
+                     "compacting - sending a short failure instead, so the round can continue");
             }
         }
     log ("STEP round=" + juce::String (round_) + " results=" + juce::String ((int) results.size()));

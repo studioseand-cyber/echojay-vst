@@ -232,13 +232,37 @@ public:
     //   limit  (int,    optional, default kInventoryPage, capped at kInventoryPageMax)
     // and the result carries total / offset / limit / returned / hasMore / names, with `count` keeping its
     // pre-paging meaning (== total, the whole list) and `truncated` keeping its (names are only a slice).
-    /** @param notLoadable  [{name, loadable:false, why}] for the WHOLE machine, or void. Folded in
-                              page-scoped and capped, and counted in `notLoadableTotal`, BEFORE the
-                              8 KB gate - 17 Oct 2026, FOR_B §25. */
+    /** @param notLoadable  [{name, loadable:false, why, type?}] for the WHOLE machine, or void. On an
+                              ordinary page: folded in page-scoped and capped, counted in
+                              `notLoadableTotal`, BEFORE the 8 KB gate (17 Oct 2026, FOR_B §25). On a
+                              CENSUS page: all of it, unscoped - see `census`.
+        @param census        A CENSUS PAGE (18 Oct 2026, B's FOR_A 76). The server's own
+                              `look(inventory)` sweep, call ids `tc_census_<n>`, which the step
+                              endpoint does not trim at 8 KB. Three differences and nothing else:
+                              `limit` is honoured up to kInventoryCensusMax, the cannot-run list is
+                              sent WHOLE and unscoped (page-scoping could only ever name a plugin
+                              that is IN the page, and a withheld plugin is by definition not in the
+                              offerable list - which is why Sean's run named none of 180), and the
+                              8 KB gate is replaced by kCensusMaxBytes with the trim taken off the
+                              END of `names` so `offset`/`hasMore` still describe what was sent.
+                              Everything about an ordinary page is untouched. */
     static juce::var inventoryPage (const juce::StringArray& all, const juce::String& match,
-                                    int offset, int limit, juce::var notLoadable = juce::var());
+                                    int offset, int limit, juce::var notLoadable = juce::var(),
+                                    bool census = false);
     static constexpr int kInventoryPage    = 60;
     static constexpr int kInventoryPageMax = 200;
+    // ---- THE CENSUS PAGE (18 Oct 2026, B's FOR_A 76) -----------------------------------------------
+    // "what compressors do I have?" answered with the 60-name page's count because the server had to
+    // walk Sean's 1,577 plugins 200 at a time: eight pages, nine plugin steps, and a model round
+    // between each. 2000 is B's figure and covers every machine either of us has seen; the byte
+    // ceiling is twice the 256 KB B says a census page may be, so a page of long names WITH the
+    // cannot-run reasons beside them still goes whole rather than being cut in half.
+    static constexpr int kInventoryCensusMax = 2000;
+    static constexpr int kCensusMaxBytes     = 524288;
+    /** TRUE for the server's own inventory sweep, by the call id B stamps on it. The id is the marker
+        because it is the same thing the step endpoint keys its own no-trim rule on: one fact, read the
+        same way on both sides, so the plugin cannot send bytes the server will refuse. */
+    static bool isCensusCallId (const juce::String& id) { return id.startsWithIgnoreCase ("tc_census_"); }
     // THE 8 KB GATE: trims `names`-style arrays and long strings until the JSON fits, marking truncated:true.
     static juce::var fitUnder8K (juce::var v);
     static int jsonBytes (const juce::var& v);
@@ -264,6 +288,10 @@ protected:
     { return src_.inventory ? src_.inventory() : juce::StringArray{}; }
     /** The gate this class already owns, offered to the client for a last-moment oversize. */
     juce::var compactResult (juce::var v) override { return fitUnder8K (std::move (v)); }
+    /** 8 KB for everything, and the census ceiling for the server's own inventory sweep - the page
+        this executor builds for those ids is deliberately bigger than the contract's cap. */
+    int maxResultBytes (const juce::String& callId) override
+    { return isCensusCallId (callId) ? kCensusMaxBytes : kMaxResultBytes; }
     /** What cannot load here, as [{name, loadable:false, why}] - empty when nothing is marked. */
     juce::var notLoadableHere() const { return src_.notLoadable ? src_.notLoadable() : juce::var(); }
 

@@ -2192,6 +2192,20 @@ public:
         and the mirror were waiting behind it. This reads what the browser and the feed have already
         caused to be computed; a row nobody has looked at is simply not in the list. */
     std::vector<std::pair<juce::String, juce::String>> withheldFromCache() const;
+
+    /** The TYPE of a scanned plugin, by name: what it declares itself to be plus its format, e.g.
+        "Dynamics (VST3)" - or just "(AU)" when it declares no category. Empty when the name is not in
+        the scan at all.
+
+        18 Oct 2026, B's FOR_A 76: the cannot-run list reached the server as names and reasons only, so
+        a census could not say which of the 180 plugins that will not run here are compressors. This is
+        the honest half of that answer: the CATEGORY the plugin itself declares, from the scan the
+        plugin already holds. The ROLE - "is this a compressor" - is not decided here; third-party
+        roles are the server's to know from its maps (see roleOfBuiltin in EJAgentExecutorRead.cpp).
+
+        A map walk under pluginsMutex_ and nothing else: no disk, no verdicts, for the reason
+        withheldFromCache's own comment gives. */
+    juce::String scannedTypeNamed (const juce::String& name) const;
     static juce::String loadFailureReasonFor(const juce::String& name);
     void maybeReloadEntriesCache();
 

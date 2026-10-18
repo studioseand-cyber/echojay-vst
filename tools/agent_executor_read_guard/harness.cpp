@@ -13,6 +13,10 @@
 //   G6   look(levels): per slot in/out/GR or "none", and the chain in/out/delta
 //   G7   look(inventory): 400 names -> under 8 KB, truncated:true, count 400; unbound -> inventory_unavailable
 //   G8   look(maps) -> server_tool; an unknown what -> unknown_what (both look and check)
+//   C    look(inventory) FOR THE SERVER'S CENSUS (18 Oct 2026, B's FOR_A 76): a `tc_census_<n>` call gets the whole
+//        list in one page and the whole cannot-run list by name, reason and declared type; every other call gets
+//        exactly the 200 names and 8 KB it got yesterday; and an oversized census page loses names off the END so
+//        offset/hasMore still describe what was sent
 //   G9   check(level) / measure: the window's in/out/delta/peak; nothing heard -> not_playing
 //   G10  check(gr, slot): the slot's GR; out of range -> unknown_slot; no reading -> not_playing
 //   G11  check(true_peak): the last slot's peak + overs; a named slot
@@ -59,6 +63,7 @@ struct FakeHost
     bool transportKnown = true, playing = true;
     juce::StringArray inventory;
     bool bindInventory = true;
+    juce::var notLoadable;              // [{name, loadable:false, why, type?}], void = not bound
 
     FakeHost()
     {
@@ -135,6 +140,9 @@ struct FakeHost
         s.transportPlaying = [this] { return playing; };
         s.chainRevision = [this] { return own.revision; };
         if (bindInventory) s.inventory = [this] { return inventory; };
+        // 18 Oct 2026 (FOR_A 76): bound only when a leg sets it, so every leg written before the
+        // cannot-run list existed asks exactly the question it asked then.
+        if (! notLoadable.isVoid()) s.notLoadable = [this] { return notLoadable; };
         return s;
     }
 };
@@ -319,6 +327,143 @@ int main()
         auto u = run (ex2, "look", call ("look", R"({"what":"inventory"})"));
         check (! u.ok && u.errorCode == "inventory_unavailable", "G7b an unbound inventory says so rather than answering empty");
     }
+    // ---- C: THE SERVER'S INVENTORY CENSUS (18 Oct 2026, B's FOR_A 76) --------------------------------------------------
+    //
+    // B: *"'what compressors do I have?' - the answer was the 60-name page's count ('48 of them... and 38 more').
+    // With your page cap of 200 it takes eight pages on Sean's 1,577-name Mac (nine plugin steps). Honour `limit` up
+    // to 2000 on look(inventory) when the call id starts with tc_census_. And the cannot-run list by name, whole:
+    // the pages name at most twelve and declare notLoadableTotal; on Sean's run they named none (total 180)."*
+    //
+    // The fixture is that machine: 1,577 installed names, and 180 that cannot run NONE of which are in the
+    // inventory - which is the real shape, because `names` is what can be offered and a plugin that cannot run is
+    // withheld from it. That is why the page-scoped field named none of 180 rather than twelve of them.
+    {
+        auto callAs = [] (const juce::String& id, const juce::String& argsJson)
+        { ToolCall c; c.id = id; c.name = "look"; c.args = juce::JSON::parse (argsJson); c.approval = "free"; return c; };
+
+        FakeHost big;
+        // CLEARED FIRST: the fixture ships 400 names for G7, and adding to them made this leg's own
+        // figures 1,977 - a number the leg then asserted against 1,577 and called the product wrong.
+        big.inventory.clear();
+        for (int i = 1; i <= 1577; ++i)
+            big.inventory.add ("Maker" + juce::String (i % 40) + " Thing " + juce::String (i));
+        check (big.inventory.size() == 1577,
+               "C0 PRECONDITION: the fixture is his machine's size, 1,577 installed names",
+               juce::String (big.inventory.size()));
+        {
+            juce::Array<juce::var> bad;
+            for (int i = 1; i <= 180; ++i)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("name", "Cannot Run " + juce::String (i));     // deliberately NOT in `inventory`
+                o->setProperty ("loadable", false);
+                o->setProperty ("why", "its VST3 has no arm64 build");
+                o->setProperty ("type", "Dynamics (VST3)");
+                bad.add (juce::var (o));
+            }
+            big.notLoadable = juce::var (bad);
+        }
+        ExecutorRead exb (big.sources());
+
+        // ---- C1/C4: AN ORDINARY CALL IS UNTOUCHED ------------------------------------------------------------
+        auto plain = run (exb, "look", callAs ("tc_7", R"({"what":"inventory","limit":2000})"));
+        check (plain.ok && (int) plain.result.getProperty ("limit", {}) == ExecutorRead::kInventoryPageMax
+               && bytesOf (plain.result) <= ExecutorRead::kMaxResultBytes
+               && (bool) plain.result.getProperty ("hasMore", {}),
+               "C1 an ORDINARY call asking for 2000 still gets 200 and still fits 8 KB - the census is the only "
+               "thing that changed, because an ordinary caller is still behind the server's own trim",
+               "limit=" + plain.result.getProperty ("limit", {}).toString() + " bytes=" + juce::String (bytesOf (plain.result)));
+        check (plain.ok && (int) plain.result.getProperty ("notLoadableTotal", {}) == 180
+               && plain.result.getProperty ("notLoadable", {}).getArray() == nullptr,
+               "C4 ...and its cannot-run field is page-scoped as before: the SCALE as a number, and no names, "
+               "because a plugin that cannot run is not in the page (this is what named none of 180)",
+               plain.result.getProperty ("notLoadable", {}).getArray() == nullptr
+                 ? juce::String ("absent, total=") + plain.result.getProperty ("notLoadableTotal", {}).toString()
+                 : juce::String ("present"));
+
+        // ---- C2: ONE PAGE, ONE STEP ---------------------------------------------------------------------------
+        auto cen = run (exb, "look", callAs ("tc_census_1", R"({"what":"inventory","limit":2000,"offset":0})"));
+        const auto* cn = cen.result.getProperty ("names", {}).getArray();
+        check (cen.ok && (int) cen.result.getProperty ("limit", {}) == 2000
+               && cn != nullptr && cn->size() == 1577
+               && (int) cen.result.getProperty ("returned", {}) == 1577
+               && (int) cen.result.getProperty ("total", {}) == 1577
+               && ! (bool) cen.result.getProperty ("hasMore", {}),
+               "C2 a tc_census_ call gets all 1,577 names in ONE page - eight pages and nine plugin steps become "
+               "one (RED as it stood: the limit was capped at 200 and the 8 KB gate halved even that)",
+               "returned=" + cen.result.getProperty ("returned", {}).toString()
+                 + " hasMore=" + cen.result.getProperty ("hasMore", {}).toString());
+        check (cen.ok && bytesOf (cen.result) > ExecutorRead::kMaxResultBytes
+               && bytesOf (cen.result) <= ExecutorRead::kCensusMaxBytes,
+               "C2b ...so the page is deliberately over the 8 KB contract cap, and still inside the census "
+               "ceiling the server allows - both halves asserted, because either alone is half a rule",
+               juce::String (bytesOf (cen.result)) + " bytes");
+
+        // ---- C3: THE CANNOT-RUN LIST, BY NAME AND TYPE --------------------------------------------------------
+        const auto* bad = cen.result.getProperty ("notLoadable", {}).getArray();
+        bool allNamed = bad != nullptr && bad->size() == 180, haveType = false, leaked = false;
+        if (bad != nullptr)
+            for (const auto& e : *bad)
+            {
+                if (e.getProperty ("name", {}).toString().isEmpty()
+                    || e.getProperty ("why", {}).toString().isEmpty()) allNamed = false;
+                if (e.getProperty ("type", {}).toString() == "Dynamics (VST3)") haveType = true;
+                if (cn != nullptr && cn->contains (e.getProperty ("name", {}))) leaked = true;
+            }
+        check (allNamed && (int) cen.result.getProperty ("notLoadableTotal", {}) == 180,
+               "C3 ...and all 180 that cannot run are NAMED on it, with the reason - not a count (RED as it "
+               "stood: twelve at most, page-scoped, which on a real machine was none)",
+               bad == nullptr ? juce::String ("absent") : juce::String (bad->size()) + " named");
+        check (haveType,
+               "C3b ...each with the type the plugin DECLARES (category and format), which is what the census "
+               "needs to count them per type - the role stays the server's to decide from its maps");
+        check (! leaked && cen.result.getProperty ("notLoadableNote", {}).toString()
+                              .containsIgnoreCase ("not in `names`"),
+               "C3c ...and the result says they are NOT in `names`, which is true here and is why they have to "
+               "be counted separately rather than filtered out of the list");
+
+        // ---- C5: AN OVERSIZED CENSUS LOSES NAMES OFF THE END, NOT HALF OF ITSELF -----------------------------
+        // 2000 names of 400 characters is 800 KB, well past the ceiling. fitUnder8K would HALVE the array, after
+        // which offset + returned stops describing the slice the server asked for and the next offset skips
+        // names nobody ever saw.
+        {
+            FakeHost huge;
+            huge.inventory.clear();                       // the same 400-name fixture, same reason
+            for (int i = 0; i < 2000; ++i)
+                huge.inventory.add (juce::String::repeatedString ("N", 390) + juce::String (i + 1000));
+            ExecutorRead exh (huge.sources());
+            auto cut = run (exh, "look", callAs ("tc_census_2", R"({"what":"inventory","limit":2000,"offset":0})"));
+            const auto* kn = cut.result.getProperty ("names", {}).getArray();
+            const int ret = (int) cut.result.getProperty ("returned", {});
+            check (cut.ok && bytesOf (cut.result) <= ExecutorRead::kCensusMaxBytes
+                   && ret > 0 && ret < 2000 && (bool) cut.result.getProperty ("hasMore", {})
+                   && (int) cut.result.getProperty ("total", {}) == 2000,
+                   "C5 a census page too big even for the ceiling is BOUNDED and says so - returned < total with "
+                   "hasMore, so the server asks for the next offset exactly as it does today",
+                   "returned=" + juce::String (ret) + " bytes=" + juce::String (bytesOf (cut.result)));
+            check (kn != nullptr && kn->size() == ret
+                   && (*kn)[0].toString() == huge.inventory[0]
+                   && (*kn)[ret - 1].toString() == huge.inventory[ret - 1],
+                   "C5b ...and what it kept is the FRONT of the slice, name for name - the trim comes off the "
+                   "end, so offset + returned still names the boundary the next page starts at");
+        }
+
+        // ---- C6: THE CAP THE CLIENT ENFORCES COMES FROM THE SAME ONE FACT ------------------------------------
+        check (ExecutorRead::isCensusCallId ("tc_census_1") && ExecutorRead::isCensusCallId ("TC_CENSUS_12")
+               && ! ExecutorRead::isCensusCallId ("tc_7") && ! ExecutorRead::isCensusCallId ("census_1"),
+               "C6 the census marker is the call id B stamps, read one way");
+        // ASKED THROUGH ToolExecutor&, which is how the client holds it - the client knows nothing about
+        // ExecutorRead, and a leg that reached past the base reference would be testing a road nobody takes.
+        ToolExecutor& asClientSeesIt = exb;
+        check (asClientSeesIt.maxResultBytes ("tc_census_1") == ExecutorRead::kCensusMaxBytes
+               && asClientSeesIt.maxResultBytes ("tc_7") == ExecutorRead::kMaxResultBytes,
+               "C6b ...and the executor tells the CLIENT the same ceiling it built the page under, through the "
+               "base reference the client actually holds, so the last gate before the wire cannot halve a census "
+               "answer back again (that gate is where this would otherwise have died)",
+               juce::String (asClientSeesIt.maxResultBytes ("tc_census_1")) + " / "
+                 + juce::String (asClientSeesIt.maxResultBytes ("tc_7")));
+    }
+
     // ---- G8 server tools / unknown ---------------------------------------------------------------------------------------
     {
         auto m = run (ex, "look", call ("look", R"({"what":"maps","plugins":["x"]})"));

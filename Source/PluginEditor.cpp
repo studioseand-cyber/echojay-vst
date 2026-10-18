@@ -24887,9 +24887,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     // another road, and a disagreement between them is logged rather than painted,
                     // because a card measured at one width and drawn at another is the fault this
                     // file's neighbours record twice.
-                    if (maxBubbleW - 20 >= 220 && agentRowWidth() != maxBubbleW - 20)
+                    // NO EXCUSE FOR THE NARROW CASE (18 Oct 2026): this used to skip the check when
+                    // maxBubbleW - 20 < 220, which is the only width at which the old floor could
+                    // drift - so the diagnostic was silent in the one case it existed for.
+                    if (agentRowWidth() > maxBubbleW - 20)
                         EchoJay_NSLog(("EJAgentRow: WIDTH DRIFT rowWidth=" + juce::String(agentRowWidth())
-                                       + " maxBubbleW-20=" + juce::String(maxBubbleW - 20)).toRawUTF8());
+                                       + " is WIDER than the column's " + juce::String(maxBubbleW - 20)
+                                       + " - the card's text will be clipped at the right edge").toRawUTF8());
                     const juce::Rectangle<int> runR(
                         bubbleX + 10,
                         drawY + bubbleH + chainAreaH + gainAreaH + editAreaH + altAreaH + figureAreaH + 4,
@@ -32508,12 +32512,22 @@ int EchoJayEditor::agentRowWidth() const
 {
     const int chatAvatarReserve = 32, avatarSz = 24;
     const int w = (chatScroll.getWidth() + chatAvatarReserve + 2) - avatarSz - 24 - 20;
-    // A FLOOR, so the row can always be LAID OUT even when the chat column is not on screen. The rig
-    // presses the row's controls through the same layout the paint uses, and a zero width would make
-    // every control "not there" rather than "not visible" - two different answers, and the rig is built
-    // on telling them apart. Nothing is painted at this width: the paint pass only draws inside the
-    // bubble it measured.
-    return juce::jmax (220, w);
+    // ---- THE FLOOR IS FOR HAVING NO COLUMN, NOT FOR HAVING A NARROW ONE (18 Oct 2026) ----------
+    //
+    // Sean, in Logic: *"the card's copy is cut off mid-word on long answers."*  This returned
+    // jmax(220, w), and the comment under it claimed "nothing is painted at this width: the paint
+    // pass only draws inside the bubble it measured". That is not what the paint does - it builds the
+    // card's rect AT THIS WIDTH (see runR in paint()) and lays the text out to match. So in a column
+    // narrower than 220 - a Link window's chat, which is where he was - the card was laid out 220
+    // wide, drawn from the bubble's left edge, and the right-hand end of every line fell outside the
+    // chat's clip region: text cut mid-word, exactly as he read it. The neighbouring WIDTH DRIFT
+    // check could not catch it either, because it excused itself on `maxBubbleW - 20 >= 220`, which
+    // is false in precisely the case that drifts.
+    //
+    // The floor now applies only when there is NO column to measure - the rig, which lays the row out
+    // with no window at all and needs the controls to have real rects. Any real column, however
+    // narrow, is the width the card is drawn into, so the layout and the paint agree by construction.
+    return w >= 80 ? w : 220;
 }
 
 int EchoJayEditor::agentCardHeight (const ChatMsg& msg) const
@@ -32633,9 +32647,10 @@ void EchoJayEditor::syncAgentRunMessage()
     // alone would wipe the closing line the bridge had just written. Same for the answers recorded
     // on a question's row.
     if (v.closing.isEmpty() && before.closing.isNotEmpty()) v.closing = before.closing;
-    for (auto& ns : v.steps)
-        for (const auto& os : before.steps)
-            if (os.id == ns.id && ns.answered.isEmpty() && os.answered.isNotEmpty()) ns.answered = os.answered;
+    // "You said" belongs to the ask it answered, by POSITION and id - the server reuses a tool id for
+    // two asks in one run (18 Oct 2026). The rule lives in carryAnswersForward; the home calls the
+    // same function.
+    carryAnswersForward (v, before);
     agentRunSession_ = v.sessionId;
     msg->agentData = juce::JSON::toString (toJson (v), true);
     // The snapshot rides on the processor's copy too, so it survives this window being destroyed -
@@ -32732,6 +32747,47 @@ void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, c
         v.closing = text;
         m->agentData = juce::JSON::toString (echojay::agentui::toJson (v), true);
         if (m->content.isEmpty()) m->content = text;
+
+        // ---- AND INTO THE CHAT RECORD, SO REOPENING THE CHAT SHOWS THE ANSWER ------------------
+        //
+        // Sean, 18 Oct, in Logic: *"my previous message 'what compressors do I have?' appeared above
+        // 'Add a compressor' WITHOUT its answer... A chat shows every message with its answer."*
+        //
+        // It did not carry over and it was not dropped by the next run: it was never written down.
+        // The GOAL is persisted (appendLocalUserBubble writes it to the workspace like any user
+        // turn), but a run's prose only ever reached ChatMsg::content and the processor's replay
+        // list - neither of which survives reopening a chat, because loadChatFromWorkspace rebuilds
+        // the transcript from the RECORD. So every finished run left a question with no answer under
+        // it, which is exactly what he read in the Kick's chat.
+        //
+        // Written ONCE, when the run is over, and not while it is live: a reload mid-run would
+        // otherwise show the stored prose AND re-open the row for the same run - the "shows twice"
+        // fault arriving from the other direction. The row is the live view; the record is what the
+        // chat holds afterwards, and an old build reads it as an ordinary assistant reply, which is
+        // the downgrade story ChatMsg::content has always had.
+        //
+        // THE CLOSING IS APPENDED ONLY WHEN IT IS NOT ALREADY THERE, and the thing that decides that
+        // is the view's own dropClosingIfItRepeatsTheOpening - the one function in this build that
+        // owns "are these the same sentence". Not a second rule beside it.
+        if (ed.currentChatId.isNotEmpty() && m->content.isNotEmpty())
+        {
+            auto decide = v;
+            decide.opening = m->content;
+            decide.dropClosingIfItRepeatsTheOpening();
+            const auto whole = decide.closing.isNotEmpty() ? (m->content + "\n\n" + decide.closing)
+                                                           : m->content;
+            if (ed.agentRecordedInChat_ == m->agentRunId && ed.agentRecordedText_.isNotEmpty())
+                ed.workspace.updateAssistantText (ed.currentChatId, ed.agentRecordedText_, whole);
+            else
+                ed.workspace.appendMessageToChat (ed.currentChatId, "assistant", whole,
+                                                  {}, {}, {}, {}, {}, {}, {});
+            ed.agentRecordedInChat_ = m->agentRunId;
+            ed.agentRecordedText_   = whole;
+            ed.workspace.requestMutationSync();
+            EchoJay_NSLog (("EJAgentRow: the run's answer is in chat " + ed.currentChatId
+                            + " now (" + juce::String (whole.length())
+                            + " chars) - a reopened chat shows it under the question").toRawUTF8());
+        }
     }
     // keep the processor's copy in step: that is the one the next window replays
     for (auto it = ed.processorRef.chatHistory.rbegin(); it != ed.processorRef.chatHistory.rend(); ++it)

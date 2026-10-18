@@ -510,7 +510,7 @@ juce::var ExecutorRead::inventoryVar (const juce::StringArray& names)
 }
 
 juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce::String& match,
-                                       int offset, int limit, juce::var notLoadable)
+                                       int offset, int limit, juce::var notLoadable, bool census)
 {
     juce::StringArray hit;
     if (match.isEmpty()) hit = all;
@@ -532,7 +532,10 @@ juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce:
 
     const int total = hit.size();
     const int off   = juce::jlimit (0, juce::jmax (0, total), offset);
-    const int lim    = juce::jlimit (1, kInventoryPageMax, limit <= 0 ? kInventoryPage : limit);
+    // B's FOR_A 76, ask 1: a census page is allowed to be the whole list. An ordinary page keeps the
+    // 200 it has always had, because an ordinary caller is still behind the server's own 8 KB trim.
+    const int lim    = juce::jlimit (1, census ? kInventoryCensusMax : kInventoryPageMax,
+                                     limit <= 0 ? kInventoryPage : limit);
 
     juce::Array<juce::var> arr;
     int returned = 0;
@@ -561,30 +564,55 @@ juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce:
     //     "357 of your plugins will not run here" without being sent 357 of anything;
     //   * and all of it added HERE, before the single 8 KB gate below, which is the actual bug: a
     //     field added after the gate is a field no gate measures.
+    //
+    // ---- AND ON A CENSUS PAGE, ALL OF THEM, BY NAME (18 Oct 2026, B's FOR_A 76 ask 2) -----------
+    //
+    // B: *"the pages name at most twelve and declare notLoadableTotal; on Sean's run they named none
+    // (total 180), so the census could only say '0 named that can't run - 180 plugins in all can't
+    // run here and the plugin does not say which are compressors'."*
+    //
+    // Named none of 180 is not bad luck, it is the page-scope test meeting the inventory's own rule:
+    // `names` is what can be OFFERED (getFilteredPlugins applies the withhold predicate), and a
+    // plugin that cannot run here is withheld - so it is never in the page the scope test checks
+    // against. The field could only ever have been empty on a real machine, and only the rig's one
+    // or two self-inflicted load failures ever appeared in it.
+    //
+    // So a census page sends the list WHOLE and unscoped, each entry with the name, the reason, and
+    // the TYPE the plugin actually knows from its own scan (the declared category and the format).
+    // The role - "is it a compressor" - is deliberately NOT guessed here: third-party roles are the
+    // server's to know from its maps, which is the rule roleOfBuiltin states at the top of this file.
+    // The category is what the plugin itself declares, which is a fact, not a classification.
     if (! notLoadable.isVoid())
     {
-        juce::Array<juce::var> onThisPage;
+        juce::Array<juce::var> listed;
         int totalBad = 0;
         if (auto* bad = notLoadable.getArray())
         {
             totalBad = bad->size();
             for (const auto& e : *bad)
             {
-                if (onThisPage.size() >= 12) break;
+                if (! census && listed.size() >= 12) break;
                 const auto nm = e.getProperty ("name", juce::var()).toString();
-                if (nm.isEmpty() || ! arr.contains (juce::var (nm))) continue;
+                if (nm.isEmpty()) continue;
+                if (! census && ! arr.contains (juce::var (nm))) continue;
                 auto* t = new juce::DynamicObject();
                 t->setProperty ("name", nm);
                 t->setProperty ("why", capped (e.getProperty ("why", juce::var()).toString(), 72));
-                onThisPage.add (juce::var (t));
+                const auto ty = e.getProperty ("type", juce::var()).toString();
+                if (ty.isNotEmpty()) t->setProperty ("type", capped (ty, 48));
+                listed.add (juce::var (t));
             }
         }
         if (totalBad > 0) o->setProperty ("notLoadableTotal", totalBad);
-        if (! onThisPage.isEmpty())
+        if (! listed.isEmpty())
         {
-            o->setProperty ("notLoadable", juce::var (onThisPage));
-            o->setProperty ("notLoadableNote", "these are on this page and cannot run here - say so "
-                                               "and offer a working alternative of the same role");
+            o->setProperty ("notLoadable", juce::var (listed));
+            o->setProperty ("notLoadableNote", census
+                ? juce::String ("every plugin installed here that cannot run, by name, with the type it "
+                                "declares - these are NOT in `names` (a plugin that cannot run is not "
+                                "offered), so count them separately")
+                : juce::String ("these are on this page and cannot run here - say so and offer a working "
+                                "alternative of the same role"));
         }
     }
 
@@ -593,7 +621,29 @@ juce::var ExecutorRead::inventoryPage (const juce::StringArray& all, const juce:
     // INSTALLED, with `truncated` saying the names were only a slice of it. look(list_tracks) uses `count` the
     // same way. So count stays the total: a server that reads it to answer "how many do I have" keeps getting
     // the honest answer, and `returned` is the new field for the length of this page.
-    auto v = fitUnder8K (juce::var (o));
+    // ---- THE GATE, OR THE CENSUS CEILING ---------------------------------------------------------
+    //
+    // An ordinary page goes through the 8 KB gate it always has. A census page does not: the step
+    // endpoint does not trim those (B's FOR_A 76), and fitUnder8K's trim is the wrong shape for one
+    // anyway - it HALVES the array, so `offset + returned` would stop describing the slice the server
+    // asked for. Instead the page is measured whole and names come off the END until it fits, which
+    // leaves offset/returned/hasMore true and lets the server simply ask for the next offset.
+    //
+    // The var is created BEFORE the loop on purpose: `o` is a raw DynamicObject* until a var owns it,
+    // and building a temporary var per iteration would hand it a reference count that drops to zero.
+    juce::var v;
+    if (census)
+    {
+        v = juce::var (o);                      // owns `o` from here; measured and mutated through both
+        int rounds = 0;
+        while (arr.size() > 1 && jsonBytes (v) > kCensusMaxBytes && ++rounds < 64)
+        {
+            arr.removeRange (juce::jmax (1, arr.size() * 9 / 10), arr.size());
+            o->setProperty ("names", juce::var (arr));
+        }
+    }
+    else
+        v = fitUnder8K (juce::var (o));
 
     // Derived AFTER the trim, from the array that actually survived it - fitUnder8K may halve `names` again on
     // a page of very long names, and a `returned`/`hasMore` computed before that would be a lie about the very
@@ -781,8 +831,21 @@ void ExecutorRead::look (const ToolCall& call, Done done)
         const int limit  = (int) argNumber (call, "limit",  (double) kInventoryPage);
         // MARKED, NOT HIDDEN (item 3) - and handed to inventoryPage so it is inside the 8 KB gate
         // rather than appended after it, which is the defect FOR_B §25 is about.
+        //
+        // THE CENSUS (18 Oct 2026, B's FOR_A 76): the server's own inventory sweep stamps its calls
+        // `tc_census_<n>` and does not trim their answers at 8 KB, so those - and only those - are
+        // allowed the whole list and the whole cannot-run list. One marker, read the same way on both
+        // sides; every other caller's bytes are exactly what they were.
+        const bool census = isCensusCallId (call.id);
         auto page = inventoryPage (names, match.trim(), offset, limit,
-                                   src_.notLoadable ? src_.notLoadable() : juce::var());
+                                   src_.notLoadable ? src_.notLoadable() : juce::var(), census);
+        if (census)
+            EchoJay_NSLog (("EJAgent: census page for " + call.id + " - asked limit=" + juce::String (limit)
+                            + " offset=" + juce::String (offset) + ", returned "
+                            + page.getProperty ("returned", juce::var()).toString() + " of "
+                            + page.getProperty ("total", juce::var()).toString() + " name(s), "
+                            + page.getProperty ("notLoadableTotal", juce::var()).toString()
+                            + " cannot-run named, " + juce::String (jsonBytes (page)) + " bytes").toRawUTF8());
         // A filter that matched nothing is a RESULT, not a failure - "you have no de-essers" is an answer the
         // agent can act on, and a failure here would send it round again on the same question.
         done (ToolOutcome::success (page));
@@ -1341,12 +1404,19 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     s.notLoadable = [p] () -> juce::var
     {
         juce::Array<juce::var> out;
-        auto add = [&out] (const juce::String& name, const juce::String& why)
+        // ---- WITH THE TYPE IT DECLARES (18 Oct 2026, B's FOR_A 76 ask 2) ------------------------
+        // B could count none of Sean's 180 per type, because a name and a reason do not say what a
+        // plugin is. `type` is the plugin's OWN declared category and format from the scan the host
+        // already holds - a fact. Whether a "Dynamics" plugin is the compressor the user asked for
+        // stays the server's call, from its maps.
+        auto add = [&out, p] (const juce::String& name, const juce::String& why)
         {
             auto* o = new juce::DynamicObject();
             o->setProperty ("name", name);
             o->setProperty ("loadable", false);
             o->setProperty ("why", why);
+            const auto ty = p->getChainHost().scannedTypeNamed (name);
+            if (ty.isNotEmpty()) o->setProperty ("type", ty);
             out.add (juce::var (o));
         };
         for (const auto& e : p->getChainHost().installedButCannotLoad())

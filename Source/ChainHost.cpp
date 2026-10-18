@@ -201,6 +201,23 @@ std::vector<std::pair<juce::String, juce::String>> ChainHost::installedButCannot
     return out;
 }
 
+juce::String ChainHost::scannedTypeNamed (const juce::String& name) const
+{
+    const auto want = name.trim();
+    if (want.isEmpty()) return {};
+    std::lock_guard<std::mutex> lock (pluginsMutex_);
+    for (const auto& d : knownPlugins_.getTypes())
+    {
+        if (! d.name.trim().equalsIgnoreCase (want)) continue;
+        const auto cat = d.category.trim();
+        const auto fmt = d.pluginFormatName.trim();
+        if (cat.isEmpty() && fmt.isEmpty()) return {};
+        if (cat.isEmpty()) return "(" + fmt + ")";
+        return fmt.isEmpty() ? cat : (cat + " (" + fmt + ")");
+    }
+    return {};
+}
+
 juce::String ChainHost::loadFailureReasonFor(const juce::String& name)
 {
     const auto f = getLoadFailedFile();

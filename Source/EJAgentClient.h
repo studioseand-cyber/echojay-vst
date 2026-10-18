@@ -114,6 +114,10 @@ public:
     void dismiss();              // Done/Stopped/Failed -> Idle (the panel hides)
     bool isActive() const noexcept;      // a live session (not Idle/Done/Stopped/Failed)
     bool hasSession() const noexcept;    // anything to show, finished or not
+    /** Which run this is: 0 before the first, then +1 per start(). A retry does NOT move it (the same
+        run), and neither does a stop. Read by EJAgentHome to tell a NEW run from the one it is holding
+        before the server has given it a sessionId - see runsStarted_. */
+    int  runSerial() const noexcept { return runsStarted_; }
     // A typed message while a session is live: answers a pending ask (true = consumed) or is refused (true, with a
     // status line) so the send path does not start a second conversation under a running agent.
     bool interceptTyped (const juce::String& typed);
@@ -270,6 +274,12 @@ private:
 
     State state_ = State::Idle;
     int   generation_ = 0;                        // bumped on start() and stop(); stale completions are ignored
+    // ---- WHICH RUN IS THIS (18 Oct 2026, Sean in Logic) --------------------------------------------
+    // Bumped ONCE per start() and never by anything else, so "is this a new run" has an answer from
+    // the instant Send is pressed. generation_ is not that answer - it also moves on stop() and on
+    // retry(), and a retry is the SAME run - and the sessionId is not either: it is empty until the
+    // server replies, which is the window in which the row and the record are created.
+    int   runsStarted_ = 0;
     std::shared_ptr<std::atomic<bool>> alive_ { std::make_shared<std::atomic<bool>> (true) };
     std::shared_ptr<Cancel> cancel_;
 

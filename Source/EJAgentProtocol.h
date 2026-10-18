@@ -449,6 +449,30 @@ inline juce::var askAnswerVar (const juce::String& text, bool typed)
 // author for the words), else a short derived line so no row is ever blank.
 inline juce::String describeCall (const ToolCall& c)
 {
+    // ---- A QUESTION'S LINE IS THE QUESTION (18 Oct 2026, Sean in Logic) ------------------------
+    //
+    // *"The card shows a bare 'ask' next to the spinner. Show the question or nothing."*  It was not
+    // a placeholder: his log has the server's own summary for that call, and the summary is the word
+    //
+    //     frame tool_call id=tc_pick_look_ask name=talk approval=free mode=ask "ask"
+    //
+    // The summary shortcut below is right for every other call - the server describes its own work
+    // better than we can guess - but for a talk that carries a QUESTION the question is the thing the
+    // user is being asked to read, and it is right there in the args. So it wins, and a summary that
+    // is only the tool's own verb ("ask", "talk") never reaches the card at all.
+    if (c.name == "talk")
+    {
+        const auto ask = talkAskOf (c);
+        if (ask.present && ask.question.trim().isNotEmpty()) return ask.question.trim();
+        const auto bare = c.summary.trim().toLowerCase();
+        if (bare == "ask" || bare == "talk" || bare == "question")
+        {
+            // Nothing worth a line: the text if there is any, otherwise empty - and empty is the
+            // honest answer, because a row that says "ask" tells the reader nothing they can use.
+            const auto text = argString (c, "text").trim();
+            return text;
+        }
+    }
     if (c.summary.isNotEmpty()) return c.summary;
     if (isPlaybackWait (c))
         return "Wait for playback (" + juce::String ((int) playbackMinSeconds (c)) + " s)";

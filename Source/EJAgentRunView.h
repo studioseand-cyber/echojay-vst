@@ -350,9 +350,14 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     for (const auto& s : c.steps())
     {
         ++i;
+        const bool askHere = askNow && i == lastIdx;
         RunStep r;
         r.id          = s.id;
-        r.label       = s.label.isNotEmpty() ? s.label : juce::String ("step");
+        // "Show the question or nothing" (Sean, 18 Oct): a pending ask whose call said nothing worth a
+        // line shows its chips and its hint and no label, rather than the word "step" - which is the
+        // same empty noise as the bare "ask" describeCall no longer passes on.
+        r.label       = s.label.isNotEmpty() ? s.label
+                                             : (askHere ? juce::String() : juce::String ("step"));
         r.detail      = s.detail;
         r.modelDetail = s.modelDetail;
         r.status      = (int) s.status;
@@ -362,7 +367,6 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         r.hasDetails  = s.status == St::Failed && s.modelDetail.isNotEmpty() && s.modelDetail != s.detail;
         r.expanded    = expanded.contains (s.id);
         r.applySkip   = s.status == St::AwaitingApproval && c.state() == S::AwaitingApproval;
-        const bool askHere = askNow && i == lastIdx;
         if (askHere) r.chips = c.pendingAsk().labels;
         r.right       = rightWordFor (s, askHere);
         if (s.status == St::Done || s.status == St::Undone) ++v.changeCount;
@@ -833,6 +837,60 @@ inline void drawRunGlyph (juce::Graphics& g, juce::Rectangle<int> r, int status,
             g.fillRect (c.reduced (2.5f));
             break;
     }
+}
+
+/** Carry what the user ANSWERED from the previous snapshot of this run onto the rebuilt one.
+
+    18 Oct 2026, Sean in Logic: *"On a second ask, 'You said: cl1b' appears under the NEW pending ask
+    before I've answered it."*  Both callers - the window's row and the home's record - matched the two
+    snapshots BY STEP ID, and his log has the server using one id for two asks in the same run:
+
+        12:05:11  frame tool_call id=tc_pick_look_ask name=talk ... "ask"
+        12:06:38  frame tool_call id=tc_pick_look_ask name=talk ... "ask"
+
+    So the second ask found the first one's record and inherited its answer. An id the server reuses is
+    not an identity; the POSITION in an append-only list is. Both are required - same index AND same id
+    - so a list that ever did shift carries nothing rather than the wrong thing.
+
+    It is one function because it was two copies of one rule, in two files, and a rule in two places is
+    a rule that gets fixed in one. */
+inline void carryAnswersForward (RunView& now, const RunView& before)
+{
+    for (size_t i = 0; i < now.steps.size() && i < before.steps.size(); ++i)
+        if (now.steps[i].id == before.steps[i].id
+            && now.steps[i].answered.isEmpty() && before.steps[i].answered.isNotEmpty())
+            now.steps[i].answered = before.steps[i].answered;
+}
+
+/** The invariants a laid-out RUN must satisfy; "" when every rect passes, else the first violation.
+
+    18 Oct 2026. checkRows (EJAgentPanelLayout.h) has covered the STEP rows since the panel existed,
+    and nothing has ever checked the rest of the card - so the closing sentence, the notice and the
+    ask question could each have been given a rect shorter than their text with no test able to see
+    it. Sean read a cut-off closing in Logic and the cause turned out to be the row's WIDTH rather
+    than its height, which is the other half of the same blindness: the width the card is laid out at
+    must be the width it is drawn into, so a leg passes BOTH and compares them. */
+inline juce::String checkRun (const RunView& v, const RunRects& L, int x0, int width)
+{
+    if (v.empty()) return L.totalHeight == 0 ? juce::String() : "an empty run laid out to a height";
+    auto fits = [&] (const juce::Rectangle<int>& r, const juce::String& text, const juce::Font& f,
+                     const char* what) -> juce::String
+    {
+        if (text.isEmpty()) return {};
+        if (r.isEmpty()) return juce::String (what) + ": text with no rect";
+        if (r.getX() < x0 || r.getRight() > x0 + width) return juce::String (what) + ": leaves the column";
+        if (r.getHeight() < wrappedTextHeight (text, f, r.getWidth())) return juce::String (what) + ": truncated";
+        return {};
+    };
+    if (auto why = fits (L.closing,     v.closing,     bodyFont(),   "closing");     why.isNotEmpty()) return why;
+    if (auto why = fits (L.askQuestion, v.askQuestion, bodyFont(),   "ask");         why.isNotEmpty()) return why;
+    if (auto why = fits (L.notice,      v.notice,      detailFont(), "notice");      why.isNotEmpty()) return why;
+    if (auto why = fits (L.askHint,     v.askTypeHint, detailFont(), "ask hint");    why.isNotEmpty()) return why;
+    for (const auto& z : L.zones)
+        if (! z.rect.isEmpty() && (z.rect.getX() < x0 || z.rect.getRight() > x0 + width))
+            return "a control leaves the column";
+    if (L.totalHeight <= 0) return "a run with content laid out to no height";
+    return {};
 }
 
 } // namespace echojay::agentui

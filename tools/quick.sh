@@ -62,7 +62,16 @@ if [ "$GUARDS" = "none" ]; then
   say "(skipped by request)"
   GRC=0
 else
-  cmake --build build-guards -j 4 --target $(echo "$GUARDS" | tr '|' ' ') >> "$LOG" 2>&1
+  # ---- A GUARD THAT DID NOT COMPILE IS NOT A GUARD THAT PASSED (18 Oct 2026) -----------------
+  # The build's exit code was dropped on the floor here, so a harness with a compile error left the
+  # PREVIOUS binary in build-guards/guards and ctest ran that - and the summary said "100% tests
+  # passed out of 2" over a leg group that had never been built. A stale green is worse than a red.
+  if ! cmake --build build-guards -j 4 --target $(echo "$GUARDS" | tr '|' ' ') >> "$LOG" 2>&1; then
+    say "GUARD BUILD FAILED - the binaries in build-guards are STALE, so nothing below would be"
+    say "evidence. Not running them. The errors:"
+    grep -E "error:" "$LOG" | tail -8 | tee -a "$LOG"
+    say "elapsed: $(mins $(( $(date +%s) - T0 )))"; exit 1
+  fi
   ( cd build-guards && ctest -R "$GUARDS" --output-on-failure ) >> "$LOG" 2>&1
   GRC=$?
   grep -E "tests passed|The following tests FAILED" "$LOG" | tail -2 | tee -a "$LOG"

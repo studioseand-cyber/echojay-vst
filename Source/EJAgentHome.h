@@ -108,6 +108,9 @@ public:
         closing shows twice: as a separate chat bubble AND inside the run message." One key, from
         here, whoever asks first. */
     juce::String ensureRunKey();
+    /** TRUE once per run, for whichever of the two minting sites asks first. The run SERIAL, never the
+        sessionId - which is empty in exactly the window where a row and a record are created. */
+    bool newRunSinceLastKey();
     juce::String sessionId() const { return client_ != nullptr ? client_->sessionId() : juce::String(); }
     /** Whether a build is waiting for a window right now - published to the rig. */
     bool buildParked() const noexcept { return parkedBuild_ != nullptr; }
@@ -127,6 +130,10 @@ private:
     std::unique_ptr<EJAgentClient> client_;
     std::function<void (const juce::String&, const juce::String&)> buildRoad_;
     juce::String runKey_, lastSession_;
+    // 18 Oct 2026: which run runKey_ belongs to. The sessionId could not answer that at the moment a
+    // run starts (it is empty until the server replies), so a second run adopted the first one's
+    // record - see newRunCheck().
+    int lastSerial_ = 0;
     /** THE HISTORY'S DEPTH WHEN THIS RUN STARTED (16 Oct 2026). "Undo all" means "put back
         everything this run did", which is a walk back to a point - and the point only exists if
         somebody wrote it down when the run began. -1 = no run has started since this object did. */

@@ -530,14 +530,39 @@ juce::Array<juce::var> EJAgentHome::takeParkedLines()
     return out;
 }
 
+// ---- IS THIS A NEW RUN? (18 Oct 2026, Sean in Logic) -------------------------------------------
+//
+// *"The closing shows twice (a bubble above the ASK label and again inside the card)... On a second
+// ask, 'You said: cl1b' appears under the NEW pending ask."*  His log, 12:05:
+//
+//     12:05:07  EJAgent: START goal="Add a compressor"
+//     12:05:07  EJAgentRow: opened run row #2 key=b2ae1f1b-...      <- run #1's key
+//     12:05:08  EJAgentHome: opened the run's record, key=136dc0a6-...
+//
+// Run #2's row asked for a key one second before the server answered /start. BOTH places that mint
+// one tested "is this a new run" by the sessionId MOVING - and at that moment the sessionId is empty,
+// because start() clears it and the first frame had not arrived. So the test could not fire, the new
+// row was handed run #1's key, and syncAgentRunMessage then correctly adopted the record under that
+// key: run #1's closing became run #2's bubble, and run #1's recorded answers came with it.
+//
+// The sessionId is the wrong fact: it arrives AFTER the window in which both the row and the record
+// are created. runSerial() is +1 per start() and nothing else, so it is already different by the time
+// anything asks. One test, one function, called by both minting sites - they cannot disagree again.
+bool EJAgentHome::newRunSinceLastKey()
+{
+    if (client_ == nullptr) return false;
+    const int serial = client_->runSerial();
+    if (serial == lastSerial_) return false;
+    lastSerial_ = serial;
+    return true;
+}
+
 juce::String EJAgentHome::ensureRunKey()
 {
     using namespace echojay::agentui;
     if (client_ == nullptr) return runKey_;
     const auto sid = client_->sessionId();
-    // The same new-run test writeSnapshot makes, so the two cannot disagree about whether this is a
-    // new run: a sessionId that moved means the previous row is finished with.
-    if (sid.isNotEmpty() && lastSession_.isNotEmpty() && sid != lastSession_) runKey_.clear();
+    if (newRunSinceLastKey()) runKey_.clear();
     if (runKey_.isEmpty())
     {
         runKey_ = juce::Uuid().toDashedString();
@@ -559,10 +584,10 @@ void EJAgentHome::writeSnapshot()
     if (client_ == nullptr || ! client_->hasSession()) return;
     const auto sid = client_->sessionId();
 
-    // Which row is this? The sessionId moving means a NEW run, and a new run gets a new row - the
-    // same rule the editor's row follows, for the same reason: without it the next run would be
-    // written over the last one's record and a whole run would vanish from the transcript.
-    if (sid.isNotEmpty() && lastSession_.isNotEmpty() && sid != lastSession_) runKey_.clear();
+    // Which row is this? A NEW run gets a new row - without it the next run would be written over the
+    // last one's record and a whole run would vanish from the transcript. By the run SERIAL, not by
+    // the sessionId: see newRunSinceLastKey above for the hour that rule cost.
+    if (newRunSinceLastKey()) runKey_.clear();
     if (runKey_.isEmpty())
     {
         runKey_ = juce::Uuid().toDashedString();
@@ -586,9 +611,7 @@ void EJAgentHome::writeSnapshot()
         // NEVER LOSE A SENTENCE WE WERE GIVEN: a stopped run has no doneSummary, and the answers
         // recorded on a question's row are not in the client's model at all.
         if (v.closing.isEmpty() && prev.closing.isNotEmpty()) v.closing = prev.closing;
-        for (auto& ns : v.steps)
-            for (const auto& os : prev.steps)
-                if (os.id == ns.id && ns.answered.isEmpty() && os.answered.isNotEmpty()) ns.answered = os.answered;
+        carryAnswersForward (v, prev);   // by position and id, never the id alone (18 Oct 2026)
         e.agentJson = juce::JSON::toString (toJson (v), true);
         return;
     }
