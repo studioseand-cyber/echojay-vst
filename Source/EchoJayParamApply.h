@@ -148,6 +148,27 @@ inline juce::String semanticUnit (const juce::String& key)
     becomes one, and a silent conversion between unrelated units would be a worse fault than the
     one this fixes. 1.0 when the units agree, or when either side does not say what it is - which
     is every map written before today, so nothing that worked moves. */
+/** ---- IS THIS CONTROL A TIME? (18 Oct 2026, 19:18) ----------------------------------------
+    His real CL 1B map entry declares `unit: None` - the rung labels "0.0 ... 10.0" are the only
+    statement it makes about units, and `kind: position`. My first elimination rule asked the map
+    what unit it was in and got no answer, so it never fired; the guard leg passed because I had
+    declared `unit: "s"` on my fixture, which is a richer map than the one he has.
+
+    So the question is asked of the CONTROL'S NAME, from a closed list, which is also how a person
+    would decide. Narrow on purpose: a 1000x re-reading is a TIME convention (ms against s), and on
+    a frequency or a gain the same arithmetic would be a guess with a plausible answer - the worst
+    kind. Anything not on this list is never re-read. */
+inline bool isTimeControlName (const juce::String& name)
+{
+    const auto n = name.trim().toLowerCase();
+    for (const char* k : { "release", "attack", "decay", "hold", "predelay", "pre-delay",
+                           "lookahead", "look-ahead", "time", "rise", "fall" })
+        if (n == k || n.startsWith (juce::String (k) + " ") || n.endsWith (juce::String (" ") + k)
+            || n.contains (juce::String (k) + "_") || n.startsWith (juce::String (k) + "_"))
+            return true;
+    return false;
+}
+
 inline double unitFactor (const juce::String& from, const juce::String& to)
 {
     const auto f = from.trim().toLowerCase(), t = to.trim().toLowerCase();
@@ -954,6 +975,55 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                 const auto ctlUnit = mapEntry.getProperty ("unit", juce::var()).toString();
                 const auto askUnit = semanticUnit (semantic);     // applyOne has no override; the key says it
                 bool converted = false;
+                // ---- WHEN THE ASK DOES NOT SAY WHAT UNIT IT IS IN (18 Oct 2026, 18:36) ------------
+                //
+                // His second CL 1B run: `Release: 100` was refused as "a bare index (100)". Two facts
+                // from the log explain it and neither is the one my first cut assumed. The ask came
+                // through `controls`, keyed by the plugin's own CONTROL NAME ("Release"), so there is
+                // no _ms suffix and semanticUnit answers nothing - no conversion fired. And the CL 1B's
+                // release ladder is 0.0 to 10.0 in 0.1 steps, which is 101 rungs, so 100 fell inside
+                // 1..steps and looked like an index.
+                //
+                // The rule here is ELIMINATION, not a guess: 100 is OUT OF RANGE as a value in this
+                // control's own unit (the rungs stop at 10.0) and is exactly a rung when read as the
+                // time unit one step finer (0.1 s). One reading is impossible, the other is exact, so
+                // the number cannot have meant the first. Only applied when the map declares a TIME
+                // unit, only when the asked number is unreachable as-is, and always said out loud.
+                double rungLo = 1.0e18, rungHi = -1.0e18;
+                for (const auto& t0 : positions)
+                {
+                    int n = 0; while (n < t0.length() && juce::String ("0123456789.-+").containsChar (t0[n])) ++n;
+                    const auto lead = t0.substring (0, n);
+                    if (! lead.containsAnyOf ("0123456789")) continue;
+                    const double v = (double) lead.getFloatValue();
+                    rungLo = juce::jmin (rungLo, v); rungHi = juce::jmax (rungHi, v);
+                }
+                // THE ENTRY MAY DECLARE NO UNIT AT ALL, and his does (`unit: None`, kind
+                // position): the rungs are the statement. So the gate is the control's NAME being a
+                // time, and a declared unit - when there is one - not contradicting that.
+                const auto cu = ctlUnit.trim().toLowerCase();
+                const bool timeish = isTimeControlName (semantic)
+                                  && (cu.isEmpty() || cu == "s" || cu == "ms" || cu == "position");
+                if (askUnit.isEmpty() && timeish && rungHi > rungLo
+                    && ((double) pos < rungLo || (double) pos > rungHi))
+                {
+                    const double k = cu == "ms" ? 1000.0 : 0.001;   // seconds unless the map says ms
+                    if (k != 0.0)
+                    {
+                        const double asFiner = (double) pos * k;
+                        if (asFiner >= rungLo && asFiner <= rungHi)
+                        {
+                            EchoJay_NSLog (("EJParamApply: \"" + semantic + "\" asked " + juce::String (pos, 3)
+                                            + " with no unit; this control's rungs are " + juce::String (rungLo, 2)
+                                            + " to " + juce::String (rungHi, 2) + " " + ctlUnit
+                                            + ", where that is unreachable - reading it as "
+                                            + juce::String (asFiner, 3) + " " + ctlUnit
+                                            + ", the only representable meaning").toRawUTF8());
+                            pos = (float) asFiner;
+                            converted = true;
+                        }
+                    }
+                }
                 if (const double k = unitFactor (askUnit, ctlUnit); k != 0.0 && k != 1.0)
                 {
                     converted = true;

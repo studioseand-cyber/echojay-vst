@@ -498,9 +498,61 @@ void LinkProcessor::publishRackSidecar()
                            || (pgUser  != lastPublishedPreGainUserSet_)
                            || (pgKnown != lastPublishedPreGainInputKnown_);
 
-    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved)
+    // ---- ITEM 13, THE HALF PHASE A MISSED (18 Oct 2026, 18:37) --------------------------------
+    //
+    // Sean: *"check gr right after 'Got it, you can stop' failed with 'I have no fresh reading from
+    // that track yet'."*  The log says why, and it is not the freshness window: the measurements were
+    // 15 s old while playback had ended 7 s earlier, because THIS GATE is revision-gated - the
+    // sidecar is written when the RACK changes, and playing a song changes no slots at all. So phase
+    // A published live measurements into a file nothing republished while the audio ran.
+    //
+    // Widening the staleness window to cover that would be the exact fault his 15 Oct ruling names:
+    // quoting a window from before the section he just played. So the LINK republishes while it is
+    // measuring - bounded to kMeterPublishMs, and only while there is something to measure (audio
+    // heard and a slot with a reading), so a quiet rack is as silent on disk as it ever was.
+    // ---- AND THE TRIGGER IS THE DATA (18 Oct 2026, 19:19 - the second miss) -------------------
+    //
+    // My first cut asked the transport ("has this rack heard audio") and said nothing in the log, so
+    // when it did not fire there was nothing to read: his measurements were still 10 s old at the
+    // moment check gr ran. The comment forty lines above this one says exactly why that was the
+    // wrong instrument - "the authoritative trigger is the DATA ... unlike a notification it cannot
+    // be silently defeated" - and a meter is data.
+    //
+    // So: a cheap digest of what the slots are MEASURING. When it moves, the sidecar is republished,
+    // bounded to kMeterPublishMs. No transport question, no heardSeconds, and a line in the log the
+    // first time and then at most once a second, so the next failure is readable instead of inferred.
+    bool metersMoved = false;
+    {
+        double digest = 0.0;
+        for (int i = 0; i < chainHost.getNumSlots(); ++i)
+        {
+            const auto pic = chainHost.slotPicture (i);
+            if (pic.grKnown)   digest += pic.grHeldDb * 7.0 + pic.grLoudestDb * 13.0 + (double) pic.grWindowFrames;
+            if (pic.hasPeaks()) digest += pic.outTpDb * 3.0 + pic.inTpDb;
+        }
+        if (std::abs (digest - lastPublishedMeterDigest_) > 1.0e-6
+            && (nowMs - lastMeterPublishMs_) >= kMeterPublishMs)
+        {
+            metersMoved = true;
+            lastPublishedMeterDigest_ = digest;
+        }
+    }
+    if (metersMoved)
+    {
+        lastMeterPublishMs_ = nowMs;
+        if (nowMs - lastMeterLogMs_ >= 1000.0)
+        {
+            lastMeterLogMs_ = nowMs;
+            EchoJay_NSLog ("EJRackSidecar: republishing because the meters moved - this Link's "
+                           "measurements go out while it is measuring, not only when the rack "
+                           "changes (item 13, 18 Oct)");
+        }
+    }
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved && !metersMoved)
         return;
-    if (!revMoved && !preGainMoved)
+    // A meter-driven publish is not a gesture to coalesce: its whole point is to be RECENT, and the
+    // settle below would hold it back by exactly the interval that made the reading stale.
+    if (!revMoved && !preGainMoved && !metersMoved)
     {
         // A settle test ALONE would starve under sustained automation: a host
         // automating an EQ emits changes every block, so the "last change"

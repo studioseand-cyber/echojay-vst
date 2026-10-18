@@ -79,6 +79,20 @@ struct EchoJayTabStripTestAccess
     static juce::String banner (EchoJayEditor& e) { e.refreshChannelBannerCache(); return e.chanBannerText_; }
     /** The agent's road in: the client emits the goal as a "user" line and the bridge lands here. */
     static void agentUserLine (EchoJayEditor& e, const juce::String& t) { e.appendLocalUserBubble (t); }
+    static int onScreen (EchoJayEditor& e, const juce::String& text)
+    {
+        int n = 0;
+        for (const auto& m : e.chatMessages) if (m.role == "user" && m.content == text) ++n;
+        return n;
+    }
+    static int inStore (EchoJayEditor& e, const juce::String& id, const juce::String& text)
+    {
+        auto* c = e.workspace.findChatById (id);
+        if (c == nullptr) return -1;
+        int n = 0;
+        for (const auto& m : c->messages) if (m.role == "user" && m.content == text) ++n;
+        return n;
+    }
     static void clearChat (EchoJayEditor& e) { e.currentChatId = {}; e.chatMessages.clear(); }
     static void pend (EchoJayProcessor& p, const juce::String& uid) { p.pendingChannelUid = uid; }
     static juce::String channelLabel (EchoJayEditor& e, const juce::String& uid) { return e.channelDisplayLabel (uid); }
@@ -386,6 +400,49 @@ int main()
                "SP5h ...and the banner says which channel the chat is working on (RED as it stood: "
                "\"no Working on Link banner\")",
                A::banner (*ed).isEmpty() ? juce::String ("(no banner)") : A::banner (*ed));
+    }
+
+    // ---- DUP (18 Oct 2026, 18:35): "MY 'Add a compressor' SHOWS TWICE (sent once)" ------------
+    //
+    // His log settles the half that matters first: ONE `START goal="Add a compressor"` and ONE
+    // POST /api/agent/start in that session, so B saw one request and the chat is drawing two. In
+    // agent mode the composer's own send path returns before it appends anything (hook E5), so the
+    // bubble has exactly one author: the client emits the goal as a "user" transcript line and the
+    // bridge lands it in appendLocalUserBubble, which writes BOTH the on-screen row and the store's.
+    // That is one of each - and then a reload has to put them back together without making two.
+    std::printf ("\n-- DUP: one send, one bubble, before and after a reload --\n");
+    {
+        proc.setProjectName ("test project nafe aitch"); pumpMs (20);
+        A::selectRack (*ed, kickUid); pumpMs (30);
+        A::newChat (*ed); pumpMs (30);
+        const juce::String goal = "Add a compressor";
+        A::agentUserLine (*ed, goal); pumpMs (60);
+        const auto chat = A::chatId (*ed);
+        check (A::onScreen (*ed, goal) == 1,
+               "DUP1 the agent's road draws the goal ONCE on screen",
+               juce::String (A::onScreen (*ed, goal)) + " on screen");
+        check (A::inStore (*ed, chat, goal) == 1,
+               "DUP1b ...and writes it once to the chat's record",
+               juce::String (A::inStore (*ed, chat, goal)) + " in the record");
+        // THE RELOAD, which is where a store copy and a held copy meet. His session reloads this
+        // chat constantly: openChannelByUid does it on every rack selection.
+        A::openChat (*ed, chat); pumpMs (60);
+        check (A::onScreen (*ed, goal) == 1,
+               "DUP2 ...and after a reload it is STILL once - the store's copy and the processor's "
+               "held copy are the same row, not two (RED as it stood: \"my 'Add a compressor' shows "
+               "twice in the chat, sent once\")",
+               juce::String (A::onScreen (*ed, goal)) + " on screen");
+        check (A::inStore (*ed, chat, goal) == 1,
+               "DUP2b ...and the record still holds one",
+               juce::String (A::inStore (*ed, chat, goal)) + " in the record");
+        // and twice more, because his session switches racks repeatedly
+        A::selectRack (*ed, voxUid); pumpMs (30);
+        A::selectRack (*ed, kickUid); pumpMs (30);
+        A::openChat (*ed, chat); pumpMs (60);
+        check (A::onScreen (*ed, goal) == 1 && A::inStore (*ed, chat, goal) == 1,
+               "DUP3 ...and it does not grow a copy per switch",
+               juce::String (A::onScreen (*ed, goal)) + " on screen, "
+                 + juce::String (A::inStore (*ed, chat, goal)) + " in the record");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

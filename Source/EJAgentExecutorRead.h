@@ -286,7 +286,11 @@ public:
         a tool call. Older than this is not a measurement of what is playing now, and his ruling is
         that a figure nobody can check is worse than no figure. Deliberately a named constant: the
         number is a claim about freshness and belongs where it can be argued with. */
-    static constexpr juce::int64 kLinkMeterStaleMs = 4000;
+    // 18 Oct 2026, after his 18:37 run: the Link republishes every 500 ms while it is measuring, and
+    // a tool round trip adds its own second or two - so a bound of 6 s covers "the reading is from the
+    // section he just played" with room for one missed publish, and still refuses a window from
+    // before it. The number is a claim about freshness and belongs where it can be argued with.
+    static constexpr juce::int64 kLinkMeterStaleMs = 6000;
     static constexpr int kMaxResultBytes = 8192;
     static constexpr int kMaxSettingsChars = 160;
     static constexpr int kMaxBands = 6;

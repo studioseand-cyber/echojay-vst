@@ -814,6 +814,14 @@ private:
     // toggle (linkOn + updateShmState + dirty-mark).
     int  lastAppliedCtrlSeq_ = 0;
     juce::String lastPerSeqAckFile_;   // v9: the previous ctrl-ack-<id>-<seq>.json, removed on the next answer
+    /** ITEM 13 (18 Oct 2026): the sidecar also republishes while this Link is MEASURING, because
+        playing a song changes no slots and the rack-revision gate therefore never fired - which left
+        the main plugin reading a 15-second-old window and refusing it, correctly, as stale. Bounded
+        so a playing rack writes twice a second at most, and only while there is a reading to send. */
+    static constexpr double kMeterPublishMs = 500.0;
+    double lastMeterPublishMs_ = 0.0;
+    double lastMeterLogMs_     = 0.0;   // the line is said at most once a second
+    double lastPublishedMeterDigest_ = 0.0;   // what the slots were measuring at the last publish
     void pollControlCommand();
     /** ---- THE PLUGIN'S OWN WINDOW, OPENED WHERE THE PLUGIN LIVES (18 Oct 2026) --------------
         Sean, in Logic: *"the editor area said 'Logic owns that window - open EchoJay on

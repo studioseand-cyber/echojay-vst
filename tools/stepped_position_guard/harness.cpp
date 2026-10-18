@@ -503,6 +503,66 @@ int main()
         check (echojay::unitFactor ("", "ms") == 1.0 && echojay::unitFactor ("ms", "ms") == 1.0,
                "CL1B ...and a map that does not say what its unit is behaves exactly as it did");
 #endif
+        // ---- HIS SECOND RUN: THE ASK CAME THROUGH `controls`, SO IT DECLARED NO UNIT ------------
+        // 18:36: `Release: 100` on a 0.0-10.0 s ladder (101 rungs) was refused as "a bare index
+        // (100)". Keyed by the plugin's control NAME, there is no _ms to read, and 100 fell inside
+        // 1..101. The rule is elimination: 100 s is off this control, 0.1 s is a rung.
+        {
+            juce::StringArray tenths;
+            for (int k = 0; k <= 100; ++k) tenths.add (juce::String (k / 10.0, 1));
+            // HIS MAP, AS IT ACTUALLY IS (read out of param_maps.json, 18 Oct): kind position,
+            // steps 101, and NO declared unit - the rung labels are the only statement about units
+            // this entry makes. My first cut of this leg set unit:"s", which is a richer map than
+            // the one he has, and that is why it passed while his Logic kept refusing 100.
+            // `name` is the PLUGIN's own parameter, which on this mock is "Analog"; the SEMANTIC
+            // passed to applyOne is "Release", and that is what the time-name test reads - exactly
+            // as his map has a Release entry on a plugin whose parameter is called Release.
+            auto* e = new juce::DynamicObject();
+            e->setProperty ("name", "Analog"); e->setProperty ("index", 0);
+            e->setProperty ("kind", "position"); e->setProperty ("steps", tenths.size());
+            e->setProperty ("trust", "setread");
+            juce::Array<juce::var> pv; for (const auto& t : tenths) pv.add (t);
+            e->setProperty ("positions", pv);
+            const juce::var cl1bRelease (e);
+            const auto byName = echojay::applyOne (m, "Release", cl1bRelease, juce::var (100));
+            juce::ignoreUnused (byName);
+            check (byName.applied,
+                   "CL1B a control dialled by NAME (no _ms to read) whose number is unreachable in the "
+                   "control's own unit is read as the finer one - 100 is off a 0-10 s ladder, 0.1 s is a "
+                   "rung (RED as it stood: \"a bare index (100)\", because 100 fell inside 1..101)",
+                   show (byName));
+            check (byName.note.contains ("0.1") || byName.landedText.contains ("0.1"),
+                   "CL1B ...and it names the rung, so the reading it took is on the row",
+                   byName.note + " / \"" + byName.landedText + "\"");
+            // HIS 19:18 RUN, the same control with B's conversion in: Release 500.
+            const auto five00 = echojay::applyOne (m, "Release", cl1bRelease, juce::var (500));
+            check (five00.applied && (five00.note.contains ("0.5") || five00.landedText.contains ("0.5")),
+                   "CL1B 500 on that same ladder lands on 0.5 s - his 19:18 run, where the refusal read "
+                   "\"unknown position \\\"500\\\"\"", show (five00));
+            // AND AN AMBIGUOUS NUMBER IS STILL REFUSED: 5 is a legal value in seconds on this ladder,
+            // so nothing is eliminated and nothing is guessed.
+            const auto five = echojay::applyOne (m, "Release", cl1bRelease, juce::var (5));
+            check (five.applied && (five.note.contains ("5.0") || five.landedText.contains ("5.0")),
+                   "CL1B ...while a number that IS reachable as-is is taken as what it says (5 -> 5.0 s), "
+                   "never re-read as something finer", show (five));
+        }
+
+        {
+            // A CONTROL THAT IS NOT A TIME IS NEVER RE-READ. The same arithmetic on a frequency or a
+            // gain would be a guess with a plausible answer, which is the worst kind.
+            juce::StringArray hz;
+            for (int k = 2; k <= 20; ++k) hz.add (juce::String (k * 100));
+            auto* e = new juce::DynamicObject();
+            e->setProperty ("name", "Frequency"); e->setProperty ("index", 0);
+            e->setProperty ("kind", "position"); e->setProperty ("steps", hz.size());
+            juce::Array<juce::var> pv; for (const auto& t : hz) pv.add (t);
+            e->setProperty ("positions", pv);
+            const auto freq = echojay::applyOne (m, "Frequency", juce::var (e), juce::var (20000));
+            check (! freq.applied,
+                   "CL1B a FREQUENCY asked 20000 against 200-2000 is refused, not re-read as 20 - the "
+                   "1000x rule is a time convention and nothing else", show (freq));
+        }
+
         // AND THE REFUSAL SURVIVES where the ask is genuinely off this control
         const auto far = echojay::applyOne (m, "release_ms", mapEntry, juce::var (9000));
         check (! far.applied && far.note.contains ("unknown position"),
