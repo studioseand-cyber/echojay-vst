@@ -42,7 +42,12 @@ It runs the preflight first:
 - **If it refuses, nothing runs.** It says why. Fix that and run the same command again.
 
 It then starts the re-check and prints the plan:
-- **The steps (part 1):** preflight, followup, accuracy_gaps_drafts, accuracy_gaps, drafts.
+- **The steps (part 1):** preflight, followup, drafts, then the two accuracy-gap steps through `recheck_gaps_18oct.sh`.
+  - **Correction, 18 Oct:** the original part 1 named the run-all steps accuracy_gaps_drafts and accuracy_gaps.
+  - Both pass `--redo accuracy_gaps`, which this build (ad50ddbb) refuses with "not a Phase B category" (exit 2). On Sean's cert 6 both failed and the rest ran.
+  - The dry runs below printed the plan but never parsed it, so they could not catch this.
+  - `recheck_gaps_18oct.sh` runs the same work in values ad50ddbb accepts (`--redo unfinished` for gain-cal + timing, `--redo nothing_nominated` for combined + material + frequency).
+  - Later builds take `accuracy_gaps`: one list, and every run-all `--redo` value is pinned by WZ-REDO-1.
 - **The steps (part 2):** multiband_v1, strips, drafts. Part 2 starts by itself when part 1 ends.
 - **Time:** the plan prints about 2 h 10 min at 2 jobs (dry-run on a copy of your cert 5 folder). Allow 3 h. Auto-Tune Vocal Compressor's gain and timing are ~1 h of that. Part 2 then takes about 1 h. In all, about 4 h.
 - **Logs:** in `~/Library/ejmap/cert/run_all/` and `~/Library/ejmap/cert/recheck_16oct.log`.

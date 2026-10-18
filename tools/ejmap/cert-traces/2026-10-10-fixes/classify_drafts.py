@@ -2,6 +2,7 @@ import json,glob,os,collections,sys
 R=sys.argv[1]
 # --expect (13 Oct): the classes this baseline may explain. 'status' = v0.1 -> v0.2 (50a39e1b), 'limiter' = the one-profile change
 # (5185311f / 7ee67720); both are IN b287aef3, so against it --expect '' explains nothing. No --expect = both (vs 00f2ae79, as before).
+# 'ceiling_null' (18 Oct): a limiter ceiling block with no control found writes null, not "" - NOT in b287aef3, so the morning names it
 EXPECT={'status','limiter'}
 if '--expect' in sys.argv: EXPECT=set(x for x in sys.argv[sys.argv.index('--expect')+1].split(',') if x)
 def load(side): return {os.path.relpath(f,f'{R}/{side}'):json.load(open(f)) for f in glob.glob(f'{R}/{side}/phaseb/*/drafts/*.json')}
@@ -29,6 +30,12 @@ for k in sorted(set(o)&set(n)):
         nb=b.get('notes') or []; na=a2.get('notes') or []
         if 'compressor_profile' in b and b['compressor_profile'] is None and nb[:-1]==na and NOTE_NEW in nb[-1] and 'no compressor profile exported for' in nb[-1]:
             a2=dict(a2, compressor_profile=None, notes=nb); reasons.append('limiter: compressor_profile null + the one-profile note (5185311f / 7ee67720)')
+    if cat=='limiter' and 'ceiling_null' in EXPECT:
+        # EXPECTED 3 (18 Oct, B: "a neutral never has an empty control"): a limiter draft whose ceiling block found no control wrote
+        # ceiling.control "" - it now writes null. Only that one value may differ
+        ca=(a2.get('ceiling') or {}) if isinstance(a2.get('ceiling'),dict) else None
+        if ca is not None and ca.get('control')=='' and isinstance(b.get('ceiling'),dict) and b['ceiling'].get('control') is None:
+            a2=dict(a2, ceiling=dict(ca, control=None)); reasons.append('limiter: ceiling.control "" -> null (18 Oct)')
     if a2==b: c[' + '.join(reasons)]+=1
     else: unexplained.append((k,sorted(x for x in set(a2)|set(b) if a2.get(x)!=b.get(x))))
 for k,v in c.most_common(): print(f'  {v:5d}  {k}')

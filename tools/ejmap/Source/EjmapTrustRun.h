@@ -319,8 +319,10 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         const auto heldWhy = heldWhyFor (held, name);
         const auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
         if (L.level == "unsure" && L.why.startsWith ("role not identified")) review.addArray (reviewItems (m, measured, rb));
-        // the credited copy: each judged control carries its read-back, as the sweep writes it
-        if (auto* co = m.getProperty ("controls", {}).getDynamicObject())
+        // the credited copy: each judged control carries its read-back, as the sweep writes it. 18 Oct (B): a params-format map (CLA-76,
+        // PuigChild 670) keeps its role controls in params - they were credited and levelled but their read-back was never written there
+        for (const char* section : { "controls", "params" })
+        if (auto* co = m.getProperty (section, {}).getDynamicObject())
             for (const auto& [ctl, r] : rb)
                 for (const auto& p : co->getProperties())
                     if (p.value.getProperty ("name", p.name.toString()).toString() == ctl && r.judged > 0)
@@ -331,7 +333,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                             o->setProperty ("source", r.source); if (r.superseded > 0) o->setProperty ("superseded", r.superseded); if (r.snapped > 0) o->setProperty ("snapped", r.snapped);
                             if (! r.failedAt.empty()) { juce::Array<juce::var> fa; for (double n : r.failedAt) fa.add (juce::String (n, 6)); o->setProperty ("failed_at", juce::var (fa)); }
                             cobj->setProperty ("readback", juce::var (o));
-                            ++creditedControls; if (r.failed > 0) ++failedControls;
+                            if (juce::String (section) == "controls") { ++creditedControls; if (r.failed > 0) ++failedControls; }   // the printed tally stays per control
                         }
         out.getChildFile ("maps").getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (m));
         entries.push_back ({ m, f.getFileName(), name, cat, fmt, m.getProperty ("identity", {}).getProperty ("version", "").toString(), heldWhy, {}, {}, L, measured, &pd, {} });
@@ -353,7 +355,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         if (e.bridge.ok)
         {
             e.L.level = twin->L.level; e.L.why = "bridged from the AU map " + twin->m.getProperty ("fp", "").toString().substring (0, 12) + ": " + e.bridge.why;
-            e.L.dialable = roles; e.bridgedFrom = twin->m.getProperty ("fp", "").toString(); ++bridged; continue;
+            e.L.dialable = roles; e.L.roles = twin->L.roles; e.bridgedFrom = twin->m.getProperty ("fp", "").toString(); ++bridged; continue;
         }
         e.bridgeWhy = e.bridge.why; ++bridgeRefused;
         auto* pc = new juce::DynamicObject();
@@ -375,7 +377,9 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         o->setProperty ("version", e.version); o->setProperty ("level", e.L.level); o->setProperty ("why", e.L.why);
         if (e.bridgedFrom.isNotEmpty()) o->setProperty ("bridged_from", e.bridgedFrom);
         if (e.bridgeWhy.isNotEmpty()) o->setProperty ("bridge_refused", e.bridgeWhy);
-        juce::Array<juce::var> d; for (const auto& x : e.L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d)); rows.add (juce::var (o));
+        juce::Array<juce::var> d; for (const auto& x : e.L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d));
+        juce::Array<juce::var> rl; for (const auto& [need, c] : e.L.roles) { auto* r = new juce::DynamicObject(); r->setProperty ("semantic", need); r->setProperty ("control", c); rl.add (juce::var (r)); }
+        o->setProperty ("roles", juce::var (rl)); rows.add (juce::var (o));   // 18 Oct (B): each dialable control with the role it was found for
     }
     out.getChildFile ("trust_levels.json").replaceWithText (juce::JSON::toString (juce::var (rows)));
     out.getChildFile ("bridge_plan.json").replaceWithText (juce::JSON::toString (juce::var (plan)));

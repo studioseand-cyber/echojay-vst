@@ -21,7 +21,7 @@ Status: DRAFT for Sean (server) and A (EchoJay) to agree. No code. Nothing sent.
   - the measured compressor profiles (`ej_comp_profile/1`: amount, ratio, engage, neutral and make-up, by measurement);
   - the server's `compressor-profiles.json` role table (74 products; its header: "a profile is not a certification").
 - **Read-back.** Three kinds exist:
-  - `evidence.readback {asked, wrote, read, match}` per role (33 maps). The server stores it at `plugin:<fp>:evidence:ejmap` but does **not serve** it.
+  - `evidence.readback {asked, wrote, read, match}` per role (33 maps), in EJ Map's local map files. **Corrected 18 Oct (B):** there is no server store `plugin:<fp>:evidence:ejmap` - nothing writes or reads that key, and the upload carries no readback. Until a route exists it travels in `trust_levels.json` (section 15.2).
   - The compressor tone check: the profile's writes played, GR measured.
   - The wizard's read-back check ("N write(s) read back as the profile says").
 
@@ -730,3 +730,67 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
   - Every pause logs pid, bundle id, path and whether it has a window.
   - **With no window**, the words are: "Logic is still running in the background (even with no window open) - quit it with Cmd-Q or from the Dock and the wizard carries on by itself."
   - **Carry on anyway** (on the DAW pause only) carries on beside that one DAW process until it quits; a new DAW process pauses again. Its one-line warning: "Measuring while Logic runs can slow both down and change the results - only if you're not using it."
+
+## 15. Sean's re-check and B's reply, 18 Oct (Kathy). Built and pinned; nothing sent; no server change
+
+### 15.1 The count, Kathy's count rule (held out of the totals)
+| format | certified | mapped | unsure | testable | can't test on this Mac |
+|---|---|---|---|---|---|
+| AudioUnit | 154 | 197 | 260 | 611 | 197 |
+| VST3 | 0 | 4 | 119 | 123 | 192 |
+| **all** | **154** | **201** | **379** | **734** | **389** |
+
+- **The one change since 13.6:** RVox (m)/(s) move certified -> unsure. B's server rejected their profiles (17 Oct), and a rejected profile is no profile.
+  - In trust_levels.json their rows carry `not_dialled.reason = server_rejected`.
+
+- **Can't test on this Mac (389):** UAD 341, demo 30, silent 9, APB / hardware 6, licence 3.
+- **The other 26 holds count as unsure** (they are never dialled either way): multiband 10, needs_review 10, quarantined 4, refused 2.
+  - `hold_states.json` carries only the 389, so the server's totals and this table agree.
+- **Compressors on Sean's cert 6 (the v1 rule, re-applied to his 16 Oct re-check, build ad50ddbb): 47 clear / 39 held of 86.**
+  - His 46 held units: 15 clear (bx_opto, elysia alpha master, elysia alpha mix, MaxxVolume m/s, Millennia TCL-2, OneKnob Pressure m/s, Renaissance Axx m/s, RVox m/s, SSL Native X-Comp v6, X-ValveComp v6, DSM V3), 31 held.
+  - The other 40: 32 clear, 8 held (Mike-E, H-Comp m/s, SSL LMC+, U73b, VComp m/s, elysia mpressor).
+  - All 47 published v3 profiles are clear on cert 6.
+
+### 15.2 What the server reads (B: `comp_profiles/trust_levels.json`, `comp_profiles/hold_states.json`)
+- **`trust_levels.json`** is a plain array, one row per map:
+  - fields: `fp`, `name`, `vendor`, `version`, `format`, `category`, `level`, `why`, `roles[]`, `controls[]`;
+  - `held` only on a count-rule hold, and `not_dialled` on the other holds;
+  - `limits` only on a mapped row: the section 3 defaults, GR 6 dB, EQ ±3 dB, mix 50%, drive a third;
+  - `bridged_from` / `bridge_refused` where the format bridge ran.
+- **`roles[]`** = `{semantic, semantic_from, control, index, readback}` per dialable control.
+- **`controls[]`** = `{name, index, readback {checked, failed, pass, worst, source}}` for every control with a read-back.
+- **`hold_states.json`** = `[{fp, name, version, format, held {reason, count_rule, stage, at, why}}]`.
+- **Two engine gaps found by validating the files against B's description** (pin WZ-TRUST-18):
+  - **The role a control met was thrown away.** `levelFor` kept only names; 29 measured roles (Peak Reduction, Range, Input...) had no semantic a server could read.
+    - The level now carries (role, control) pairs, the role being the part of the need the control met ("freq" and "gain" for an EQ's "freq+gain"). The run writes them per row and keeps them over a bridge.
+  - **A params-format map's role controls were levelled but never credited in the file.** CLA-76 m/s, PuigChild 670 s and SSL Blitzer were mapped with no read-back on their role control: the credit step wrote read-back into `controls` only.
+    - It now writes `params` too.
+- **Validation** (`validate_b.py`, in FOR_SEAN_18oct): array shape, fp or name + version, level, why, every mapped role with a semantic and a passing read-back, limits only on mapped rows, readback shape and `pass == (checked >= 2 and failed == 0)`, and the held rows equal in both files.
+
+### 15.3 The exporter: a neutral never has an empty control (B; pin WZ-EXPORT-1)
+- **B rejected three v3 profiles** for `neutral[n].control == ""`: Millennia TCL-2 [16, 17], DSM V3 [32..39], bx_opto [7]. These were b287aef3 exports.
+- **Sean's cert 6 re-exports (ad50ddbb) were already right.** d26db00f files a control with no name and no label of its own in `not_written`.
+- **Now also:**
+  - a blank name is refused from `neutral` even when the control has labels, filed in `not_written` as "no name";
+  - a limiter ceiling block with no control found writes `control: null`, not "" (APB L-18, kHs Limiter drafts).
+- **Swept every other profile and draft:** on cert 6 the only empty names left are in `not_written`, which exists to list them.
+- **v3b** = the three cert 6 profiles + tone checks, unmodified (same map_fp). RVox stays out (15.4).
+- **Sean's Logic check, 5th unit:** OneKnob Pressure (m) 15.0.70 replaces RVox (m). It is the only accepted profile that is input-drive, mono and Waves.
+
+### 15.4 RVox (m)/(s): POINTS_NOT_REPEATABLE, 1.28 dB (the gate stays; held)
+- **The cause.** One position (-16.8) of 23. Its quiet-reference rung check was -0.1003 dB in the 2.5 s pass (fails the 0.1 tolerance, so it descends to -66/-60) and -0.0999 dB in the 5 s pass (keeps -54/-48).
+  - The two references differ by 0.15 dB.
+  - On the shallow low-GR curve that moves in_at_gr[1] by 1.28 dB.
+  - The raw audio of the two passes agreed within 0.002 dB.
+- **Not an unsettled plugin.** A longer hold would not change it.
+- **Proposed fix (not built):** the hold-doubled repeat uses the reference rung the first pass chose for each position, so the point error compares only what the plugin did.
+
+### 15.5 `--redo accuracy_gaps` (pin WZ-REDO-1)
+- **The fault.** ad50ddbb's run-all steps passed `--redo accuracy_gaps`, which its own Main refused (a whitelist that omitted it and `licensed_now`). Both accuracy steps failed on cert 6 with exit 2.
+- **Now.** One list (`redoSelectors`) feeds the refusal. Every run-all `--redo` value is checked against it in the suite.
+- **For Sean's build:** `recheck_gaps_18oct.sh` runs the same work in values ad50ddbb accepts: `--redo unfinished` for gain-cal + timing, and `--redo nothing_nominated` for combined + material + frequency.
+
+### 15.6 C6 (m) / C6-SideChain (s) multiband, re-measured on Kathy's Mac
+- **Matches Sean's cert 6.** Bands 1-4 to 0.01 dB, bands 5/6 within 0.07 dB. Sean's pass was not spoiled.
+- **v1, both units:** bands 1-4 certified; bands 5 and 6 (the floating bands) fail only the gain ask (2 -> 1.17).
+

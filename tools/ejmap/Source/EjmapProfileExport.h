@@ -627,6 +627,13 @@ inline Export exportCompProfile (const juce::var& f)
                 const auto name = c.getProperty ("name", "").toString();
                 if (idx == plan.thr || idx == plan.ratioIndex || idx == pairIdx || engaged.count (idx) || nt.contains (name) || linkedTwins.contains (name)) continue;
                 if (isReadoutOrMeter (c)) continue;
+                if (name.trim().isEmpty())
+                {   // 18 Oct (B, FOR_KATHY_2026-10-17: Millennia TCL-2 / DSM V3 / bx_opto / bx_limiter carried neutrals with control ""): a neutral
+                    // always names its control - a nameless one, labelled or not, is never written: said on the profile, by index
+                    auto* x = new juce::DynamicObject(); x->setProperty ("index", idx); x->setProperty ("control", name);
+                    x->setProperty ("why", "no name: a neutral names its control, so this one is not written");
+                    notWritten.add (juce::var (x)); continue;
+                }
                 if (unaddressableUnlabelled (c, f.getProperty ("controls", {})))
                 {   // 13 Oct: never a neutral write (AMEK 'M', SPL IRON's unnamed) - said on the profile, by index
                     auto* x = new juce::DynamicObject(); x->setProperty ("index", idx); x->setProperty ("control", name);

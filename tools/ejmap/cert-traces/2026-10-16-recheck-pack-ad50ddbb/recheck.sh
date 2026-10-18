@@ -24,9 +24,12 @@ while IFS= read -r name; do [ -n "$name" ] && ONLY+=(--only "$name"); done < "$L
 echo "RECHECK: $(( ${#ONLY[@]} / 2 )) units from held_units.txt; log in $CERT/run_all/"
 mkdir -p "$CERT"
 caffeinate -dimsu "$BIN" --run-all --jobs 2 \
-    --steps preflight,followup,accuracy_gaps_drafts,accuracy_gaps,drafts \
+    --steps preflight,followup,drafts \
     "${ONLY[@]}" --until 07:00 --out "$CERT" 2>&1 | tee -a "$CERT/recheck_16oct.log"
 echo "RECHECK: part 1 finished or stopped (exit ${PIPESTATUS[0]})."
+# 18 Oct (Kathy): this build (ad50ddbb) refuses "--redo accuracy_gaps" (exit 2), so the run-all steps accuracy_gaps_drafts and accuracy_gaps
+# never ran on Sean's cert 6. The same work in the values ad50ddbb accepts is recheck_gaps_18oct.sh, beside this file
+bash "$HERE/recheck_gaps_18oct.sh"
 # PART 2 (Kathy, 16 Oct): the multiband v1 measuring (every multiband in the folder: per-band tone checks, crossovers, make-up; ~3-5 min a
 # unit, ~1 h), the channel strips only if this folder has none (Sean's were measured 13 Oct: skipped), then every draft. Same hour, same resume
 caffeinate -dimsu "$BIN" --run-all --jobs 2 --steps multiband_v1,strips,drafts --until 07:00 --out "$CERT" 2>&1 | tee -a "$CERT/recheck_16oct.log"
