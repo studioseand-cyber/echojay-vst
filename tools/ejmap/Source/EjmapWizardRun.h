@@ -550,9 +550,11 @@ inline int runWizard (const WizardOptions& wo)
         { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); row->setProperty ("lane", "vst3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);   // 18 Oct: lane - never given its AU twin's queue
           row->setProperty ("state", st); row->setProperty ("why", why); vst3Rows.add (juce::var (row)); return row; };
         const auto plan = vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache);
-        std::map<juce::String, int> by; int identityLoads = 0, bridgeLoads = 0, bridgesKept = 0;
+        std::map<juce::String, int> by; int identityLoads = 0, bridgeLoads = 0, bridgesKept = 0, looked = 0;
+        prog.looking (0, (int) plan.size());   // 18 Oct (LOOKING FOR PLUGINS): "Looking for plugins - n of N", a heartbeat per bundle
         for (const auto& pr : plan)
         {
+            prog.looking (looked++, (int) plan.size());
             if (wizardStop() != 0) break;
             const auto& b = pr.b; const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase();
             auto matchesOnly = [&] (const juce::String& n) { return std::any_of (wo.only.begin(), wo.only.end(), [&] (const juce::String& o) { return o.equalsIgnoreCase (n) || n.containsIgnoreCase (o); }); };
@@ -623,6 +625,7 @@ inline int runWizard (const WizardOptions& wo)
                 say ("  " + d.name.paddedRight (' ', 30) + " VST3 with no AU twin (identity: " + id.source + "): joins the run as its own plugin");
             }
         }
+        prog.looking ((int) plan.size(), (int) plan.size());
         say ("WIZARD: VST3 - " + juce::String ((int) plan.size()) + " bundle(s); identity from moduleinfo " + juce::String (by["moduleinfo"]) + ", from the cache " + juce::String (by["cache"])
              + ", loaded " + juce::String (identityLoads) + " (now cached), remembered failing " + juce::String (by["cache_failed"]) + ", WaveShell " + juce::String (by["shell"])
              + "; bridge reads: " + juce::String (bridgeLoads) + " load(s), " + juce::String (bridgesKept) + " kept from an earlier run");

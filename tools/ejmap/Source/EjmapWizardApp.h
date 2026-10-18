@@ -319,6 +319,9 @@ struct ReadyBar { bool on = false; double value = 0.0; juce::String left, right;
 inline ReadyBar readyBar (const juce::var& p, const juce::String& current)
 {
     ReadyBar b; const auto stage = p.getProperty ("stage", "").toString();
+    const auto lk = p.getProperty ("looking", {}); const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
+    if ((int) p.getProperty ("stage_index", 0) <= 0 && lt > 0 && ld < lt)   // 18 Oct: the measuring run's own look at the VST3 bundles
+    { b.on = true; b.value = (double) ld / lt; b.left = "Getting ready - looking for plugins"; b.right = juce::String (ld) + " of " + juce::String (lt); return b; }
     if (stage == "Scanning" || stage == "Checking")
     {
         const auto sc = p.getProperty ("stage_counts", {}); const int d = (int) sc.getProperty ("done", 0), t = (int) sc.getProperty ("total", 0);
@@ -431,14 +434,28 @@ inline DiskVerdict diskVerdict (juce::int64 free, bool starting)
 // THE SCAN SCREEN'S BAR (Kathy, 13 Oct: the bar at ~67% while the text said "15 of 1285"): its own progress - the Checking stage's
 // n of N - never the engine's overall percent. The overall bar gives Scanning 0-10 and Checking only 10-15, so overall / 15 put the bar
 // at two-thirds the moment Checking began. Scanning (listing what is installed, seconds) is 0; past Checking (or a stop after it) is 1.
+// LOOKING FOR PLUGINS COUNTS IN THE BAR (Kathy, 18 Oct): the scan screen's bar is the looking (the VST3 bundles, n of N) up to kLookShare,
+// then the checking the rest of the way - one bar that never goes back
+inline constexpr double kLookShare = 0.5;
 inline double scanBarValue (const juce::var& progress)
 {
     const int idx = (int) progress.getProperty ("stage_index", 0);
-    if (idx <= 0) return 0.0;
     if (idx >= 2) return 1.0;
+    const auto lk = progress.getProperty ("looking", {});
+    const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
+    const double look = lt > 0 ? kLookShare : 0.0;   // a run with no VST3 lane (none found, or switched off) gives checking the whole bar
+    if (idx <= 0) return lt > 0 ? look * juce::jlimit (0.0, 1.0, (double) ld / (double) lt) : 0.0;
     const auto sc = progress.getProperty ("stage_counts", {});
     const int total = (int) sc.getProperty ("total", 0), done = (int) sc.getProperty ("done", 0);
-    return total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0;
+    return look + (1.0 - look) * (total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0);
+}
+// the words under the scan screen's bar: "Looking for plugins - 312 of 859" while the bundles are looked at; then the plugin being checked
+inline juce::String scanLeftWords (const juce::var& progress, const juce::String& current)
+{
+    const auto stage = progress.getProperty ("stage", "").toString(); const auto lk = progress.getProperty ("looking", {});
+    const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
+    if ((int) progress.getProperty ("stage_index", 0) <= 0 && lt > 0 && ld < lt) return "Looking for plugins - " + juce::String (ld) + " of " + juce::String (lt);
+    return current.isNotEmpty() ? current : stage == "Checking" ? juce::String ("Checking") : juce::String ("Looking for plugins");
 }
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
 // FINISH NOW (Kathy, 13 Oct): the app writes this file in the engine's folder, then stops it as a pause does; the engine, seeing it after

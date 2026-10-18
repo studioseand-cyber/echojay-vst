@@ -9610,6 +9610,42 @@ void testWizardCategories()
                && ejmap::wizapp::scanBarValue (prog (2, 40.0, 3, 11)) == 1.0 && ejmap::wizapp::scanBarValue (prog (1, 12.0, 0, 0)) == 0.0,
                "wizard WZ-SCANBAR: '15 of 1285' draws " + juce::String (kathy * 100.0, 1) + "% (it drew 68%); Scanning 0, past Checking full, no items 0");
     }
+    // WZ-LOOK-1 LOOKING FOR PLUGINS MOVES (Kathy, 18 Oct: with the VST3 lane the first step took a while, licence windows flashing, the bar
+    // empty and nothing moving - it looked frozen): the engine counts the bundles looked at (each a heartbeat) into progress.json; the scan
+    // screen says "Looking for plugins - n of N", counts it in the bar (never going back when Checking starts), shows the live wave and
+    // the 2 min / 15 min lines; the measuring run's own look is a getting-ready bar
+    {
+        using namespace ejmap::wizapp;
+        const auto dir = juce::File::createTempFile ("wzlook"); dir.createDirectory(); std::ostringstream term;
+        juce::var p312;
+        {   ejmap::wizprog::Tracker tr (dir.getChildFile ("progress.json"), term, false, 2);
+            juce::Thread::sleep (30); const auto before = juce::Time::currentTimeMillis();   // past the tracker's own start stamp: only looking() can move it
+            tr.looking (312, 859); p312 = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+            check ((int) p312.getProperty ("looking", {}).getProperty ("done", 0) == 312 && (int) p312.getProperty ("looking", {}).getProperty ("total", 0) == 859
+                   && (juce::int64) p312.getProperty ("heartbeat_ms", (juce::int64) 0) >= before && (int) p312.getProperty ("stage_index", -1) == 0,
+                   "wizard WZ-LOOK-1a: the tracker writes looking {done, total} and a heartbeat with each bundle"); }
+        dir.deleteRecursively();
+        auto prog = [] (int idx, int ld, int lt, int cd, int ct) { auto* o = new juce::DynamicObject(); o->setProperty ("stage_index", idx); o->setProperty ("stage", idx == 0 ? "Scanning" : idx == 1 ? "Checking" : "Measuring");
+            if (lt > 0) { auto* l = new juce::DynamicObject(); l->setProperty ("done", ld); l->setProperty ("total", lt); o->setProperty ("looking", juce::var (l)); }
+            auto* c = new juce::DynamicObject(); c->setProperty ("done", cd); c->setProperty ("total", ct); o->setProperty ("stage_counts", juce::var (c)); return juce::var (o); };
+        const double a = scanBarValue (prog (0, 0, 859, 0, 0)), b = scanBarValue (prog (0, 312, 859, 0, 0)), c = scanBarValue (prog (0, 859, 859, 0, 0)),
+                     d = scanBarValue (prog (1, 859, 859, 0, 400)), e = scanBarValue (prog (1, 859, 859, 200, 400)), f = scanBarValue (prog (1, 859, 859, 400, 400));
+        const auto rb = readyBar (prog (0, 312, 859, 0, 0), {}), rbDone = readyBar (prog (0, 859, 859, 0, 0), {});
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto scanPoll = app.fromFirstOccurrenceOf ("if (screen == Screen::scan)\n        {   // the Logic-style bar", false, false).upToFirstOccurrenceOf ("else\n        {   // measuring", false, false);
+        const auto loop = run.fromFirstOccurrenceOf ("prog.looking (0, (int) plan.size());", false, false).upToFirstOccurrenceOf ("if (wizardStop() != 0) break;", false, false);
+        check (a == 0.0 && std::abs (b - kLookShare * 312.0 / 859.0) < 1e-9 && c == kLookShare && d == c && e > d && f == 1.0 && a < b && b < c
+               && scanBarValue (prog (1, 0, 0, 200, 400)) == 0.5 && scanBarValue (prog (0, 0, 0, 0, 0)) == 0.0 && scanBarValue (prog (2, 0, 0, 0, 0)) == 1.0
+               && scanLeftWords (prog (0, 312, 859, 0, 0), "MFreeformAnalogEq") == "Looking for plugins - 312 of 859"
+               && scanLeftWords (prog (1, 859, 859, 3, 400), "Pro-Q 3") == "Pro-Q 3" && scanLeftWords (prog (0, 859, 859, 0, 0), {}) == "Looking for plugins"
+               && rb.on && rb.left == "Getting ready - looking for plugins" && rb.right == "312 of 859" && std::abs (rb.value - 312.0 / 859.0) < 1e-9 && rbDone.left != rb.left
+               && loop.contains ("prog.looking (looked++, (int) plan.size());") && run.contains ("prog.looking ((int) plan.size(), (int) plan.size());")
+               && scanPoll.contains ("barLeft = wizapp::scanLeftWords (p, cur);") && scanPoll.contains ("heartbeatMs = (juce::int64) p.getProperty (\"heartbeat_ms\"")
+               && app.contains ("if (screen == Screen::measuring || screen == Screen::scan)\n        {   // 15 Oct (FEELS FROZEN): a soft sound wave")
+               && app.fromFirstOccurrenceOf ("// 14 Oct: the licence-window warning", false, false).upToFirstOccurrenceOf ("if (screen == Screen::paused", false, false).contains ("wizapp::liveWords (wizapp::liveState ("),
+               "wizard WZ-LOOK-1: 'Looking for plugins - 312 of 859', counted in the bar (" + juce::String (b, 3) + ", " + juce::String (c, 2) + " when Checking starts, never back), the live wave and the 2 / 15 min lines on the scan screen, the measuring run's look a getting-ready bar");
+    }
     // WZ-SCANBAR-2 a resumed scan starts at its true done share: what needs nothing (its map already stored) is done from the first frame,
     // with no time recorded and no problem counted; a fresh scan starts at 0
     {

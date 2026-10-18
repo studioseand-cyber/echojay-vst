@@ -379,8 +379,8 @@ public:
             const auto lw = wizapp::liveWords (wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs));
             if (lw.isNotEmpty()) { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (13.0f)); g.drawText (lw, juce::Rectangle<int> (40, 382, getWidth() - 80, 18), juce::Justification::centred); }
         }
-        if (screen == Screen::measuring)
-        {   // 15 Oct (FEELS FROZEN): a soft sound wave beside the title, moving only while the engine's heartbeat is live
+        if (screen == Screen::measuring || screen == Screen::scan)
+        {   // 15 Oct (FEELS FROZEN): a soft sound wave beside the title, moving only while the engine's heartbeat is live (18 Oct: the scan too)
             const bool live = ! pausing && ! finishing && wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs) == wizapp::Live::live;
             const juce::Font tf (juce::FontOptions (24.0f, juce::Font::bold)); const float tw = juce::GlyphArrangement::getStringWidth (tf, title);
             const float x0 = (float) getWidth() / 2.0f + tw / 2.0f + 14.0f, yc = 120.0f + 20.0f; const double ms = juce::Time::getMillisecondCounterHiRes();
@@ -394,7 +394,10 @@ public:
             g.setColour (ink); g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold)); g.drawText (bigCode, box, juce::Justification::centred);
         }
         if (screen == Screen::scan)   // 14 Oct: the licence-window warning
-        { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 330, getWidth() - 140, 40), juce::Justification::centred, 2); }
+        { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 330, getWidth() - 140, 40), juce::Justification::centred, 2);
+          // 18 Oct (LOOKING FOR PLUGINS): the same 2 min "still working" / 15 min "may be stuck" lines as measuring
+          const auto lw = wizapp::liveWords (wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs));
+          if (lw.isNotEmpty()) { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (13.0f)); g.drawText (lw, juce::Rectangle<int> (40, 382, getWidth() - 80, 18), juce::Justification::centred); } }
         if (screen == Screen::paused && anyway.isVisible() && dawPaused.isNotEmpty())   // 17 Oct: Carry on anyway's one-line warning
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (12.0f)); g.drawFittedText (wizapp::carryOnAnywayWarning (dawPaused), juce::Rectangle<int> (30, getHeight() - 182, getWidth() - 60, 20), juce::Justification::centred, 1); }
         if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
@@ -744,8 +747,10 @@ private:
         if (cur.isEmpty()) if (const auto* a = p.getProperty ("current", {}).getArray()) if (! a->isEmpty()) cur = (*a)[a->size() - 1].toString();
         if (screen == Screen::scan)
         {   // the Logic-style bar: the scan is the engine's Scanning + Checking (0..15 of its bar)
-            barValue = wizapp::scanBarValue (p); barLeft = cur.isNotEmpty() ? cur : stage == "Checking" ? "Checking" : "Looking for plugins";
-            const auto sc = p.getProperty ("stage_counts", {}); barRight = sc.isObject() ? juce::String ((int) sc.getProperty ("done", 0)) + " of " + juce::String ((int) sc.getProperty ("total", 0)) : juce::String();
+            barValue = wizapp::scanBarValue (p); barLeft = wizapp::scanLeftWords (p, cur);   // 18 Oct (LOOKING FOR PLUGINS): "Looking for plugins - n of N", counted in the bar
+            const auto sc = p.getProperty ("stage_counts", {}); barRight = barLeft.startsWith ("Looking for plugins - ") || ! sc.isObject() || (int) sc.getProperty ("total", 0) == 0 ? juce::String()
+                                                                          : juce::String ((int) sc.getProperty ("done", 0)) + " of " + juce::String ((int) sc.getProperty ("total", 0));
+            heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 18 Oct: the live wave and the 2 min / 15 min lines here too
             if (cfg.snapScanAtPct >= 0.0 && barValue * 100.0 >= cfg.snapScanAtPct) { cfg.snapScanAtPct = -1.0; repaint(); juce::Timer::callAfterDelay (300, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->snap ("scan_at_pct"); }); }
         }
         else

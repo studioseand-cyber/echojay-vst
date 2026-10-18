@@ -249,6 +249,10 @@ public:
         if (s == Stage::measuring) queueKnown_ = true;
         emitLocked (true);
     }
+    // LOOKING FOR PLUGINS (Kathy, 18 Oct: with the VST3 lane the first step takes a while and its bar sat empty - it looked frozen): the
+    // bundles looked at so far of all found; each one is a heartbeat, so a slow identity load shows "still working" after 2 min like any other
+    void looking (int done, int total)
+    { std::lock_guard<std::mutex> g (m_); lookDone_ = done; lookTotal_ = total; heartbeatMs_ = juce::Time::currentTimeMillis(); emitLocked (true); }
     void setQueue (std::vector<Item> q) { std::lock_guard<std::mutex> g (m_); queue_ = std::move (q); queueKnown_ = true; }
     void seedTime (const juce::String& kind, double s) { std::lock_guard<std::mutex> g (m_); times_.add (kind, s); }
     void started (const juce::String& product, const juce::String& kind = {})   // kind: which of a product's items (a limiter has two)
@@ -370,6 +374,7 @@ private:
         juce::Array<juce::var> cur; for (const auto& c : current_) cur.add (c); o->setProperty ("current", cur); o->setProperty ("current_latest", latestLocked());
         o->setProperty ("plugins", plugins_);
         auto* st = new juce::DynamicObject(); st->setProperty ("done", done); st->setProperty ("to_do", todo); st->setProperty ("total", (int) items_.size()); o->setProperty ("stage_counts", juce::var (st));
+        if (lookTotal_ > 0) { auto* lk = new juce::DynamicObject(); lk->setProperty ("done", lookDone_); lk->setProperty ("total", lookTotal_); o->setProperty ("looking", juce::var (lk)); }   // 18 Oct
         o->setProperty ("problems", problems_);
         {   // 14 Oct: "N measured so far" - finished measurements without a problem, never a demo check
             int md = 0; for (const auto& i : items_) if (i.done && ! i.problem && i.kind != "demo") ++md; o->setProperty ("measured_done", md);
@@ -406,7 +411,7 @@ private:
     Stage stage_ = Stage::scanning; std::vector<Item> items_, queue_; bool queueKnown_ = false;
     Times times_; juce::StringArray current_; std::map<juce::String, double> startedAt_;
     juce::int64 heartbeatMs_ = juce::Time::currentTimeMillis(); double lastStepScan_ = 0.0;
-    bool stopped_ = false; int plugins_ = 0, problems_ = 0; double lastPct_ = 0.0, t0_ = 0.0, lastPrinted_ = -1e9;
+    bool stopped_ = false; int plugins_ = 0, problems_ = 0, lookDone_ = 0, lookTotal_ = 0; double lastPct_ = 0.0, t0_ = 0.0, lastPrinted_ = -1e9;
     juce::String lastKey_, lastLine_, summary_;
 };
 } // namespace ejmap::wizprog
