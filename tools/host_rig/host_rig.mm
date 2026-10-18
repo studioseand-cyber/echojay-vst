@@ -5445,6 +5445,19 @@ int main (int argc, char* argv[])
         // own `landed` field. Same rule, the other road.
         if (tp.ok && ! linkUid.isEmpty())
         {
+            // ---- AIM IT AT THE LINK, WHICH THIS ROW NEVER DID (18 Oct 2026, gate 27) ----------
+            //
+            // Gate 27's mock half went red here with "(no slot carried both facts)": the Link's
+            // slotsDetail was empty because the add had landed on the OWN rack. The row asked the
+            // agent without ever setting the working target, so it measured the Link while talking
+            // to whatever the previous row had left selected - and I9b, which runs immediately
+            // before it, leaves the own rack. It passed in earlier gates only because some earlier
+            // row happened to leave the Link selected, which is the same "a verdict that depends on
+            // what ran before it" fault this evening has already cost three rows.
+            //
+            // I9b passed on this very build, on the own rack, with the same plugin and the same
+            // figure, so the product was never in this red.
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 8000);
             const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
                                           + tp.paramName, 120000);
             // ---- ONE SLOT, BOTH FACTS (17 Oct) ------------------------------------------------

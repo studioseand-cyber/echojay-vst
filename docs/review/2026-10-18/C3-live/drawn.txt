@@ -1,0 +1,7 @@
+scenario C3-live
+captured 2026-10-18T00:37:12.943+01:00
+  [user] Add Renaissance Axx (s) to this rack and set its Threshold to -30 dB
+  [assistant] I can't add Renaissance Axx (s) here — EchoJay flags it as not yet confirmed as settable, so it refuses the add even unset. You'll need to add it manually in your DAW and dial the Threshold to -30 dB by hand.
+  run row: status=Done changes=0 steps=0 zones=[]
+  opening: I can't add Renaissance Axx (s) here — EchoJay flags it as not yet confirmed as settable, so it refuses the add even unset. You'll need to add it manually in your DAW and dial the Threshold to -30 dB by hand.
+  closing: I can't add Renaissance Axx (s) here - EchoJay flags it as not yet confirmed as settable, so it refuses the add even unset. You'll need to add it manually in your DAW and dial the Threshold to -30 dB by hand.

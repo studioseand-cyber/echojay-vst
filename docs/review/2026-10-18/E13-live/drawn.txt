@@ -1,0 +1,14 @@
+scenario E13-live
+captured 2026-10-18T00:34:39.770+01:00
+  [user] What is the loudness of this rack?
+  [assistant] I'm only getting about 1.2 seconds of audio each time no matter how long you play it for, so I can't get a confirmed loudness reading. The one partial figure I have is integrated around -15 LUFS with true peak around -17 dBTP, but I can't stand behind that number since playback isn't sustaining long enough to measure properly. You might want to check the transport is actually rolling on this track, or try again in a bit.
+  run row: status=Done changes=0 steps=7 zones=[11:7 steps]
+  opening: I'm only getting about 1.2 seconds of audio each time no matter how long you play it for, so I can't get a confirmed loudness reading. The one partial figure I have is integrated around -15 LUFS with true peak around -17 dBTP, but I can't stand behind that number since playback isn't sustaining long enough to measure properly. You might want to check the transport is actually rolling on this track, or try again in a bit.
+  closing: 
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "read the analysis" [done] right="" detail="" chips=[]
+    step "ask" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]

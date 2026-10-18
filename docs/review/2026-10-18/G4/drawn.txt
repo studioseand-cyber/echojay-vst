@@ -1,0 +1,10 @@
+scenario G4
+captured 2026-10-18T00:52:43.985+01:00
+  [user] rig-nomap-marker: add that compressor
+  [assistant] Added Vertigo VSM-3. Settings not confirmed.
+  [user] rig-oneline-marker: nudge the pre-gain
+  [assistant] 
+  run row: status=Waiting for your OK changes=0 steps=1 zones=[1,2,7:Stop]
+  opening: 
+  closing: 
+    step "pre-gain 5 dB" [awaiting] right="" detail="" chips=[]

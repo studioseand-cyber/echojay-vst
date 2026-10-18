@@ -1,0 +1,9 @@
+scenario A4-live
+captured 2026-10-18T00:23:21.696+01:00
+  [user] Add Renaissance Axx (s) to the Kick's rack and set its Threshold
+  [assistant] I wasn't able to add Renaissance Axx (s) to the Kick's rack from here - EchoJay doesn't have a reliable enough map for it yet to place it, even unset, so it needs to go in by hand from the plugin's own chain, and then you'd dial the Threshold to -10 dB yourself on its own interface.
+  run row: status=Done changes=0 steps=2 zones=[11:2 steps]
+  opening: I wasn't able to add Renaissance Axx (s) to the Kick's rack from here - EchoJay doesn't have a reliable enough map for it yet to place it, even unset, so it needs to go in by hand from the plugin's own chain, and then you'd dial the Threshold to -10 dB yourself on its own interface.
+  closing: 
+    step "ask" [done] right="" detail="" chips=[]
+    step "ask" [done] right="" detail="" chips=[]

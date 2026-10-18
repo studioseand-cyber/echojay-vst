@@ -1,0 +1,10 @@
+scenario E3
+captured 2026-10-18T00:52:50.294+01:00
+  [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
+  run row: status=Done changes=0 steps=1 zones=[3,11:1 step]
+  opening: Had a look at that one.
+  closing: 
+    step "gain reduction on the third-party slot" [failed] right="not applied" detail="I cannot measure gain reduction on Renaissance Axx (s) - it is not a plugin EchoJay has measured, so any figure would be a guess." chips=[]

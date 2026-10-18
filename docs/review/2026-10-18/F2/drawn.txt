@@ -1,0 +1,12 @@
+scenario F2
+captured 2026-10-18T00:45:24.773+01:00
+  [user] rig-row-marker: set the pre gain, twice (then I close the window)
+  [assistant] Stopped.
+  [user] rig-classifyhold-marker: how does this kick sound
+  [assistant] You closed the window before the answer came back.
+  [user] rig-classifyhold-marker: how does this kick sound
+  run row: status=Stopped changes=0 steps=2 zones=[11:2 steps]
+  opening: Stopped.
+  closing: 
+    step "pre-gain 4 dB" [stopped] right="stopped" detail="stopped" chips=[]
+    step "pre-gain 6 dB" [stopped] right="stopped" detail="stopped" chips=[]

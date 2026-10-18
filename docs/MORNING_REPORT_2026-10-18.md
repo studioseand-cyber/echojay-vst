@@ -2,9 +2,40 @@
 
 *(the overnight run of 17 Oct: the §25 fix, the RP8K pair, the full gate, Kathy's recheck pack)*
 
-## 1. The gate
+## 1. The gate: RED, and neither red is the build
 
-<!-- FILLED WHEN THE GATE RETURNS -->
+Gate 27 ran 22:58:54 to 00:59:56 on `a645cde0`, Logic closed, nothing installed by it.
+
+| stage | verdict | |
+|---|---|---|
+| S1 | green | forced delete of six archives, relink across three trees |
+| S2, S3, S3b | green | guard targets, the four bundles, the archive-provenance check |
+| S4 | green | **79 of 79** guard tests |
+| S5 | green | the two-sided link guard |
+| S6 live half | **RED** | 3 failed, 65 passed, 6 skipped |
+| S6 mock half | **RED** | 1 failed, 117 passed, 13 skipped |
+
+**The three live reds are B's server, and the plugin is provably not in them.** A3-live, A4-live and
+C3-live all failed because the server refused Renaissance Axx *as a pick* — "its control map isn't
+fully verified yet" — so **no `do` was ever issued**. The round posted two `look`s and a rack read
+and nothing else, and the plugin marked **zero** plugins as unable to load, so this is not my
+won't-load list leaking into B's A8 gate. Written up for B with the round's log as `FOR_B` §27.
+In LIVE mode your server's own map store decides, not the map the rig samples, which is why every
+row that adds a third party with a setting is unrunnable against 3213 tonight.
+
+**The one mock red is the rig's own, and I have fixed the row.** I9c reads the *Link's* mirrored
+card but never aimed its run at the Link — it asked the agent on whatever target the previous row
+left selected, and I9b, which runs immediately before it, leaves the own rack. So the add landed on
+the own rack, the Link had nothing to carry, and the row reported "(no slot carried both facts)".
+It passed in earlier gates only when some earlier row happened to leave the Link selected: a verdict
+that depended on what ran before it. I9b — same build, same plugin, same figure, own rack — passed,
+which is what clears the product. The row now sends `work_on` with the Link's uid before it asks.
+**That fix is written and syntax-checked (13 s) but unbuilt and unrun**, because building and running
+it needs the rig, and from 01:03 the machine belongs to your recheck. It is first in tomorrow's rig
+window, with item 13.
+
+**No QUICK build tonight, and nothing new installed**: no product change is implicated by either
+red, so there was nothing to rebuild. What is in `~/Library` is still the binary this gate verified.
 
 ## 2. RP8K, red then green
 
@@ -52,9 +83,23 @@ The V2 carries the §25 fix; both Link binaries are 17b's unchanged, because the
 none of the files this round touched. Nothing was installed after 22:13 — see the disclosure in
 `docs/REPORT_2026-10-17c_QUICK.md`.
 
-## 4. Kathy's recheck pack
+## 4. Kathy's recheck pack: started 01:03:14, preflight passed
 
-<!-- FILLED WHEN IT STARTS -->
+Unzipped to `~/Downloads/SEAN_RECHECK_PACK_16oct`, quarantine cleared, then
+`bash ~/Downloads/SEAN_RECHECK_PACK_16oct/recheck.sh`. Its own preflight passed on every line:
+
+    build ad50ddbb; app signed team 8BT5F9B887; probe beside the executable,
+    cdhash 7adf508f38…; iLok present (0x00120000 / 1); power AC; sleep timer off;
+    quarantine: none on the app, its executable or the probe
+
+Then: 46 units from `held_units.txt`, 5 steps to run and 27 done or skipped, ETA 2:10, stops at
+07:00, state in `~/Library/ejmap/cert/run_all.json`, log in `~/Library/ejmap/cert/run_all/` and
+`recheck_16oct.log`. It also found **86 tone checks made by a build other than `ad50ddbb`**, so the
+follow-up re-runs those stale checks first — that is the step it spent the first hour in.
+
+**It started 4 minutes after the gate ended**, and the only reason it was not 4 minutes after
+midnight is that the gate's own S6 takes an hour. From 01:03 I ran nothing that loads a plugin and
+nothing that builds: the I9c fix above was written and syntax-checked before the pack started.
 
 ## 5. Your Logic recheck, on B's server 3215 (about 9 minutes)
 

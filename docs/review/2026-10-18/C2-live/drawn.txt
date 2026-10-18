@@ -1,0 +1,12 @@
+scenario C2-live
+captured 2026-10-18T00:37:02.994+01:00
+  [user] Add an EchoJay EQ to this rack, then add an EchoJay Compressor before it
+  [assistant] Added EchoJay Compressor before EchoJay EQ, per the ack's rack order. Settings not confirmed by read-back.
+Added EchoJay EQ. Added EchoJay Compressor.
+  run row: status=Done changes=2 steps=3 zones=[11:2 changes,8:Undo all]
+  opening: Added EchoJay Compressor before EchoJay EQ, per the ack's rack order. Settings not confirmed by read-back.
+Added EchoJay EQ. Added EchoJay Compressor.
+  closing: 
+    step "read the rack" [done] right="" detail="" chips=[]
+    step "add EchoJay EQ" [done] right="applied" detail="added EchoJay EQ first; read back 1 slot(s) on the rack" chips=[]
+    step "add EchoJay Compressor" [done] right="applied" detail="added EchoJay Compressor first; read back 2 slot(s) on the rack" chips=[]

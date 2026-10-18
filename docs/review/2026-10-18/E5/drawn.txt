@@ -1,0 +1,14 @@
+scenario E5
+captured 2026-10-18T00:50:19.340+01:00
+  [user] rig: does the box clear?
+  [assistant] mock reply, sent quickly.
+  [user] rig-midreply-marker
+  [assistant] mock reply held back so the window could be closed mid-reply, then finished.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [user] rig-rawids-marker: set the attack and release
+  [assistant] Set the attack and release.
+  [assistant] Set the attack and release.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Set the attack and release.
+  closing: 
+    step "set slot 1: attack 20, release 60, band 1 frequency 240" [done] right="applied" detail="set the pre-chain gain to 1.0 dB" chips=[]
