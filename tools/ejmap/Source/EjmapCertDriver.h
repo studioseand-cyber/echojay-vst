@@ -246,6 +246,10 @@ struct SleepGuard
 // THE TIMEOUT ARITHMETIC, alone so it can be pinned: elapsed is AWAKE time.
 inline bool timeoutPassed (double startAwakeMs, double nowAwakeMs, int timeoutMs) { return nowAwakeMs - startAwakeMs > timeoutMs; }
 
+// NEVER LOOKS FROZEN (Kathy, 18 Oct): a caller that wants a child's progress while it runs (the quick check's "checking controls 12 of 40")
+// sets this hook on its own thread; it sees the output so far each time more arrives - direct and served alike. Unset: nothing changes
+inline std::function<void (const juce::String&)>& childOutputHook() { thread_local std::function<void (const juce::String&)> h; return h; }
+struct ScopedChildOutputHook { explicit ScopedChildOutputHook (std::function<void (const juce::String&)> f) { childOutputHook() = std::move (f); } ~ScopedChildOutputHook() { childOutputHook() = {}; } };
 inline ChildResult runChildDirect (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
 {
     ChildResult r;
@@ -284,7 +288,7 @@ inline ChildResult runChildDirect (const juce::StringArray& args, int timeoutMs,
     {
         pollfd p { fds[0], POLLIN, 0 };
         poll (&p, 1, 20);
-        drain();
+        { const auto before = collected.getDataSize(); drain(); if (collected.getDataSize() != before && childOutputHook()) childOutputHook() (collected.toString()); }   // 18 Oct
         if (! reaped && waitpid (pid, &status, WNOHANG) == pid) reaped = true;
         if (reaped) { drain(); break; }
         const double now = clock.awakeMs();
@@ -452,7 +456,8 @@ inline ChildResult runServed (const juce::StringArray& args, int timeoutMs, Watc
         std::optional<Parsed> got;
         for (;;)
         {
-            pollfd p { s.fromServer, POLLIN, 0 }; poll (&p, 1, 20); drain();
+            pollfd p { s.fromServer, POLLIN, 0 }; poll (&p, 1, 20);
+            { const auto before = collected.length(); drain(); if (collected.length() != before && childOutputHook()) childOutputHook() (collected); }   // 18 Oct: progress while it runs
             if (! s.readySeen && collected.contains ("ejprobe-ready\t") && collected.fromFirstOccurrenceOf ("ejprobe-ready\t", false, false).containsChar ('\n'))
             { s.readySeen = true; collected = afterReady (collected); }
             if (s.readySeen && (got = parseServed (collected))) break;

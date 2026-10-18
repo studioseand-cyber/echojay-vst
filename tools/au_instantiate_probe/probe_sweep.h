@@ -473,7 +473,9 @@ inline void runTextAtNormsMulti (juce::AudioPluginInstance& p, const juce::Strin
     }
     if (work.empty()) { std::printf ("refused empty spec\n"); return; }
     std::printf ("textmulti\tproto\t1\tcontrols\t%d\n", (int) work.size());
-    for (const auto& [idx, ns] : work) runTextAtNorms (p, idx, ns, true, false);
+    // 18 Oct (NEVER LOOKS FROZEN): a line per control read, flushed, so the wizard can say "checking controls 12 of 40" while this runs
+    int k = 0;
+    for (const auto& [idx, ns] : work) { runTextAtNorms (p, idx, ns, true, false); std::printf ("progress\t%d\t%d\n", ++k, (int) work.size()); std::fflush (stdout); }
     stage ("done");
 }
 

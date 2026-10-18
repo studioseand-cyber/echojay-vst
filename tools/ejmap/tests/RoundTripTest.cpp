@@ -4562,6 +4562,18 @@ void testSweepQuietReference()
                      + " edge " + rung (edge, 2) + "/" + juce::String (edge.rungsKept) + " moved " + rung (moved, 2) + "/" + juce::String (moved.rungsKept)
                      + " compared " + juce::String (qOwn.pointsCompared) + " " + first.result + "]");
         }
+        // WZ-HOOK-1 A CHILD'S OUTPUT WHILE IT RUNS (18 Oct, the shared half of the wizard's NEVER LOOKS FROZEN): the thread-local hook sees the
+        // output so far each time more arrives (the wizard reads "progress<TAB>k<TAB>n" from it); the probe's one-load read prints one per control
+        {
+            std::vector<juce::String> seen;
+            {   ejmap::cert::ScopedChildOutputHook hook ([&] (const juce::String& so) { if (seen.empty() || seen.back() != so) seen.push_back (so); });
+                (void) ejmap::cert::runChildDirect ({ "/bin/sh", "-c", "printf 'progress\\t1\\t2\\n'; sleep 0.4; printf 'progress\\t2\\t2\\n'" }, 10000); }
+            const auto probe = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_sweep.h").loadFileAsString();
+            check (seen.size() >= 2 && seen.front().contains ("progress\t1\t2") && ! seen.front().contains ("progress\t2\t2") && seen.back().contains ("progress\t2\t2")
+                   && ! (bool) ejmap::cert::childOutputHook()
+                   && probe.contains ("{ runTextAtNorms (p, idx, ns, true, false); std::printf (\"progress\\t%d\\t%d\\n\", ++k, (int) work.size()); std::fflush (stdout); }"),
+                   "cert WZ-HOOK-1: a child's output reaches the hook while it runs (" + juce::String ((int) seen.size()) + " updates), the hook is cleared after; the probe prints a progress line per control");
+        }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
         check (rungOf (bent, 1) == "-66/-60" && ! bent.skipped.contains (1) && rungOf (bent, 0) == "-54/-48",
