@@ -1591,3 +1591,16 @@ GREEN. No product rebuild is needed for the red half - the 17b bundle is in its 
 A filtered single-row pass costs 16m 21s, because the filter suppresses a row's verdict and nothing
 else. The matrix needs named blocks whose setup is skipped when no row in them is wanted. Until
 then QUICK's row step is sixteen minutes whatever is asked for.
+
+## 21. I9c's no-ack: a chain command to a live Link got no ack in 8 s (18 Oct, runs 5 and 6)
+With the row aiming at a Link it has proved alive (`work_on -> ok (working on 61cc4c030f)`), the add
+still failed:
+
+    EJLink: chain-cmd v2 -> 61cc4c030f seq=1792285348 source="agent" lease=none
+    EJAgent: step tc_tp FAILED code=not_applied
+             "no chain-ack-61cc4c030f.json with seq 1792285348 appeared in 8000 ms"
+
+while the editor was renewing a lease for a DIFFERENT uid (`da53af5fa3`) throughout. Pull that
+first: one process addressed, another leased. Sits with item 16 (the 8 s window and what the plugin
+says when it expires), item 0b (host the Link by PATH, because a fresh process loads the INSTALLED
+Link) and item 13 (a Link looking gone for seconds after its rack is rebuilt). Needs rig time.
