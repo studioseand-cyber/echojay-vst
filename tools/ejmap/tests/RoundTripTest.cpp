@@ -9702,10 +9702,44 @@ void testWizardCategories()
                && app.contains ("barValue = stepBar.next (sidx <= 0 ? 1 : 2, wizapp::scanBarValue (p)); barLeft = wizapp::scanLeftWords (p, cur); barRight = wizapp::barPercentWords (barValue);")
                && app.contains ("stepText = wizapp::stepLine (false, sidx); nowText = wizapp::nowWords (p); doneLine = wizapp::counterWords (p, false);")
                && app.contains ("g.drawFittedText (nowText, juce::Rectangle<int> (70, 310,") && app.contains ("g.drawText (doneLine, juce::Rectangle<int> (70, 330,")
-               && app.contains ("const auto nw = nowText.isNotEmpty() ? nowText :") && app.contains ("stepText = wizapp::stepLine (true, (int) p.getProperty (\"stage_index\", 0)); nowText = wizapp::nowWords (p);")
+               && app.contains ("const auto nw = ! jobsNow.empty() ? juce::String() : nowText.isNotEmpty() ? nowText :") && app.contains ("stepText = wizapp::stepLine (true, (int) p.getProperty (\"stage_index\", 0)); nowText = wizapp::nowWords (p);")
                && app.contains ("doneLine = wizapp::counterWords (p, true); snapOnStep (stepText + \" - getting ready\");"),
                "wizard WZ-FROZEN-1: Step n of 3 on top; a bar per step, never back, % to a tenth; the now line ('" + nowWords (afterNow) + "', read live from the probe: "
                  + juce::String ((int) seen.size()) + " progress line(s) seen while it ran); a ticking counter per stage; getting ready keeps the measuring %");
+    }
+    // WZ-PCT-1 THE MEASURING % AGREES WITH THE COUNTER (Kathy, 18 Oct, BAR % WRONG: 98.9% beside "19 plugins done" of 472). Two causes:
+    // the app kept the run before "Reset test" in its never-back % (reset now on a reset and on every new scan), and the engine's
+    // time-weighted share counted instantly skipped measurements (UAD / licence / demo skips) as done with their full weight. Now a
+    // plugin whose measurements were all skipped comes OFF the total and the % is per plugin - like tonight: 83 skips, 20 done, 2 running
+    {
+        using namespace ejmap::wizprog;
+        const auto dir = juce::File::createTempFile ("wzpct"); dir.createDirectory(); std::ostringstream term; juce::var p;
+        {   Tracker tr (dir.getChildFile ("progress.json"), term, false, 4);
+            std::vector<Item> its;
+            for (int k = 0; k < 472; ++k) { Item d; d.product = "P" + juce::String (k); d.kind = "demo"; its.push_back (d); Item c = d; c.kind = "compressor"; its.push_back (c); }
+            tr.stage (Stage::measuring, its);
+            for (int k = 0; k < 83; ++k)  { const auto n = "P" + juce::String (k); tr.started (n, "demo"); tr.finished (n, true, 3.0, "demo"); tr.finished (n, true, -1.0, "compressor"); }   // the sound check skipped it: its measurement never ran
+            for (int k = 83; k < 102; ++k) { const auto n = "P" + juce::String (k); tr.started (n, "demo"); tr.finished (n, false, 3.0, "demo"); tr.started (n, "compressor"); tr.finished (n, false, 250.0, "compressor"); }
+            { tr.started ("P102", "demo"); tr.finished ("P102", false, 3.0, "demo"); tr.started ("P102", "compressor"); tr.finished ("P102", true, 40.0, "compressor"); }   // ran and failed: an outcome, not a skip
+            for (int k = 103; k < 105; ++k) { const auto n = "P" + juce::String (k); tr.started (n, "demo"); tr.finished (n, false, 3.0, "demo"); tr.started (n, "compressor"); tr.now (n, "measuring (compressor)", 5, 10); }
+            p = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString()); }
+        dir.deleteRecursively();
+        const auto mp = p.getProperty ("measure_progress", {});
+        const double share = (double) mp.getProperty ("share", -1.0);
+        const double oldPct = ejmap::wizapp::measuringPercentTenths (p, 0.0), newPct = ejmap::wizapp::measuringShareTenths (p, 0.0);
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto resetFn = app.fromFirstOccurrenceOf ("void resetTestNow()", false, false).upToFirstOccurrenceOf ("void pauseNow", false, false);
+        const auto scanCase = app.fromFirstOccurrenceOf ("case Screen::scan:", false, false).upToFirstOccurrenceOf ("case Screen::alreadyDone:", false, false);
+        check ((int) mp.getProperty ("total", 0) == 389 && (int) mp.getProperty ("done", 0) == 20 && (int) mp.getProperty ("skipped", 0) == 83
+               && share >= 20.0 / 389.0 && share < 22.0 / 389.0 && std::abs (newPct - std::floor (share * 1000.0 + 1.0e-9) / 10.0) < 1e-9 && newPct < 6.0 && oldPct > 3.0 * newPct
+               && ejmap::wizapp::counterWords (p, true) == "20 of 389 done - 83 skipped" && ejmap::wizapp::measuringShareTenths (p, 98.9) == 98.9
+               && resetFn.contains ("resetShownProgress();") && scanCase.contains ("resetShownProgress();")
+               && app.contains ("void resetShownProgress() { shownPct = 0; shownPctT = 0.0; stepBar = {};")
+               && app.contains ("barLeft = \"Measuring\"; barRight = wizapp::percentWordsTenths (shownPctT);")
+               && app.contains ("shownPctT = wizapp::measuringShareTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); snapOnStep (stepText);")
+               && app.contains ("doneLine = stage == \"Measuring\" || stage == \"Packing\" ? wizapp::counterWords (p, true) : juce::String();"),
+               "wizard WZ-PCT-1: 83 instant skips + 20 done + 2 running of 472 -> '" + ejmap::wizapp::counterWords (p, true) + "', " + juce::String (newPct, 1)
+                 + "% (the weighted share said " + juce::String (oldPct, 1) + "%); a reset or a new scan starts the shown % from 0; no name above the job lines");
     }
     // WZ-SCANBAR-2 a resumed scan starts at its true done share: what needs nothing (its map already stored) is done from the first frame,
     // with no time recorded and no problem counted; a fresh scan starts at 0
@@ -11006,7 +11040,7 @@ void testWizardCategories()
                && (bool) written.getProperty ("demo_checks", {}).getProperty ("running", false)
                && jobs::demoJobsFor (1) == 2 && jobs::demoJobsFor (2) == 4 && jobs::demoJobsFor (4) == 6 && jobs::demoJobsFor (8) == 6
                && run.contains ("const int demoJobs = jobs::demoJobsFor (jobs);") && run.contains ("pool (todo, demoJobs);")
-               && app.contains ("shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); barLeft = rb.left; barRight = wizapp::barPercentWords (barValue);") && ! app.contains ("barValue = rb.value")
+               && app.contains ("shownPctT = wizapp::measuringShareTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); barLeft = rb.left; barRight = wizapp::barPercentWords (barValue);") && ! app.contains ("barValue = rb.value")
                && app.contains ("barValue = stepBar.next (3, shownPctT / 100.0); snapOnStep (stepText);")
                && wizapp::measuringText (474).startsWith ("Measuring 474 plugins we haven't mapped yet.") && ! wizapp::measuringText (474).contains ("Ready to measure"),
                "wizard WZ-READY-1: the PACE check read once per bundle (again when it changes); the re-check and the demo checks have their own moving bar; demo checks at twice the jobs (max 6); 'Measuring N plugins'");
@@ -11061,7 +11095,7 @@ void testWizardCategories()
                && (int) pv.getProperty ("plugins_done", -1) == 1 && (int) pv.getProperty ("plugins_total", -1) == 2 && (juce::int64) pv.getProperty ("heartbeat_ms", (juce::int64) 0) > 0
                && wizapp::liveState (now, now - 60000) == wizapp::Live::live && wizapp::liveState (now, now - 121000) == wizapp::Live::slow && wizapp::liveState (now, now - 901000) == wizapp::Live::stuck
                && wizapp::liveWords (wizapp::Live::slow) == "Still working on a slow plugin..." && wizapp::liveWords (wizapp::Live::stuck) == "Something may be stuck - Pause and carry on to restart it"
-               && app.contains ("jobsNow.empty() && ! doneLine.isEmpty() ? wizapp::betweenPluginsWords()") && wizapp::betweenPluginsWords() == "Starting the next plugin..."
+               && app.contains ("nowText.isNotEmpty() ? nowText : ! doneLine.isEmpty() ? wizapp::betweenPluginsWords()") && wizapp::betweenPluginsWords() == "Starting the next plugin..."
                && wizapp::liveWords (wizapp::Live::live).isEmpty() && wizapp::pluginsDoneWords (43) == "43 plugins done" && wizapp::pluginsDoneWords (1) == "1 plugin done"
                && wizapp::waveHeight (0, 0.0, false) == 2.0f && wizapp::waveHeight (0, 250.0, true) != wizapp::waveHeight (0, 600.0, true)
                && run.contains ("it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);") && run.contains ("getChildFile (\".tmp-\" + fmtTag (ir.desc) + \"_\"")

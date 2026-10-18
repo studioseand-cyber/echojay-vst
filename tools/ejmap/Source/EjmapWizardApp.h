@@ -287,6 +287,14 @@ inline double measuringPercentTenths (const juce::var& progress, double lastShow
     return juce::jmax (lastShown, now);
 }
 inline juce::String percentWordsTenths (double pct) { return juce::String (pct, 1) + "%"; }
+// 18 Oct (BAR % WRONG): the measuring %, from the engine's per-plugin share (skipped plugins off the total) - it agrees with "19 of 389
+// done"; an older engine without it: the band formula above. Never below what was shown
+inline double measuringShareTenths (const juce::var& progress, double lastShown)
+{
+    const auto mp = progress.getProperty ("measure_progress", {});
+    if (! mp.isObject()) return measuringPercentTenths (progress, lastShown);
+    return juce::jmax (lastShown, std::floor (juce::jlimit (0.0, 1.0, (double) mp.getProperty ("share", 0.0)) * 1000.0 + 1.0e-9) / 10.0);
+}
 // (2) each running job (up to 4): its name and its steps as a share (-1: a demo / sound check - no steps, "checking")
 struct JobLine { juce::String name; double fraction = -1.0; };
 inline std::vector<JobLine> jobLines (const juce::var& progress)
@@ -483,6 +491,9 @@ inline juce::String counterWords (const juce::var& progress, bool measuringScree
     if (idx <= 1) return n (done, "plugin re-checked", "plugins re-checked");   // the measuring run's getting ready: the Mac re-checked
     const auto dc = progress.getProperty ("demo_checks", {});
     if ((bool) dc.getProperty ("running", false)) return n ((int) dc.getProperty ("done", 0), "plugin sound-checked", "plugins sound-checked");
+    if (const auto mp = progress.getProperty ("measure_progress", {}); mp.isObject())   // 18 Oct (BAR % WRONG): "19 of 389 done - 83 skipped"
+    {   const int sk = (int) mp.getProperty ("skipped", 0);
+        return juce::String ((int) mp.getProperty ("done", 0)) + " of " + juce::String ((int) mp.getProperty ("total", 0)) + " done" + (sk > 0 ? " - " + juce::String (sk) + " skipped" : juce::String()); }
     return progress.hasProperty ("plugins_done") ? pluginsDoneWords ((int) progress.getProperty ("plugins_done", 0)) : juce::String();
 }
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring

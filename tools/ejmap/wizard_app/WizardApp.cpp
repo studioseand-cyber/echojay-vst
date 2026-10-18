@@ -365,7 +365,8 @@ public:
             int y = 282;
             // 18 Oct (NEVER LOOKS FROZEN): the now line first - plugin + what it is doing (between passes: say so, never a blank gap)
             { g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (13.0f));
-              const auto nw = nowText.isNotEmpty() ? nowText : jobsNow.empty() && ! doneLine.isEmpty() ? wizapp::betweenPluginsWords() : juce::String();
+              // 18 Oct (BAR % WRONG): only while no job line names a plugin - never the same name twice
+              const auto nw = ! jobsNow.empty() ? juce::String() : nowText.isNotEmpty() ? nowText : ! doneLine.isEmpty() ? wizapp::betweenPluginsWords() : juce::String();
               g.drawFittedText (nw, juce::Rectangle<int> (70, y, getWidth() - 140, 17), juce::Justification::centred, 1, 0.7f); y += 19; }
             int shownJobs = 0;
             for (const auto& j : jobsNow)
@@ -430,10 +431,11 @@ private:
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
     juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0; ejmap::wizapp::DawHit dawHit; int dawIgnoredPid = 0;   // 17 Oct: the hit (for the words and the log), the DAW the user chose to carry on beside   // 15 Oct: a pause the DAW caused, and where it carries on
     double shownPctT = 0.0; std::vector<wizapp::JobLine> jobsNow; juce::String doneLine; juce::int64 heartbeatMs = 0;   // 15 Oct (FEELS FROZEN)
-    wizapp::StepBar stepBar; juce::String stepText, nowText, lastSnapStep;   // 18 Oct (NEVER LOOKS FROZEN): the step line, the now line
+    wizapp::StepBar stepBar; juce::String stepText, nowText, lastSnapStep;
+    void resetShownProgress() { shownPct = 0; shownPctT = 0.0; stepBar = {}; jobsNow.clear(); doneLine.clear(); nowText.clear(); stepText.clear(); lastSnapStep.clear(); }   // a NEW run starts from 0   // 18 Oct (NEVER LOOKS FROZEN): the step line, the now line
     void snapOnStep (const juce::String& key)   // rehearsals (--snapshots): one picture a few seconds into each stage
     { if (cfg.snapshots == juce::File() || key == lastSnapStep) return; lastSnapStep = key;
-      juce::Timer::callAfterDelay (4000, [safe = juce::Component::SafePointer<WizardComponent> (this), key] { if (safe != nullptr) safe->snap ("stage-" + juce::File::createLegalFileName (key)); }); }
+      juce::Timer::callAfterDelay (1200, [safe = juce::Component::SafePointer<WizardComponent> (this), key] { if (safe != nullptr) safe->snap ("stage-" + juce::File::createLegalFileName (key)); }); }
     int shownPct = 0; juce::int64 readyStamp = 0;   // 15 Oct: the % shown (never backwards); wizard_state.json's time, for the ready line
     struct Shimmer : juce::Timer { std::function<void()> tick; void timerCallback() override { if (tick) tick(); } } shimmer;
     void refreshReadyLine()
@@ -501,7 +503,8 @@ private:
                 title = "Before we start"; text = wizapp::consentText (kMode);
                 agree.setToggleState (false, juce::dontSendNotification); agree.setVisible (true); primary.setButtonText ("Continue"); primary.setVisible (true); primary.setEnabled (false); break;
             case Screen::scan:
-                title = "Checking your plugins"; text = "We're looking at each plugin on this Mac and checking it against what EchoJay already knows.";
+                title = "Looking for plugins"; text = "We're looking at each plugin on this Mac and checking it against what EchoJay already knows.";
+                resetShownProgress();   // 18 Oct (BAR % WRONG): a scan starts a run - nothing shown carries over from the last one
                 showBar = true; barValue = 0.0; barLeft = "Starting"; barRight = {}; startEngine (false); break;
             case Screen::alreadyDone: copy (wizapp::alreadyDoneCopy()); break;
             case Screen::scanDone:
@@ -638,6 +641,7 @@ private:
         const int n = wizapp::resetTest (cfg.work); cfg.work.createDirectory(); seedTestBuild (cfg); cfg.only = wizapp::testOnlyPlugins (cfg.work);
         account = juce::var(); receipt = juce::var(); crashed.clear(); lastSendKept = false; lastCheckpointSeq = 0; email.clear(); password.clear();
         logLine ("reset test: " + juce::String (n) + " item(s) cleared, config.json kept, the snapshot seeded again");
+        resetShownProgress();   // 18 Oct (BAR % WRONG): the 98.9% was the run before the reset, kept by "never go back"
         show (Screen::welcome);
     }
     void pauseNow (const juce::String& from, bool quitAfter)
@@ -764,6 +768,7 @@ private:
             const int sidx = (int) p.getProperty ("stage_index", 0);
             barValue = stepBar.next (sidx <= 0 ? 1 : 2, wizapp::scanBarValue (p)); barLeft = wizapp::scanLeftWords (p, cur); barRight = wizapp::barPercentWords (barValue);
             stepText = wizapp::stepLine (false, sidx); nowText = wizapp::nowWords (p); doneLine = wizapp::counterWords (p, false);
+            title = sidx <= 0 ? "Looking for plugins" : "Checking your plugins";   // 18 Oct: the title follows the step
             heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 18 Oct: the live wave and the 2 min / 15 min lines here too
             snapOnStep (stepText);
             if (cfg.snapScanAtPct >= 0.0 && barValue * 100.0 >= cfg.snapScanAtPct) { cfg.snapScanAtPct = -1.0; repaint(); juce::Timer::callAfterDelay (300, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->snap ("scan_at_pct"); }); }
@@ -774,14 +779,14 @@ private:
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 15 Oct (FEELS FROZEN)
             stepText = wizapp::stepLine (true, (int) p.getProperty ("stage_index", 0)); nowText = wizapp::nowWords (p);   // 18 Oct (NEVER LOOKS FROZEN)
-            doneLine = p.hasProperty ("plugins_done") && (stage == "Measuring" || stage == "Packing") ? wizapp::pluginsDoneWords ((int) p.getProperty ("plugins_done", 0)) : juce::String();
+            doneLine = stage == "Measuring" || stage == "Packing" ? wizapp::counterWords (p, true) : juce::String();   // 18 Oct (BAR % WRONG): "19 of 389 done - 83 skipped"
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
             else if (const auto rb = wizapp::readyBar (p, cur); rb.on)
             {   // 18 Oct (NEVER LOOKS FROZEN): getting ready is part of step 3 - the bar stays the measuring % (never back); its own count is the counter
-                shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); barLeft = rb.left; barRight = wizapp::barPercentWords (barValue);
+                shownPctT = wizapp::measuringShareTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); barLeft = rb.left; barRight = wizapp::barPercentWords (barValue);
                 doneLine = wizapp::counterWords (p, true); snapOnStep (stepText + " - getting ready"); }
-            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); snapOnStep (stepText);   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWordsTenths (shownPctT);   // 15 Oct: the step-weighted %, one decimal, never backwards
+            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); shownPctT = wizapp::measuringShareTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); snapOnStep (stepText);   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = "Measuring"; barRight = wizapp::percentWordsTenths (shownPctT);   /* 18 Oct: no name above the job lines (they name each plugin) */   // 15 Oct: the step-weighted %, one decimal, never backwards
                                              refreshReadyLine(); }   // 14 Oct: n of N, never time left
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }   // the first second, before the engine's first progress

@@ -95,7 +95,8 @@ struct Times
 
 struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; double weight = 0.0;
               juce::String stepDir; int expectedSteps = 0, steps = 0;
-              int subDone = 0, subTotal = 0; };   // 18 Oct (NEVER LOOKS FROZEN): a sub-step inside the item (a control read, ...) - credit while it runs   // 15 Oct (FEELS FROZEN): the row's temp folder, Sean's probe calls for it (or the kind's median), the calls done so far   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
+              int subDone = 0, subTotal = 0;
+              bool skipped = false; };   // 18 Oct (BAR % WRONG): filed a problem without ever starting (a UAD / licence / demo skip) - off the total, never done   // 18 Oct (NEVER LOOKS FROZEN): a sub-step inside the item (a control read, ...) - credit while it runs   // 15 Oct (FEELS FROZEN): the row's temp folder, Sean's probe calls for it (or the kind's median), the calls done so far   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
 
 // the weights' source: <database>/expected_work.json (tools/ejmap/scripts/expected_work.py, from Sean's real runs): per plugin uid and kind
 // Sean's seconds, else the kind's median over his rows; 0 when the file or the kind is missing (the item keeps its kind's figure)
@@ -142,6 +143,39 @@ inline double runningCredit (const Item& i, double w)
     return c;
 }
 // the words for what a started item is doing (the "now" line), by its kind and stage
+// THE MEASURING SHARE (Kathy, 18 Oct, BAR % WRONG: 98.9% beside "19 plugins done" of 472): per PLUGIN, so the % agrees with the counter.
+// A plugin every one of whose measurements was skipped (filed a problem without starting) comes OFF the total; each other plugin
+// counts 1 when all its measurements have an outcome, else its sound check's 5% plus its measurements' share (done 1, running their
+// steps / sub-steps, never time); skipped measurements leave its average. share = the sum / the plugins left
+struct MeasureProgress { double share = 0.0; int done = 0, total = 0, skipped = 0; };
+inline MeasureProgress measureProgress (const std::vector<Item>& items)
+{
+    struct P { int meas = 0, measSkipped = 0, measDone = 0; double measCredit = 0.0; bool demo = false, demoDone = false; };
+    std::map<juce::String, P> per;
+    for (const auto& i : items)
+    {
+        auto& p = per[i.product];
+        if (i.kind == "demo") { p.demo = true; p.demoDone = i.done; continue; }
+        ++p.meas;
+        if (i.skipped) { ++p.measSkipped; continue; }
+        if (i.done) { ++p.measDone; p.measCredit += 1.0; continue; }
+        if (i.running)
+        {   double f = juce::jmax (0.0, stepFraction (i));
+            if (i.subTotal > 0) f = juce::jmax (f, juce::jmin (kStepCap, (double) i.subDone / (double) i.subTotal));
+            p.measCredit += f; }
+    }
+    MeasureProgress m; double sum = 0.0;
+    for (const auto& [name, p] : per)
+    {
+        if (p.meas == 0) continue;                                      // a sound check with no measurement of its own
+        if (p.measSkipped == p.meas) { ++m.skipped; continue; }          // skipped: off the total
+        ++m.total; const int left = p.meas - p.measSkipped;
+        if (p.measDone == left) { ++m.done; sum += 1.0; continue; }
+        sum += (p.demo ? 0.05 * (p.demoDone ? 1.0 : 0.0) : 0.0) + (p.demo ? 0.95 : 1.0) * juce::jmin (kStepCap, p.measCredit / (double) left);
+    }
+    m.share = m.total > 0 ? juce::jlimit (0.0, 1.0, sum / (double) m.total) : 0.0;
+    return m;
+}
 inline juce::String doingWords (Stage s, const juce::String& kind)
 {
     if (kind == "demo") return "sound check";
@@ -305,8 +339,9 @@ public:
         heartbeatMs_ = juce::Time::currentTimeMillis();
         for (auto& i : items_) if (i.product == product && ! i.done && (kind.isEmpty() || i.kind == kind))
         {
-            i.done = true; i.running = false; i.problem = problem;
             const auto key = product + "|" + i.kind;
+            i.skipped = problem && ! i.running && ! startedAt_.count (key);   // 18 Oct: an instant skip never ran - off the total
+            i.done = true; i.running = false; i.problem = problem;
             double s = seconds; if (s < 0.0 && startedAt_.count (key)) s = (juce::Time::getMillisecondCounterHiRes() - startedAt_[key]) / 1000.0;
             if (! problem && s > 0.0) { times_.add (i.kind, s); times_.addWeighted (i.weight, s); }
             if (problem) ++problems_;
@@ -413,6 +448,9 @@ private:
             auto* nw = new juce::DynamicObject(); nw->setProperty ("product", nowProduct_); nw->setProperty ("what", nowWhat_); nw->setProperty ("done", nowDone_); nw->setProperty ("total", nowTotal_);
             nw->setProperty ("line", nowLine (nowProduct_, nowWhat_, nowDone_, nowTotal_, steps, exp)); o->setProperty ("now", juce::var (nw));
             o->setProperty ("stage_share", items_.empty() ? 0.0 : std::round (juce::jlimit (0.0, 1.0, stageShare (items_, times_)) * 10000.0) / 10000.0); }
+        if (stage_ == Stage::measuring || stage_ == Stage::packing)   // 18 Oct (BAR % WRONG): the per-plugin share the measuring bar shows
+        { const auto mp = measureProgress (items_); auto* m = new juce::DynamicObject(); m->setProperty ("share", std::round (mp.share * 10000.0) / 10000.0);
+          m->setProperty ("done", mp.done); m->setProperty ("total", mp.total); m->setProperty ("skipped", mp.skipped); o->setProperty ("measure_progress", juce::var (m)); }
         if (lookTotal_ > 0) { auto* lk = new juce::DynamicObject(); lk->setProperty ("done", lookDone_); lk->setProperty ("total", lookTotal_); o->setProperty ("looking", juce::var (lk)); }   // 18 Oct
         o->setProperty ("problems", problems_);
         {   // 14 Oct: "N measured so far" - finished measurements without a problem, never a demo check
