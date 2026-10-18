@@ -24044,6 +24044,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
         const bool isCaptureMsg = isUser && msg.reviewId.isNotEmpty();
         static constexpr int kCaptureMsgH = 56;
 
+        // ---- A RUN'S PROSE LIVES IN ITS CARD (18 Oct 2026, Sean in Logic) --------------------
+        // *"Show it once, in full, inside the card."*  The card now carries the whole answer
+        // (RunView::foldProseIntoTheCard), so a row that HAS a card reserves no bubble height and
+        // the "No prose, no bubble" path below leaves the card alone at the top of the message.
+        // Computed here, above the text height, because the text height now depends on it.
+        const int agentAreaH = isUser ? 0 : agentCardHeight(msg);
         juce::AttributedString as;
         // item 3b: markdown, through the one renderer the measure pass also calls
         echojay::appendChatMarkdown(as, displayedText(msg), chatMsgFontSize,
@@ -24055,7 +24061,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         layout.createLayout(as, (float)(maxBubbleW - 20));
         // A message with NOTHING to say reserves no text height (9 Aug
         // 2026: card-only edit turns) - MUST match the measure pass.
-        int textH = displayedText(msg).isEmpty() ? 0 : (int)layout.getHeight() + 20;
+        int textH = (displayedText(msg).isEmpty() || agentAreaH > 0) ? 0 : (int)layout.getHeight() + 20;
 
         // Extra height for waveform card
         int waveCardH = 0;
@@ -24087,7 +24093,6 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // ITEM 0: the agent run's row. LAST in the card stack, so reserving it cannot move any
         // other card's Y - the discipline the figure card's comment states. SAME helper as the
         // measure pass, at the same width.
-        int agentAreaH = isUser ? 0 : agentCardHeight(msg);
 
 
         // Extra height for AI gain-proposal APPLY cards
@@ -26712,13 +26717,15 @@ int EchoJayEditor::measureChatContentHeight()
         }
         else
         {
+            const int agentAreaH2 = (msg.role == "assistant") ? agentCardHeight(msg) : 0;   // ITEM 0: SAME helper as paint
             juce::AttributedString as;
             echojay::appendChatMarkdown(as, displayedText(msg), chatMsgFontSize2, C::text);   // item 3b: SAME renderer as paint
             as.setLineSpacing(chatMsgFontSize2 * 0.35f); // MUST match paint pass
             juce::TextLayout layout;
             layout.createLayout(as, (float)(maxBW - 20));
             // Empty shown text reserves no height - MUST match paint pass.
-            int textH = displayedText(msg).isEmpty() ? 0 : (int)layout.getHeight() + 20;
+            // a run's prose is in its card, not in a bubble above it - MUST match the paint pass
+            int textH = (displayedText(msg).isEmpty() || agentAreaH2 > 0) ? 0 : (int)layout.getHeight() + 20;
             int waveCardH = (msg.hasWaveform && !msg.waveform.empty()) ? 36 : 0;
             int chainAreaH2 = (msg.role == "assistant") ? chainCardHeight(msg) : 0;   // SAME helper as paint
             int figAreaH2   = (msg.role == "assistant") ? figureCardHeight(msg) : 0;  // SAME helper as paint
@@ -26737,7 +26744,6 @@ int EchoJayEditor::measureChatContentHeight()
             // Chain-edit preview card — same shared helper as the paint pass
             int editAreaH2 = (msg.role == "assistant") ? editCardHeight(msg) : 0;
             int altAreaH2  = (msg.role == "assistant") ? altPillH(msg, maxBW - 20) : 0;   // SAME helper as paint (18h: rows)
-            int agentAreaH2 = (msg.role == "assistant") ? agentCardHeight(msg) : 0;      // ITEM 0: SAME helper as paint
             tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2 + figAreaH2 + agentAreaH2;
         }
         totalH += tH + 10; // matches paint msgY += tH + 10
@@ -32502,7 +32508,7 @@ echojay::agentui::RunView EchoJayEditor::agentRunViewFor (const ChatMsg& msg) co
     // 16 Oct: "the closing appears twice, as a bubble ABOVE the ASK row and again inside the run").
     // Here, because this is the one place where the opening - which comes from the ChatMsg and not
     // from the stored JSON - and the closing are both known.
-    v.dropClosingIfItRepeatsTheOpening();
+    v.foldProseIntoTheCard();
     // The user's press wins over the run's own default (expanded while running, collapsed after).
     if (msg.agentStepsOpen >= 0) v.stepsOpen = msg.agentStepsOpen == 1;
     return v;
@@ -32668,6 +32674,45 @@ void EchoJayEditor::syncAgentRunMessage()
     repaint();
 }
 
+// ---- THE RUN'S ANSWER, IN THE CHAT RECORD (18 Oct 2026, his 14:10 run) ---------------------
+//
+// Sean: *"the agent's reply vanished from the chat when I deselected and reselected the rack: the
+// chat now shows 'Add a compressor / Stopped. / Add a compressor' with no answer."*
+//
+// The 13:52 build wrote the answer down from the CLOSING transcript line - the one the client emits
+// when the done summary says something the round's talk did not. His 14:10 run had no round talk at
+// all, so its only assistant line was the summary, and it arrived while the client was still active:
+// it went into the bubble (the live branch) and the closing branch never ran. Nothing was written,
+// and reselecting the rack rebuilds the transcript from the record, which is why the answer was gone
+// while the row on screen still had it.
+//
+// The fact that matters is the run ENDING, not which frame the prose happened to arrive on. So the
+// write lives here, on its own, and both the closing line and the state change call it. Idempotent
+// by (run, chat, text): the first call appends, a later one with different words updates the same
+// assistant entry, and an unchanged one does nothing - so being called on every change is free.
+void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m)
+{
+    if (currentChatId.isEmpty() || m.agentData.isEmpty()) return;
+    auto v = echojay::agentui::fromJson (juce::JSON::parse (m.agentData));
+    v.opening = displayedText (m);
+    v.foldProseIntoTheCard();                 // what the CARD says, by the one rule that decides it
+    const auto whole = v.closing.trim();
+    if (whole.isEmpty()) return;
+    const bool sameRun = agentRecordedInChat_ == m.agentRunId && agentRecordedChat_ == currentChatId;
+    if (sameRun && agentRecordedText_ == whole) return;                 // already in the record
+    if (sameRun && agentRecordedText_.isNotEmpty())
+        workspace.updateAssistantText (currentChatId, agentRecordedText_, whole);
+    else
+        workspace.appendMessageToChat (currentChatId, "assistant", whole, {}, {}, {}, {}, {}, {}, {});
+    agentRecordedInChat_ = m.agentRunId;
+    agentRecordedChat_   = currentChatId;
+    agentRecordedText_   = whole;
+    workspace.requestMutationSync();
+    EchoJay_NSLog (("EJAgentRow: the run's answer is in chat " + currentChatId
+                    + " now (" + juce::String (whole.length())
+                    + " chars) - a reopened chat shows it under the question").toRawUTF8());
+}
+
 void EchoJayEditor::AgentRunBridge::agentChanged()
 {
     // The run row is the indicator from here on: item 9's "Thinking..." line covered the gap
@@ -32675,6 +32720,10 @@ void EchoJayEditor::AgentRunBridge::agentChanged()
     // with itself again.
     if (ed.stageStatusIsThinking()) ed.clearStageStatus();
     ed.syncAgentRunMessage();
+    // A run that is over belongs in the record, whichever frame its prose arrived on.
+    if (auto* m = ed.agentRunMessage())
+        if (ed.agentClient() != nullptr && ! ed.agentClient()->isActive())
+            ed.recordAgentRunInChat (*m);
 }
 
 void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, const juce::String& text)
@@ -32769,25 +32818,7 @@ void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, c
         // THE CLOSING IS APPENDED ONLY WHEN IT IS NOT ALREADY THERE, and the thing that decides that
         // is the view's own dropClosingIfItRepeatsTheOpening - the one function in this build that
         // owns "are these the same sentence". Not a second rule beside it.
-        if (ed.currentChatId.isNotEmpty() && m->content.isNotEmpty())
-        {
-            auto decide = v;
-            decide.opening = m->content;
-            decide.dropClosingIfItRepeatsTheOpening();
-            const auto whole = decide.closing.isNotEmpty() ? (m->content + "\n\n" + decide.closing)
-                                                           : m->content;
-            if (ed.agentRecordedInChat_ == m->agentRunId && ed.agentRecordedText_.isNotEmpty())
-                ed.workspace.updateAssistantText (ed.currentChatId, ed.agentRecordedText_, whole);
-            else
-                ed.workspace.appendMessageToChat (ed.currentChatId, "assistant", whole,
-                                                  {}, {}, {}, {}, {}, {}, {});
-            ed.agentRecordedInChat_ = m->agentRunId;
-            ed.agentRecordedText_   = whole;
-            ed.workspace.requestMutationSync();
-            EchoJay_NSLog (("EJAgentRow: the run's answer is in chat " + ed.currentChatId
-                            + " now (" + juce::String (whole.length())
-                            + " chars) - a reopened chat shows it under the question").toRawUTF8());
-        }
+        ed.recordAgentRunInChat (*m);
     }
     // keep the processor's copy in step: that is the one the next window replays
     for (auto it = ed.processorRef.chatHistory.rbegin(); it != ed.processorRef.chatHistory.rend(); ++it)

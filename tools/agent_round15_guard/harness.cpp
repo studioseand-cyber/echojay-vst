@@ -15,6 +15,7 @@
 #include "ChainHost.h"   // check 5 part 2: the load-failure record the inventory reads
 #include "EchoJayUndoHistory.h"
 #include "EJAgentClient.h"
+#include "EJParamPlainNames.h"   // 18 Oct: the row's sentence is built there
 #include <cmath>
 #include <cstdio>
 
@@ -489,6 +490,66 @@ int main()
         check (! ChainHost::loadFailedPluginNames().contains (name),
                "...and the mark CLEARS, so it is a reading of now and never a judgement about ownership "
                "(Sean: \"Clear the mark if the plugin later loads fine\")");
+    }
+
+    // ---------------------------------------------------------------- 18 OCT 2026
+    // SEAN, IN LOGIC: *"The step detail under an add reads like a developer log: 'the rack took it
+    // and now holds 1 slot(s); read back 1 slot(s) on the rack; read back Tube-Tech CL 1B:
+    // threshold -12.00 dB, ...'. Make it a plain sentence, e.g. 'Added. Read back: threshold -12,
+    // ratio 4:1, attack 10, gain 2. Release couldn't be read.'"*
+    std::printf ("== 18 Oct: the row is a sentence, the model keeps the plumbing ==\n");
+    {
+        Fixture f;
+        f.own.slots.push_back ({});                      // the add's slot, as (c) above sets one up
+        f.own.slots[0].n = 1; f.own.slots[0].name = "Tube-Tech CL 1B";
+        f.held = { { "threshold_db", -12.0 }, { "ratio", 4.0 }, { "attack_ms", 10.0 } };
+        f.unreadable.add ("release_ms");          // the one his CL 1B would not report
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto out = runDo (ex, call (R"({"op":"add","name":"Tube-Tech CL 1B","settings_structured":)"
+                                          R"({"params":{"threshold_db":-12,"ratio":4,"attack_ms":10,"release_ms":100}}})"));
+        const auto row = out.landedForTheUser();
+        check (out.ok, "the add lands", out.errorMessage);
+        check (row.startsWith ("Added"),
+               "the row OPENS with what happened, in a word (RED as it stood: it opened with \"the "
+               "rack took it and now holds 1 slot(s)\")", row);
+        check (! row.contains ("slot(s)") && ! row.contains (";") && ! row.contains ("on the rack"),
+               "...and carries no slot counts, no semicolons and no plumbing - the three clauses he "
+               "read in front of the one fact he wanted", row);
+        check (row.contains ("Read back: ") && row.contains ("threshold -12") && row.contains ("ratio 4"),
+               "...and says what came back, in words", row);
+        check (row.containsIgnoreCase ("release") && row.containsIgnoreCase ("couldn't be read"),
+               "...and names what could NOT be read as its own sentence, which is his example verbatim",
+               row);
+        // THE MODEL'S HALF IS UNTOUCHED: it still gets the structural evidence and the ids.
+        check (out.landedLine.contains ("slot(s)") && out.landedLine.contains ("threshold_db")
+               && out.landedLine != row,
+               "the MODEL still gets the slot count and the ids - two audiences, one call, and the "
+               "evidence stays where it is needed", out.landedLine);
+    }
+    {
+        // An op with NOTHING asked: one word and a full stop on the row, the count on the model's half.
+        Fixture f;
+        f.own.slots.push_back ({}); f.own.slots[0].n = 1;
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto out = runDo (ex, call (R"({"op":"add","name":"EchoJay Compressor"})"));
+        const auto row = out.landedForTheUser();
+        check (out.ok && row.startsWith ("Added") && ! row.contains ("slot(s)"),
+               "an add with no settings reads as a sentence too (RED as it stood: \"the rack took it "
+               "and now holds 2 slot(s); read back 2 slot(s) on the rack\")", row);
+        check (out.landedLine.contains ("slot(s)"),
+               "...while the model keeps the read-back it needs as evidence", out.landedLine);
+    }
+    {
+        // The word comes from a CLOSED list, and anything not on it is "Done" rather than an invented tense.
+        check (echojay::params::opDoneWord ("add") == "Added"
+               && echojay::params::opDoneWord ("remove") == "Removed"
+               && echojay::params::opDoneWord ("set") == "Set"
+               && echojay::params::opDoneWord ("set_rack_out") == "Done",
+               "the op's word is a closed list - never a tense made up from the op name");
+        check (echojay::params::landedRowSentence ("add", "CL 1B", "threshold -12", "release")
+                   == "Added CL 1B. Read back: threshold -12. Release couldn't be read.",
+               "...and the whole sentence is built in ONE place, so no caller writes its own",
+               echojay::params::landedRowSentence ("add", "CL 1B", "threshold -12", "release"));
     }
 
     std::printf ("==== agent_round15_guard: %s (%d assertion(s) failed, %d passed) ====\n",

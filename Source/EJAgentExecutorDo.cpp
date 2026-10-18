@@ -1046,7 +1046,17 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         }
     }
 
-    if (asks.empty()) { finish (juce::var (new juce::DynamicObject()), landedSentence); return; }
+    // THE THIRD DOOR (18 Oct 2026). An op with no settings at all returns HERE, before the
+    // askedCount check below, and it was still handing the row the structural sentence. Three doors
+    // onto one row is why the leg asked the question of the BEHAVIOUR and not of one branch: the
+    // first two were the ones I guessed, this is the one that was actually open.
+    if (asks.empty())
+    {
+        finish (juce::var (new juce::DynamicObject()),
+                echojay::params::landedRowSentence (opName, {}, {}, {}),
+                landedSentence);
+        return;
+    }
 
     SettingsCheck all;
     for (const auto& a : asks)
@@ -1062,7 +1072,16 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         all.missedPlain.addArray (c.missedPlain);
         if (all.slotName.isEmpty()) all.slotName = c.slotName;
     }
-    if (all.askedCount == 0) { finish (juce::var (new juce::DynamicObject()), landedSentence); return; }
+    // THE ROW READS AS A SENTENCE, THE MODEL KEEPS THE STRUCTURAL LINE (18 Oct 2026). With no
+    // settings asked there is nothing to read back, so the row is one word and a full stop; the
+    // slot count the model needs as evidence travels on its own half, as it always did.
+    if (all.askedCount == 0)
+    {
+        finish (juce::var (new juce::DynamicObject()),
+                echojay::params::landedRowSentence (opName, all.slotName, {}, {}),
+                landedSentence);
+        return;
+    }
 
     // ---- GIVE A PENDING DIAL ITS BOUND BEFORE CALLING IT A FAILURE (16 Oct 2026) ----------------
     //
@@ -1240,14 +1259,20 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // What he saw: "slot 2 threshold_db -14.00, slot 2 ratio 4.00". What he asked for: "Compressor:
     // threshold -14 dB, ratio 4:1". Same figures, same order, one audience each - the model's copy
     // travels on the result object (settings_applied), untouched.
-    const auto plainFigures = (all.slotName.isNotEmpty() ? all.slotName + ": " : juce::String())
-                            + all.matchedPlain.joinIntoString (", ");
+    // ---- SEAN, 18 Oct 2026: THE ROW IS A SENTENCE, NOT A LOG -----------------------------------
+    // What he read: "the rack took it and now holds 1 slot(s); read back 1 slot(s) on the rack;
+    // read back Tube-Tech CL 1B: threshold -12.00 dB, ...". Three clauses of plumbing in front of
+    // the one fact he wanted. The row now says what happened, what came back, and what did not -
+    // one sentence each, built in ONE place (landedRowSentence) so no caller writes its own.
+    // The slot counts and the ids stay on the model's half, which is where the evidence belongs.
     finish (juce::var (r),
-            landedSentence + "; read back " + plainFigures
-            + (unreadablePlain.isEmpty() ? juce::String()
-                                         : ". Not readable, so not confirmed: " + unreadablePlain),
+            echojay::params::landedRowSentence (opName, all.slotName,
+                                                all.matchedPlain.joinIntoString (", "),
+                                                unreadablePlain),
             // the MODEL's half: the ids and the slot numbers it needs to retry or explain
-            "read back " + landedPlain + " - " + all.matched.joinIntoString (", "));
+            landedSentence + "; read back " + landedPlain + " - " + all.matched.joinIntoString (", ")
+            + (unreadablePlain.isEmpty() ? juce::String()
+                                         : ". Not readable, so not confirmed: " + unreadablePlain));
 }
 
 // ---- ITEM 1 (14 Oct 2026): ONE CROSS-CHANNEL GATE ----------------------------------------------------
@@ -1310,9 +1335,14 @@ void ExecutorDo::confirmLanded (const juce::String& applyTo, int wantSlots, cons
         r->setProperty ("op", opName);
         // ONE UNDO TOKEN PER `do`, because one do is one undo step. The token is the op's own call id, which
         // the server already has, so an agent can undo exactly the thing it asked for and nothing else.
-        done (ToolOutcome::success (juce::var (r),
-                                    /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
-                                    withSentence));
+        // THE SECOND DOOR ONTO THE ROW (18 Oct 2026). My own new leg caught this one: a caller with
+        // nothing to check comes through here, and it was still handing the row the structural
+        // sentence ("the rack took it and now holds 2 slot(s); read back 2 slot(s) on the rack").
+        // The row gets the words, the model keeps the evidence - the same split as confirmSettings.
+        done (ToolOutcome::successFor (juce::var (r),
+                                       /*undoToken*/ opName + ":" + juce::String (juce::Time::currentTimeMillis()),
+                                       /*model*/ withSentence,
+                                       /*user*/  echojay::params::landedRowSentence (opName, {}, {}, {})));
     };
 
     if (wantSlots < 0) { finishOk (sentence, -1); return; }      // nothing structural to count

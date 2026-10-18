@@ -182,6 +182,49 @@ inline juce::String plainValuePhrase (const juce::String& idIn, double value,
       - it is a dotted id whose leaf is one of those ("band1.freq_hz" -> "band 1 frequency").
 
     Everything else is left exactly as it was written.                                              */
+/** ---- WHAT HAPPENED, IN ONE WORD (18 Oct 2026, Sean in Logic) ------------------------------
+    *"The step detail under an add reads like a developer log: 'the rack took it and now holds 1
+    slot(s); read back 1 slot(s) on the rack; read back Tube-Tech CL 1B: ...'. Make it a plain
+    sentence, e.g. 'Added. Read back: threshold -12, ratio 4:1, attack 10, gain 2. Release couldn't
+    be read.'"*
+
+    A CLOSED LIST, and "Done" for anything not on it: a tense invented from an op name ("bypassed",
+    "set_rack_outed") is the kind of sentence this product keeps having to apologise for. The model
+    still gets the structural line it needs - the row and the model are two audiences, and this is
+    only ever the row's half. */
+inline juce::String opDoneWord (const juce::String& op)
+{
+    const auto o = op.trim().toLowerCase();
+    if (o == "add")      return "Added";
+    if (o == "remove")   return "Removed";
+    if (o == "set")      return "Set";
+    if (o == "build")    return "Built";
+    if (o == "move")     return "Moved";
+    if (o == "bypass")   return "Bypassed";
+    if (o == "unbypass") return "Switched back on";
+    if (o == "rename")   return "Renamed";
+    if (o == "replace")  return "Replaced";
+    return "Done";
+}
+
+/** The row's sentence for a `do` that landed: what happened, what was read back, and what could
+    not be read - in that order, each its own sentence, and no ids. `figures` and `unreadable` are
+    already in plain words (plainParamList / the executor's *Plain lists). */
+inline juce::String landedRowSentence (const juce::String& op, const juce::String& what,
+                                       const juce::String& figures, const juce::String& unreadable)
+{
+    juce::String s = opDoneWord (op);
+    if (what.trim().isNotEmpty()) s << " " << what.trim();
+    s << ".";
+    if (figures.trim().isNotEmpty()) s << " Read back: " << figures.trim() << ".";
+    if (unreadable.trim().isNotEmpty())
+    {
+        auto u = unreadable.trim();
+        s << " " << u.substring (0, 1).toUpperCase() << u.substring (1) << " couldn't be read.";
+    }
+    return s;
+}
+
 inline juce::String plainifyLine (const juce::String& lineIn)
 {
     if (lineIn.isEmpty()) return lineIn;

@@ -1166,6 +1166,114 @@ int main()
         }
     }
 
+    // ---- Z: THE ANSWER ONCE, IN THE CARD, AND THE QUESTION ONCE (18 Oct 2026, his 13:5x log) --
+    {
+        using namespace echojay::agentui;
+
+        // His run, in the two strings it actually produced: the round's talk carried the whole
+        // answer, and the done frame's summary carried the same answer CUT MID-WORD.
+        juce::String whole = "You've got 154 compressors: 56 I can set, 98 you'd set by ear, and 31 "
+                             "more that can't run on this Mac. Plus the EchoJay Compressor.\n\n"
+                             "The ones I can set: Acme Opticom XLA-3, API-2500, Auto-Tune Vocal "
+                             "Compressor, Bettermaker Bus Compressor DSP, bx_opto, bx_townhouse Buss "
+                             "Compressor, C1 comp, C1 comp-gate, C1 comp-sc, dbx-160, DPR-402, elysia "
+                             "alpha master, elysia alpha mix, Empirical Labs Mike-E Comp, kHs "
+                             "Compressor, Kiive XTComp, Lindell 254E, Lindell 7X-500, Lindell MBC, "
+                             "Lindell SBC, MaxxVolume, MCompressor, Millennia TCL-2, Mixland Vac "
+                             "Attack, OneKnob Pressure, Pro Audio DSP DSM V3, RCompressor, RVox, "
+                             "SSL Native X-Comp, Shadow Hills Mastering Compressor, Tube-Tech CL 1B.";
+        const auto cut = whole.substring (0, whole.indexOf ("RCompressor") + 10);   // "...RCompresso"
+        check (cut.endsWith ("RCompresso") && whole.startsWith (cut) && cut != whole
+               && ! whole.endsWith (cut),
+               "Z0 PRECONDITION: the summary is the answer's BEGINNING, cut mid-word - not equal to "
+               "it, not its tail, not a whole line of it, which is why every test the 12:05 fix added "
+               "walked straight past it",
+               "cut " + juce::String (cut.length()) + " of " + juce::String (whole.length()));
+
+        {
+            RunView v;
+            v.sessionId = "ag_z"; v.statusWord = "Done"; v.finished = true; v.modeBadge = "ASK";
+            v.opening = whole; v.closing = cut;
+            v.foldProseIntoTheCard();
+            check (v.closing == whole,
+                   "Z1 the card says the WHOLE answer, once (RED as it stood: the card drew the cut "
+                   "copy under the bubble's full one - \"the closing still shows twice\")",
+                   juce::String (v.closing.length()) + " chars, ends \""
+                     + v.closing.substring (v.closing.length() - 12) + "\"");
+            // and nothing of it is lost or spilled, at his column widths
+            for (int width : { 180, 220, 420 })
+            {
+                const auto L   = layoutRun (v, 0, 0, width);
+                const auto why = checkRun (v, L, 0, width);
+                check (why.isEmpty() && L.totalHeight > 0,
+                       "Z1b at " + juce::String (width) + " px the card holds the whole answer: nothing "
+                       "truncated, nothing outside the column",
+                       why.isEmpty() ? juce::String ("clean, height ") + juce::String (L.totalHeight) : why);
+            }
+        }
+        {
+            // A closing that says something NEW is still kept - after the prose, once.
+            RunView v;
+            v.sessionId = "ag_z2"; v.opening = "Looking at the kick.";
+            v.closing = "Added the CL 1B.";
+            v.foldProseIntoTheCard();
+            check (v.closing == "Looking at the kick.\n\nAdded the CL 1B.",
+                   "Z2 a closing that is NOT the prose is kept, under it - never lose a sentence we "
+                   "were given", v.closing);
+        }
+        {
+            // THE FOLD CANNOT DOUBLE. The card folds from the snapshot on every paint; a rule that
+            // appended unconditionally would grow the answer by one copy per pass.
+            RunView v;
+            v.sessionId = "ag_z3"; v.opening = "Looking at the kick."; v.closing = "Added the CL 1B.";
+            v.foldProseIntoTheCard();
+            const auto once = v.closing;
+            v.foldProseIntoTheCard();
+            v.foldProseIntoTheCard();
+            check (v.closing == once, "Z3 folding twice changes nothing - the card's sentence is the "
+                                      "same after three passes as after one", v.closing);
+        }
+        {
+            // THE QUESTION, ONCE. The asking step's line IS the question (X2), so the block under it
+            // was a second copy of the same sentence.
+            Rig w;
+            w.client.start ("add a compressor", "chat_z");
+            w.round (1);
+            w.tool (R"EJ({"id":"tc_q","name":"talk","summary":"Which compressor do you want on the kick?","approval":"free","args":{"ask":{"question":"Which compressor do you want on the kick?","choices":[{"label":"EchoJay Compressor"}],"allowFreeText":true}}})EJ");
+            w.await ({ "tc_q" });
+            pumpMs (10);
+            const auto v = runViewFrom (w.client, {}, true);
+            check (! v.steps.empty() && v.steps.back().label == "Which compressor do you want on the kick?"
+                   && v.askQuestion.isEmpty(),
+                   "Z4 the question is on the row and NOT repeated in the block below it (RED as it "
+                   "stood: the step line and the ask block both drew it)",
+                   "row=\"" + (v.steps.empty() ? juce::String() : v.steps.back().label)
+                     + "\" block=\"" + v.askQuestion + "\"");
+            const auto L = layoutRun (v, 0, 0, 420);
+            check (L.askQuestion.isEmpty(), "Z4b ...so the layout reserves nothing for the block either");
+        }
+        {
+            // AND THE QUESTION IS NEVER LOST. The block goes because the ROW carries it: a rule that
+            // cleared the block without that being true would have deleted the question itself,
+            // which is the fault with the sign flipped.
+            Rig w;
+            w.client.start ("add a compressor", "chat_z2");
+            w.round (1);
+            w.tool (R"EJ({"id":"tc_q2","name":"talk","summary":"ask","approval":"free","args":{"ask":{"question":"Which compressor do you want on the kick, and how hard should it work?","choices":[{"label":"EchoJay Compressor","detail":"I can set it"}],"allowFreeText":true}}})EJ");
+            w.await ({ "tc_q2" });
+            pumpMs (10);
+            const auto v = runViewFrom (w.client, {}, true);
+            const auto L = layoutRun (v, 0, 0, 220);
+            const bool onTheRow = ! v.steps.empty()
+                && v.steps.back().label == "Which compressor do you want on the kick, and how hard should it work?";
+            check (onTheRow && v.askQuestion.isEmpty() && ! L.rows.empty()
+                   && checkRun (v, L, 0, 220).isEmpty(),
+                   "Z5 ...and the question is not LOST with the block: it is on the row, whole, inside "
+                   "the column at 220 px",
+                   checkRun (v, L, 0, 220));
+        }
+    }
+
     // ---- SZ1: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ----------------------
     // The executor's own gate, asked directly with a result the size of Sean's machine: 420 entries
     // of the shape 17b sent. It must come back inside the contract's 8 KB.

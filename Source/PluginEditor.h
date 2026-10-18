@@ -2109,6 +2109,11 @@ private:
     // faults start. Per run, by agentRunId, and empty between runs.
     int          agentRecordedInChat_ = 0;
     juce::String agentRecordedText_;
+    /** Which chat that record went into: he can open another chat while a run is finishing, and an
+        answer appended to whatever chat happens to be open then is worse than no answer at all. */
+    juce::String agentRecordedChat_;
+    /** Writes the finished run's prose into the chat RECORD, once per run, updated afterwards. */
+    void recordAgentRunInChat (const ChatMsg& m);
     // Result stage: a local assistant bubble (persisted, block-less).
     // altPrompt (optional) attaches a Suggest-an-alternative pill to the
     // bubble (build failures) - same one-shot machinery as edit cards.

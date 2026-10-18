@@ -121,6 +121,40 @@ struct RunView
         if (b.endsWith (a)) { closing.clear(); return; }
         for (const auto& line : juce::StringArray::fromLines (b))
             if (line.trim() == a) { closing.clear(); return; }
+        // ---- AND WHEN THE SUMMARY IS THE ANSWER'S BEGINNING, CUT (18 Oct 2026) -----------------
+        //
+        // He read it a third time: *"the closing still shows twice, and the card copy is still cut
+        // off mid-word (...RCompresso)"*. His 13:56 log says why, exactly: the round's talk carried
+        // the whole answer (1,077 characters) and the done frame's summary carried the SAME answer
+        // truncated mid-word - "...Pro Audio DSP DSM V3, RCompresso" - so the two strings were
+        // neither equal, nor one the tail of the other, nor a whole line of it. Every test above
+        // missed it and the row drew the cut copy underneath the full one.
+        //
+        // A summary that is the opening's PREFIX is the opening, shortened. It says nothing new, so
+        // it goes - and because this is the one owner of "are these the same sentence", the record
+        // and the card agree about it without a second rule.
+        if (b.startsWith (a)) { closing.clear(); return; }
+    }
+
+    /** ---- THE ANSWER, ONCE, IN THE CARD (18 Oct 2026) ------------------------------------------
+        *"Show it once, in full, inside the card."*  The prose reached the screen twice because two
+        surfaces drew it: the message's own bubble (ChatMsg::content, which is `opening` here) above
+        the card, and the card's closing inside it. Dropping the repeat was only half of what he
+        asked for - the copy that survived was the BUBBLE, not the card.
+
+        So the card takes the whole answer: the opening, plus whatever the closing adds that the
+        opening does not already say. The caller then draws no bubble for a row that has a card
+        (EchoJayEditor's two passes), which makes "shows twice" unreachable rather than tested for.
+        `content` is untouched: it is still what the record holds and what an older build reads. */
+    void foldProseIntoTheCard()
+    {
+        const auto b = opening.trim();
+        if (b.isEmpty()) return;                     // a card with no prose is unchanged
+        dropClosingIfItRepeatsTheOpening();          // the same-sentence rule, one owner
+        const auto a = closing.trim();
+        if (a.isEmpty())      { closing = b; return; }
+        if (a.startsWith (b)) { closing = a; return; }   // already folded: never fold twice
+        closing = b + "\n\n" + a;
     }
     juce::String statusWord;    // "Working" | "Waiting for your OK" | ... (the mockup's words)
     juce::String modeBadge;     // "ASK" | "AUTO"
@@ -376,6 +410,13 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         if (askHere)
         {
             const auto& pending = c.pendingAsk();
+            // ---- THE QUESTION IS ASKED ONCE (18 Oct 2026, Sean in Logic) ----------------------
+            // *"The ask question now shows twice: as the step line AND again in the question block
+            // below it."*  Since describeCall started preferring the question over the server's
+            // bare "ask" summary, the asking step's line IS the question - so the block underneath
+            // is a second copy of it. The row wins (it carries the chips), exactly as the no-steps
+            // branch below already decided for the same reason.
+            if (v.askQuestion.trim() == r.label.trim()) v.askQuestion.clear();
             r.chips       = pending.labels;
             r.chipNotes   = pending.details;     // "the chips don't show their notes" (18 Oct)
             r.chipHandSet = pending.handSet;
