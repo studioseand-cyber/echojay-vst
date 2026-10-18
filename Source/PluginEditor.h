@@ -2478,6 +2478,10 @@ private:
     }
     juce::Rectangle<int> channelBannerRect_;
     void showChatTargetMenu();
+    /** The picker's Link branch: choose that Link the way every other surface does (18 Oct 2026).
+        Called by showChatTargetMenu's popup callback and asserted directly by ui_guard - the popup
+        lambda it came out of could not be reached without a window and an open menu. */
+    void aimChatAtLink (const juce::String& uid, const juce::String& label);
     juce::TextButton chatTextSizeBtn { "Aa" };
     juce::Label      chatDisclaimerLabel;   // AI-mistakes footer pinned under the input
     juce::Label      chatModelLabel;        // model name indicator by the input (server-fed)

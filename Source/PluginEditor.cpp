@@ -18241,9 +18241,35 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         r.inflight = (chat.id == inflightChatId);   // busy dot: turn arriving
         r.indent   = indent;
 
-        auto raw = chat.created;
-        auto s = raw.upToFirstOccurrenceOf("T", false, false);
-        r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
+        // ---- A CHAT IS DATED BY WHEN IT WAS LAST USED (18 Oct 2026, Sean in Logic) --------------
+        //
+        // *"that new chat is dated 10-13 in the list, but it was created today."* It was not a new
+        // chat. Aiming the chat at a Link opens that Link's most recent conversation (14 Aug 2026),
+        // and the one it opened had been started on the 13th - so today's turns went into a row dated
+        // five days ago. The row read `created`, while the SELECTION that chose that very row already
+        // ranks by activity (EchoJayChannelChats.h: updatedAt else created) and so does the dashboard
+        // (WsChat::updatedAt's own comment). The list was the last reader still dating a conversation
+        // by when it began.
+        //
+        // PARSED, NOT SLICED, because the two stamps are in different formats: `created` is local with
+        // an offset (toISO8601) and `updatedAt` is UTC with a Z (isoUtcNow). Slicing either one prints
+        // whatever day that string happens to carry, which for a UTC stamp near midnight is the wrong
+        // day in his timezone. fromISO8601 reads both, and the day is then formatted LOCALLY - the
+        // only day that means anything to the person reading the list. The old slicing stays as the
+        // fallback for a stamp neither this build nor the web ever wrote.
+        //
+        // GUARDED ON LENGTH as well as emptiness: fromISO8601 jassertfalses on anything it cannot
+        // parse, and a record written by neither client is exactly the input that would find it.
+        const auto stamp = chat.updatedAt.isNotEmpty() ? chat.updatedAt : chat.created;
+        const auto t = stamp.length() >= 10 ? juce::Time::fromISO8601 (stamp) : juce::Time();
+        if (t.toMilliseconds() > 0)
+            r.meta = t.formatted ("%m-%d");
+        else
+        {
+            auto raw = chat.created;
+            auto s = raw.upToFirstOccurrenceOf("T", false, false);
+            r.meta = (s.length() == 10) ? s.substring(5) : raw.substring(0, 10);
+        }
         if (chat.revisionCount > 0)
             r.meta += "  -" + juce::String(chat.revisionCount) + " rev";
         return r;
@@ -34334,46 +34360,68 @@ void EchoJayEditor::showChatTargetMenu()
             {
                 size_t li = (size_t)(result - 2);
                 if (li >= targets.size()) return;
-                pr.chatTargetGroupId.clear();
-                pr.chatTargetGroupName.clear();
-                safeThis->api.setSelectedGroupId ({});
-                // ---- A CHAT BELONGS TO THE TRACK IT CHANGES (17 Oct 2026, Sean's item 12) -------
-                //
-                // "Aiming the chat at another track continues the current chat. Bring the
-                // chat-per-track round forward (file each chat under the track it changed)."
-                //
-                // Two roads aim a conversation at a Link and they behaved differently. Opening a
-                // channel (a strip click, a chat activation, a deep link) goes through
-                // openChannelByUid, which has done the right thing since August: it opens that
-                // channel's latest chat, or holds the channel pending so the first send mints one
-                // bound to it. The ROUTER - this picker - only set the target, so a chat full of
-                // work on the mix bus carried on and its next five turns, about the kick, were filed
-                // under the mix bus.
-                //
-                // So the picker now takes the same road as every other selection when the chat it
-                // would carry over already HAS turns in it: that track's own chat is opened, or a
-                // fresh one is held pending for it. An empty chat is simply pointed at the track,
-                // because there is nothing to file in the wrong place.
-                const bool sameTrack = pr.chatTargetLinkUid == targets[li].uid;
-                if (! sameTrack && ! safeThis->chatMessages.empty())
-                {
-                    EchoJay_NSLog (("EJChat: the chat was aimed at " + targets[li].label
-                                    + " and this one already holds "
-                                    + juce::String ((int) safeThis->chatMessages.size())
-                                    + " turn(s) - opening that track's own chat instead of continuing "
-                                      "here (Sean's item 12)").toRawUTF8());
-                    safeThis->pendingSelectionIsUser_ = true;
-                    safeThis->openChannelByUid (targets[li].uid);
-                    safeThis->chatTargetBtn.setButtonText (safeThis->chatTargetLabel());
-                    safeThis->resized();
-                    return;
-                }
-                pr.chatTargetLinkUid  = targets[li].uid;
-                pr.chatTargetLinkName = targets[li].label;
-                safeThis->chatTargetBtn.setButtonText (safeThis->chatTargetLabel());
+                safeThis->aimChatAtLink (targets[li].uid, targets[li].label);
+                return;
             }
             safeThis->resized();   // pill is label-sized in the strip
         });
+}
+
+// ---- AIMING THE CHAT AT A LINK (17 Oct 2026 item 12; re-cut 18 Oct 2026) -----------------------
+//
+// Sean, 17 Oct: *"Aiming the chat at another track continues the current chat. File each chat under
+// the track it changed."*  Sean, 18 Oct, in Logic: *"I picked '-> 88_7even Kick_2_01' in the
+// composer. Three things should happen and none did: the rack switches to that Link, the banner says
+// 'Working on Link: 88_7even Kick_2_01', and the chat goes under the Kick's group, not Ungrouped."*
+//
+// Two roads aim a conversation at a Link and they behaved differently. Opening a channel - a strip
+// click, a chat activation, a deep link, the banner menu - goes through openChannelByUid, which has
+// done the right thing since August: it clears any group, follows the rack view, and opens that
+// channel's own latest chat or holds the channel PENDING so the first send mints one bound to it.
+// The composer picker did none of that. It set chatTargetLinkUid, a one-shot ROUTE that is consumed
+// at the next send and that nothing else reads:
+//
+//   - the banner reads effectiveChannelUid (the chat's channel, else the pending one), so it stayed
+//     empty and said nothing;
+//   - the rack in view is chainViewUid(), which is that same uid, so the Chain tab did not move;
+//   - the sidebar folder comes from the chat's own linkUid, so the conversation sat under Main.
+//
+// Item 12 fixed the half where the chat already held turns and left the empty chat on the old road,
+// which is the one he was on. There is ONE road for choosing a Link, and the picker takes it.
+//
+// IT IS A FUNCTION because the picker's branch lived in a popup callback, which a guard cannot reach
+// without a window and an open menu - so the behaviour he reads in Logic had no road a leg could
+// take to it. The menu calls this; ui_guard asserts this. Never a copy of the rule beside it.
+void EchoJayEditor::aimChatAtLink (const juce::String& uid, const juce::String& label)
+{
+    if (uid.isEmpty()) return;
+    auto& pr = processorRef;
+    pr.chatTargetGroupId.clear();
+    pr.chatTargetGroupName.clear();
+    api.setSelectedGroupId ({});
+
+    // Already there: nothing to switch, and no one-shot route left behind pointing at the channel
+    // the window is on - a route nobody will consume is the invisible mode the router pass removed.
+    if (effectiveChannelUid() == uid)
+    {
+        EchoJay_NSLog (("EJChat: the chat is already on " + label + " - nothing to switch").toRawUTF8());
+        pr.chatTargetLinkUid.clear();
+        pr.chatTargetLinkName.clear();
+        chatTargetBtn.setButtonText (chatTargetLabel());
+        resized();
+        return;
+    }
+
+    EchoJay_NSLog (("EJChat: the chat was aimed at " + label + " (this one holds "
+                    + juce::String ((int) chatMessages.size())
+                    + " turn(s)) - opening that track's own chat, switching the rack to it and saying "
+                      "so in the banner").toRawUTF8());
+    pr.chatTargetLinkUid.clear();
+    pr.chatTargetLinkName.clear();
+    pendingSelectionIsUser_ = true;   // a USER selection: apply-and-engage, not a view-only move
+    openChannelByUid (uid);
+    chatTargetBtn.setButtonText (chatTargetLabel());
+    resized();
 }
 
 int EchoJayEditor::findNewestUnansweredAsk() const

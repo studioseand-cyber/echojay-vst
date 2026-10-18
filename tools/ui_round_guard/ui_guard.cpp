@@ -190,6 +190,21 @@ struct EchoJayTabStripTestAccess
     using BannerItem = EchoJayEditor::BannerMenuItem;
     static std::vector<BannerItem> bannerItems (EchoJayEditor& e) { return e.channelBannerMenuItems(); }   // H2a
     static void openChannel (EchoJayEditor& e, const juce::String& uid) { e.openChannelByUid (uid); }      // H2b
+    // ---- 18 Oct 2026: the composer picker's own branch, which lived in a popup callback ----
+    static void aimAtLink (EchoJayEditor& e, const juce::String& uid, const juce::String& label)
+    { e.aimChatAtLink (uid, label); }
+    static juce::String effectiveUid (EchoJayEditor& e) { return e.effectiveChannelUid(); }
+    /** Every ChatRow the shipped row builder lays, as "<chat id>|<meta>" - the date column included. */
+    static juce::StringArray chatRows (EchoJayEditor& e)
+    {
+        e.sidebarModel->refreshRows (e.workspace.getChats(), e.workspace.getAlbums(), e.workspace.getReviews(),
+                                     e.workspace.getPinnedProjects(), e.collapsedAlbums, e.currentChatId);
+        juce::StringArray out;
+        for (const auto& r : e.sidebarModel->rows)
+            if (r.kind == EchoJayEditor::ChatSidebarModel::Row::Kind::ChatRow)
+                out.add (r.id + "|" + r.meta);
+        return out;
+    }
     static juce::String projName (EchoJayEditor& e) { return e.newChatProjectName(); }                     // H2c
     // ---- 21t-b R1 ----
     // 21t-e: the guard drives the SHARED rule, the way the menu and a strip click do. selectViewOnly exists for
@@ -1000,6 +1015,125 @@ int main()
                    proc.chatTargetGroupId);
             A::targetGroup (*ed, {});
             proc.removeLinkGroup (gA); proc.removeLinkGroup (gB);
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed) = savedMsgs;
+            A::toChat (*ed); pumpMs (40);
+        }
+
+        // ---- K (18 Oct 2026, Sean in Logic): AIMING THE CHAT AT A LINK FROM THE COMPOSER ---------------------
+        //
+        // *"I picked '-> 88_7even Kick_2_01' in the composer. Three things should happen and none did: the rack
+        // switches to that Link, the banner says 'Working on Link: 88_7even Kick_2_01', and the chat goes under
+        // the Kick's group in the chat list, not Ungrouped. Also, that new chat is dated 10-13 in the list, but
+        // it was created today."*
+        //
+        // The picker set chatTargetLinkUid - a one-shot route consumed at the next send, which nothing else
+        // reads - instead of choosing the channel the way the banner menu, a strip click and a chat activation
+        // all do. Item 12 had already moved the chat-WITH-TURNS case onto that road and left the empty chat on
+        // the old one, which is the case he was in. These legs drive aimChatAtLink, which IS the picker's branch
+        // (the popup's lambda cannot be reached from here, so the branch is a function and the menu calls it).
+        {
+            std::printf ("\n== K: picking a Link in the composer chooses that Link - rack, banner and folder ==\n");
+            const auto savedId   = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+            const juce::String kickUid  = "lnk_kick";
+            const juce::String kickName = "88_7even Kick_2_01";
+            {
+                std::vector<EchoJayProcessor::LinkSlotInfo> rows;
+                EchoJayProcessor::LinkSlotInfo li;
+                li.name = kickName; li.uid = kickUid; li.active = true; li.connected = true; li.regIdx = 0;
+                rows.push_back (li);
+                EchoJayAlignTestAccess::setLinks (proc, rows); pumpMs (40);
+            }
+            A::newChat (*ed); pumpMs (40);          // the case he was in: a chat with nothing in it yet
+            check (A::effectiveUid (*ed).isEmpty() && A::banner (*ed).isEmpty(),
+                   "K0 PRECONDITION: a fresh main chat is on no channel and the banner says nothing",
+                   A::effectiveUid (*ed) + " / " + A::banner (*ed));
+
+            A::aimAtLink (*ed, kickUid, kickName); pumpMs (60);
+            check (A::effectiveUid (*ed) == kickUid,
+                   "K1 picking the Link CHOOSES it: the window's channel is that Link, whether or not the chat "
+                   "record exists yet (RED as it stood: the pick set a one-shot route nothing on screen reads)",
+                   A::effectiveUid (*ed).isEmpty() ? juce::String ("(none)") : A::effectiveUid (*ed));
+            check (A::viewUid (*ed) == kickUid,
+                   "K2 ...so the rack in view is that Link's rack - the Chain tab follows the pick",
+                   A::viewUid (*ed).isEmpty() ? juce::String ("(local rack)") : A::viewUid (*ed));
+            check (A::banner (*ed).startsWith ("Working on Link: " + kickName),
+                   "K3 ...and the banner says which Link, in his words", A::banner (*ed));
+            check (proc.chatTargetLinkUid.isEmpty(),
+                   "K4 ...and no one-shot route is left behind: the window is ON the channel, so there is nothing "
+                   "for the next send to route (RED as it stood: the route WAS the whole of what the pick did)",
+                   proc.chatTargetLinkUid);
+
+            // THE FOLDER. The send is what mints the record (lazy creation: a bare pick must not leave an empty
+            // chat behind), so the leg sends. The turn never reaches a server here, so the record is given the
+            // message the send would have written - the sidebar filters empty chats and what is under test is
+            // the FOLDER, exactly as H2c does for a group.
+            A::send (*ed, "tighten the kick"); pumpMs (80);
+            const auto kid = A::chatId (*ed);
+            auto* kc = A::chat (*ed, kid);
+            check (kc != nullptr && kc->linkUid == kickUid,
+                   "K5 the first send lands in a chat BOUND to that Link (RED as it stood: it stayed a main "
+                   "chat, and the next five turns about the kick were filed under whatever the chat was on)",
+                   kc == nullptr ? juce::String ("no chat") : (kid + " linkUid=\"" + kc->linkUid + "\""));
+            if (kc != nullptr && kc->messages.empty())
+            { WsMessage m; m.role = "user"; m.content = "tighten the kick"; kc->messages.push_back (m); }
+            {
+                const auto folders = A::folders (*ed);
+                bool own = false, named = false;
+                for (const auto& f : folders)
+                {
+                    if (! f.startsWith (kickUid + "|")) continue;
+                    own = true;
+                    named = f.fromFirstOccurrenceOf ("|", false, false).startsWith (kickName);
+                }
+                check (own, "K6 ...and the sidebar files it under that Link's own folder, not Main",
+                       folders.joinIntoString (" , "));
+                check (named, "K6b ...named after the Link", folders.joinIntoString (" , "));
+            }
+            // Picking the Link the window is ALREADY on changes nothing and leaves no route.
+            A::aimAtLink (*ed, kickUid, kickName); pumpMs (40);
+            check (A::chatId (*ed) == kid && proc.chatTargetLinkUid.isEmpty(),
+                   "K7 picking the Link it is already on is a no-op - it does not open a second chat or leave a "
+                   "route pointing at where it already is",
+                   A::chatId (*ed) + " route=\"" + proc.chatTargetLinkUid + "\"");
+
+            // ---- THE DATE IN THE LIST (both directions) --------------------------------------------------
+            // Aiming at a Link CONTINUES that Link's most recent conversation (14 Aug 2026), so today's turns
+            // can land in a record opened days ago - and the row dated it by `created` while the selection that
+            // picked it ranks by activity. Midday UTC on purpose: the leg asserts a calendar day, and a stamp
+            // near midnight would print a different one either side of his timezone.
+            {
+                WsChat old13;
+                old13.id = "k_old"; old13.title = "started on the 13th";
+                old13.trackName = A::projName (*ed); old13.linkUid = kickUid; old13.linkNameSnap = kickName;
+                old13.created = "2026-10-13T12:00:00.000+01:00";
+                WsMessage m; m.role = "user"; m.content = "a turn"; old13.messages.push_back (m);
+                A::addChat (*ed, old13);
+
+                WsChat used18 = old13;
+                used18.id = "k_used"; used18.title = "started on the 13th, used on the 18th";
+                used18.updatedAt = "2026-10-18T12:00:00.000Z";
+                A::addChat (*ed, used18);
+
+                juce::String metaOld, metaUsed;
+                for (const auto& r : A::chatRows (*ed))
+                {
+                    if (r.startsWith ("k_old|"))  metaOld  = r.fromFirstOccurrenceOf ("|", false, false);
+                    if (r.startsWith ("k_used|")) metaUsed = r.fromFirstOccurrenceOf ("|", false, false);
+                }
+                check (metaUsed.startsWith ("10-18"),
+                       "K8 a chat STARTED on the 13th and used on the 18th is dated 10-18 in the list - the day "
+                       "it was last used (RED as it stood: it read `created` and said 10-13 about today's "
+                       "conversation)",
+                       metaUsed.isEmpty() ? juce::String ("no row") : metaUsed);
+                check (metaOld.startsWith ("10-13"),
+                       "K8b ...and a chat that has never been touched since is still dated by its creation - the "
+                       "fallback is unchanged, so nothing that was right has moved",
+                       metaOld.isEmpty() ? juce::String ("no row") : metaOld);
+            }
+
+            EchoJayAlignTestAccess::setLinks (proc, {});
             A::setChatId (*ed, savedId);
             A::msgs (*ed) = savedMsgs;
             A::toChat (*ed); pumpMs (40);
