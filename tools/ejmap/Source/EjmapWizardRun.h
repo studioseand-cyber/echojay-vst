@@ -158,6 +158,28 @@ inline juce::Array<juce::var> leftAtEnd (const juce::Array<juce::var>& rows)
     return left;
 }
 
+// 18 Oct: THE SAFETY NET (Kathy, CONFIRMED: Carry on looped straight back to "Almost done - 33 plugins" with no change - "anything that can't
+// be measured after a carry-on gets filed with a reason, never loops"). previousLeft = the left.json the LAST run wrote, which only a run
+// that reached the end with plugins left writes non-empty - so this run is its carry-on. A queued plugin left without an outcome in BOTH
+// (same product, same plugin_id) has had its carry-on: it is filed not_measurable, saying what it was left as. Returns how many were filed
+inline int fileLeftAfterCarryOn (juce::Array<juce::var>& rows, const juce::var& previousLeft)
+{
+    std::set<juce::String> before;
+    if (const auto* a = previousLeft.getArray()) for (const auto& x : *a) before.insert (x.getProperty ("product", "").toString() + "|" + x.getProperty ("plugin_id", "").toString());
+    int filed = 0;
+    for (auto& rv : rows)
+    {
+        const auto st = rv.getProperty ("state", "").toString(), w = rv.getProperty ("why", "").toString();
+        if (rv.getProperty ("phaseb", "").toString().isEmpty() || wizserver::stub::isFinalState (st)
+            || ! before.count (rv.getProperty ("product", "").toString() + "|" + rv.getProperty ("plugin_id", "").toString())) continue;
+        auto* o = rv.getDynamicObject();
+        o->setProperty ("state", "not_measurable");
+        o->setProperty ("why", "no outcome after a carry-on (left as '" + st + "'" + (w.isNotEmpty() ? ": " + w : juce::String()) + ") - filed with this reason, not tried again");
+        o->setProperty ("filed_by", "safety_net"); ++filed;
+    }
+    return filed;
+}
+
 // THE SOUND CHECK (Kathy, 15 Oct: bx_opto Pedal and three APB passed digital silence, NEOLD U17 / U2A / V76U73 never processed - each was
 // still fully measured, 2-8 min, before the certification filed it). Part of the demo check, on its own steady tone:
 //   - SILENT: the input present and the output digital silence in every window -> needs_licence at once (no sound at all);
@@ -526,6 +548,9 @@ inline int runWizard (const WizardOptions& wo)
             if (! wo.only.isEmpty() && ! matchesOnly (b.name) && std::none_of (pr.ids.begin(), pr.ids.end(), [&] (const Vst3Identity& i) { return matchesOnly (i.name); })) continue;
             ++by[pr.source];
             if (pr.source == "shell") { vrow (b.name, {}, "out_of_scope", "a WaveShell VST3 bundle: its plugins are measured through their AudioUnits"); continue; }
+            if (pr.source == "own") { vrow (b.name, {}, "out_of_scope", "EchoJay's own plugin: never measured"); continue; }   // 18 Oct
+            if (pr.source == "wrong_arch")   // 18 Oct: 321 of tonight's 322 "crashed" VST3s - an Intel-only bundle, opened by no arm64 host: not loaded
+            { vrow (b.name, {}, "wont_load", "an Intel-only VST3 (" + b.archs.joinIntoString (" / ") + ", no " + hostArch() + " code): it cannot run natively on this Mac - not loaded"); continue; }
             if (pr.source == "cache_failed") { const auto e = idCache.get (pr.key); vrow (b.name, {}, e.getProperty ("state", "").toString(), e.getProperty ("why", "").toString() + " (remembered at this version: not loaded again)"); continue; }
             if (skipped.contains (b.name)) { vrow (b.name, {}, "crashed", "the wizard closed while checking it: skipped for good, never retried"); continue; }
             if (licMem.count (bundleKey)) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered)); continue; }
@@ -544,11 +569,13 @@ inline int runWizard (const WizardOptions& wo)
                   idCache.put (pr.key, {}, st, why); vrow (b.name, {}, st, why); continue; }
                 Vst3Identity id; id.name = cls.isNotEmpty() ? cls : b.name; id.version = ver.isNotEmpty() ? ver : b.version; id.uid = (int) (juce::int64) uid.getHexValue64(); id.source = "load";
                 id.vendor = readback::vst3FieldOf (r.out, "vendor").isNotEmpty() ? readback::vst3FieldOf (r.out, "vendor") : b.vendor;
+                id.instrument = readback::vst3FieldOf (r.out, "instrument") == "1";
                 ids = { id }; idCache.put (pr.key, ids);
             }
             else if (pr.source == "moduleinfo") idCache.put (pr.key, ids);   // the metadata's answer, kept with the rest
             for (const auto& id : ids)
             {
+                if (id.instrument) { vrow (id.name, {}, "out_of_scope", "an instrument (the wizard measures effects): not measured"); continue; }   // 18 Oct: as the AU census leaves aumu out
                 juce::PluginDescription d = d0; d.name = id.name; d.version = id.version; d.uniqueId = d.deprecatedUid = id.uid; if (id.vendor.isNotEmpty()) d.manufacturerName = id.vendor;
                 const auto uid = juce::String::toHexString (id.uid).toLowerCase(); const auto pid = wizroute::pluginId (uid, d.version, "VST3");
                 juce::String twin;
@@ -1281,6 +1308,15 @@ inline int runWizard (const WizardOptions& wo)
     // LEFT: not uploaded as finished - what is done goes as a checkpoint, engine/left.json says what is left and why, kLeftExit
     if (wo.bundle && wo.measure && ! sentEarly)
     {
+        // 18 Oct: THE SAFETY NET - what the last run also left has had its carry-on: filed with its reason before the left list is made, so a
+        // carry-on can never end on the same "Almost done" twice
+        if (const int filed = fileLeftAfterCarryOn (rows, juce::JSON::parse (out.getChildFile ("left.json").loadFileAsString())); filed > 0)
+        {
+            counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
+            state->setProperty ("plugins", rows); state->setProperty ("summary", wizard::summaryLine (counts, wo.bundle));
+            out.getChildFile ("wizard_state.json").replaceWithText (juce::JSON::toString (juce::var (state)) + "\n");
+            say ("WIZARD: " + juce::String (filed) + " plugin(s) still without an outcome after a carry-on: filed as not measurable, each with what it was left as");
+        }
         const auto left = leftAtEnd (rows);
         out.getChildFile ("left.json").replaceWithText (juce::JSON::toString (juce::var (left)) + "\n");
         if (! left.isEmpty())
