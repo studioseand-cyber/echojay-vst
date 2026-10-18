@@ -797,6 +797,122 @@ int main()
         check (maxBytesSeen <= ExecutorRead::kMaxResultBytes, "G16c every successful result in this guard was under 8 KB (the largest: " + juce::String (maxBytesSeen) + " bytes)");
     }
 
+    // ---- LM (18 Oct 2026, item 13): A LINK'S GAIN REDUCTION CAN BE MEASURED --------------------
+    //
+    // *"On the Kick's Link, check gr fails with 'Gain reduction cannot be read from a Link yet', so
+    // the certified-compressor measurement can't run on any Link. This was the original item 13."*
+    //
+    // The Link publishes its slots' own measurements now. What is still refusable is narrower, and
+    // each refusal has to be TRUE of what it refuses: an older Link that publishes nothing, and a
+    // reading too old to quote. Both directions here, because a measurement that cannot fail is the
+    // thing his 15 Oct ruling is really about.
+    std::printf ("\n== LM: item 13, a Link's certified compressor measures from its own sidecar ==\n");
+    {
+        FakeHost h;
+        // the Kick's Link, publishing a certified compressor's window right now
+        h.link.valid = true; h.link.meterCapable = true;
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();
+        h.link.slots.clear();
+        SlotRead cs;
+        cs.n = 1; cs.name = "Tube-Tech CL 1B"; cs.builtin = false;
+        cs.pictureValid = true; cs.grKnown = true; cs.grCertified = true;
+        cs.grDb = 2.1f; cs.grPeakDb = 7.4f; cs.grTypicalDb = 3.2f; cs.grLoudestDb = 5.6f; cs.grHeldDb = 5.1f;
+        cs.grWindowFrames = 480.0;
+        cs.inLufs = -14.2f; cs.outLufs = -16.8f; cs.inTpDb = -3.1f; cs.outTpDb = -5.4f;
+        h.link.slots.push_back (cs);
+        h.playing = true; h.transportKnown = true;
+
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);     // the TARGET is the Link
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        check (o.ok,
+               "LM1 check(gr) on a Link ANSWERS (RED as it stood: \"Gain reduction cannot be read from "
+               "a Link yet - this will not work on a retry\", which closed the certified-compressor "
+               "measurement on every Link)",
+               o.ok ? juce::String ("answered") : (o.errorCode + ": " + o.errorMessage.substring (0, 80)));
+        // THE FIELD NAMES THE OWN-RACK BRANCH ALREADY USES - read off the product rather than guessed,
+        // which is what my first cut of these two legs did (they failed on my spelling, not the fix).
+        const auto loudest = (double) o.result.getProperty ("grLoudestDb", juce::var (-1.0));
+        check (std::abs (loudest - 5.6) < 0.05,
+               "LM1b ...with the LOUDEST figure (the 95th percentile), which is the one his 15 Oct "
+               "ruling says to report", juce::String (loudest, 2));
+        check (o.result.getProperty ("measured", juce::var()).toString().containsIgnoreCase ("listen window")
+               && std::abs ((double) o.result.getProperty ("grHeldDb", juce::var (-1.0)) - 5.1) < 0.05,
+               "LM1c ...and it says the figure came from the whole listen window, with the held figure "
+               "the meter shows beside it - so nobody can quote an instant as the measurement",
+               o.result.getProperty ("measured", juce::var()).toString());
+    }
+    {
+        // AN OLDER LINK publishes nothing, and that is its own sentence - not "a Link cannot".
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = false; h.link.measuredAtMs = 0;
+        h.link.slots.clear();
+        SlotRead cs; cs.n = 1; cs.name = "Tube-Tech CL 1B"; cs.grCertified = true;
+        h.link.slots.push_back (cs);
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        check (! o.ok && o.errorCode == "link_has_no_meters",
+               "LM2 a Link whose build does not publish meters says THAT, and names the fix",
+               o.errorCode + ": " + o.userMessage.substring (0, 70));
+        check (o.userMessage.containsIgnoreCase ("older build")
+               && ! o.userMessage.containsIgnoreCase ("cannot be read from a Link"),
+               "LM2b ...in a sentence that is true of this Link rather than of Links", o.userMessage);
+    }
+    {
+        // A STALE READING is refused with no figure in it, and IS worth retrying after playback.
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = true;
+        h.link.measuredAtMs = juce::Time::currentTimeMillis() - 60000;   // a minute old
+        h.link.slots.clear();
+        SlotRead cs;
+        cs.n = 1; cs.name = "Tube-Tech CL 1B"; cs.pictureValid = true; cs.grKnown = true;
+        cs.grCertified = true; cs.grLoudestDb = 5.6f; cs.grWindowFrames = 480.0;
+        h.link.slots.push_back (cs);
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        check (! o.ok && o.errorCode == "link_meters_stale",
+               "LM3 a reading too old to be a measurement of what is playing is REFUSED (his ruling: a "
+               "figure nobody can check is worse than no figure)", o.errorCode);
+        check (! o.errorMessage.contains ("5.6") && ! o.userMessage.contains ("5.6"),
+               "LM3b ...with NO figure anywhere in the refusal - a stale number quoted once is a number "
+               "that gets repeated", o.userMessage);
+        check ((bool) o.result.getProperty ("retryable", juce::var (false)),
+               "LM3c ...and marked retryable, because playing the section is exactly what fixes it");
+    }
+    {
+        // THE CAPABILITY B IS WAITING FOR, and the `cannot` entry no longer lying about Links.
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = true;
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto ctx = ex.startContext();
+        juce::StringArray caps;
+        if (auto* a = ctx.getProperty ("capabilities", juce::var()).getArray())
+            for (const auto& c : *a) caps.add (c.toString());
+        check (caps.contains ("link_meters"),
+               "LM4 the start context announces link_meters, so B can PLAN a measurement on a Link",
+               caps.joinIntoString (","));
+        check ((bool) ctx.getProperty ("grReadableOnLink", juce::var (false)),
+               "LM4b ...and the flat flag agrees with it");
+        const auto* cannot = ctx.getProperty ("cannot", juce::var()).getArray();
+        check (cannot == nullptr || cannot->isEmpty(),
+               "LM4c ...and nothing is listed as impossible that is now possible (RED as it stood: the "
+               "gr-on-a-Link entry was unconditional, which is how the agent learned a limit that has gone)",
+               juce::String (cannot == nullptr ? 0 : cannot->size()) + " entry/entries");
+    }
+    {
+        // ...and an older Link still gets the warning BEFORE the call, which is what item 8 is for.
+        FakeHost h;
+        h.link.valid = true; h.link.meterCapable = false;
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto ctx = ex.startContext();
+        const auto* cannot = ctx.getProperty ("cannot", juce::var()).getArray();
+        check (cannot != nullptr && cannot->size() == 1
+               && (*cannot)[0].getProperty ("what", juce::var()).toString() == "gr",
+               "LM5 an older Link is still declared BEFORE the agent plans a measurement on it");
+        check (! (bool) ctx.getProperty ("grReadableOnLink", juce::var (true)),
+               "LM5b ...and the flat flag says so too");
+    }
+
     std::printf ("\n==== agent_executor_read_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
     return failures == 0 ? 0 : 1;
 }

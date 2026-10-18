@@ -64,6 +64,35 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         // read-back on a Link can wait for the round trip instead of calling an unread value a
         // failed write.
         back.dialPending  = s.dialPending;
+        // ---- ITEM 13: THIS SLOT'S MEASUREMENTS (18 Oct 2026, Sean) ------------------------------
+        //
+        // *"On the Kick's Link, check gr fails with 'Gain reduction cannot be read from a Link yet',
+        // so the certified-compressor measurement can't run on any Link."*
+        //
+        // The Link has measured them all along - it runs this same ChainHost - and slotPicture is the
+        // one place that composes them, with its own four gates (a group is a reading only when it
+        // HAS one; the dB fields sit at a no-reading floor otherwise). Copied field for field, so the
+        // Link publishes exactly what the main plugin would read from its own rack, and no reader has
+        // to decide anything the picture has already decided.
+        const auto pic = host.slotPicture (i);
+        back.pictureValid  = pic.valid;
+        back.grKnown       = pic.grKnown;
+        back.grCertified   = pic.grCertified;
+        back.grDb          = pic.grDb;
+        back.grPeakDb      = pic.grPeakDb;
+        back.grTypicalDb   = pic.grTypicalDb;
+        back.grLoudestDb   = pic.grLoudestDb;
+        back.grHeldDb      = pic.grHeldDb;
+        back.grWindowFrames = (double) pic.grWindowFrames;
+        back.inLufs        = pic.inLufs;
+        back.outLufs       = pic.outLufs;
+        back.inTpDb        = pic.inTpDb;
+        back.outTpDb       = pic.outTpDb;
     }
+    // THIS BUILD PUBLISHES THEM, AND WHEN. The stamp is what lets the reader tell a live reading
+    // from the window this Link happened to have ten minutes ago - and quoting the latter would be
+    // an estimate wearing a measurement's clothes, which is the one thing his 15 Oct ruling forbids.
+    rc.meterCapable = true;
+    rc.measuredAtMs = juce::Time::currentTimeMillis();
 }
 } // namespace echojay

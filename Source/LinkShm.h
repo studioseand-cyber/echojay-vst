@@ -1398,6 +1398,29 @@ struct RackSidecarSlot {
         false, which is the settled case. LAST in the struct - the positional-brace-init rule the five
         notes above record. */
     bool dialPending = false;
+    /** ---- ITEM 13: THE LINK'S OWN MEASUREMENTS (18 Oct 2026) --------------------------------
+        *"On the Kick's Link, check gr fails with 'Gain reduction cannot be read from a Link yet',
+        so the certified-compressor measurement can't run on any Link."*
+
+        The Link runs the same MeterEngine and ChainHost as the main plugin, so these figures are
+        already measured over there - they simply never crossed. They are ChainHost::SlotPicture's
+        own fields, by the same names and the same conventions:
+          - grWindowFrames == 0 means NOTHING WAS MEASURED, never "no reduction";
+          - the dB fields sit at the no-reading floor (-200) until there is a reading, and a reader
+            must not print a floor as a figure;
+          - grCertified is a property of the PLUGIN (it passed the EJ Maps sweep), not of whether
+            audio was heard - the "no estimates, ever" ruling turns on it.
+        Written only when there is something to say, so an older reader never asks and an older
+        WRITER's silence reads as "this Link does not publish its meters", which is a different
+        sentence from "a Link cannot be measured".
+
+        LAST IN THE STRUCT, after dialPending: RackSidecarSlot is positionally brace-initialised in
+        LinkProcessor::publishRackSidecar, and the comments above record that trap biting four
+        times. A new field goes at the end and is set by assignment. */
+    bool  pictureValid = false, grKnown = false, grCertified = false;
+    float grDb = 0.0f, grPeakDb = 0.0f, grTypicalDb = 0.0f, grLoudestDb = 0.0f, grHeldDb = 0.0f;
+    double grWindowFrames = 0.0;
+    float inLufs = -200.0f, outLufs = -200.0f, inTpDb = -200.0f, outTpDb = -200.0f;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -1459,6 +1482,13 @@ struct RackSidecar {
     bool  muteUser = false;
     bool  soloOn = false;
     bool  muteSoloCapable = false;
+    /** ITEM 13 (18 Oct 2026): WHEN these measurements were taken, in wallclock ms, and whether this
+        writer publishes them at all. A figure with no age is the thing Sean's "no estimates, ever"
+        ruling forbids most directly: the reader cannot tell a live reading from the window a Link
+        happened to have ten minutes ago, and quoting the latter is an estimate wearing a
+        measurement's clothes. 0 = this Link's build does not publish meters. */
+    juce::int64 measuredAtMs = 0;
+    bool  meterCapable = false;
     bool  muteEngaged = false;         // LIVE state: the mute is actually
                                        // applied this instant — the closed
                                        // loop that replaces "impossible by
@@ -2150,6 +2180,9 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.muteUser) obj->setProperty("muteUser", true);
     if (rc.soloOn) obj->setProperty("soloOn", true);
     if (rc.muteSoloCapable) obj->setProperty("muteSoloCapable", true);
+    // ITEM 13: the meters' own stamp and capability flag (absent = a build that does not publish them)
+    if (rc.meterCapable)      obj->setProperty("meterCapable", true);
+    if (rc.measuredAtMs != 0) obj->setProperty("measuredAtMs", (double) rc.measuredAtMs);
     juce::Array<juce::var> slots;
     for (const auto& s : rc.slots)
     {
@@ -2197,6 +2230,25 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
         // Written ONLY when true, so an old reader is indistinguishable from a settled slot.
         if (s.dialPending)
             so->setProperty("dialPending", true);
+        // ---- ITEM 13: THIS SLOT'S MEASUREMENTS (18 Oct 2026) -------------------------------------
+        // Each group written only when it HAS a reading, which is the convention every meter field in
+        // this file keeps: absent means unavailable, and a floor must never be published as a figure.
+        if (s.pictureValid) so->setProperty("picValid", true);
+        if (s.grKnown)
+        {
+            so->setProperty("grKnown", true);
+            so->setProperty("grDb",        (double) s.grDb);
+            so->setProperty("grPeakDb",    (double) s.grPeakDb);
+            so->setProperty("grTypicalDb", (double) s.grTypicalDb);
+            so->setProperty("grLoudestDb", (double) s.grLoudestDb);
+            so->setProperty("grHeldDb",    (double) s.grHeldDb);
+            if (s.grWindowFrames > 0.0) so->setProperty("grFrames", s.grWindowFrames);
+        }
+        if (s.grCertified) so->setProperty("grCert", true);
+        if (s.inLufs  > -199.0f) so->setProperty("inLufs",  (double) s.inLufs);
+        if (s.outLufs > -199.0f) so->setProperty("outLufs", (double) s.outLufs);
+        if (s.inTpDb  > -199.0f) so->setProperty("inTpDb",  (double) s.inTpDb);
+        if (s.outTpDb > -199.0f) so->setProperty("outTpDb", (double) s.outTpDb);
         slots.add(juce::var(so));
     }
     obj->setProperty("slots", slots);
@@ -2236,6 +2288,11 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.muteUser = obj->hasProperty("muteUser") && (bool)obj->getProperty("muteUser");
     rc.soloOn = obj->hasProperty("soloOn") && (bool)obj->getProperty("soloOn");
     rc.muteSoloCapable = obj->hasProperty("muteSoloCapable") && (bool)obj->getProperty("muteSoloCapable");
+    // ITEM 13: meterCapable says this Link publishes its slots' measurements at all; measuredAtMs
+    // says when. Absent = an older Link, which the reader must report as "that build does not
+    // publish its meters" rather than as "a Link cannot be measured".
+    rc.meterCapable = obj->hasProperty("meterCapable") && (bool)obj->getProperty("meterCapable");
+    rc.measuredAtMs = obj->hasProperty("measuredAtMs") ? (juce::int64)(double)obj->getProperty("measuredAtMs") : 0;
     if (auto* arr = obj->getProperty("slots").getArray())
         for (auto& sv : *arr)
             if (auto* so = sv.getDynamicObject())
@@ -2267,6 +2324,26 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                             s.curveDeciDb.push_back ((int16_t) juce::jlimit (
                                 -kEqCurveClampDeciDb, kEqCurveClampDeciDb, (int) pv));
                     }
+                // ITEM 13: the measurements. A reader that finds nothing leaves the no-reading
+                // floor in place, so "this Link does not publish meters" and "this slot has not been
+                // heard" are both answerable - and neither reads as a figure.
+                s.pictureValid = so->hasProperty("picValid") && (bool) so->getProperty("picValid");
+                s.grKnown      = so->hasProperty("grKnown")  && (bool) so->getProperty("grKnown");
+                s.grCertified  = so->hasProperty("grCert")   && (bool) so->getProperty("grCert");
+                if (s.grKnown)
+                {
+                    s.grDb        = (float)(double) so->getProperty("grDb");
+                    s.grPeakDb    = (float)(double) so->getProperty("grPeakDb");
+                    s.grTypicalDb = (float)(double) so->getProperty("grTypicalDb");
+                    s.grLoudestDb = (float)(double) so->getProperty("grLoudestDb");
+                    s.grHeldDb    = (float)(double) so->getProperty("grHeldDb");
+                    s.grWindowFrames = so->hasProperty("grFrames")
+                                         ? (double) so->getProperty("grFrames") : 0.0;
+                }
+                if (so->hasProperty("inLufs"))  s.inLufs  = (float)(double) so->getProperty("inLufs");
+                if (so->hasProperty("outLufs")) s.outLufs = (float)(double) so->getProperty("outLufs");
+                if (so->hasProperty("inTpDb"))  s.inTpDb  = (float)(double) so->getProperty("inTpDb");
+                if (so->hasProperty("outTpDb")) s.outTpDb = (float)(double) so->getProperty("outTpDb");
                 s.controlled = so->hasProperty("controlled")
                                  && (bool) so->getProperty("controlled");
                 s.lastEditMs = so->hasProperty("lastEditMs")

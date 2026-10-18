@@ -77,6 +77,13 @@ struct RackRead
     int   revision = -1;
     float masterWet = 1.0f, preGainDb = 0.0f;
     std::vector<SlotRead> slots;
+    /** ---- ITEM 13 (18 Oct 2026): CAN THIS RACK BE MEASURED, AND HOW OLD IS THE READING? -------
+        For the open rack both are implicit - the measurement is this process's own and it is now.
+        For a LINK they are facts that have to travel: meterCapable false means that Link's build
+        does not publish its meters (a different sentence from "a Link cannot be measured"), and
+        measuredAtMs is when it last did, so a stale window is refused rather than quoted. */
+    bool  meterCapable = true;
+    juce::int64 measuredAtMs = 0;
 };
 
 struct TrackRead
@@ -273,6 +280,13 @@ public:
     // THE 8 KB GATE: trims `names`-style arrays and long strings until the JSON fits, marking truncated:true.
     static juce::var fitUnder8K (juce::var v);
     static int jsonBytes (const juce::var& v);
+    /** ---- ITEM 13 (18 Oct 2026): HOW OLD A LINK'S READING MAY BE AND STILL BE QUOTED ---------
+        The Link republishes on its own cadence (the sidecar's publish tick, ~100 ms when the rack
+        changes and on the meter tick), so a few seconds covers an ordinary gap between a publish and
+        a tool call. Older than this is not a measurement of what is playing now, and his ruling is
+        that a figure nobody can check is worse than no figure. Deliberately a named constant: the
+        number is a claim about freshness and belongs where it can be argued with. */
+    static constexpr juce::int64 kLinkMeterStaleMs = 4000;
     static constexpr int kMaxResultBytes = 8192;
     static constexpr int kMaxSettingsChars = 160;
     static constexpr int kMaxBands = 6;
@@ -325,6 +339,11 @@ protected:   // ExecutorDo is a subclass and item 6(b) needs the channel resolve
     // resolves to a uid, or this session is itself addressing one. Both are Links, and neither can be
     // measured until 0a lands the transport - so both get the same sentence rather than a slot error.
     bool measuringALink (const ToolCall& call) const;
+    /** ITEM 13 (18 Oct 2026): can the target in front of us have its gain reduction measured? TRUE
+        for the open rack always, and for a Link whose build publishes its meters. Freshness is NOT
+        asked here: that is a question about one reading at one moment, and the start context is a
+        statement about what may be PLANNED. */
+    bool linkMetersAvailable() const;
 
     // ---- ITEM 1 (13 Oct 2026): THIS EXECUTOR OUTLIVES NOTHING ----------------------------------------
     // doOp's apply now waits for the Link's ack before it reports, so its completion runs LATER - possibly

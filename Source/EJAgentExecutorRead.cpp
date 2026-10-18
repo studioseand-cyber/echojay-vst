@@ -295,6 +295,17 @@ bool ExecutorRead::measuringALink (const ToolCall& call) const
     return asked.isNotEmpty();      // "" is this instance's own rack; anything else is a Link uid
 }
 
+// ---- ITEM 13 (18 Oct 2026): IS THE TARGET MEASURABLE AT ALL? ----------------------------------
+// The open rack always is - the measurement is this process's own. A Link is, when its build
+// publishes its slots' measurements (meterCapable), which every build from today does. Said about
+// THE TARGET, so a start context can state a limit that is true rather than one that was.
+bool ExecutorRead::linkMetersAvailable() const
+{
+    if (target_.isEmpty()) return true;
+    const auto r = targetRack();
+    return r.valid && r.meterCapable;
+}
+
 ToolOutcome ExecutorRead::notFromALink (const juce::String& what)
 {
     auto o = ToolOutcome::failureFor ("not_available_on_link",
@@ -715,6 +726,13 @@ juce::var ExecutorRead::startContext()
         o->setProperty ("transport", juce::var (tr));
     }
     juce::Array<juce::var> caps; caps.add ("look"); caps.add ("check"); caps.add ("wait_for_playback"); caps.add ("checkpoint");
+    // ---- ITEM 13 (18 Oct 2026): link_meters, the flag B has been waiting for -------------------
+    // A Link publishes its slots' measurements now, so a measurement on another track's Link is a
+    // thing the server may PLAN. Announced as a capability rather than inferred from the absence of
+    // a `cannot` entry: B asked for the positive statement, and a reader that walks neither list
+    // still has the flat grReadableOnLink below.
+    const bool linkMeters = linkMetersAvailable();
+    if (linkMeters) caps.add ("link_meters");
     o->setProperty ("capabilities", juce::var (caps));
     // ---- SEAN'S #8 (16 Oct 2026): WHAT CANNOT BE DONE, SAID BEFORE IT IS TRIED ------------------
     //
@@ -730,18 +748,26 @@ juce::var ExecutorRead::startContext()
     // can address another channel mid-turn.
     {
         juce::Array<juce::var> cannot;
-        auto* gr = new juce::DynamicObject();
-        gr->setProperty ("what", "gr");
-        gr->setProperty ("where", "link");
-        gr->setProperty ("why", "gain reduction is not published by a Link yet - only the rack this "
-                                "EchoJay window has open can be measured");
-        gr->setProperty ("retryable", false);
-        gr->setProperty ("instead", "work from what look(rack) reports, or ask the user to open that "
-                                    "track's own EchoJay window");
-        cannot.add (juce::var (gr));
+        // ---- ITEM 13: AND IT IS NOW A FACT ABOUT THIS TARGET, NOT ABOUT LINKS -------------------
+        // This entry was unconditional, which is how his agent learned a limit that has gone. It is
+        // emitted only when the Link in front of us genuinely cannot be measured, and it says WHICH
+        // of the two reasons it is - an older build over there, or no fresh reading yet - because
+        // those have different answers and only one of them is worth retrying.
+        if (! linkMeters && target_.isNotEmpty())
+        {
+            auto* gr = new juce::DynamicObject();
+            gr->setProperty ("what", "gr");
+            gr->setProperty ("where", "link");
+            gr->setProperty ("why", "that track's EchoJay is an older build that does not publish its "
+                                    "slots' measurements");
+            gr->setProperty ("retryable", false);
+            gr->setProperty ("instead", "ask the user to update EchoJay on that track, or measure from "
+                                        "the rack this window has open");
+            cannot.add (juce::var (gr));
+        }
         o->setProperty ("cannot", juce::var (cannot));
         // The same fact in the flat form, for a reader that does not walk `cannot`.
-        o->setProperty ("grReadableOnLink", false);
+        o->setProperty ("grReadableOnLink", linkMeters);
         o->setProperty ("targetIsLink", target_.isNotEmpty());
     }
     o->setProperty ("agentMode", true);
@@ -901,10 +927,55 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     }
     if (what == "gr")
     {
-        // ITEM 8: BEFORE the rack, before the slot. The old order asked "is slot 2 on the rack I have open?"
-        // about a slot the plan meant on a different rack, and answered truthfully about the wrong thing.
-        if (measuringALink (call)) { done (notFromALink ("Gain reduction")); return; }
+        // ---- ITEM 13 (18 Oct 2026): A LINK CAN BE MEASURED NOW -------------------------------------
+        //
+        // *"On the Kick's Link, check gr fails with 'Gain reduction cannot be read from a Link yet', so
+        // the certified-compressor measurement can't run on any Link."*
+        //
+        // It can, because the Link publishes its slots' own measurements (EJRackSidecarFill, from the
+        // same slotPicture the open rack is read through). What remains refusable is NOT "a Link":
+        //   - that Link's build does not publish meters at all (meterCapable false), and
+        //   - the reading is older than the window a measurement may honestly be quoted from.
+        // Each gets its own sentence, because "cannot be read from a Link yet" was true of neither and
+        // sent him looking for a limit that no longer exists. ITEM 8's rule stands - the answer comes
+        // before the rack and the slot - it is just a narrower answer.
         const auto r = targetRack();
+        if (measuringALink (call) && r.valid)
+        {
+            if (! r.meterCapable)
+            {
+                done (ToolOutcome::failureFor ("link_has_no_meters",
+                        "that Link's EchoJay does not publish its slots' measurements - it is an older "
+                        "build. Ask the user to update EchoJay on that track, or measure from the rack "
+                        "this window has open. This will not work on a retry.",
+                        "That track's EchoJay is an older build that does not send its meters over yet."));
+                return;
+            }
+            const auto ageMs = r.measuredAtMs > 0 ? (juce::Time::currentTimeMillis() - r.measuredAtMs)
+                                                  : (juce::int64) -1;
+            if (ageMs < 0 || ageMs > kLinkMeterStaleMs)
+            {
+                // A FIGURE WITH NO AGE IS AN ESTIMATE (Sean's 15 Oct ruling, applied to the Link road).
+                auto o = ToolOutcome::failureFor ("link_meters_stale",
+                        "that Link's measurements are " + (ageMs < 0 ? juce::String ("of unknown age")
+                                                                     : juce::String (ageMs / 1000) + " s old")
+                        + ", which is too old to quote as a reading. Ask the user to play the section and "
+                          "call wait_for_playback, then measure again.",
+                        "I have no fresh reading from that track yet - play the loudest section and I "
+                        "will measure it.");
+                auto* e = new juce::DynamicObject();
+                e->setProperty ("retryable", true);
+                e->setProperty ("hint", "ask the user to play, then wait_for_playback, then check(gr) again");
+                o.result = juce::var (e);
+                done (std::move (o));
+                return;
+            }
+        }
+        else if (measuringALink (call))
+        {
+            done (notFromALink ("Gain reduction"));      // the rack itself could not be read
+            return;
+        }
         if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", r.why + knownChannelsSentence(),
                                                         "I could not read that rack.")); return; }
         if (slotArg < 1 || slotArg > (int) r.slots.size()) { done (ToolOutcome::failure ("unknown_slot", "slot " + juce::String (slotArg) + " is not on the rack (1.." + juce::String ((int) r.slots.size()) + ")")); return; }
@@ -1272,6 +1343,7 @@ namespace
         if (! sc.valid) { r.why = "the Link's rack sidecar could not be read"; return r; }
         r.uid = sc.uid; r.name = displayName.isNotEmpty() ? displayName : sc.name; r.kind = "channel";
         r.revision = sc.revision; r.masterWet = sc.masterWet; r.preGainDb = sc.preGainDb;
+        r.meterCapable = sc.meterCapable; r.measuredAtMs = sc.measuredAtMs;
         int i = 0;
         for (const auto& ss : sc.slots)
         {
@@ -1280,6 +1352,21 @@ namespace
             s.name = ss.name; s.format = ss.format; s.settings = ss.settings;
             s.bypassed = ss.bypassed; s.wet = ss.wet; s.preTrimDb = ss.preTrimDb; s.outGainDb = ss.outGainDb;
             s.builtin = ChainHost::isBuiltinName (ss.name);
+            // ---- ITEM 13: THE LINK'S MEASUREMENTS (18 Oct 2026) ----------------------------------
+            // Field for field from the sidecar, which carried slotPicture's own gates across. A Link
+            // that does not publish them leaves every one at its no-reading floor, which is exactly
+            // the state check(gr) already knows how to answer about.
+            s.pictureValid  = ss.pictureValid;
+            s.grKnown       = ss.grKnown;
+            s.grCertified   = ss.grCertified;
+            s.grDb          = ss.grDb;
+            s.grPeakDb      = ss.grPeakDb;
+            s.grTypicalDb   = ss.grTypicalDb;
+            s.grLoudestDb   = ss.grLoudestDb;
+            s.grHeldDb      = ss.grHeldDb;
+            s.grWindowFrames = ss.grWindowFrames;
+            s.inLufs  = ss.inLufs;  s.outLufs = ss.outLufs;
+            s.inTpDb  = ss.inTpDb;  s.outTpDb = ss.outTpDb;
             r.slots.push_back (s);
         }
         return r;

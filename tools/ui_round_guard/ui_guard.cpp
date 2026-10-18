@@ -1065,6 +1065,12 @@ int main()
                 rows.push_back (li);
                 EchoJayAlignTestAccess::setLinks (proc, rows); pumpMs (40);
             }
+            // A LEG SETS ITS OWN GROUND (18 Oct 2026). This read whatever the leg before it left in
+            // view, and since rule 1 a new chat follows the rack in VIEW - so with lnk_02 still
+            // pinned from an earlier leg, the "fresh main chat" was a Link chat and this
+            // precondition failed. The main rack is what this group means by a main chat, so it
+            // says so instead of inheriting it.
+            A::selectRack (*ed, {}); pumpMs (40);
             A::newChat (*ed); pumpMs (40);          // the case he was in: a chat with nothing in it yet
             check (A::effectiveUid (*ed).isEmpty() && A::banner (*ed).isEmpty(),
                    "K0 PRECONDITION: a fresh main chat is on no channel and the banner says nothing",
