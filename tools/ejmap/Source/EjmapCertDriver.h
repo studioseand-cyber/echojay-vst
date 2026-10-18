@@ -1569,7 +1569,7 @@ inline int vst3UidFromCid (const juce::String& cid)
     for (int i = 0; i < 4; ++i) v = v * 31u + (juce::uint32) h.substring (8 * i, 8 * i + 8).getHexValue64();
     return (int) v;
 }
-struct Vst3Identity { juce::String name, version, vendor, source; int uid = 0; };   // source: "moduleinfo", "cache", "load"
+struct Vst3Identity { juce::String name, version, vendor, source; int uid = 0; bool instrument = false; };   // source: "moduleinfo", "cache", "load"; instrument: an "Instrument" sub-category (18 Oct)
 // moduleinfo.json is JSON5 (trailing commas, // comments): cleaned before the parse
 inline std::vector<Vst3Identity> vst3IdentitiesFromModuleInfo (const juce::File& bundle)
 {
@@ -1590,6 +1590,7 @@ inline std::vector<Vst3Identity> vst3IdentitiesFromModuleInfo (const juce::File&
             if (c.getProperty ("Category", "").toString() != "Audio Module Class") continue;
             Vst3Identity id; id.name = c.getProperty ("Name", "").toString(); id.version = c.getProperty ("Version", "").toString().trim();
             id.vendor = vendor.isNotEmpty() ? vendor : c.getProperty ("Vendor", "").toString(); id.uid = vst3UidFromCid (c.getProperty ("CID", "").toString()); id.source = "moduleinfo";
+            if (const auto* sc = c.getProperty ("Sub Categories", {}).getArray()) for (const auto& x : *sc) if (x.toString() == "Instrument") id.instrument = true;   // as JUCE's isInstrument
             if (id.name.isNotEmpty() && id.uid != 0) out.push_back (id);
         }
     return out;
@@ -1607,7 +1608,7 @@ struct Vst3IdentityCache
     {
         auto* o = new juce::DynamicObject(); o->setProperty ("state", state); if (why.isNotEmpty()) o->setProperty ("why", why);
         juce::Array<juce::var> cs; for (const auto& i : ids) { auto* c = new juce::DynamicObject(); c->setProperty ("name", i.name); c->setProperty ("version", i.version); c->setProperty ("vendor", i.vendor);
-                                                               c->setProperty ("uid", juce::String::toHexString (i.uid).toLowerCase()); c->setProperty ("source", i.source); cs.add (juce::var (c)); }
+                                                               c->setProperty ("uid", juce::String::toHexString (i.uid).toLowerCase()); c->setProperty ("source", i.source); if (i.instrument) c->setProperty ("instrument", true); cs.add (juce::var (c)); }
         o->setProperty ("classes", juce::var (cs)); o->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
         root.getDynamicObject()->setProperty (juce::Identifier (k), juce::var (o));
         file.getParentDirectory().createDirectory(); file.replaceWithText (juce::JSON::toString (root));
@@ -1617,7 +1618,7 @@ struct Vst3IdentityCache
         std::vector<Vst3Identity> out; const auto e = get (k);
         if (const auto* cs = e.getProperty ("classes", {}).getArray())
             for (const auto& c : *cs) { Vst3Identity i; i.name = c.getProperty ("name", "").toString(); i.version = c.getProperty ("version", "").toString(); i.vendor = c.getProperty ("vendor", "").toString();
-                                        i.uid = (int) (juce::int64) c.getProperty ("uid", "").toString().getHexValue64(); i.source = "cache"; out.push_back (i); }
+                                        i.uid = (int) (juce::int64) c.getProperty ("uid", "").toString().getHexValue64(); i.source = "cache"; i.instrument = (bool) c.getProperty ("instrument", false); out.push_back (i); }
         return out;
     }
 };
@@ -1637,7 +1638,40 @@ inline juce::String auTwinByBundleName (const juce::String& bundleName, const st
 // THE VST3 BUNDLES ON THIS MAC (17 Oct, rulings 3), loading nothing: every *.vst3 under the two VST3 folders (vendor sub-folders too).
 // The name is the bundle's CFBundleName (else its file name), the version CFBundleShortVersionString (else CFBundleVersion), the vendor
 // the sub-folder it sits in. A WaveShell bundle hosts many classes, which only a load can list: it is reported, not enumerated
-struct Vst3Bundle { juce::String name, version, vendor; juce::File bundle; bool shell = false; };
+struct Vst3Bundle { juce::String name, version, vendor; juce::File bundle; bool shell = false; juce::StringArray archs; juce::String bundleId; };   // archs: from the binary's Mach-O header (18 Oct)
+// THE ARCHITECTURES A BINARY CARRIES (18 Oct: 321 of tonight's 322 "crashed" VST3s were Intel-only - an arm64 host cannot open them), read
+// from its Mach-O header, loading nothing: a fat header's slices, or a thin binary's one cputype. Empty = unreadable (the load decides)
+inline juce::StringArray machOArchs (const juce::File& binary)
+{
+    juce::StringArray out; juce::FileInputStream in (binary); if (! in.openedOk()) return out;
+    juce::uint8 h[4096] = {}; const auto n = (int) in.read (h, (int) sizeof (h)); if (n < 8) return out;
+    auto be = [&] (int o) { return o + 4 <= n ? (juce::uint32) ((h[o] << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) : 0u; };
+    auto le = [&] (int o) { return o + 4 <= n ? (juce::uint32) (h[o] | (h[o + 1] << 8) | (h[o + 2] << 16) | (h[o + 3] << 24)) : 0u; };
+    auto name = [] (juce::uint32 cpu) -> juce::String { switch (cpu) { case 0x0100000Cu: return "arm64"; case 0x01000007u: return "x86_64"; case 7u: return "i386"; case 18u: return "ppc"; case 0x01000012u: return "ppc64"; case 12u: return "arm"; default: return "cpu" + juce::String::toHexString ((int) cpu); } };
+    const auto magic = be (0);
+    if (magic == 0xCAFEBABEu || magic == 0xCAFEBABFu)   // fat (64-bit entries are 32 bytes)
+    {
+        const auto count = be (4); const int step = magic == 0xCAFEBABFu ? 32 : 20;
+        for (juce::uint32 i = 0; i < count && i < 16; ++i) out.addIfNotAlreadyThere (name (be (8 + (int) i * step)));
+        return out;
+    }
+    const auto lm = le (0);
+    if (lm == 0xFEEDFACFu || lm == 0xFEEDFACEu) out.add (name (le (4)));
+    return out;
+}
+inline juce::String hostArch()
+{
+   #if defined(__arm64__) || defined(__aarch64__)
+    return "arm64";
+   #else
+    return "x86_64";
+   #endif
+}
+// EchoJay's own plugins are never measured (the AU registry census leaves them out too)
+inline bool isEchoJayOwn (const juce::String& name, const juce::String& bundleId)
+{
+    return name.startsWithIgnoreCase ("EchoJay") || bundleId.containsIgnoreCase ("echojay");
+}
 inline std::vector<Vst3Bundle> installedVst3Bundles (const juce::StringArray& roots = { "/Library/Audio/Plug-Ins/VST3", "~/Library/Audio/Plug-Ins/VST3" })
 {
     std::vector<Vst3Bundle> out;
@@ -1664,6 +1698,8 @@ inline std::vector<Vst3Bundle> installedVst3Bundles (const juce::StringArray& ro
             b.name = info (f, CFSTR ("CFBundleName")); if (b.name.isEmpty()) b.name = f.getFileNameWithoutExtension();
             b.version = info (f, CFSTR ("CFBundleShortVersionString")); if (b.version.isEmpty()) b.version = info (f, kCFBundleVersionKey);
             b.shell = f.getFileName().startsWithIgnoreCase ("WaveShell");
+            b.bundleId = info (f, kCFBundleIdentifierKey);
+            if (const auto exe = info (f, kCFBundleExecutableKey); exe.isNotEmpty()) b.archs = machOArchs (f.getChildFile ("Contents/MacOS").getChildFile (exe));
             out.push_back (b);
         }
     };
@@ -1683,6 +1719,8 @@ inline std::vector<Vst3PlanRow> vst3IdentityPlan (const std::vector<Vst3Bundle>&
     {
         Vst3PlanRow r; r.b = b; r.key = Vst3IdentityCache::key (b.bundle, b.version);
         if (b.shell) r.source = "shell";
+        else if (isEchoJayOwn (b.name, b.bundleId)) r.source = "own";   // 18 Oct: never measured
+        else if (! b.archs.isEmpty() && ! b.archs.contains (hostArch())) r.source = "wrong_arch";   // 18 Oct: no slice this Mac's hosts run - nothing to load
         else if (cache.has (r.key)) { r.source = cache.get (r.key).getProperty ("state", "").toString() == "ok" ? "cache" : "cache_failed"; r.ids = cache.classes (r.key); }
         else { r.ids = vst3IdentitiesFromModuleInfo (b.bundle); r.source = r.ids.empty() ? "load" : "moduleinfo"; }
         for (const auto& id : r.ids) { for (const auto& [n, v] : aus) if (n.trim().equalsIgnoreCase (id.name.trim())) { r.twin = n; break; } if (r.twin.isNotEmpty()) break; }
@@ -1698,7 +1736,8 @@ inline int runVst3IdentityPlan (const juce::File& ledger, bool list)
     const auto plan = vst3IdentityPlan (installedVst3Bundles(), aus, cache);
     std::map<juce::String, int> n; int classes = 0, twins = 0, loadTwins = 0;
     for (const auto& r : plan) { ++n[r.source]; classes += (int) r.ids.size(); if (r.twin.isNotEmpty()) { ++twins; if (r.source == "load") ++loadTwins; } if (list) std::cout << r.source << "\t" << r.b.name << "\t" << r.twin << "\n"; }
-    std::cout << "VST3-PLAN: " << plan.size() << " bundle(s), nothing loaded: " << n["moduleinfo"] << " identified from moduleinfo.json, " << n["cache"] << " from the identity cache, "
+    std::cout << "VST3-PLAN: " << plan.size() << " bundle(s), nothing loaded: " << n["wrong_arch"] << " without a " << hostArch() << " slice (not loadable here), " << n["own"] << " EchoJay's own, "
+              << n["moduleinfo"] << " identified from moduleinfo.json, " << n["cache"] << " from the identity cache, "
               << n["cache_failed"] << " remembered as failing (not loaded again), " << n["shell"] << " WaveShell (reported), " << n["load"] << " need ONE identity load (then cached; "
               << loadTwins << " of them are AU twins by bundle name, whose load is the bridge read's own parameter list); " << classes << " class(es) known; " << twins << " AU twin(s)" << std::endl;
     return 0;

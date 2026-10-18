@@ -10580,7 +10580,7 @@ int main (int, char**)
                && run.indexOf ("readback::guardedVst3") < run.indexOf ("runProbeCall") && run.contains ("readback::pickMap (mapsOf[desc.name], desc.version, format)")
                && run.contains ("const auto stem = format + \"_\"") && run.contains ("if (pv.isNotEmpty()) installed = pv;") && run.contains ("readback::record (map, ws, got, installed)")
                && red.contains ("readback::pickMap (mapsOf[product], version, fmt)")
-               && probe.contains ("in the bundle)\\tversion\\t%s\\tuid\\t%08x\\tvendor\\t%s\\n\", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8(), (unsigned int) d.uniqueId, d.manufacturerName.toRawUTF8());")
+               && probe.contains ("in the bundle)\\tversion\\t%s\\tuid\\t%08x\\tvendor\\t%s\\tinstrument\\t%d\\n\", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size(), d.version.toRawUTF8(), (unsigned int) d.uniqueId, d.manufacturerName.toRawUTF8(), d.isInstrument ? 1 : 0);")
                && mainRb.contains ("else if (k == \"--format\") format = v; else if (k == \"--at\") atFile = cwdFile (v);") && mainRb.contains ("runReadbackSweep (o, maps, ns, format, at, allow)"),
                "wizard WZ-RBSWEEP-4: --format VST3 reads VST3 maps (scan-cache products through the guard, a bundle it cannot check held, the probe's installed version); --at reads only the listed controls at their targets plus the given norms");
     }
@@ -10804,6 +10804,42 @@ int main (int, char**)
                && auTwinByBundleName ("FabFilter Pro-Q 3", aus) == "Pro-Q 3" && auTwinByBundleName ("Pro-Q 3", aus) == "Pro-Q 3" && auTwinByBundleName ("Acme Pro-Q 3", aus).isEmpty()
                && rbs.contains ("if (idxS.startsWithChar ('@'))") && rbs.contains ("clean (ps[i]->getName (128)).trim() == want") && rbs.contains ("std::printf (\"missing\\tname\\t%s\\n\", want.toRawUTF8()); continue;"),
                "wizard WZ-VST3-2: identity from moduleinfo (JUCE's uid from the CID), the cache (failures too) or ONE load then cached; twins with no load (class name, vendor-prefixed bundle name); the probe finds a parameter by name");
+    }
+    // WZ-ARCH-1 THE ARCH / INSTRUMENT / OWN RULES (Kathy, 18 Oct: 322 VST3s "crashed" - 321 had no arm64 code, Omnisphere and Romplur are
+    // instruments): a bundle's Mach-O header says its architectures (loading nothing); one without this Mac's is "wont_load", never loaded;
+    // EchoJay's own plugins and instruments are out of scope, said
+    {
+        using namespace ejmap::cert;
+        const auto tmp = juce::File::createTempFile ("arch"); tmp.createDirectory();
+        auto bin = [&] (const char* n, std::vector<juce::uint8> bytes) { const auto f = tmp.getChildFile (n); f.replaceWithData (bytes.data(), bytes.size()); return f; };
+        auto be = [] (std::vector<juce::uint8>& v, juce::uint32 x) { for (int s = 24; s >= 0; s -= 8) v.push_back ((juce::uint8) (x >> s)); };
+        auto le = [] (std::vector<juce::uint8>& v, juce::uint32 x) { for (int s = 0; s <= 24; s += 8) v.push_back ((juce::uint8) (x >> s)); };
+        auto fat = [&] (std::vector<juce::uint32> cpus) { std::vector<juce::uint8> v; be (v, 0xCAFEBABEu); be (v, (juce::uint32) cpus.size()); for (auto c : cpus) { be (v, c); for (int k = 0; k < 4; ++k) be (v, 0); } return v; };
+        std::vector<juce::uint8> thin; le (thin, 0xFEEDFACFu); le (thin, 0x0100000Cu); le (thin, 0);
+        const auto intel = machOArchs (bin ("intel", fat ({ 0x01000007u, 7u }))), both = machOArchs (bin ("both", fat ({ 0x01000007u, 0x0100000Cu }))),
+                   arm = machOArchs (bin ("arm", thin)), junk = machOArchs (bin ("junk", { 1, 2, 3, 4, 5, 6, 7, 8, 9 })), none = machOArchs (tmp.getChildFile ("absent"));
+        const auto mi = tmp.getChildFile ("Synth.vst3"); mi.getChildFile ("Contents/Resources").createDirectory();
+        mi.getChildFile ("Contents/Resources/moduleinfo.json").replaceWithText (R"J({ "Name": "Synth", "Factory Info": { "Vendor": "Spectrasonics" },
+  "Classes": [ { "CID": "ABCDEF019182FAEB4D62796A5363716C", "Category": "Audio Module Class", "Name": "Synth", "Version": "2.0", "Sub Categories": [ "Instrument", "Synth" ] } ] })J");
+        const auto ids = vst3IdentitiesFromModuleInfo (mi);
+        Vst3IdentityCache cache (tmp.getChildFile ("ledger/vst3_identity.json"));
+        std::vector<Vst3Bundle> bs { { "Old Intel", "1.0", "", tmp.getChildFile ("Old Intel.vst3"), false, { "x86_64", "i386" }, "com.old.intel" },
+                                     { "Universal", "1.0", "", tmp.getChildFile ("Universal.vst3"), false, { "x86_64", "arm64" }, "com.u" },
+                                     { "EchoJay V2", "2.0", "", tmp.getChildFile ("EchoJay V2.vst3"), false, { "arm64" }, "com.echojay.v2" },
+                                     { "Unread", "1.0", "", tmp.getChildFile ("Unread.vst3"), false, {}, "com.x" } };
+        const auto plan = vst3IdentityPlan (bs, {}, cache);
+        auto src = [&] (const juce::String& n) { for (const auto& r : plan) if (r.b.name == n) return r.source; return juce::String ("?"); };
+        tmp.deleteRecursively();
+        const auto probe = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/au_instantiate_probe.cpp").loadFileAsString();
+        check (intel == juce::StringArray { "x86_64", "i386" } && both.contains ("arm64") && arm == juce::StringArray { "arm64" } && junk.isEmpty() && none.isEmpty()
+               && hostArch() == "arm64"
+               && isEchoJayOwn ("EchoJay V2", "") && isEchoJayOwn ("Link", "com.echojay.link") && ! isEchoJayOwn ("Pro-Q 3", "com.fabfilter.ProQ3")
+               && src ("Old Intel") == "wrong_arch" && src ("Universal") != "wrong_arch" && src ("EchoJay V2") == "own" && src ("Unread") != "wrong_arch" && src ("Unread") != "own"
+               && ids.size() == 1 && ids[0].instrument
+               && [] { const juce::String l = "vst3 class: \"Omnisphere\" (asked \"Omnisphere\", 1 class(es) in the bundle)\tversion\t2.8.6\tuid\t1a2b3c4d\tvendor\tSpectrasonics\tinstrument\t1\n";
+                       return ejmap::readback::vst3FieldOf (l, "instrument") == "1" && ejmap::readback::vst3FieldOf (l, "vendor") == "Spectrasonics" && ejmap::readback::vst3FieldOf (l, "version") == "2.8.6"; }()
+               && probe.contains ("\\tinstrument\\t%d\\n"),   // cert: the wizard's rows for these sources live on feat/ejmap-wizard
+               "wizard WZ-ARCH-1: a VST3 without this Mac's architecture (Mach-O header, nothing loaded) is wont_load, never loaded; EchoJay's own and instruments are out of scope, said; an unreadable header leaves the load to decide");
     }
     // WZ-REDO-1 ONE LIST OF --redo SELECTORS (Kathy, 18 Oct: Sean's recheck - run-all's own accuracy_gaps steps passed "--redo accuracy_gaps"
     // and --phaseb-all refused it, exit 2): every value a run-all step passes to --redo is accepted, and every selector the engine reads
