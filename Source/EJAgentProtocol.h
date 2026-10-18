@@ -332,6 +332,10 @@ struct TalkAsk
 {
     juce::String question;
     juce::StringArray labels, details, intents;
+    /** ONE PER CHOICE, parallel to `labels`: TRUE when the server marked this one as something the
+        user sets by hand. B sends it as `handSet` on the choice, beside the `detail` note ("you'll
+        set it by ear"), and the card tints that note so the two kinds of answer read apart. */
+    juce::Array<bool> handSet;
     bool allowFreeText = true;
     bool present = false;
     /** TRUE when the server sent no choices AND allowFreeText false - an ask nobody could answer.
@@ -380,15 +384,20 @@ inline TalkAsk talkAskOf (const ToolCall& c)
         for (auto& cv : *ch)
         {
             juce::String label, detail, intent;
+            bool hand = false;
             if (cv.isString()) { label = cv.toString().trim(); labelKey = "(bare string)"; }
             else if (auto* co = cv.getDynamicObject())
             {
                 label  = choiceLabelOf (*co, labelKey);
                 detail = co->getProperty ("detail").toString().trim();
                 intent = co->getProperty ("intent").toString().trim();
+                // the by-ear mark, under either spelling - the same reason choiceLabelOf reads more
+                // than one key: a flag that arrives under the other name is a flag silently lost
+                for (const char* k : { "handSet", "hand_set" })
+                    if (co->hasProperty (k)) { hand = (bool) co->getProperty (k); break; }
             }
             if (label.isEmpty()) continue;
-            a.labels.add (label); a.details.add (detail); a.intents.add (intent);
+            a.labels.add (label); a.details.add (detail); a.intents.add (intent); a.handSet.add (hand);
         }
     a.choiceKey = arrayKey;
     a.labelKey  = labelKey;

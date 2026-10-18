@@ -1032,6 +1032,140 @@ int main()
         }
     }
 
+    // ---- Y: A CHIP'S NOTE (18 Oct 2026, Sean in Logic) ---------------------------------------
+    //
+    // *"The chips don't show their notes. B sends them on every chip as ask.choices[i].detail ("I can
+    // set it", "I can set and measure it", "you'll set it by ear") with handSet: true on the by-ear
+    // ones; draw the note under or beside each chip name."*
+    //
+    // The note was parsed and then dropped on the floor: the card's chips were built from `labels`
+    // alone, so the one thing that distinguishes the choices - whether EchoJay does the work or he
+    // does - never reached the screen.
+    {
+        using namespace echojay::agentui;
+        const char* withNotes = R"EJ({"id":"tc_pick_comp","name":"talk","summary":"ask","approval":"free","args":{"ask":{"question":"Which compressor shall I use on the kick?","choices":[{"label":"cl1b","detail":"I can set it"},{"label":"the EchoJay Compressor","detail":"I can set and measure it"},{"label":"Shadow Hills Mastering Compressor","detail":"you'll set it by ear","handSet":true}],"allowFreeText":true}}})EJ";
+
+        Rig w;
+        w.client.start ("add a compressor", "chat_y");
+        w.round (1);
+        w.tool (withNotes);
+        w.await ({ "tc_pick_comp" });
+        pumpMs (10);
+        const auto& ask = w.client.pendingAsk();
+        check (w.client.askPending() && ask.labels.size() == 3 && ask.details.size() == 3
+               && ask.details[0] == "I can set it" && ask.details[2] == "you'll set it by ear"
+               && ask.handSet.size() == 3 && ! ask.handSet[0] && ! ask.handSet[1] && ask.handSet[2],
+               "Y0 the ask arrives with a note on every choice and the by-ear one MARKED (RED as it "
+               "stood: handSet was not read at all, so the two kinds of answer were indistinguishable)",
+               "notes=" + ask.details.joinIntoString ("|") + " hand=" + juce::String ((int) ask.handSet.size()));
+
+        const auto v = runViewFrom (w.client, {}, true);
+        const auto* qs = v.steps.empty() ? nullptr : &v.steps.back();
+        check (qs != nullptr && qs->chips.size() == 3 && qs->chipNotes.size() == 3
+               && qs->chipNotes[1] == "I can set and measure it"
+               && qs->chipHandSet.size() == 3 && qs->chipHandSet[2],
+               "Y1 the card's question row carries one note per chip, parallel to the chips, and the "
+               "by-ear mark with them (RED as it stood: the row took `labels` and nothing else)",
+               qs == nullptr ? juce::String ("no step") : qs->chipNotes.joinIntoString ("|"));
+
+        // Y2: the zone is what gets drawn and what gets pressed - the note has to be ON it, and the
+        // chip has to be taller than a one-line chip or the note has nowhere to go.
+        {
+            const auto L = layoutRun (v, 0, 0, 420);
+            int chips = 0, noted = 0, hand = 0, tall = 0;
+            juce::Rectangle<int> third;
+            for (const auto& z : L.zones)
+                if (z.kind == RunHit::Chip)
+                {
+                    ++chips;
+                    if (z.note.isNotEmpty()) ++noted;
+                    if (z.handSet) { ++hand; third = z.rect; }
+                    if (z.rect.getHeight() > Metrics::chipH) ++tall;
+                }
+            check (chips == 3 && noted == 3 && hand == 1 && tall == 3,
+                   "Y2 every chip zone carries its note, one of them is marked by-ear, and all three "
+                   "are TALLER than a one-line chip so the note has room",
+                   "chips=" + juce::String (chips) + " noted=" + juce::String (noted)
+                     + " hand=" + juce::String (hand) + " tall=" + juce::String (tall));
+            check (! third.isEmpty() && chipNameArea (third, true).getHeight() == Metrics::chipNameH
+                   && chipNoteArea (third, true).getHeight() > 0
+                   && chipNameArea (third, true).getBottom() <= chipNoteArea (third, true).getY(),
+                   "Y2b ...and the name's area and the note's area do not overlap - the one author of "
+                   "the split answers the layout, the paint and the check the same way");
+        }
+
+        // Y3: and it all fits, at his column widths. The same question asked of the closing in X4.
+        for (int width : { 180, 220, 420 })
+        {
+            const auto L   = layoutRun (v, 0, 0, width);
+            const auto why = checkRun (v, L, 0, width);
+            check (why.isEmpty(),
+                   "Y3 at " + juce::String (width) + " px the notes are whole: nothing truncated, "
+                   "nothing outside the column",
+                   why.isEmpty() ? juce::String ("clean, height ") + juce::String (L.totalHeight) : why);
+        }
+
+        // Y4: THE OTHER DIRECTION. A note drawn into a one-line chip is exactly the defect checkRun
+        // is for, so it must SAY so - a check that cannot go red is not a check.
+        {
+            auto L = layoutRun (v, 0, 0, 420);
+            for (auto& z : L.zones)
+                if (z.kind == RunHit::Chip && z.note.isNotEmpty()) { z.rect.setHeight (Metrics::chipH); break; }
+            const auto why = checkRun (v, L, 0, 420);
+            check (why.contains ("note"), "Y4 a note squeezed back into a one-line chip is CAUGHT and named", why);
+        }
+
+        // Y5: and an ask with no notes is laid out exactly as it was before today - the same rects,
+        // from the same function, through the overload every other surface still calls.
+        {
+            Rig q;
+            q.client.start ("louder?", "chat_y2");
+            q.round (1);
+            q.tool (R"({"id":"tc_plain","name":"talk","args":{"ask":{"question":"Louder?","choices":[{"label":"Yes"},{"label":"No"}],"allowFreeText":false}},"approval":"free"})");
+            q.await ({ "tc_plain" });
+            pumpMs (10);
+            const auto pv = runViewFrom (q.client, {}, true);
+            const auto L  = layoutRun (pv, 0, 0, 420);
+            int plain = 0, wrong = 0;
+            for (const auto& z : L.zones)
+                if (z.kind == RunHit::Chip)
+                {
+                    ++plain;
+                    if (z.rect.getHeight() != Metrics::chipH || z.note.isNotEmpty()) ++wrong;
+                }
+            juce::StringArray yesNo; yesNo.add ("Yes"); yesNo.add ("No");
+            std::vector<juce::Rectangle<int>> oldWay;
+            const int h = layoutChips (yesNo, 0, 0, 420, oldWay);
+            std::vector<juce::Rectangle<int>> newWay;
+            const int h2 = layoutChips (yesNo, juce::StringArray(), 0, 0, 420, newWay);
+            check (plain == 2 && wrong == 0 && h == h2 && oldWay.size() == newWay.size()
+                   && oldWay[0] == newWay[0] && oldWay[1] == newWay[1],
+                   "Y5 a chip with no note is the chip it always was: 26 px, and the notes-free call "
+                   "returns the same rects and the same height as the new one",
+                   "plain=" + juce::String (plain) + " wrong=" + juce::String (wrong)
+                     + " h=" + juce::String (h) + "/" + juce::String (h2));
+        }
+
+        // Y6: the record. The notes ride on the saved message, additively, and a snapshot written by
+        // a build that knew nothing about them still reads - both directions of the downgrade rule.
+        {
+            const auto back = fromJson (toJson (v));
+            const auto* bs = back.steps.empty() ? nullptr : &back.steps.back();
+            check (bs != nullptr && bs->chips.size() == 3 && bs->chipNotes.size() == 3
+                   && bs->chipNotes[2] == "you'll set it by ear"
+                   && bs->chipHandSet.size() == 3 && bs->chipHandSet[2] && ! bs->chipHandSet[0],
+                   "Y6 the notes and the by-ear marks survive the snapshot the chat message holds",
+                   bs == nullptr ? juce::String ("no step") : bs->chipNotes.joinIntoString ("|"));
+            const auto older = fromJson (juce::JSON::parse (
+                R"({"sessionId":"ag_old","steps":[{"id":"tc_old","label":"Which one?","status":"awaiting","chips":"Yes\nNo"}]})"));
+            check (older.steps.size() == 1 && older.steps[0].chips.size() == 2
+                   && older.steps[0].chipNotes.size() == 2 && older.steps[0].chipNotes[0].isEmpty()
+                   && older.steps[0].chipHandSet.size() == 2 && ! older.steps[0].chipHandSet[1],
+                   "Y6b ...and a snapshot from before today reads with its chips intact and no notes - "
+                   "padded to the chips' length, never mis-paired");
+        }
+    }
+
     // ---- SZ1: AN OVERSIZED RESULT IS COMPACTED, NOT POSTED (17 Oct 2026) ----------------------
     // The executor's own gate, asked directly with a result the size of Sean's machine: 420 entries
     // of the shape 17b sent. It must come back inside the contract's 8 KB.

@@ -57,6 +57,12 @@ struct RunStep
     juce::String right;         // the right-hand status word ("applied", "auto-applied", ...)
     juce::String askReason;     // Auto: why this one still waits. Never invented here.
     juce::StringArray chips;    // a question's answer chips (this step is the question)
+    /** One note per chip, parallel to `chips`, as the server sent it ("I can set it", "you'll set
+        it by ear"). Empty for a chip with no note, and the whole array is empty for an ask that
+        carried none - which is the geometry every chip had before 18 Oct. */
+    juce::StringArray chipNotes;
+    /** Parallel again: TRUE where the server marked the choice as one the user sets by hand. */
+    juce::Array<bool>  chipHandSet;
     juce::String answered;      // "You said: ..." once a chip is tapped
     int  status = 0;            // EJAgentClient::Step::Status
     bool applySkip = false;     // Ask mode, awaiting a decision -> [Apply] [Skip] on the line
@@ -367,7 +373,13 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         r.hasDetails  = s.status == St::Failed && s.modelDetail.isNotEmpty() && s.modelDetail != s.detail;
         r.expanded    = expanded.contains (s.id);
         r.applySkip   = s.status == St::AwaitingApproval && c.state() == S::AwaitingApproval;
-        if (askHere) r.chips = c.pendingAsk().labels;
+        if (askHere)
+        {
+            const auto& pending = c.pendingAsk();
+            r.chips       = pending.labels;
+            r.chipNotes   = pending.details;     // "the chips don't show their notes" (18 Oct)
+            r.chipHandSet = pending.handSet;
+        }
         r.right       = rightWordFor (s, askHere);
         if (s.status == St::Done || s.status == St::Undone) ++v.changeCount;
         v.steps.push_back (std::move (r));
@@ -377,7 +389,9 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         RunStep r;
         r.id     = "ask";
         r.label  = c.pendingAsk().question.isNotEmpty() ? c.pendingAsk().question : juce::String ("a question");
-        r.chips  = c.pendingAsk().labels;
+        r.chips       = c.pendingAsk().labels;
+        r.chipNotes   = c.pendingAsk().details;
+        r.chipHandSet = c.pendingAsk().handSet;
         r.right  = "your answer?";
         r.status = (int) St::AwaitingApproval;
         v.steps.push_back (std::move (r));
@@ -487,6 +501,15 @@ inline juce::var toJson (const RunView& v)
         if (s.askReason.isNotEmpty())   so->setProperty ("askReason", s.askReason);
         if (s.answered.isNotEmpty())    so->setProperty ("answered", s.answered);
         if (! s.chips.isEmpty())        so->setProperty ("chips", s.chips.joinIntoString ("\n"));
+        // Additive, and read back positionally: a build that does not know these fields reads the
+        // chips exactly as it did before, and this one pads a short list rather than mis-pairing it.
+        if (! s.chipNotes.isEmpty())    so->setProperty ("chipNotes", s.chipNotes.joinIntoString ("\n"));
+        if (! s.chipHandSet.isEmpty())
+        {
+            juce::String hand;
+            for (int k = 0; k < s.chipHandSet.size(); ++k) hand << (s.chipHandSet[k] ? '1' : '0');
+            so->setProperty ("chipHand", hand);
+        }
         so->setProperty ("status", statusToken (s.status));
         if (s.applySkip)   so->setProperty ("applySkip", true);
         if (s.canUndo)     so->setProperty ("canUndo", true);
@@ -548,6 +571,12 @@ inline RunView fromJson (const juce::var& v)
                 s.answered    = so->getProperty ("answered").toString();
                 const auto chips = so->getProperty ("chips").toString();
                 if (chips.isNotEmpty()) s.chips.addLines (chips);
+                const auto notes = so->getProperty ("chipNotes").toString();
+                if (notes.isNotEmpty()) s.chipNotes.addLines (notes);
+                while (s.chipNotes.size() < s.chips.size()) s.chipNotes.add ({});
+                const auto hand = so->getProperty ("chipHand").toString();
+                for (int k = 0; k < s.chips.size(); ++k)
+                    s.chipHandSet.add (k < hand.length() && hand[k] == '1');
                 s.status      = statusFromToken (so->getProperty ("status").toString());
                 s.applySkip   = (bool) so->getProperty ("applySkip");
                 s.canUndo     = (bool) so->getProperty ("canUndo");
@@ -575,6 +604,8 @@ struct RunZone
     RunHit kind = RunHit::None;
     int    stepIndex = -1;
     juce::String label;      // a chip's label; "" otherwise
+    juce::String note;       // a chip's note, drawn under its name; "" otherwise
+    bool handSet = false;    // a chip the user sets by hand: its note is tinted
 };
 
 struct RunRects
@@ -685,9 +716,15 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
                 if (st.chips.isEmpty() || ! st.answered.isEmpty()) continue;
                 const int cx = x0 + Metrics::glyphW + Metrics::glyphGap;
                 std::vector<juce::Rectangle<int>> chipRects;
-                const int h = layoutChips (st.chips, cx, y, juce::jmax (1, width - (cx - x0)), chipRects);
+                const int h = layoutChips (st.chips, st.chipNotes, cx, y,
+                                           juce::jmax (1, width - (cx - x0)), chipRects);
                 for (size_t k = 0; k < chipRects.size(); ++k)
-                    L.zones.push_back ({ chipRects[k], RunHit::Chip, si, st.chips[(int) k] });
+                {
+                    const int ki = (int) k;
+                    L.zones.push_back ({ chipRects[k], RunHit::Chip, si, st.chips[ki],
+                                         ki < st.chipNotes.size() ? st.chipNotes[ki] : juce::String(),
+                                         ki < st.chipHandSet.size() && st.chipHandSet[ki] });
+                }
                 y += h;
             }
             y += gap;
@@ -887,8 +924,18 @@ inline juce::String checkRun (const RunView& v, const RunRects& L, int x0, int w
     if (auto why = fits (L.notice,      v.notice,      detailFont(), "notice");      why.isNotEmpty()) return why;
     if (auto why = fits (L.askHint,     v.askTypeHint, detailFont(), "ask hint");    why.isNotEmpty()) return why;
     for (const auto& z : L.zones)
-        if (! z.rect.isEmpty() && (z.rect.getX() < x0 || z.rect.getRight() > x0 + width))
-            return "a control leaves the column";
+    {
+        if (z.rect.isEmpty()) continue;
+        if (z.rect.getX() < x0 || z.rect.getRight() > x0 + width) return "a control leaves the column";
+        // a chip's note, measured through the same two functions that drew it
+        if (z.note.isNotEmpty())
+        {
+            const auto na = chipNoteArea (z.rect, true);
+            if (na.isEmpty()) return "a chip's note: text with no rect";
+            if (na.getHeight() < wrappedTextHeight (z.note, detailFont(), na.getWidth()))
+                return "a chip's note: truncated";
+        }
+    }
     if (L.totalHeight <= 0) return "a run with content laid out to no height";
     return {};
 }

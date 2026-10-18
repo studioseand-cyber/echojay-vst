@@ -32978,7 +32978,17 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
         g.drawRoundedRectangle (z.rect.toFloat().reduced (0.5f), 4.0f, 1.0f);
         g.setColour (danger ? C::red : primary ? accent : C::text2);
         g.setFont (chipFont().withHeight (11.0f));
-        g.drawText (label, z.rect, juce::Justification::centred, false);
+        // ---- A CHIP'S NOTE (18 Oct 2026, Sean in Logic) ------------------------------------
+        // *"The chips don't show their notes."*  The name goes on the top line and the server's
+        // note under it, in the areas layoutChips measured - chipNameArea / chipNoteArea are the
+        // one author of the split, so what is drawn is what was measured and checkRun can ask
+        // whether it had room. The by-ear choices are tinted amber: that one is work for him.
+        const bool hasNote = z.kind == RunHit::Chip && z.note.isNotEmpty();
+        g.drawText (label, chipNameArea (z.rect, hasNote), juce::Justification::centred, false);
+        if (hasNote)
+            drawWrapped (g, z.note, detailFont(),
+                         (z.handSet ? C::amber : C::text3).withAlpha (0.9f),
+                         chipNoteArea (z.rect, true));
     }
 
     if (! L.askQuestion.isEmpty())

@@ -34,6 +34,7 @@ struct Metrics
     static constexpr int toggleW    = 74;   // Approved / Skipped
     static constexpr int stopW      = 56;
     static constexpr int chipH      = 26;
+    static constexpr int chipNameH  = 18;   // the name's line on a chip that also carries a note
     static constexpr int chipRowH   = 32;
     static constexpr int chipGap    = 8;
     static constexpr int chipMinW   = 40;
@@ -80,22 +81,77 @@ inline void drawWrapped (juce::Graphics& g, const juce::String& text, const juce
 // The 18h rule, verbatim from layoutResultChips: natural width = text + 24, at
 // least 40, at most the area width; a row wraps when the next chip would cross
 // the right edge. Rects are relative to (x0, y0). Returns the total height.
-inline int layoutChips (const juce::StringArray& labels, int x0, int y0, int width,
-                        std::vector<juce::Rectangle<int>>& rectsOut)
+// ---- A CHIP'S TWO LINES (18 Oct 2026, Sean in Logic) --------------------------------------
+//
+// *"The chips don't show their notes."*  B sends one on every choice - "I can set it", "I can set
+// and measure it", "you'll set it by ear" - and the card drew the name alone, so the whole point of
+// the choice (whether EchoJay does the work or the user does) was invisible.
+//
+// A chip with a note is two lines: the name on top, the note under it. These two functions are the
+// ONE author of that split - the layout measures with them, the paint draws with them and checkRun
+// asks them whether the note it drew had room. The same discipline as layoutRun/checkRun: a drawn
+// rectangle nobody measured is how text ends up cut off mid-word.
+inline juce::Rectangle<int> chipNameArea (juce::Rectangle<int> chip, bool hasNote)
+{
+    return hasNote ? chip.withHeight (Metrics::chipNameH) : chip;
+}
+inline juce::Rectangle<int> chipNoteArea (juce::Rectangle<int> chip, bool hasNote)
+{
+    if (! hasNote) return {};
+    return chip.withTrimmedTop (Metrics::chipNameH).withTrimmedBottom (2).reduced (8, 0);
+}
+/** The height of one chip, name and note together. Pure, and the only place the sum is written. */
+inline int chipHeight (const juce::String& note, int chipWidth)
+{
+    if (note.isEmpty()) return Metrics::chipH;
+    const int inner = juce::jmax (1, chipWidth - 16);
+    return juce::jmax (Metrics::chipH, Metrics::chipNameH + wrappedTextHeight (note, detailFont(), inner) + 2);
+}
+
+/** `notes` is parallel to `labels` and may be shorter or hold empty entries: a chip whose note is
+    empty keeps exactly the one-line geometry it has always had. Rows are laid at the height of
+    their TALLEST chip, so two chips side by side never sit at different heights. */
+inline int layoutChips (const juce::StringArray& labels, const juce::StringArray& notes,
+                        int x0, int y0, int width, std::vector<juce::Rectangle<int>>& rectsOut)
 {
     rectsOut.clear();
     if (labels.isEmpty() || width <= 0) return 0;
-    const auto f = chipFont();
-    int x = x0, y = y0;
-    for (const auto& label : labels)
+    const auto f = chipFont(), nf = detailFont();
+    std::vector<int> ws, hs;
+    ws.reserve ((size_t) labels.size()); hs.reserve ((size_t) labels.size());
+    for (int i = 0; i < labels.size(); ++i)
     {
-        const int w = juce::jlimit (Metrics::chipMinW, juce::jmax (Metrics::chipMinW, width),
-                                    f.getStringWidth (label) + 24);
-        if (x > x0 && x + w > x0 + width) { x = x0; y += Metrics::chipRowH; }
-        rectsOut.push_back ({ x, y, w, Metrics::chipH });
-        x += w + Metrics::chipGap;
+        const auto note = i < notes.size() ? notes[i] : juce::String();
+        const int textW = juce::jmax (f.getStringWidth (labels[i]), nf.getStringWidth (note));
+        const int w = juce::jlimit (Metrics::chipMinW, juce::jmax (Metrics::chipMinW, width), textW + 24);
+        ws.push_back (w);
+        hs.push_back (chipHeight (note, w));
     }
-    return (y - y0) + Metrics::chipRowH;
+    int x = x0, y = y0, rowH = 0;
+    std::vector<size_t> row;
+    auto endRow = [&] ()
+    {
+        for (auto k : row) rectsOut[k].setHeight (rowH);
+        y += rowH + (Metrics::chipRowH - Metrics::chipH);   // the same gap the one-line rows have always had
+        row.clear(); rowH = 0; x = x0;
+    };
+    for (size_t i = 0; i < (size_t) labels.size(); ++i)
+    {
+        if (x > x0 && x + ws[i] > x0 + width) endRow();
+        rectsOut.push_back ({ x, y, ws[i], hs[i] });
+        row.push_back (rectsOut.size() - 1);
+        rowH = juce::jmax (rowH, hs[i]);
+        x += ws[i] + Metrics::chipGap;
+    }
+    endRow();
+    return y - y0;
+}
+
+/** The notes-free call every other surface still makes: identical geometry to before. */
+inline int layoutChips (const juce::StringArray& labels, int x0, int y0, int width,
+                        std::vector<juce::Rectangle<int>>& rectsOut)
+{
+    return layoutChips (labels, juce::StringArray(), x0, y0, width, rectsOut);
 }
 
 // ---- checklist rows ---------------------------------------------------------------
