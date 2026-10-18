@@ -250,6 +250,13 @@ inline bool scanCounts (const juce::String& outOfScopeByType, bool loadsDuringSc
 // an engine whose parent is gone (launchd, pid 1, adopted it): the app quit without stopping it
 inline bool orphaned (int parentPid) { return parentPid == 1; }
 inline juce::String scanWarning() { return "Some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it and moves on."; }
+// 18 Oct (Kathy: after Carry on the screen said "Measuring 472 plugins" with 33 left): a RESUMED run (measuring had started, and the last
+// run left engine/left.json) says how many are left; a first run says how many it measures
+inline juce::String measuringResumedText (int left)
+{
+    return "Carrying on: " + juce::String (left) + (left == 1 ? " plugin" : " plugins") + " left to measure. Leave it running - the Mac stays awake. You can pause and carry on any time.";
+}
+inline int leftCount (bool measureStarted, const juce::var& leftJson) { return measureStarted && leftJson.isArray() ? leftJson.size() : 0; }
 inline juce::String measuringText (int toMeasure = 0)
 {   // 15 Oct: the scan-done screen's "Ready to measure" words, as the Measuring screen's line (never a time)
     const juce::String keep = "Leave it running - the Mac stays awake. You can pause and carry on any time.";

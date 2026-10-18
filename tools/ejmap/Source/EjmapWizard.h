@@ -360,7 +360,8 @@ inline juce::String summaryLine (const std::map<juce::String, int>& n, bool sent
     if (ready) parts.add (plural (ready, "plugin ready", "plugins ready"));
     if (get ("measured")) parts.add (plural (get ("measured"), "newly measured, ready to send", "newly measured, ready to send"));
     if (get ("queued")) parts.add (juce::String (get ("queued")) + " to measure");
-    if (get ("bridge_read")) parts.add (plural (get ("bridge_read"), "VST3 read beside its AU", "VST3s read beside their AU"));   // 17 Oct: the VST3 lane
+    if (get ("bridged")) parts.add (plural (get ("bridged"), "VST3 shows what its AU shows", "VST3s show what their AU shows"));   // 18 Oct: the VST3 lane's outcomes
+    if (get ("bridge_no_match")) parts.add (plural (get ("bridge_no_match"), "VST3 differs from its AU", "VST3s differ from their AU"));
     if (get ("measuring")) parts.add (juce::String (get ("measuring")) + " measuring");
     if (get ("needs_licence")) parts.add (plural (get ("needs_licence"), "needs a licence", "need a licence"));
     if (get ("needs_hardware")) parts.add (plural (get ("needs_hardware"), "needs its hardware (UAD / APB) connected", "need their hardware (UAD / APB) connected"));

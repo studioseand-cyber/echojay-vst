@@ -223,7 +223,8 @@ inline int acceptedNew (const juce::File& work, const juce::File& storedZip, con
 // Pausing across days is the same run (the same run id). Only a FINISHED upload is judged for the code, on the merged run.
 inline bool isFinalState (const juce::String& st)
 {   // a final outcome: measured, or skipped for licence / hardware / crash / demo / silent / timeout / won't load / not measurable / custom default
-    static const juce::StringArray k { "measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default", "timed_out", "waves_skipped" };
+    static const juce::StringArray k { "measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default", "timed_out", "waves_skipped",
+                                       "bridged", "bridge_no_match" };   // 18 Oct: a VST3 twin's bridge read is a final outcome (the server decides what it inherits)
     return k.contains (st);
 }
 inline juce::var newRun (const juce::String& runId)

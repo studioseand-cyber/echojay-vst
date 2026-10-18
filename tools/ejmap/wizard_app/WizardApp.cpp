@@ -507,7 +507,11 @@ private:
             case Screen::measuring:
             {
                 const auto ch = wizapp::measuringChoices (kMode);
-                title = "Measuring"; text = wizapp::measuringText (wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString())).count);
+                title = "Measuring";
+                {   // 18 Oct: a resumed run says what is LEFT (the last run's left.json), a first run what it measures
+                    const int left = wizapp::leftCount ((bool) appState().getProperty ("measure_started", false), juce::JSON::parse (engineDir().getChildFile ("left.json").loadFileAsString()));
+                    text = left > 0 ? wizapp::measuringResumedText (left) : wizapp::measuringText (wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString())).count);
+                }
                 showBar = true; barValue = 0.0; barLeft = "Getting ready"; barRight = {}; setState ("measure_started", true); finishing = false; pausing = false;
                 primary.setButtonText (ch.pause); primary.setVisible (true); secondary.setButtonText (ch.send); secondary.setVisible (true); secondary.setEnabled (false);
                 choiceLine = ch.line; soFar = wizapp::measuredSoFarWords (0);

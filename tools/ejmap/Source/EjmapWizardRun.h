@@ -136,6 +136,17 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
     }
 }
 
+// each row's Phase B queues (the "phaseb" key), by product name - except a VST3-lane row (18 Oct): a VST3 twin shares its AU's name,
+// never its queue; on 18 Oct 33 bridge-read twins took their AU's queues and ended the run "still need measuring"
+inline void attributeQueues (juce::Array<juce::var>& rows, const std::map<juce::String, juce::StringArray>& queues)
+{
+    for (auto& rv : rows)
+    {
+        if (rv.getProperty ("lane", "").toString() == "vst3") continue;
+        juce::StringArray pbs; for (const auto& [pb, l] : queues) if (l.contains (rv.getProperty ("product", "").toString())) pbs.add (pb);
+        if (! pbs.isEmpty()) rv.getDynamicObject()->setProperty ("phaseb", pbs.joinIntoString (","));
+    }
+}
 // 15 Oct: what a run that reached the end has LEFT - every queued (phaseb) plugin whose state is not a final outcome (the server's own list)
 inline juce::Array<juce::var> leftAtEnd (const juce::Array<juce::var>& rows)
 {
@@ -345,6 +356,34 @@ inline std::vector<BridgePick> bridgeControls (const std::vector<std::pair<int, 
     return out;
 }
 inline juce::String bridgeRecordName (const juce::PluginDescription& d);
+// THE BRIDGE READ'S OUTCOME (Kathy, 18 Oct: 33 twins ended the run "still need measuring"): the wizard compares its two records itself -
+// every control read in both formats at BRIDGE_MIN_POINTS+ shared settings, each display the same (numbers within the coarser display's
+// last digit, else the same text) -> "bridged"; anything else -> "bridge_no_match", with the first difference. Both are final outcomes;
+// the server judges what a bridged VST3 inherits (its role controls, its AU's level)
+inline juce::String bridgeVerdict (const juce::var& auRec, const juce::var& v3Rec, juce::String& why)
+{
+    std::map<juce::String, juce::var> v3; if (const auto* a = v3Rec.getProperty ("controls", {}).getArray()) for (const auto& c : *a) v3[c.getProperty ("name", "").toString()] = c;
+    int controls = 0;
+    if (const auto* a = auRec.getProperty ("controls", {}).getArray())
+        for (const auto& c : *a)
+        {
+            const auto name = c.getProperty ("name", "").toString(); ++controls;
+            if (! v3.count (name)) { why = "'" + name + "' was not read on the VST3"; return "bridge_no_match"; }
+            const auto* ad = c.getProperty ("displayAt", {}).getDynamicObject(); const auto* vd = v3[name].getProperty ("displayAt", {}).getDynamicObject();
+            int paired = 0;
+            if (ad != nullptr && vd != nullptr)
+                for (const auto& p : ad->getProperties())
+                {
+                    if (! vd->hasProperty (p.name)) continue;
+                    ++paired; const auto x = p.value.toString().trim(), y = vd->getProperty (p.name).toString().trim(); double a1 = 0.0, b1 = 0.0;
+                    const bool same = (trust::numberOf (x, a1) && trust::numberOf (y, b1)) ? std::abs (a1 - b1) <= std::max (trust::displayStepValue (x), trust::displayStepValue (y)) + 1e-9 : x.equalsIgnoreCase (y);
+                    if (! same) { why = "'" + name + "' at " + p.name.toString() + ": AU '" + x + "', VST3 '" + y + "'"; return "bridge_no_match"; }
+                }
+            if (paired < trust::BRIDGE_MIN_POINTS) { why = "'" + name + "': " + juce::String (paired) + " setting(s) read in both formats, " + juce::String (trust::BRIDGE_MIN_POINTS) + " needed"; return "bridge_no_match"; }
+        }
+    if (controls == 0) { why = "no control read in both formats"; return "bridge_no_match"; }
+    why = juce::String (controls) + " control(s) show the same in both formats"; return "bridged";
+}
 // the AU's role-named parameters (the trust role table), at most 12 - the bridge's controls when the VST3's own list is not in hand
 inline std::vector<BridgePick> roleNamedParams (const std::vector<std::pair<int, juce::String>>& au, int cap = 12)
 {
@@ -475,7 +514,7 @@ inline int runWizard (const WizardOptions& wo)
         Vst3IdentityCache idCache (opt.ledger.getChildFile ("vst3_identity.json"));
         const auto bridgeDir = out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge");
         auto vrow = [&] (const juce::String& product, const juce::String& pid, const juce::String& st, const juce::String& why)
-        { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);
+        { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); row->setProperty ("lane", "vst3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);   // 18 Oct: lane - never given its AU twin's queue
           row->setProperty ("state", st); row->setProperty ("why", why); vst3Rows.add (juce::var (row)); return row; };
         const auto plan = vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache);
         std::map<juce::String, int> by; int identityLoads = 0, bridgeLoads = 0, bridgesKept = 0;
@@ -518,12 +557,17 @@ inline int runWizard (const WizardOptions& wo)
                     const auto& au = auByName[twin.toLowerCase()];
                     const auto twinPid = wizroute::pluginId (juce::String::toHexString (au.uniqueId), au.version, "AudioUnit");
                     if (bridgeDir.getChildFile (bridgeRecordName (d)).existsAsFile())   // read on an earlier run at this version: not loaded again
-                    { auto* row = vrow (d.name, pid, "bridge_read", "read beside its AU on an earlier run (not loaded again)"); row->setProperty ("twin_plugin_id", twinPid); ++bridgesKept; continue; }
+                    {   // read on an earlier run: its outcome from the two records on disk
+                        juce::String vwhy; const auto v = bridgeVerdict (juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (au)).loadFileAsString()), juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (d)).loadFileAsString()), vwhy);
+                        auto* row = vrow (d.name, pid, v, vwhy + " (read on an earlier run, not loaded again)"); row->setProperty ("twin_plugin_id", twinPid); ++bridgesKept; continue; }
                     juce::String apw; if (! paceOk && paceHeld (au, componentBundles(), apw) && apw.startsWith ("PACE")) { vrow (d.name, pid, "needs_licence", "its AU twin is iLok-protected and this Mac has no iLok: not read"); continue; }
                     bool window = false;
                     const auto why = bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps, bridgeDir, window, &bridgeLoads);
                     if (window) wizroute::rememberLicenceWindow (licF, bundleKey);
-                    auto* row = vrow (d.name, pid, window ? "needs_licence" : why.endsWith ("in both formats") && ! why.startsWith ("0 ") ? "bridge_read" : "not_measurable", why);
+                    juce::String st = window ? juce::String ("needs_licence") : juce::String ("not_measurable"), rowWhy = why;
+                    if (! window && why.endsWith ("in both formats") && ! why.startsWith ("0 "))   // 18 Oct: the read's own outcome, never a bare "read"
+                        st = bridgeVerdict (juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (au)).loadFileAsString()), juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (d)).loadFileAsString()), rowWhy);
+                    auto* row = vrow (d.name, pid, st, rowWhy);
                     row->setProperty ("twin_plugin_id", twinPid); row->setProperty ("identity_from", id.source);
                     say ("  " + d.name.paddedRight (' ', 30) + " VST3 twin of the AU (identity: " + id.source + "): " + why); continue;
                 }
@@ -859,7 +903,7 @@ inline int runWizard (const WizardOptions& wo)
     // THE DEMO CHECK (14 Oct): no longer here - it is the first thing in each plugin's measuring (below), so the scan finishes fast
     counts.clear(); for (const auto& r : rows) ++counts[r.getProperty ("state", "").toString()];
     for (const auto& grp : wizroute::measureOrder()) for (const auto& pb : grp) queueFile (pb).replaceWithText ((queues.count (pb) ? queues[pb].joinIntoString ("\n") : juce::String()) + "\n");
-    for (auto& rv : rows) { juce::StringArray pbs; for (const auto& [pb, l] : queues) if (l.contains (rv.getProperty ("product", "").toString())) pbs.add (pb); if (! pbs.isEmpty()) rv.getDynamicObject()->setProperty ("phaseb", pbs.joinIntoString (",")); }
+    attributeQueues (rows, queues);
     say ("WIZARD: " + juce::String ((int) plugins.size()) + " plugin(s) found: " + wizard::summaryLine (counts, wo.bundle));
     {   // what the scan screen says: "N plugins we don't have yet - about X" (the measured per-category seconds once any exist, --jobs aware)
         const auto q = measureItems(); juce::StringArray distinct; for (const auto& it : q) distinct.addIfNotAlreadyThere (it.product);

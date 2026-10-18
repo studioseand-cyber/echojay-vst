@@ -10250,7 +10250,7 @@ void testWizardCategories()
                && measuringText (504) == "Measuring 504 plugins we haven't mapped yet. Leave it running - the Mac stays awake. You can pause and carry on any time."
                && ! tellsATime (measuringText (504)) && measuringText() == "Leave it running - the Mac stays awake. You can pause and carry on any time."
                && app.contains ("const auto el = wizapp::eligibilityOf (eligibility); const auto next = wizapp::afterScan (el, kMode);") && app.contains ("show (next);")
-               && app.contains ("text = wizapp::measuringText (wizapp::eligibilityOf (") && app.contains ("show (wizapp::openOn (w, kMode, wizapp::eligibilityOf ("),
+               && app.contains ("wizapp::measuringText (wizapp::eligibilityOf (") && app.contains ("show (wizapp::openOn (w, kMode, wizapp::eligibilityOf ("),
                "wizard WZ-START-1: one Start carries the whole run (504 to measure -> Measuring, no second button; reopened after the scan -> Measuring); not eligible / nothing new stop on their screen; the ready line on the Measuring screen (read: " + juce::String ((int) read) + ")");
     }
     // WZ-SCREEN-1 THE MEASURING SCREEN (Kathy, 15 Oct): a percentage of the weighted bar ("23%", not "12 of 517"), whole numbers, never
@@ -12555,6 +12555,54 @@ int main (int, char**)
                && stage.contains ("if (pr.source == \"cache_failed\")") && stage.contains ("if (bridgeDir.getChildFile (bridgeRecordName (d)).existsAsFile())")
                && stage.contains ("bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps, bridgeDir, window, &bridgeLoads)") && stage.contains ("vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache)"),
                "wizard WZ-VST3-2: identity from moduleinfo (JUCE's uid from the CID), the cache (failures too) or ONE load then cached; twins with no load (class name, vendor-prefixed bundle name); one bridge read per version; the VST3 read by name, the AU's list from the store");
+    }
+    // WZ-VST3-3 EVERY VST3-LANE ROW ENDS WITH AN OUTCOME (Kathy, 18 Oct: the run ended "33 plugins still need measuring" - every one a
+    // bridge-read VST3 twin that took its AU's Phase B queue by name): a VST3-lane row never gets a queue; a bridge read ends "bridged" (every
+    // control the same in both formats at 3+ settings) or "bridge_no_match" (the first difference said), both final
+    {
+        using namespace ejmap::cert;
+        auto row = [] (const char* p, const char* fmt, const char* st, bool lane) { auto* o = new juce::DynamicObject(); o->setProperty ("product", p); o->setProperty ("format", fmt);
+                                                                                    o->setProperty ("state", st); if (lane) o->setProperty ("lane", "vst3"); return juce::var (o); };
+        juce::Array<juce::var> rows { row ("EchoBoy Jr", "AudioUnit", "measured", false), row ("EchoBoy Jr", "VST3", "bridge_read", true), row ("Solo", "AudioUnit", "queued", false) };
+        std::map<juce::String, juce::StringArray> queues { { "delay", { "EchoBoy Jr" } }, { "wizard", { "Solo" } } };
+        attributeQueues (rows, queues);
+        const auto left = leftAtEnd (rows);
+        auto rec = [] (std::initializer_list<std::pair<const char*, std::vector<std::pair<const char*, const char*>>>> cs) {
+            juce::Array<juce::var> a; for (const auto& [n, pts] : cs) { auto* c = new juce::DynamicObject(); c->setProperty ("name", n); auto* d = new juce::DynamicObject(); for (const auto& [k, v] : pts) d->setProperty (k, v); c->setProperty ("displayAt", juce::var (d)); a.add (juce::var (c)); }
+            auto* o = new juce::DynamicObject(); o->setProperty ("controls", a); return juce::var (o); };
+        const auto au = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "500 ms" }, { "0.900000", "1.20 s" } } }, { "Mix", { { "0.100000", "10 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
+        const auto same = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "500 ms" }, { "0.900000", "1.20 s" } } }, { "Mix", { { "0.100000", "10.0 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
+        const auto diff = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "530 ms" }, { "0.900000", "1.20 s" } } }, { "Mix", { { "0.100000", "10 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
+        const auto few = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "500 ms" } } }, { "Mix", { { "0.100000", "10 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
+        const auto lacks = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "500 ms" }, { "0.900000", "1.20 s" } } } });
+        juce::String w1, w2, w3, w4, w5;
+        const auto v1 = bridgeVerdict (au, same, w1), v2 = bridgeVerdict (au, diff, w2), v3 = bridgeVerdict (few, few, w3), v4 = bridgeVerdict (au, lacks, w4), v5 = bridgeVerdict (rec ({}), rec ({}), w5);
+        const auto wr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto stage = wr.fromFirstOccurrenceOf ("// THE VST3s (Kathy, 17 Oct, rulings 3; VST3 SPEED", false, false).upToFirstOccurrenceOf ("prog.setPlugins", false, false);
+        std::map<juce::String, int> n { { "bridged", 2 }, { "bridge_no_match", 1 } };
+        check (! rows[1].hasProperty ("phaseb") && rows[0].getProperty ("phaseb", "").toString() == "delay" && rows[2].getProperty ("phaseb", "").toString() == "wizard"
+               && left.size() == 1 && left[0].getProperty ("product", "").toString() == "Solo"
+               && v1 == "bridged" && v2 == "bridge_no_match" && w2.contains ("'Time' at 0.500000: AU '500 ms', VST3 '530 ms'") && v3 == "bridge_no_match" && w3.contains ("2 setting(s)")
+               && v4 == "bridge_no_match" && w4.contains ("'Mix' was not read on the VST3") && v5 == "bridge_no_match"
+               && ejmap::wizserver::stub::isFinalState ("bridged") && ejmap::wizserver::stub::isFinalState ("bridge_no_match") && ! ejmap::wizserver::stub::isFinalState ("bridge_read")
+               && ejmap::wizard::summaryLine (n).contains ("2 VST3s show what their AU shows") && ejmap::wizard::summaryLine (n).contains ("1 VST3 differs from its AU")
+               && stage.contains ("row->setProperty (\"lane\", \"vst3\");") && ! stage.contains ("\"bridge_read\"")
+               && stage.contains ("st = bridgeVerdict (juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (au)).loadFileAsString()), juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (d)).loadFileAsString()), rowWhy);")
+               && stage.contains ("const auto v = bridgeVerdict (juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (au)).loadFileAsString()), juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (d)).loadFileAsString()), vwhy);")
+               && wr.contains ("    attributeQueues (rows, queues);"),
+               "wizard WZ-VST3-3: a VST3-lane row never takes its AU twin's queue; a bridge read ends bridged / bridge_no_match (first difference said), both final - a run that reaches the end with only those is finished");
+    }
+    // WZ-RESUME-1 A RESUMED RUN SAYS WHAT IS LEFT (Kathy, 18 Oct: after Carry on the screen said "Measuring 472 plugins" with 33 left)
+    {
+        using namespace ejmap::wizapp;
+        const juce::var three (juce::Array<juce::var> { juce::var (1), juce::var (2), juce::var (3) });
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (leftCount (true, three) == 3 && leftCount (false, three) == 0 && leftCount (true, juce::var()) == 0 && leftCount (true, juce::var (juce::Array<juce::var>())) == 0
+               && measuringResumedText (33).startsWith ("Carrying on: 33 plugins left to measure.") && measuringResumedText (1).startsWith ("Carrying on: 1 plugin left") && ! tellsATime (measuringResumedText (33))
+               && app.contains ("const int left = wizapp::leftCount ((bool) appState().getProperty (\"measure_started\", false), juce::JSON::parse (engineDir().getChildFile (\"left.json\").loadFileAsString()));")
+               && app.contains ("text = left > 0 ? wizapp::measuringResumedText (left) : wizapp::measuringText (")
+               && app.indexOf ("const int left = wizapp::leftCount") < app.indexOf ("setState (\"measure_started\", true); finishing = false;"),
+               "wizard WZ-RESUME-1: a resumed run (measuring started, the last run's left.json) says how many are left; a first run what it measures; never a time");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
