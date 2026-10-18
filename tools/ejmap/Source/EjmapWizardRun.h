@@ -263,12 +263,13 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
                                                                         const std::function<void (const juce::String&, const wizard::DemoVerdict&, double)>& onChecked = {})
 {
     std::map<juce::String, wizard::DemoVerdict> out; auto cache = juce::JSON::parse (cacheFile.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
-    auto pidOf = [] (const juce::PluginDescription& d) { return "AudioUnit|" + juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; };
+    // 18 Oct: the plugin's own format (was "AudioUnit|" for every plugin, so a VST3 and an AU of one uid / version shared a cache entry)
+    auto pidOf = [] (const juce::PluginDescription& d) { return wizroute::pluginId (juce::String::toHexString (d.uniqueId), d.version, fmtTag (d)); };
     std::vector<size_t> todo;
     for (size_t i = 0; i < ds.size(); ++i)
     {
         const auto c = cache.getProperty (pidOf (ds[i]), {});
-        if (c.isObject()) { wizard::DemoVerdict v; v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.window = (bool) c.getProperty ("window", false); v.silent = (bool) c.getProperty ("silent", false); v.inert = (bool) c.getProperty ("inert", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
+        if (c.isObject()) { wizard::DemoVerdict v; v.pluginId = pidOf (ds[i]); v.judged = (bool) c.getProperty ("judged", false); v.demo = (bool) c.getProperty ("demo", false); v.window = (bool) c.getProperty ("window", false); v.silent = (bool) c.getProperty ("silent", false); v.inert = (bool) c.getProperty ("inert", false); v.why = c.getProperty ("why", "").toString(); out[ds[i].name] = v; }
         else todo.push_back (i);
     }
     std::mutex m;
@@ -301,6 +302,7 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
     pool.finish = [&] (const size_t& i, juce::StringArray&, ChildResult& r)
     {
         auto v = r.cleanExit() ? wizard::demoDropouts (r.out) : wizard::DemoVerdict();   // a probe that failed here is the measurement's business, not a demo
+        v.pluginId = pidOf (ds[i]);
         if (r.cleanExit() && soundcheck::silent (r.out)) { v.silent = true; v.judged = true; v.why = "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"; }
         else if (r.cleanExit() && soundcheck::dry (r.out))
         {   juce::String why; std::vector<std::pair<juce::String, double>> t; { std::lock_guard<std::mutex> g (m); t = tries[ds[i].name]; }
@@ -323,15 +325,21 @@ inline std::map<juce::String, wizard::DemoVerdict> demoCheckForWizard (const std
 // every skipped row filed "crashed" that is not already there - stage "probe", no report (the probe's own log stays on this Mac)
 inline juce::Array<juce::var> withProbeCrashes (juce::Array<juce::var> crashed, const juce::Array<juce::var>& skipped)
 {
-    juce::StringArray have; for (const auto& c : crashed) have.add (c.getProperty ("product", "").toString());
-    for (const auto& s : skipped)
-    {
-        const auto product = s.getProperty ("product", "").toString();
-        if (s.getProperty ("state", "").toString() != "crashed" || have.contains (product)) continue;
-        auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", s.getProperty ("plugin_id", {})); c->setProperty ("stage", "probe");
-        c->setProperty ("why", s.getProperty ("why", {})); c->setProperty ("crash_report", ""); c->setProperty ("report_found", false);
-        crashed.add (juce::var (c)); have.add (product);
-    }
+    // 18 Oct: one entry per PLUGIN (product + plugin_id) - a VST3's own crash is never folded into an AU's of the same name. The app's
+    // crash (its marker knows only the product) claims ONE row of that product, an AudioUnit's first, so a twin's separate crash still shows
+    auto key = [] (const juce::var& x) { return x.getProperty ("product", "").toString() + "|" + x.getProperty ("plugin_id", "").toString(); };
+    juce::StringArray have; std::map<juce::String, int> claims;
+    for (const auto& c : crashed) { have.add (key (c)); if (c.getProperty ("plugin_id", "").toString().isEmpty()) ++claims[c.getProperty ("product", "").toString()]; }
+    for (const bool auPass : { true, false })
+        for (const auto& s : skipped)
+        {
+            const auto product = s.getProperty ("product", "").toString(); const auto pid = s.getProperty ("plugin_id", "").toString();
+            if (s.getProperty ("state", "").toString() != "crashed" || pid.startsWith ("AudioUnit|") != auPass || have.contains (key (s))) continue;
+            if (claims[product] > 0) { --claims[product]; have.add (key (s)); continue; }   // the app's own report of this crash
+            auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", s.getProperty ("plugin_id", {})); c->setProperty ("stage", "probe");
+            c->setProperty ("why", s.getProperty ("why", {})); c->setProperty ("crash_report", ""); c->setProperty ("report_found", false);
+            crashed.add (juce::var (c)); have.add (key (s));
+        }
     return crashed;
 }
 
@@ -383,7 +391,10 @@ inline juce::String bridgeRecordName (const juce::PluginDescription& d);
 // last digit, else the same text) -> "bridged"; anything else -> "bridge_no_match", with the first difference. Both are final outcomes;
 // the server judges what a bridged VST3 inherits (its role controls, its AU's level)
 inline juce::String bridgeVerdict (const juce::var& auRec, const juce::var& v3Rec, juce::String& why)
-{
+{   // 18 Oct (Kathy): the bridge is the ONLY way a VST3 takes its AU's result, and it needs the same version ("14.16.0" = "14.16")
+    const auto va = auRec.getProperty ("version", "").toString(), vv = v3Rec.getProperty ("version", "").toString();
+    if (va.isEmpty() || vv.isEmpty()) { why = "a version is not on the read-back record: no bridge"; return "bridge_no_match"; }
+    if (trust::versionKey (va) != trust::versionKey (vv)) { why = "AU " + va + ", VST3 " + vv + ": a bridge needs the same version"; return "bridge_no_match"; }
     std::map<juce::String, juce::var> v3; if (const auto* a = v3Rec.getProperty ("controls", {}).getArray()) for (const auto& c : *a) v3[c.getProperty ("name", "").toString()] = c;
     int controls = 0;
     if (const auto* a = auRec.getProperty ("controls", {}).getArray())
@@ -552,7 +563,8 @@ inline int runWizard (const WizardOptions& wo)
             if (pr.source == "wrong_arch")   // 18 Oct: 321 of tonight's 322 "crashed" VST3s - an Intel-only bundle, opened by no arm64 host: not loaded
             { vrow (b.name, {}, "wont_load", "an Intel-only VST3 (" + b.archs.joinIntoString (" / ") + ", no " + hostArch() + " code): it cannot run natively on this Mac - not loaded"); continue; }
             if (pr.source == "cache_failed") { const auto e = idCache.get (pr.key); vrow (b.name, {}, e.getProperty ("state", "").toString(), e.getProperty ("why", "").toString() + " (remembered at this version: not loaded again)"); continue; }
-            if (skipped.contains (b.name)) { vrow (b.name, {}, "crashed", "the wizard closed while checking it: skipped for good, never retried"); continue; }
+            // 18 Oct: the never-retry list is by product name and this stage writes no marker - an entry is this VST3's only when no AU has its name
+            if (skipped.contains (b.name) && ! auByName.count (b.name.toLowerCase())) { vrow (b.name, {}, "crashed", "the wizard closed while checking it: skipped for good, never retried"); continue; }
             if (licMem.count (bundleKey)) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered)); continue; }
             juce::PluginDescription d0; d0.pluginFormatName = "VST3"; d0.name = b.name; d0.fileOrIdentifier = path; d0.version = b.version; d0.manufacturerName = b.vendor;
             juce::String pw; const bool pace = paceHeld (d0, {}, pw) && pw.startsWith ("PACE");
@@ -1262,7 +1274,9 @@ inline int runWizard (const WizardOptions& wo)
                     for (const auto& [name, v] : verdicts)
                     {
                         if (! v.demo && ! v.window && ! v.silent && ! v.inert) continue;
-                        for (auto& rv : rows) if (rv.getProperty ("product", "").toString() == name)
+                        // 18 Oct (Kathy): the verdict lands on the row of the plugin it CHECKED - never on another row by product name (five Intel-only
+                        // VST3s took their AU twin's "no sound", and its licence window was remembered under the VST3's id)
+                        for (auto& rv : rows) if (v.pluginId.isNotEmpty() && rv.getProperty ("plugin_id", "").toString() == v.pluginId)
                         {   rv.getDynamicObject()->setProperty ("state", v.window || v.silent || v.inert ? "needs_licence" : "demo"); rv.getDynamicObject()->setProperty ("why", v.window ? wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered) : v.why);
                             if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty ("plugin_id", "").toString()); }
                         say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);

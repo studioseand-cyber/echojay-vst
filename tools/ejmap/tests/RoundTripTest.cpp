@@ -4528,6 +4528,52 @@ void testSweepQuietReference()
         check (shallow.skipped.size() == 4 && shallow.skippedReasons[0].contains ("-48 minus -54") && ! shallow.skippedReasons[0].contains ("every rung") && rungOf (shallow, 1) == "-54/-48",
                "ladder L5: a trace with the first rung only is read exactly as before - no deeper rung is invented, the reason names -48 minus -54 (skipped "
                  + juce::String (shallow.skipped.size()) + ": '" + (shallow.skippedReasons.isEmpty() ? juce::String() : shallow.skippedReasons[0]) + "')");
+        // WZ-RUNG-1 THE RUNG IS CHOSEN ONCE PER POSITION (Kathy, 18 Oct: RVox (m)'s 1.28 dB point error - one position's -54/-48 check read
+        // -0.1003 in the 2.5 s pass and -0.0999 in the 5 s pass, so the passes took different rungs while the audio agreed to 0.002 dB): the
+        // hold-doubled repeat keeps the first pass's rung while its own check there is within kQuietTolDb + kQuietHystDb; beyond that (a
+        // reference that really moved) it walks its own ladder, so the point error still shows a plugin that does not repeat
+        {
+            auto bent = [] (std::function<double (int, double)> bend) {
+                Measured m; m.ok = true; m.movingDb = 0.1;
+                for (int p = 0; p < 4; ++p)
+                {
+                    const double T = -40.0 - 12.0 * juce::jmax (0, p - 1);
+                    PositionReading r; r.k = p; r.norm = (float) p / 3.0f; r.text = juce::String (T, 1) + " dB";
+                    for (double L : { -54.0, -48.0, -66.0, -60.0, -78.0, -72.0, -90.0, -84.0, -45.0, -42.0, -39.0, -36.0, -33.0, -30.0, -24.0, -12.0, -6.0 })
+                    {
+                        HoldReading h; h.present = true; h.inRmsDb = L - 3.0103;
+                        h.levelDb = h.inRmsDb + 1.0 - (L > T ? (L - T) * 0.5 : 0.0) + bend (p, L);
+                        r.holds[levelKey (L)] = h;
+                    }
+                    m.positions.push_back (r);
+                }
+                return m; };
+            const std::vector<double> lv { -45.0, -42.0, -39.0, -36.0, -33.0, -30.0, -24.0, -12.0, -6.0 };   // straddles 1/2/3 dB at position 1
+            auto rung = [] (const Derived& d, int i) { return d.quietRungDb[(size_t) i] ? juce::String ((int) d.quietRungDb[(size_t) i]->first) + "/" + juce::String ((int) d.quietRungDb[(size_t) i]->second) : juce::String ("none"); };
+            const auto first = derive (bent ([] (int p, double L) { return p == 1 && L == -48.0 ? -0.1003 : 0.0; }), lv, -1, true);
+            const auto againM = bent ([] (int p, double L) { return p == 1 && L == -48.0 ? -0.0999 : 0.0; });
+            const auto own = derive (againM, lv, -1, true), pinned = derive (againM, lv, -1, true, &first);
+            const auto qOwn = repeatQuality (first, &own), qPin = repeatQuality (first, &pinned);
+            // inside the hysteresis: the first pass's -66/-60 at position 2 reads 0.115 off in the repeat (over 0.1, within 0.12) - kept
+            const auto edge = derive (bent ([] (int p, double L) { return p == 2 && L == -60.0 ? 0.115 : 0.0; }), lv, -1, true, &first);
+            // a reference that really moved: 0.13 off at the pinned rung - the repeat walks its own ladder (-78/-72 for position 2)
+            const auto moved = derive (bent ([] (int p, double L) { return p == 2 && L == -60.0 ? 0.13 : 0.0; }), lv, -1, true, &first);
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (rung (first, 1) == "-66/-60" && rung (own, 1) == "-54/-48" && rung (pinned, 1) == "-66/-60" && pinned.rungsKept == 4 && own.rungsKept == 0
+                   && qOwn.pointErrorDb && *qOwn.pointErrorDb > 0.1 && qPin.pointErrorDb && *qPin.pointErrorDb == 0.0
+                   && rung (edge, 2) == "-66/-60" && edge.rungsKept == 4 && rung (moved, 2) == "-78/-72" && moved.rungsKept == 3
+                   && kQuietHystDb > 0.0 && kQuietHystDb <= 0.05
+                   && drv.contains ("if (repeatM != nullptr) repeat = sweep::derive (*repeatM, plan.testLevels(), plan.ratioIndex, plan.quietReference, &one.d);")
+                   && drv.contains ("q.testLevels(), q.ratioIndex, q.quietReference, &one.d);   // the first pass's rungs")
+                   && drv.contains ("if (rptM) rpt = sweep::derive (*rptM, q.testLevels(), q.ratioIndex, q.quietReference, &one.d);")
+                   && ! drv.contains ("std::optional<sweep::Derived> repeatFor"),
+                   "sweep WZ-RUNG-1: the repeat keeps the first pass's reference rung per position (a 0.0003 dB edge wobble no longer moves the point error: "
+                     + (qOwn.pointErrorDb ? juce::String (*qOwn.pointErrorDb, 2) : juce::String ("-")) + " -> " + (qPin.pointErrorDb ? juce::String (*qPin.pointErrorDb, 2) : juce::String ("-"))
+                     + " dB), within the hysteresis; a reference that really moved walks its own ladder; every repeat site passes the first pass ["
+                     + rung (first, 1) + " " + rung (own, 1) + " " + rung (pinned, 1) + " kept " + juce::String (pinned.rungsKept) + "/" + juce::String (own.rungsKept)
+                     + " edge " + rung (edge, 2) + "/" + juce::String (edge.rungsKept) + " moved " + rung (moved, 2) + "/" + juce::String (moved.rungsKept)
+                     + " compared " + juce::String (qOwn.pointsCompared) + " " + first.result + "]");
+        }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
         check (rungOf (bent, 1) == "-66/-60" && ! bent.skipped.contains (1) && rungOf (bent, 0) == "-54/-48",
@@ -12607,7 +12653,7 @@ int main (int, char**)
         const auto left = leftAtEnd (rows);
         auto rec = [] (std::initializer_list<std::pair<const char*, std::vector<std::pair<const char*, const char*>>>> cs) {
             juce::Array<juce::var> a; for (const auto& [n, pts] : cs) { auto* c = new juce::DynamicObject(); c->setProperty ("name", n); auto* d = new juce::DynamicObject(); for (const auto& [k, v] : pts) d->setProperty (k, v); c->setProperty ("displayAt", juce::var (d)); a.add (juce::var (c)); }
-            auto* o = new juce::DynamicObject(); o->setProperty ("controls", a); return juce::var (o); };
+            auto* o = new juce::DynamicObject(); o->setProperty ("controls", a); o->setProperty ("version", "1.0"); return juce::var (o); };
         const auto au = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "500 ms" }, { "0.900000", "1.20 s" } } }, { "Mix", { { "0.100000", "10 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
         const auto same = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "500 ms" }, { "0.900000", "1.20 s" } } }, { "Mix", { { "0.100000", "10.0 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
         const auto diff = rec ({ { "Time", { { "0.100000", "120 ms" }, { "0.500000", "530 ms" }, { "0.900000", "1.20 s" } } }, { "Mix", { { "0.100000", "10 %" }, { "0.500000", "50 %" }, { "0.900000", "90 %" } } } });
@@ -12704,6 +12750,43 @@ int main (int, char**)
                && guard.indexOf ("fileLeftAfterCarryOn (") >= 0 && guard.indexOf ("fileLeftAfterCarryOn (") < guard.indexOf ("const auto left = leftAtEnd (rows);")
                && guard.contains ("counts.clear(); for (const auto& r : rows) ++counts["),
                "wizard WZ-NET-1: a plugin left without an outcome by the last run and this one is filed not_measurable with what it was left as (first-time left, settled or another version untouched); filed before the left list, so no carry-on loops");
+    }
+    // WZ-NAME-1 NO RESULT BY PRODUCT NAME (Kathy, 18 Oct: five Intel-only Brainworx VST3s were filed "no sound" - their AU twin's sound check,
+    // applied to every row of that name, and its licence window remembered under the VST3's id): a demo / sound-check verdict carries the
+    // plugin it checked (format-tagged) and lands on that row only; the crash list keeps one entry per plugin; the never-retry list reaches a
+    // VST3 only when no AU has its name; the bridge - the ONE way a VST3 takes its AU's result - needs the same version
+    {
+        using namespace ejmap::cert;
+        auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_name_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
+        const auto dd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/demo_check");
+        juce::PluginDescription au; au.name = "bx_opto Pedal"; au.uniqueId = 0x417f7e70; au.version = "1.10.1";
+        juce::PluginDescription v3 = au; v3.pluginFormatName = "VST3"; v3.uniqueId = 0x1234abcd;
+        auto fake = [&] (const juce::StringArray& a) { ChildResult r; r.kind = ChildResult::Kind::exited; r.code = 0;
+            if (a.contains ("--list-params")) { r.out = "0\tOutput\tdB\t2147483647\t0\t1\t0\n"; return r; }
+            r.out = dd.getChildFile ("MTurboComp.burst.txt").loadFileAsString(); return r; };
+        wizardStop() = 0;
+        const auto va = demoCheckForWizard ({ au }, 1, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
+        const auto vv = demoCheckForWizard ({ v3 }, 1, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks_v3.json"));
+        const auto cachedAgain = demoCheckForWizard ({ au }, 1, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
+        work.deleteRecursively();
+        auto crash = [] (const char* p, const char* id) { auto* o = new juce::DynamicObject(); o->setProperty ("product", p); o->setProperty ("plugin_id", id); o->setProperty ("state", "crashed"); return juce::var (o); };
+        const auto list = withProbeCrashes ({ crash ("bx_opto Pedal", "AudioUnit|417f7e70|1.10.1") }, { crash ("bx_opto Pedal", "VST3|1234abcd|1.10.1"), crash ("bx_opto Pedal", "AudioUnit|417f7e70|1.10.1") });
+        juce::Array<juce::var> app; { auto* c = new juce::DynamicObject(); c->setProperty ("product", "bx_opto Pedal"); c->setProperty ("crash_report", "crash_reports/b.txt"); app.add (juce::var (c)); }
+        const auto claimed = withProbeCrashes (app, { crash ("bx_opto Pedal", "VST3|1234abcd|1.10.1"), crash ("bx_opto Pedal", "AudioUnit|417f7e70|1.10.1") });
+        auto rec = [] (const char* ver) { auto* c = new juce::DynamicObject(); c->setProperty ("name", "Drive");
+            auto* d = new juce::DynamicObject(); for (const char* k : { "0.100000", "0.500000", "0.900000" }) d->setProperty (k, juce::String (k).substring (0, 3)); c->setProperty ("displayAt", juce::var (d));
+            auto* o = new juce::DynamicObject(); o->setProperty ("controls", juce::Array<juce::var> { juce::var (c) }); if (*ver) o->setProperty ("version", ver); return juce::var (o); };
+        juce::String w1, w2, w3;
+        const auto same = bridgeVerdict (rec ("14.16.0"), rec ("14.16"), w1), other = bridgeVerdict (rec ("14.16.0"), rec ("14.17"), w2), none = bridgeVerdict (rec ("14.16.0"), rec (""), w3), neither = bridgeVerdict (rec (""), rec (""), w3);
+        const auto wr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (va.count ("bx_opto Pedal") && va.at ("bx_opto Pedal").pluginId == "AudioUnit|417f7e70|1.10.1" && vv.at ("bx_opto Pedal").pluginId == "VST3|1234abcd|1.10.1"
+               && cachedAgain.at ("bx_opto Pedal").pluginId == "AudioUnit|417f7e70|1.10.1"
+               && wr.contains ("for (auto& rv : rows) if (v.pluginId.isNotEmpty() && rv.getProperty (\"plugin_id\", \"\").toString() == v.pluginId)")
+               && ! wr.contains ("for (auto& rv : rows) if (rv.getProperty (\"product\", \"\").toString() == name)")
+               && wr.contains ("if (skipped.contains (b.name) && ! auByName.count (b.name.toLowerCase()))")
+               && list.size() == 2 && claimed.size() == 2 && claimed[1].getProperty ("plugin_id", "").toString() == "VST3|1234abcd|1.10.1"
+               && same == "bridged" && other == "bridge_no_match" && w2.contains ("same version") && none == "bridge_no_match" && neither == "bridge_no_match",
+               "wizard WZ-NAME-1: a sound / demo verdict carries the plugin it checked (AU and VST3 ids apart, cache too) and lands on that row only; the crash list keeps one entry per plugin; the never-retry list reaches a VST3 only without an AU of its name; the bridge needs the same version");
     }
     // WZ-REDO-1 ONE LIST OF --redo SELECTORS (Kathy, 18 Oct: Sean's recheck - run-all's own accuracy_gaps steps passed "--redo accuracy_gaps"
     // and --phaseb-all refused it, exit 2): every value a run-all step passes to --redo is accepted, and every selector the engine reads

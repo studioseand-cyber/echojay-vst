@@ -71,6 +71,11 @@ inline constexpr double kPeakToRmsDb  = 3.0103; // a sine's peak over its RMS
 inline constexpr double kLinearDb     = 2.0;    // the soft end's gains disagreeing by more than this is UNUSABLE data (useful
                                                 // reductions are 3-20 dB); the disagreement itself is recorded on every fixture
 inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must differ by 6 dB within this
+// THE RUNG IS CHOSEN ONCE PER POSITION (Kathy, 18 Oct: RVox's 1.28 dB point error was one position whose -54/-48 check read -0.1003 in the
+// 2.5 s pass and -0.0999 in the 5 s pass, so the two passes took different rungs 0.15 dB apart while the audio agreed to 0.002 dB): the
+// hold-doubled repeat uses the rung the first pass chose, kept while its own check there is within kQuietTolDb + kQuietHystDb - so a
+// wobble at the edge cannot flip it, and a reference that really moved still takes the repeat's own ladder and shows in the point error
+inline constexpr double kQuietHystDb  = 0.02;
 // THE REFERENCE LADDER (2 Oct, Tube-Tech CL 1B): a threshold whose range reaches -57 dBFS peak is already compressing at
 // -48, so the fixed -54/-48 pair failed its own 6 dB check on 10 of 16 positions and those positions had no reference and
 // no curve (3 of 16 reached 1 dB; the export needs 9). The ladder descends a rung at a time, 12 dB each, until a
@@ -892,6 +897,7 @@ struct Derived
     std::optional<double> softEndSpreadDb;
     std::vector<std::optional<double>> quietCheckDb; // per position: (gain at the rung's upper level) - (gain at its lower); 0 for a linear quiet tone
     std::vector<std::optional<std::pair<double, double>>> quietRungDb; // per position: the ladder rung the reference came from (none = no rung passed)
+    int rungsKept = 0;   // a repeat: positions that kept the first pass's rung (kQuietHystDb)
     std::map<juce::String, std::optional<int>> engage;
     std::vector<juce::var> tEquivalent;             // number | {"above": L} | {"below": L} | null
     // THE RATIO-FREE AMOUNT CURVE (Sean's definition, adopted ALONGSIDE ours, 1 Oct): the input level at which gain
@@ -1070,8 +1076,8 @@ inline std::vector<float> refineNorms (const std::vector<float>& norms, const st
     return out;
 }
 
-inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex, bool quietReference = false)
-{
+inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex, bool quietReference = false, const Derived* rungsOf = nullptr)
+{   // rungsOf: the first pass, when this is its hold-doubled repeat (kQuietHystDb)
     Derived d;
     d.levels = levelsIn;
     d.quietReference = quietReference;
@@ -1167,8 +1173,18 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             // THE LADDER: rungs the trace holds, loudest first; the first that passes is the reference. The check kept on
             // refusal is the LAST measured rung's, so the reason names how far the ladder went.
             int walked = 0;
+            if (rungsOf != nullptr)   // the repeat: the first pass's rung for this position, while this pass's own check there holds
+                for (size_t k = 0; k < rungsOf->norms.size() && k < rungsOf->quietRungDb.size(); ++k)
+                    if (std::abs (rungsOf->norms[k] - p->norm) < 1e-6 && rungsOf->quietRungDb[k])
+                    {
+                        const auto [lo, hi] = *rungsOf->quietRungDb[k];
+                        const auto a = usable (levelKey (lo)), b = usable (levelKey (hi));
+                        if (a && b && std::abs (*b - *a) <= kQuietTolDb + kQuietHystDb) { quietCheck = *b - *a; rung = std::make_pair (lo, hi); ++d.rungsKept; }
+                        break;
+                    }
             for (const auto& [lo, hi] : kQuietLadder)
             {
+                if (rung) break;
                 if (! p->holds.count (levelKey (lo)) && ! p->holds.count (levelKey (hi))) break;   // not rendered: the ladder ends here
                 ++walked;
                 const auto a = usable (levelKey (lo)), b = usable (levelKey (hi));

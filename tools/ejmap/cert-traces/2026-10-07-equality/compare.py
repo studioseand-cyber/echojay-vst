@@ -3,7 +3,29 @@ r=sys.argv[1]
 # --expect (13 Oct): the profile classes this baseline may explain. 'not_written' (d26db00f): the new profile's neutral is the old one
 # minus EXACTLY the entries its not_written lists (by index), and nothing else differs. "differ" counts the UNEXPLAINED only.
 EXPECT=set(x for x in sys.argv[sys.argv.index('--expect')+1].split(',') if x) if '--expect' in sys.argv else set()
+# 'rung_pin' (18 Oct, WZ-RUNG-1): the hold-doubled repeat keeps the first pass's reference rung - ONLY the repeat's points, the repeat's
+# quality figures and the profile note quoting deep_point_error_db may move; anything else is unexplained
+RUNG_OK=re.compile(r'^~(/thresholdSweep|/thresholdCandidates\[\]/thresholdSweep)?/(inAtGrRepeat(\[\].*)?|quality/(point_error_db|deep_point_error_db|deepPointsCompared|deepPointsNulled.*))$|^~/notes\[\]$')
+def rung_pin(a,b):
+    if 'rung_pin' not in EXPECT: return None
+    ds=keydiff(a,b)
+    if not ds: return None
+    def at(o,pth):   # the value at a keydiff path ("/x[2]/y")
+        for part in re.findall(r'/([^/\[]+)|\[(\d+)\]', pth):
+            o=o.get(part[0]) if part[0] else o[int(part[1])]
+        return o
+    for t,pth in ds:
+        k=t+re.sub(r'\[\d+\]','[]',pth)
+        if RUNG_OK.match(k): continue
+        # a DEEP point (4 dB and up) the old repeat had nulled (it disagreed only because of the flip) is back: old null, new a number
+        if re.match(r'^~(/thresholdSweep|/thresholdCandidates\[\]/thresholdSweep)/inAtGr\[\]/([4-9]|1[0-2])$',k) and at(a,pth) is None and isinstance(at(b,pth),(int,float)): continue
+        return None
+    na=[x for x in a.get('notes',[]) if 'deep_point_error_db' not in str(x)] if isinstance(a,dict) else None
+    nb=[x for x in b.get('notes',[]) if 'deep_point_error_db' not in str(x)] if isinstance(b,dict) else None
+    if na!=nb: return None
+    return 'rung_pin (WZ-RUNG-1)'
 def explained(sub,a,b):
+    if (r:=rung_pin(a,b)): return r
     if sub!='profiles' or 'not_written' not in EXPECT or 'not_written' not in b or 'not_written' in a: return None
     drop={x.get('index') for x in b['not_written']}
     a2=dict(a, neutral=[x for x in a.get('neutral',[]) if x.get('index') not in drop]); b2={k:v for k,v in b.items() if k!='not_written'}
