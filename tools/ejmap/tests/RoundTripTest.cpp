@@ -86,6 +86,7 @@
 #include <functional>
 #include "EjmapCustomDefault.h"
 #include "EjmapCertDriver.h"
+#include "EjmapRatioLawRun.h"   // 19 Oct: the ratio law
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
@@ -4573,6 +4574,68 @@ void testSweepQuietReference()
                    && ! (bool) ejmap::cert::childOutputHook()
                    && probe.contains ("{ runTextAtNorms (p, idx, ns, true, false); std::printf (\"progress\\t%d\\t%d\\n\", ++k, (int) work.size()); std::fflush (stdout); }"),
                    "cert WZ-HOOK-1: a child's output reaches the hook while it runs (" + juce::String ((int) seen.size()) + " updates), the hook is cleared after; the probe prints a progress line per control");
+        }
+        // WZ-RATIO-1 THE RATIO LAW SCORER (Kathy, 19 Oct): predicted (input - T) x (1 - 1/R_label) against the measured GR, T from the existing
+        // sweep; within 0.5 dB at every point from the knee upward. Fake plugins: a true ratio passes; a threshold that moves with ratio
+        // fails (and says how far); a real ratio off its label fails (its effective ratio from the slope); soft-knee points below the knee
+        // are excluded, not failed; the verdict never reaches past the lowest or highest ratio tested
+        {
+            using namespace ejmap::ratiolaw;
+            const double T0 = -20.0;
+            // GR of a fake: true ratio rt, threshold tt, soft knee of width k (quadratic across tt +- k/2)
+            auto gr = [] (double L, double tt, double rt, double k) { const double s = 1.0 - 1.0 / rt, x = L - tt;
+                if (k > 0.0 && std::abs (x) <= k / 2.0) return s * (x + k / 2.0) * (x + k / 2.0) / (2.0 * k); return x > 0.0 ? s * x : 0.0; };
+            auto fake = [&] (std::function<double (double)> trueRatio, std::function<double (double)> trueT, double k, std::vector<double> ups) {
+                std::vector<ejmap::ratiolaw::Point> pts;
+                for (double label : { 2.0, 4.0, 10.0 }) for (double pos : { 0.2, 0.3 })
+                    for (double up : ups) { ejmap::ratiolaw::Point p; p.ratio = label; p.position = pos; p.T = T0; p.input = T0 + up; p.gr = gr (p.input, trueT (label), trueRatio (label), k); pts.push_back (p); }
+                return pts; };
+            const auto truth = score (fake ([] (double r) { return r; }, [&] (double) { return T0; }, 0.0, { 6.0, 9.0, 12.0 }), 6.0, 6.0);
+            const auto moving = score (fake ([] (double r) { return r; }, [&] (double r) { return T0 + 0.5 * (r - 6.0); }, 0.0, { 6.0, 9.0, 12.0 }), 6.0, 6.0);
+            const auto offLabel = score (fake ([] (double r) { return 1.0 + 0.6 * (r - 1.0); }, [&] (double) { return T0; }, 0.0, { 6.0, 9.0, 12.0 }), 6.0, 6.0);
+            const auto soft = score (fake ([] (double r) { return r; }, [&] (double) { return T0; }, 16.0, { 2.0, 4.0, 9.0, 12.0, 14.0 }), 16.0, 6.0);
+            const auto softJudgedAll = score (fake ([] (double r) { return r; }, [&] (double) { return T0; }, 16.0, { 2.0, 4.0, 9.0, 12.0, 14.0 }), 0.01, 6.0);   // the same points all judged: the knee ones fail
+            const auto partial = score (fake ([] (double r) { return r < 9.0 ? r : 6.0; }, [&] (double) { return T0; }, 0.0, { 6.0, 9.0, 12.0 }), 6.0, 6.0);
+            auto rr = [] (const ejmap::ratiolaw::Verdict& v, double r) { for (const auto& x : v.ratios) if (std::abs (x.ratio - r) < 1e-9) return x; return ejmap::ratiolaw::RatioResult(); };
+            // the settings on a CL 1B-shaped control: 2..10 linear, measured at 6 -> 2, 4, 10 (the lowest is 2:1, once)
+            const auto cl1b = juce::JSON::parse (R"({"name":"Ratio","index":1,"displayAt":{"0.000":"2:1","0.500":"6:1","1.000":"10:1"},"range":{"at0":2.0,"at1":10.0,"linear":true}})");
+            juce::String why; const auto st = settingsFor (cl1b, 6.0, why);
+            juce::String why4; const auto at4 = settingsFor (cl1b, 4.0, why4);   // measured AT one of the candidates: that one is skipped
+            const auto stepped = juce::JSON::parse (R"({"name":"Ratio","displayAt":{"0.0":"1.5:1","0.5":"3:1","1.0":"8:1"}})");
+            juce::String why2; const auto st2 = settingsFor (stepped, 3.0, why2);
+            // the threshold from a sweep point: GR 2 at -18, 4 at -16, 6 at -14 (slope 1, T -20); the law at 6:1 from a sweep at slope 0.45 fails
+            const auto pt = juce::JSON::parse (R"({"norm":0.2,"in_at_gr_dbfs":{"1":-19.5,"2":-18.0,"4":-16.0,"6":-14.0}})");
+            const auto curve = juce::JSON::parse (R"([{"norm":0.2,"in_at_gr_dbfs":{"2":-15.556,"4":-11.111,"6":-6.667}},{"norm":0.4,"in_at_gr_dbfs":{"2":-25.556,"4":-21.111,"6":-16.667}}])");
+            const auto line = thresholdAtPoint (pt); const auto mid = thresholdAt (curve, 0.3); const auto atMeasured = lawAtMeasuredRatio (curve, 6.0, 6.0);
+            const auto blk = block (partial);
+            auto allPass = [] (const ejmap::ratiolaw::Verdict& v) { int n = 0; for (const auto& j : v.points) if (j.judged) { ++n; if (! j.pass) return false; } return n > 0; };
+            auto someFail = [] (const ejmap::ratiolaw::Verdict& v) { for (const auto& j : v.points) if (j.judged && ! j.pass) return true; return false; };
+            check (allPass (truth) && someFail (moving) && someFail (offLabel) && allPass (soft) && truth.status == "verified" && truth.worst < 1e-6 && truth.tested.size() == 3 && std::abs (rr (truth, 4.0).effectiveRatio - 4.0) < 1e-6 && ! rr (truth, 10.0).thresholdMoved
+                   && truth.safeBetween && truth.safeBetween->first == 2.0 && truth.safeBetween->second == 10.0
+                   && moving.status != "verified" && ! rr (moving, 2.0).pass && rr (moving, 2.0).thresholdMoved && std::abs (rr (moving, 2.0).thresholdShift + 2.0) < 1e-6
+                   && offLabel.status == "none" && ! rr (offLabel, 10.0).pass && std::abs (rr (offLabel, 10.0).effectiveRatio - 6.4) < 1e-6
+                   && soft.status == "verified" && rr (soft, 4.0).excluded == 4 && rr (soft, 4.0).judged == 6 && softJudgedAll.status != "verified"
+                   && partial.status == "partial" && partial.safe == std::vector<double> { 2.0, 4.0 } && partial.safeBetween && partial.safeBetween->second == 4.0
+                   && (double) blk.getProperty ("safe_between", {})[1] == 4.0 && blk.getProperty ("status", "").toString() == "partial" && blk.getProperty ("safe_ratios", {}).size() == 2
+                   && st.size() == 3 && st[0].ratio == 2.0 && st[0].norm == 0.0 && std::abs (st[1].norm - 0.25) < 1e-9 && st[2].ratio == 10.0 && st[2].norm == 1.0
+                   && at4.size() == 2 && at4[0].ratio == 2.0 && at4[1].ratio == 10.0 && st2.size() == 4 && std::abs (st2[0].ratio - 1.5) < 1e-9 && std::abs (st2[1].norm - 0.1666667) < 1e-6 && std::abs (st2[2].norm - 0.6) < 1e-9 && st2[3].ratio == 8.0 && st2[3].norm == 1.0
+                   && line.ok && std::abs (line.T + 20.0) < 1e-9 && std::abs (line.slope - 1.0) < 1e-9 && mid.ok && std::abs (mid.T + 25.0) < 0.01
+                   && atMeasured.status == "none" && atMeasured.worst > 1.0 && ratioOfText ("6:1") == 6.0 && ! ratioOfText ("Off"),
+                   "cert WZ-RATIO-1: a true ratio verifies (2-10:1); a moving threshold fails (" + juce::String (rr (moving, 2.0).thresholdShift, 2) + " dB at 2:1); a ratio off its label fails (effective "
+                     + juce::String (rr (offLabel, 10.0).effectiveRatio, 2) + ":1 for 10:1); soft-knee points under the knee excluded, not failed; partial -> safe 2, 4 only; never past the tested ends");
+        }
+        // WZ-RATIO-2 THE RATIO LAW RUN (Kathy, 19 Oct): --dry-run returns before any plugin is looked up or loaded; the call is the tone check's
+        // with ONLY the ratio write swapped; the licence gate comes first; the labelled ratio is the plugin's own text, read back
+        {
+            const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapRatioLawRun.h").loadFileAsString();
+            const auto mainSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+            check (run.indexOf ("if (dryRun) { say (\"RATIO-LAW: --dry-run - nothing loaded\"); return 0; }") >= 0
+                   && run.indexOf ("if (dryRun) { say (\"RATIO-LAW: --dry-run - nothing loaded\"); return 0; }") < run.indexOf ("for (const auto& r : installedPlugins())")
+                   && run.indexOf ("licenceGate (opt, desc)") < run.indexOf ("runProbeCall (args, opt.timeoutMs)")
+                   && run.contains ("for (const auto& x : sets) if (! x.startsWith (juce::String (ratioIdx) + \":\")) all.add (x);") && run.contains ("all.add (juce::String (ratioIdx) + \":\" + juce::String (j.s.norm, 6));")
+                   && run.contains ("profile::toneWrites (profile, record, sets, writes, ratioNote)") && run.contains ("o->setProperty (\"labelled_ratio\", *lr);")
+                   && mainSrc.contains ("if (a == \"--ratio-law\")") && mainSrc.contains ("if (a == \"--ratio-law-score\" && i + 1 < argc)"),
+                   "cert WZ-RATIO-2: the dry run loads nothing; the tone check's call with only the ratio write swapped; licence gate first; the labelled ratio read back");
         }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
