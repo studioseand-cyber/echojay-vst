@@ -431,6 +431,11 @@ ej_add_guard(ring_leak_guard          SOURCE tools/ring_leak_guard/harness.cpp  
 # and carries item 13's own leg - a burst of registry refreshes must not make a live Link read as gone.
 ej_add_guard(chain_busy_ack_guard     SOURCE tools/chain_busy_ack_guard/harness.cpp          LABEL fast LINKSIDE)
 ej_add_guard(chain_ack_wait_guard     SOURCE tools/chain_ack_wait_guard/harness.cpp          LABEL fast)
+# ...and the OTHER channel that goes quiet while a rack rebuilds (18 Oct, queue item 22): the borrowed dial
+# read's 5 s-per-slot window expired against a Link that was loading plugins, re-sent at the worst possible
+# moment, and ended with nothing. The policy lives in EJBorrowReadWait.h precisely so it can be asserted
+# without a window, a message loop and a second process answering ctrl-cmds.
+ej_add_guard(borrow_read_wait_guard   SOURCE tools/borrow_read_wait_guard/harness.cpp        LABEL fast)
 # ---- 11 Oct 2026, from Sean's in-host pass on ship_2026-10-11b -------------------------------------------
 # chains_view_guard: the CHAINS column over EIGHT frames, with the timer running between them. The header and
 # the AI|CHAINS switch painted inside `if (assistantVisible)`, which chatReplyControlsAllowed() makes false

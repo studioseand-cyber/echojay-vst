@@ -3136,7 +3136,7 @@ void EchoJayProcessor::awaitChainAck(const juce::String& linkUid, int seq,
                     {
                         poll->busyAcked = true;
                         poll->busyAtMs  = poll->waitedMs;
-                        poll->hardMaxMs = juce::jmax (poll->maxMs, kChainAckBusyHardMaxMs);
+                        poll->hardMaxMs = juce::jmax (poll->maxMs, kBusyWaitHardMaxMs);
                         EchoJay_NSLog (("EJLink: chain-ack seq=" + juce::String (poll->seq) + " says the rack is "
                                         "BUSY rebuilding (" + (why.isNotEmpty() ? why : juce::String ("no reason given"))
                                         + ") - the wait is extended to " + juce::String (poll->hardMaxMs / 1000)

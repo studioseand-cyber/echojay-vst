@@ -274,7 +274,7 @@ int main()
         std::printf ("    sentence: %s\n", out->sentence.toRawUTF8());
         std::printf ("    technical: %s\n", out->technical.toRawUTF8());
         check (out->fired && ! out->ok && tookS > 20.0 && tookS < 45.0,
-               "(7) the extension has a cap (kChainAckBusyHardMaxMs, 30 s): a rack that never finishes is not "
+               "(7) the extension has a cap (kBusyWaitHardMaxMs, 30 s): a rack that never finishes is not "
                "waited on for ever",
                juce::String (tookS, 1) + " s");
         check (out->sentence.contains ("queued") && out->sentence.contains ("not refused"),

@@ -1665,3 +1665,49 @@ busy with every field before it unmoved), `agent_executor_read_guard` G4d (busy 
   lease was never the reason the command went unanswered — the silence was. The lease line stays in
   the queue as item 16's neighbour only because a lease on the addressed rack is still the thing that
   decides whether a structural edit is refused, and no row asserts that today.
+
+### item 22, first bullet: BUILT (18 Oct, Sean's "do the borrowed dial read next")
+
+The borrowed dial read's 5 s-per-slot window no longer expires against a rack that has told us it is
+rebuilding. `Source/EJBorrowReadWait.h` holds the policy and every sentence it produces, so a guard
+can assert it without a window, a message loop and a second process answering ctrl-cmds; the editor
+keeps only the plumbing. Three rules:
+
+1. **The retry is for a LOST request.** A rack that says it is rebuilding has not lost anything, so
+   waiting on it neither re-sends nor spends the retry. The old code re-requested here — a second
+   request to a rack that is about to answer the first.
+2. **The wait is bounded** by `EchoJayProcessor::kBusyWaitHardMaxMs` — the same 30 s the chain-ack
+   wait uses, now one constant for both, because one question with two numbers is how the two drift.
+3. **What it says when it gives up is a reading.** "it stayed unreachable for 30.1 s - it was
+   rebuilding its chain throughout" for a rack that stayed busy; "that rack is no longer in this
+   session" for a row that has gone; "stayed unreachable for N s while it rebuilt its chain" for one
+   that was busy and has stopped; and the old "no answer from the Link in N s, two requests, last
+   seq S" **verbatim** for a rack that is there and silent, which is the leg that says this is
+   additive.
+
+Guard: `borrow_read_wait_guard`, eight legs, each asserted on both sides of its own boundary
+(29.9 s waits, 30.1 s gives up; busy retries-not-spent AND idle retries-once; the old sentence
+reproduced exactly).
+
+**One thing this does NOT fix, and it is the rest of the S6 sequence.** The gate's log was:
+
+```
+EJRackLock: released uid=d684c7e220
+EJBorrow: dial info cleared for uid=d684c7e220 (rack rebuilt or Link gone)
+EJBorrow: slot 1 (...) unanswered after 5.0 s - re-requesting once
+EJBorrow: read for d684c7e220 ABANDONED after 0 of 3 slots - the selection is now (none)
+```
+
+The ABANDONED line is **not** the timeout path — it fires when `pendingAutoEngage_` is no longer this
+uid, i.e. the selection moved or was cleared. So after the fix above, that read would wait on BUSY
+and then still be abandoned, because the rack lock was released and the selection went to (none)
+underneath it. Two questions left, and both are about the rebuild clearing state the session was
+using rather than about waiting:
+
+- **why the selection became (none)** when the rack was rebuilt (`EJRackLock: released`, then
+  `pendingAutoEngage_` empty) — a rebuild of the rack you are looking at should leave you looking at
+  it;
+- **and whether `dial info cleared for uid=... (rack rebuilt or Link gone)`** should clear on a
+  rebuild at all, now that BUSY distinguishes the two cases in its own message.
+
+Neither is guessed at here. They want the rig and a rebuild in flight, which is Sean's next break.

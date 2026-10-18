@@ -2129,13 +2129,17 @@ public:
     // every decision of this shape must use the same one, measured in TIME - a count of consumer polls says
     // more about how busy the editor was than about whether the Link is alive (see heartbeatFresh).
     static constexpr float kLinkAnsweringWithinS = 3.0f;
-    // How long awaitChainAck may go on waiting once the rack has said "busy" and the registry agrees it is
-    // still building. 30 s, and the figure is a judgement about PEOPLE rather than about plugins: a rack of
-    // slow AUs can take longer than this to build, but a user or an agent step left with no answer for half a
-    // minute needs to be told something true now - and what it is told then is that the edit is queued on that
-    // rack, which is the truth and is actionable. The original 8 s window is unchanged for a rack that says
-    // nothing at all.
-    static constexpr int kChainAckBusyHardMaxMs = 30000;
+    // How long anything here may go on waiting for a rack that SAYS it is busy and whose registry row agrees.
+    // 30 s, and the figure is a judgement about PEOPLE rather than about plugins: a rack of slow AUs can take
+    // longer than this to build, but a user or an agent step left with no answer for half a minute needs to be
+    // told something true now - and what it is told then is that the rack was still rebuilding, which is the
+    // truth and is actionable. The windows for a rack that says NOTHING are unchanged (8 s for a chain ack,
+    // 5 s per slot for a borrowed read).
+    //
+    // ONE constant for both waits, deliberately. awaitChainAck waits on a chain command's ack and the borrowed
+    // dial read waits on a ctrl-cmd pull - two channels, one question ("how long do we believe a rack that
+    // says it is building"), and two numbers for one question is how they drift apart.
+    static constexpr int kBusyWaitHardMaxMs = 30000;
     struct LinkAnswerability
     {
         bool  found     = false;   // a row with this uid is listed at all

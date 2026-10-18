@@ -1,6 +1,7 @@
 #include "EJDialWrites.h"
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
+#include "EJBorrowReadWait.h"   // item 22: what to do when a borrowed read's window expires
 #include "EJAffirmation.h"   // 06d test 5: the narrow client-side yes to a staged proposal
 #include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): the editor's fetches are in the census too
 #include "EJCaptureChannels.h"
@@ -13610,6 +13611,14 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
         bool perSeq = false;               // v9 Link: poll ctrl-ack-<uid>-<seq>.json, never the shared file
         bool retried = false;              // one re-request per slot before "no answer"
         juce::int64 t0 = 0;                // wall clock at the first request of the current slot
+        // ---- WAITING ON A RACK THAT SAYS IT IS BUSY (18 Oct 2026, queue item 22) ------------------------
+        // Whether THIS slot's read has ever found the rack rebuilding, and whether the one waiting line has
+        // been said for it. Per slot, both: a rebuild that ends between slot 1 and slot 2 must not spend
+        // slot 2's patience, and a rack that was busy throughout is a different sentence from one that simply
+        // never answered. The clock stays t0 - the bound is on the TOTAL wait for a slot, which is the same
+        // thing kBusyWaitHardMaxMs bounds on the chain-ack side.
+        bool sawBusy = false;
+        bool saidWaiting = false;
     };
     auto st = std::make_shared<PullState>();
     st->uid       = uid;
@@ -13873,7 +13882,11 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             if (! pr.borrowActive()) pr.setRackLockWant(pr.pendingAutoEngage_);
             return;
         }
-        if (! st->retried) st->t0 = juce::Time::currentTimeMillis();
+        if (! st->retried)
+        {
+            st->t0 = juce::Time::currentTimeMillis();
+            st->sawBusy = false; st->saidWaiting = false;   // per slot, per item 22
+        }
         int err = 0;
         const juce::String dir = LinkShm::resolveDir(err);
         if (dir.isEmpty())
@@ -13929,20 +13942,40 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
                 }
                 if (attemptsLeft <= 1)
                 {
-                    const double elapsedS = (double) (juce::Time::currentTimeMillis() - st->t0) / 1000.0;
-                    if (! st->retried)
+                    // ---- A RACK THAT IS REBUILDING HAS NOT LOST THE REQUEST (18 Oct 2026, item 22) ------
+                    // The policy and every sentence it produces live in EJBorrowReadWait.h, where a guard can
+                    // reach them; this is the plumbing. Sean's words for the case it exists for: wait on BUSY
+                    // with a bound, then say it stayed unreachable for N s.
+                    echojay::borrowread::Reading rd;
+                    rd.elapsedS  = (double) (juce::Time::currentTimeMillis() - st->t0) / 1000.0;
+                    rd.retried   = st->retried;
+                    rd.sawBusy   = st->sawBusy;
+                    rd.hardMaxMs = EchoJayProcessor::kBusyWaitHardMaxMs;
+                    rd.slotName  = slotName;
+                    rd.uid       = st->uid;
+                    rd.slot1     = st->idx + 1;
+                    rd.seq       = seq;
                     {
-                        // ONE re-request with a fresh seq before refusing (9 Sep 2026)
-                        st->retried = true;
-                        EchoJay_NSLog(("EJBorrow: slot " + juce::String(st->idx + 1) + " (\"" + slotName + "\") of " + st->uid
-                                       + " unanswered after " + juce::String(elapsedS, 1) + " s (seq " + juce::String(seq)
-                                       + ") - re-requesting once").toRawUTF8());
+                        const auto ans = safeThis->processorRef.linkAnswerability(st->uid);
+                        rd.found = ans.found; rd.busy = ans.busy;
+                    }
+                    const auto d = echojay::borrowread::decide(rd, ! st->saidWaiting);
+                    st->sawBusy = d.sawBusy;
+                    if (d.logLine.isNotEmpty()) EchoJay_NSLog(d.logLine.toRawUTF8());
+                    if (d.next == echojay::borrowread::Next::WaitOnBusy)
+                    {
+                        if (d.logLine.isNotEmpty()) st->saidWaiting = true;
+                        (*poll)(4);   // another second of patience, then ask the registry again
+                        return;
+                    }
+                    if (d.next == echojay::borrowread::Next::Retry)
+                    {
+                        st->retried = true;   // ONE re-request with a fresh seq (9 Sep 2026)
                         (*step)();
                         return;
                     }
                     st->retried = false;
-                    st->failures.add(slotName + " (no answer from the Link in " + juce::String(elapsedS, 1)
-                                     + " s, two requests, last seq " + juce::String(seq) + ")");
+                    st->failures.add(d.failure);
                     ++st->idx;
                     (*step)();
                     return;
