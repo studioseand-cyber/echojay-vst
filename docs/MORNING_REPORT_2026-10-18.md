@@ -97,6 +97,36 @@ Then: 46 units from `held_units.txt`, 5 steps to run and 27 done or skipped, ETA
 `recheck_16oct.log`. It also found **86 tone checks made by a build other than `ad50ddbb`**, so the
 follow-up re-runs those stale checks first — that is the step it spent the first hour in.
 
+### Two of its steps refused instantly, and that is in Kathy's pack, not your Mac
+
+`accuracy_gaps_drafts` and `accuracy_gaps` both exited 2 within a second of starting, with the same
+line in `~/Library/ejmap/cert/run_all/accuracy_gaps*.log`:
+
+    --redo: 'accuracy_gaps' is not a Phase B category, nothing_nominated, uad or no_pool
+
+`recheck.sh` passes `--redo accuracy_gaps`, and this build (`ad50ddbb`) does not accept that value —
+it wants a Phase B category, or `nothing_nominated`, `uad` or `no_pool`. So the script and the app
+in the same zip disagree about one flag. Nothing was measured by those two steps and nothing was
+corrupted by them; part 1 ended `exit 1` with its other three steps done.
+
+I did not rewrite Kathy's flag. Which category those two steps were meant to redo changes what gets
+certified, and guessing it would put wrong numbers in your cert folder — that is Kathy's call, and
+it is one line in `recheck.sh` once she says which value she meant.
+
+Part 2 started on its own and is the hour that matters: `multiband_v1` (per-band tone checks,
+crossovers, make-up across 17 multiband records), then `drafts`. Its plan also notes **40 tone checks
+made by another build stay stale**, because the follow-up step is not in part 2's `--steps`.
+
+### One disclosure about the measurements
+
+At about 01:18 I ran `ejmap --help` to find out which `--redo` values the build accepts. It did not
+return — it ran for roughly two minutes before I killed it at 01:20, alongside the measuring. So any
+unit measured in that window (the first minutes of `multiband_v1`, around C6 (m) and
+C6-SideChain (s) in `multiband_v1.log`) had an extra process on the machine and should be
+re-measured before it is trusted. The measuring run itself was never interrupted, and nothing else
+of mine has touched the machine since 01:03. Asking a measuring app a question during its own
+measurement window was my error.
+
 **It started 4 minutes after the gate ended**, and the only reason it was not 4 minutes after
 midnight is that the gate's own S6 takes an hour. From 01:03 I ran nothing that loads a plugin and
 nothing that builds: the I9c fix above was written and syntax-checked before the pack started.
