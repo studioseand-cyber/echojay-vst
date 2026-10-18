@@ -23,16 +23,16 @@ won't-load list leaking into B's A8 gate. Written up for B with the round's log 
 In LIVE mode your server's own map store decides, not the map the rig samples, which is why every
 row that adds a third party with a setting is unrunnable against 3213 tonight.
 
-**The one mock red is the rig's own, and I have fixed the row.** I9c reads the *Link's* mirrored
-card but never aimed its run at the Link — it asked the agent on whatever target the previous row
-left selected, and I9b, which runs immediately before it, leaves the own rack. So the add landed on
-the own rack, the Link had nothing to carry, and the row reported "(no slot carried both facts)".
-It passed in earlier gates only when some earlier row happened to leave the Link selected: a verdict
-that depended on what ran before it. I9b — same build, same plugin, same figure, own rack — passed,
-which is what clears the product. The row now sends `work_on` with the Link's uid before it asks.
-**And then I ran it, twice, because Kathy's pack finished at 01:30 instead of 07:00** — which freed
-the machine, and with no measurements left to disturb there was no reason to hold the rig. Both runs
-are worth reading, because my first fix was wrong:
+**The one mock red was the row addressing a Link that no longer exists — and it is still red, now
+for a reason worth having.** I9c reads the *Link's* mirrored card against the Link's own ledger, and
+the uid it addresses is captured much earlier in the pass; by the time the row runs, that Link is
+gone. Nothing landed, so the row reported "(no slot carried both facts)" and read as a product
+failure. I9b — same build, same plugin, same figure, on the own rack — passed in every run tonight,
+and that is what clears the product of this red.
+
+I ran it twice, because Kathy's pack finished at 01:30 rather than 07:00, which freed the machine
+with no measurements left to disturb. Both runs are worth reading, because **my first fix was
+wrong**:
 
 **Run 5 (01:30, `work_on linkUid` before the ask): I9c failed again, in exactly the same words.**
 The rig had already answered the question in a line I had not read:
