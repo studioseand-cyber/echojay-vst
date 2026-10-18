@@ -1454,6 +1454,12 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         if (! rc.valid || slot1Based > (int) rc.slots.size()) return false;
         return rc.slots[(size_t) (slot1Based - 1)].dialPending;
     };
+    // The knob's own resolution, for the read-back tolerance (18 Oct 2026). One road for both racks:
+    // the map is in THIS process whether the slot is on the open rack or in a Link.
+    s.paramStep = [p] (const juce::String& pluginName, const juce::String& paramId, double near) -> double
+    {
+        return p->getChainHost().mappedStepFor (pluginName, paramId, near);
+    };
     s.slotParam = [p] (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out) -> bool
     {
         if (slot1Based < 1 || paramId.isEmpty()) return false;

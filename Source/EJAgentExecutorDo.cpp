@@ -713,6 +713,16 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         return;
     }
 
+    // WHOSE KNOBS THESE ARE: the tolerance is the control's own ladder, and the map is found by the
+    // plugin's name - so the `set` path reads it off the rack exactly as the add path does.
+    juce::String slotName;
+    {
+        const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                               : (src_.ownRack  ? src_.ownRack()          : RackRead());
+        if (rack.valid)
+            for (const auto& sl : rack.slots)
+                if (sl.n == slot1) { slotName = sl.name; break; }
+    }
     juce::StringArray matched, missed, unreadable, matchedPlain, missedPlain;
     for (auto& kv : asked->getProperties())
     {
@@ -722,7 +732,7 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         const double wanted = (double) want;
         double got = 0.0;
         if (! src_.slotParam (applyTo, slot1, id, got)) { unreadable.add (id); continue; }
-        const double tol = juce::jmax (0.05, std::abs (wanted) * 0.02);
+        const double tol = readBackTolerance (slotName, id, wanted);
         if (std::abs (got - wanted) <= tol)
         {
             matched.add (id + " " + juce::String (got, 2));
@@ -797,6 +807,37 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
 //  the plugin a second time. What changes is that the settings are reported separately and honestly, so
 //  the closing text can only be built from what was actually confirmed.
 // =======================================================================================================
+// ---- THE TOLERANCE, IN ONE PLACE (18 Oct 2026, Sean in Logic) -----------------------------------
+//
+// *"False failure: the step says 'Added it, but the settings did NOT take: the gain - gain 0.3 (asked
+// gain 0)'. Everything else landed. Use a read-back tolerance (the knob's resolution, or the map's
+// readback worst from Kathy's file), so 0.3 vs 0 counts as landed."*
+//
+// The knob's resolution, as he asked first: a mapped control is a ladder and a request between two
+// rungs lands on a rung, so the read-back can differ from the request by the local rung spacing and
+// still be the value the dial could reach. 0.05 dB was a continuum's tolerance on a ladder.
+//
+// NOT Kathy's readback worst, and the reason is in her file: `readback.worst` is present on every
+// control and null on all 1,123 entries of today's trust_levels.json, and nothing in the plugin
+// ingests that file yet. A tolerance read from a field that is always null would be a rule that
+// never fires dressed up as a rule that does.
+//
+// Both comparison sites call this, so the add path and the `set` path cannot drift apart - they had
+// two copies of the same two-term expression, which is how one of them would have been fixed alone.
+double ExecutorDo::readBackTolerance (const juce::String& slotName, const juce::String& paramId,
+                                      double wanted) const
+{
+    // Per magnitude, not absolute: a device stores 18 ms as 18.0 and a ratio as 4.0, but a dB value
+    // may round, and == would make an honest apply look like a failure.
+    double tol = juce::jmax (0.05, std::abs (wanted) * 0.02);
+    if (src_.paramStep != nullptr && slotName.isNotEmpty() && paramId.isNotEmpty())
+    {
+        const double step = src_.paramStep (slotName, paramId, wanted);
+        if (step > 0.0) tol = juce::jmax (tol, step);
+    }
+    return tol;
+}
+
 ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& applyTo, int slot1,
                                                        const juce::var& settingsStructured) const
 {
@@ -830,9 +871,7 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
         const double wanted = (double) want;
         double got = 0.0;
         if (! src_.slotParam || ! src_.slotParam (applyTo, slot1, id, got)) { out.unreadable.add (id); continue; }
-        // Per magnitude, not absolute: a device stores 18 ms as 18.0 and a ratio as 4.0, but a dB value
-        // may round, and == would make an honest apply look like a failure.
-        const double tol = juce::jmax (0.05, std::abs (wanted) * 0.02);
+        const double tol = readBackTolerance (out.slotName, id, wanted);
         if (std::abs (got - wanted) <= tol)
         {
             out.matched.add ("slot " + juce::String (slot1) + " " + id + " " + juce::String (got, 2));

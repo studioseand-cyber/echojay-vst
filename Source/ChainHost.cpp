@@ -3356,6 +3356,67 @@ ChainHost::SlotPicture ChainHost::slotPicture(int i) const
     }
     return p;
 }
+// ---- ONE AUTHOR FOR "WHICH ENTRY IS THIS CONTROL" (18 Oct 2026) ---------------------------------
+// Both readers below need it and both had their own copy of the two-table walk. `params` is keyed by
+// SEMANTIC ("attack_db"); `controls` by the plugin's own CONTROL NAME ("Attack (Transient)"), which is
+// what a third-party dial uses - and a name that differs only in spacing or case is rescued the same
+// way the WRITE rescues it, so a read and a write resolve a name identically.
+static juce::var controlEntryIn (const juce::var& mapObj, const juce::String& paramId)
+{
+    const auto mapParams   = mapObj.getProperty ("params", juce::var());
+    const auto mapControls = mapObj.getProperty ("controls", juce::var());
+    auto entry = mapParams.isObject() ? mapParams.getProperty (juce::Identifier (paramId), juce::var())
+                                      : juce::var();
+    if (! entry.isObject() && mapControls.isObject())
+    {
+        entry = mapControls.getProperty (juce::Identifier (paramId), juce::var());
+        if (! entry.isObject())
+            if (auto* mo = mapControls.getDynamicObject())
+            {
+                const auto want = echojay::normalizeControlName (paramId);
+                for (auto& mk : mo->getProperties())
+                    if (echojay::normalizeControlName (mk.name.toString()).equalsIgnoreCase (want))
+                    { entry = mk.value; break; }
+            }
+    }
+    return entry;
+}
+
+// ---- WHAT THIS KNOB CAN REPRESENT, FOR A READ-BACK TOLERANCE (18 Oct 2026, Sean in Logic) -------
+//
+// *"False failure: 'the settings did NOT take: the gain - gain 0.3 (asked gain 0)'. Everything else
+// landed. Use a read-back tolerance (the knob's resolution ...) so 0.3 vs 0 counts as landed."*
+//
+// By plugin NAME rather than by fingerprint, deliberately: the asked-for plugin may be in a LINK's
+// rack, in another process, and a Link's slot read carries its name and not its fp. The synced map is
+// here either way, so this answers for both racks without hosting or loading anything. 0 = the map
+// cannot say, and the caller then keeps the tolerance it had.
+//
+// paramMaps_ is message-thread-only state (as slotParamValue's own read of it is) and this does no
+// disk and no verdicts - a walk of the maps and the arithmetic in mappedStepNear, nothing else.
+double ChainHost::mappedStepFor (const juce::String& pluginName, const juce::String& paramId,
+                                 double near) const
+{
+    if (pluginName.isEmpty() || paramId.isEmpty()) return 0.0;
+    const auto want = pluginName.trim();
+    for (const auto& m : paramMaps_)
+    {
+        const auto named = m.second.getProperty ("plugin", juce::var()).toString().trim();
+        if (! named.equalsIgnoreCase (want)) continue;
+        const auto entry = controlEntryIn (m.second, paramId);
+        if (! entry.isObject()) continue;
+        const double step = echojay::mappedStepNear (entry, near);
+        if (step > 0.0)
+        {
+            EchoJay_NSLog (("EJReadback: \"" + want + "\" " + paramId + " moves in steps of about "
+                            + juce::String (step, 3) + " near " + juce::String (near, 2)
+                            + " - the read-back tolerance follows the knob").toRawUTF8());
+            return step;
+        }
+    }
+    return 0.0;
+}
+
 bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, double& out) const
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
@@ -3407,22 +3468,7 @@ bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, doub
     // display units as the registry prints them."* The first cut of this read looked only in `params`,
     // so the one shape Sean's four plugins are dialled through could not be read back at all. The
     // normalised-name rescue is the same one the WRITE uses, so the two resolve a name identically.
-    const auto mapParams   = mapIt->second.getProperty ("params", juce::var());
-    const auto mapControls = mapIt->second.getProperty ("controls", juce::var());
-    auto entry = mapParams.isObject() ? mapParams.getProperty (juce::Identifier (paramId), juce::var())
-                                      : juce::var();
-    if (! entry.isObject() && mapControls.isObject())
-    {
-        entry = mapControls.getProperty (juce::Identifier (paramId), juce::var());
-        if (! entry.isObject())
-            if (auto* mo = mapControls.getDynamicObject())
-            {
-                const auto want = echojay::normalizeControlName (paramId);
-                for (auto& mk : mo->getProperties())
-                    if (echojay::normalizeControlName (mk.name.toString()).equalsIgnoreCase (want))
-                    { entry = mk.value; break; }
-            }
-    }
+    const auto entry = controlEntryIn (mapIt->second, paramId);
     if (! entry.isObject()) return false;
     juce::String how;
     const int idx = echojay::resolveParamIndex (*plug, entry, paramId, how);

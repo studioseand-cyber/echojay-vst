@@ -226,6 +226,9 @@ private:
     void confirmSettings (const ToolCall& call, const juce::String& applyTo, const juce::String& opName,
                           int slotsOnRack, juce::String landedSentence, Done done, int triesLeft = 6,
                           bool pendingBudget = false);
+    /** The read-back tolerance for one asked value: a little, 2% of the magnitude, and whatever the
+        knob's own ladder says near it (18 Oct 2026 - "0.3 vs 0 counts as landed"). */
+    double readBackTolerance (const juce::String& slotName, const juce::String& paramId, double wanted) const;
     void confirmLanded (const juce::String& applyTo, int wantSlots, const juce::String& opName,
                         juce::String sentence, Done done, int waitedMs, const ToolCall* call = nullptr);
 

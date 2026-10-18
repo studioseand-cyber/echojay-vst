@@ -1512,6 +1512,10 @@ public:
         plugin's values are not readable here) - which the caller must report as "could not confirm",
         never as success. */
     bool slotParamValue (int slotIndex, const juce::String& paramId, double& out) const;
+    /** The smallest change a mapped control can represent near `near`, in the control's own units,
+        read off the SYNCED map by plugin name so it answers for a Link's slot too. 0 = cannot say
+        (18 Oct 2026: the read-back tolerance follows the knob, never a fixed 0.05). */
+    double mappedStepFor (const juce::String& pluginName, const juce::String& paramId, double near) const;
     juce::StringArray listenCardLines() const;            // the per-slot picture for the Listen reply card, flags by name
     float getSlotPreTrimDb(int i) const;
     // 21t-m (29 Sep 2026 ruling): setSlotTrimDb / getSlotTrimDb / slotTrimText / hasActiveTrims /

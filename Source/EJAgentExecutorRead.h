@@ -141,6 +141,13 @@ struct Sources
         the behaviour this build had before the field existed. */
     std::function<bool (const juce::String& uid, int slot1Based)> slotDialPending;
 
+    /** ---- WHAT THE KNOB CAN REPRESENT (18 Oct 2026, Sean in Logic) ----------------------------
+        The read-back tolerance follows the control's own ladder: the step the map declares near the
+        asked value, in the control's units. 0 (or no hook at all) = the map cannot say, and the
+        comparison keeps the tolerance it had. By plugin NAME, because a Link's slot read carries a
+        name and not a fingerprint. */
+    std::function<double (const juce::String& pluginName, const juce::String& paramId, double near)> paramStep;
+
     // identity
     std::function<juce::String()> ownName;       // the channel's display name
     std::function<juce::String()> ownKind;       // channel | bus | mix_bus | master

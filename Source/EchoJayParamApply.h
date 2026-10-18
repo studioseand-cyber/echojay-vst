@@ -526,6 +526,69 @@ inline juce::Array<juce::Array<float>> anchorsFromVar (const juce::var& entry)
     return out;
 }
 
+/** ---- WHAT THIS KNOB CAN ACTUALLY REPRESENT (18 Oct 2026, Sean in Logic) ------------------
+    *"False failure: the step says 'Added it, but the settings did NOT take: the gain - gain 0.3
+    (asked gain 0)'. Everything else landed. Use a read-back tolerance (the knob's resolution ...)
+    so 0.3 vs 0 counts as landed."*
+
+    A mapped control is a LADDER, not a continuum: the map's anchors are the values the knob can be
+    put at, and asking for one between two rungs lands on a rung. The read-back then differs from the
+    request by up to the local rung spacing - the UAD Studer's gain anchors are 1.2 dB apart - and
+    comparing that against a fixed 0.05 dB called an honest apply a failure.
+
+    So the step is read off the map, NEAR the asked value, because a ladder is rarely even: 1 dB rungs
+    at the bottom and 6 dB at the top is an ordinary shape. Returns 0 when the map cannot say, and the
+    caller then keeps the tolerance it had - a value we cannot reason about is not a value we loosen.
+
+    Pure, and takes the ENTRY rather than a plugin, so a guard can hold it against a real anchor
+    table without hosting anything. */
+inline double mappedStepNear (const juce::var& entry, double near)
+{
+    const auto anchors = anchorsFromVar (entry);
+    if (anchors.size() >= 2)
+    {
+        // the rungs bracketing `near`, or the nearest pair when it sits outside the table
+        double best = 0.0, bestDist = 1.0e18;
+        for (int i = 1; i < anchors.size(); ++i)
+        {
+            const double a = (double) anchors[i - 1][0], b = (double) anchors[i][0];
+            const double lo = juce::jmin (a, b), hi = juce::jmax (a, b);
+            const double gap = hi - lo;
+            if (gap <= 0.0) continue;
+            const double dist = near < lo ? (lo - near) : near > hi ? (near - hi) : 0.0;
+            if (dist < bestDist) { bestDist = dist; best = gap; }
+            if (dist == 0.0) break;
+        }
+        if (best > 0.0) return best;
+    }
+    // a stepped control: its own positions, else an even ladder over the declared range
+    if (auto* pos = entry.getProperty ("positions", juce::var()).getArray())
+        if (pos->size() >= 2)
+        {
+            double best = 0.0, bestDist = 1.0e18;
+            for (int i = 1; i < pos->size(); ++i)
+            {
+                const double a = (double) (*pos)[i - 1], b = (double) (*pos)[i];
+                const double lo = juce::jmin (a, b), hi = juce::jmax (a, b);
+                const double gap = hi - lo;
+                if (gap <= 0.0) continue;
+                const double dist = near < lo ? (lo - near) : near > hi ? (near - hi) : 0.0;
+                if (dist < bestDist) { bestDist = dist; best = gap; }
+                if (dist == 0.0) break;
+            }
+            if (best > 0.0) return best;
+        }
+    const int steps = (int) entry.getProperty ("steps", juce::var (0));
+    if (steps >= 2)
+        if (auto* range = entry.getProperty ("range", juce::var()).getArray())
+            if (range->size() >= 2)
+            {
+                const double span = std::abs ((double) (*range)[1] - (double) (*range)[0]);
+                if (span > 0.0) return span / (double) (steps - 1);
+            }
+    return 0.0;
+}
+
 // ---------------------------------------------------------------------------
 // Apply one semantic setting to the plugin using its map entry.
 // ---------------------------------------------------------------------------

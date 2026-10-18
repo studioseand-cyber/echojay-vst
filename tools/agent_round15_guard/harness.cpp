@@ -16,6 +16,7 @@
 #include "EchoJayUndoHistory.h"
 #include "EJAgentClient.h"
 #include "EJParamPlainNames.h"   // 18 Oct: the row's sentence is built there
+#include "EchoJayParamApply.h"    // 18 Oct: mappedStepNear, the read-back tolerance's arithmetic
 #include <cmath>
 #include <cstdio>
 
@@ -43,6 +44,9 @@ struct Fixture
     // what the slot "holds" after an apply, by parameter name. A set's read-back is compared against this.
     std::map<juce::String, double> held;
     juce::StringArray unreadable;      // names the device refuses to report at all
+    // 18 Oct: the knob's own ladder, as the synced map declares it. 0 = the map cannot say, which is
+    // the state every build before today was in for every control.
+    double stepNear = 0.0;
     int applyCalls = 0;
     bool applyOk = true;
 
@@ -61,6 +65,7 @@ struct Fixture
         s.chainRevision = [this] { return own.revision; };
         s.transportKnown   = [this] { return transportKnown; };
         s.transportPlaying = [this] { return transportPlaying; };
+        s.paramStep = [this] (const juce::String&, const juce::String&, double) -> double { return stepNear; };
         s.slotParam = [this] (const juce::String&, int, const juce::String& id, double& out) -> bool
         {
             if (unreadable.contains (id)) return false;
@@ -550,6 +555,107 @@ int main()
                    == "Added CL 1B. Read back: threshold -12. Release couldn't be read.",
                "...and the whole sentence is built in ONE place, so no caller writes its own",
                echojay::params::landedRowSentence ("add", "CL 1B", "threshold -12", "release"));
+    }
+
+    // ---------------------------------------------------------------- 18 OCT 2026 (his item 2)
+    // *"False failure: the step says 'Added it, but the settings did NOT take: the gain - gain 0.3
+    // (asked gain 0)'. Everything else landed. Use a read-back tolerance (the knob's resolution, or
+    // the map's readback worst from Kathy's file), so 0.3 vs 0 counts as landed."*
+    std::printf ("\n== 18 Oct: the read-back tolerance follows the knob's own ladder ==\n");
+    {
+        // HIS CASE. A gain asked at 0 that reads back 0.3, on a knob whose map says its rungs are
+        // 1 dB apart - and three other values that landed exactly.
+        Fixture f;
+        f.own.slots.push_back ({}); f.own.slots[0].n = 1; f.own.slots[0].name = "bx_townhouse Buss Compressor";
+        f.held = { { "threshold_db", -10.0 }, { "ratio", 4.0 }, { "gain_db", 0.3 } };
+        f.stepNear = 1.0;
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto out = runDo (ex, call (R"({"op":"add","name":"bx_townhouse Buss Compressor","settings_structured":)"
+                                          R"({"params":{"threshold_db":-10,"ratio":4,"gain_db":0}}})"));
+        const auto state = out.result.getProperty ("settings_state", juce::var()).toString();
+        check (out.ok && state == "applied",
+               "a value 0.3 off its asked 0, on a knob that moves in 1 dB rungs, is LANDED (RED as it "
+               "stood: 0.05 dB was the whole tolerance, so an honest apply read as \"the settings did "
+               "NOT take: the gain - gain 0.3 (asked gain 0)\")",
+               "state=\"" + state + "\" row=" + out.landedForTheUser());
+        check (! out.landedForTheUser().containsIgnoreCase ("did NOT take"),
+               "...and the row says so - no false failure on it", out.landedForTheUser());
+    }
+    {
+        // THE OTHER DIRECTION, and it matters more than the first: a write that did NOT happen must
+        // still fail, however generous the ladder is.
+        Fixture f;
+        f.own.slots.push_back ({}); f.own.slots[0].n = 1; f.own.slots[0].name = "bx_townhouse Buss Compressor";
+        f.held = { { "threshold_db", 0.0 } };          // asked -30, sitting at its default
+        f.stepNear = 1.0;
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto out = runDo (ex, call (R"({"op":"add","name":"bx_townhouse Buss Compressor","settings_structured":)"
+                                          R"({"params":{"threshold_db":-30}}})"));
+        check (out.result.getProperty ("settings_state", juce::var()).toString() == "not_applied",
+               "a threshold asked at -30 and sitting at 0 is still NOT APPLIED - the tolerance widened "
+               "by one rung, not by thirty",
+               out.landedForTheUser());
+    }
+    {
+        // AND WITH NO MAP TO ASK, nothing is loosened: a control the map cannot describe keeps the
+        // tolerance it has always had. An unfalsifiable "landed" is what this product keeps paying for.
+        Fixture f;
+        f.own.slots.push_back ({}); f.own.slots[0].n = 1; f.own.slots[0].name = "Unmapped Thing";
+        f.held = { { "gain_db", 0.3 } };
+        f.stepNear = 0.0;                              // the map cannot say
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto out = runDo (ex, call (R"({"op":"add","name":"Unmapped Thing","settings_structured":)"
+                                          R"({"params":{"gain_db":0}}})"));
+        check (out.result.getProperty ("settings_state", juce::var()).toString() == "not_applied",
+               "with no ladder to read, 0.3 against 0 is reported as before - a tolerance is never "
+               "invented for a control nothing can describe",
+               out.landedForTheUser());
+    }
+    {
+        // THE ARITHMETIC, against a real anchor table: the UAD Studer's input gain, whose rungs are
+        // 1.2 dB apart in the map Kathy's sweep wrote.
+        auto* e = new juce::DynamicObject();
+        juce::Array<juce::var> anchors;
+        for (int i = 0; i <= 30; ++i)
+        {
+            juce::Array<juce::var> pair;
+            pair.add (-12.0 + 1.2 * i);                      // value
+            pair.add (i / 30.0);                             // normalised
+            anchors.add (juce::var (pair));
+        }
+        e->setProperty ("anchors", juce::var (anchors));
+        e->setProperty ("unit", "db");
+        const juce::var entry (e);
+        const double step = echojay::mappedStepNear (entry, 0.0);
+        check (std::abs (step - 1.2) < 0.01,
+               "mappedStepNear reads the rung spacing off the anchors (1.2 dB on the Studer's gain)",
+               juce::String (step, 3));
+        check (std::abs (echojay::mappedStepNear (entry, 999.0) - 1.2) < 0.01,
+               "...and a value outside the table takes the nearest pair's spacing rather than nothing");
+        auto* uneven = new juce::DynamicObject();
+        juce::Array<juce::var> ua;
+        const double vals[] = { 0.0, 1.0, 2.0, 3.0, 10.0, 20.0, 40.0 };
+        int i = 0;
+        for (const double v : vals)
+        {
+            juce::Array<juce::var> pair; pair.add (v); pair.add (i++ / 6.0); ua.add (juce::var (pair));
+        }
+        uneven->setProperty ("anchors", juce::var (ua));
+        const juce::var un (uneven);
+        check (std::abs (echojay::mappedStepNear (un, 1.5) - 1.0) < 0.01
+               && std::abs (echojay::mappedStepNear (un, 30.0) - 20.0) < 0.01,
+               "...and it is read NEAR the asked value, because a ladder is rarely even - 1 ms rungs at "
+               "the bottom and 20 at the top is an ordinary shape",
+               juce::String (echojay::mappedStepNear (un, 1.5), 2) + " / "
+                 + juce::String (echojay::mappedStepNear (un, 30.0), 2));
+        auto* stepped = new juce::DynamicObject();
+        juce::Array<juce::var> range; range.add (1.0); range.add (7.0);
+        stepped->setProperty ("range", juce::var (range));
+        stepped->setProperty ("steps", 7);
+        check (std::abs (echojay::mappedStepNear (juce::var (stepped), 3.0) - 1.0) < 0.01,
+               "a stepped control with no anchors takes its ladder from range and steps");
+        check (echojay::mappedStepNear (juce::var (new juce::DynamicObject()), 0.0) == 0.0,
+               "and an entry that says nothing returns 0 - \"cannot say\", never a guess");
     }
 
     std::printf ("==== agent_round15_guard: %s (%d assertion(s) failed, %d passed) ====\n",
