@@ -9635,16 +9635,77 @@ void testWizardCategories()
         const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
         const auto scanPoll = app.fromFirstOccurrenceOf ("if (screen == Screen::scan)\n        {   // the Logic-style bar", false, false).upToFirstOccurrenceOf ("else\n        {   // measuring", false, false);
         const auto loop = run.fromFirstOccurrenceOf ("prog.looking (0, (int) plan.size());", false, false).upToFirstOccurrenceOf ("if (wizardStop() != 0) break;", false, false);
-        check (a == 0.0 && std::abs (b - kLookShare * 312.0 / 859.0) < 1e-9 && c == kLookShare && d == c && e > d && f == 1.0 && a < b && b < c
+        check (a == 0.0 && std::abs (b - 312.0 / 859.0) < 1e-9 && c == 1.0 && d == 0.0 && std::abs (e - 0.5) < 1e-9 && f == 1.0 && a < b && b < c   // 18 Oct (NEVER LOOKS FROZEN): a bar per step
                && scanBarValue (prog (1, 0, 0, 200, 400)) == 0.5 && scanBarValue (prog (0, 0, 0, 0, 0)) == 0.0 && scanBarValue (prog (2, 0, 0, 0, 0)) == 1.0
                && scanLeftWords (prog (0, 312, 859, 0, 0), "MFreeformAnalogEq") == "Looking for plugins - 312 of 859"
-               && scanLeftWords (prog (1, 859, 859, 3, 400), "Pro-Q 3") == "Pro-Q 3" && scanLeftWords (prog (0, 859, 859, 0, 0), {}) == "Looking for plugins"
+               && scanLeftWords (prog (1, 859, 859, 3, 400), "Pro-Q 3") == "Checking your plugins" && scanLeftWords (prog (0, 859, 859, 0, 0), {}) == "Looking for plugins"
                && rb.on && rb.left == "Getting ready - looking for plugins" && rb.right == "312 of 859" && std::abs (rb.value - 312.0 / 859.0) < 1e-9 && rbDone.left != rb.left
-               && loop.contains ("prog.looking (looked++, (int) plan.size());") && run.contains ("prog.looking ((int) plan.size(), (int) plan.size());")
+               && loop.contains ("prog.looking (looked++, (int) plan.size(), pr.b.name);") && run.contains ("prog.looking ((int) plan.size(), (int) plan.size());")
                && scanPoll.contains ("barLeft = wizapp::scanLeftWords (p, cur);") && scanPoll.contains ("heartbeatMs = (juce::int64) p.getProperty (\"heartbeat_ms\"")
                && app.contains ("if (screen == Screen::measuring || screen == Screen::scan)\n        {   // 15 Oct (FEELS FROZEN): a soft sound wave")
                && app.fromFirstOccurrenceOf ("// 14 Oct: the licence-window warning", false, false).upToFirstOccurrenceOf ("if (screen == Screen::paused", false, false).contains ("wizapp::liveWords (wizapp::liveState ("),
-               "wizard WZ-LOOK-1: 'Looking for plugins - 312 of 859', counted in the bar (" + juce::String (b, 3) + ", " + juce::String (c, 2) + " when Checking starts, never back), the live wave and the 2 / 15 min lines on the scan screen, the measuring run's look a getting-ready bar");
+               "wizard WZ-LOOK-1: 'Looking for plugins - 312 of 859', its own step bar (" + juce::String (b, 3) + ", full at " + juce::String (c, 2) + "), the live wave and the 2 / 15 min lines on the scan screen, the measuring run's look a getting-ready bar");
+    }
+    // WZ-FROZEN-1 NEVER LOOKS FROZEN (Kathy, 18 Oct): one progress system on every stage - the step line, a bar per step that moves per
+    // sub-step and never goes back inside its step (its % to a tenth), the now line (plugin + what it is doing, "checking controls 12 of 40"
+    // read live from the probe), a ticking counter, the wave and the 2 / 15 min lines; getting ready never swaps the measuring bar
+    {
+        using namespace ejmap::wizapp;
+        auto P = [] (int idx, int ld, int lt, int cd, int ct) { auto* o = new juce::DynamicObject(); o->setProperty ("stage_index", idx);
+            if (lt > 0) { auto* l = new juce::DynamicObject(); l->setProperty ("done", ld); l->setProperty ("total", lt); o->setProperty ("looking", juce::var (l)); }
+            auto* c = new juce::DynamicObject(); c->setProperty ("done", cd); c->setProperty ("total", ct); o->setProperty ("stage_counts", juce::var (c)); return juce::var (o); };
+        StepBar sb; const double s1 = sb.next (1, 0.4), s1back = sb.next (1, 0.3), s2 = sb.next (2, 0.1), s2up = sb.next (2, 0.2);
+        auto withShare = [&] (double share) { auto v = P (1, 0, 0, 3, 10); v.getDynamicObject()->setProperty ("stage_share", share); return v; };
+        auto demoRun = P (2, 0, 0, 0, 0); { auto* d = new juce::DynamicObject(); d->setProperty ("running", true); d->setProperty ("done", 30); d->setProperty ("total", 120); demoRun.getDynamicObject()->setProperty ("demo_checks", juce::var (d)); }
+        auto meas = P (2, 0, 0, 0, 0); meas.getDynamicObject()->setProperty ("plugins_done", 43);
+        // the engine: the now line, sub-step credit, the share unrounded
+        const auto dir = juce::File::createTempFile ("wzfrozen"); dir.createDirectory(); std::ostringstream term;
+        juce::var afterStart, afterNow, demoNow, measNow;
+        {   ejmap::wizprog::Tracker tr (dir.getChildFile ("progress.json"), term, false, 2);
+            std::vector<ejmap::wizprog::Item> its; for (const char* n : { "LinEQ Lowband", "B" }) { ejmap::wizprog::Item it; it.product = n; it.kind = "check"; its.push_back (it); }
+            tr.stage (ejmap::wizprog::Stage::checking, its); tr.started ("LinEQ Lowband");
+            afterStart = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+            tr.now ("LinEQ Lowband", "checking controls", 12, 40); afterNow = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+            std::vector<ejmap::wizprog::Item> ms; { ejmap::wizprog::Item d; d.product = "CLA-2A (m)"; d.kind = "demo"; ms.push_back (d); ejmap::wizprog::Item c; c.product = "CLA-76 (m)"; c.kind = "compressor"; c.expectedSteps = 10; ms.push_back (c); }
+            tr.stage (ejmap::wizprog::Stage::measuring, ms); tr.started ("CLA-2A (m)", "demo"); demoNow = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString());
+            tr.started ("CLA-76 (m)", "compressor"); measNow = juce::JSON::parse (dir.getChildFile ("progress.json").loadFileAsString()); }
+        dir.deleteRecursively();
+        // the probe's progress lines, read while it runs: a real child printing two, a pause between
+        std::vector<std::pair<int, int>> seen;
+        {   ejmap::cert::ScopedChildOutputHook hook ([&] (const juce::String& so) { int k = 0, n = 0; if (ejmap::cert::lastProgress (so, k, n) && (seen.empty() || seen.back().first != k)) seen.push_back ({ k, n }); });
+            (void) ejmap::cert::runChildDirect ({ "/bin/sh", "-c", "printf 'textmulti\\tproto\\t1\\tcontrols\\t2\\nprogress\\t1\\t2\\n'; sleep 0.4; printf 'progress\\t2\\t2\\n'" }, 10000); }
+        const bool hookCleared = ! (bool) ejmap::cert::childOutputHook();
+        // the probe's own read still parses the same with a progress line after each control
+        const juce::String mOne = "probe: x\ntextmulti\tproto\t1\tcontrols\t2\ntextat\tproto\t1\tindex\t3\tname\tRatio\tpoints\t2\tinstantiated\t0.2\t2:1\n"
+                                  "at\t0.000000\tlanded\tgetValue\t0.000000\tconfirm_ms\t1.0\tlanded_by\tread\ttext\t1:1\nat\t0.500000\tlanded\tgetValue\t0.500000\tconfirm_ms\t1.0\tlanded_by\tread\ttext\t4:1\n"
+                                  "restored\t3\t0.200000\tlanded\n";
+        const juce::String mTwo = "textat\tproto\t1\tindex\t7\tname\tMix\tpoints\t1\tinstantiated\t1\t100\nat\t1.000000\tlanded\tgetValue\t1.000000\tconfirm_ms\t1.0\tlanded_by\tread\ttext\t100 %\nrestored\t7\t1.000000\tlanded\n";
+        const auto plainParse = ejmap::wizard::parseTextAt (mOne + mTwo + "stage done\n"), withProgress = ejmap::wizard::parseTextAt (mOne + "progress\t1\t2\n" + mTwo + "progress\t2\t2\nstage done\n");
+        const bool usable = ejmap::wizroute::oneLoadReadUsable (true, mOne + "progress\t1\t2\n" + mTwo + "progress\t2\t2\nstage done\n");
+        int k = 0, n = 0; const bool p1 = ejmap::cert::lastProgress ("textmulti\tproto\t1\tcontrols\t40\nprogress\t11\t40\ntext\t3\t0.5\t4:1\nprogress\t12\t40\n", k, n);
+        int k2 = 0, n2 = 0; const bool bad = ejmap::cert::lastProgress ("xprogress\t3\t4\n", k2, n2) || ejmap::cert::lastProgress ("progress\tx\t4\n", k2, n2);
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (stepLine (false, 0) == "Step 1 of 3 - Looking for plugins" && stepLine (false, 1) == "Step 2 of 3 - Checking your plugins" && stepLine (true, 0) == "Step 3 of 3 - Measuring"
+               && s1 == 0.4 && s1back == 0.4 && s2 == 0.1 && s2up == 0.2 && barPercentWords (0.43129) == "43.1%" && barPercentWords (0.43169) == "43.1%" && barPercentWords (1.0) == "100.0%"
+               && std::abs (scanBarValue (withShare (0.4312)) - 0.4312) < 1e-9 && scanBarValue (P (1, 0, 0, 3, 10)) == 0.3
+               && counterWords (P (0, 312, 859, 0, 0), false) == "312 plugins looked at" && counterWords (P (1, 0, 0, 431, 1211), false) == "431 plugins checked"
+               && counterWords (P (1, 0, 0, 9, 20), true) == "9 plugins re-checked" && counterWords (demoRun, true) == "30 plugins sound-checked" && counterWords (meas, true) == "43 plugins done"
+               && nowWords (afterNow) == "LinEQ Lowband - checking controls 12 of 40" && nowWords (afterStart) == "LinEQ Lowband - reading its controls"
+               && (double) afterNow.getProperty ("stage_share", 0.0) > (double) afterStart.getProperty ("stage_share", 0.0)
+               && nowWords (demoNow) == "CLA-2A (m) - sound check" && nowWords (measNow) == "CLA-76 (m) - measuring (compressor) - step 1 of 10"
+               && p1 && k == 12 && n == 40 && ! bad && hookCleared && plainParse == withProgress && plainParse.size() == 2 && usable && seen.size() == 2 && seen[0] == std::make_pair (1, 2) && seen[1] == std::make_pair (2, 2)
+               && run.contains ("ScopedChildOutputHook hook ([&] (const juce::String& so) { int k = 0, n = 0; if (onControl && lastProgress (so, k, n)) onControl (k, n); });")
+               && run.contains ("[&] (int k, int n) { prog.now (ir.desc.name, \"checking controls\", k, n); }") && run.contains ("prog.now (b.name, \"identifying it (one load)\");")
+               && run.contains ("prog.now (d.name, \"reading it beside its AU\");") && run.contains ("prog.now (ir.desc.name, \"reading its signature\");")
+               && app.contains ("if ((screen == Screen::scan || screen == Screen::measuring) && stepText.isNotEmpty())")
+               && app.contains ("barValue = stepBar.next (sidx <= 0 ? 1 : 2, wizapp::scanBarValue (p)); barLeft = wizapp::scanLeftWords (p, cur); barRight = wizapp::barPercentWords (barValue);")
+               && app.contains ("stepText = wizapp::stepLine (false, sidx); nowText = wizapp::nowWords (p); doneLine = wizapp::counterWords (p, false);")
+               && app.contains ("g.drawFittedText (nowText, juce::Rectangle<int> (70, 310,") && app.contains ("g.drawText (doneLine, juce::Rectangle<int> (70, 330,")
+               && app.contains ("const auto nw = nowText.isNotEmpty() ? nowText :") && app.contains ("stepText = wizapp::stepLine (true, (int) p.getProperty (\"stage_index\", 0)); nowText = wizapp::nowWords (p);")
+               && app.contains ("doneLine = wizapp::counterWords (p, true); snapOnStep (stepText + \" - getting ready\");"),
+               "wizard WZ-FROZEN-1: Step n of 3 on top; a bar per step, never back, % to a tenth; the now line ('" + nowWords (afterNow) + "', read live from the probe: "
+                 + juce::String ((int) seen.size()) + " progress line(s) seen while it ran); a ticking counter per stage; getting ready keeps the measuring %");
     }
     // WZ-SCANBAR-2 a resumed scan starts at its true done share: what needs nothing (its map already stored) is done from the first frame,
     // with no time recorded and no problem counted; a fresh scan starts at 0
@@ -10140,7 +10201,7 @@ void testWizardCategories()
                && ! ejmap::wizroute::oneLoadReadUsable (true, "probe: x\nrefused malformed spec part 'x'\n") && ! ejmap::wizroute::oneLoadReadUsable (true, "probe: x\nunknown mode\n")
                && ! ejmap::wizroute::oneLoadReadUsable (true, "probe: x\ntextmulti\tproto\t1\tcontrols\t2\nrefused no parameter at index 99 (9 parameters)\nstage done\n")   // a refusal INSIDE the block
                && qc.indexOf ("--text-at-norms-multi") >= 0 && qc.indexOf ("--text-at-norms-multi") < qc.indexOf ("a.add (\"--text-at-norms\")") && qc.contains ("if (mode != \"one_load\")")
-               && probe.contains ("if (restore) { q.setValueNotifyingHost (instantiated);") && probe.contains ("for (const auto& [idx, ns] : work) runTextAtNorms (p, idx, ns, true, false);"),
+               && probe.contains ("if (restore) { q.setValueNotifyingHost (instantiated);") && probe.contains ("for (const auto& [idx, ns] : work) { runTextAtNorms (p, idx, ns, true, false); std::printf (\"progress\\t%d\\t%d\\n\", ++k, (int) work.size()); std::fflush (stdout); }"),
                "wizard WZ-QC-1: one load for every control (spec, multi-block parse, restore after each control), the per-control way only on a refusal (read: " + juce::String ((int) read) + ")");
     }
     // WZ-NEAR-1 THE NEAR-MATCH TOLERANCE (Kathy, 14 Oct; the wizard's read-back only): numbers in the same unit within max(0.5%, one step of
@@ -10945,8 +11006,8 @@ void testWizardCategories()
                && (bool) written.getProperty ("demo_checks", {}).getProperty ("running", false)
                && jobs::demoJobsFor (1) == 2 && jobs::demoJobsFor (2) == 4 && jobs::demoJobsFor (4) == 6 && jobs::demoJobsFor (8) == 6
                && run.contains ("const int demoJobs = jobs::demoJobsFor (jobs);") && run.contains ("pool (todo, demoJobs);")
-               && app.contains ("else if (const auto rb = wizapp::readyBar (p, cur); rb.on) { barValue = rb.value; barLeft = rb.left; barRight = rb.right; }")
-               && app.contains ("barValue = shownPctT / 100.0;")
+               && app.contains ("shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); barLeft = rb.left; barRight = wizapp::barPercentWords (barValue);") && ! app.contains ("barValue = rb.value")
+               && app.contains ("barValue = stepBar.next (3, shownPctT / 100.0); snapOnStep (stepText);")
                && wizapp::measuringText (474).startsWith ("Measuring 474 plugins we haven't mapped yet.") && ! wizapp::measuringText (474).contains ("Ready to measure"),
                "wizard WZ-READY-1: the PACE check read once per bundle (again when it changes); the re-check and the demo checks have their own moving bar; demo checks at twice the jobs (max 6); 'Measuring N plugins'");
     }
@@ -11000,7 +11061,7 @@ void testWizardCategories()
                && (int) pv.getProperty ("plugins_done", -1) == 1 && (int) pv.getProperty ("plugins_total", -1) == 2 && (juce::int64) pv.getProperty ("heartbeat_ms", (juce::int64) 0) > 0
                && wizapp::liveState (now, now - 60000) == wizapp::Live::live && wizapp::liveState (now, now - 121000) == wizapp::Live::slow && wizapp::liveState (now, now - 901000) == wizapp::Live::stuck
                && wizapp::liveWords (wizapp::Live::slow) == "Still working on a slow plugin..." && wizapp::liveWords (wizapp::Live::stuck) == "Something may be stuck - Pause and carry on to restart it"
-               && app.contains ("if (jobsNow.empty() && ! doneLine.isEmpty())") && wizapp::betweenPluginsWords() == "Starting the next plugin..."
+               && app.contains ("jobsNow.empty() && ! doneLine.isEmpty() ? wizapp::betweenPluginsWords()") && wizapp::betweenPluginsWords() == "Starting the next plugin..."
                && wizapp::liveWords (wizapp::Live::live).isEmpty() && wizapp::pluginsDoneWords (43) == "43 plugins done" && wizapp::pluginsDoneWords (1) == "1 plugin done"
                && wizapp::waveHeight (0, 0.0, false) == 2.0f && wizapp::waveHeight (0, 250.0, true) != wizapp::waveHeight (0, 600.0, true)
                && run.contains ("it.expectedSteps = expectedWork.procsFor (juce::String::toHexString (ir.desc.uniqueId), it.kind);") && run.contains ("getChildFile (\".tmp-\" + fmtTag (ir.desc) + \"_\"")

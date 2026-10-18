@@ -328,6 +328,8 @@ public:
         { const float w = 210.0f, h = w * (float) logo.getHeight() / (float) logo.getWidth(); g.setColour (ink);
           g.drawImage (logo, juce::Rectangle<float> ((float) getWidth() / 2.0f - w / 2.0f, 30.0f, w, h), juce::RectanglePlacement::centred, true); }
         auto body = r.withTrimmedTop (92);
+        if ((screen == Screen::scan || screen == Screen::measuring) && stepText.isNotEmpty())   // 18 Oct (NEVER LOOKS FROZEN): the step, above the title
+        { g.setColour (accent); g.setFont (juce::FontOptions (12.5f, juce::Font::bold)); g.drawText (stepText, juce::Rectangle<int> (40, 100, getWidth() - 80, 16), juce::Justification::centred); }
         g.setColour (ink); g.setFont (juce::FontOptions (24.0f, juce::Font::bold));
         g.drawFittedText (title, body.removeFromTop (40), juce::Justification::centred, 2);
         g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (15.5f));
@@ -361,10 +363,14 @@ public:
         if (screen == Screen::measuring && showBar && ! pausing && ! finishing)
         {   // 15 Oct (FEELS FROZEN): each running job on its own line - its name and a small bar of its steps; the plugins done; the live words
             int y = 282;
-            if (jobsNow.empty() && ! doneLine.isEmpty())   // between passes: say so, never a blank gap
-            { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawText (wizapp::betweenPluginsWords(), juce::Rectangle<int> (70, y, getWidth() - 140, 17), juce::Justification::centred); }
+            // 18 Oct (NEVER LOOKS FROZEN): the now line first - plugin + what it is doing (between passes: say so, never a blank gap)
+            { g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (13.0f));
+              const auto nw = nowText.isNotEmpty() ? nowText : jobsNow.empty() && ! doneLine.isEmpty() ? wizapp::betweenPluginsWords() : juce::String();
+              g.drawFittedText (nw, juce::Rectangle<int> (70, y, getWidth() - 140, 17), juce::Justification::centred, 1, 0.7f); y += 19; }
+            int shownJobs = 0;
             for (const auto& j : jobsNow)
             {
+                if (++shownJobs > 3) break;   // 18 Oct: three under the now line leave the counter its room
                 g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (13.0f));
                 g.drawFittedText (j.name, juce::Rectangle<int> (70, y, 250, 17), juce::Justification::centredLeft, 1, 0.7f);
                 const auto mini = juce::Rectangle<float> (330.0f, (float) y + 6.0f, (float) getWidth() - 400.0f, 5.0f);
@@ -394,10 +400,13 @@ public:
             g.setColour (ink); g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 24.0f, juce::Font::bold)); g.drawText (bigCode, box, juce::Justification::centred);
         }
         if (screen == Screen::scan)   // 14 Oct: the licence-window warning
-        { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 330, getWidth() - 140, 40), juce::Justification::centred, 2);
+        { // 18 Oct (NEVER LOOKS FROZEN): the now line and the ticking counter under the bar, as on the measuring screen
+          g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (nowText, juce::Rectangle<int> (70, 310, getWidth() - 140, 17), juce::Justification::centred, 1, 0.7f);
+          g.setColour (ink); g.setFont (juce::FontOptions (13.5f, juce::Font::bold)); g.drawText (doneLine, juce::Rectangle<int> (70, 330, getWidth() - 140, 18), juce::Justification::centred);
+          g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 352, getWidth() - 140, 40), juce::Justification::centred, 2);
           // 18 Oct (LOOKING FOR PLUGINS): the same 2 min "still working" / 15 min "may be stuck" lines as measuring
           const auto lw = wizapp::liveWords (wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs));
-          if (lw.isNotEmpty()) { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (13.0f)); g.drawText (lw, juce::Rectangle<int> (40, 382, getWidth() - 80, 18), juce::Justification::centred); } }
+          if (lw.isNotEmpty()) { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (13.0f)); g.drawText (lw, juce::Rectangle<int> (40, 396, getWidth() - 80, 18), juce::Justification::centred); } }
         if (screen == Screen::paused && anyway.isVisible() && dawPaused.isNotEmpty())   // 17 Oct: Carry on anyway's one-line warning
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (12.0f)); g.drawFittedText (wizapp::carryOnAnywayWarning (dawPaused), juce::Rectangle<int> (30, getHeight() - 182, getWidth() - 60, 20), juce::Justification::centred, 1); }
         if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
@@ -421,6 +430,10 @@ private:
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
     juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0; ejmap::wizapp::DawHit dawHit; int dawIgnoredPid = 0;   // 17 Oct: the hit (for the words and the log), the DAW the user chose to carry on beside   // 15 Oct: a pause the DAW caused, and where it carries on
     double shownPctT = 0.0; std::vector<wizapp::JobLine> jobsNow; juce::String doneLine; juce::int64 heartbeatMs = 0;   // 15 Oct (FEELS FROZEN)
+    wizapp::StepBar stepBar; juce::String stepText, nowText, lastSnapStep;   // 18 Oct (NEVER LOOKS FROZEN): the step line, the now line
+    void snapOnStep (const juce::String& key)   // rehearsals (--snapshots): one picture a few seconds into each stage
+    { if (cfg.snapshots == juce::File() || key == lastSnapStep) return; lastSnapStep = key;
+      juce::Timer::callAfterDelay (4000, [safe = juce::Component::SafePointer<WizardComponent> (this), key] { if (safe != nullptr) safe->snap ("stage-" + juce::File::createLegalFileName (key)); }); }
     int shownPct = 0; juce::int64 readyStamp = 0;   // 15 Oct: the % shown (never backwards); wizard_state.json's time, for the ready line
     struct Shimmer : juce::Timer { std::function<void()> tick; void timerCallback() override { if (tick) tick(); } } shimmer;
     void refreshReadyLine()
@@ -747,10 +760,12 @@ private:
         if (cur.isEmpty()) if (const auto* a = p.getProperty ("current", {}).getArray()) if (! a->isEmpty()) cur = (*a)[a->size() - 1].toString();
         if (screen == Screen::scan)
         {   // the Logic-style bar: the scan is the engine's Scanning + Checking (0..15 of its bar)
-            barValue = wizapp::scanBarValue (p); barLeft = wizapp::scanLeftWords (p, cur);   // 18 Oct (LOOKING FOR PLUGINS): "Looking for plugins - n of N", counted in the bar
-            const auto sc = p.getProperty ("stage_counts", {}); barRight = barLeft.startsWith ("Looking for plugins - ") || ! sc.isObject() || (int) sc.getProperty ("total", 0) == 0 ? juce::String()
-                                                                          : juce::String ((int) sc.getProperty ("done", 0)) + " of " + juce::String ((int) sc.getProperty ("total", 0));
+            // 18 Oct (NEVER LOOKS FROZEN): step 1 / 2, a bar per step that never goes back, its % to a tenth, the now line, the counter
+            const int sidx = (int) p.getProperty ("stage_index", 0);
+            barValue = stepBar.next (sidx <= 0 ? 1 : 2, wizapp::scanBarValue (p)); barLeft = wizapp::scanLeftWords (p, cur); barRight = wizapp::barPercentWords (barValue);
+            stepText = wizapp::stepLine (false, sidx); nowText = wizapp::nowWords (p); doneLine = wizapp::counterWords (p, false);
             heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 18 Oct: the live wave and the 2 min / 15 min lines here too
+            snapOnStep (stepText);
             if (cfg.snapScanAtPct >= 0.0 && barValue * 100.0 >= cfg.snapScanAtPct) { cfg.snapScanAtPct = -1.0; repaint(); juce::Timer::callAfterDelay (300, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->snap ("scan_at_pct"); }); }
         }
         else
@@ -758,11 +773,15 @@ private:
             if (! finishing && ! pausing) { soFar = wizapp::measuredSoFarWords (wizapp::measuredSoFar (p)); secondary.setEnabled (wizapp::finishAvailable (p)); }
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 15 Oct (FEELS FROZEN)
+            stepText = wizapp::stepLine (true, (int) p.getProperty ("stage_index", 0)); nowText = wizapp::nowWords (p);   // 18 Oct (NEVER LOOKS FROZEN)
             doneLine = p.hasProperty ("plugins_done") && (stage == "Measuring" || stage == "Packing") ? wizapp::pluginsDoneWords ((int) p.getProperty ("plugins_done", 0)) : juce::String();
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
-            else if (const auto rb = wizapp::readyBar (p, cur); rb.on) { barValue = rb.value; barLeft = rb.left; barRight = rb.right; }   // 15 Oct: getting ready moves too
-            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = shownPctT / 100.0;   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWordsTenths (shownPctT);   // 15 Oct: the step-weighted %, one decimal, never backwards
+            else if (const auto rb = wizapp::readyBar (p, cur); rb.on)
+            {   // 18 Oct (NEVER LOOKS FROZEN): getting ready is part of step 3 - the bar stays the measuring % (never back); its own count is the counter
+                shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); barLeft = rb.left; barRight = wizapp::barPercentWords (barValue);
+                doneLine = wizapp::counterWords (p, true); snapOnStep (stepText + " - getting ready"); }
+            else if (stage == "Measuring") { shownPct = wizapp::measuringPercent (p, shownPct); shownPctT = wizapp::measuringPercentTenths (p, shownPctT); barValue = stepBar.next (3, shownPctT / 100.0); snapOnStep (stepText);   /* the % never goes back; after a getting-ready bar the % bar starts from the % */ barLeft = cur.isNotEmpty() ? cur : "Measuring"; barRight = wizapp::percentWordsTenths (shownPctT);   // 15 Oct: the step-weighted %, one decimal, never backwards
                                              refreshReadyLine(); }   // 14 Oct: n of N, never time left
             else if (stage == "Packing" || stage == "Done") { barValue = 1.0; barLeft = "Packing your results"; barRight = {}; }
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }   // the first second, before the engine's first progress

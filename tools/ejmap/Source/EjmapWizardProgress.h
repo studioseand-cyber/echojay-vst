@@ -94,7 +94,8 @@ struct Times
 };
 
 struct Item { juce::String product, kind; bool done = false, running = false, problem = false, serial = false; double ranS = 0.0; int group = -1; double weight = 0.0;
-              juce::String stepDir; int expectedSteps = 0, steps = 0; };   // 15 Oct (FEELS FROZEN): the row's temp folder, Sean's probe calls for it (or the kind's median), the calls done so far   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
+              juce::String stepDir; int expectedSteps = 0, steps = 0;
+              int subDone = 0, subTotal = 0; };   // 18 Oct (NEVER LOOKS FROZEN): a sub-step inside the item (a control read, ...) - credit while it runs   // 15 Oct (FEELS FROZEN): the row's temp folder, Sean's probe calls for it (or the kind's median), the calls done so far   // ranS: seconds a running item has run; group: its Phase B pass (-1: one pass); weight: Sean's seconds for this plugin and kind (0: the kind's figure)
 
 // the weights' source: <database>/expected_work.json (tools/ejmap/scripts/expected_work.py, from Sean's real runs): per plugin uid and kind
 // Sean's seconds, else the kind's median over his rows; 0 when the file or the kind is missing (the item keeps its kind's figure)
@@ -134,7 +135,29 @@ inline std::vector<Item> resumeItems (std::vector<Item> queue, const std::map<ju
 // the time credit (90% at most)
 inline constexpr double kStepCap = 0.95;
 inline double stepFraction (const Item& i) { return i.expectedSteps > 0 ? juce::jmin (kStepCap, (double) i.steps / (double) i.expectedSteps) : -1.0; }
-inline double runningCredit (const Item& i, double w) { const double f = stepFraction (i); return f >= 0.0 ? f * w : juce::jmin (0.9 * w, juce::jmax (0.0, i.ranS)); }
+inline double runningCredit (const Item& i, double w)
+{
+    const double f = stepFraction (i); double c = f >= 0.0 ? f * w : juce::jmin (0.9 * w, juce::jmax (0.0, i.ranS));
+    if (i.subTotal > 0) c = juce::jmax (c, juce::jmin (kStepCap, (double) i.subDone / (double) i.subTotal) * w);   // 18 Oct: each sub-step moves the bar
+    return c;
+}
+// the words for what a started item is doing (the "now" line), by its kind and stage
+inline juce::String doingWords (Stage s, const juce::String& kind)
+{
+    if (kind == "demo") return "sound check";
+    if (s == Stage::checking || kind == "check" || kind == "map") return "reading its controls";
+    if (s == Stage::packing) return "packing";
+    return kind.isNotEmpty() ? "measuring (" + kind + ")" : juce::String ("measuring");
+}
+// THE NOW LINE (18 Oct): "LinEQ Lowband - checking controls 12 of 40"; a measuring row with steps says them instead
+inline juce::String nowLine (const juce::String& product, const juce::String& what, int done, int total, int steps = 0, int expectedSteps = 0)
+{
+    if (product.isEmpty()) return {};
+    auto l = product + (what.isNotEmpty() ? " - " + what : juce::String());
+    if (total > 0) l << " " << done << " of " << total;
+    else if (expectedSteps > 0) l << " - step " << juce::jmin (steps + 1, expectedSteps) << " of " << expectedSteps;
+    return l;
+}
 // the steps a row has taken: its probe traces so far (".<attempt>.txt" files anywhere under the row's temp folder)
 inline int countSteps (const juce::File& dir)
 {
@@ -245,14 +268,24 @@ public:
     void stage (Stage s, std::vector<Item> items)
     {
         std::lock_guard<std::mutex> g (m_);
-        stage_ = s; items_ = std::move (items); current_.clear();
+        stage_ = s; items_ = std::move (items); current_.clear(); nowProduct_.clear(); nowWhat_.clear(); nowDone_ = nowTotal_ = 0;
         if (s == Stage::measuring) queueKnown_ = true;
         emitLocked (true);
     }
     // LOOKING FOR PLUGINS (Kathy, 18 Oct: with the VST3 lane the first step takes a while and its bar sat empty - it looked frozen): the
     // bundles looked at so far of all found; each one is a heartbeat, so a slow identity load shows "still working" after 2 min like any other
-    void looking (int done, int total)
-    { std::lock_guard<std::mutex> g (m_); lookDone_ = done; lookTotal_ = total; heartbeatMs_ = juce::Time::currentTimeMillis(); emitLocked (true); }
+    void looking (int done, int total, const juce::String& bundle = {})
+    { std::lock_guard<std::mutex> g (m_); lookDone_ = done; lookTotal_ = total; heartbeatMs_ = juce::Time::currentTimeMillis();
+      if (bundle.isNotEmpty()) { nowProduct_ = bundle; nowWhat_ = "looking at its VST3"; nowDone_ = nowTotal_ = 0; } emitLocked (true); }
+    // THE NOW LINE (Kathy, 18 Oct, NEVER LOOKS FROZEN): what the engine is doing this moment - a heartbeat, and a sub-step of the running
+    // item of that product (its credit moves the bar inside the plugin)
+    void now (const juce::String& product, const juce::String& what, int done = 0, int total = 0)
+    {
+        std::lock_guard<std::mutex> g (m_);
+        nowProduct_ = product; nowWhat_ = what; nowDone_ = done; nowTotal_ = total; heartbeatMs_ = juce::Time::currentTimeMillis();
+        for (auto& i : items_) if (i.product == product && i.running && ! i.done) { i.subDone = done; i.subTotal = total; }
+        emitLocked (true);
+    }
     void setQueue (std::vector<Item> q) { std::lock_guard<std::mutex> g (m_); queue_ = std::move (q); queueKnown_ = true; }
     void seedTime (const juce::String& kind, double s) { std::lock_guard<std::mutex> g (m_); times_.add (kind, s); }
     void started (const juce::String& product, const juce::String& kind = {})   // kind: which of a product's items (a limiter has two)
@@ -261,6 +294,7 @@ public:
         heartbeatMs_ = juce::Time::currentTimeMillis();
         for (auto& i : items_) if (i.product == product && ! i.done && ! i.running && (kind.isEmpty() || i.kind == kind)) { i.running = true; startedAt_[product + "|" + i.kind] = juce::Time::getMillisecondCounterHiRes(); break; }
         current_.removeString (product); current_.add (product);   // 15 Oct: the newest start is last (the name under the bar)
+        nowProduct_ = product; nowWhat_ = doingWords (stage_, kind); nowDone_ = nowTotal_ = 0;   // 18 Oct: the now line
         if (markers_ != juce::File()) wizapp::markerBegin (markers_, product, stageWord (stage_));
         if (markers_ != juce::File() && stage_ != Stage::packing) markers_.getSiblingFile ("loads.log").appendText (juce::Time::getCurrentTime().toISO8601 (true) + "\t" + stageWord (stage_) + "\t" + product + "\n");   // every load, for the record
         emitLocked (false);
@@ -374,6 +408,11 @@ private:
         juce::Array<juce::var> cur; for (const auto& c : current_) cur.add (c); o->setProperty ("current", cur); o->setProperty ("current_latest", latestLocked());
         o->setProperty ("plugins", plugins_);
         auto* st = new juce::DynamicObject(); st->setProperty ("done", done); st->setProperty ("to_do", todo); st->setProperty ("total", (int) items_.size()); o->setProperty ("stage_counts", juce::var (st));
+        {   // 18 Oct (NEVER LOOKS FROZEN): the now line, and the stage's own share unrounded (the bar moves per sub-step; percent is rounded to 0.1)
+            int steps = 0, exp = 0; for (const auto& i : items_) if (i.product == nowProduct_ && i.running && ! i.done) { steps = i.steps; exp = i.expectedSteps; }
+            auto* nw = new juce::DynamicObject(); nw->setProperty ("product", nowProduct_); nw->setProperty ("what", nowWhat_); nw->setProperty ("done", nowDone_); nw->setProperty ("total", nowTotal_);
+            nw->setProperty ("line", nowLine (nowProduct_, nowWhat_, nowDone_, nowTotal_, steps, exp)); o->setProperty ("now", juce::var (nw));
+            o->setProperty ("stage_share", items_.empty() ? 0.0 : std::round (juce::jlimit (0.0, 1.0, stageShare (items_, times_)) * 10000.0) / 10000.0); }
         if (lookTotal_ > 0) { auto* lk = new juce::DynamicObject(); lk->setProperty ("done", lookDone_); lk->setProperty ("total", lookTotal_); o->setProperty ("looking", juce::var (lk)); }   // 18 Oct
         o->setProperty ("problems", problems_);
         {   // 14 Oct: "N measured so far" - finished measurements without a problem, never a demo check
@@ -411,7 +450,7 @@ private:
     Stage stage_ = Stage::scanning; std::vector<Item> items_, queue_; bool queueKnown_ = false;
     Times times_; juce::StringArray current_; std::map<juce::String, double> startedAt_;
     juce::int64 heartbeatMs_ = juce::Time::currentTimeMillis(); double lastStepScan_ = 0.0;
-    bool stopped_ = false; int plugins_ = 0, problems_ = 0, lookDone_ = 0, lookTotal_ = 0; double lastPct_ = 0.0, t0_ = 0.0, lastPrinted_ = -1e9;
+    bool stopped_ = false; int plugins_ = 0, problems_ = 0, lookDone_ = 0, lookTotal_ = 0, nowDone_ = 0, nowTotal_ = 0; juce::String nowProduct_, nowWhat_; double lastPct_ = 0.0, t0_ = 0.0, lastPrinted_ = -1e9;
     juce::String lastKey_, lastLine_, summary_;
 };
 } // namespace ejmap::wizprog

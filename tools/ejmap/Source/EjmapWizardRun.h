@@ -56,7 +56,16 @@ inline std::vector<std::pair<int, juce::String>> paramsOfList (const juce::Strin
 }
 
 // THE QUICK LIVE CHECK: the plugin's control list, then each written control read back at the profile's norms (one probe call each)
-inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginDescription& desc, const juce::var& profile, bool& window, ChildResult::Kind* listKind = nullptr)
+// 18 Oct (NEVER LOOKS FROZEN): the last "progress<TAB>k<TAB>n" line a probe printed so far (the one-load read prints one per control)
+inline bool lastProgress (const juce::String& out, int& done, int& total)
+{
+    const int at = out.lastIndexOf ("progress\t"); if (at < 0 || (at > 0 && out[at - 1] != '\n')) return false;
+    const auto line = out.substring (at).upToFirstOccurrenceOf ("\n", false, false); const auto t = juce::StringArray::fromTokens (line, "\t", "");
+    if (t.size() < 3 || ! t[1].containsOnly ("0123456789") || ! t[2].containsOnly ("0123456789") || t[1].isEmpty() || t[2].isEmpty()) return false;
+    done = t[1].getIntValue(); total = t[2].getIntValue(); return total > 0;
+}
+inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginDescription& desc, const juce::var& profile, bool& window, ChildResult::Kind* listKind = nullptr,
+                                    const std::function<void (int, int)>& onControl = {})
 {
     window = false;
     const juce::StringArray base { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) };
@@ -77,6 +86,8 @@ inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginD
         // read is refused or fails. Its limit grows with the reads, and it never counts toward a WaveShell's hang (the list load does)
         int points = 0; for (const auto& [idx, ns] : norms) points += ns.size();
         auto a = base; a.add ("--text-at-norms-multi"); a.add (wizard::multiNormsSpec (norms));
+        if (onControl) onControl (0, (int) norms.size());
+        ScopedChildOutputHook hook ([&] (const juce::String& so) { int k = 0, n = 0; if (onControl && lastProgress (so, k, n)) onControl (k, n); });   // 18 Oct: control by control
         const auto r = runChild (a, opt.timeoutMs + 500 * points); ++loads;
         if (r.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls", "one_load", loads }; }
         if (wizroute::oneLoadReadUsable (r.cleanExit(), r.out)) { observed = wizard::parseTextAt (r.out); mode = "one_load"; }
@@ -84,6 +95,7 @@ inline wizard::Readback quickCheck (const SweepOptions& opt, const juce::PluginD
     if (mode != "one_load")
         for (const auto& [idx, ns] : norms)
         {
+            if (onControl) onControl (loads - 1, (int) norms.size());   // 18 Oct: the per-control way, one load a control
             auto a = base; a.add ("--text-at-norms"); a.add (juce::String (idx)); a.add (ns.joinIntoString (","));
             const auto r = runChild (a, opt.timeoutMs); ++loads;
             if (r.kind == ChildResult::Kind::uiShown) { window = true; return { false, 0, "a window appeared while reading its controls", "per_control", loads }; }
@@ -554,7 +566,7 @@ inline int runWizard (const WizardOptions& wo)
         prog.looking (0, (int) plan.size());   // 18 Oct (LOOKING FOR PLUGINS): "Looking for plugins - n of N", a heartbeat per bundle
         for (const auto& pr : plan)
         {
-            prog.looking (looked++, (int) plan.size());
+            prog.looking (looked++, (int) plan.size(), pr.b.name);   // 18 Oct: the now line names the bundle
             if (wizardStop() != 0) break;
             const auto& b = pr.b; const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase();
             auto matchesOnly = [&] (const juce::String& n) { return std::any_of (wo.only.begin(), wo.only.end(), [&] (const juce::String& o) { return o.equalsIgnoreCase (n) || n.containsIgnoreCase (o); }); };
@@ -575,6 +587,7 @@ inline int runWizard (const WizardOptions& wo)
             auto ids = pr.ids; std::vector<std::pair<int, juce::String>> ps;
             if (pr.source == "load")   // neither the bundle nor an earlier run says who it is: ONE load, and its answer (or its failure) is kept
             {
+                prog.now (b.name, "identifying it (one load)");
                 const auto r = runChild ({ opt.probe.getFullPathName(), d0.name, path, "0", "--list-params" }, opt.timeoutMs); ++identityLoads;
                 if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licF, bundleKey); idCache.put (pr.key, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); vrow (b.name, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); continue; }
                 ps = paramsOfList (r.out); const auto cls = readback::vst3ClassOf (r.out), uid = readback::vst3UidOf (r.out), ver = readback::vst3VersionOf (r.out);
@@ -603,6 +616,7 @@ inline int runWizard (const WizardOptions& wo)
                         auto* row = vrow (d.name, pid, v, vwhy + " (read on an earlier run, not loaded again)"); row->setProperty ("twin_plugin_id", twinPid); ++bridgesKept; continue; }
                     juce::String apw; if (! paceOk && paceHeld (au, componentBundles(), apw) && apw.startsWith ("PACE")) { vrow (d.name, pid, "needs_licence", "its AU twin is iLok-protected and this Mac has no iLok: not read"); continue; }
                     bool window = false;
+                    prog.now (d.name, "reading it beside its AU");   // 18 Oct
                     const auto why = bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps, bridgeDir, window, &bridgeLoads);
                     if (window) wizroute::rememberLicenceWindow (licF, bundleKey);
                     juce::String st = window ? juce::String ("needs_licence") : juce::String ("not_measurable"), rowWhy = why;
@@ -838,7 +852,8 @@ inline int runWizard (const WizardOptions& wo)
             prog.started (ir.desc.name);
             auto qopt = opt; qopt.timeoutMs = loadTimeoutFor (ir.desc.fileOrIdentifier);
             ChildResult::Kind qk = ChildResult::Kind::exited;
-            bool window = false; const auto rb = quickCheck (qopt, ir.desc, q.entry->profile, window, &qk);
+            bool window = false; const auto rb = quickCheck (qopt, ir.desc, q.entry->profile, window, &qk,
+                                                             [&] (int k, int n) { prog.now (ir.desc.name, "checking controls", k, n); });   // 18 Oct: "checking controls 12 of 40"
             if (wizardStop() != 0) return stoppedInScan ("checking");   // a check cut short by the stop is never filed or cached
             if (shells.report (qshell, qk == ChildResult::Kind::timedOut, qk == ChildResult::Kind::signaled)) say ("WIZARD: " + qshell + " " + shells.why (qshell) + " - its other Waves plugins are skipped this scan (check Waves Central)");
             row->setProperty ("readback", rb.why); row->setProperty ("readback_mode", rb.mode); row->setProperty ("readback_loads", rb.loads);
@@ -923,7 +938,7 @@ inline int runWizard (const WizardOptions& wo)
         {
             if (const auto cshell = shellOfId (ir.desc.fileOrIdentifier); shells.isBad (cshell))
             {   p.row->setProperty ("state", "waves_skipped"); p.row->setProperty ("why", wizroute::wavesSkippedWhy (cshell, shells.why (cshell))); prog.finished (ir.desc.name, true); continue; }
-            prog.started (ir.desc.name);
+            prog.started (ir.desc.name); prog.now (ir.desc.name, "reading its signature");   // 18 Oct
             auto cOpt = catOpt; cOpt.timeoutMs = loadTimeoutFor (ir.desc.fileOrIdentifier);
             const auto r = categoriseOne (cOpt, ir, {}, bundlesAll, catRaw);
             if (wizardStop() != 0) return stoppedInScan ("reading signatures");   // a read cut short by the stop is never cached

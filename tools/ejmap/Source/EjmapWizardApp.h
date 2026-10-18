@@ -434,28 +434,56 @@ inline DiskVerdict diskVerdict (juce::int64 free, bool starting)
 // THE SCAN SCREEN'S BAR (Kathy, 13 Oct: the bar at ~67% while the text said "15 of 1285"): its own progress - the Checking stage's
 // n of N - never the engine's overall percent. The overall bar gives Scanning 0-10 and Checking only 10-15, so overall / 15 put the bar
 // at two-thirds the moment Checking began. Scanning (listing what is installed, seconds) is 0; past Checking (or a stop after it) is 1.
-// LOOKING FOR PLUGINS COUNTS IN THE BAR (Kathy, 18 Oct): the scan screen's bar is the looking (the VST3 bundles, n of N) up to kLookShare,
-// then the checking the rest of the way - one bar that never goes back
-inline constexpr double kLookShare = 0.5;
+// NEVER LOOKS FROZEN (Kathy, 18 Oct): ONE progress system on every stage - a step line on top, a bar per step that moves per sub-step and
+// never goes back inside its step, its % with one decimal, a "now" line (plugin + what it is doing), a ticking counter, the live wave and
+// the 2 min / 15 min lines. The scan screen is steps 1 and 2; the measuring screen (its getting ready too) is step 3
+inline juce::String stepLine (bool measuringScreen, int stageIndex)
+{
+    if (measuringScreen) return "Step 3 of 3 - Measuring";
+    return stageIndex <= 0 ? juce::String ("Step 1 of 3 - Looking for plugins") : juce::String ("Step 2 of 3 - Checking your plugins");
+}
+// the scan screen's bar, PER STEP: step 1 the VST3 bundles looked at (n of N), step 2 the engine's own unrounded share of the checking
+// (every control read, every map, every signature read - stage_share; an older engine: its n of N)
 inline double scanBarValue (const juce::var& progress)
 {
     const int idx = (int) progress.getProperty ("stage_index", 0);
     if (idx >= 2) return 1.0;
-    const auto lk = progress.getProperty ("looking", {});
-    const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
-    const double look = lt > 0 ? kLookShare : 0.0;   // a run with no VST3 lane (none found, or switched off) gives checking the whole bar
-    if (idx <= 0) return lt > 0 ? look * juce::jlimit (0.0, 1.0, (double) ld / (double) lt) : 0.0;
+    if (idx <= 0)
+    {   const auto lk = progress.getProperty ("looking", {}); const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
+        return lt > 0 ? juce::jlimit (0.0, 1.0, (double) ld / (double) lt) : 0.0; }
+    if (progress.hasProperty ("stage_share")) return juce::jlimit (0.0, 1.0, (double) progress.getProperty ("stage_share", 0.0));
     const auto sc = progress.getProperty ("stage_counts", {});
     const int total = (int) sc.getProperty ("total", 0), done = (int) sc.getProperty ("done", 0);
-    return look + (1.0 - look) * (total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0);
+    return total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0;
 }
-// the words under the scan screen's bar: "Looking for plugins - 312 of 859" while the bundles are looked at; then the plugin being checked
-inline juce::String scanLeftWords (const juce::var& progress, const juce::String& current)
+// a step's bar never goes back: the larger of what was shown in THIS step and the new value (a new step starts from its own 0)
+struct StepBar { int step = 0; double shown = 0.0; double next (int s, double v) { if (s != step) { step = s; shown = 0.0; } shown = juce::jmax (shown, juce::jlimit (0.0, 1.0, v)); return shown; } };
+inline juce::String barPercentWords (double fraction) { return percentWordsTenths (std::floor (juce::jlimit (0.0, 1.0, fraction) * 1000.0 + 1.0e-9) / 10.0); }
+// the words left of the bar: step 1 "Looking for plugins - 312 of 859" (Kathy, 18 Oct, LOOKING FOR PLUGINS), step 2 "Checking your plugins"
+inline juce::String scanLeftWords (const juce::var& progress, const juce::String&)
 {
-    const auto stage = progress.getProperty ("stage", "").toString(); const auto lk = progress.getProperty ("looking", {});
+    const auto lk = progress.getProperty ("looking", {});
     const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
-    if ((int) progress.getProperty ("stage_index", 0) <= 0 && lt > 0 && ld < lt) return "Looking for plugins - " + juce::String (ld) + " of " + juce::String (lt);
-    return current.isNotEmpty() ? current : stage == "Checking" ? juce::String ("Checking") : juce::String ("Looking for plugins");
+    if ((int) progress.getProperty ("stage_index", 0) <= 0)
+        return lt > 0 && ld < lt ? "Looking for plugins - " + juce::String (ld) + " of " + juce::String (lt) : juce::String ("Looking for plugins");
+    return "Checking your plugins";
+}
+// the now line: the engine's own (plugin + what it is doing, "LinEQ Lowband - checking controls 12 of 40")
+inline juce::String nowWords (const juce::var& progress) { return progress.getProperty ("now", {}).getProperty ("line", "").toString(); }
+// the ticking counter, per stage
+inline juce::String counterWords (const juce::var& progress, bool measuringScreen)
+{
+    const int idx = (int) progress.getProperty ("stage_index", 0); const auto sc = progress.getProperty ("stage_counts", {}); const int done = (int) sc.getProperty ("done", 0);
+    auto n = [] (int k, const char* one, const char* many) { return juce::String (k) + " " + (k == 1 ? one : many); };
+    if (! measuringScreen)
+    {
+        if (idx <= 0) { const auto lk = progress.getProperty ("looking", {}); return (int) lk.getProperty ("total", 0) > 0 ? n ((int) lk.getProperty ("done", 0), "plugin looked at", "plugins looked at") : juce::String(); }
+        return n (done, "plugin checked", "plugins checked");
+    }
+    if (idx <= 1) return n (done, "plugin re-checked", "plugins re-checked");   // the measuring run's getting ready: the Mac re-checked
+    const auto dc = progress.getProperty ("demo_checks", {});
+    if ((bool) dc.getProperty ("running", false)) return n ((int) dc.getProperty ("done", 0), "plugin sound-checked", "plugins sound-checked");
+    return progress.hasProperty ("plugins_done") ? pluginsDoneWords ((int) progress.getProperty ("plugins_done", 0)) : juce::String();
 }
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
 // FINISH NOW (Kathy, 13 Oct): the app writes this file in the engine's folder, then stops it as a pause does; the engine, seeing it after
