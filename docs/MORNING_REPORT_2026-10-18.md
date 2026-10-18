@@ -30,9 +30,42 @@ the own rack, the Link had nothing to carry, and the row reported "(no slot carr
 It passed in earlier gates only when some earlier row happened to leave the Link selected: a verdict
 that depended on what ran before it. I9b — same build, same plugin, same figure, own rack — passed,
 which is what clears the product. The row now sends `work_on` with the Link's uid before it asks.
-**That fix is written and syntax-checked (13 s) but unbuilt and unrun**, because building and running
-it needs the rig, and from 01:03 the machine belongs to your recheck. It is first in tomorrow's rig
-window, with item 13.
+**And then I ran it, twice, because Kathy's pack finished at 01:30 instead of 07:00** — which freed
+the machine, and with no measurements left to disturb there was no reason to hold the rig. Both runs
+are worth reading, because my first fix was wrong:
+
+**Run 5 (01:30, `work_on linkUid` before the ask): I9c failed again, in exactly the same words.**
+The rig had already answered the question in a line I had not read:
+
+    EJRig: work_on seq=3024 -> FAILED (that uid is not live)
+
+`linkUid` is captured earlier in the pass and the Link behind it is gone by the time this row runs.
+The row's guard tested that the *string* was non-empty, which is not the same question as whether
+the Link exists — and the command that would have told it so had its ack thrown away. So the row
+now resolves a Link this run can prove is alive, sends `work_on`, **reads the ack**, and treats a
+refusal as a loud skip carrying the rig's own words.
+
+**Run 6 (01:48): it aimed correctly — `work_on seq=3018 -> ok (working on 61cc4c030f)` — and I9c
+still failed, now on something real:**
+
+    EJLink: chain-cmd v2 -> 61cc4c030f seq=1792285348 source="agent" lease=none
+    EJDialSummary: slot 1 ("Renaissance Axx (s)") … requested=1 applied=1 status=applied
+    EJAgent: step tc_tp FAILED code=not_applied
+             "no chain-ack-61cc4c030f.json with seq 1792285348 appeared in 8000 ms"
+
+The add was sent to that Link and **no ack came back inside the 8-second window**, so nothing ever
+landed for the mirrored card to carry. That is not the card's logic and not the row's target any
+more: it is the chain-command ack path, which is queue item 16 (the 8 s window) sitting next to
+item 0b (the rig hosts the INSTALLED Link in a fresh process) and item 13 (a Link looking gone for
+a few seconds after its rack is rebuilt). The log also shows the editor renewing a lease for a
+*different* uid (`da53af5fa3`) while the command went to `61cc4c030f`, which is the first thing I
+would pull on tomorrow.
+
+I stopped there rather than keep going: you said item 13 is first tomorrow and needs rig time, and
+this finding is in its family. The row fix stands and is strictly better — it no longer measures a
+dead Link, and it surfaced this instead of hiding it — and it is **built and run** now, not
+unverified. I9b passed in both runs, on this build, which is still what clears the product of the
+original red.
 
 **No QUICK build tonight, and nothing new installed**: no product change is implicated by either
 red, so there was nothing to rebuild. What is in `~/Library` is still the binary this gate verified.
@@ -113,7 +146,14 @@ I did not rewrite Kathy's flag. Which category those two steps were meant to red
 certified, and guessing it would put wrong numbers in your cert folder — that is Kathy's call, and
 it is one line in `recheck.sh` once she says which value she meant.
 
-Part 2 started on its own and is the hour that matters: `multiband_v1` (per-band tone checks,
+**It finished the whole sequence at 01:30, in 28 minutes rather than the night**:
+`RUN-ALL: 2 done, 0 failed; the sequence is complete (cert/run_all.json: every step done; delete it
+to run the whole sequence again)`. Most of its plan was already done or skipped from earlier runs,
+the follow-up re-ran the 86 stale tone checks in 15 minutes, and `multiband_v1` took 11 against its
+own hour-long estimate. What it did NOT do is the two refused steps below, and 40 tone checks from
+another build that part 2's plan deliberately leaves stale.
+
+Part 2 was the hour that mattered: `multiband_v1` (per-band tone checks,
 crossovers, make-up across 17 multiband records), then `drafts`. Its plan also notes **40 tone checks
 made by another build stay stale**, because the follow-up step is not in part 2's `--steps`.
 

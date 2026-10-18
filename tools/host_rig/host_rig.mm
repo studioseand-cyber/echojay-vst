@@ -5445,19 +5445,46 @@ int main (int argc, char* argv[])
         // own `landed` field. Same rule, the other road.
         if (tp.ok && ! linkUid.isEmpty())
         {
-            // ---- AIM IT AT THE LINK, WHICH THIS ROW NEVER DID (18 Oct 2026, gate 27) ----------
+            // ---- AIM IT AT A LINK THAT IS STILL ALIVE, AND READ THE ACK (18 Oct 2026) ---------
             //
-            // Gate 27's mock half went red here with "(no slot carried both facts)": the Link's
-            // slotsDetail was empty because the add had landed on the OWN rack. The row asked the
-            // agent without ever setting the working target, so it measured the Link while talking
-            // to whatever the previous row had left selected - and I9b, which runs immediately
-            // before it, leaves the own rack. It passed in earlier gates only because some earlier
-            // row happened to leave the Link selected, which is the same "a verdict that depends on
-            // what ran before it" fault this evening has already cost three rows.
+            // Gate 27's mock half went red here with "(no slot carried both facts)". My first fix
+            // sent `work_on linkUid` before the ask, and the row failed again in exactly the same
+            // words - because the rig had already answered the question in a line I had not read:
             //
-            // I9b passed on this very build, on the own rack, with the same plugin and the same
-            // figure, so the product was never in this red.
-            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 8000);
+            //     EJRig: work_on seq=3024 -> FAILED (that uid is not live)
+            //
+            // `linkUid` was captured earlier in the pass and the Link behind it is gone by the time
+            // this row runs. The row's guard tested that the STRING was non-empty, which is not the
+            // same question as whether the Link exists - and the command that would have told it so
+            // had its ack discarded. So: resolve a Link this run can prove is alive
+            // (usableLinkUid prefers the ones this pass launched), send work_on, and treat a refused
+            // ack as a loud skip rather than measuring a rack nobody is holding.
+            //
+            // I9b passed on this very build, on the own rack, with the same plugin and figure, so
+            // the product is not in this red either way.
+            const auto liveUid = usableLinkUid (rig.freshState(), true);
+            juce::String aimNote;
+            bool aimed = false;
+            if (liveUid.isNotEmpty())
+            {
+                const auto ack = rig.send (echojay::rig::cmd::workOn, args1 ("uid", liveUid), 8000);
+                aimed   = (bool) ack.getProperty ("ok", false);
+                aimNote = ack.getProperty ("note", juce::var()).toString();
+            }
+            if (! aimed)
+            {
+                scenSkip ("I9c", "the Link's mirrored card carries the plugin's figure too",
+                          liveUid.isEmpty()
+                            ? juce::String ("no Link in this run's state is usable (connected, named, "
+                                            "with a readable slot count), so there is no mirrored card "
+                                            "to read. NEVER counted as a pass.")
+                            : "work_on was REFUSED for " + liveUid + " (\"" + aimNote + "\"), which is "
+                              "the rig telling this row its target has gone. Measuring the mirror of a dead "
+                              "Link would report the product's words about nothing. NEVER counted as a "
+                              "pass.", "A");
+            }
+            else
+            {
             const auto r = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
                                           + tp.paramName, 120000);
             // ---- ONE SLOT, BOTH FACTS (17 Oct) ------------------------------------------------
@@ -5531,6 +5558,7 @@ int main (int argc, char* argv[])
                   + "  (RED before this evening: \"Threshold 0\" on the Mix Bus AND the Kick Link, and "
                   "\"Attack 0, Sustain 0\" for Transient Master - three out of three)",
                   "A", v2.editor.get(), rig.freshState(), &r);
+            }
         }
         else
             scenSkip ("I9c", "the Link's mirrored card carries the plugin's figure too",
