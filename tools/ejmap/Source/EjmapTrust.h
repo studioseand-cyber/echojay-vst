@@ -777,7 +777,8 @@ inline std::vector<double> refineNorms (const std::vector<Anchor>& a, const std:
 
 //==============================================================================
 // 3. THE LEVEL
-struct Level { juce::String level, why; juce::StringArray dialable; };
+struct Level { juce::String level, why; juce::StringArray dialable;
+               std::vector<std::pair<juce::String, juce::String>> roles; };   // 18 Oct (B): (the need a control met, the control) - the semantic travels with the control
 inline Level levelFor (const juce::var& map, bool certified, const juce::String& heldWhy, const std::map<juce::String, ControlReadback>& rb,
                        const Measured& measured = {})
 {
@@ -785,15 +786,20 @@ inline Level levelFor (const juce::var& map, bool certified, const juce::String&
     if (certified) { L.level = "certified"; L.why = "passed its category's v1 certification"; return L; }
     if (heldWhy.isNotEmpty()) { L.level = "unsure"; L.why = "held: " + heldWhy; return L; }
     const auto R = rolesOf (map, measured);
+    // the role a control met: the part of the need ("threshold|freq", "freq+gain") whose identified controls hold it - never the need string
+    auto roleIn = [&R] (const juce::String& need, const juce::String& c) -> juce::String {
+        for (const auto& alt : juce::StringArray::fromTokens (need, "|", "")) for (const auto& part : juce::StringArray::fromTokens (alt, "+", ""))
+            if (const auto it = R.identified.find (part); it != R.identified.end() && it->second.contains (c)) return part;
+        return need; };
     juce::StringArray missing, unread;
     for (const auto& need : needsFor (map.getProperty ("category", "").toString()))
     {
         auto ctl = meetNeed (need, R, map.getProperty ("category", "").toString());
         if (ctl.isEmpty()) { missing.add (need); continue; }
-        for (const auto& c : ctl) { const auto it = rb.find (c); if (it == rb.end() || ! it->second.proven()) unread.add (c + (it != rb.end() && it->second.failed > 0 ? " (read-back failed: " + it->second.worst + ")" : " (no read-back yet)")); else L.dialable.addIfNotAlreadyThere (c); }
+        for (const auto& c : ctl) { const auto it = rb.find (c); if (it == rb.end() || ! it->second.proven()) unread.add (c + (it != rb.end() && it->second.failed > 0 ? " (read-back failed: " + it->second.worst + ")" : " (no read-back yet)")); else { if (L.dialable.addIfNotAlreadyThere (c)) L.roles.push_back ({ roleIn (need, c), c }); } }
     }
-    if (! missing.isEmpty()) { L.level = "unsure"; L.why = "role not identified: " + missing.joinIntoString ("; ") + (R.ambiguous.isEmpty() ? juce::String() : " (ambiguous: " + R.ambiguous.joinIntoString ("; ") + ")"); L.dialable.clear(); return L; }
-    if (! unread.isEmpty()) { L.level = "unsure"; L.why = "not read back: " + unread.joinIntoString ("; "); L.dialable.clear(); return L; }
+    if (! missing.isEmpty()) { L.level = "unsure"; L.why = "role not identified: " + missing.joinIntoString ("; ") + (R.ambiguous.isEmpty() ? juce::String() : " (ambiguous: " + R.ambiguous.joinIntoString ("; ") + ")"); L.dialable.clear(); L.roles.clear(); return L; }
+    if (! unread.isEmpty()) { L.level = "unsure"; L.why = "not read back: " + unread.joinIntoString ("; "); L.dialable.clear(); L.roles.clear(); return L; }
     L.level = "mapped"; L.why = "roles identified and read back: " + L.dialable.joinIntoString (", "); return L;
 }
 

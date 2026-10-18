@@ -106,7 +106,17 @@ inline void gzipInto (const juce::File& src, const juce::File& dstDir)
 inline bool rowIsNothingNominated (const juce::var& row) { return row.getProperty ("outcome", "").toString() == "ok" && (row.getProperty ("records", {}).size() == 0 || (bool) row.getProperty ("nothing_measured", false) || (int) row.getProperty ("exit_code", 0) == 4); }   // exit 4 = the mode measured nothing: Sean's b0258a7b rows carry no flag, only the code
 // a selector reaches an OPT-IN category's EXISTING rows (9 Oct: --redo no_pool must reach gain-all's 2C rows) - never starts that
 // category's rows that were never run (a no_pool redo on a folder without gain-all must not begin the whole gain-all set)
+// THE --redo SELECTORS (18 Oct: Sean's recheck - run-all's own "--redo accuracy_gaps" step was refused by --phaseb-all, whose list
+// knew four of the six selectors rowToRedo reads). ONE list: --phaseb-all validates against it; the suite checks it holds every selector
+// rowToRedo and selectorReachesOptIn read and every --redo value the run-all plan passes
+inline const juce::StringArray& redoSelectors() { static const juce::StringArray k { "nothing_nominated", "uad", "no_pool", "unfinished", "accuracy_gaps", "licensed_now" }; return k; }
 inline bool selectorReachesOptIn (const juce::StringArray& redo) { return redo.contains ("no_pool") || redo.contains ("unfinished") || redo.contains ("licensed_now"); }
+// "" when every --redo value is a Phase B category or a selector; else the refusal --phaseb-all prints (and exits 2)
+inline juce::String redoRefusal (const juce::StringArray& redo)
+{
+    for (const auto& r : redo) if (! redoSelectors().contains (r) && categoryNamed (r) == nullptr) return "--redo: '" + r + "' is not a Phase B category or one of " + redoSelectors().joinIntoString (", ");
+    return {};
+}
 // --redo licensed_now (Kathy, 13 Oct: "the UAD EQs once his licence file has the UAD lines - they run only if licensed"): a row the
 // LICENCE FILE filed needs_licence (unmatched / unowned / expired / demo ended) that the file as it is NOW admits (owned, or a demo
 // running) runs again; a row the scan or a licence window filed stays an answer, and so does one the file still refuses

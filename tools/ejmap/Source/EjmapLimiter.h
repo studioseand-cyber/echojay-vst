@@ -242,7 +242,7 @@ inline juce::var ceilingBlock (const juce::String& control, const juce::String& 
     const auto& rows = writeOn ? on : off;
     const auto v = judge (rows);
     auto* o = new juce::DynamicObject();
-    o->setProperty ("control", control); o->setProperty ("found_by", foundBy);
+    o->setProperty ("control", control.trim().isEmpty() ? juce::var() : juce::var (control)); o->setProperty ("found_by", foundBy);   // 18 Oct: no ceiling control found = null, never ""
     o->setProperty ("holds_true_peak", v.positions > 0 && v.holdsTrue);
     o->setProperty ("worst_true_overshoot_db", v.positions > 0 ? juce::var (std::round (v.worstTrueDb * 100.0) / 100.0) : juce::var());
     o->setProperty ("driven_positions", v.positions); o->setProperty ("not_driven_positions", v.notDriven);

@@ -10567,6 +10567,28 @@ void testWizardCategories()
                && none.level == "unsure" && none.why.contains ("no read-back yet") && failed.level == "unsure" && failed.why.contains ("read-back failed"),
                "wizard WZ-TRUST-3: certified > mapped (identified + read back) > unsure; held is unsure; no read-back or a failed one is unsure, said");
     }
+    // WZ-TRUST-18 THE ROLES TRAVEL (B, 18 Oct): a mapped level names each dialable control WITH the role it was found for, and none when it
+    // is not mapped; the run writes them per row, carries them over a bridge, and credits a params-format map's role controls (CLA-76) too
+    {
+        using namespace ejmap::trust;
+        const auto m = juce::JSON::parse (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        std::map<juce::String, ControlReadback> rb; rb["Threshold"].judged = 3;
+        std::map<juce::String, ControlReadback> rbFail = rb; rbFail["Threshold"].failed = 1;
+        const auto ok = levelFor (m, false, "", rb), failed = levelFor (m, false, "", rbFail), held = levelFor (m, false, "demo", rb);
+        // an EQ's one need "freq+gain": each control gets its own part; with the gain unread nothing is mapped and no role is kept
+        const auto eq = juce::JSON::parse (R"({"category":"eq","controls":{"Band 1 Freq":{"name":"Band 1 Freq","kind":"anchored","unit":"hz","anchors":[[20,0],[20000,1]]},
+            "Band 1 Gain":{"name":"Band 1 Gain","kind":"anchored","unit":"db","anchors":[[-18,0],[18,1]]}}})");
+        std::map<juce::String, ControlReadback> rbEq; rbEq["Band 1 Freq"].judged = 3; rbEq["Band 1 Gain"].judged = 3;
+        std::map<juce::String, ControlReadback> rbHalf; rbHalf["Band 1 Freq"].judged = 3;
+        const auto eqOk = levelFor (eq, false, "", rbEq), eqHalf = levelFor (eq, false, "", rbHalf);
+        const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (ok.roles.size() == 1 && ok.roles[0].first == "threshold" && ok.roles[0].second == "Threshold" && failed.roles.empty() && held.roles.empty()
+               && eqOk.level == "mapped" && eqOk.roles.size() == 2 && eqOk.roles[0] == std::make_pair (juce::String ("freq"), juce::String ("Band 1 Freq"))
+               && eqOk.roles[1] == std::make_pair (juce::String ("gain"), juce::String ("Band 1 Gain")) && eqHalf.level == "unsure" && eqHalf.roles.empty()
+               && trr.contains ("for (const char* section : { \"controls\", \"params\" })") && trr.contains ("o->setProperty (\"roles\", juce::var (rl));")
+               && trr.contains ("e.L.roles = twin->L.roles;"),
+               "wizard WZ-TRUST-18: a mapped level carries (role, control) per dialable control and none otherwise; the run writes roles per row, keeps them over a bridge, and credits params-format role controls");
+    }
     // WZ-CERTV1-1 v1 CERTIFICATION, THE MEASURABLE PARTS (Kathy, 16 Oct): each category's rule over a draft that passes and one that fails
     {
         using namespace ejmap::certv1;
@@ -11711,6 +11733,22 @@ void testToneCheck13Oct()
     bool noneWritten = true; for (int i : ua) if (na.count (i)) noneWritten = false; for (int i : us) if (ns.count (i)) noneWritten = false;
     check (ea.ok && es.ok && noneWritten && wa == ua && ws == us && na.size() == 54 && ns.size() == 32 && na.count (27) && ns.count (17),
            "tonecheck TC-1b: the exported AMEK (neutral " + juce::String ((int) na.size()) + ") and SPL IRON (neutral " + juce::String ((int) ns.size()) + ") never write them; not_written lists each by index (" + juce::String ((int) wa.size()) + " / " + juce::String ((int) ws.size()) + ")");
+    // WZ-EXPORT-1 A NEUTRAL ALWAYS NAMES ITS CONTROL (B, FOR_KATHY_2026-10-17: Millennia TCL-2 neutral[16,17], DSM V3 neutral[32..39], bx_opto
+    // neutral[7] - and on cert 6 bx_limiter - carried control ""): a nameless control, labelled or not, goes to not_written with its index and
+    // why, never to neutral; no exported neutral has an empty control; a limiter ceiling with no control found is null, never ""
+    {
+        auto rec = juce::JSON::parse (juce::JSON::toString (amek));   // a deep copy: [27] Parallel Mix 1 (named, labelled, a neutral) loses its name
+        if (const auto* cs = rec.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == 27) c.getDynamicObject()->setProperty ("name", "");
+        const auto e = exp (rec);
+        const auto n27 = idxs (e.profile.getProperty ("neutral", {})).count (27), w27 = idxs (e.profile.getProperty ("not_written", {})).count (27);
+        juce::String why27; if (const auto* nw = e.profile.getProperty ("not_written", {}).getArray()) for (const auto& x : *nw) if ((int) x.getProperty ("index", -1) == 27) why27 = x.getProperty ("why", "").toString();
+        auto noEmpty = [] (const juce::var& p) { if (const auto* a = p.getProperty ("neutral", {}).getArray()) for (const auto& x : *a) if (x.getProperty ("control", "").toString().trim().isEmpty()) return false; return true; };
+        const auto ceil = ejmap::limiter::ceilingBlock ("", "measurement", {}, {}, {}, {}, {});
+        const auto ceilNamed = ejmap::limiter::ceilingBlock ("Ceiling", "name", {}, {}, {}, {}, {});
+        check (e.ok && ! n27 && w27 && why27.contains ("no name") && noEmpty (e.profile) && noEmpty (ea.profile) && noEmpty (es.profile)
+               && ceil.getProperty ("control", "x").isVoid() && ceilNamed.getProperty ("control", "").toString() == "Ceiling",
+               "export WZ-EXPORT-1: a nameless control (even labelled) goes to not_written with its index and why, never to neutral; no neutral has an empty control; a ceiling with no control is null");
+    }
     // TC-2 MAGNUM-K: at L -18.40 the 0.95 detent lies under its shallowest point (1 dB at -15.31) - the pick stands (condition 3) but has
     // NO expectation (it read 1.0; the sweep's traces read ~0.5 there, the check 0.49); the L rule moves to a level the curve answers
     {
@@ -12603,6 +12641,30 @@ int main (int, char**)
                && app.contains ("text = left > 0 ? wizapp::measuringResumedText (left) : wizapp::measuringText (")
                && app.indexOf ("const int left = wizapp::leftCount") < app.indexOf ("setState (\"measure_started\", true); finishing = false;"),
                "wizard WZ-RESUME-1: a resumed run (measuring started, the last run's left.json) says how many are left; a first run what it measures; never a time");
+    }
+    // WZ-REDO-1 ONE LIST OF --redo SELECTORS (Kathy, 18 Oct: Sean's recheck - run-all's own accuracy_gaps steps passed "--redo accuracy_gaps"
+    // and --phaseb-all refused it, exit 2): every value a run-all step passes to --redo is accepted, and every selector the engine reads
+    // (rowToRedo / selectorReachesOptIn) is in the list --phaseb-all checks against
+    {
+        using namespace ejmap;
+        juce::StringArray bad;
+        for (const auto& st : runall::steps())
+        {
+            juce::StringArray vals;
+            if (st.kind == "redo" || st.kind == "selector") for (const auto& a : st.args) vals.addTokens (a, ",", "");
+            else for (int i = 0; i + 1 < st.args.size(); ++i) if (st.args[i] == "--redo") vals.addTokens (st.args[i + 1], ",", "");
+            for (auto v : vals) { if (v == "gain-cal") v = "gaincal"; if (v == "gain-all") v = "gainall"; if (phaseb::redoRefusal ({ v }).isNotEmpty()) bad.add (st.name + ": " + v); }
+        }
+        const auto pb = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapPhaseB.h").loadFileAsString();
+        juce::StringArray read; for (int i = pb.indexOf ("redo.contains (\""); i >= 0; i = pb.indexOf (i + 1, "redo.contains (\""))
+        { const auto v = pb.substring (i + 16).upToFirstOccurrenceOf ("\"", false, false); if (phaseb::categoryNamed (v) == nullptr) read.addIfNotAlreadyThere (v); }
+        juce::StringArray missing; for (const auto& v : read) if (! phaseb::redoSelectors().contains (v)) missing.add (v);
+        const auto mainSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        check (bad.isEmpty() && missing.isEmpty() && read.contains ("accuracy_gaps") && read.contains ("licensed_now") && read.size() >= 6
+               && phaseb::redoRefusal ({ "accuracy_gaps", "unfinished", "gaincal" }).isEmpty() && phaseb::redoRefusal ({ "accuracy_gap" }).contains ("'accuracy_gap' is not a Phase B category")
+               && mainSrc.contains ("if (const auto refusal = ejmap::phaseb::redoRefusal (redo); refusal.isNotEmpty()) { std::cerr << refusal << std::endl; return 2; }")
+               && ! mainSrc.contains ("r != \"nothing_nominated\" && r != \"uad\""),
+               "wizard WZ-REDO-1: every run-all step's --redo value is accepted by --phaseb-all, and every selector the engine reads is on its one list (bad: " + bad.joinIntoString (", ") + "; missing: " + missing.joinIntoString (", ") + ")");
     }
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

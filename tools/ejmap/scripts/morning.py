@@ -25,7 +25,7 @@ SCRATCH_DEFAULT = '/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-
 # THE BASELINE (Kathy, 13 Oct: repointed from 00f2ae79 to b287aef3, Sean's build). Its derive-only outputs are cached under their OWN
 # name (equality_<hash>): a cache made by another baseline is never read as this one's. 'expect' = the only draft classes the equality may
 # explain against it (classify_drafts.py --expect); everything since b287aef3 changes no derive-only output, so none.
-BASELINE = {'hash': 'b287aef3', 'bin': HOME + '/Desktop/ejmap-dist-11oct-b287aef3/ejmap.app/Contents/MacOS/ejmap', 'expect': '',
+BASELINE = {'hash': 'b287aef3', 'bin': HOME + '/Desktop/ejmap-dist-11oct-b287aef3/ejmap.app/Contents/MacOS/ejmap', 'expect': 'ceiling_null',   # 18 Oct: ceiling.control "" -> null
             'expect_sets': 'not_written'}   # 13 Oct (d26db00f): compressor profiles may drop exactly the controls their not_written lists
 OLD_BIN = BASELINE['bin']
 def baseline_cache(scratch, b=BASELINE): return os.path.join(scratch, 'equality_' + b['hash'])
