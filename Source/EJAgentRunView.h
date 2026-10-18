@@ -379,6 +379,30 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         v.steps.push_back (std::move (r));
         v.askQuestion.clear();        // the row IS the question; two copies would be two authorities
     }
+    // ---- SOMETHING ON THE ROW THE MOMENT IT EXISTS (18 Oct 2026, Sean in Logic) ----------------
+    //
+    // *"I press Enter on the Kick's Link and see only a blank 'E' avatar for several seconds before
+    // the answer appears. 'Thinking...' must show the moment I send."* Item 9 (17 Oct) put that line
+    // in the stage row to cover the gap between Send and the first frame - and the row cleared it
+    // immediately, because EJAgentClient::post() sets Connecting and calls changed() INSIDE start().
+    // AgentRunBridge::agentChanged then handed over to a row that had nothing to hand over to: no
+    // sessionId (the server has not answered), no steps, no closing - so empty() was true, layoutRun
+    // returned a zero height, and the only thing drawn was the assistant avatar of a message with no
+    // content. The handover was right; the row was not ready to receive it.
+    //
+    // A live run with nothing to show yet is not an empty run: it is a run WAITING ON THE SERVER,
+    // which is a step like any other. So it gets one line, carrying the same word item 9 chose and
+    // the pulsing glyph the mockup already uses for work in progress. It costs no new paint code, it
+    // makes empty() false so the card has a height, and it goes away by itself the moment a real
+    // step arrives - this block cannot outlive the thing it stands in for.
+    else if (v.running && v.steps.empty())
+    {
+        RunStep r;
+        r.id     = "thinking";
+        r.label  = juce::String::fromUTF8 ("Thinking\xe2\x80\xa6");
+        r.status = (int) St::Running;
+        v.steps.push_back (std::move (r));
+    }
     // ---- SEAN'S #18 (16 Oct 2026): A READ IS NOT A CHANGE --------------------------------------
     // *"A read-only run (a GR question) shows '4 changes'. Read-only steps aren't changes: show
     // 'N steps', or no count if nothing changed."* Undone steps are not changes either - counting

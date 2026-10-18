@@ -29,6 +29,10 @@
 //   T   a typed message under a running agent is refused WITH a line
 //   L   the panel: at every editor width (380..1780) and height cap, no text row is shorter than its wrapped text,
 //       no button overlaps text or leaves the card, chips wrap, and a body taller than its room scrolls
+//   V   the run ROW at the instant of Send (18 Oct 2026): a live run with nothing back from the server yet still
+//       lays out, with item 9's "Thinking..." line and its Stop - because a row that lays out to nothing is the
+//       blank avatar Sean read in Logic. And the other direction: a real step replaces that line, and a run that
+//       is not live never carries it.
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EJAgentFraming.h"
@@ -37,6 +41,7 @@
 #include "EJAgentClient.h"
 #include "EJAgentExecutorRead.h"   // SZ2/SZ3 call the product's own inventoryPage
 #include "EJAgentPanel.h"
+#include "EJAgentRunView.h"    // V: the run ROW, whose geometry is what Sean reads in Logic
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -234,6 +239,63 @@ int main()
         check (EJAgentClient::nextRunnable (st, 1, true) == -1, "N5 nothing runs while a step is running");
         st[1].status = S::Status::Done;
         check (EJAgentClient::nextRunnable (st, 1, true) == -1, "N6 all answered: nothing to run (the step is posted)");
+    }
+
+    // ---- V: THE ROW AT THE INSTANT OF SEND (18 Oct 2026, Sean in Logic) ---------------------------------------
+    //
+    // *"I press Enter on the Kick's Link and see only a blank 'E' avatar for several seconds before the answer
+    // appears."* The row is opened by AgentRunBridge::agentChanged, and EJAgentClient::post() calls changed()
+    // from INSIDE start() - so the row is born while the client is Connecting, with no sessionId, no steps and
+    // no closing. RunView::empty() was true there, layoutRun returned a zero height, and the assistant message
+    // that carries the row drew its avatar and nothing else. These legs are that moment, and they are RED
+    // without the waiting line: `empty()` true, totalHeight 0.
+    {
+        using namespace echojay::agentui;
+        using St = EJAgentClient::Step::Status;
+        Rig vr;
+        vr.client.start ("make the kick hit harder", "chat_v");
+        check (vr.client.state() == EJAgentClient::State::Connecting,
+               "V0 PRECONDITION: start() leaves the client Connecting - the state the row is born in");
+        const auto atSend = runViewFrom (vr.client, {}, true);
+        const auto L = layoutRun (atSend, 0, 0, 420);
+        check (! atSend.empty() && L.totalHeight > 0,
+               "V1 the row LAYS OUT the moment the run exists: a live run with nothing back yet is not an empty "
+               "run, and a card of zero height is the blank avatar he read",
+               juce::String ("empty=") + (atSend.empty() ? "yes" : "no") + " h=" + juce::String (L.totalHeight));
+        check (atSend.steps.size() == 1
+               && atSend.steps[0].label == juce::String::fromUTF8 ("Thinking\xe2\x80\xa6")
+               && atSend.steps[0].status == (int) St::Running,
+               "V2 ...carrying item 9's own word, on a Running line so the mockup's glyph pulses - one indicator, "
+               "the same one the stage row was showing a frame earlier",
+               atSend.steps.empty() ? juce::String ("no steps") : atSend.steps[0].label);
+        check (! L.rows.empty() && ! L.statusText.isEmpty() && atSend.statusWord == "Working" && atSend.showStop,
+               "V3 ...and the header's pulsing status and Stop are on screen with it, so a slow round can be "
+               "abandoned instead of waited out");
+        bool pressable = false;
+        for (const auto& z : L.zones) if (z.kind == RunHit::Stop) pressable = true;
+        check (pressable, "V3b ...Stop as a REAL zone, not a drawn word (the dead-Details fault of item 3)");
+
+        // THE OTHER DIRECTION, 1: a real step takes the line's place. The waiting line cannot outlive the
+        // thing it stands in for, which is what makes it safe to put in the snapshot at all.
+        vr.round (1);
+        vr.tool (kLook);
+        const auto withStep = runViewFrom (vr.client, {}, true);
+        check (withStep.steps.size() == 1
+               && withStep.steps[0].label != juce::String::fromUTF8 ("Thinking\xe2\x80\xa6"),
+               "V4 the first real step REPLACES the waiting line - it is never a second row beside the work",
+               withStep.steps.empty() ? juce::String ("no steps") : withStep.steps[0].label);
+
+        // THE OTHER DIRECTION, 2: a run that is over carries no waiting line, so nothing pulses on a dead row.
+        Rig done;
+        done.client.start ("tell me the level", "chat_v2");
+        EJAgentClientTestAccess::feed (done.client, "done", R"({"reason":"complete","rounds":1,"costUsd":0.0})");
+        const auto after = runViewFrom (done.client, {}, true);
+        check (! after.running && after.steps.empty() && after.empty()
+               && layoutRun (after, 0, 0, 420).totalHeight == 0,
+               "V5 a run that is NOT live has no waiting line and lays out to nothing, exactly as before - the "
+               "change is additive to the live case only",
+               juce::String ("steps=") + juce::String ((int) after.steps.size())
+                 + " running=" + (after.running ? "yes" : "no"));
     }
 
     // ---- R1: one round with a plan ------------------------------------------------------------------------------
