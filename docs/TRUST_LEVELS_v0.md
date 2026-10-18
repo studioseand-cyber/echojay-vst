@@ -733,16 +733,14 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 
 ## 15. Sean's re-check and B's reply, 18 Oct (Kathy). Built and pinned; nothing sent; no server change
 
-### 15.1 The count, Kathy's count rule (held out of the totals)
+### 15.1 The count, Kathy's count rule (held out of the totals), as section 13.6
 | format | certified | mapped | unsure | testable | can't test on this Mac |
 |---|---|---|---|---|---|
-| AudioUnit | 154 | 197 | 260 | 611 | 197 |
+| AudioUnit | 156 | 197 | 258 | 611 | 197 |
 | VST3 | 0 | 4 | 119 | 123 | 192 |
-| **all** | **154** | **201** | **379** | **734** | **389** |
+| **all** | **156** | **201** | **377** | **734** | **389** |
 
-- **The one change since 13.6:** RVox (m)/(s) move certified -> unsure. B's server rejected their profiles (17 Oct), and a rejected profile is no profile.
-  - In trust_levels.json their rows carry `not_dialled.reason = server_rejected`.
-
+- RVox (m)/(s) were unsure (`server_rejected`, 154 certified) until their re-judge passed (15.7). All five rejected profiles are certified once v3c is on the server.
 - **Can't test on this Mac (389):** UAD 341, demo 30, silent 9, APB / hardware 6, licence 3.
 - **The other 26 holds count as unsure** (they are never dialled either way): multiband 10, needs_review 10, quarantined 4, refused 2.
   - `hold_states.json` carries only the 389, so the server's totals and this table agree.
@@ -793,4 +791,15 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 ### 15.6 C6 (m) / C6-SideChain (s) multiband, re-measured on Kathy's Mac
 - **Matches Sean's cert 6.** Bands 1-4 to 0.01 dB, bands 5/6 within 0.07 dB. Sean's pass was not spoiled.
 - **v1, both units:** bands 1-4 certified; bands 5 and 6 (the floating bands) fail only the gain ask (2 -> 1.17).
+
+### 15.7 The rung chosen once, and no result by product name (Kathy, "TWO MORE"; wizard 70b88414, cert cb30bbe6)
+- **The rung (pin WZ-RUNG-1).** The hold-doubled repeat keeps the reference rung the first pass chose for each position, while its own 6 dB check there is within 0.1 + 0.02 dB (hysteresis). A reference that really moved walks its own ladder, so the repeat still tests that the audio repeats.
+  - Re-judged from Sean's cert 6 traces with nothing loaded: RVox m/s 1.28 -> **0.03 dB** (the unfixed build reproduces 1.28).
+  - Of 109 records, only RVox m/s and an SSL G3 MultiBusComp candidate (1.61 -> 0.39) change. compare.py names the class `rung_pin`, and the morning equality is clean.
+  - RVox m/s are in `EJMAP_PUBLISH_COMPRESSORS_v3c.zip`.
+- **No result by product name (pin WZ-NAME-1, wizard only).** Five Intel-only Brainworx VST3s had taken their AU twin's "no sound", and its licence window was remembered under the VST3's id. Now:
+  - a demo / sound-check verdict carries the plugin it checked (its own format in the id and in the cache key, which had been "AudioUnit|" for every plugin) and lands on that row only;
+  - the never-retry list reaches a VST3 only when no AU has its name;
+  - the crash list keeps one entry per plugin;
+  - the bridge, the only way a VST3 takes its AU's result, needs the same version on both read-back records.
 
