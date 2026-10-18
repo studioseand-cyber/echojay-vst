@@ -2150,10 +2150,13 @@ inline juce::File writeRefusalRecord (const juce::File& fixturesDir, const juce:
 // default), which the caller records as a refusal.
 inline bool composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
                               const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info, juce::String* whyNot = nullptr,
-                              const sweep::Derived* repeat = nullptr)
+                              const sweep::Measured* repeatM = nullptr)
 {
     auto one = deriveOne (plan, m, pv, info, fixtureOut.getFileName());
-    if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, repeat);
+    // 18 Oct: the repeat is derived HERE, against the first pass's rungs (sweep::kQuietHystDb), so both passes use one reference per position
+    std::optional<sweep::Derived> repeat;
+    if (repeatM != nullptr) repeat = sweep::derive (*repeatM, plan.testLevels(), plan.ratioIndex, plan.quietReference, &one.d);
+    if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, repeat ? &*repeat : nullptr);
     if (one.written)
         fixtureOut.replaceWithText (juce::JSON::toString (sweep::composeFixture (base, one.sweepVar)) + "\n", false, false, "\n");
     else if (whyNot != nullptr)
@@ -2887,9 +2890,9 @@ inline int runCertSweep (const SweepOptions& opt)
     }
     info.newIdentity = newIdentity;
     // v1.3: the repeat's derivation, when the sweep ran twice (quality lives on the sweep var at composition).
-    auto repeatFor = [&] (const sweep::Plan& q, const juce::String& prefix) -> std::optional<sweep::Derived> {
+    auto repeatFor = [&] (const sweep::Plan& q, const juce::String& prefix) -> std::optional<sweep::Measured> {   // derived in composeAndReport (the first pass's rungs)
         auto it = repeatRuns.find (prefix); if (it == repeatRuns.end() || it->second.empty()) return std::nullopt;
-        return sweep::derive (sweep::mergeProcesses (refOut.out.isEmpty() ? sweep::ProcessOut { juce::String(), true, "none", -1.0f } : refOut, it->second, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference); };
+        return sweep::mergeProcesses (refOut.out.isEmpty() ? sweep::ProcessOut { juce::String(), true, "none", -1.0f } : refOut, it->second, q.pairIndex); };
     if (plan.candidates.empty())
     {
         juce::String whyNot;
@@ -2913,7 +2916,7 @@ inline int runCertSweep (const SweepOptions& opt)
         if (q.quietReference && ! q.referenceFallbackNote.isEmpty() && repeatRuns.count ("q." + pre)) pre = "q." + pre;
         if (auto it = repeatRuns.find (pre); it != repeatRuns.end() && one.written)
         {
-            const auto d2 = sweep::derive (sweep::mergeProcesses (run.first, it->second, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
+            const auto d2 = sweep::derive (sweep::mergeProcesses (run.first, it->second, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference, &one.d);   // the first pass's rungs
             sweep::attachRepeatQuality (one.sweepVar, one.d, &d2);
         }
         else if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, nullptr);
@@ -3082,9 +3085,9 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         if (run.engageIndex >= 0) restoreEngage (plan, old);
         restoreRefinement (plan, old);
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
-        sweep::ProcessOut ref2; std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
+        sweep::ProcessOut ref2; std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Measured> rpt;   // derived in composeAndReport (the first pass's rungs)
         if (sweep::loadProcesses (processesJson, rawDir, ref2, pos2, "r2." + run.prefix) || (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2)))
-            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2, plan.pairIndex), plan.testLevels(), plan.ratioIndex, plan.quietReference);
+            rpt = sweep::mergeProcesses (ref, pos2, plan.pairIndex);
         const auto merged = sweep::mergeProcesses (ref, pos, plan.pairIndex);
         restoreWrites (plan, old, merged);
         composeAndReport (base, plan, merged, pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info, nullptr, rpt ? &*rpt : nullptr);
@@ -3107,14 +3110,15 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         if (run.engageIndex >= 0 || oldC.hasProperty ("engageWrites")) restoreEngage (q, oldC);
         restoreRefinement (q, oldC);
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
-        std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
+        std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Measured> rptM; std::optional<sweep::Derived> rpt;
         if (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2))
-            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2, q.pairIndex), q.testLevels(), q.ratioIndex, q.quietReference);
+            rptM = sweep::mergeProcesses (ref, pos2, q.pairIndex);   // derived below, against this candidate's first pass (its rungs)
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
         const auto mergedC = sweep::mergeProcesses (ref, pos, q.pairIndex);
         restoreWrites (q, oldC, mergedC);
         auto one = deriveOne (q, mergedC, pv, ci, fixtureOut.getFileName());
+        if (rptM) rpt = sweep::derive (*rptM, q.testLevels(), q.ratioIndex, q.quietReference, &one.d);
         if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, rpt ? &*rpt : nullptr);
         cands.push_back ({ q, one });
     }
