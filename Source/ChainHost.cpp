@@ -3405,7 +3405,17 @@ double ChainHost::mappedStepFor (const juce::String& pluginName, const juce::Str
         if (! named.equalsIgnoreCase (want)) continue;
         const auto entry = controlEntryIn (m.second, paramId);
         if (! entry.isObject()) continue;
-        const double step = echojay::mappedStepNear (entry, near);
+        double step = echojay::mappedStepNear (entry, near);
+        // THE SAME BOUNDARY (18 Oct 2026): the rungs are in the control's unit and the comparison is
+        // in the semantic's. A 0.1 s rung is a 100 ms tolerance, and handing back 0.1 against values
+        // in milliseconds would be a tolerance a thousand times too tight.
+        if (step > 0.0)
+        {
+            const auto ctlUnit = entry.getProperty ("unit", juce::var()).toString();
+            const auto askUnit = echojay::semanticUnit (paramId);
+            if (const double k = echojay::unitFactor (ctlUnit, askUnit); k != 0.0 && k != 1.0)
+                step *= k;
+        }
         if (step > 0.0)
         {
             EchoJay_NSLog (("EJReadback: \"" + want + "\" " + paramId + " moves in steps of about "
@@ -3485,6 +3495,23 @@ bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, doub
     // "-oo" IS a reading, and the only honest number for it is the floor the parser hands back; it is
     // reported as-is rather than suppressed, because a threshold at -inf is a real setting.
     out = (double) v;
+    // ---- AND IN THE UNIT THE CALLER ASKED IN (18 Oct 2026, the CL 1B release) -------------------
+    // The display was parsed with the unit the MAP declares (the CL 1B's release is in seconds); the
+    // caller asked for a semantic whose unit may differ (release_ms). Handing back 0.2 against an
+    // asked 150 is not a read-back, it is two different questions - so the number is converted once,
+    // here, where both units are known. unitFactor refuses anything but the time pair, and returns 1
+    // when they agree, which is every other control in the tree.
+    {
+        const auto askUnit = echojay::semanticUnit (paramId);
+        if (const double k = echojay::unitFactor (unit, askUnit); k != 0.0 && k != 1.0)
+        {
+            EchoJay_NSLog (("EJReadback: slot " + juce::String (slotIndex + 1) + " \"" + paramId
+                            + "\" reads " + juce::String (out, 3) + " " + unit + " = "
+                            + juce::String (out * k, 3) + " " + askUnit
+                            + " - the value is handed back in the unit it was asked in").toRawUTF8());
+            out *= k;
+        }
+    }
     EchoJay_NSLog (("EJReadback: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
                     + "\") third-party read \"" + paramId + "\" -> param " + juce::String (idx)
                     + " (" + how + ") shows \"" + text.trim() + "\" = " + juce::String (out, 3)

@@ -95,6 +95,19 @@ juce::var positionEntry (const char* name, int index, const juce::StringArray& p
     juce::Array<juce::var> p; for (const auto& t : positions) p.add (t); e->setProperty ("positions", p);
     return juce::var (e);
 }
+#define EJ_HAVE_UNITFACTOR 1
+
+juce::var secondsLadder (const char* name, int index)
+{   // THE TUBE-TECH CL 1B's RELEASE, as the map carries it (18 Oct 2026): a stepped control whose
+    // positions are labelled in SECONDS, which is what his log printed - "0.0 | 0.1 | 0.2 | 0.3 ...".
+    juce::StringArray pos;
+    for (int k = 0; k <= 15; ++k) pos.add (juce::String (k / 10.0, 1));
+    auto* e = new juce::DynamicObject();
+    e->setProperty ("name", name); e->setProperty ("index", index); e->setProperty ("kind", "position");
+    e->setProperty ("steps", pos.size()); e->setProperty ("unit", "s"); e->setProperty ("trust", "setread");
+    juce::Array<juce::var> pv; for (const auto& t : pos) pv.add (t); e->setProperty ("positions", pv);
+    return juce::var (e);
+}
 juce::var anchoredSteps (const char* name, int index, double lo, double hi, int steps, const char* unit)
 {
     auto* e = new juce::DynamicObject(); e->setProperty ("name", name); e->setProperty ("index", index); e->setProperty ("kind", "anchored"); e->setProperty ("unit", unit); e->setProperty ("trust", "setread"); e->setProperty ("steps", steps);
@@ -450,6 +463,51 @@ int main()
         const auto d1 = echojay::probeTextAtPoints (1, true);
         check (d1.size() == 21, "21t-j. ...as is a control claiming fewer than two",
                juce::String ((int) d1.size()) + " point(s)");
+    }
+
+    // ---- CL1B (18 Oct 2026, Sean in Logic at 17:45) -----------------------------------------------
+    //
+    // *"One read-back question: 'The release couldn't be read' on Tube-Tech CL 1B (Softube). Check my
+    // log for what value text the plugin returned for its release after the set, and why it didn't
+    // parse."*  His log answered it one step earlier than the read-back:
+    //
+    //   EJParamApply:   Release: manual  0.000  (unknown position "150" (this control has
+    //                   0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | ...))
+    //
+    // The rungs are SECONDS and the ask was 150 MILLISECONDS, so the write matched nothing and never
+    // landed - and a value that was never written cannot be read back. Not a parsing gap: a units gap.
+    std::printf ("\n== CL1B: a seconds ladder asked in milliseconds ==\n");
+    {
+        MockStepped m;
+        // the mock's Analog control stands in for a stepped control; the MAP is what carries the unit
+        // and the rungs, and that is what this leg is about.
+        const auto mapEntry = secondsLadder ("Analog", 0);
+        const auto r = echojay::applyOne (m, "release_ms", mapEntry, juce::var (150));
+        check (r.applied,
+               "CL1B 150 ms on a seconds ladder LANDS (RED as it stood: \"unknown position \\\"150\\\"\" - "
+               "the number was compared with 0.0, 0.1, 0.2 ... and matched nothing)",
+               show (r));
+        check (r.note.contains ("0.2") || r.landedText.contains ("0.2"),
+               "CL1B ...and the row names the rung it chose (0.2 s for an asked 150 ms), so nothing is "
+               "claimed silently", r.note + " / landed \"" + r.landedText + "\"");
+        // the conversion itself, both ways and refused where it would be a guess. Behind a switch
+        // because unitFactor is part of the FIX: the red-first pass compiles against the code that
+        // did not have it, and only the behavioural leg above can be red there.
+#if EJ_HAVE_UNITFACTOR
+        check (std::abs (echojay::unitFactor ("ms", "s") - 0.001) < 1.0e-12
+               && std::abs (echojay::unitFactor ("s", "ms") - 1000.0) < 1.0e-9,
+               "CL1B the time pair converts both ways");
+        check (echojay::unitFactor ("db", "ms") == 0.0 && echojay::unitFactor ("hz", "s") == 0.0,
+               "CL1B ...and nothing else converts - a dB is not a millisecond, and a silent guess "
+               "between unrelated units would be worse than the fault this fixes");
+        check (echojay::unitFactor ("", "ms") == 1.0 && echojay::unitFactor ("ms", "ms") == 1.0,
+               "CL1B ...and a map that does not say what its unit is behaves exactly as it did");
+#endif
+        // AND THE REFUSAL SURVIVES where the ask is genuinely off this control
+        const auto far = echojay::applyOne (m, "release_ms", mapEntry, juce::var (9000));
+        check (! far.applied && far.note.contains ("unknown position"),
+               "CL1B an ask this control cannot represent (9000 ms on a 0-1.5 s ladder) is still "
+               "REFUSED - the nearest rung is a rounding, never a reinterpretation", show (far));
     }
 
     std::printf ("\n==== stepped_position_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

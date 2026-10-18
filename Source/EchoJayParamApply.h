@@ -136,6 +136,27 @@ inline juce::String semanticUnit (const juce::String& key)
     return {};
 }
 
+/** ---- ONE UNIT BOUNDARY, ONE CONVERSION (18 Oct 2026, Sean's CL 1B release) ----------------
+    His log, line for line: `EJParamApply:   Release: manual  0.000  (unknown position "150" (this
+    control has 0.0 | 0.1 | 0.2 | 0.3 | ...))`. The Tube-Tech CL 1B's Release is a STEPPED control
+    whose positions are in SECONDS, and the ask was 150 MILLISECONDS. So the write matched no rung
+    and never landed - and the read-back then had nothing to confirm, which is what he read as "the
+    release couldn't be read".
+
+    Returns the factor that takes a value FROM one unit INTO another, or 0 when the conversion is
+    not one this build will make. Deliberately only the time pair: a dB is not a Hz and never
+    becomes one, and a silent conversion between unrelated units would be a worse fault than the
+    one this fixes. 1.0 when the units agree, or when either side does not say what it is - which
+    is every map written before today, so nothing that worked moves. */
+inline double unitFactor (const juce::String& from, const juce::String& to)
+{
+    const auto f = from.trim().toLowerCase(), t = to.trim().toLowerCase();
+    if (f.isEmpty() || t.isEmpty() || f == t) return 1.0;
+    if (f == "ms" && t == "s")  return 0.001;
+    if (f == "s"  && t == "ms") return 1000.0;
+    return 0.0;                                  // not a conversion this build will make
+}
+
 // Parse a plugin display string into the semantic's unit. Handles the same
 // display quirks the server parser does: us/microseconds under a ms target,
 // s<->ms flips, bare-k and NkM frequency forms under an hz target, "-oo" /
@@ -925,6 +946,23 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             if (p < 0 && numeric)
             {   // a number the panel text carries: "60" against "60Hz", "-12" against "-12 dB". This NAMES a
                 // position - the number is the position's own label - so it stays allowed.
+                // ---- IN THE CONTROL'S OWN UNIT (18 Oct 2026) ----------------------------------------
+                // The rungs are labelled in the unit the MAP declares for this control; the ask arrives in
+                // the semantic's unit. For his CL 1B they are seconds and milliseconds, so 150 was compared
+                // with 0.0, 0.1, 0.2 ... and matched nothing. Converted once, here, and only between units
+                // this build will convert (unitFactor returns 0 otherwise and nothing is changed).
+                const auto ctlUnit = mapEntry.getProperty ("unit", juce::var()).toString();
+                const auto askUnit = semanticUnit (semantic);     // applyOne has no override; the key says it
+                bool converted = false;
+                if (const double k = unitFactor (askUnit, ctlUnit); k != 0.0 && k != 1.0)
+                {
+                    converted = true;
+                    EchoJay_NSLog (("EJParamApply: " + semantic + " asked in " + askUnit
+                                    + ", this control's rungs are in " + ctlUnit + " - "
+                                    + juce::String (pos, 3) + " " + askUnit + " is "
+                                    + juce::String ((float) (pos * k), 3) + " " + ctlUnit).toRawUTF8());
+                    pos = (float) (pos * k);
+                }
                 for (int i = 0; i < positions.size() && p < 0; ++i)
                 {
                     // THE NUMBER MUST LEAD THE TEXT (21r item 2(a)). Retaining digits from anywhere in the name
@@ -939,11 +977,46 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                 // a list the server holds, and when that order is wrong the write lands on a different position
                 // and reads back as one - which is exactly the "op said Minor, plugin shows Arabic 2" defect. A
                 // stepped control is dialled BY NAME or not at all.
-                if (p < 0 && ! value.isString() && pos >= 1.0f && pos <= (float) steps)
+                // ...AND A CONVERTED NUMBER IS NOT AN INDEX CLAIM (18 Oct 2026). 9000 ms becomes 9 s,
+                // which falls inside 1..steps and was refused as "a bare index (9)" - the right
+                // refusal with the wrong reason, which is a sentence nobody can act on. A value we
+                // converted into this control's own unit is a VALUE; the rung test below judges it.
+                if (p < 0 && ! converted && ! value.isString() && pos >= 1.0f && pos <= (float) steps)
                 {
                     r.note = "REFUSED: a bare index (" + juce::String (pos, 0) + ") is not a position name; this control is dialled by name {"
                            + positions.joinIntoString (" | ") + "}";
                     return r;
+                }
+            }
+            // ---- THE NEAREST RUNG, WHEN THE ASK IS A NUMBER (18 Oct 2026) ----------------------
+            // A stepped control can only BE at one of these, so an asked 0.15 s on a 0.1 ladder means
+            // the rung next to it - and the note says which, so nothing is claimed silently. Only
+            // within half a rung: further away than that is a value this control cannot represent,
+            // and the old refusal still stands. Names are untouched; this is numbers only.
+            if (p < 0 && numeric)
+            {
+                int best = -1; double bestGap = 1.0e18, widestGap = 0.0;
+                juce::Array<double> rungs;
+                for (const auto& t0 : positions)
+                {
+                    int n = 0; while (n < t0.length() && juce::String ("0123456789.-+").containsChar (t0[n])) ++n;
+                    const auto lead = t0.substring (0, n);
+                    rungs.add (lead.containsAnyOf ("0123456789") ? (double) lead.getFloatValue() : 1.0e18);
+                }
+                for (int i = 0; i < rungs.size(); ++i)
+                {
+                    if (rungs[i] > 1.0e17) continue;
+                    const double gap = std::abs (rungs[i] - (double) pos);
+                    if (gap < bestGap) { bestGap = gap; best = i; }
+                }
+                for (int i = 1; i < rungs.size(); ++i)
+                    if (rungs[i] < 1.0e17 && rungs[i - 1] < 1.0e17)
+                        widestGap = juce::jmax (widestGap, std::abs (rungs[i] - rungs[i - 1]));
+                if (best >= 0 && widestGap > 0.0 && bestGap <= widestGap * 0.5 + 1.0e-9)
+                {
+                    p = best + 1;
+                    r.note = "asked " + asked + ", and this control's nearest position is \""
+                           + positions[best] + "\"";
                 }
             }
             if (p < 0) { r.note = "unknown position \"" + asked + "\" (this control has " + positions.joinIntoString (" | ") + ")"; return r; }
