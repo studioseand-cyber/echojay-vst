@@ -33,8 +33,10 @@
 #include <JuceHeader.h>
 #include "EJAgentExecutorRead.h"
 #include "EJAgentExecutorDo.h"
+#include "LinkShm.h"   // 19 Oct: the SC group round-trips the rack sidecar's own fields
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 using namespace echojay::agent;
 
@@ -64,7 +66,16 @@ struct FakeHost
     juce::StringArray inventory;
     bool bindInventory = true;
     juce::var notLoadable;              // [{name, loadable:false, why, type?}], void = not bound
+    // 19 Oct 2026: kWeighted stays FALSE on every slot fixture below. A slot leg is
+    // LevelTally::Weighting::Plain by construction ("a compressor's detector never hears
+    // K-weighting"), so a fixture that sets it true models a state the product cannot produce -
+    // the "legs model the host" rule, and the likeliest way "it's K-weighted LUFS" entered the
+    // conversation at all. The CHAIN tallies above are K-weighted, and correctly say so.
     Sources::SlotInputLevels inLevels;  // 18 Oct: what a slot heard - check(gr)'s answer for a third party
+    // 19 Oct 2026: and what a DIFFERENT channel heard. A fake that answers the same numbers
+    // whatever uid it is handed cannot tell a routed read from an unrouted one, which is exactly
+    // the defect the CH group is about - so the ground has to distinguish them before the legs can.
+    Sources::SlotInputLevels linkInLevels;
 
     FakeHost()
     {
@@ -137,7 +148,7 @@ struct FakeHost
         s.projectName = [] { return juce::String ("Guard Song"); };
         s.ownRack = [this] { return own; };
         // 18 Oct 2026: the slot's own input measurement, which is what a third-party slot answers with
-        s.slotInputLevels = [this] (const juce::String&, int) { return inLevels; };
+        s.slotInputLevels = [this] (const juce::String& uid, int) { return uid == link.uid ? linkInLevels : inLevels; };
         s.linkRack = [this] (const juce::String& uid) { if (uid == link.uid) return link; RackRead r; r.why = "no Link with uid \"" + uid + "\" is in the registry"; return r; };
         s.tracks = [this] { return tracks; };
         s.ownAnalysis = [this] { return ownA; };
@@ -580,7 +591,7 @@ int main()
         // map says. Certification is no longer the plugin's question, so it is no longer this leg's.
         {
             fh.own.slots[1].grCertified = false;      // and it makes no difference any more
-            fh.inLevels.known = true; fh.inLevels.kWeighted = true;
+            fh.inLevels.known = true; fh.inLevels.kWeighted = false;
             fh.inLevels.loudestDb = -10.5f; fh.inLevels.typicalDb = -15.5f; fh.inLevels.windowSeconds = 6.0f;
             auto nc = run (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
             const bool noReduction = ! nc.result.hasProperty ("grLoudestDb")
@@ -847,7 +858,7 @@ int main()
         h.playing = true; h.transportKnown = true;
 
         ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);     // the TARGET is the Link
-        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (o.ok,
                "LM1 check(gr) on a Link ANSWERS (RED as it stood: \"Gain reduction cannot be read from "
                "a Link yet - this will not work on a retry\", which closed the certified-compressor "
@@ -873,7 +884,7 @@ int main()
         SlotRead cs; cs.n = 1; cs.name = "Tube-Tech CL 1B"; cs.grCertified = true;
         h.link.slots.push_back (cs);
         ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
-        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (! o.ok && o.errorCode == "link_has_no_meters",
                "LM2 a Link whose build does not publish meters says THAT, and names the fix",
                o.errorCode + ": " + o.userMessage.substring (0, 70));
@@ -892,7 +903,7 @@ int main()
         cs.grCertified = true; cs.grLoudestDb = 5.6f; cs.grWindowFrames = 480.0;
         h.link.slots.push_back (cs);
         ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
-        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (! o.ok && o.errorCode == "link_meters_stale",
                "LM3 a reading too old to be a measurement of what is playing is REFUSED (his ruling: a "
                "figure nobody can check is worse than no figure)", o.errorCode);
@@ -950,13 +961,16 @@ int main()
         third.n = 1; third.name = "Tube-Tech CL 1B"; third.builtin = false;
         third.settings = "Threshold -15; Ratio 4";
         h.link.slots.push_back (third);
-        h.inLevels.known = true; h.inLevels.kWeighted = true;
-        h.inLevels.loudestDb = -8.1f; h.inLevels.typicalDb = -13.0f;
-        h.inLevels.loudestPeakDbtp = -2.4f; h.inLevels.typicalPeakDbtp = -6.6f;
-        h.inLevels.windowSeconds = 8.0f;
+        // 19 Oct 2026: on the LINK's measurement, because that is the channel this leg reads. It
+        // used to set the OPEN rack's and pass anyway, which is precisely what the CH group proved
+        // the product could not tell apart.
+        h.linkInLevels.known = true; h.linkInLevels.kWeighted = false;
+        h.linkInLevels.loudestDb = -8.1f; h.linkInLevels.typicalDb = -13.0f;
+        h.linkInLevels.loudestPeakDbtp = -2.4f; h.linkInLevels.typicalPeakDbtp = -6.6f;
+        h.linkInLevels.windowSeconds = 8.0f;
         ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
         ex.beginPlaybackWindow();
-        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (o.ok && o.result.getProperty ("measurement", {}).toString() == "slot_input_level"
                && std::abs ((double) o.result.getProperty ("inputLoudestDb", juce::var (0.0)) + 8.1) < 0.05
                && o.result.getProperty ("readBack", {}).toString().contains ("Threshold -15"),
@@ -983,7 +997,7 @@ int main()
         third.n = 1; third.name = "Tube-Tech CL 1B"; third.builtin = false;
         third.settings = "Threshold -15; Ratio 4; Attack 10; Release 0.5";
         h.own.slots.push_back (third);
-        h.inLevels.known = true; h.inLevels.kWeighted = true;
+        h.inLevels.known = true; h.inLevels.kWeighted = false;
         h.inLevels.loudestDb = -9.4f; h.inLevels.typicalDb = -14.8f;
         h.inLevels.loudestPeakDbtp = -3.2f; h.inLevels.typicalPeakDbtp = -7.9f;
         h.inLevels.windowSeconds = 8.0f;
@@ -1070,7 +1084,7 @@ int main()
         h.link.measuredAtMs = juce::Time::currentTimeMillis();   // measured during it
         for (int k = 0; k < 20; ++k) { juce::Timer::callPendingTimersSynchronously();
                                        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }
-        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (o.ok,
                "LM7 a reading stamped inside the playback the agent waited for is quoted even when it "
                "is older than the staleness bound - his ruling: that IS the section he played, not a "
@@ -1091,7 +1105,7 @@ int main()
         h.link.measuredAtMs = juce::Time::currentTimeMillis() - 30000;   // before the window
         ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
         ex.beginPlaybackWindow();
-        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"lnk_1"})"));
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
         check (! o.ok && o.errorCode == "link_meters_stale",
                "LM7b ...while a reading from BEFORE that window is still refused - the rule moved the "
                "line, it did not remove it", o.errorCode);
@@ -1104,6 +1118,445 @@ int main()
         check (fresh.linkMeterStaleMs == 6000,
                "LM7c and the shipped staleness bound is 6 s - one missed 500 ms publish plus a tool "
                "round trip", juce::String (fresh.linkMeterStaleMs));
+    }
+
+
+    // ---- HP (19 Oct 2026, his test 1): THE HOP PERCENTILES, ON THE INSTRUMENT ITSELF ----------
+    //
+    // *"loudest and typical were both exactly -15.5, twice, on a kick; that can't be right, so
+    // check the percentiles and the window."*  They were both -15.5 because p50 and p90 are taken
+    // over 400 ms MOMENTARY blocks and returned as the CENTRE of a 1 dB bin: two percentiles that
+    // land in one bin are byte-identical, and always end in .5. A kick's 400 ms blocks are far more
+    // alike than its 100 ms hops, so on that material one bin is where both land.
+    //
+    // LevelTally is header-only and allocation-free, so these drive the real instrument with
+    // synthetic audio rather than asserting on a fixture's numbers - the arithmetic is the subject.
+    std::printf ("\n== HP: hop percentiles separate loudest from typical, in plain dBFS RMS ==\n");
+    {
+        auto feedHops = [] (echojay::LevelTally& t, double amp, int hops, double sr, double freq)
+        {
+            // 100 ms per hop at sr; a sine so the RMS is exactly derivable, phase carried across calls
+            static double ph = 0.0;
+            const int n = (int) std::lround (sr * 0.1);
+            std::vector<float> l ((size_t) n), r ((size_t) n);
+            for (int h = 0; h < hops; ++h)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    const float v = (float) (amp * std::sin (ph));
+                    ph += 2.0 * juce::MathConstants<double>::pi * freq / sr;
+                    if (ph > 2.0 * juce::MathConstants<double>::pi) ph -= 2.0 * juce::MathConstants<double>::pi;
+                    l[(size_t) i] = v; r[(size_t) i] = v;
+                }
+                t.push (l.data(), r.data(), n);
+            }
+        };
+        const double sr = 48000.0;
+        // amplitude for a wanted dBFS RMS on the plain per-channel-mean convention: A = sqrt(2) * 10^(db/20)
+        auto ampFor = [] (double db) { return std::sqrt (2.0) * std::pow (10.0, db / 20.0); };
+        {
+            // LOUD AND QUIET HOPS: 20 at -12 dBFS, 60 at -30. p50 must sit in the quiet, p90 in the loud.
+            echojay::LevelTally t (echojay::LevelTally::Weighting::Plain);
+            t.prepare (sr);
+            feedHops (t, ampFor (-30.0), 60, sr, 1000.0);
+            feedHops (t, ampFor (-12.0), 20, sr, 1000.0);
+            const auto sn = t.snapshot();
+            float p50 = 0.0f, p90 = 0.0f;
+            const bool got = sn.hopLevelPercentiles (p50, p90);
+            check (got && p90 - p50 > 10.0f,
+                   "HP1 loud hops and quiet hops give DIFFERENT figures (the defect: both the same "
+                   "1 dB bin centre, twice)",
+                   got ? ("p50 " + juce::String (p50, 2) + "  p90 " + juce::String (p90, 2))
+                       : juce::String ("no percentile offered"));
+            check (got && std::abs (p90 + 12.0f) < 0.6f && std::abs (p50 + 30.0f) < 0.6f,
+                   "HP1b ...and each is the level that was actually played, not a bin centre",
+                   "p50 " + juce::String (p50, 2) + "  p90 " + juce::String (p90, 2));
+            // THE OLD ROAD, for contrast: the 400 ms percentiles on the same material are bin centres.
+            // |frac| == 0.5 is the test for "a 1 dB bin centre". Written with floor, not round:
+            // std::round(-11.5) goes AWAY from zero to -12, which made my first cut of this leg
+            // fail on a value that was exactly the bin centre it was asserting.
+            check (std::abs (sn.p90 - std::floor (sn.p90) - 0.5f) < 0.001f,
+                   "HP1c (and the 400 ms percentile beside it is still a 1 dB bin centre, ending in .5 - "
+                   "unchanged, because other readers depend on it)", juce::String (sn.p90, 3));
+        }
+        {
+            // PLAIN, NOT K: a 60 Hz sine reads its true RMS. K-weighting would cut it by about 8 dB,
+            // which is the whole of his point (2) - so this leg fails loudly if the leg is ever
+            // pointed at a K tally or the slot legs are ever switched to one.
+            echojay::LevelTally t (echojay::LevelTally::Weighting::Plain);
+            t.prepare (sr);
+            feedHops (t, ampFor (-20.0), 40, sr, 60.0);
+            float p50 = 0.0f, p90 = 0.0f;
+            const bool got = t.snapshot().hopLevelPercentiles (p50, p90);
+            check (got && std::abs (p50 + 20.0f) < 0.8f,
+                   "HP2 a 60 Hz sine at -20 dBFS RMS reads -20: unweighted, which is the unit Kathy's "
+                   "profiles are in (K-weighting would read about -28)",
+                   got ? juce::String (p50, 2) : juce::String ("no percentile"));
+        }
+        {
+            // CREST: a sine is 3.01 dB peak-to-RMS, and the crest comes off ONE window.
+            echojay::LevelTally t (echojay::LevelTally::Weighting::Plain);
+            t.prepare (sr);
+            feedHops (t, ampFor (-20.0), 40, sr, 1000.0);
+            float crest = 0.0f;
+            const bool got = t.snapshot().hopCrest (crest);
+            check (got && std::abs (crest - 3.01f) < 0.8f,
+                   "HP3 a sine's crest reads 3 dB (peak minus RMS, both over the same hops)",
+                   got ? juce::String (crest, 2) : juce::String ("no crest"));
+        }
+        {
+            // TOO SHORT A WINDOW IS NO FIGURE AT ALL, and it writes neither output.
+            echojay::LevelTally t (echojay::LevelTally::Weighting::Plain);
+            t.prepare (sr);
+            feedHops (t, ampFor (-18.0), 4, sr, 1000.0);        // 0.4 s: under the floor
+            float p50 = -77.0f, p90 = -77.0f, crest = -77.0f;
+            const auto sn = t.snapshot();
+            check (! sn.hopLevelPercentiles (p50, p90) && p50 == -77.0f && p90 == -77.0f,
+                   "HP4 under a second of audio there is no percentile, and nothing is written over "
+                   "the caller's variables - no plausible zero", juce::String (p50, 1));
+            check (! sn.hopCrest (crest) && crest == -77.0f,
+                   "HP4b ...and no crest either");
+        }
+        {
+            // THE WINDOW IS THE LISTEN WINDOW: resetShortTermMax() reopens it, and what was played
+            // before is gone. This is what makes the figures answer "the section he just played".
+            echojay::LevelTally t (echojay::LevelTally::Weighting::Plain);
+            t.prepare (sr);
+            feedHops (t, ampFor (-6.0), 40, sr, 1000.0);        // a loud passage
+            t.resetShortTermMax();                              // wait_for_playback opens a window
+            feedHops (t, ampFor (-26.0), 30, sr, 1000.0);       // and a quiet one is played
+            float p50 = 0.0f, p90 = 0.0f;
+            const bool got = t.snapshot().hopLevelPercentiles (p50, p90);
+            check (got && std::abs (p90 + 26.0f) < 0.8f,
+                   "HP5 reopening the window forgets the louder passage before it - the figures "
+                   "describe the section that was played, not the session",
+                   got ? ("p90 " + juce::String (p90, 2)) : juce::String ("no percentile"));
+            check (got && t.snapshot().hopLevelSeconds() <= 3.1f,
+                   "HP5b ...and the window says how much audio it describes",
+                   juce::String (t.snapshot().hopLevelSeconds(), 1));
+        }
+    }
+
+    // ---- CH (19 Oct 2026): THE READ ANSWERS ABOUT THE CHANNEL IT WAS ASKED ABOUT ---------------
+    //
+    // Found while writing the multi-channel design note, not from a report. check(gr) resolved the
+    // call's `channel` ONLY to decide whether a Link was involved (measuringALink) and then read
+    // targetRack() and slotInputLevels(target_) regardless - the rack the WINDOW has open. So a call
+    // naming another channel was answered about this one: internally consistent, and wrong at the
+    // only level that matters, because the model asked about the kick and was told about the mix bus
+    // with nothing in the payload to reveal the substitution.
+    //
+    // The build path two hundred lines up has always resolved this correctly (resolveChannelArg ->
+    // linkRack(asked)), which is why this is one helper used by both rather than a third copy of the
+    // idiom - the lesson ITEM 1's "ONE CROSS-CHANNEL GATE" wrote down on 14 Oct.
+    std::printf ("\n== CH: check(gr) reads the channel it was asked about, and says which ==\n");
+    {
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        // The two channels differ in EVERY way a leg could confuse: the open rack's slot 1 is a
+        // built-in (EchoJay EQ), the Kick's slot 1 is a third party (UAD 1176), and their input
+        // measurements share no figure.
+        h.link.meterCapable = true;
+        h.inLevels.known = true;     h.inLevels.kWeighted = false;
+        h.inLevels.loudestDb = -9.4f; h.inLevels.typicalDb = -14.8f;
+        h.inLevels.loudestPeakDbtp = -3.2f; h.inLevels.typicalPeakDbtp = -7.9f;
+        h.inLevels.windowSeconds = 8.0f;
+        h.linkInLevels.known = true;  h.linkInLevels.kWeighted = false;
+        h.linkInLevels.loudestDb = -6.1f; h.linkInLevels.typicalDb = -12.2f;
+        h.linkInLevels.loudestPeakDbtp = -1.4f; h.linkInLevels.typicalPeakDbtp = -5.5f;
+        h.linkInLevels.windowSeconds = 8.0f;
+        ExecutorRead ex (h.sources());
+        ex.setTarget ({});                       // the WINDOW is on the open rack
+        ex.beginPlaybackWindow();
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();   // the Kick measured inside the window
+        // BY NAME, as the model would send it after reading the start context's track names.
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"Kick"})"));
+        check (o.ok && o.result.getProperty ("name", juce::var()).toString() == "UAD 1176",
+               "CH1 with the Mix Bus open, check(gr) on \"Kick\" slot 1 answers about the KICK's slot "
+               "(RED as it stood: it read the open rack and answered about EchoJay EQ)",
+               o.ok ? o.result.getProperty ("name", juce::var()).toString()
+                    : (o.errorCode + ": " + o.errorMessage.substring (0, 70)));
+        check (std::abs ((double) o.result.getProperty ("inputLoudestDb", juce::var (0.0)) + 6.1) < 0.05
+               && std::abs ((double) o.result.getProperty ("inputTypicalDb", juce::var (0.0)) + 12.2) < 0.05,
+               "CH2 ...and the figures are the KICK's measurement, not the open rack's",
+               juce::JSON::toString (o.result).substring (0, 110));
+        const auto ch = o.result.getProperty ("channel", juce::var());
+        check (ch.getProperty ("uid", juce::var()).toString() == "lnk_kick"
+               && ch.getProperty ("name", juce::var()).toString() == "Kick",
+               "CH3 ...and the payload NAMES the channel it answered about, so a substitution can "
+               "never again be invisible to the model or to B",
+               juce::JSON::toString (ch));
+    }
+    {
+        // A CHANNEL THAT DOES NOT RESOLVE IS REFUSED, NOT QUIETLY ANSWERED FROM THE OPEN RACK.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        ExecutorRead ex (h.sources());
+        ex.setTarget ({});
+        ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"Trumpet"})"));
+        check (! o.ok && o.errorCode == "unknown_channel",
+               "CH4 an unknown channel is refused (RED as it stood: it answered about the Mix Bus)",
+               o.ok ? juce::JSON::toString (o.result).substring (0, 80) : o.errorCode);
+        check (o.errorMessage.contains ("Kick") && o.errorMessage.contains ("Lead Vocal"),
+               "CH4b ...and the refusal lists the channels that exist, so the next turn can name one "
+               "or stop", o.errorMessage.substring (0, 110));
+    }
+    {
+        // THE OTHER DIRECTION: no channel argument still answers about the open rack, and stamps it.
+        // Slot 2 of the open rack is a third party (API-2500), so this is the same road as CH1.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.inLevels.known = true; h.inLevels.kWeighted = false;
+        h.inLevels.loudestDb = -9.4f; h.inLevels.typicalDb = -14.8f;
+        h.inLevels.windowSeconds = 8.0f;
+        ExecutorRead ex (h.sources());
+        ex.setTarget ({});
+        ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
+        check (o.ok && std::abs ((double) o.result.getProperty ("inputLoudestDb", juce::var (0.0)) + 9.4) < 0.05,
+               "CH5 with no channel argument the open rack answers, as it always did",
+               o.ok ? juce::JSON::toString (o.result).substring (0, 80) : o.errorCode);
+        check (o.result.getProperty ("channel", juce::var()).getProperty ("uid", juce::var()).toString() == "self",
+               "CH5b ...stamped \"self\", which is the spelling rackVar has always used for the open rack",
+               juce::JSON::toString (o.result.getProperty ("channel", juce::var())));
+    }
+    {
+        // AND WHEN THE WINDOW IS ON THE LINK, the target carries it with no argument at all - the
+        // road the six LM legs above drive, asserted here so repairing their fixture cannot hide a
+        // regression in it.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.link.meterCapable = true;
+        h.linkInLevels.known = true; h.linkInLevels.kWeighted = false;
+        h.linkInLevels.loudestDb = -6.1f; h.linkInLevels.typicalDb = -12.2f;
+        h.linkInLevels.windowSeconds = 8.0f;
+        ExecutorRead ex (h.sources());
+        ex.setTarget (h.link.uid);
+        ex.beginPlaybackWindow();
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (o.ok && o.result.getProperty ("name", juce::var()).toString() == "UAD 1176"
+               && std::abs ((double) o.result.getProperty ("inputLoudestDb", juce::var (0.0)) + 6.1) < 0.05,
+               "CH6 a Link TARGET with no channel argument answers about the Link, as before",
+               o.ok ? juce::JSON::toString (o.result).substring (0, 90) : o.errorCode);
+        check (o.result.getProperty ("channel", juce::var()).getProperty ("uid", juce::var()).toString() == "lnk_kick",
+               "CH6b ...and names it, so every answer on this road carries its channel",
+               juce::JSON::toString (o.result.getProperty ("channel", juce::var())));
+    }
+
+
+    // ---- ST (19 Oct 2026, his coverage ask): check(gr) ACROSS SLOT TYPES ----------------------
+    //
+    // *"Coverage, not just the Kick/CL 1B: a guard leg for check gr across slot types (EchoJay
+    // Compressor, a third party on the open rack, a third party on a Link, an empty slot, slot out
+    // of range)."*  One fixture per type, each asserting the ANSWER THAT TYPE SHOULD GET - which is
+    // how two of these were found to be answered with a false reason rather than their own.
+    std::printf ("\n== ST: every slot type gets its own answer ==\n");
+    auto plainLevels = [] (float loud, float typ, float crest)
+    {
+        Sources::SlotInputLevels lv;
+        lv.known = true; lv.kWeighted = false;
+        lv.loudestDb = loud; lv.typicalDb = typ;
+        lv.loudestPeakDbtp = loud + crest; lv.typicalPeakDbtp = typ + crest;
+        lv.windowSeconds = 8.0f;
+        lv.rmsKnown = true; lv.loudestRmsDb = loud; lv.typicalRmsDb = typ; lv.rmsSeconds = 8.0f;
+        lv.outRmsKnown = true; lv.outLoudestRmsDb = loud - 2.5f; lv.outTypicalRmsDb = typ - 0.5f;
+        lv.inCrestKnown = true;  lv.inCrestDb  = crest;
+        lv.outCrestKnown = true; lv.outCrestDb = crest - 3.0f;
+        return lv;
+    };
+    {
+        // (1) AN ECHOJAY COMPRESSOR: its own meter, a reduction figure, and no input-level road.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead dev;
+        dev.n = 1; dev.name = "EchoJay Compressor"; dev.builtin = true;
+        dev.pictureValid = true; dev.grKnown = true; dev.grCertified = true;
+        dev.grLoudestDb = 5.6f; dev.grTypicalDb = 3.2f; dev.grHeldDb = 5.1f; dev.grWindowFrames = 480.0;
+        h.own.slots.push_back (dev);
+        ExecutorRead ex (h.sources()); ex.setTarget ({}); ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (o.ok && std::abs ((double) o.result.getProperty ("grLoudestDb", juce::var (0.0)) - 5.6) < 0.05,
+               "ST1 an EchoJay Compressor answers from its OWN meter, with the loudest reduction",
+               o.ok ? juce::JSON::toString (o.result).substring (0, 80) : o.errorCode);
+        check (! juce::JSON::toString (o.result).contains ("inputLoudestRmsDb"),
+               "ST1b ...and does NOT take the third-party input road: a device that measures its own "
+               "reduction is not asked to infer one");
+    }
+    {
+        // (2) A THIRD PARTY ON THE OPEN RACK: both legs, both crests, in dBFS RMS, and no GR field.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead third;
+        third.n = 1; third.name = "Renaissance Axx"; third.builtin = false;
+        third.settings = "Threshold -20; Ratio 4";
+        h.own.slots.push_back (third);
+        h.inLevels = plainLevels (-9.4f, -14.8f, 9.0f);
+        ExecutorRead ex (h.sources()); ex.setTarget ({}); ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        const auto flat = juce::JSON::toString (o.result);
+        check (o.ok && std::abs ((double) o.result.getProperty ("inputLoudestRmsDb", juce::var (0.0)) + 9.4) < 0.05
+               && std::abs ((double) o.result.getProperty ("inputTypicalRmsDb", juce::var (0.0)) + 14.8) < 0.05,
+               "ST2 a third party on the open rack answers with the INPUT hop percentiles in dBFS RMS",
+               o.ok ? flat.substring (0, 110) : o.errorCode);
+        check (std::abs ((double) o.result.getProperty ("outputLoudestRmsDb", juce::var (0.0)) + 11.9) < 0.05
+               && std::abs ((double) o.result.getProperty ("outputTypicalRmsDb", juce::var (0.0)) + 15.3) < 0.05,
+               "ST2b ...and the OUTPUT leg over the same window (his 19 Oct fallback ask)",
+               flat.substring (0, 140));
+        check (std::abs ((double) o.result.getProperty ("inputCrestDb", juce::var (0.0)) - 9.0) < 0.05
+               && std::abs ((double) o.result.getProperty ("outputCrestDb", juce::var (0.0)) - 6.0) < 0.05,
+               "ST2c ...and both crests, peak minus RMS", flat.substring (0, 160));
+        check (o.result.getProperty ("inputRmsUnit", juce::var()).toString() == "dBFS RMS"
+               && o.result.getProperty ("inputUnit", juce::var()).toString() == "dBFS RMS",
+               "ST2d ...named in Kathy's unit, not LUFS - a slot leg is never K-weighted",
+               o.result.getProperty ("inputUnit", juce::var()).toString());
+        check (! flat.contains ("grDb") && ! flat.contains ("grLoudest") && ! flat.contains ("grEstimate")
+               && ! flat.contains ("reductionDb")
+               && o.result.getProperty ("gainReduction", juce::var()).toString() == "not_read",
+               "ST2e ...and NOTHING in it could be quoted as gain reduction, including the new fields",
+               flat.substring (0, 120));
+    }
+    {
+        // (3) A THIRD PARTY ON A LINK: the same answer, over the sidecar.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.link.meterCapable = true;
+        h.link.slots.clear();
+        SlotRead third;
+        third.n = 1; third.name = "Tube-Tech CL 1B"; third.builtin = false;
+        third.settings = "Threshold -15; Ratio 4";
+        h.link.slots.push_back (third);
+        h.linkInLevels = plainLevels (-6.1f, -12.2f, 7.0f);
+        ExecutorRead ex (h.sources()); ex.setTarget ({}); ex.beginPlaybackWindow();
+        h.link.measuredAtMs = juce::Time::currentTimeMillis();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1,"channel":"Kick"})"));
+        check (o.ok && std::abs ((double) o.result.getProperty ("inputLoudestRmsDb", juce::var (0.0)) + 6.1) < 0.05
+               && std::abs ((double) o.result.getProperty ("outputTypicalRmsDb", juce::var (0.0)) + 12.7) < 0.05
+               && std::abs ((double) o.result.getProperty ("inputCrestDb", juce::var (0.0)) - 7.0) < 0.05,
+               "ST3 a third party on a LINK answers with the same six figures, over the sidecar",
+               o.ok ? juce::JSON::toString (o.result).substring (0, 140) : o.errorCode);
+    }
+    {
+        // (4) AN EMPTY SLOT: nothing is in it, so there is nothing to measure - and it must SAY so.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead empty; empty.n = 1; empty.name = ""; empty.builtin = false;
+        h.own.slots.push_back (empty);
+        h.inLevels = plainLevels (-9.4f, -14.8f, 9.0f);     // the leg IS measuring: levels exist
+        ExecutorRead ex (h.sources()); ex.setTarget ({}); ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (! o.ok && ! juce::JSON::toString (o.result).contains ("inputLoudestRmsDb"),
+               "ST4 an empty slot is refused, with no measurement attributed to nothing (RED as it "
+               "stood: it answered with the levels under a blank name)",
+               o.ok ? juce::JSON::toString (o.result).substring (0, 90) : o.errorCode);
+        check (! o.ok && o.userMessage.containsIgnoreCase ("nothing")
+                      && ! o.userMessage.containsIgnoreCase ("no audio"),
+               "ST4b ...and the reason is that the slot is empty, not a false 'no audio has been heard'",
+               o.userMessage.substring (0, 90));
+    }
+    {
+        // (5) A SLOT OUT OF RANGE: the range is named, which is what stops a retry loop.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        ExecutorRead ex (h.sources()); ex.setTarget ({}); ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":9})"));
+        check (! o.ok && o.errorCode == "unknown_slot" && o.errorMessage.contains ("1..4"),
+               "ST5 a slot out of range is unknown_slot AND names the range that exists",
+               o.errorCode + ": " + o.errorMessage.substring (0, 60));
+    }
+    {
+        // (6) A BYPASSED SLOT: nothing passes through it, so "no audio has been heard" is a false
+        // reason of exactly the kind his #19 was about. It must say it is bypassed.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.own.slots.clear();
+        SlotRead byp; byp.n = 1; byp.name = "Renaissance Axx"; byp.builtin = false; byp.bypassed = true;
+        h.own.slots.push_back (byp);
+        h.inLevels = {};                                    // a bypassed slot is not in circuit
+        ExecutorRead ex (h.sources()); ex.setTarget ({}); ex.beginPlaybackWindow();
+        const auto o = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));
+        check (! o.ok && o.userMessage.containsIgnoreCase ("bypass"),
+               "ST6 a bypassed slot says it is bypassed (RED as it stood: 'no audio has been heard', "
+               "which sent him looking for a silent channel)", o.userMessage.substring (0, 90));
+    }
+
+
+    // ---- SC (19 Oct 2026): THE FIGURES SURVIVE THE CROSSING ------------------------------------
+    //
+    // "Same from a Link" is entirely a claim about the sidecar, and nothing in the repo round-trips
+    // the slot measurement through the shipped writer and reader - the Link legs above all stop at
+    // a fake linkRack. A field that is written but never parsed (or parsed under a different key)
+    // reads as "that track's EchoJay is an older build", which is the most plausible-looking wrong
+    // answer this road can give. The runner provides a private ECHOJAY_STATE_HOME, so this writes
+    // a real sidecar and reads it back through the shipped pair.
+    std::printf ("\n== SC: the slot measurement survives the sidecar, key for key ==\n");
+    {
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        check (dir.isNotEmpty(), "SC0 the guard has a private state directory to write into",
+               dir.isNotEmpty() ? dir : juce::String ("none"));
+        if (dir.isNotEmpty())
+        {
+            LinkShm::RackSidecar rc;
+            rc.valid = true; rc.uid = "lnk_sc"; rc.name = "Kick"; rc.revision = 2;
+            rc.meterCapable = true; rc.measuredAtMs = juce::Time::currentTimeMillis();
+            LinkShm::RackSidecarSlot sl;
+            sl.name = "Tube-Tech CL 1B"; sl.settings = "Threshold -15";
+            sl.inLevelsKnown = true; sl.inLevelsKWeighted = false;
+            sl.inLoudestDb = -6.1f; sl.inTypicalDb = -12.2f;
+            sl.inLoudestPeakDbtp = -1.4f; sl.inTypicalPeakDbtp = -5.5f;
+            sl.inWindowSeconds = 8.0f;
+            sl.inRmsKnown = true; sl.inLoudestRmsDb = -6.3f; sl.inTypicalRmsDb = -12.4f; sl.inRmsSeconds = 7.5f;
+            sl.outRmsKnown = true; sl.outLoudestRmsDb = -8.8f; sl.outTypicalRmsDb = -12.9f;
+            sl.inCrestKnown = true; sl.inCrestDb = 9.2f;
+            sl.outCrestKnown = true; sl.outCrestDb = 6.1f;
+            rc.slots.push_back (sl);
+            LinkShm::writeRackSidecar (dir, rc);
+            const auto back = LinkShm::readRackSidecar (dir, "lnk_sc");
+            check (back.valid && back.slots.size() == 1,
+                   "SC1 the sidecar reads back", juce::String ((int) back.slots.size()));
+            if (back.valid && ! back.slots.empty())
+            {
+                const auto& b = back.slots[0];
+                check (b.inRmsKnown && std::abs (b.inLoudestRmsDb + 6.3f) < 0.05f
+                       && std::abs (b.inTypicalRmsDb + 12.4f) < 0.05f && std::abs (b.inRmsSeconds - 7.5f) < 0.05f,
+                       "SC2 the INPUT hop percentiles and their window cross intact",
+                       juce::String (b.inLoudestRmsDb, 2) + " / " + juce::String (b.inTypicalRmsDb, 2));
+                check (b.outRmsKnown && std::abs (b.outLoudestRmsDb + 8.8f) < 0.05f
+                       && std::abs (b.outTypicalRmsDb + 12.9f) < 0.05f,
+                       "SC3 the OUTPUT leg crosses intact",
+                       juce::String (b.outLoudestRmsDb, 2) + " / " + juce::String (b.outTypicalRmsDb, 2));
+                check (b.inCrestKnown && std::abs (b.inCrestDb - 9.2f) < 0.05f
+                       && b.outCrestKnown && std::abs (b.outCrestDb - 6.1f) < 0.05f,
+                       "SC4 both crests cross intact",
+                       juce::String (b.inCrestDb, 2) + " / " + juce::String (b.outCrestDb, 2));
+                check (! b.inLevelsKWeighted,
+                       "SC5 and the weighting crosses as PLAIN, which is what a slot leg is");
+            }
+            // AND AN OLDER BUILD'S SIDECAR - no RMS keys at all - reads as "not known", never as 0.
+            LinkShm::RackSidecar old;
+            // A REVISION, because the reader refuses a sidecar without one - my first cut of this
+            // leg left it out and read back valid=0, which is the leg's ground missing, not the
+            // product refusing the keys. Every real writer sets it.
+            old.valid = true; old.uid = "lnk_old"; old.name = "Snare"; old.revision = 1;
+            old.meterCapable = true; old.measuredAtMs = juce::Time::currentTimeMillis();
+            LinkShm::RackSidecarSlot os;
+            os.name = "Renaissance Axx";
+            os.inLevelsKnown = true; os.inLoudestDb = -9.0f; os.inTypicalDb = -14.0f; os.inWindowSeconds = 8.0f;
+            old.slots.push_back (os);
+            LinkShm::writeRackSidecar (dir, old);
+            const auto oback = LinkShm::readRackSidecar (dir, "lnk_old");
+            check (oback.valid && ! oback.slots.empty() && ! oback.slots[0].inRmsKnown
+                   && oback.slots[0].inLoudestRmsDb < -199.0f,
+                   "SC6 a sidecar written without the new keys reads as NO hop percentiles, not as 0 dB "
+                   "- the one failure mode that would look like a measurement",
+                   oback.slots.empty() ? juce::String ("no slot")
+                                       : juce::String (oback.slots[0].inLoudestRmsDb, 1));
+        }
     }
 
     std::printf ("\n==== agent_executor_read_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);

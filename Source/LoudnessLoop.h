@@ -898,12 +898,20 @@ public:
                       ? juce::String ("The chain changed after I matched the level. Tap Listen and I'll match it again.")
                       : "The chain changed after I set the level. Tap Listen and I'll check it against " + aimWords() + ".",
                   -1.0f, false, false, Bubble::Kind::info, { "Listen" });
+            // 19 Oct 2026: AND MEASURE IT AGAIN OURSELVES, if there is a pass left. His 08:07 run
+            // went stale because the threshold loop was still settling the compressor - a chain
+            // change we caused, 30 s after the match, which the user cannot be expected to chase
+            // with a tap. The bubble stays (he may want to re-cue a different section); this makes
+            // the common case right without one.
+            armVerify ("the chain changed under the landing");
         }
         // 08c F2: the owed opening landing runs while ARMED - `armed` is exactly the state it has to fire in,
         // which is why it sits past the early return below. The stale check above it deliberately runs FIRST:
         // after the opening landing the loop is STILL armed, waiting for Listen, so a staleness check that only
         // ran in the measuring states could never see the case it exists for (Sean's two EQ bells at 20:05).
-        if (state_ == State::armed) { tryOpeningLanding(); return; }
+        // 19 Oct 2026: and the verify pass runs in the same state, right after it - the loop stays
+        // ARMED through both, which is why the opening landing lives here in the first place.
+        if (state_ == State::armed) { tryOpeningLanding(); tryVerifyLanding(); return; }
         if (state_ != State::waitAudio && state_ != State::measuring && state_ != State::tracking) return;   // proposed / hold / quietAsked: nothing runs on its own
         const auto out = host_.getChainOutLevels();
         const float counted = out.heardAboveSeconds;
@@ -1332,9 +1340,94 @@ private:
                  + aimWords() + ". No peak-headroom cap (7 Oct ruling): the ceiling and the loud-window GR "
                  "check are the safety." + busGainNote());
         openingOwed_ = false;
-        if (std::abs (want - cur) >= 0.05f) writeGainDb (want);
-        else noteLanded();   // nothing to write, but this chain HAS now been landed on
+        if (std::abs (want - cur) >= 0.05f)
+        {
+            writeGainDb (want);
+            armVerify ("the opening match");   // 19 Oct: and now measure what that actually did
+        }
+        else
+        {
+            noteLanded();   // nothing to write, but this chain HAS now been landed on
+            armVerify ("the opening match (no move needed)");
+        }
     }
+    /** 19 Oct 2026: owe a verification. The OUT tap is reset so the next reading is of the chain
+        as it stands AFTER the write; the input aim is not re-measured, because the thing being
+        checked is whether the output now sits where the input was. */
+    void armVerify (const juce::String& why)
+    {
+        if (verifyPasses_ >= kMaxVerifyPasses) return;
+        host_.resetChainOutLevels();
+        verifyOwed_ = true; verifyResetSeen_ = false;
+        log ("verify OWED after " + why + ": the output tap is reset, so the next reading is of the "
+             "chain as it stands now. Aim " + fmt (target_) + " LUFS, tolerance "
+             + juce::String (kVerifyTolDb, 1) + " dB, pass " + juce::String (verifyPasses_ + 1)
+             + " of " + juce::String (kMaxVerifyPasses) + ".");
+    }
+
+    /** The verification, run from the same armed tick as the opening landing. Reads the output over
+        the playback window and compares it with the aim; corrects ONCE if it has a pass left, and
+        otherwise says how close it got rather than moving again. */
+    void tryVerifyLanding()
+    {
+        if (! verifyOwed_) return;
+        if (! stageReady()) return;
+        const auto outNow = host_.getChainOutLevels();
+        // The same observed-reset discipline as the opening landing: LevelTally::reset only raises a
+        // flag, so `known` can still be true on the window we just discarded.
+        if (! verifyResetSeen_)
+        {
+            if (outNow.heardSeconds < 1.0f)
+            {
+                verifyResetSeen_ = true;
+                log ("verify: the output tap has cleared, so the next reading is of the chain after the write");
+            }
+            return;
+        }
+        if (! (outNow.known && std::isfinite (outNow.levelDb))) return;
+        ++verifyPasses_;
+        verifyOwed_ = false;
+        const float heard = effectiveOutDb (outNow.levelDb);
+        const float off   = heard - target_;
+        if (std::abs (off) <= kVerifyTolDb)
+        {
+            log ("verify PASSED: the output measures " + fmt (heard) + " LUFS against an aim of "
+                 + fmt (target_) + " LUFS (" + fmtSigned (off) + " dB), over "
+                 + juce::String (outNow.windowSeconds, 1) + " s of playback at Level "
+                 + fmtSigned (currentGainDb()) + " dB" + busGainNote());
+            noteLanded();
+            emit (aim_ == Aim::matchInput
+                      ? juce::String ("Matched and checked: it now measures ") + fmt (heard)
+                        + " LUFS out against " + fmt (target_) + " LUFS in."
+                      : juce::String ("Set and checked: it now measures ") + fmt (heard)
+                        + " LUFS against " + aimWords() + ".",
+                  -1.0f, false, false, Bubble::Kind::info, {});
+            return;
+        }
+        if (verifyPasses_ < kMaxVerifyPasses)
+        {
+            const float cur  = currentGainDb();
+            const float want = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, cur - off);
+            log ("verify OFF by " + fmtSigned (off) + " dB: the output measures " + fmt (heard)
+                 + " LUFS against an aim of " + fmt (target_) + " LUFS, so the Level goes "
+                 + fmtSigned (cur) + " -> " + fmtSigned (want) + " dB and is measured again. This is "
+                 "the correction his 08:07 build never made.");
+            if (std::abs (want - cur) >= 0.05f) writeGainDb (want);
+            armVerify ("a correction of " + fmtSigned (-off) + " dB");
+            return;
+        }
+        // OUT OF PASSES. The loop stops moving and says where it got to: a third, fourth and fifth
+        // correction is how a trim walks, and a walking trim is worse than a named miss.
+        log ("verify STOPPED after " + juce::String (verifyPasses_) + " pass(es): the output measures "
+             + fmt (heard) + " LUFS against an aim of " + fmt (target_) + " LUFS (" + fmtSigned (off)
+             + " dB). Not corrected again - something else is moving the level while this measures.");
+        noteLanded();
+        emit (juce::String ("I got it to ") + fmt (heard) + " LUFS against " + fmt (target_)
+              + " LUFS and stopped there - something else is changing the level while I measure. "
+                "Tap Listen and I'll try again.",
+              -1.0f, false, false, Bubble::Kind::info, { "Listen" });
+    }
+
     bool pastResolveDeadline() const
     {
         const juce::int64 from = firstAudioMs_ > 0 ? firstAudioMs_ : passStartMs_;
@@ -1552,6 +1645,30 @@ public:
     Aim    aim_ = Aim::hitTarget;
     bool   openingOwed_ = false;       // 08c F2: the opening landing is measured, not written at arm
     bool   openingResetSeen_ = false;  // 08c F2: the deferred tally reset has been OBSERVED, not assumed
+    // ---- THE VERIFY PASS (19 Oct 2026, Sean, agent off, 08:07) ----------------------------------
+    // *"The build put the Acme Opticom XLA-3 in with input gain 7.5 (about 12 dB GR on its meter),
+    // and the Link GAIN went to -8.6 dB to compensate, but the kick came out LOUDER. Level matching
+    // must measure the actual output after the build over the playback window and match it to the
+    // input loudness, then verify."*
+    //
+    // His log says the -8.6 WAS measured, not predicted: "chain in -16.6 LUFS, out -7.9 LUFS over
+    // the same window -> Level +0.0 -> -8.6 dB". What was missing is the step after it. Thirty
+    // seconds later the loop said "landing STALE: the chain's gain changed after the Level was set"
+    // - the threshold loop was still settling the Opticom - and all it did about that was ask him
+    // to tap Listen. So the number was right about a chain that had moved, and nothing ever
+    // measured the result.
+    //
+    // A verify pass closes it: after the gain is written, the output tap is reset and read again
+    // over the playback window, and the aim is checked against what was actually heard. Within
+    // kVerifyTolDb that is a verified landing, said with both figures. Outside it, ONE correction
+    // is made and verified again; after kMaxVerifyPasses the loop stops moving and says plainly
+    // how close it got, because a loop that keeps correcting is how a trim walked from -8.6 to
+    // -19.1 dB in three seconds in his 08:07 log.
+    bool   verifyOwed_ = false;
+    bool   verifyResetSeen_ = false;
+    int    verifyPasses_ = 0;
+    static constexpr float kVerifyTolDb    = 0.7f;   // closer than anyone can hear on a kick
+    static constexpr int   kMaxVerifyPasses = 2;
     Stage  stage_;                     // levelling v2: the gain this loop drives (rack OUT or limiter IN)
     bool   staleSaid_ = false;         // 08c F2: the stale-landing offer is made once per landing
     bool   landedOnce_ = false;        // a landing has been written: a later chain-gain change makes it stale

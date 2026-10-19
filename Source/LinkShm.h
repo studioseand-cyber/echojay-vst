@@ -1430,6 +1430,23 @@ struct RackSidecarSlot {
     float grDb = 0.0f, grPeakDb = 0.0f, grTypicalDb = 0.0f, grLoudestDb = 0.0f, grHeldDb = 0.0f;
     double grWindowFrames = 0.0;
     float inLufs = -200.0f, outLufs = -200.0f, inTpDb = -200.0f, outTpDb = -200.0f;
+    /** ---- PLAIN RMS, HOP BY HOP (19 Oct 2026, Sean's test 1) ----------------------------------
+        p50 and p90 of the 100 ms hops this slot actually heard, unquantised, in dBFS RMS - the
+        unit Kathy's profiles are in. The figures above are percentiles of 400 ms blocks returned
+        as 1 dB bin centres, which is why a kick read "loudest" and "typical" as the same number.
+        inRmsSeconds is how much audible audio they describe.
+        LAST, after every existing member, for the same positional-brace-init reason the
+        manufacturer and lastEditMs fields are: a field spliced mid-struct shifts every brace
+        initialiser silently and still compiles. The trap's FOURTH visit. */
+    bool  inRmsKnown = false;
+    float inLoudestRmsDb = -200.0f, inTypicalRmsDb = -200.0f;
+    float inRmsSeconds = 0.0f;
+    /** The OUT leg's hop percentiles and both crests, over the same window (19 Oct 2026, for B's
+        fallback where a compressor has no profile). LAST, same positional-init rule. */
+    bool  outRmsKnown = false;
+    float outLoudestRmsDb = -200.0f, outTypicalRmsDb = -200.0f;
+    bool  inCrestKnown = false, outCrestKnown = false;
+    float inCrestDb = 0.0f, outCrestDb = 0.0f;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -2252,6 +2269,19 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
             so->setProperty ("inTypTp",    (double) s.inTypicalPeakDbtp);
             so->setProperty ("inWinSec",   (double) s.inWindowSeconds);
             if (s.inLevelsKWeighted) so->setProperty ("inLvlK", true);
+            if (s.inRmsKnown)   // 19 Oct 2026: the hop percentiles, written only when there are hops
+            {
+                so->setProperty ("inLoudRms", (double) s.inLoudestRmsDb);
+                so->setProperty ("inTypRms",  (double) s.inTypicalRmsDb);
+                so->setProperty ("inRmsSec",  (double) s.inRmsSeconds);
+            }
+            if (s.outRmsKnown)
+            {
+                so->setProperty ("outLoudRms", (double) s.outLoudestRmsDb);
+                so->setProperty ("outTypRms",  (double) s.outTypicalRmsDb);
+            }
+            if (s.inCrestKnown)  so->setProperty ("inCrest",  (double) s.inCrestDb);
+            if (s.outCrestKnown) so->setProperty ("outCrest", (double) s.outCrestDb);
         }
         if (s.pictureValid) so->setProperty("picValid", true);
         if (s.grKnown)
@@ -2356,6 +2386,25 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                     s.inTypicalPeakDbtp = (float)(double) so->getProperty ("inTypTp");
                     s.inWindowSeconds   = (float)(double) so->getProperty ("inWinSec");
                     s.inLevelsKWeighted = so->hasProperty ("inLvlK") && (bool) so->getProperty ("inLvlK");
+                    // 19 Oct: absent (an older build on that track) reads as "no hop percentiles",
+                    // which is what inRmsKnown false means - never a zero that looks measured.
+                    s.inRmsKnown = so->hasProperty ("inLoudRms") && so->hasProperty ("inTypRms");
+                    if (s.inRmsKnown)
+                    {
+                        s.inLoudestRmsDb = (float)(double) so->getProperty ("inLoudRms");
+                        s.inTypicalRmsDb = (float)(double) so->getProperty ("inTypRms");
+                        s.inRmsSeconds   = (float)(double) so->getProperty ("inRmsSec");
+                    }
+                    s.outRmsKnown = so->hasProperty ("outLoudRms") && so->hasProperty ("outTypRms");
+                    if (s.outRmsKnown)
+                    {
+                        s.outLoudestRmsDb = (float)(double) so->getProperty ("outLoudRms");
+                        s.outTypicalRmsDb = (float)(double) so->getProperty ("outTypRms");
+                    }
+                    s.inCrestKnown  = so->hasProperty ("inCrest");
+                    if (s.inCrestKnown)  s.inCrestDb  = (float)(double) so->getProperty ("inCrest");
+                    s.outCrestKnown = so->hasProperty ("outCrest");
+                    if (s.outCrestKnown) s.outCrestDb = (float)(double) so->getProperty ("outCrest");
                 }
                 s.pictureValid = so->hasProperty("picValid") && (bool) so->getProperty("picValid");
                 s.grKnown      = so->hasProperty("grKnown")  && (bool) so->getProperty("grKnown");

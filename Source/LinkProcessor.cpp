@@ -532,7 +532,22 @@ void LinkProcessor::publishRackSidecar()
             // AND WHAT THE SLOT HEARD (18 Oct 2026): this is what moves on a third-party rack, which
             // is every rack his session has had on the Kick - without it the digest was dead weight.
             if (const auto lv = chainHost.getSlotLevels (i); lv.measured && lv.in.known)
+            {
                 digest += lv.in.p90 * 17.0 + lv.in.p50 * 5.0 + (double) lv.in.windowSeconds;
+                // 19 Oct 2026: AND the hop percentiles, which are the figures a reader now quotes,
+                // plus the out leg and the crests. The item-13 lesson, verbatim: a digest that does
+                // not include what it publishes is a digest that never moves, and the republish it
+                // guards never happens. (The braces matter: `lv` is scoped to the if-statement, and
+                // without them this block sat outside it and would not compile.)
+                float t = 0.0f, l = 0.0f;
+                if (lv.in.hopLevelPercentiles (t, l))
+                    digest += (double) l * 23.0 + (double) t * 11.0 + (double) lv.in.hopLevelCount;
+                if (lv.out.hopLevelPercentiles (t, l))
+                    digest += (double) l * 29.0 + (double) t * 19.0;
+                float c = 0.0f;
+                if (lv.in.hopCrest (c))  digest += (double) c * 31.0;
+                if (lv.out.hopCrest (c)) digest += (double) c * 37.0;
+            }
         }
         if (std::abs (digest - lastPublishedMeterDigest_) > 1.0e-6
             && (nowMs - lastMeterPublishMs_) >= kMeterPublishMs)

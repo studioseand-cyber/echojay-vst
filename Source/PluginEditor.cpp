@@ -3004,9 +3004,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 return;
             }
             if (chainEditGateRefusesFor(uid))
-            {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet — refuse
-                // with the overlay's own line, so Build and the panel say one thing.
-                appendLocalResultBubble(chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr));
+            {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet.
+                // 19 Oct 2026: AND THE PRESS IS KEPT. It used to announce the state and return, so
+                // the first press after selecting a rack was always lost and the second one built -
+                // exactly what he saw at 08:07. The lock states that reach here all resolve on their
+                // own, so the press waits for the gate to open, bounded, and says it is waiting.
+                const auto why = chainLockStateText (processorRef.rackLockState(),
+                                                     processorRef.borrowHostIfActiveFor (uid) != nullptr);
+                bool already = false;
+                for (auto& q : pendingChainBuilds_)
+                    if (q.uid == uid && q.chainJson == chainBuildJsons[(size_t) i]) { already = true; q.lastWhy = why; }
+                if (! already)
+                {
+                    PendingChainBuild q;
+                    q.uid = uid; q.chainJson = chainBuildJsons[(size_t) i];
+                    q.queuedMs = juce::Time::getMillisecondCounterHiRes(); q.lastWhy = why;
+                    pendingChainBuilds_.push_back (q);
+                    EchoJay_NSLog (("EJChain: build QUEUED for " + uid + " - " + why
+                                    + " (will build when the rack is ready; bound "
+                                    + juce::String ((int) (kPendingApplyMs / 1000.0)) + " s)").toRawUTF8());
+                }
+                appendLocalResultBubble (why + juce::String::fromUTF8 (" \xe2\x80\x94 I'll build as soon as "
+                                         "the rack is ready; no need to press again."));
                 return;
             }
             // 21t-h (27 Sep 2026): THE LOOP IS NOT STARTED HERE. It was, and on the LEASED path that is one
@@ -26879,7 +26898,8 @@ int EchoJayEditor::measureChatContentHeight()
 void EchoJayEditor::timerCallback()
 {
     processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
-    pumpPendingLinkApplies();            // item 4 (12 Oct 2026): dials queued while the rack was connecting
+    pumpPendingLinkApplies();
+    pumpPendingChainBuilds();   // 19 Oct: the Build press waits on the same pump            // item 4 (12 Oct 2026): dials queued while the rack was connecting
     drainOrphanedChatTurns();            // item 3 (12 Oct 2026): a turn that landed while the window was shut
     drainParkedAgentLines();             // item 0b (15 Oct 2026): what a run said while there was no window
     syncAgentChip();                     // item 11: the chip follows the flag file, however it changed
@@ -32644,20 +32664,9 @@ echojay::agentui::RunView EchoJayEditor::agentRunViewFor (const ChatMsg& msg) co
     // store, the processor's replay list, and a row that is simply not the live one.
     const bool live = agentClient() != nullptr && agentClient()->isActive()
                    && msg.agentRunId == agentRunMsgId_;
-    if (! live)
-    {
-        v.fromRecord  = true;
-        v.running     = false;
-        v.finished    = true;
-        v.showStop    = false;
-        v.showRetry   = false;
-        v.showApplyAll = false;
-        v.showUndoAll = false;
-        v.showGotIt   = false;
-        v.playbackActive = false;
-        for (auto& s : v.steps) { s.applySkip = false; s.canUndo = false; }
-        if (v.statusWord.isEmpty()) v.statusWord = "Done";
-    }
+    // 19 Oct 2026: the transformation itself now lives on the view (RunView::makeRecord), so his
+    // leg can compare a live layout with a restored one through the product's own code.
+    if (! live) v.makeRecord();
     // The user's press wins over the run's own default (expanded while running, collapsed after).
     if (msg.agentStepsOpen >= 0) v.stepsOpen = msg.agentStepsOpen == 1;
     return v;
@@ -33035,12 +33044,46 @@ void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, c
     ed.syncAgentRunMessage();
 }
 
-void EchoJayEditor::agentRowPressed (const echojay::agentui::RunZone& z)
+void EchoJayEditor::agentRowPressed (const echojay::agentui::RunZone& z, int msgIndex)
 {
     using echojay::agentui::RunHit;
-    if (agentClient() == nullptr) return;
-    auto* msg = agentRunMessage();
-    const auto view = msg != nullptr ? agentRunViewFor (*msg) : echojay::agentui::RunView();
+    // ---- THE CARD THAT WAS PRESSED, NOT THE ONE THAT IS RUNNING (19 Oct 2026) ------------------
+    //
+    // This resolved agentRunMessage() - the LIVE run's row - whatever card the press landed on, and
+    // refused outright when there was no client at all. So on a reopened chat the read-only
+    // controls had nothing to act on: Details needs a step id, which it took from the live row's
+    // view (empty), and the change list wrote its state onto the live row's message (or none).
+    // Both are questions about THIS picture, so both act on this card's message.
+    ChatMsg* msg = (msgIndex >= 0 && msgIndex < (int) chatMessages.size())
+                       ? &chatMessages[(size_t) msgIndex] : nullptr;
+    if (msg == nullptr || msg->agentData.isEmpty())
+    {
+        // No card under the press: fall back to the live row, which is what every caller meant
+        // before this took an index at all.
+        msg = agentRunMessage();
+        if (msg == nullptr) return;
+    }
+    const auto view = agentRunViewFor (*msg);
+    // ---- WHICH CONTROLS ACT, AND WHICH ONLY LOOK ----------------------------------------------
+    // His rule, in his words: *"Both are read-only views... Only the buttons that act stay locked:
+    // Undo, Apply, Skip, Retry, Stop, chips."*  Liveness is asked ONCE, here, so no case below has
+    // to remember it - and the read-only pair is never gated on it.
+    const bool actingAllowed = agentClient() != nullptr && agentClient()->isActive()
+                            && ! view.fromRecord;
+    switch (z.kind)
+    {
+        case RunHit::ApplyLine: case RunHit::SkipLine: case RunHit::ApplyAll: case RunHit::SkipAll:
+        case RunHit::Stop: case RunHit::Retry: case RunHit::GotIt: case RunHit::UndoAll:
+        case RunHit::Undo: case RunHit::Chip:
+            if (! actingAllowed)
+            {
+                EchoJay_NSLog (("EJAgentRow: press kind=" + juce::String ((int) z.kind)
+                                + " ignored - that run is over (this card is a record)").toRawUTF8());
+                return;
+            }
+            break;
+        default: break;   // Details, ToggleSteps, None: read-only, always allowed
+    }
     const juce::String stepId = (z.stepIndex >= 0 && z.stepIndex < (int) view.steps.size())
                                    ? view.steps[(size_t) z.stepIndex].id : juce::String();
     EchoJay_NSLog (("EJAgentRow: press kind=" + juce::String ((int) z.kind)
@@ -33080,9 +33123,25 @@ void EchoJayEditor::agentRowPressed (const echojay::agentui::RunZone& z)
             // ITEM 3's rule: by step id, so a relayout cannot collapse what the user opened.
             if (stepId.isNotEmpty())
             {
-                if (agentExpandedRows_.contains (stepId)) agentExpandedRows_.removeString (stepId);
-                else                                      agentExpandedRows_.add (stepId);
-                syncAgentRunMessage();
+                if (view.fromRecord)
+                {
+                    // ---- A RECORD'S DETAILS LIVES IN THE RECORD (19 Oct 2026) ----------------
+                    // agentExpandedRows_ is the LIVE card's set, rebuilt from the client by
+                    // runViewFrom; a record is rendered from its own snapshot and never consults
+                    // it, so writing the id there opened nothing. The snapshot already carries
+                    // `expanded` per step (it is how the card comes back in the state it finished
+                    // in), so the press flips it where the picture is actually read from.
+                    auto v = echojay::agentui::fromJson (juce::JSON::parse (msg->agentData));
+                    for (auto& st : v.steps)
+                        if (st.id == stepId) st.expanded = ! st.expanded;
+                    msg->agentData = juce::JSON::toString (echojay::agentui::toJson (v), true);
+                }
+                else
+                {
+                    if (agentExpandedRows_.contains (stepId)) agentExpandedRows_.removeString (stepId);
+                    else                                      agentExpandedRows_.add (stepId);
+                    syncAgentRunMessage();
+                }
                 resized(); repaint();
             }
             break;
@@ -33090,11 +33149,10 @@ void EchoJayEditor::agentRowPressed (const echojay::agentui::RunZone& z)
             if (z.label.isNotEmpty()) agentClient()->answerAsk (z.label);
             break;
         case RunHit::ToggleSteps:
-            if (msg != nullptr)
-            {
-                msg->agentStepsOpen = view.stepsOpen ? 0 : 1;
-                resized(); repaint();
-            }
+            // The change list, on the card that was pressed. Per-message already; what was wrong
+            // was WHICH message. A record's list opens exactly as the live one's does.
+            msg->agentStepsOpen = view.stepsOpen ? 0 : 1;
+            resized(); repaint();
             break;
         case RunHit::None: break;
     }
@@ -33108,7 +33166,10 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
     const auto L = layoutRun (v, area.getX(), area.getY(), area.getWidth());
 
     // the zones this paint authored, for mouseDown. ONE author: the rects drawn ARE the rects hit.
-    agentRunZones_ = L.zones;
+    // 19 Oct 2026: APPENDED, each stamped with this card's message. It used to assign, so a chat
+    // with two runs in it left only the last card pressable - his "Details is in the wrong place".
+    // The chat paint clears the list once before drawing any card, so this accumulates every card.
+    for (const auto& z : L.zones) agentRunZones_.push_back ({ msgIndex, z });
     agentRunZoneMsg_ = msgIndex;
     agentRowPaintRect_ = area;
 
@@ -33291,8 +33352,13 @@ bool EchoJayEditor::rigPressAgentRow (const juce::String& button)
     else if (want == "changes" || want == "toggle_steps") kind = RunHit::ToggleSteps;
     else if (want.startsWith ("chip"))                kind = RunHit::Chip;
     if (kind == RunHit::None) return false;
+    // The rig presses the LIVE row, so it hands that message's own index to the press - the same
+    // thing the mouse now hands it. Found by identity, not by assuming it is the last message.
+    int idx = -1;
+    for (int i = 0; i < (int) chatMessages.size(); ++i)
+        if (&chatMessages[(size_t) i] == msg) { idx = i; break; }
     for (const auto& z : L.zones)
-        if (z.kind == kind) { agentRowPressed (z); return true; }
+        if (z.kind == kind) { agentRowPressed (z, idx); return true; }
     return false;
 }
 
@@ -33541,6 +33607,42 @@ void EchoJayEditor::pumpPendingLinkApplies()
         keep.push_back(q);
     }
     pendingLinkApplies_.swap(keep);
+}
+
+// ---- THE QUEUED BUILD PRESS (19 Oct 2026) ------------------------------------------------------
+// Pumped from the same timer as pumpPendingLinkApplies, and deliberately the same shape: it applies
+// when the gate opens, retires with the state that was still blocking it when the bound expires, and
+// otherwise waits. A press is never lost and never silent in either outcome.
+void EchoJayEditor::pumpPendingChainBuilds()
+{
+    if (pendingChainBuilds_.empty()) return;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    std::vector<PendingChainBuild> keep;
+    for (auto& q : pendingChainBuilds_)
+    {
+        bool connected = false;
+        for (const auto& e : processorRef.getLinkDisplayList())
+            if (e.info.uid == q.uid) { connected = e.info.connected; break; }
+        if (connected && ! chainEditGateRefusesFor (q.uid))
+        {
+            EchoJay_NSLog (("EJChain: queued build now READY for " + q.uid + " after "
+                            + juce::String ((int) (now - q.queuedMs)) + " ms - building").toRawUTF8());
+            const auto uid = q.uid, json = q.chainJson;
+            sendChainToLink (uid, json);
+            continue;
+        }
+        if (now - q.queuedMs >= kPendingApplyMs)
+        {
+            EchoJay_NSLog (("EJChain: queued build EXPIRED for " + q.uid + " after "
+                            + juce::String ((int) (now - q.queuedMs)) + " ms - " + q.lastWhy).toRawUTF8());
+            appendLocalResultBubble ("Nothing was built: " + q.lastWhy
+                + juce::String::fromUTF8 (" \xe2\x80\x94 the rack did not become ready within ")
+                + juce::String ((int) (kPendingApplyMs / 1000.0)) + " s. Press Build again when it is.");
+            continue;
+        }
+        keep.push_back (q);
+    }
+    pendingChainBuilds_.swap (keep);
 }
 
 void EchoJayEditor::applyChainEditToLink(int msgIdx)
@@ -45857,10 +45959,10 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // buttons sit inside an assistant bubble that no other zone claims.
     if (assistantHit && !agentRunZones_.empty())
     {
-        for (const auto& z : agentRunZones_)
-            if (z.rect.contains(pos))
+        for (const auto& pz : agentRunZones_)
+            if (pz.z.rect.contains(pos))
             {
-                agentRowPressed(z);
+                agentRowPressed (pz.z, pz.msgIndex);
                 return;
             }
     }

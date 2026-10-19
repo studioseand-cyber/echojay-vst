@@ -1568,6 +1568,121 @@ int main()
 
     }
 
+
+    // ---- RO (19 Oct 2026, his 08:00 report): A RESTORED CARD'S READ-ONLY VIEWS ----------------
+    //
+    // *"The restored card is there, but only the steps toggle is clickable. Details and N change(s)
+    // are in the wrong place and don't open. Both are read-only views, so on a restored card they
+    // must sit exactly where they sat live and open the same. Only the buttons that act stay
+    // locked: Undo, Apply, Skip, Retry, Stop, chips. Also open a restored card in the same
+    // expanded/collapsed state it finished in."*
+    //
+    // His leg, in his words: *"finish a run with a failure and a change, reopen, and Details and
+    // the change list open with the same content and position as live."*  So this lays out the LIVE
+    // card, puts it through the store's own round trip (toJson -> fromJson) and the product's own
+    // record transformation (RunView::makeRecord - moved out of the editor for exactly this leg, so
+    // the guard cannot compare against its own idea of a record), and asks for the same rects.
+    std::printf ("\n== RO: a restored card's Details and change list sit where they sat live ==\n");
+    {
+        using namespace echojay::agentui;
+        const int width = 420;
+        RunView live;
+        live.sessionId = "ses_ro"; live.runKey = "key_ro";
+        live.opening = "Here's what I did on the Kick.";
+        live.closing = "One change landed and one step failed.";
+        live.statusWord = "Done"; live.modeBadge = "ASK";
+        live.finished = true; live.running = false; live.stepsOpen = true;
+        {
+            RunStep a;                      // THE CHANGE: a do that landed and can be undone
+            a.id = "st_added"; a.label = "Added Tube-Tech CL 1B to slot 1";
+            a.detail = "read back Threshold -15 dB"; a.right = "applied";
+            a.status = (int) EJAgentClient::Step::Status::Done;
+            a.canUndo = true;
+            live.steps.push_back (a);
+            RunStep b;                      // THE FAILURE: a line with a technical detail behind it
+            b.id = "st_failed"; b.label = "Set the release on slot 1";
+            b.detail = "The release couldn't be read.";
+            b.modelDetail = "param_not_readable: Release returned \"0.3\" with no unit";
+            b.status = (int) EJAgentClient::Step::Status::Failed;
+            b.hasDetails = true; b.expanded = true;       // he left Details OPEN when it finished
+            live.steps.push_back (b);
+        }
+        live.changeCount = 1;
+        live.showUndoAll = true; live.showRetry = true;   // live, these are offered
+        const auto Llive = layoutRun (live, 0, 0, width);
+
+        // the store's round trip, then the product's own record transformation
+        auto rec = fromJson (toJson (live));
+        rec.opening = live.opening;        // the editor supplies this from the ChatMsg, as always
+        rec.makeRecord();
+        const auto Lrec = layoutRun (rec, 0, 0, width);
+
+        auto zoneOf = [] (const RunRects& L, RunHit k, int stepIndex = -2)
+        {
+            for (const auto& z : L.zones)
+                if (z.kind == k && (stepIndex == -2 || z.stepIndex == stepIndex)) return z;
+            return RunZone {};
+        };
+        const auto dLive = zoneOf (Llive, RunHit::Details);
+        const auto dRec  = zoneOf (Lrec,  RunHit::Details);
+        check (! dLive.rect.isEmpty() && ! dRec.rect.isEmpty(),
+               "RO1 a restored card still HAS a Details control (it is a question about the picture, "
+               "not an action on the run)",
+               "live " + dLive.rect.toString() + "  record " + dRec.rect.toString());
+        check (dRec.rect == dLive.rect,
+               "RO2 ...at exactly the rect it had live (RED as it stood: the press was answered by "
+               "whichever card painted last, which is what 'in the wrong place' was)",
+               "live " + dLive.rect.toString() + "  record " + dRec.rect.toString());
+        const auto tLive = zoneOf (Llive, RunHit::ToggleSteps);
+        const auto tRec  = zoneOf (Lrec,  RunHit::ToggleSteps);
+        check (! tRec.rect.isEmpty() && tRec.rect == tLive.rect && tRec.label == tLive.label,
+               "RO3 and the change list sits where it sat live, with the same caption",
+               "live \"" + tLive.label + "\" " + tLive.rect.toString()
+               + "  record \"" + tRec.label + "\" " + tRec.rect.toString());
+
+        // THE ACTING CONTROLS ARE THE ONLY THING THAT GOES.
+        check (zoneOf (Lrec, RunHit::Undo).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::UndoAll).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::ApplyLine).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::SkipLine).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::ApplyAll).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::Retry).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::Stop).rect.isEmpty()
+               && zoneOf (Lrec, RunHit::Chip).rect.isEmpty(),
+               "RO4 Undo, Apply, Skip, Retry, Stop and the chips are all gone from the record - the "
+               "run they would act on is over");
+
+        // THE CONTENT BEHIND DETAILS IS THE SAME CONTENT.
+        const RunStep* fLive = nullptr; const RunStep* fRec = nullptr;
+        for (const auto& st : live.steps) if (st.id == "st_failed") fLive = &st;
+        for (const auto& st : rec.steps)  if (st.id == "st_failed") fRec  = &st;
+        check (fLive != nullptr && fRec != nullptr
+               && fRec->detail == fLive->detail && fRec->modelDetail == fLive->modelDetail,
+               "RO5 the failure's detail and its technical message survive the round trip, so what "
+               "Details opens is what it opened live",
+               fRec != nullptr ? fRec->modelDetail.substring (0, 60) : juce::String ("missing"));
+        check (fRec != nullptr && fRec->expanded,
+               "RO6 and the card comes back in the state it FINISHED in - Details was open, so it "
+               "opens open");
+        check (rec.stepsOpen == live.stepsOpen && rec.changeCount == live.changeCount,
+               "RO7 ...including whether the steps were showing, and how many changes it counted",
+               juce::String ((int) rec.stepsOpen) + " / " + juce::String (rec.changeCount));
+
+        // AND COLLAPSED STAYS COLLAPSED, which is the other half of "the state it finished in".
+        {
+            RunView collapsed = live;
+            collapsed.stepsOpen = false;
+            auto rec2 = fromJson (toJson (collapsed));
+            rec2.makeRecord();
+            check (! rec2.stepsOpen,
+                   "RO8 a card that finished collapsed comes back collapsed");
+            const auto t2 = zoneOf (layoutRun (rec2, 0, 0, width), RunHit::ToggleSteps);
+            check (! t2.rect.isEmpty() && t2.label.containsIgnoreCase ("change"),
+                   "RO8b ...and its change list is the control that opens it, named for what it holds",
+                   t2.label);
+        }
+    }
+
     std::printf ("\n==== agent_client_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
     return failures == 0 ? 0 : 1;
 }

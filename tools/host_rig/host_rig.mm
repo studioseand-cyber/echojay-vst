@@ -4668,7 +4668,18 @@ int main (int argc, char* argv[])
                                   || words.containsIgnoreCase ("silent or muted");
             // ...and it must actually SAY it cannot measure that one, not merely avoid the silence
             // excuse: a run that said nothing at all would have passed the old assertion.
-            const bool saysUncertified = words.containsIgnoreCase ("not certified")
+            // ---- THE RULE THIS ROW ASSERTS CHANGED ON 18 OCT 2026 -----------------------------
+            // His ruling: *"EchoJay Compressor = its own meter; certified third-party = Kathy's
+            // measured curve; anything else = no figure. check gr on a third-party slot returns
+            // that slot's measured INPUT level over the listen window, plus the read-back."*  So
+            // "not certified" is no longer the answer for a third party - the answer is the
+            // measurement, with a plain line saying EchoJay does not read their reduction meter.
+            // The half of this row that still bites is the half he wrote it for: it must never
+            // blame silence. Kept, with the vocabulary the product now uses.
+            const bool saysUncertified = words.containsIgnoreCase ("does not read")
+                                      || words.containsIgnoreCase ("no GR meter is read")
+                                      || words.containsIgnoreCase ("cannot read its own")
+                                      || words.containsIgnoreCase ("not certified")
                                       || words.containsIgnoreCase ("not a plugin EchoJay has measured")
                                       || words.containsIgnoreCase ("cannot measure")
                                       || words.containsIgnoreCase ("not an EchoJay device");

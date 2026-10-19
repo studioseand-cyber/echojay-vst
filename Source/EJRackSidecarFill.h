@@ -86,6 +86,13 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
                 back.inLevelsKWeighted = lv.in.kWeighted;
                 back.inLoudestDb       = lv.in.p90;
                 back.inTypicalDb       = lv.in.p50;
+                // 19 Oct 2026: and the hop percentiles, taken by the Snapshot's own implementation
+                // so this side and the open rack's cannot take them differently.
+                back.inRmsKnown        = lv.in.hopLevelPercentiles (back.inTypicalRmsDb, back.inLoudestRmsDb);
+                back.inRmsSeconds      = lv.in.hopLevelSeconds();
+                back.outRmsKnown       = lv.out.hopLevelPercentiles (back.outTypicalRmsDb, back.outLoudestRmsDb);
+                back.inCrestKnown      = lv.in.hopCrest  (back.inCrestDb);
+                back.outCrestKnown     = lv.out.hopCrest (back.outCrestDb);
                 back.inWindowSeconds   = lv.in.windowSeconds;
                 juce::Array<float> hops;
                 for (int k = 0; k < lv.in.hopTruePeakCount && k < (int) lv.in.hopTruePeakDb.size(); ++k)

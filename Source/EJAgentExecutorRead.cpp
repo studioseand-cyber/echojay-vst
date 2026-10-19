@@ -192,10 +192,9 @@ juce::StringArray ExecutorRead::buildWouldRemove (const ToolCall& call)
                            ? call.args.getDynamicObject()->getProperty ("chain") : juce::var();
     auto* arr = chain.getArray();
     if (arr == nullptr) return going;                 // no block: nothing to compare, nothing claimed
-    const auto asked = resolveChannelArg (call);
-    const auto rack = asked.isNotEmpty() && asked != target_
-                          ? (src_.linkRack ? src_.linkRack (asked) : RackRead())
-                          : targetRack();
+    // 19 Oct 2026: through the one resolver, now that check(gr) needs it too. This was the first
+    // copy of the idiom and it was right; keeping it as a copy is what let the third one be wrong.
+    const auto rack = rackForCall (call);
     if (! rack.valid) return going;                  // the rack cannot be read: claim nothing
     juce::StringArray wanted;
     for (const auto& e : *arr)
@@ -293,6 +292,28 @@ bool ExecutorRead::measuringALink (const ToolCall& call) const
 {
     const auto asked = resolveChannelArg (call);
     return asked.isNotEmpty();      // "" is this instance's own rack; anything else is a Link uid
+}
+
+// ---- THE RACK THIS CALL IS ABOUT (19 Oct 2026) ------------------------------------------------
+// See the header for why this is one function rather than a third copy. The one subtlety: an
+// argument that does not resolve comes back from resolveChannelArg as the RAW string, and handing
+// that to linkRack yields an invalid rack whose `why` quotes what the model sent - which is the
+// refusal the caller wants, with knownChannelsSentence() appended. Answering about the open rack
+// instead is the defect this replaces.
+RackRead ExecutorRead::rackForCall (const ToolCall& call) const
+{
+    const auto asked = resolveChannelArg (call);
+    if (asked.isEmpty() || asked == target_) return targetRack();
+    return src_.linkRack ? src_.linkRack (asked) : RackRead();
+}
+
+juce::var ExecutorRead::channelVar (const RackRead& r)
+{
+    auto* ch = new juce::DynamicObject();
+    ch->setProperty ("uid",  r.uid.isNotEmpty() ? r.uid : juce::String ("self"));
+    ch->setProperty ("name", r.name);
+    ch->setProperty ("kind", r.kind);
+    return juce::var (ch);
 }
 
 // ---- ITEM 13 (18 Oct 2026): IS THE TARGET MEASURABLE AT ALL? ----------------------------------
@@ -939,7 +960,13 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // Each gets its own sentence, because "cannot be read from a Link yet" was true of neither and
         // sent him looking for a limit that no longer exists. ITEM 8's rule stands - the answer comes
         // before the rack and the slot - it is just a narrower answer.
-        const auto r = targetRack();
+        // ---- AND IT IS THE RACK THE CALL NAMED (19 Oct 2026) ------------------------------------
+        // This was targetRack(): the channel argument was resolved only to decide WHETHER a Link
+        // was involved, so a call about the kick was answered about whatever the window had open -
+        // consistently, from one rack, and about the wrong one. Every read below comes off `r`, and
+        // the input measurement comes off `r.uid`, so the whole answer belongs to the rack that was
+        // asked about rather than to a uid resolved a second time beside it.
+        const auto r = rackForCall (call);
         // ---- THE PLUGIN'S OWN TRUTH COMES FIRST (18 Oct 2026, after his third report) ------------
         //
         // He asked three times why a CL 1B on a Link said "no fresh reading", and the answer was not
@@ -993,15 +1020,46 @@ void ExecutorRead::check (const ToolCall& call, Done done)
                 return;
             }
         }
-        else if (measuringALink (call) && ! r.valid)
-        {
-            done (notFromALink ("Gain reduction"));      // the rack itself could not be read
-            return;
-        }
+        // ---- A RACK THAT COULD NOT BE READ IS A CHANNEL QUESTION (19 Oct 2026) ------------------
+        // This used to answer notFromALink ("Gain reduction cannot be read from a Link yet"), which
+        // ITEM 13 made untrue yesterday and which never addressed the actual case: the argument
+        // named a channel that does not exist. Falling through to unknown_channel gives the model
+        // r.why plus the list of channels that DO exist - the one refusal shape that lets a turn
+        // name a real one or stop (item 6(d)). notFromALink stays where it is still true: a true
+        // peak and a spectrum genuinely cannot be read from a Link.
         if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", r.why + knownChannelsSentence(),
                                                         "I could not read that rack.")); return; }
         if (slotArg < 1 || slotArg > (int) r.slots.size()) { done (ToolOutcome::failure ("unknown_slot", "slot " + juce::String (slotArg) + " is not on the rack (1.." + juce::String ((int) r.slots.size()) + ")")); return; }
         const auto& s = r.slots[(size_t) slotArg - 1];
+        // ---- WHAT THE SLOT IS, BEFORE WHAT IT HEARD (19 Oct 2026, his coverage ask) -------------
+        //
+        // Two slot types had no answer of their own, and both took the "no audio has been heard"
+        // road - the false-reason shape of his #19, which sent him looking for a muted channel:
+        //   an EMPTY slot    answered with the measurement under a BLANK name, so a figure was
+        //                    attributed to nothing at all; and
+        //   a BYPASSED slot  is not in circuit, so its tally is empty BY CONSTRUCTION - "nothing
+        //                    has been heard" is true and useless, and "play the section again"
+        //                    is advice that cannot work.
+        // Both are properties of the slot, so both are answered before any listening question, the
+        // same ordering ITEM 8 and his #19 both argue for. Neither is retryable.
+        if (s.name.trim().isEmpty())
+        {
+            done (ToolOutcome::failureFor ("empty_slot",
+                    "slot " + juce::String (slotArg) + " has nothing in it, so there is nothing to "
+                    "measure. This will not change on a retry: name a slot that holds a plugin, or "
+                    "ask what is on the rack.",
+                    "There's nothing in slot " + juce::String (slotArg) + " to measure."));
+            return;
+        }
+        if (s.bypassed)
+        {
+            done (ToolOutcome::failureFor ("slot_bypassed",
+                    "slot " + juce::String (slotArg) + " (" + s.name + ") is BYPASSED, so no audio "
+                    "passes through it and nothing can be measured there. This will not change on a "
+                    "retry while it is bypassed: ask the user to switch it in, or measure another slot.",
+                    s.name + " is bypassed, so there's nothing passing through it to measure."));
+            return;
+        }
         // ---- SEAN'S RULING, 15 Oct 2026: NO ESTIMATES, EVER ------------------------------------
         // "check(gr) returns a figure only for those; for anything else it returns not_certified with
         // no number." An EchoJay device reports its own reduction; a third party must have passed the
@@ -1038,7 +1096,10 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // actually has, named for what it is, with no field that could be mistaken for a reduction.
         if (! s.builtin)
         {
-            const auto lv = src_.slotInputLevels ? src_.slotInputLevels (target_, slotArg)
+            // FROM THE RACK THAT ANSWERED (19 Oct 2026): r.uid, not target_. With target_ the
+            // figures came off the open channel while the slot's name and read-back came off the
+            // one the call named - two channels in one payload, if the names had ever differed.
+            const auto lv = src_.slotInputLevels ? src_.slotInputLevels (r.uid, slotArg)
                                                  : Sources::SlotInputLevels();
             if (! lv.known)
             {
@@ -1046,6 +1107,10 @@ void ExecutorRead::check (const ToolCall& call, Done done)
                 return;
             }
             auto* io = new juce::DynamicObject();
+            // WHICH CHANNEL ANSWERED (19 Oct 2026), on every gr payload: without it a routed read
+            // and an unrouted one look identical to the model and to B, which is how the open rack
+            // answered for the kick unnoticed.
+            io->setProperty ("channel", channelVar (r));
             io->setProperty ("slot", slotArg);
             io->setProperty ("name", s.name);
             io->setProperty ("measurement", "slot_input_level");
@@ -1055,6 +1120,28 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             io->setProperty ("inputLoudestPeakDbtp", r1 (lv.loudestPeakDbtp));
             io->setProperty ("inputTypicalPeakDbtp", r1 (lv.typicalPeakDbtp));
             io->setProperty ("inputUnit", lv.kWeighted ? "LUFS" : "dBFS RMS");
+            // ---- THE HOP PERCENTILES, IN KATHY'S UNIT (19 Oct 2026, his test 1) ---------------
+            // *"loudest and typical were both exactly -15.5, twice, on a kick; that can't be
+            // right"* - they were the 400 ms percentiles returned as 1 dB BIN CENTRES, so two
+            // percentiles in one bin came back byte-identical. These are p90/p50 of the 100 ms
+            // hops, unquantised, plain unweighted RMS, with the window they describe.
+            if (lv.rmsKnown)
+            {
+                io->setProperty ("inputLoudestRmsDb", r1 (lv.loudestRmsDb));
+                io->setProperty ("inputTypicalRmsDb", r1 (lv.typicalRmsDb));
+                io->setProperty ("inputRmsUnit", "dBFS RMS");
+                io->setProperty ("inputRmsWindowSeconds", r1 (lv.rmsSeconds));
+            }
+            // ---- AND THE OUT LEG AND THE CRESTS (19 Oct 2026, for B's no-profile fallback) ----
+            // Named for what they are. In minus out is NOT here: that difference is the figure his
+            // 18 Oct ruling took out, and B decides from the profile what may be said.
+            if (lv.outRmsKnown)
+            {
+                io->setProperty ("outputLoudestRmsDb", r1 (lv.outLoudestRmsDb));
+                io->setProperty ("outputTypicalRmsDb", r1 (lv.outTypicalRmsDb));
+            }
+            if (lv.inCrestKnown)  io->setProperty ("inputCrestDb",  r1 (lv.inCrestDb));
+            if (lv.outCrestKnown) io->setProperty ("outputCrestDb", r1 (lv.outCrestDb));
             io->setProperty ("windowSeconds", r1 (lv.windowSeconds));
             // THE WINDOW'S OWN START, so B judges freshness against the playback rather than a clock
             // it cannot see (his ruling, same message).
@@ -1063,19 +1150,45 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             if (s.settings.isNotEmpty()) io->setProperty ("readBack", s.settings);
             if (s.dialSummary.isNotEmpty()) io->setProperty ("readBackSummary", s.dialSummary);
             io->setProperty ("note", "EchoJay does not read this plugin's gain-reduction meter and does "
-                                     "not estimate one. These are the levels measured AT ITS INPUT over "
-                                     "the listen window, with what the slot is set to. Any reduction "
-                                     "figure must come from the profile for this plugin, not from here.");
+                                     "not estimate one. These are the levels measured at its INPUT and "
+                                     "its OUTPUT over the same listen window, in plain unweighted dBFS "
+                                     "RMS (p90 = loudest, p50 = typical, over 100 ms hops), with each "
+                                     "leg's crest (peak minus RMS) and what the slot is set to. The "
+                                     "difference between the two legs is not a reduction and is not "
+                                     "given as one: any reduction figure must come from the profile for "
+                                     "this plugin, not from here.");
             done (ToolOutcome::successFor (fitUnder8K (juce::var (io)), {},
-                        "slot " + juce::String (slotArg) + " (" + s.name + "): input "
-                        + juce::String (lv.loudestDb, 1) + " loudest / "
-                        + juce::String (lv.typicalDb, 1) + " typical "
-                        + (lv.kWeighted ? "LUFS" : "dBFS") + " over "
-                        + juce::String (lv.windowSeconds, 1) + " s; no GR meter is read for a third party",
-                        "I measured what reaches " + s.name + ": "
-                        + juce::String (lv.loudestDb, 1) + " on the loud parts, "
-                        + juce::String (lv.typicalDb, 1) + " typically. I cannot read its own "
-                          "gain-reduction meter."));
+                        // ---- THE ROW SAYS WHICH FIGURE IS WHICH (19 Oct 2026) ----------------
+                        // *"RMS input + output and crest fields with the labelled step text."*
+                        // Six figures on one row is unreadable unless each carries its label, and
+                        // the unit is said ONCE at the end rather than after every number.
+                        [&]
+                        {
+                            juce::String row = "slot " + juce::String (slotArg) + " (" + s.name + "): ";
+                            if (lv.rmsKnown)
+                                row << "input " << juce::String (lv.loudestRmsDb, 1) << " loudest / "
+                                    << juce::String (lv.typicalRmsDb, 1) << " typical";
+                            else
+                                row << "input " << juce::String (lv.loudestDb, 1) << " loudest / "
+                                    << juce::String (lv.typicalDb, 1) << " typical";
+                            if (lv.outRmsKnown)
+                                row << ", output " << juce::String (lv.outLoudestRmsDb, 1) << " loudest / "
+                                    << juce::String (lv.outTypicalRmsDb, 1) << " typical";
+                            row << " dBFS RMS";
+                            if (lv.inCrestKnown)  row << ", crest in " << juce::String (lv.inCrestDb, 1);
+                            if (lv.outCrestKnown) row << " out " << juce::String (lv.outCrestDb, 1);
+                            if (lv.inCrestKnown || lv.outCrestKnown) row << " dB";
+                            row << ", over " << juce::String (lv.rmsKnown ? lv.rmsSeconds : lv.windowSeconds, 1)
+                                << " s; no GR meter is read for a third party";
+                            return row;
+                        }(),
+                        "I measured what reaches " + s.name + " and what leaves it: in "
+                        + juce::String (lv.rmsKnown ? lv.loudestRmsDb : lv.loudestDb, 1) + " loudest, "
+                        + juce::String (lv.rmsKnown ? lv.typicalRmsDb : lv.typicalDb, 1) + " typical"
+                        + (lv.outRmsKnown ? ("; out " + juce::String (lv.outLoudestRmsDb, 1) + " loudest, "
+                                             + juce::String (lv.outTypicalRmsDb, 1) + " typical")
+                                          : juce::String())
+                        + " dBFS RMS. I cannot read its own gain-reduction meter."));
             return;
         }
         // A CERTIFIED slot with no reading yet IS the not-playing case, and that answer is true of it.
@@ -1091,6 +1204,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
         // the TYPICAL (the median of the frames where audio was present), each NAMED, with the current
         // value kept and labelled as the momentary one so nothing can quote it as "the" figure.
         auto* o = new juce::DynamicObject();
+        o->setProperty ("channel", channelVar (r));          // 19 Oct: the same stamp on the device road
         o->setProperty ("slot", slotArg); o->setProperty ("name", s.name);
         // The one sentence a person reads, written in both branches below and landed on the row.
         juce::String grSentence;
@@ -1635,6 +1749,13 @@ Sources bindToProcessor (EchoJayProcessor& proc)
             out.loudestDb  = lv.in.p90;
             out.typicalDb  = lv.in.p50;
             out.windowSeconds = lv.in.windowSeconds;
+            // 19 Oct 2026: the hop percentiles, through the Snapshot's own implementation
+            out.rmsKnown   = lv.in.hopLevelPercentiles (out.typicalRmsDb, out.loudestRmsDb);
+            out.rmsSeconds = lv.in.hopLevelSeconds();
+            // 19 Oct 2026: the OUT leg of the same blend, over its own hops, and the two crests
+            out.outRmsKnown   = lv.out.hopLevelPercentiles (out.outTypicalRmsDb, out.outLoudestRmsDb);
+            out.inCrestKnown  = lv.in.hopCrest  (out.inCrestDb);
+            out.outCrestKnown = lv.out.hopCrest (out.outCrestDb);
             juce::Array<float> hops;
             for (int k = 0; k < lv.in.hopTruePeakCount && k < (int) lv.in.hopTruePeakDb.size(); ++k)
                 if (lv.in.hopTruePeakDb[(size_t) k] > -199.0f) hops.add (lv.in.hopTruePeakDb[(size_t) k]);
@@ -1661,6 +1782,18 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         out.loudestPeakDbtp = ss.inLoudestPeakDbtp;
         out.typicalPeakDbtp = ss.inTypicalPeakDbtp;
         out.windowSeconds   = ss.inWindowSeconds;
+        // 19 Oct 2026: the hop percentiles cross the sidecar as two figures and their window - the
+        // ring itself stays on the track that measured it, because nothing over here could take a
+        // different percentile over it than the one implementation already did.
+        out.rmsKnown        = ss.inRmsKnown;
+        out.loudestRmsDb    = ss.inLoudestRmsDb;
+        out.typicalRmsDb    = ss.inTypicalRmsDb;
+        out.rmsSeconds      = ss.inRmsSeconds;
+        out.outRmsKnown     = ss.outRmsKnown;
+        out.outLoudestRmsDb = ss.outLoudestRmsDb;
+        out.outTypicalRmsDb = ss.outTypicalRmsDb;
+        out.inCrestKnown    = ss.inCrestKnown;   out.inCrestDb  = ss.inCrestDb;
+        out.outCrestKnown   = ss.outCrestKnown;  out.outCrestDb = ss.outCrestDb;
         return out;
     };
     s.slotParam = [p] (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out) -> bool

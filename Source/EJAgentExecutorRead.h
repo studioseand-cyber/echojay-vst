@@ -173,6 +173,30 @@ struct Sources
         float loudestPeakDbtp = -200.0f, typicalPeakDbtp = -200.0f;
         float windowSeconds = 0.0f;
         bool  kWeighted = false;
+        // ---- PLAIN RMS, HOP BY HOP (19 Oct 2026, Sean's test 1) --------------------------------
+        // *"Kathy's profiles are sine RMS dBFS, and K-weighting cuts a kick's low end, so the
+        // figure would be wrong. Add plain unweighted RMS: inputLoudestRmsDb / inputTypicalRmsDb
+        // (p90/p50 of the 100 ms hops)."*
+        //
+        // The slot legs have in fact never been K-weighted (LevelTally::Weighting::Plain: "a
+        // compressor's detector never hears K-weighting"), so the figures above were already dBFS
+        // RMS - but they are percentiles of 400 ms MOMENTARY blocks returned as 1 dB bin centres,
+        // which is why his kick read the same number twice. These are the hop percentiles: raw,
+        // unquantised, and over the hops that were actually heard. rmsSeconds says how much
+        // audible audio they describe, so the figure is never quoted without its window.
+        bool  rmsKnown = false;
+        float loudestRmsDb = -200.0f, typicalRmsDb = -200.0f;
+        float rmsSeconds = 0.0f;
+        // ---- AND THE OUTPUT LEG, AND BOTH CRESTS (19 Oct 2026, for B's no-profile fallback) ---
+        // *"check gr on a third-party slot should also return the slot's OUTPUT level and both
+        // crests over the same window: outputLoudestRmsDb / outputTypicalRmsDb, plus
+        // inputCrestDb / outputCrestDb (peak minus RMS), named as measurements, no GR field."*
+        // In minus out is NOT computed here and never will be: a difference between two legs is
+        // the figure his 18 Oct ruling removed, and B derives whatever it derives from the profile.
+        bool  outRmsKnown = false;
+        float outLoudestRmsDb = -200.0f, outTypicalRmsDb = -200.0f;
+        bool  inCrestKnown = false,  outCrestKnown = false;
+        float inCrestDb = 0.0f,      outCrestDb = 0.0f;
     };
     std::function<SlotInputLevels (const juce::String& uid, int slot1Based)> slotInputLevels;
 
@@ -372,6 +396,22 @@ protected:   // ExecutorDo is a subclass and item 6(b) needs the channel resolve
     // resolves to a uid, or this session is itself addressing one. Both are Links, and neither can be
     // measured until 0a lands the transport - so both get the same sentence rather than a slot error.
     bool measuringALink (const ToolCall& call) const;
+    /** ---- THE RACK THIS CALL IS ABOUT (19 Oct 2026) -------------------------------------------
+        The call's `channel` when it names one, this session's target when it does not - and an
+        INVALID RackRead (carrying `why`) when the argument resolves to nothing, so the caller
+        refuses with unknown_channel rather than answering about whatever is open.
+
+        Written as one function because it is the third place to need the idiom: the build claim
+        resolves it this way, doOp gates on it through resolveTargetWithConfirm, and check(gr) did
+        NOT - it read targetRack() and answered about the open channel whatever the call said. Two
+        copies agreed, which is exactly why the third got written from memory and disagreed (the
+        same lesson as ITEM 1's one cross-channel gate, 14 Oct). Use `.uid` from the result to
+        address anything else about the same rack: a measurement must come from the rack that
+        answered, not from a uid computed again beside it. */
+    RackRead rackForCall (const ToolCall& call) const;
+    /** The {uid, name, kind} the payload carries so the reader can see WHICH channel answered.
+        "self" for the open rack, which is the spelling rackVar has always used. */
+    static juce::var channelVar (const RackRead& r);
     /** ITEM 13 (18 Oct 2026): can the target in front of us have its gain reduction measured? TRUE
         for the open rack always, and for a Link whose build publishes its meters. Freshness is NOT
         asked here: that is a question about one reading at one moment, and the start context is a

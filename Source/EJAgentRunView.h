@@ -198,6 +198,33 @@ struct RunView
     int  changeCount = 0;       // how many steps landed (the "N changes" button)
     std::vector<RunStep> steps;
 
+    /** ---- THIS CARD IS HISTORY (19 Oct 2026; the rule itself is from 18 Oct) -----------------
+        A row whose run is not the one this window is running draws in full - that is the whole
+        point of keeping the snapshot - but the controls that would ACT on it are not offered,
+        because the run they would act on is over.
+
+        *"Both are read-only views, so on a restored card they must sit exactly where they sat live
+        and open the same. Only the buttons that act stay locked: Undo, Apply, Skip, Retry, Stop,
+        chips."*  So Details and the change list are deliberately NOT touched here.
+
+        Moved out of the editor (agentRunViewFor) into the view on 19 Oct for one reason: his guard
+        leg compares a live layout with a restored one, and a guard that re-implemented this
+        transformation would be comparing its own idea of a record with the product's. */
+    void makeRecord()
+    {
+        fromRecord     = true;
+        running        = false;
+        finished       = true;
+        showStop       = false;
+        showRetry      = false;
+        showApplyAll   = false;
+        showUndoAll    = false;
+        showGotIt      = false;
+        playbackActive = false;
+        for (auto& s : steps) { s.applySkip = false; s.canUndo = false; }
+        if (statusWord.isEmpty()) statusWord = "Done";
+    }
+
     bool empty() const noexcept { return sessionId.isEmpty() && steps.empty() && closing.isEmpty(); }
 };
 

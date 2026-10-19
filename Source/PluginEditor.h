@@ -1871,6 +1871,17 @@ private:
     };
     std::vector<PendingLinkApply> pendingLinkApplies_;
     static constexpr double kPendingApplyMs = 20000.0;
+    /** ---- A BUILD PRESS IS QUEUED, NOT DROPPED (19 Oct 2026) --------------------------------
+        Sean, agent off, 08:07: *"Build this chain first press showed 'Connecting to rack...' and
+        nothing happened; the second press built it. A press must never be dropped silently."*
+        His log: `08:00:49 EJEditGate: refused - Connecting to rack…`. The press announced the
+        state and returned, so the work was thrown away - while "connecting" is a state that
+        resolves on its own within a second or two. This is the same bounded queue the chat
+        card's Apply has had since 12 Oct (item 4), for the same reason, on the one path that
+        never got it. */
+    struct PendingChainBuild { juce::String uid, chainJson, lastWhy; double queuedMs = 0.0; };
+    std::vector<PendingChainBuild> pendingChainBuilds_;
+    void pumpPendingChainBuilds();
     void pumpPendingLinkApplies();
     // item 3: the one-shot drain of turns that finished with no window open
     /** item 2: "OUT -2.4 dB . level match" for the rack in view, or "" when nothing can be said. */
@@ -2678,8 +2689,17 @@ private:
     float agentRunPhase_  = 0.0f;  // the spinner's phase; advanced by the editor's own 20 Hz timer
     juce::StringArray agentExpandedRows_;   // Details open, BY STEP ID (item 3's rule, 13 Oct)
     juce::Rectangle<int> agentRowPaintRect_;      // what the ticker repaints while a run is live
-    std::vector<echojay::agentui::RunZone> agentRunZones_;   // rebuilt by every chat paint
-    int agentRunZoneMsg_ = -1;                               // which message those zones belong to
+    /** ---- EVERY CARD'S ZONES, EACH STAMPED WITH ITS OWN MESSAGE (19 Oct 2026) --------------
+        Sean, reopening old chats: *"the restored card is there, but only the steps toggle is
+        clickable. Details and N change(s) are in the wrong place and don't open."*
+        This was ONE zone list for the whole chat, assigned (not appended) by each card's paint, so
+        in a chat holding more than one run only the LAST card painted had live rects - and a press
+        on an earlier card either did nothing or was answered by the last card's button at those
+        coordinates, which is exactly "in the wrong place". A zone now carries the message it was
+        drawn for, and the press acts on THAT message. */
+    struct PaintedRunZone { int msgIndex = -1; echojay::agentui::RunZone z; };
+    std::vector<PaintedRunZone> agentRunZones_;   // rebuilt by every chat paint, one entry per zone
+    int agentRunZoneMsg_ = -1;                    // the last card painted (the live row's ticker)
 
     /** The run's model for this message: the LIVE client when the message is this session's
         run, the persisted snapshot otherwise. One function, so a reopened chat and a running
@@ -2691,7 +2711,10 @@ private:
     /** Create or rewrite this run's message from the client. Called on every agentChanged(). */
     void syncAgentRunMessage();
     /** A press on the row. The ONE handler; a zone exists only when pressing it does something. */
-    void agentRowPressed (const echojay::agentui::RunZone& z);
+    /** A press on the row, on the card it landed on. `msgIndex` is that card's message: the
+        read-only controls (Details, the change list) act on it whatever its liveness, and the
+        acting controls (Apply, Skip, Undo, Retry, Stop, chips) act only when it is the live run. */
+    void agentRowPressed (const echojay::agentui::RunZone& z, int msgIndex);
     ChatMsg* agentRunMessage();
     const ChatMsg* agentRunMessage() const;
     /** THE HOST RIG: press a named control on the run row exactly as the mouse does. Returns
@@ -2765,7 +2788,10 @@ private:
         {
             case AgentApproval::Auto: return "Auto: does everything without waiting, and only stops to ask you a question. Undo all is on the message.";
             case AgentApproval::Ask:  return "Ask: small moves just happen; adding, removing or touching another track waits for your Apply.";
-            default:                  return "Off: normal chat. EchoJay suggests, you make the changes.";
+            // 19 Oct 2026, his words: *"Agent off still builds; it's just not agentic."*  The old
+            // line ("you make the changes") described a product where Off meant chat only, and it
+            // told him the Build button would not work.
+            default:                  return "Off: EchoJay suggests a chain. Press Build and it adds and sets it for you.";
         }
     }
     /** The toggle's write. Creating the file turns it on; deleting it turns it off. A file rather than a

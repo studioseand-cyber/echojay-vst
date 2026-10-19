@@ -307,7 +307,22 @@ int main()
     std::printf ("== L6: item 8, a measurement on a Link says so, once ==\n");
     {
         FakeHost h; SinkLog lg; ExecutorDo ex (h.sources(), sinks (lg));
-        for (const char* what : { "gr", "true_peak", "spectrum" })
+        // ---- gr LEFT THIS RULE ON 18 OCT 2026 (item 13) ----------------------------------------
+        // A Link publishes its slots' measurements now, so "gain reduction cannot be read from a
+        // Link yet" stopped being true, and on 19 Oct check(gr) began reading the channel the call
+        // NAMES rather than whatever the window has open - so this call reaches the Link's own
+        // road and answers (here: nothing has been heard on that slot yet, which is a fact about
+        // the Link). The item-8 protection this leg exists for is kept below, where it still
+        // bites: the refusal must never be about the open rack.
+        {
+            const auto g = run (ex, "check", call ("check", "{\"what\":\"gr\",\"slot\":2,\"channel\":\"uid bb411b8240\"}"));
+            check (g.errorCode != "not_available_on_link",
+                   "check(gr) on a Link is NOT refused with \"cannot be read from a Link\" any more "
+                   "(item 13, 18 Oct)", g.errorCode + " / " + g.errorMessage.substring (0, 60));
+            check (! g.errorMessage.containsIgnoreCase ("is not on the rack"),
+                   "...and still never answers about the open rack", g.errorMessage.substring (0, 80));
+        }
+        for (const char* what : { "true_peak", "spectrum" })
         {
             const auto o = run (ex, "check", call ("check", juce::String ("{\"what\":\"") + what
                                                             + "\",\"slot\":2,\"channel\":\"uid bb411b8240\"}"));
