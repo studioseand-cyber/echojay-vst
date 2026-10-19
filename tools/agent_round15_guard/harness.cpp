@@ -163,6 +163,53 @@ int main()
                "...still naming the control, what it holds and what was asked", o.errorMessage.substring (0, 90));
     }
 
+    // ------------------------------------- AN EQ BAND IS READ BACK (19 Oct 2026, his 13:54 mud test)
+    //
+    // *"The add carried the EQ band and the EchoJay EQ shows band 1 bell 300 Hz -4.0 dB Q 1.20
+    // applied, but the card step only says 'Added EchoJay EQ.' with no read-back, so the server's
+    // closing fell back to 'Settings not confirmed'. An add that carries settings must read them
+    // back in its ack, EQ bands included ('band 1: bell 300 Hz, -4.0 dB, Q 1.2'), the same text the
+    // slot's Suggested Settings already shows."*
+    //
+    // checkSlotValues read params and controls only, so an add carrying ONLY eq_bands asked for
+    // nothing by its own count and reported nothing. A band is not a numeric control and cannot go
+    // through slotParam - but the slot already composes the exact text he wants FROM ITS OWN
+    // READ-BACK, so that is what the ack carries, taken from the rack rather than from the request.
+    std::printf ("== EQ READ-BACK: an add carrying a band reports the band, from the slot ==\n");
+    {
+        Fixture f;
+        f.own.slots.clear();
+        {
+            SlotRead eq;
+            eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true;
+            // what the slot itself composed from its read-back, in his words
+            eq.dialSummary = "bell 300 Hz -4.0 dB Q 1.20";
+            f.own.slots.push_back (eq);
+        }
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"add","name":"EchoJay EQ","settings_structured":{"eq_bands":[{"band":1,"type":"bell","freq_hz":300,"gain_db":-4.0,"q":1.2}]}})"));
+        const auto words = o.landedLine + " | " + juce::JSON::toString (o.result);
+        check (words.contains ("300") && words.containsIgnoreCase ("bell"),
+               "EQR1 the add's ack carries the BAND's read-back  (RED as it stood: the step said only "
+               "\"Added EchoJay EQ.\" and the server's closing fell back to \"Settings not confirmed\")",
+               o.landedLine.substring (0, 110));
+        check (words.contains ("-4.0") && words.contains ("1.2"),
+               "EQR1b ...with its gain and Q, which is the text the slot's Suggested Settings shows",
+               o.landedLine.substring (0, 110));
+    }
+    {
+        // AND WHEN THE SLOT HAS COMPOSED NOTHING YET, it is reported unreadable rather than invented
+        // from the request - the same rule every other read-back in this file keeps.
+        Fixture f;
+        f.own.slots.clear();
+        { SlotRead eq; eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true; f.own.slots.push_back (eq); }
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"add","name":"EchoJay EQ","settings_structured":{"eq_bands":[{"band":1,"type":"bell","freq_hz":300,"gain_db":-4.0,"q":1.2}]}})"));
+        check (! (o.landedLine + juce::JSON::toString (o.result)).contains ("300"),
+               "EQR2 a slot that has composed no settings text yet does NOT have a band read-back "
+               "invented from the request");
+    }
+
     // ----------------------------------------------- EQ BANDS ARE VALUES (19 Oct 2026, his 12:36)
     //
     // *"The set 'bell 300 Hz -3.5 dB Q 1.4' came back 'That change didn't name anything to set, so

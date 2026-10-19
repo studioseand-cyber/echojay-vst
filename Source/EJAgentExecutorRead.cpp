@@ -1525,6 +1525,10 @@ PlaybackReading ExecutorRead::readPlayback()
         // ONE TALLY, ONE RESET: on the open rack these two describe the same span (19 Oct).
         r.loudestWindowSeconds     = out.heardSeconds;
         r.integratedIsLongerWindow = false;
+        // B's 86(2): the same hops in plain dBFS RMS, plus the sample peak in dBFS. Not the hop
+        // TRUE peak: the field is named dBFS and a true peak is a different measurement.
+        r.plainRmsKnown = out.hopPlainPercentiles (r.typicalRmsDbfs, r.loudestRmsDbfs);
+        if (finiteLevel (out.peakDb)) r.loudestPeakDbfs = out.peakDb;
         return r;
     }
     const auto a = targetAnalysis();

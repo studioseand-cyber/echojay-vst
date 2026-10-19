@@ -5790,6 +5790,10 @@ private:
     // builds on ITS channel, a main chat on the local rack (the target
     // menu and suggestedTarget were deleted together).
     void sendChainToLink(const juce::String& linkUid, const juce::String& chainJson);
+    /** The edit-cmd road to a Link, on its own so the AGENT's build can take it directly rather
+        than through the borrow-session arm (19 Oct 2026, his test 5: the agent's 2-slot build went
+        into the edit session while its reads came from the Link, so the run contradicted itself). */
+    void sendChainToLinkOverTheWire (const juce::String& linkUid, const juce::String& chainJson);
     // chainJson: the REQUESTED chain — used ONLY for role wording when a
     // failed plugin has no surviving built neighbour; anchors themselves
     // derive from the ack's built-only entries, never the request.

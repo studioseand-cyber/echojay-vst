@@ -1508,6 +1508,17 @@ void EJAgentClient::endPlayback (const juce::String& reason)
                      + " LUFS, which cannot be true of one span (his 12:33)");
         }
         setIfFinite (o, "peakDbtp", r.truePeakDbtp);
+        // ---- B'S SECTION 86(2): THE PROFILE'S CURVE WANTS PLAIN RMS ---------------------------
+        // *"check(playback) sends LUFS only, so the server uses the loudest-3-second LUFS as a
+        // stand-in and logs [agent-first-listen] proxy: true. Please add the fields below."*
+        // Sent only when they are genuinely known: a profile fed a stand-in it believes is a
+        // measurement is worse off than one that knows it has none.
+        if (r.plainRmsKnown)
+        {
+            o->setProperty ("loudestRmsDbfs", juce::String (r.loudestRmsDbfs, 1).getDoubleValue());
+            o->setProperty ("typicalRmsDbfs", juce::String (r.typicalRmsDbfs, 1).getDoubleValue());
+        }
+        setIfFinite (o, "loudestPeakDbfs", r.loudestPeakDbfs);
         if (heard < playback_.minSeconds) o->setProperty ("short", true);   // less than asked for; the model can ask again
     }
     else if (reason != "timeout")

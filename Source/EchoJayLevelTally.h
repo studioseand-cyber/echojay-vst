@@ -133,6 +133,10 @@ public:
         // 19 Oct 2026: the same hops' true peaks (dBTP), same index, same gate - so a crest taken
         // from these two arrays describes one window.
         std::array<float, kHopLevelHops> hopPeakDb {};
+        /** The same hops in PLAIN dBFS RMS, whatever this tally is weighted as (19 Oct 2026, B's
+            section 86(2)): a K tally's hopLevelDb is LUFS, and the profile's curve is referenced to
+            sine RMS dBFS. Two names, two meanings, no stand-ins. */
+        std::array<float, kHopLevelHops> hopPlainDb {};
         int hopLevelCount = 0;
         float windowSeconds = 0.0f;   // how much of it the estimate describes
         // Everything below is NaN while !known. Read known first.
@@ -165,6 +169,23 @@ public:
             loudestOut = v[(size_t) std::min (n - 1, (n * 9) / 10)];
             return true;
         }
+        /** p50 and p90 of the same hops in PLAIN dBFS RMS. Same contract as hopLevelPercentiles,
+            same floor, and deliberately a separate call: a caller asking for RMS must not be able
+            to receive LUFS by accident. */
+        bool hopPlainPercentiles (float& typicalOut, float& loudestOut) const
+        {
+            if (hopLevelCount < kHopLevelFloor) return false;
+            std::array<float, kHopLevelHops> v {};
+            int n = 0;
+            for (int k = 0; k < hopLevelCount && k < kHopLevelHops; ++k)
+                if (hopPlainDb[(size_t) k] > -199.0f) v[(size_t) n++] = hopPlainDb[(size_t) k];
+            if (n < kHopLevelFloor) return false;
+            std::sort (v.begin(), v.begin() + n);
+            typicalOut = v[(size_t) (n / 2)];
+            loudestOut = v[(size_t) std::min (n - 1, (n * 9) / 10)];
+            return true;
+        }
+
         /** CREST over the same window: the loudest hop true peak minus the window's RMS, where
             the window's RMS is the ENERGY mean of its hops (not the median - a crest is about how
             far the peaks stand above the energy, and a median would flatter a spiky source).
@@ -350,6 +371,14 @@ private:
     // a crest (peak minus RMS) describes ONE window. The 30-hop tpRing_ beside it is the loudness
     // loop's 3 s window and a crest taken across the two would mix a 3 s peak with an 8 s RMS.
     std::array<float, kHopLevelHops> lvlPeakRing_ {};
+    // ---- AND THE SAME HOPS IN PLAIN dBFS RMS (19 Oct 2026, B's section 86(2)) ------------------
+    // *"The profile's curve needs the slot input as sine-referenced RMS dBFS... Please add
+    // loudestRmsDbfs / loudestPeakDbfs / typicalRmsDbfs."*  The CHAIN taps are K-weighted, so their
+    // hop levels are LUFS - handing those over under a dBFS-RMS name is precisely the mislabelling
+    // this file spent today unpicking. Every tally already computes the plain per-channel power per
+    // hop (hopPlainPow_), so the plain figure is kept beside the weighted one and each keeps its
+    // own name. On a Plain tally the two rings agree, which is correct rather than wasteful.
+    std::array<float, kHopLevelHops> lvlPlainRing_ {};
     int lvlPos_ = 0, lvlFill_ = 0;
     std::array<double, kStHops> stRing_ {};
     std::array<float, kStHops>  tpRing_ {};   // 21m item 3
@@ -388,7 +417,8 @@ private:
         zl1_ = zr1_ = zl2_ = zr2_ = Z {};
         hopFill_ = 0; hopKPow_ = hopPlainPow_ = 0.0; hopPeak_ = 0.0f;
         ring_.fill (0.0); ringPos_ = 0; ringFill_ = 0;
-        lvlRing_.fill (-200.0f); lvlPeakRing_.fill (-200.0f); lvlPos_ = 0; lvlFill_ = 0;
+        lvlRing_.fill (-200.0f); lvlPeakRing_.fill (-200.0f); lvlPlainRing_.fill (-200.0f);
+        lvlPos_ = 0; lvlFill_ = 0;
         bins_.fill (0.0); binPow_.fill (0.0); heardHops_ = 0.0; heardAboveHops_ = 0.0; tpMax_ = 0.0f; plainPow_ = plainW_ = 0.0; peak_ = 0.0f;
     }
 
@@ -418,7 +448,7 @@ private:
             if (std::isfinite (cf) && hopK > 0.0 && offsetDb() + 10.0 * std::log10 (hopK) > (double) cf) heardAboveHops_ += 1.0;
         }
         {   // 18e: short-term (3 s) window, K-weighted, ungated; the max hold restarts on resetShortTermMax()
-            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; tpRing_.fill (0.0f); hopTp_ = 0.0f; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; stBins_.fill (0.0); stBinCount_ = 0.0; lvlRing_.fill (-200.0f); lvlPeakRing_.fill (-200.0f); lvlPos_ = 0; lvlFill_ = 0; }
+            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; tpRing_.fill (0.0f); hopTp_ = 0.0f; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; stBins_.fill (0.0); stBinCount_ = 0.0; lvlRing_.fill (-200.0f); lvlPeakRing_.fill (-200.0f); lvlPlainRing_.fill (-200.0f); lvlPos_ = 0; lvlFill_ = 0; }
             tpRing_[(size_t) stPos_] = hopTp_; hopTp_ = 0.0f;   // 21m item 3: the hop's true peak rides the same ring index
             stRing_[(size_t) stPos_] = hopK; stPos_ = (stPos_ + 1) % kStHops; if (stFill_ < kStHops) ++stFill_;
             if (stFill_ == kStHops)
@@ -445,6 +475,10 @@ private:
                 lvlRing_[(size_t) lvlPos_] = (float) hopDb;
                 lvlPeakRing_[(size_t) lvlPos_] = hopTpThis > 0.0f ? (float) (20.0 * std::log10 (hopTpThis))
                                                                   : -200.0f;
+                // the SAME hop in plain dBFS RMS, whatever this tally is weighted as
+                const double plainHop = hopPlainPow_ / (double) hopSamples_;
+                lvlPlainRing_[(size_t) lvlPos_] = plainHop > 0.0 ? (float) (10.0 * std::log10 (plainHop))
+                                                                 : -200.0f;
                 lvlPos_ = (lvlPos_ + 1) % kHopLevelHops;
                 if (lvlFill_ < kHopLevelHops) ++lvlFill_;
             }
@@ -516,6 +550,7 @@ private:
                 const int idx = ((lvlPos_ - n + k) % kHopLevelHops + kHopLevelHops) % kHopLevelHops;
                 s.hopLevelDb[(size_t) k] = lvlRing_[(size_t) idx];
                 s.hopPeakDb[(size_t) k]  = lvlPeakRing_[(size_t) idx];
+                s.hopPlainDb[(size_t) k] = lvlPlainRing_[(size_t) idx];
             }
         }
         s.windowSeconds = (float) juce::jmin ((double) s.heardSeconds, kEffectiveWindowSeconds);

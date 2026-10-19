@@ -146,71 +146,44 @@ LinkProcessor::LinkProcessor()
         LoudnessLoop::Stage st;
         if (match)
         {
-            // ---- THE PLUGIN'S OWN MAKE-UP FIRST (19 Oct 2026, Sean at 12:27) ------------------
+            // ---- THE SLOT CARD'S OUT TRIM (19 Oct 2026, his correction at 14:0x) -------------
             //
-            // *"Set the PLUGIN'S OWN make-up/output control (its map's make-up/output role) to bring
-            // the output back to the input loudness... Only use EchoJay's own gain if the plugin has
-            // no output/make-up control, and say so once."*
+            // *"Level matching uses the SLOT CARD's OUT trim, the per-slot in/out we built for
+            // exactly this, never the plugin's own make-up/output... The 14:00 run set the EchoJay
+            // Compressor's MAKEUP to 3.93 dB instead; that's the bug to undo."*
             //
-            // Why it is the better stage, beyond his asking: the rack OUT gain is applied AFTER the
-            // chain-output tally (outsideTap), so the loop cannot see its own correction there and
-            // the arithmetic has to account for it. A make-up control is INSIDE the chain, before
-            // the tap, so the verify pass measures the result of its own write - which is what makes
-            // "re-measure once and correct once" mean anything.
-            if (const auto mk = makeupStageSlot(); mk.slot >= 0)
+            // It is undone: this wrote the plugin's makeup_db/output_db, which was my reading of his
+            // 12:27 instruction and is now explicitly wrong. A plugin's make-up is part of how the
+            // user set the plugin up; EchoJay moving it silently rewrites their setting. The slot's
+            // OUT trim is EchoJay's own gain, exists for this, and shows on the card as "OUT -3.9".
+            //
+            // outsideTap is TRUE for it: the slot's out TALLY is taken before the slot's out GAIN
+            // (the 21t-k ruling, so the sensor measures the PLUGIN and not what the hold wrote), so
+            // the loop cannot see this correction in its own measurement and the arithmetic has to
+            // account for it - exactly as it does for the rack gain.
+            if (const int slot = outermostSlot(); slot >= 0)
             {
-                const int    slot     = mk.slot;
-                const auto   semantic = mk.semantic;
-                st.name       = "slot_makeup";
-                st.outsideTap = false;      // inside the chain: the tap sees this write
-                st.ready      = [this, slot, semantic]
+                st.name       = "slot_out";
+                st.outsideTap = true;
+                st.ready      = [this, slot] { return slot < chainHost.getNumSlots(); };
+                st.readDb     = [this, slot] { return chainHost.getSlotOutGainDb (slot); };
+                st.writeDb    = [this, slot] (float db)
                 {
-                    double v = 0.0;
-                    return chainHost.slotParamValue (slot, semantic, v);
-                };
-                st.readDb = [this, slot, semantic] () -> float
-                {
-                    double v = 0.0;
-                    return chainHost.slotParamValue (slot, semantic, v) ? (float) v : 0.0f;
-                };
-                st.writeDb = [this, slot, semantic] (float db)
-                {
-                    // Written through the ordinary edit road, not a back door: that is what puts the
-                    // figure in the slot's own settings text and on the panel, which is where he
-                    // asked to see it ("the new value just shows in the slot's settings").
-                    auto* params = new juce::DynamicObject();
-                    params->setProperty (semantic, (double) juce::jlimit (-24.0f, 24.0f, db));
-                    auto* ss = new juce::DynamicObject();
-                    ss->setProperty ("params", juce::var (params));
-                    auto* op = new juce::DynamicObject();
-                    op->setProperty ("op", "set");
-                    op->setProperty ("slot", slot + 1);               // ops are 1-based
-                    op->setProperty ("settings_structured", juce::var (ss));
-                    juce::Array<juce::var> arr; arr.add (juce::var (op));
-                    auto* envelope = new juce::DynamicObject();
-                    envelope->setProperty ("edit", juce::var (arr));
-                    auto ops = ChainHost::parseChainEditOps (juce::JSON::toString (juce::var (envelope), true));
-                    if (ops.empty())
-                    {
-                        EchoJay_NSLog (("EJLoudness: the make-up write parsed no ops for slot "
-                                        + juce::String (slot + 1) + " - nothing written").toRawUTF8());
-                        return;
-                    }
-                    EchoJay_NSLog (("EJLoudness: level match writes the PLUGIN'S OWN " + semantic
-                                    + " on slot " + juce::String (slot + 1) + " (\""
-                                    + chainHost.getSlotInfo (slot).name + "\") to "
-                                    + juce::String (db, 2) + " dB - his 12:27 rule").toRawUTF8());
-                    chainHost.applyChainEdits (std::move (ops), -1, {}, [] (const juce::StringArray&, int, bool) {});
+                    const float clamped = juce::jlimit (-24.0f, 24.0f, db);
+                    EchoJay_NSLog (("EJLoudness: level match writes the SLOT CARD's OUT trim on slot "
+                                    + juce::String (slot + 1) + " (\"" + chainHost.getSlotInfo (slot).name
+                                    + "\") to " + juce::String (clamped, 2) + " dB - his 14:0x rule. The "
+                                      "plugin's own make-up is left exactly as the user set it.").toRawUTF8());
+                    chainHost.setSlotOutGainDb (slot, clamped);
                 };
                 return st;
             }
-            // NO MAKE-UP CONTROL ANYWHERE IN THE RACK: EchoJay's own gain, said ONCE.
+            // NO SLOTS AT ALL: EchoJay's rack gain, which is the only gain left to use.
             if (! saidNoMakeupControl_)
             {
                 saidNoMakeupControl_ = true;
-                EchoJay_NSLog ("EJLoudness: no slot on this rack has a make-up or output control in its "
-                               "map, so the level match uses EchoJay's own rack gain instead (said once, "
-                               "his 12:27 rule)");
+                EchoJay_NSLog ("EJLoudness: this rack has no slots, so the level match uses EchoJay's "
+                               "own rack gain (said once)");
             }
             st.name       = "rack_out";
             st.outsideTap = true;   // applied AFTER the chain-output tally the loop measures
@@ -4098,25 +4071,18 @@ void LinkProcessor::pollChainCommand()
 //
 // So the arming lives here, called from both, and from nowhere else: a RESTORE must not re-level a rack the
 // user has since set by hand, which is the one case that has to stay unarmed.
-/** ---- WHICH CONTROL BRINGS THE OUTPUT BACK (19 Oct 2026) ------------------------------------
-    The OUTPUT-MOST slot whose map carries a make-up or an output role, searched from the end of the
-    rack backwards: that is the gain closest to what leaves the rack, so correcting it corrects the
-    whole chain rather than a stage something later re-compresses. `makeup_db` is preferred over
-    `output_db` on one slot because a compressor's make-up is the control the role exists for; an
-    output trim is the same arithmetic when there is no make-up.
+/** ---- WHICH SLOT'S OUT TRIM (19 Oct 2026, his 14:0x correction) ----------------------------
+    The OUTPUT-MOST slot: its OUT trim is the last gain before the rack's own output, so correcting
+    it corrects what leaves the rack rather than a stage something later re-compresses. -1 when the
+    rack has no slots at all, which is the only case left for EchoJay's rack gain.
 
-    Resolution is slotParamValue's, which reads the PLUGIN through its map and answers false rather
-    than guessing - so a slot with no map, no entry or unparseable display text is simply not a
-    candidate, and the fallback below is reached honestly. */
-LinkProcessor::MakeupStage LinkProcessor::makeupStageSlot() const
+    This replaces makeupStageSlot, which looked for the PLUGIN's make-up or output role. That was my
+    reading of his 12:27 instruction and he has since ruled it out in terms: a plugin's make-up is
+    the user's setting, not EchoJay's to move. */
+int LinkProcessor::outermostSlot() const
 {
-    for (int i = chainHost.getNumSlots() - 1; i >= 0; --i)
-    {
-        double v = 0.0;
-        if (chainHost.slotParamValue (i, "makeup_db", v)) return { i, "makeup_db" };
-        if (chainHost.slotParamValue (i, "output_db", v)) return { i, "output_db" };
-    }
-    return {};
+    const int n = chainHost.getNumSlots();
+    return n > 0 ? n - 1 : -1;
 }
 
 void LinkProcessor::armLoudnessAfterBuild (const juce::String& via)

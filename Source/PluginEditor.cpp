@@ -2192,7 +2192,65 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // slot was asked about and nothing more.
     chainListPanel.onReport = [this](int i) { openSlotReport(i); };
     chainListPanel.onRemoveSlot = [this](int i) {
-        if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
+        // ---- A REMOVE IS NEVER IGNORED (19 Oct 2026, his 14:05) --------------------------------
+        //
+        // *"The slot card's X shows 'Remove from chain' but clicking it does nothing... A remove
+        // must always work: close the plugin's window if it's open, then remove; if something
+        // genuinely blocks it, say why in one line on the card. Never ignore the click silently."*
+        // And his follow-up: *"switching to another rack and back makes the X work."*
+        //
+        // The line below this was `if (chainEditGateRefuses()) return;` - a bare silent return. The
+        // gate asks whether the BORROW SESSION is engaged, and after an agent run on that Link it
+        // is not (the agent's work goes over the wire now and holds no session), so the user's X
+        // was refused without a word until a rack switch re-engaged one.
+        //
+        // A Link's remove does not need a session any more than its build does: it takes the same
+        // edit-cmd road, and the Link closes its own editors before applying a chain change
+        // (onChainAboutToChange). So the gate refusing is no longer a reason to do nothing.
+        if (chainEditGateRefuses())
+        {
+            const juce::String uidR = chainViewUid();
+            if (uidR.isNotEmpty() && i >= 0)
+            {
+                std::vector<ChainHost::ChainEditOp> ops;
+                { ChainHost::ChainEditOp rm; rm.op = "remove"; rm.slot = i; ops.push_back (rm); }
+                const int seqR = processorRef.writeChainEditCommand (uidR,
+                                     ChainHost::editOpsToWireVar (ops), juce::var(),
+                                     "EchoJay V2 remove", {});
+                EchoJay_NSLog (("EJChain: the X on slot " + juce::String (i + 1) + " of " + uidR
+                                + " goes down the edit-cmd road (no session engaged; seq "
+                                + juce::String (seqR) + ") - his 14:05").toRawUTF8());
+                if (seqR < 0)
+                {
+                    chainListPanel.statusText = "That rack would not take the remove - nothing changed.";
+                    chainListPanel.repaint();
+                    return;
+                }
+                chainListPanel.statusText = "Removing...";
+                chainListPanel.repaint();
+                auto safeRm = juce::Component::SafePointer<EchoJayEditor> (this);
+                processorRef.awaitChainAck (uidR, seqR,
+                    [safeRm, uidR] (bool ok, juce::String sentence, juce::String, int)
+                {
+                    if (safeRm == nullptr) return;
+                    safeRm->chainListPanel.statusText = ok ? juce::String()
+                                                           : ("Not removed: " + sentence);
+                    // THE VIEW FOLLOWS THE LINK, so the next click acts on live slots - his
+                    // follow-up was exactly this going stale after an agent add.
+                    if (ok && safeRm->processorRef.onAgentChangedRack)
+                        safeRm->processorRef.onAgentChangedRack (uidR);
+                    safeRm->chainListPanel.repaint();
+                }, 12000);
+                return;
+            }
+            // The OWN rack, or no slot: there is no wire road, so say why rather than nothing.
+            chainListPanel.statusText = chainLockStateText (processorRef.rackLockState(),
+                                            processorRef.borrowHostIfActiveFor (chainViewUid()) != nullptr);
+            if (chainListPanel.statusText.isEmpty())
+                chainListPanel.statusText = "That rack cannot be edited just now.";
+            chainListPanel.repaint();
+            return;
+        }
         // Same fork, same reason. The local body keeps its 80ms deferred
         // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
         // that, because nothing in this process is being destroyed.
@@ -3282,7 +3340,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // AGENT'S; a user's Build press never passes this way.
             if (agentRowRendererOn()) ++agentBuildBubbleSuppress_;
             if (uid.isEmpty()) loadChainFromJson (chainJson, /*replaceConfirmed*/ true);
-            else               sendChainToLink (uid, chainJson);
+            // ---- THE AGENT'S BUILD GOES STRAIGHT TO THE LINK (19 Oct 2026, his test 5) --------
+            // Not sendChainToLink: its first arm is the borrow-session arm, and aiming the chat at
+            // a Link switches the rack, so that arm was always taken - the build landed in the
+            // mirror ("writes to Aitch_4_01 when you leave this rack") while the run's own
+            // read-backs and checks read the Link. A run that contradicts itself is worse than one
+            // that waits. The agent's reads come from the Link, so its writes do too.
+            else               sendChainToLinkOverTheWire (uid, chainJson);
         });
         agentPanel_ = std::make_unique<EJAgentPanel> (*agentClient());
         addChildComponent (*agentPanel_);
@@ -41000,6 +41064,31 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
         }
     }
 
+    // ---- THE WIRE ROAD IS ITS OWN FUNCTION (19 Oct 2026, his test 5) ------------------------
+    // So the agent's build can take it DIRECTLY, without passing the edit-session arm above. See
+    // sendChainToLinkOverTheWire.
+    sendChainToLinkOverTheWire (linkUid, chainJson);
+}
+
+/** ---- STRAIGHT TO THE LINK (19 Oct 2026) -----------------------------------------------------
+    Sean, test 5 at 12:41, with the vocal Link's rack open in his Chain tab: *"the agent's build
+    went into the EDIT SESSION ('Built 2 plugins into your edit session - writes to Aitch_4_01 when
+    you leave this rack'), while its read-backs and checks read the Link itself, so the run
+    contradicted itself."*  And the clue that named it: *"single adds today landed on the Link at
+    once; only the agent's 2-slot BUILD went into the edit session."*
+
+    Single adds go through the agent's applyChainOps sink, which writes an edit-cmd straight to the
+    Link. The build went through sendChainToLink, whose FIRST arm is the borrow-session arm - and
+    aiming the chat at a Link switches the rack, so that arm is always taken. One road for the ops
+    was the fix this morning; this is the other half of it, and it is the same road: a v2 edit-cmd
+    with intent="build", acked by awaitChainAck, needing no session, no lock and no engage.
+
+    sendChainToLink keeps the session arm for a USER's Build press while they are editing a borrowed
+    rack - that build belongs in the mirror they are looking at. The agent's does not: its reads
+    come from the Link, so its writes must too. */
+void EchoJayEditor::sendChainToLinkOverTheWire (const juce::String& linkUid,
+                                                const juce::String& chainJson)
+{
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
     const juce::String id = linkUid;   // instanceId — the address, never the name
@@ -41086,6 +41175,14 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             EchoJay_NSLog (("EJChain: build ack from " + uidForAck + " ok=" + juce::String ((int) ok)
                             + " slotsAfter=" + juce::String (slotsAfter) + " \"" + sentence + "\" "
                             + technical).toRawUTF8());
+            // ---- AND THE MIRROR FOLLOWS THE LINK (19 Oct 2026, his test 5) ------------------
+            // With a borrow session open, the V2 republishes the sidecar from its MIRROR - so a
+            // build written straight to the Link could be overwritten by a mirror that never saw
+            // it: "the open session holding the agent's work" arriving by the read path instead of
+            // the write path. The agent's own applyChainOps sink answers this with
+            // onAgentChangedRack; the build road does the same now, so one rule covers both.
+            if (ok && safeAck->processorRef.onAgentChangedRack)
+                safeAck->processorRef.onAgentChangedRack (uidForAck);
             // ---- WHO TELLS HIM IT LANDED (B's section 85(2), 19 Oct 2026) -------------------
             //
             // *"'Built 2/2' belongs inside the plan card as its steps, not a separate bubble."*

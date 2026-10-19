@@ -497,6 +497,47 @@ int main()
                "PW1 the playback payload NAMES each figure's window, so B can label them truthfully",
                "integratedWindow=\"" + res.getProperty ("integratedWindow", juce::var()).toString() + "\"");
 
+        // ---- PW3 (B's section 86(2)): PLAIN RMS, OR NOTHING -------------------------------
+        // *"The profile's curve needs the slot input as sine-referenced RMS dBFS... check(playback)
+        // sends LUFS only, so the server uses the loudest-3-second LUFS as a stand-in and logs
+        // proxy: true."*  The fields are sent when known and ABSENT when not - a profile fed a
+        // stand-in it takes for a measurement is worse off than one that knows it has none.
+        r.round (80);
+        r.tool (R"({"id":"tc_rms","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r.await ({ "tc_rms" });
+        r.ex.reading = {};
+        r.ex.reading.heardAboveSeconds = 4.0f;
+        r.ex.reading.integratedLufs = -18.0f;
+        r.ex.reading.loudestShortTermLufs = -12.0f;
+        r.ex.reading.plainRmsKnown  = true;
+        r.ex.reading.loudestRmsDbfs = -11.4f;
+        r.ex.reading.typicalRmsDbfs = -19.2f;
+        r.ex.reading.loudestPeakDbfs = -3.1f;
+        pumpMs (60);
+        {
+            const auto rp = r.result (0).getProperty ("result", {});
+            check (std::abs ((double) rp.getProperty ("loudestRmsDbfs", juce::var (0.0)) + 11.4) < 0.05
+                   && std::abs ((double) rp.getProperty ("typicalRmsDbfs", juce::var (0.0)) + 19.2) < 0.05
+                   && std::abs ((double) rp.getProperty ("loudestPeakDbfs", juce::var (0.0)) + 3.1) < 0.05,
+                   "PW3 check(playback) carries plain dBFS RMS and the peak, so the profile's curve "
+                   "stops running on a LUFS stand-in (B's 86(2))",
+                   juce::JSON::toString (rp).substring (0, 150));
+        }
+        r.round (81);
+        r.tool (R"({"id":"tc_nor","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r.await ({ "tc_nor" });
+        r.ex.reading = {};
+        r.ex.reading.heardAboveSeconds = 4.0f;
+        r.ex.reading.integratedLufs = -18.0f;
+        r.ex.reading.plainRmsKnown = false;            // too little audio for a percentile
+        pumpMs (60);
+        {
+            const auto rp = r.result (0).getProperty ("result", {});
+            check (! rp.hasProperty ("loudestRmsDbfs") && ! rp.hasProperty ("typicalRmsDbfs"),
+                   "PW3b ...and they are ABSENT rather than zero when the window is too short to "
+                   "measure them", juce::JSON::toString (rp).substring (0, 110));
+        }
+
         // PW2: HIS PAIR, -17.5 UNDER -14.1, WITHHELD WITH ITS REASON.
         r.round (90);
         r.tool (R"({"id":"tc_pw","name":"check","args":{"what":"playback","min_seconds":8},"approval":"free"})");

@@ -372,10 +372,9 @@ private:
     // Link's own v1 chain build, or a borrowed-rack build pushed as v2 editOps with intent=build. One
     // implementation on purpose: 13a fixed one road and Sean's build came down the other.
     void armLoudnessAfterBuild (const juce::String& via);
-    /** The slot and semantic the level match writes, or slot -1 when no slot has such a control
-        (19 Oct 2026, his 12:27 rule). */
-    struct MakeupStage { int slot = -1; juce::String semantic; };
-    MakeupStage makeupStageSlot() const;
+    /** The slot whose OUT trim the level match writes, or -1 when the rack has no slots (19 Oct
+        2026, his 14:0x correction - never the plugin's own make-up). */
+    int outermostSlot() const;
     bool saidNoMakeupControl_ = false;
     std::vector<ChainSlotSpec> chainModel;
     bool chainBuilding = false;

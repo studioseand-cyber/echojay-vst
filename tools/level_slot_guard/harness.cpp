@@ -181,6 +181,53 @@ int main()
         }
     }
 
+    // ---- OUT: THE LEVEL MATCH MOVES THE SLOT'S OUT TRIM, NOT THE PLUGIN (19 Oct, his 14:0x) --
+    //
+    // *"Level matching uses the SLOT CARD's OUT trim, the per-slot in/out we built for exactly this,
+    // never the plugin's own make-up/output... The 14:00 run set the EchoJay Compressor's MAKEUP to
+    // 3.93 dB instead; that's the bug to undo."*
+    //
+    // His correction reverses what he asked for at 12:27 and what I built from it. The leg holds
+    // BOTH halves: the trim moves, and the plugin's make-up is exactly where the user left it -
+    // because the second half is the harm he actually saw.
+    {
+        const auto* cmpO = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (cmpO != nullptr)
+        {
+            EchoJayProcessor po; po.prepareToPlay (48000.0, 512);
+            auto& ho = po.getChainHost();
+            EchoJayBorrowHostTestAccess::loadBuiltin (ho, BuiltinDeviceRegistry::descriptionFor (*cmpO));
+            {   // the user's own make-up, which nothing may move
+                auto* pp = new juce::DynamicObject();
+                pp->setProperty ("threshold_db", -20.0);
+                pp->setProperty ("ratio",         4.0);
+                pp->setProperty ("makeup_db",     5.0);
+                auto* w = new juce::DynamicObject();
+                w->setProperty ("params", juce::var (pp));
+                ho.setSlotStructuredSettings (0, juce::var (w));
+            }
+            auto* devO = dynamic_cast<EedDeviceProcessor*> (ho.getSlotProcessor (0));
+            const double makeupBefore = devO != nullptr ? devO->getParamValue ("makeup_db") : -999.0;
+            const float  trimBefore   = ho.getSlotOutGainDb (0);
+            check (std::abs (makeupBefore - 5.0) < 0.5 && std::abs (trimBefore) < 0.01f,
+                   "OUT0 the fixture: the user's make-up is +5 dB and the slot's OUT trim is 0",
+                   "make-up " + f1 ((float) makeupBefore) + ", trim " + f1 (trimBefore));
+
+            // THE WRITE THE LOOP MAKES. Driven through the host exactly as the stage does, because
+            // what is being held here is WHICH control the match is allowed to touch.
+            ho.setSlotOutGainDb (0, -3.9f);
+            const double makeupAfter = devO != nullptr ? devO->getParamValue ("makeup_db") : -999.0;
+            check (std::abs (ho.getSlotOutGainDb (0) + 3.9f) < 0.01f,
+                   "OUT1 the slot's OUT trim takes the match's figure, and shows on the card as "
+                   "\"OUT -3.9\"", f1 (ho.getSlotOutGainDb (0)));
+            check (std::abs (makeupAfter - makeupBefore) < 0.01,
+                   "OUT2 ...and the PLUGIN'S OWN MAKE-UP is untouched  (RED as it stood: his 14:00 run "
+                   "set the EchoJay Compressor's makeup to 3.93 dB, which is the user's setting being "
+                   "silently rewritten)",
+                   "make-up " + f1 ((float) makeupBefore) + " -> " + f1 ((float) makeupAfter));
+        }
+    }
+
     // ---- TAP4: THE STATIC TEST, WHICH NO DYNAMICS CAN CONFUSE (19 Oct 2026) ------------------
     //
     // B's section 87 reads his 12:59 payload as "in and out swapped": input -10.2/-13.6, output

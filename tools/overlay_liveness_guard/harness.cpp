@@ -50,6 +50,9 @@ struct EchoJayTabStripTestAccess
     // 19 Oct 2026: the Build press's own road to a Link, so (b4) can read what it sent.
     static void buildToLink (EchoJayEditor& e, const juce::String& uid, const juce::String& json)
     { e.sendChainToLink (uid, json); }
+    // 19 Oct 2026 (his test 5): the AGENT's road, which must reach the Link even with a session open.
+    static void agentBuildToLink (EchoJayEditor& e, const juce::String& uid, const juce::String& json)
+    { e.sendChainToLinkOverTheWire (uid, json); }
     static bool overlayVisible (EchoJayEditor& e)       { return e.chainListPanel.editGate.isVisible(); }
     static bool pillOrange (EchoJayEditor& e)           { return e.chainListPanel.rackBtn.findColour (juce::TextButton::textColourOffId) == juce::Colour (0xffFFB020); }
     static juce::String readInFlight (EchoJayEditor& e) { return e.borrowReadInFlightUid_; }
@@ -217,6 +220,86 @@ int main()
                + ", editOps=" + (hasEditOps ? "y" : "n") + ", chain=" + (hasWholeChain ? "y" : "n"));
         check (! proc.borrowActive(),
                "(b4b) ...and it needed no borrow session to send it, which is the whole point");
+    }
+
+    // ---- (b5) THE AGENT'S BUILD REACHES THE LINK WITH A SESSION OPEN (19 Oct, his test 5) ----
+    //
+    // *"The agent's build went into the EDIT SESSION ('writes to Aitch_4_01 when you leave this
+    // rack'), while its read-backs and checks read the Link itself, so the run contradicted
+    // itself... aiming the chat at a Link switches the rack, so the agent's own target is always
+    // the open rack."*  And his clue: single adds landed at once; only the 2-slot BUILD deferred -
+    // because sendChainToLink's FIRST arm is the borrow-session arm, and that arm is always taken.
+    //
+    // (b4) proved the Build press writes a v2 edit-cmd with no session active. This is the harder
+    // half: a session IS active, and the agent's road must still write to the Link.
+    std::printf ("== (b5) with a session OPEN, the agent's build still goes to the Link ==\n");
+    {
+        // stand the session up again (the earlier legs released it)
+        EchoJayAlignTestAccess::setPending (proc, kUid);
+        proc.setRackLockWant (kUid);
+        for (int k = 0; k < 20 && ! proc.borrowActive(); ++k)
+        {
+            heartbeat(); proc.refreshLinkRegistry(); proc.rackLockTick();
+            EchoJayTabStripTestAccess::tickEditor (*ed); pumpMs (100);
+        }
+        check (proc.borrowActive() && proc.borrowUid() == kUid,
+               "(b5) the fixture IS his case: a borrow session is OPEN on the rack in the chain view",
+               proc.borrowActive() ? ("session on " + proc.borrowUid()) : juce::String ("no session"));
+
+        int e5 = 0;
+        const auto dir5 = LinkShm::resolveDir (e5);
+        const juce::File cmd5 (dir5 + "chain-cmd-" + juce::String (kUid) + ".json");
+        cmd5.deleteFile();
+        EchoJayTabStripTestAccess::agentBuildToLink (*ed, kUid,
+            R"({"chain":[{"name":"EchoJay Compressor"},{"name":"EchoJay EQ"}]})");
+        pumpMs (250);
+        const auto wrote5 = juce::JSON::parse (cmd5.loadFileAsString());
+        const int  ver5 = (int) wrote5.getProperty ("v", juce::var (0));
+        const auto ops5 = wrote5.getProperty ("editOps", juce::var());
+        const int  nOps = ops5.getArray() != nullptr ? ops5.getArray()->size() : 0;
+        check (cmd5.existsAsFile() && ver5 == 2 && nOps >= 2,
+               "(b5b) the agent's 2-slot build is written to the LINK as a v2 edit-cmd, with a session "
+               "open  (RED as it stood: it went into the mirror and said \"writes when you leave this "
+               "rack\", while the run's own reads came from the Link)",
+               "v=" + juce::String (ver5) + ", ops=" + juce::String (nOps));
+        check (wrote5.getProperty ("intent", juce::var()).toString() == "build",
+               "(b5c) ...carrying intent=build, so the Link arms its level match (his 12:27)",
+               wrote5.getProperty ("intent", juce::var()).toString());
+    }
+
+    // ---- (b6) THE X IS NEVER IGNORED (19 Oct 2026, his 14:05) --------------------------------
+    //
+    // *"The slot card's X shows 'Remove from chain' but clicking it does nothing... Never ignore
+    // the click silently."*  And: *"switching to another rack and back makes the X work"* - the
+    // gate asks whether a borrow SESSION is engaged, and after an agent run on that Link there is
+    // none, so the press was refused without a word.
+    //
+    // With no session engaged, the X must now write a remove down the edit-cmd road - the same one
+    // road as the build - and the view must follow the Link so the NEXT click acts on live slots.
+    std::printf ("== (b6) with no session, the X writes a remove to the Link and says what it did ==\n");
+    {
+        if (proc.borrowActive()) proc.borrowRelease (false);
+        EchoJayAlignTestAccess::clearPending (proc);
+        EchoJayTabStripTestAccess::refresh (*ed);
+        int e6 = 0;
+        const auto dir6 = LinkShm::resolveDir (e6);
+        const juce::File cmd6 (dir6 + "chain-cmd-" + juce::String (kUid) + ".json");
+        cmd6.deleteFile();
+        EchoJayTabStripTestAccess::xPress (*ed, 0);        // the card's X, on slot 1
+        pumpMs (250);
+        const auto wrote6 = juce::JSON::parse (cmd6.loadFileAsString());
+        const auto ops6 = wrote6.getProperty ("editOps", juce::var());
+        juce::String firstOp;
+        if (auto* a6 = ops6.getArray(); a6 != nullptr && ! a6->isEmpty())
+            firstOp = (*a6)[0].getProperty ("op", juce::var()).toString();
+        check (cmd6.existsAsFile() && firstOp == "remove",
+               "(b6) the X writes a REMOVE to the Link with no session engaged  (RED as it stood: a "
+               "bare `if (chainEditGateRefuses()) return;` - the click did nothing at all until he "
+               "switched racks and back)",
+               "op=\"" + firstOp + "\", file " + juce::String ((int) cmd6.existsAsFile()));
+        check (EchoJayTabStripTestAccess::panelStatus (*ed).isNotEmpty(),
+               "(b6b) ...and the card SAYS something either way - never a silent click",
+               "card says: \"" + EchoJayTabStripTestAccess::panelStatus (*ed) + "\"");
     }
 
     std::printf ("\n==== overlay_liveness_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

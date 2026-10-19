@@ -948,19 +948,50 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
     if (root == nullptr || slot1 < 1) return out;
     // WHOSE KNOBS THESE ARE (Sean's #6): the row reads "Compressor: threshold -14 dB", so the line
     // needs the plugin's name. Read from the rack, which is the only place it exists.
-    {
-        const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
-                                               : (src_.ownRack  ? src_.ownRack()          : RackRead());
-        if (rack.valid)
-            for (const auto& sl : rack.slots)
-                if (sl.n == slot1) { out.slotName = sl.name; break; }
-    }
+    // READ ONCE, used twice now: the slot's name for the row, and (19 Oct) the slot's own composed
+    // settings text as the EQ bands' read-back. Hoisted out of its block rather than read twice,
+    // because two reads of a rack a moment apart can disagree and then the row's name and its
+    // figures would belong to different moments.
+    const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                           : (src_.ownRack  ? src_.ownRack()          : RackRead());
+    if (rack.valid)
+        for (const auto& sl : rack.slots)
+            if (sl.n == slot1) { out.slotName = sl.name; break; }
     // ---- BOTH SHAPES, BECAUSE A THIRD PARTY USES THE OTHER ONE (16 Oct 2026) -------------------
     // This read `params` (and the flat form) only. A THIRD-PARTY slot is dialled through `controls`,
     // keyed by the plugin's own control name - the shape the contract names and the shape Sean's four
     // plugins arrive in - so the one case last night's read-back was written for was the one case it
     // could not see. Row T1 caught it on a real MTransient: the rack even said so itself, *"a 'params'
     // wrapper is a built-in device payload and reached the third-party map path"*.
+    // ---- AN EQ BAND IS A SETTING, AND IT IS READ BACK (19 Oct 2026, his 13:54 mud test) -------
+    //
+    // *"The add carried the EQ band and the EchoJay EQ shows band 1 bell 300 Hz -4.0 dB Q 1.20
+    // applied, but the card step only says 'Added EchoJay EQ.' with no read-back, so the server's
+    // closing fell back to 'Settings not confirmed'. An add that carries settings must read them
+    // back in its ack, EQ bands included."*
+    //
+    // This function read `params` and `controls` only, so an add carrying ONLY eq_bands asked for
+    // nothing by its own count and reported nothing. A band is not a numeric control and cannot be
+    // read through slotParam - but the slot already composes the exact text he wants from its own
+    // READ-BACK (the Suggested Settings line: "bell 300 Hz -4.0 dB Q 1.20"), so that text is the
+    // band's read-back and is taken from the rack rather than from the request.
+    if (auto* bands = root->getProperty ("eq_bands").getArray(); bands != nullptr && ! bands->isEmpty())
+    {
+        juce::String fromTheSlot;
+        if (rack.valid)
+            for (const auto& sl : rack.slots)
+                if (sl.n == slot1)
+                { fromTheSlot = sl.dialSummary.isNotEmpty() ? sl.dialSummary : sl.settings; break; }
+        out.askedCount += bands->size();
+        if (fromTheSlot.isNotEmpty())
+        {
+            out.matched.add ("slot " + juce::String (slot1) + " eq_bands: " + fromTheSlot);
+            out.matchedIds.add ("eq_bands");
+            out.matchedPlain.add (fromTheSlot);
+        }
+        else
+            out.unreadable.add ("eq_bands");
+    }
     juce::DynamicObject* asked = root;
     if (auto* p = root->getProperty ("params").getDynamicObject())        asked = p;
     else if (auto* c = root->getProperty ("controls").getDynamicObject()) asked = c;

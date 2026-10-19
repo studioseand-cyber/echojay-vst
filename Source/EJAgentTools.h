@@ -174,6 +174,15 @@ struct PlaybackReading
     // "over the window" of both, which is the whole of the lie.
     float loudestWindowSeconds = 0.0f;         // what the loudest figure describes, in seconds
     bool  integratedIsLongerWindow = false;    // TRUE when the integrated figure is of a longer span
+    // ---- PLAIN dBFS RMS, FOR THE PROFILE'S CURVE (19 Oct 2026, B's section 86(2)) --------------
+    // *"The profile's curve needs the slot input as sine-referenced RMS dBFS, plus the peak.
+    // check(playback) sends LUFS only, so the server uses the loudest-3-second LUFS as a stand-in
+    // and logs [agent-first-listen] proxy: true."*  These end the stand-in. They are PLAIN RMS off
+    // the same hops the LUFS figures come from - a separate ring in LevelTally, because the chain
+    // taps are K-weighted and handing LUFS over under a dBFS name is the mislabelling that cost
+    // today's morning.
+    bool  plainRmsKnown = false;
+    float loudestRmsDbfs = 0.0f, typicalRmsDbfs = 0.0f, loudestPeakDbfs = 0.0f;
 };
 
 /** WHETHER A STEP CAN BE PUT BACK, AND WHETHER AUTO MAY RUN IT WITHOUT ASKING (Sean's Auto ruling).
