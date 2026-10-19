@@ -815,7 +815,7 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 - **The call:** the tone check's own (`--sweep` at the position, the profile's engage / neutral writes), with only the ratio write swapped. One process per (ratio, position); GR read after settling; the landed ratio read back as the plugin prints it.
 - **Licence gate first;** a window stops that product.
 - **`--dry-run`** prints the plan and the law at the measured ratio from the existing sweep, and loads nothing.
-- **Pack:** `FOR_SEAN_19oct/RATIO_LAW_PACK` (`ratio_law.sh [--dry-run] <list>`; `products_sean_mac.txt` 7 licence-bound, `products_kathy_mac.txt` 20 guard-allowed, from B's 27 adjustable single-ratio profiles).
+- **Pack:** `FOR_SEAN_19oct/RATIO_LAW_PACK` (`ratio_law.sh [--dry-run] <list>`; `products_sean_mac.txt` 20 (7 licence-bound + 13 Waves at 15.0.70, Kathy's Mac has 12.0.0), `products_kathy_mac.txt` 7 (guard-allowed and the same version), from B's 27 adjustable single-ratio profiles).
 
 ### 16.2 The scoring (EjmapRatioLaw.h; `ejmap --ratio-law-score <results.json>` on our side)
 - **T** is the line through the existing sweep's (input at g dB, g) points for g >= 2 at that position, interpolated between positions.
@@ -867,7 +867,7 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
   - **Varies with depth (19):** the rest. C1 and RCompressor overshoot then fall; CL 1B, townhouse, 254E, SSL Bus 2, Solid Bus and SSLComp rise with depth; MCompressor falls.
 - **The whole-dB in_at_gr curves are too coarse** for this (X-Comp read 3.92-4.33 from them, 4.00 from the raw readings), so the raw readings were used.
 - **Re-derive from disk: none needed.** The server uses the measured curve at the measured setting.
-- **Re-measure: all 27 at their other settings** (RATIO_LAW_PACK; 7 on Sean's Mac, 20 on Kathy's).
+- **Re-measure: all 27 at their other settings** (RATIO_LAW_PACK; 20 on Sean's Mac, 7 on Kathy's).
 - **No v3d** (v3c unchanged).
 
 ## 17. The recount with the 18 Oct night run, 19 Oct (data on disk only; nothing loaded, nothing sent)

@@ -1,21 +1,8 @@
-# Kathy's Mac: the guard KEEPS these (not licence-bound) - 19 Oct: adjustable-ratio profiles from B's single-ratio list (18 Oct)
-API-2500 (m)
-API-2500 (s)
-DPR-402 (m)
-C1 comp-sc (m)
-C1 comp-sc (s)
-C1 comp (m)
-C1 comp (s)
-C1 comp-gate (m)
-C1 comp-gate (s)
+# Kathy's Mac (7): the guard keeps these AND the installed version equals the served profile's (Info.plist, 19 Oct)
 Lindell 254E
 Lindell SBC
 Bettermaker Bus Compressor DSP
 Solid Bus Comp
-SSLComp (m)
-SSLComp (s)
-RCompressor (m)
-RCompressor (s)
 elysia alpha mix
 bx_townhouse Buss Compressor
 Unfiltered Audio Zip

@@ -3,8 +3,9 @@
 **Why.** Your server dials a certified compressor at its measured setting from our measured curve. At any other ratio setting it needs the true (effective) ratio of that setting. This check measures each setting's effective ratio and says whether GR = (input - T) x (1 - 1/ratio) holds there within 0.5 dB, both with the label and with the effective ratio, from the knee upward, inside the tested range only.
 
 **Two lists** (B's 27 adjustable single-ratio profiles, 18 Oct; the 18 fixed-ratio are out of scope):
-- `products_sean_mac.txt`: 7 that are licence-bound on Kathy's Mac. **Run these on your Mac.**
-- `products_kathy_mac.txt`: 20 that Kathy's Mac can load. Kathy runs these.
+- `products_sean_mac.txt`: 20: the 7 licence-bound on Kathy's Mac (MCompressor, CL 1B, VBC FG-Red: PACE; the three SSL Native; kHs Compressor) and the 13 Waves profiles (API-2500 m/s, DPR-402, the six C1 variants, SSLComp m/s, RCompressor m/s), served at 15.0.70 while Kathy's Mac has 12.0.0. **Run these on your Mac.**
+- `products_kathy_mac.txt`: 7 whose installed version equals the served profile's (Lindell 254E, Lindell SBC, Bettermaker, Solid Bus Comp, elysia alpha mix, bx_townhouse, Zip). Kathy runs these.
+- A profile is never used across versions: the run refuses a plugin whose installed version differs from the profile's, before loading it.
 
 ## 1. Unzip and clear the download flag (once)
 ```

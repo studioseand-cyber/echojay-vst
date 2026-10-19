@@ -1,7 +1,7 @@
 #!/bin/bash
 # EJ Map - the RATIO LAW spot check (Kathy, 19 Oct 2026). ONE command, from inside this folder:
 #     bash ratio_law.sh [--dry-run] [products_sean_mac.txt | products_kathy_mac.txt]
-#     (default list: products_sean_mac.txt - the licence-bound ones; --dry-run: the plan only, loads nothing)
+#     (default list: products_sean_mac.txt - the licence-bound ones and the Waves 15.0.70 ones; --dry-run: the plan only, loads nothing)
 # For each product in the list (certified compressors with an adjustable ratio measured at ONE ratio - B's list, 18 Oct): its ratio control at the
 # lowest, 2:1, 4:1 and the highest ratio (the measured ratio skipped), at the tone check's g 2 and g 4 positions, a steady tone at 3
 # input levels above threshold - the tone check's own probe call with the ratio write swapped. Licence gate first; a window stops that

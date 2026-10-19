@@ -1,0 +1,222 @@
+[
+ {
+  "name": "API-2500 (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "API-2500 (s)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "DPR-402 (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "C1 comp-sc (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "C1 comp-sc (s)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "C1 comp (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "C1 comp (s)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "C1 comp-gate (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "C1 comp-gate (s)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "Lindell 254E",
+  "served": "1.2.2",
+  "installed": [
+   "1.2.2"
+  ],
+  "bundles": [
+   "Lindell 254E.component 1.2.2"
+  ],
+  "match": true
+ },
+ {
+  "name": "Lindell SBC",
+  "served": "1.0.3",
+  "installed": [
+   "1.0.3"
+  ],
+  "bundles": [
+   "Lindell SBC.component 1.0.3"
+  ],
+  "match": true
+ },
+ {
+  "name": "Bettermaker Bus Compressor DSP",
+  "served": "1.0.0",
+  "installed": [
+   "1.0.0"
+  ],
+  "bundles": [
+   "Bettermaker Bus Compressor DSP.component 1.0.0"
+  ],
+  "match": true
+ },
+ {
+  "name": "Solid Bus Comp",
+  "served": "1.4.5",
+  "installed": [
+   "1.4.5"
+  ],
+  "bundles": [
+   "Solid Bus Comp.component 1.4.5"
+  ],
+  "match": true
+ },
+ {
+  "name": "SSLComp (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "SSLComp (s)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "RCompressor (m)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "RCompressor (s)",
+  "served": "15.0.70",
+  "installed": [
+   "12.0.0"
+  ],
+  "bundles": [
+   "WaveShell2-AU 12.0.component 12.0.0"
+  ],
+  "match": false
+ },
+ {
+  "name": "elysia alpha mix",
+  "served": "1.17.1",
+  "installed": [
+   "1.17.1"
+  ],
+  "bundles": [
+   "elysia alpha mix.component 1.17.1"
+  ],
+  "match": true
+ },
+ {
+  "name": "bx_townhouse Buss Compressor",
+  "served": "1.8.1",
+  "installed": [
+   "1.8.1"
+  ],
+  "bundles": [
+   "bx_townhouse Buss Compressor.component 1.8.1"
+  ],
+  "match": true
+ },
+ {
+  "name": "Unfiltered Audio Zip",
+  "served": "1.4.2",
+  "installed": [
+   "1.4.2"
+  ],
+  "bundles": [
+   "Unfiltered Audio Zip.component 1.4.2"
+  ],
+  "match": true
+ }
+]

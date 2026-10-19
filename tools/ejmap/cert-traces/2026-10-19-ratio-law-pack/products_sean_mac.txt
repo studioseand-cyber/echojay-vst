@@ -1,4 +1,4 @@
-# Sean's Mac: licence-bound or guard-refused on Kathy's Mac (PACE / iLok, SSL, Kilohearts) - the reason beside each in the README
+# Sean's Mac (20): licence-bound or guard-refused on Kathy's Mac (7), and Waves at the served 15.0.70 where Kathy's Mac has 12.0.0 (13; the version gate refuses across versions)
 SSL Native Bus Compressor 2
 SSL Native X-Comp v6
 SSL Native X-ValveComp v6
@@ -6,3 +6,16 @@ VBC FG-Red
 Tube-Tech CL 1B
 kHs Compressor
 MCompressor
+API-2500 (m)
+API-2500 (s)
+DPR-402 (m)
+C1 comp-sc (m)
+C1 comp-sc (s)
+C1 comp (m)
+C1 comp (s)
+C1 comp-gate (m)
+C1 comp-gate (s)
+SSLComp (m)
+SSLComp (s)
+RCompressor (m)
+RCompressor (s)
