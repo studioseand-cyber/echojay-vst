@@ -1683,6 +1683,59 @@ int main()
         }
     }
 
+
+    // ---- RO9: A FINISHED RUN IS NOT A RECORD (19 Oct 2026) ------------------------------------
+    //
+    // The rig's C5, D3 and D4 all failed on one cause and the arithmetic is conclusive:
+    //   runViewFrom:        showUndoAll = finished && canUndoAll()      (only when FINISHED)
+    //   agentRunViewFor:    a row was a RECORD unless isActive()        (false when finished)
+    // Two mutually exclusive conditions, so from 18 Oct Undo all could not be drawn at all, and the
+    // per-step Undo went with it - while the client's own contract says undo is allowed for exactly
+    // Done, Stopped and Failed (undoAllowedNow). His 08:00 "only the steps toggle is clickable" was
+    // this, not the restored-card fault he took it for.
+    //
+    // Held in BOTH directions here, which is what the withdrawn (b3) leg could not manage: the
+    // finished run's own card offers the controls, and the same card as a RECORD does not.
+    std::printf ("\n== RO9: a finished run keeps Undo; the same card as a record does not ==\n");
+    {
+        using namespace echojay::agentui;
+        RunView fin;
+        fin.sessionId = "ses_fin"; fin.runKey = "key_fin";
+        fin.opening = "Done - I added it."; fin.statusWord = "Done";
+        fin.finished = true; fin.running = false; fin.stepsOpen = true;
+        fin.showUndoAll = true;                       // what runViewFrom computes for a finished run
+        RunStep a;
+        a.id = "st_add"; a.label = "Added Tube-Tech CL 1B to slot 1"; a.right = "applied";
+        a.status = (int) EJAgentClient::Step::Status::Done;
+        a.canUndo = true;
+        fin.steps.push_back (a);
+        fin.changeCount = 1;
+        const auto L = layoutRun (fin, 0, 0, 420);
+        bool undoAll = false, stepUndo = false;
+        for (const auto& z : L.zones)
+        {
+            if (z.kind == RunHit::UndoAll) undoAll = true;
+            if (z.kind == RunHit::Undo)    stepUndo = true;
+        }
+        check (undoAll, "RO9 a FINISHED run's card draws Undo all - the one state it can be drawn in "
+                        "(RED as it stood: the editor called every finished run a record, so the two "
+                        "conditions were mutually exclusive and it was never drawn)");
+        check (stepUndo, "RO9b ...and the landed step's own Undo");
+
+        auto rec = fin;
+        rec.makeRecord();
+        const auto LR = layoutRun (rec, 0, 0, 420);
+        bool recUndoAll = false, recStepUndo = false;
+        for (const auto& z : LR.zones)
+        {
+            if (z.kind == RunHit::UndoAll) recUndoAll = true;
+            if (z.kind == RunHit::Undo)    recStepUndo = true;
+        }
+        check (! recUndoAll && ! recStepUndo,
+               "RO9c and the SAME card as a record draws neither - a reopened chat's run is over, "
+               "which is the distinction his 08:00 ruling actually draws");
+    }
+
     std::printf ("\n==== agent_client_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
     return failures == 0 ? 0 : 1;
 }

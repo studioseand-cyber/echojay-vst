@@ -4595,8 +4595,15 @@ int main (int argc, char* argv[])
                         if (m.getProperty ("text", juce::var()).toString().contains (sentence)) ++copies;
                 const auto closingNow = arow.getProperty ("closing", juce::var()).toString().trim();
                 const auto openingNow = arow.getProperty ("opening", juce::var()).toString().trim();
+                // ---- RE-AIMED (19 Oct 2026): WHICH COPY SURVIVES CHANGED ---------------------
+                // This required the row's `closing` to be EMPTY, because when it was written the
+                // copy that survived was the BUBBLE's. On 18 Oct he ruled the other way - *"Show it
+                // once, in full, inside the card"* - so the card now carries the sentence and the
+                // bubble's copy is the one suppressed. The subject of the row is unchanged and is
+                // the thing he read in Logic: the sentence is on screen ONCE. That is what is
+                // asserted; which surface holds it is the ruling's business, not this row's.
                 scen ("G7b", "a short run whose closing IS its opening draws that sentence once",
-                      r1.ran() && copies == 1 && closingNow.isEmpty(),
+                      r1.ran() && copies == 1,
                       juce::String (copies) + " copy(ies) of \"" + sentence + "\" on screen; the row's "
                       "opening is \"" + openingNow.substring (0, 60) + "\" and its closing is "
                       + (closingNow.isEmpty() ? juce::String ("EMPTY, as it should be when it would only "
@@ -5246,13 +5253,25 @@ int main (int argc, char* argv[])
             const auto arow = st5.getProperty ("agentRow", juce::var());
             const auto closing = arow.getProperty ("closing", juce::var()).toString().trim();
             const auto shown = screenText (st5);
-            // the sentence drawn twice: once in the bubble, once as the row's closing
-            const bool twice = closing.isNotEmpty() && shown.contains (closing);
+            // ---- COUNTED, NOT "CONTAINS" (19 Oct 2026) --------------------------------------
+            // `shown.contains (closing)` was true the moment the closing was drawn AT ALL, and
+            // since 18 Oct the card draws it by design ("show it once, in full, inside the card").
+            // So this row reported "drawn twice" about a sentence that was on screen once, which is
+            // the opposite of what he asked for. Counted instead: the subject is repetition, and
+            // repetition is a count.
+            int copies5 = 0;
+            if (closing.isNotEmpty())
+            {
+                int at = shown.indexOf (closing);
+                while (at >= 0) { ++copies5; at = shown.indexOf (at + closing.length(), closing); }
+            }
+            const bool twice = copies5 > 1;
             scen ("RP5", "REPLAY rp_cp_4: the bubble does not repeat the closing when it has extra text",
                   ! twice,
                   juce::String ("the row's closing is \"") + closing.substring (0, 70) + "\" and the bubble "
-                  + (twice ? "CONTAINS IT TOO - drawn twice, which is what he read"
-                           : "does not contain it")
+                  + (twice ? "holds it " + juce::String (copies5) + " times - drawn twice, which is "
+                               "what he read"
+                           : "holds it once, in the card, as his 18 Oct ruling asks")
                   + "; bubble: \"" + shown.substring (0, 120).replace ("\n", " / ") + "\"",
                   "A", v2.editor.get(), st5, &r5);
         }

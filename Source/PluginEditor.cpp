@@ -32760,7 +32760,24 @@ echojay::agentui::RunView EchoJayEditor::agentRunViewFor (const ChatMsg& msg) co
     //
     // Decided HERE rather than at the restore, so it is true of every road into this view: the
     // store, the processor's replay list, and a row that is simply not the live one.
-    const bool live = agentClient() != nullptr && agentClient()->isActive()
+    // ---- A FINISHED RUN IS NOT A RECORD (19 Oct 2026) -----------------------------------------
+    //
+    // This asked isActive(), which is FALSE for Done, Stopped and Failed - so the moment a run
+    // ended its own card became a "record" and lost Undo, Undo all and Retry, in the same session,
+    // with the undo tokens still valid. The client's own contract says the opposite in so many
+    // words: undoAllowedNow() is true for exactly Done/Stopped/Failed, and hasSession() exists to
+    // mean "anything to show, finished or not".
+    //
+    // The rig found it: C5 ("after Undo all the closing no longer claims the change"), D3 ("undo
+    // all after an add puts the rack back as it was") and D4 all failed on one cause - the press
+    // had no zone to land on ("Undo all present=n"). It is also the true scope of his 08:00 report:
+    // he read it as a restored-card fault, and it was every finished card.
+    //
+    // A RECORD is a row this window's client is not holding: a reopened chat, a previous session,
+    // the row above the one in flight. That is what this asks now. Retry is a Failed-state control
+    // and Stop a live-state one; both come from the client's own state through runViewFrom, so
+    // nothing here has to decide which of them to offer.
+    const bool live = agentClient() != nullptr && agentClient()->hasSession()
                    && msg.agentRunId == agentRunMsgId_;
     // 19 Oct 2026: the transformation itself now lives on the view (RunView::makeRecord), so his
     // leg can compare a live layout with a restored one through the product's own code.
@@ -33166,8 +33183,10 @@ void EchoJayEditor::agentRowPressed (const echojay::agentui::RunZone& z, int msg
     // His rule, in his words: *"Both are read-only views... Only the buttons that act stay locked:
     // Undo, Apply, Skip, Retry, Stop, chips."*  Liveness is asked ONCE, here, so no case below has
     // to remember it - and the read-only pair is never gated on it.
-    const bool actingAllowed = agentClient() != nullptr && agentClient()->isActive()
-                            && ! view.fromRecord;
+    // Not isActive(): a finished run's Undo is the main road back from a run, and the client allows
+    // it for exactly Done/Stopped/Failed (undoAllowedNow). The question here is only whether this
+    // card belongs to the run this window holds.
+    const bool actingAllowed = agentClient() != nullptr && ! view.fromRecord;
     switch (z.kind)
     {
         case RunHit::ApplyLine: case RunHit::SkipLine: case RunHit::ApplyAll: case RunHit::SkipAll:
