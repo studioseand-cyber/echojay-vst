@@ -14,6 +14,7 @@
 */
 #pragma once
 #include "EjmapRatioLaw.h"
+#include "EjmapPitch.h"
 
 namespace ejmap::cert
 {
@@ -50,7 +51,7 @@ inline int ratioLawScoreFile (const juce::File& results)
     if (auto* o = r.getDynamicObject()) { o->setProperty ("ratio_law", ratiolaw::block (v)); o->setProperty ("verdict", v.words); }
     results.replaceWithText (juce::JSON::toString (r) + "\n");
     std::cout << "RATIO-LAW: " << r.getProperty ("product", "").toString() << " - " << v.words << std::endl;
-    for (const auto& rr : v.ratios) std::cout << "  " << juce::String (rr.ratio, 2) << ":1  " << (rr.tested ? (rr.pass ? "PASS  " : "FAIL  ") : "--    ") << rr.why << std::endl;
+    for (const auto& rr : v.ratios) std::cout << "  " << ratiolaw::ratioWords (rr.ratio) << ":1  " << (rr.tested ? (rr.pass ? "PASS  " : "FAIL  ") : "--    ") << rr.why << std::endl;
     if (const auto m = r.getProperty ("measured_ratio_law", {}); m.isObject()) std::cout << "  at the measured " << m.getProperty ("ratio", "").toString() << ":1 (the existing sweep, no new load): " << m.getProperty ("words", "").toString() << std::endl;
     return 0;
 }
@@ -68,8 +69,10 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     if (ratioName.isEmpty() || measured <= 0.0) { say ("RATIO-LAW: " + product + " - the profile has no ratio control / measured ratio: nothing to check (the maths stays at its fixed ratio)"); return 3; }
     juce::var ratioCtl; int ratioIdx = -1;
     if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == ratioName) { ratioCtl = c; ratioIdx = (int) c.getProperty ("index", -1); }
-    juce::String refused; const auto settings = ratiolaw::settingsFor (ratioCtl, measured, refused);
-    if (ratioIdx < 0 || settings.empty()) { say ("RATIO-LAW: " + product + " - " + (refused.isNotEmpty() ? refused : juce::String ("no ratio setting to test besides the measured one"))); return 3; }
+    juce::String refused; auto settings = ratiolaw::settingsFor (ratioCtl, measured, refused);
+    // 19 Oct: a ratio control the record cannot place (non-linear, named positions) is placed at RUN time from the plugin's own texts
+    const bool placeAtRun = ratioIdx >= 0 && settings.empty() && refused.isNotEmpty();
+    if (ratioIdx < 0 || (settings.empty() && ! placeAtRun)) { say ("RATIO-LAW: " + product + " - " + (refused.isNotEmpty() ? refused : juce::String ("no ratio setting to test besides the measured one"))); return 3; }
     const auto positions = ratioLawPositions (profile);
     if (positions.empty()) { say ("RATIO-LAW: " + product + " - the profile's tone check has no g 2 / g 4 pick to test at"); return 3; }
     const auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
@@ -83,16 +86,32 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     juce::String quiet; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) quiet << juce::String (L, 2) << ","; }
     // THE PLAN (printed in full; --dry-run stops here)
     struct Job { ratiolaw::Setting s; double g = 0.0, norm = 0.0; ratiolaw::Line T; std::vector<double> levels; };
-    std::vector<Job> jobs;
+    struct Pos { double g = 0.0, norm = 0.0; ratiolaw::Line T; std::vector<double> levels; };
+    std::vector<Pos> poss;
     for (const auto& [g, norm] : positions)
     {
         const auto T = ratiolaw::thresholdAt (curve, norm);
         if (! T.ok) { say ("RATIO-LAW: " + product + " - no threshold from the sweep at norm " + juce::String (norm, 4) + " (g " + juce::String (g, 0) + "): position skipped"); continue; }
         std::vector<double> lv; for (double up : ratiolaw::levelsAboveThreshold()) if (T.T + up <= -0.5) lv.push_back (std::round ((T.T + up) * 100.0) / 100.0);
-        for (const auto& s : settings) jobs.push_back ({ s, g, norm, T, lv });
+        poss.push_back ({ g, norm, T, lv });
     }
+    std::vector<Job> jobs;
+    auto makeJobs = [&] { jobs.clear(); for (const auto& p : poss) for (const auto& s : settings) jobs.push_back ({ s, p.g, p.norm, p.T, p.levels }); };
+    makeJobs();
+    std::vector<float> ratioGrid;
+    if (placeAtRun)
+    {   const auto rc = sweep::findControl (record, ratioIdx);
+        if (sweep::isSteppedControl (rc)) { const int n = (int) rc.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) ratioGrid.push_back ((float) k / (float) juce::jmax (1, n - 1)); }
+        else for (int k = 0; k <= 64; ++k) ratioGrid.push_back ((float) k / 64.0f); }
     say ("RATIO-LAW: " + product + " " + record.getProperty ("version", "").toString() + " - measured at " + juce::String (measured, 1) + ":1 ([" + juce::String (ratioIdx) + "] " + ratioName
-         + "), knee " + juce::String (kneeDb, 1) + " dB; " + juce::String ((int) jobs.size()) + " probe call(s):");
+         + "), knee " + juce::String (kneeDb, 1) + " dB; " + (placeAtRun ? "the ratio settings placed at run time, then up to " + juce::String (4 * (int) poss.size()) : juce::String ((int) jobs.size())) + " probe call(s):");
+    if (placeAtRun)
+    {   say ("  the ratio control cannot be placed from the record (" + refused + "): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at "
+             + juce::String ((int) ratioGrid.size()) + " points - one load, no audio, after the licence gate");
+        for (const auto& p : poss)
+        {   juce::StringArray l; for (double x : p.levels) l.add (juce::String (x, 2));
+            say ("  each placed ratio at the g " + juce::String (p.g, 0) + " position (norm " + juce::String (p.norm, 4) + ", T " + juce::String (p.T.T, 2) + " dBFS from the sweep, its slope there "
+                 + juce::String (p.T.slope, 3) + "): inputs " + l.joinIntoString (" / ") + " dBFS"); } }
     for (const auto& j : jobs)
     {   juce::StringArray l; for (double x : j.levels) l.add (juce::String (x, 2));
         say ("  " + juce::String (j.s.ratio, 1) + ":1 (" + j.s.why + ", norm " + juce::String (j.s.norm, 4) + ") at the g " + juce::String (j.g, 0) + " position (norm " + juce::String (j.norm, 4)
@@ -109,6 +128,20 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("RATIO-LAW: " + product + " - " + gate.stop); return 6; }
     const auto outDir = cert.getChildFile ("ratio_law"); const auto raw = outDir.getChildFile ("raw"); raw.createDirectory();
     const auto stem = pid.replace ("|", "_");
+    if (placeAtRun)   // THE PLACEMENT (19 Oct): the ratio's own texts on the grid; the landed ratio is read back again in every call
+    {
+        juce::StringArray gs; for (float g : ratioGrid) gs.add (juce::String (g, 6));
+        const auto r = runProbeCall ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", juce::String (ratioIdx), gs.joinIntoString (",") }, opt.timeoutMs);
+        raw.getChildFile (stem + ".ratio-grid.txt").replaceWithText (r.out);
+        if (r.kind == ChildResult::Kind::uiShown) { say ("RATIO-LAW: " + product + " - a window while reading the ratio texts: closed, not clicked; stopped"); return 6; }
+        if (! r.cleanExit()) { say ("RATIO-LAW: " + product + " - the ratio texts could not be read: " + r.describe()); return 4; }
+        std::vector<std::tuple<double, bool, juce::String>> grid; for (const auto& row : pitch::parseTextGrid (r.out)) grid.push_back ({ row.norm, row.landed, row.text });
+        juce::String why; settings = ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why);
+        if (settings.empty()) { say ("RATIO-LAW: " + product + " - read on the plugin: " + (why.isNotEmpty() ? why : juce::String ("no ratio setting besides the measured one"))); return 3; }
+        juce::StringArray placed; for (const auto& s : settings) placed.add (ratiolaw::ratioWords (s.ratio) + ":1 (" + s.why + ") at norm " + juce::String (s.norm, 4));
+        say ("  placed from the plugin's own texts: " + placed.joinIntoString ("; "));
+        makeJobs();
+    }
     juce::Array<juce::var> runs;
     for (const auto& j : jobs)
     {
