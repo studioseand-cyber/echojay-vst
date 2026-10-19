@@ -5707,7 +5707,19 @@ int main (int argc, char* argv[])
                     v2.processOneBlock (sr);                     // the main keeps running too
                     if ((i % 15) == 0) Rig::pump (10);
                 }
-                Rig::pump (60);                                  // let the Link publish its sidecar
+                // ---- AND WAIT FOR THE PUBLISH IN TIME, NOT IN ITERATIONS (19 Oct 2026) --------
+                // My first cut said Rig::pump (60) here and the row came back with
+                // "Press play and I'll measure that" and loudest=typical=0.0: pump(n) is
+                // ITERATIONS, not milliseconds (the 8 Sep lesson, written down in this tree after a
+                // 25x inflation), and the Link republishes its sidecar on a 500 ms gate. So sixty
+                // iterations of a message loop is not the half second the publish needs. Waited for
+                // the FIGURES, with a bound, rather than for a number of pumps.
+                for (int w = 0; w < 40; ++w)
+                {
+                    feed->processOneBlockKick (sr);               // keep it playing while we wait
+                    Rig::pump (10);
+                    juce::Thread::sleep (50);                     // 40 x 50 ms = 2 s, past the 500 ms gate
+                }
 
                 // 3. ask the question the user asks
                 const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);

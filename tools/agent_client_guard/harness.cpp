@@ -467,6 +467,15 @@ int main()
         r.ex.reading.heardAboveSeconds = 0.6f;
         pumpMs (60);
         check (r.client.playback().line.startsWith ("Listening..."), "W2a audio arriving turns the prompt into a progress line", r.client.playback().line);
+        // ---- PB1 (19 Oct 2026, Sean at 11:06): THE PROGRESS LINE HAS ONE SURFACE -------------
+        // *"'Listening... 3 of 8 s' draws twice (step + line under it)."*  It did: the tick wrote
+        // the progress text into the STEP's detail as well as into playback().line, and the card
+        // draws both - the row, and the playback block with its ring. The block owns it while the
+        // wait is live; the step's detail is written once, at the end, with the outcome.
+        check (! r.step ("tc_13")->detail.startsWith ("Listening..."),
+               "PB1 the progress line is NOT also written into the step's detail, so the card cannot "
+               "draw it twice  (RED as it stood: the row and the block both said \"Listening... N of M s\")",
+               "step detail: \"" + r.step ("tc_13")->detail + "\"");
         r.ex.reading.heardAboveSeconds = 2.4f; r.ex.reading.integratedLufs = -14.2f; r.ex.reading.loudestShortTermLufs = -11.9f; r.ex.reading.truePeakDbtp = -1.3f;
         pumpMs (60);
         auto res = r.result (0).getProperty ("result", {});

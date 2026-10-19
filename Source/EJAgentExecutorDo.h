@@ -178,7 +178,20 @@ public:
     static bool looksLikeUndoGoal (const juce::String& goal);
 private:
     /** FIX 1(b), 14 Oct: a `set` is confirmed against the VALUES, not the slot count. */
-    void confirmValues (const ToolCall& call, const juce::String& applyTo, juce::String sentence, Done done);
+    /** ---- THE VALUE READ-BACK, WITH ONE RETRY (19 Oct 2026) ----------------------------------
+        Sean, 11:03 on the drum bus: *"the first 'set Thresh 2.9' right after the add came back
+        'did not take: thresh 10', and the immediate retry took. Is the plugin not ready for writes
+        right after the add? If so, wait for it (or retry once inside the executor) so the first
+        write lands and the card doesn't show a failure."*
+
+        It is not ready: the read came back at the control's DEFAULT (10), not at a partly-moved
+        value, so the write was lost rather than slow - a plugin that loads its own state after the
+        host returns from the add will clobber anything written during that window. A re-read would
+        therefore find 10 for ever; the op has to be sent again. `edits` is carried in for exactly
+        that, and `attempt` bounds it: one retry, then the honest failure, which is what the card
+        showed him before and must still show if the second write is lost too. */
+    void confirmValues (const ToolCall& call, const juce::String& applyTo, const juce::var& edits,
+                        juce::String sentence, Done done, int attempt = 0);
     /** ---- SEAN'S CHECK 5, 15 OCT 2026: SETTINGS CARRIED ON add / replace / build ------------------
         Last night's fix made `set` read its values back. Everything ELSE that carries settings was
         still confirmed by SLOT COUNT alone - so "add MTransient with attack +6 dB" counted one slot,

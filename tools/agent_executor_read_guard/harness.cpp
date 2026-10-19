@@ -1559,6 +1559,54 @@ int main()
         }
     }
 
+
+    // ---- L3 (19 Oct 2026, his test 1): A LOUDEST 3 s BELOW THE INTEGRATED IS NOT A READING ----
+    //
+    // *"check(playback)'s loudest 3 s keeps coming out QUIETER than integrated (-17.5 vs -12.2
+    // here, same every run). Loudest short-term can't be below integrated. Fix the field."*
+    //
+    // The publisher half is fixed in LinkProcessor (its max-hold now runs on the integrated
+    // figure's own clock, not on the loop's resettable one), but an EchoJay already installed on
+    // another track keeps publishing the old pair, so the READ must refuse it. His two figures,
+    // exactly.
+    std::printf ("\n== L3: an impossible loudness pair is withheld, not quoted ==\n");
+    {
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.linkA.valid = true; h.linkA.heardSeconds = 8.0f;
+        h.linkA.integratedLufs   = -12.2f;        // his integrated
+        h.linkA.shortTermMaxLufs = -17.5f;        // his "loudest 3 s", 5.3 dB BELOW it
+        h.linkA.truePeakMaxDb    = -4.9f;
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto o = run (ex, "check", call ("check", R"({"what":"level"})"));
+        const auto flat = juce::JSON::toString (o.result);
+        check (o.ok && ! o.result.hasProperty ("loudest3sLufs"),
+               "L3 the loudest-3 s field is WITHHELD when it is below the integrated level - the max "
+               "of a quantity cannot be under its mean  (RED as it stood: -17.5 was quoted beside "
+               "-12.2 every run)", flat.substring (0, 120));
+        check (o.result.getProperty ("loudest3sUnavailable", juce::var()).toString()
+                   .containsIgnoreCase ("different span"),
+               "L3b ...and it says WHY, naming the two spans rather than going quiet",
+               o.result.getProperty ("loudest3sUnavailable", juce::var()).toString().substring (0, 90));
+        check (std::abs ((double) o.result.getProperty ("outLufs", juce::var (0.0)) + 12.2) < 0.05,
+               "L3c ...while the integrated figure, which IS sound, is still reported",
+               flat.substring (0, 80));
+    }
+    {
+        // AND A POSSIBLE PAIR IS REPORTED, which is what makes the rule falsifiable.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.linkA.valid = true; h.linkA.heardSeconds = 8.0f;
+        h.linkA.integratedLufs   = -17.0f;
+        h.linkA.shortTermMaxLufs = -11.5f;        // louder than the mean, as it must be
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto o = run (ex, "check", call ("check", R"({"what":"level"})"));
+        check (o.ok && std::abs ((double) o.result.getProperty ("loudest3sLufs", juce::var (0.0)) + 11.5) < 0.05
+               && ! o.result.hasProperty ("loudest3sUnavailable"),
+               "L3d a loudest 3 s ABOVE the integrated level is reported as it always was",
+               juce::JSON::toString (o.result).substring (0, 100));
+    }
+
     std::printf ("\n==== agent_executor_read_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
     return failures == 0 ? 0 : 1;
 }

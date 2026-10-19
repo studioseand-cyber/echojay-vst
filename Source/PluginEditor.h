@@ -2128,7 +2128,10 @@ private:
     /** The one-off chat-store repair has run in this editor (18 Oct 2026, rule 4). */
     bool repairedStore_ = false;
     /** Writes the finished run's prose into the chat RECORD, once per run, updated afterwards. */
-    void recordAgentRunInChat (const ChatMsg& m);
+    /** Write this run's card into the chat it ran in. `windowClosing` is the one named exception to
+        gate 4 (only a finished run is recorded): the interrupted save runs while the client is still
+        active, and without it the card was lost exactly as it was before. */
+    void recordAgentRunInChat (const ChatMsg& m, bool windowClosing = false);
     // Result stage: a local assistant bubble (persisted, block-less).
     // altPrompt (optional) attaches a Suggest-an-alternative pill to the
     // bubble (build failures) - same one-shot machinery as edit cards.
@@ -2718,6 +2721,11 @@ private:
     int  agentCardHeight (const ChatMsg& msg) const;
     /** Create or rewrite this run's message from the client. Called on every agentChanged(). */
     void syncAgentRunMessage();
+    /** A live run, written to the store as a STOPPED card as this window dies (19 Oct 2026). */
+    void saveInterruptedAgentRun();
+    /** The transform and the store write on their own, so a guard can drive them without a
+        server: the card is marked stopped, keeps its steps, and goes into the chat it was in. */
+    void writeStoppedCardForRun (ChatMsg& m, const juce::String& why);
     /** A press on the row. The ONE handler; a zone exists only when pressing it does something. */
     /** A press on the row, on the card it landed on. `msgIndex` is that card's message: the
         read-only controls (Details, the change list) act on it whatever its liveness, and the

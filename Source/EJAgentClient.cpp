@@ -1407,8 +1407,16 @@ void EJAgentClient::tickPlayback()
         : juce::String ("Play the chorus or the loudest section.");
     if (next != playback_.line)
     {
+        // ---- ONE SURFACE AT A TIME (19 Oct 2026, Sean at 11:06) -------------------------------
+        // *"'Listening... 3 of 8 s' draws twice (step + line under it)."*  It did: this wrote the
+        // progress text into the STEP's detail as well as into playback_.line, and the card draws
+        // both - the step row, and the playback block with its ring and its progress arc.
+        //
+        // The block is the richer surface and the one he watches, so it owns the line WHILE the
+        // playback is live. The step's detail is what the record keeps afterwards, so it is written
+        // at the END, with the outcome, by endPlayback - not with a progress tick that stops being
+        // true the moment it is drawn.
         playback_.line = next;
-        if (auto* s = stepById (playbackStepId_)) s->detail = next;
         changed();
     }
 }
@@ -1426,6 +1434,9 @@ void EJAgentClient::endPlayback (const juce::String& reason)
 {
     if (! playback_.active) return;
     playback_.active = false;
+    // 19 Oct 2026: the step's detail is written HERE, once, with what actually happened - so the
+    // card's record of the wait says how it ended rather than whatever the last tick had drawn.
+    // (Set below, after the sentence for this reason is known.)
     const auto r = executor_.readPlayback();
     const double heard = r.heardAboveSeconds;
     const bool played = reason != "timeout" && heard >= 1.0;

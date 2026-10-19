@@ -81,13 +81,25 @@ struct Fixture
         k.agentModeOn = [] { return true; };
         k.echoJayOnly = [] { return false; };
         k.applyChainOps = [this] (const juce::String&, const juce::var&, std::function<void (bool, juce::String, juce::String)> cb)
-        { ++applyCalls; if (cb) cb (applyOk, applyOk ? juce::String ("the rack took it") : juce::String ("refused"), {}); };
+        {
+            ++applyCalls;
+            // 19 Oct 2026: A PLUGIN THAT IS NOT READY YET. His 11:03 drum bus: the first write after
+            // the add was LOST (the read-back found the control's default, 10, not a partly-moved
+            // value) and the immediate retry took. landsOnApplyCall models exactly that - the held
+            // values move only on the Nth apply - so the retry can be held to landing the write
+            // rather than to merely happening.
+            if (landsOnApplyCall > 0 && applyCalls >= landsOnApplyCall)
+                for (const auto& kv : landsTo) held[kv.first] = kv.second;
+            if (cb) cb (applyOk, applyOk ? juce::String ("the rack took it") : juce::String ("refused"), {});
+        };
         k.buildChain = [this] (const juce::String&, const juce::var&, std::function<void (bool, juce::String)> cb)
         { ++buildCalls; if (cb) cb (buildOk, buildOk ? juce::String ("the build was sent")
                                                      : juce::String ("the build was refused")); };
         k.afterMs = [] (int, std::function<void()> fn) { if (fn) fn(); };
         return k;
     }
+    int landsOnApplyCall = 0;                      // 0 = the fixture never moves on its own
+    std::map<juce::String, double> landsTo;        // what it moves to when it does
     bool transportKnown = true, transportPlaying = true;
     bool buildOk = true;
     int  buildCalls = 0;
@@ -106,6 +118,95 @@ int main()
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     std::printf ("==== agent_round15_guard (ship 1: Sean's seven fixes) ====\n");
+
+    // ------------------------------------------------- NOT READY FOR THE FIRST WRITE (19 Oct 2026)
+    //
+    // Sean, 11:03 on the drum bus: *"the first 'set Thresh 2.9' right after the add came back 'did
+    // not take: thresh 10', and the immediate retry took. Is the plugin not ready for writes right
+    // after the add? If so, wait for it (or retry once inside the executor) so the first write lands
+    // and the card doesn't show a failure."*
+    //
+    // It is not ready, and the tell is in his own words: the read-back found 10 - the control's
+    // DEFAULT - not a value part-way to 2.9. A write that arrives while the plugin is still loading
+    // its own state is lost, not slow, so re-reading would find 10 for ever and only a second write
+    // can land. One retry, inside the executor, before anything reaches the card.
+    std::printf ("== NOT READY: the first write after an add is sent once more before it is called a failure ==\n");
+    {
+        Fixture f;
+        f.held = { {"thresh", 10.0} };              // the default, as his log read it
+        f.landsOnApplyCall = 2;                     // the SECOND write is the one that lands
+        f.landsTo = { {"thresh", 2.9} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"params":{"thresh":2.9}}})"));
+        check (o.ok, "a set whose FIRST write is lost succeeds on the retry  (RED as it stood: the "
+                     "card showed \"did not take: thresh 10\" and he retried it by hand)",
+               o.ok ? o.landedLine.substring (0, 80) : (o.errorCode + ": " + o.errorMessage.substring (0, 60)));
+        check (f.applyCalls == 2, "...having sent the op exactly twice - one retry, not a loop",
+               juce::String (f.applyCalls) + " apply call(s)");
+        check (o.landedLine.contains ("2.9") && ! o.landedLine.containsIgnoreCase ("did not take"),
+               "...and the card's line states the value that LANDED, with no failure in it",
+               o.landedLine.substring (0, 90));
+    }
+    {
+        // AND A WRITE THAT IS GENUINELY REFUSED STILL FAILS, after one retry and not before.
+        Fixture f;
+        f.held = { {"thresh", 10.0} };
+        f.landsOnApplyCall = 0;                     // it never lands, however often it is sent
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"params":{"thresh":2.9}}})"));
+        check (! o.ok && o.errorCode == "not_applied",
+               "a value that never takes is still reported not_applied - the retry does not hide it",
+               o.errorCode);
+        check (f.applyCalls == 2, "...and it was tried twice, then reported - not retried for ever",
+               juce::String (f.applyCalls) + " apply call(s)");
+        check (o.errorMessage.contains ("thresh") && o.errorMessage.contains ("10"),
+               "...still naming the control, what it holds and what was asked", o.errorMessage.substring (0, 90));
+    }
+
+    // ---------------------------------------------------------------- EMPTY SET (19 Oct 2026)
+    //
+    // Sean at 10:55, on the Kick's CL 1B, after B's threshold sets: *"all came back 'could not read
+    // these values back'."*  His log says why, and it is not a read-back fault at all:
+    //     EJAgent: frame tool_call ... name=do ... "set slot 1: "       <- nothing after the colon
+    //     EJParamApply: slot 1 ("Tube-Tech CL 1B"), 0 result(s)
+    //     EJAgent: step ... DONE undo=set:1792403763330 "... I could not read these values back"
+    // Five times in thirteen seconds: five SUCCESSES, each with an undo token, for five no-ops. The
+    // sentence conflated "applied but the display cannot be read" with "no control arrived", and the
+    // second is a bad request that must never be reported as done.
+    std::printf ("== EMPTY SET: a set that names no control is refused, not confirmed ==\n");
+    {
+        Fixture f; f.held = { {"attack_ms", 10.0} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"params":{}}})"));
+        check (! o.ok, "a set whose controls object is EMPTY is refused  (RED as it stood: success, "
+                       "with an undo token, and \"I could not read these values back\")",
+               o.ok ? ("ok, landed: " + o.landedLine) : o.errorCode);
+        check (o.errorCode == "bad_request", "...as bad_request", o.errorCode);
+        check (o.undoToken.isEmpty(),
+               "...and it mints NO undo token: there is nothing to undo, and five of those in his log "
+               "are five changes the model believed it had made", o.undoToken);
+        check (! o.userMessage.containsIgnoreCase ("could not read"),
+               "...and the sentence does not blame the read-back for an empty request",
+               o.userMessage.substring (0, 90));
+    }
+    {
+        // A MODE NAME IS NOT A VALUE THIS ROAD CAN SET, so an object full of them is as empty as none.
+        Fixture f; f.held = { {"attack_ms", 10.0} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"params":{"mode":"vintage"}}})"));
+        check (! o.ok && o.errorCode == "bad_request",
+               "a set carrying only non-numeric entries is refused the same way", o.errorCode);
+    }
+    {
+        // AND THE HONEST CASE IS UNTOUCHED: controls WERE asked for, and the slot cannot report them.
+        Fixture f; f.held = {};                       // slotParam will answer "unreadable" for every id
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"params":{"attack_ms":18}}})"));
+        check (o.ok && o.landedLine.containsIgnoreCase ("could not read"),
+               "a set whose values genuinely cannot be READ still succeeds, with the caveat - that "
+               "sentence keeps the case it was written for",
+               o.ok ? o.landedLine.substring (0, 90) : o.errorCode);
+    }
 
     // ---------------------------------------------------------------- FIX 1
     std::printf ("== FIX 1: a `set` is confirmed by its VALUES, not by a slot count ==\n");

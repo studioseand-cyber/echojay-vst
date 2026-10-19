@@ -460,11 +460,38 @@ juce::var ExecutorRead::channelVar (const juce::String& name, const juce::String
     return fitUnder8K (juce::var (o));
 }
 
+// ---- A LOUDEST 3 s BELOW THE INTEGRATED FIGURE IS NOT A READING (19 Oct 2026) ----------------
+//
+// Sean, 10:55: *"check(playback)'s loudest 3 s keeps coming out QUIETER than integrated (-17.5 vs
+// -12.2 here, same every run). Loudest short-term can't be below integrated."*  The publisher half
+// is fixed where it belongs (LinkProcessor now max-holds on the integrated figure's own clock), but
+// an EchoJay already on another track keeps publishing the old pair, and a reader that quotes an
+// impossible pair is worse than one that says it has no figure. The max of a quantity cannot be
+// below its mean, so this withholds it and says why rather than printing either number as if the
+// two described the same audio. Half a dB of slack: the two instruments round independently.
+static void reportLoudest3s (juce::DynamicObject* o, const AnalysisRead& a,
+                             void (*setter) (juce::DynamicObject*, const char*, float))
+{
+    const bool haveBoth = a.shortTermMaxLufs > -199.0f && a.integratedLufs > -199.0f;
+    if (haveBoth && a.shortTermMaxLufs < a.integratedLufs - 0.5f)
+    {
+        o->setProperty ("loudest3sUnavailable",
+                        "the loudest 3 s window on that track was measured over a different span "
+                        "from its integrated level, so the two cannot be compared - that EchoJay is "
+                        "an older build. Its integrated figure is sound.");
+        EchoJay_NSLog (("EJAgentRead: WITHHELD loudest3sLufs - " + juce::String (a.shortTermMaxLufs, 1)
+                        + " is below the integrated " + juce::String (a.integratedLufs, 1)
+                        + " LUFS, which cannot be true of one span").toRawUTF8());
+        return;
+    }
+    setter (o, "loudest3sLufs", a.shortTermMaxLufs);
+}
+
 juce::var ExecutorRead::analysisVar (const AnalysisRead& a)
 {
     auto* o = new juce::DynamicObject();
     setLevel (o, "integratedLufs", a.integratedLufs);
-    setLevel (o, "loudest3sLufs", a.shortTermMaxLufs);      // the loudest 3 s window = the short-term max
+    reportLoudest3s (o, a, &setLevel);                      // the loudest 3 s window = the short-term max
     setLevel (o, "shortTermMaxLufs", a.shortTermMaxLufs);
     setLevel (o, "peakDbtp", a.truePeakMaxDb);
     if (a.psrDb > -900.0f) o->setProperty ("psrDb", r1 (a.psrDb));
@@ -923,7 +950,7 @@ void ExecutorRead::check (const ToolCall& call, Done done)
             if (! a.valid || a.heardSeconds < 1.0f) { done (notPlaying ("a level check on the Link")); return; }
             auto* o = new juce::DynamicObject();
             setLevel (o, "outLufs", a.integratedLufs);
-            setLevel (o, "loudest3sLufs", a.shortTermMaxLufs);
+            reportLoudest3s (o, a, &setLevel);              // 19 Oct: never an impossible pair
             setLevel (o, "outDbtp", a.truePeakMaxDb);
             o->setProperty ("heardSeconds", r1 (a.heardSeconds));
             o->setProperty ("source", "link_frame");

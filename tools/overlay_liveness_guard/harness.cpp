@@ -47,6 +47,9 @@ struct EchoJayTabStripTestAccess
     // the status line is outranked by any in-flight note, and in this harness a "Rescanned: 2425
     // plugins" note owns it, which is what my first cut of (b3) read back.
     static juce::String lockWhy (EchoJayEditor& e)      { return e.chainListPanel.remoteWriteLockWhy; }
+    // 19 Oct 2026: the Build press's own road to a Link, so (b4) can read what it sent.
+    static void buildToLink (EchoJayEditor& e, const juce::String& uid, const juce::String& json)
+    { e.sendChainToLink (uid, json); }
     static bool overlayVisible (EchoJayEditor& e)       { return e.chainListPanel.editGate.isVisible(); }
     static bool pillOrange (EchoJayEditor& e)           { return e.chainListPanel.rackBtn.findColour (juce::TextButton::textColourOffId) == juce::Colour (0xffFFB020); }
     static juce::String readInFlight (EchoJayEditor& e) { return e.borrowReadInFlightUid_; }
@@ -177,6 +180,44 @@ int main()
     // three dead ends in the log once per rack (EJBorrow: not engaging <uid> - <why>), where before
     // today all three returned silently. That is what his 08:52 log had none of, and it is the
     // thing to read first if "Connecting to rack…" ever stands again.
+
+    // ---- (b4) ONE ROAD TO A LINK'S RACK (19 Oct 2026, Sean at 11:15) --------------------------
+    //
+    // *"Agent-mode adds to this same Link work every time today (CL 1B, townhouse), so the agent-off
+    // Build is on a different route to the rack and that route is broken. Make Build use the same
+    // path agent-mode adds use, so there's one road that works."*
+    //
+    // The two roads were the same FILE at different versions: the agent's adds write a chain-cmd
+    // v2 carrying `editOps` (with the lease resolved, which the Link accepts), and the Build button
+    // wrote v1 carrying a whole `chain` - which this build's own comment says the Link "refuses
+    // while leased". So a build was routed into the borrowed host instead and gated on a session
+    // that never engaged: "Nothing was built... did not become ready within 20 s", twice today.
+    //
+    // This drives the press with NO borrow session active and reads what landed on disk.
+    std::printf ("== (b4) the Build press sends the agent's own edit-cmd, with no borrow session ==\n");
+    {
+        if (proc.borrowActive()) proc.borrowRelease (false);
+        EchoJayTabStripTestAccess::refresh (*ed);
+        int e2 = 0;
+        const auto dir = LinkShm::resolveDir (e2);
+        const juce::File cmdFile (dir + "chain-cmd-" + juce::String (kUid) + ".json");
+        cmdFile.deleteFile();
+        EchoJayTabStripTestAccess::buildToLink (*ed, kUid,
+            R"({"chain":[{"name":"EchoJay Compressor","settings_structured":{"params":{"thresh":-18}}}]})");
+        pumpMs (200);
+        const auto wrote = juce::JSON::parse (cmdFile.loadFileAsString());
+        const int ver = (int) wrote.getProperty ("v", juce::var (0));
+        const bool hasEditOps = ! wrote.getProperty ("editOps", juce::var()).isVoid();
+        const bool hasWholeChain = ! wrote.getProperty ("chain", juce::var()).isVoid();
+        check (cmdFile.existsAsFile() && ver == 2 && hasEditOps && ! hasWholeChain,
+               "(b4) a Build to a Link writes a v2 EDIT-cmd - the road the agent's adds use - with no "
+               "borrow session engaged  (RED as it stood: v1 with a whole `chain`, which the Link "
+               "refuses while leased, so the press was gated on a session instead)",
+               "file " + juce::String ((int) cmdFile.existsAsFile()) + ", v=" + juce::String (ver)
+               + ", editOps=" + (hasEditOps ? "y" : "n") + ", chain=" + (hasWholeChain ? "y" : "n"));
+        check (! proc.borrowActive(),
+               "(b4b) ...and it needed no borrow session to send it, which is the whole point");
+    }
 
     std::printf ("\n==== overlay_liveness_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

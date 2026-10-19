@@ -2998,19 +2998,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             }
             if (!linkUidLive(uid))
             {
-                appendLocalResultBubble("\"" + channelDisplayLabel(uid)
-                    + "\" is offline - nothing was built. Reopen it in the "
-                      "DAW and press Build again.");
-                return;
-            }
-            if (chainEditGateRefusesFor(uid))
-            {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet.
-                // 19 Oct 2026: AND THE PRESS IS KEPT. It used to announce the state and return, so
-                // the first press after selecting a rack was always lost and the second one built -
-                // exactly what he saw at 08:07. The lock states that reach here all resolve on their
-                // own, so the press waits for the gate to open, bounded, and says it is waiting.
-                const auto why = chainLockStateText (processorRef.rackLockState(),
-                                                     processorRef.borrowHostIfActiveFor (uid) != nullptr);
+                // ---- THE QUEUE MOVES HERE (19 Oct 2026) --------------------------------------
+                // It was built for "Connecting to rack…", which no longer happens on this press now
+                // that the build takes the edit-cmd road. OFFLINE is the state that still resolves
+                // on its own - a Link coming back after a reload - so the press waits for that
+                // instead of being thrown away, and says so rather than asking him to press again.
+                const auto why = "\"" + channelDisplayLabel (uid) + "\" is not connected yet";
                 bool already = false;
                 for (auto& q : pendingChainBuilds_)
                     if (q.uid == uid && q.chainJson == chainBuildJsons[(size_t) i]) { already = true; q.lastWhy = why; }
@@ -3021,13 +3014,28 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     q.queuedMs = juce::Time::getMillisecondCounterHiRes(); q.lastWhy = why;
                     pendingChainBuilds_.push_back (q);
                     EchoJay_NSLog (("EJChain: build QUEUED for " + uid + " - " + why
-                                    + " (will build when the rack is ready; bound "
+                                    + " (will build when it comes back; bound "
                                     + juce::String ((int) (kPendingApplyMs / 1000.0)) + " s)").toRawUTF8());
                 }
-                appendLocalResultBubble (why + juce::String::fromUTF8 (" \xe2\x80\x94 I'll build as soon as "
-                                         "the rack is ready; no need to press again."));
+                appendLocalResultBubble (why + juce::String::fromUTF8 (" \xe2\x80\x94 I'll build as soon "
+                                         "as it is, no need to press again."));
                 return;
             }
+            // ---- NO BORROW GATE ON A BUILD ANY MORE (19 Oct 2026) ------------------------
+            //
+            // This refused until the borrow session engaged, and queued the press for 20 s when it
+            // did not - which is what he hit at 08:52 and again at 11:15 ("Nothing was built... did
+            // not become ready within 20 s"). The gate was right for the road the build USED (a
+            // chain-cmd into the borrowed host, which genuinely needs the session) and wrong for
+            // the road it takes now: sendChainToLink sends the agent's own edit-cmd, which needs no
+            // session, no lock and no engage - the road his agent-mode adds have been using all day.
+            //
+            // The panel's own edit callbacks keep the gate: they act on the mirror, which does need
+            // the session. This is the one press that was asking for a session it never needed.
+            if (chainEditGateRefusesFor (uid))
+                EchoJay_NSLog (("EJChain: the rack lock is not engaged for " + uid
+                                + " - building anyway, down the edit-cmd road, which does not need it "
+                                  "(his 11:15: \"make Build use the same path agent-mode adds use\")").toRawUTF8());
             // 21t-h (27 Sep 2026): THE LOOP IS NOT STARTED HERE. It was, and on the LEASED path that is one
             // message-loop turn too early: sendChainToLink queues the adds into the borrowed host and returns, so
             // the rack still read ZERO slots and the block was rejected -
@@ -3351,6 +3359,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 }
 
 EchoJayEditor::~EchoJayEditor() {
+    // ---- A RUN INTERRUPTED BY THE WINDOW CLOSING IS SAVED (19 Oct 2026, Sean at 11:08) --------
+    // *"I closed the plugin window mid-run (during wait for playback) and on reopen the run had
+    // vanished; only my question bubble remained, no card. A run interrupted by closing the editor
+    // (or Logic) must be saved and come back as its card with the steps so far and 'Stopped: the
+    // plugin was closed mid-run', never disappear."*
+    // FIRST in the destructor, while the workspace, the chat list and the client are all still
+    // alive - the next line takes the bridge off and after that no frame can reach this editor.
+    saveInterruptedAgentRun();
+
     // ITEM 0: the bridge holds a reference to THIS editor and the client holds a pointer to the
     // bridge, so it comes off first - before anything else here starts taking the window apart.
     // A frame landing after this line must not reach a half-destroyed editor, and this is the line
@@ -32967,7 +32984,45 @@ void EchoJayEditor::syncAgentRunMessage()
 // write lives here, on its own, and both the closing line and the state change call it. Idempotent
 // by (run, chat, text): the first call appends, a later one with different words updates the same
 // assistant entry, and an unchanged one does nothing - so being called on every change is free.
-void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m)
+/** ---- THE RUN THE WINDOW TOOK WITH IT (19 Oct 2026) ------------------------------------------
+    A run still live when this editor dies exists in two places that are both about to go: the
+    client's step list and this window's chatMessages. The store has the prose (his question, and
+    whatever had streamed) but NOT the card - exactly what he read at 11:08: "only my question
+    bubble remained, no card".
+
+    This is the transform and the store write, with no liveness question in it, so a guard can drive
+    precisely this without a server to start a run with (chat_store_guard's INT group). The caller
+    below owns the one-line question of whether there is a live run to save, and ENDS it - a card
+    saying it stopped while the run carried on in the background would be a worse lie than the
+    vanishing was. */
+void EchoJayEditor::writeStoppedCardForRun (ChatMsg& m, const juce::String& why)
+{
+    if (m.agentData.isEmpty()) return;
+    auto v = agentRunViewFor (m);
+    if (v.empty()) return;
+    v.running        = false;
+    v.finished       = true;
+    v.playbackActive = false;
+    v.showStop = v.showGotIt = v.showApplyAll = v.showRetry = false;
+    v.statusWord     = "Stopped";
+    v.closing        = why;
+    m.agentData      = juce::JSON::toString (echojay::agentui::toJson (v), true);
+    EchoJay_NSLog (("EJAgentRow: saving the card with " + juce::String ((int) v.steps.size())
+                    + " step(s) as STOPPED - \"" + why + "\"").toRawUTF8());
+    recordAgentRunInChat (m, /*windowClosing*/ true);
+    workspace.requestMutationSync();
+}
+
+void EchoJayEditor::saveInterruptedAgentRun()
+{
+    if (agentClient() == nullptr || ! agentClient()->isActive()) return;
+    auto* msg = agentRunMessage();
+    if (msg == nullptr) return;
+    writeStoppedCardForRun (*msg, "Stopped: the plugin was closed mid-run.");
+    agentClient()->stop();     // the run ends with the window: his ruling, 19 Oct
+}
+
+void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m, bool windowClosing)
 {
     // ---- FOUR GATES, ONE PER THING HE READ AT 15:0x (18 Oct 2026) --------------------------
     //
@@ -32987,7 +33042,14 @@ void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m)
     if (workspace.findChatById (currentChatId) == nullptr) return;
     // (4) AND ONLY FOR A RUN THAT IS OVER. A live run's prose is the row's to show; the record gets
     //     it once, at the end.
-    if (agentClient() == nullptr || agentClient()->isActive()) return;
+    //
+    // 19 Oct 2026: WITH ONE NAMED EXCEPTION - the window closing mid-run. That save happens while
+    // the client is still active (the run is stopped immediately after, and stopping first would
+    // race the state change), so this gate refused it and the card was lost anyway. chat_store's
+    // INT1 caught that: my first cut of the interrupted save could not have worked. The exception is
+    // a parameter rather than a liveness guess, so the only path that takes it is the one that knows
+    // the window is going.
+    if (! windowClosing && (agentClient() == nullptr || agentClient()->isActive())) return;
 
     if (m.agentData.isEmpty()) return;
     auto v = echojay::agentui::fromJson (juce::JSON::parse (m.agentData));
@@ -38124,6 +38186,22 @@ void EchoJayEditor::publishRigState()
             steps.add (juce::var (sv));
         }
         a->setProperty ("steps", juce::var (steps));
+        // ---- WHY A CARD HAS NO BUTTONS, PUBLISHED (19 Oct 2026) -------------------------------
+        // The rig's C5, D3 and D4 all fail on "Undo all present=n", and from outside there is no
+        // way to tell WHICH of the three possible reasons it is: the client offering no undo, the
+        // view being treated as a RECORD, or the layout dropping the zone. The client's own log
+        // shows 43 steps with undo tokens, so it is not the first - and I could not tell the other
+        // two apart without this. A row that can only report the symptom is a row that costs a
+        // twenty-minute cycle per guess.
+        if (const auto* m = agentRunMessage())
+        {
+            const auto rv = agentRunViewFor (*m);
+            a->setProperty ("fromRecord", rv.fromRecord);
+            a->setProperty ("undoAll",    rv.showUndoAll);
+            a->setProperty ("finished",   rv.finished);
+            a->setProperty ("runId",      m->agentRunId);
+            a->setProperty ("liveRunId",  agentRunMsgId_);
+        }
         o->setProperty ("agent", juce::var (a));
     }
 
@@ -40960,25 +41038,64 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                        + "  uid=" + id).toRawUTF8());
     }
 
-    // Chain entries pass through as-is (name/role/settings) — the Link
-    // resolves names and applies plugin_disabled.json on its side.
-    int seq = LinkShm::nextCtrlSeq();
-    auto* cmd = new juce::DynamicObject();
-    cmd->setProperty("v",          1);
-    cmd->setProperty("seq",        seq);
-    cmd->setProperty("chain",      o->getProperty("chain"));
-    cmd->setProperty("sourceNote", "EchoJay V2 chat build");
-
-    const juce::String payload = juce::JSON::toString(juce::var(cmd), true);
-    juce::File(dir + "chain-ack-" + id + ".json").deleteFile();   // stale ack
-    juce::File(dir + "chain-cmd-" + id + ".json").replaceWithText(payload);
-    // A COPY THAT SURVIVES. The Link consumes and deletes chain-cmd, so after a
-    // build there is nothing left to inspect and the payload can only be
-    // reasoned about. This one is overwritten each send and is never read by
-    // anything, so it costs one file and settles the question directly.
-    juce::File(dir + "chain-cmd-last-sent.json").replaceWithText(payload);
-
-    pollLinkChainAck(id, seq, 20, chainJson);   // 20 x 250ms = ~5s timeout; id = uid
+    // ---- ONE ROAD TO A LINK'S RACK: THE ONE THE AGENT'S ADDS USE (19 Oct 2026) ---------------
+    //
+    // Sean, 11:15, agent off on the Kick's Link: *"Build -> 'Connecting to rack...' -> 'Nothing was
+    // built... did not become ready within 20 s'. Agent-mode adds to this same Link work every time
+    // today (CL 1B, townhouse), so the agent-off Build is on a different route to the rack and that
+    // route is broken. Make Build use the same path agent-mode adds use, so there's one road that
+    // works."*
+    //
+    // He is exactly right, and the two roads are these:
+    //   the agent's ADDS   writeChainEditCommand -> an EDIT-cmd, which the Link accepts, acked by
+    //                      awaitChainAck. No borrow session, no rack lock, no engage.
+    //   the Build button   a CHAIN-cmd, written here - and this function's own comment says the
+    //                      Link "refuses chain-cmds while leased", which is why the build was
+    //                      routed into the borrowed host and gated on a session that never engaged.
+    //
+    // So the chain becomes the same replace-ops the session arm above builds (chainArrayToReplaceOps
+    // -> editOpsToWireVar, one conversion, already shared with the functional gate) and goes down
+    // the adds' road. The session arm above is untouched: when a borrow IS engaged the build belongs
+    // in the mirror, and that arm keeps the mirror and the Link in step.
+    auto* chainArrForWire = o->getProperty ("chain").getArray();
+    if (chainArrForWire == nullptr) return;
+    int nOldOnLink = 0;
+    if (auto it = processorRef.linkRackCache.find (id); it != processorRef.linkRackCache.end())
+        if (it->second.valid) nOldOnLink = (int) it->second.rack.slots.size();
+    auto wireOps = ChainHost::chainArrayToReplaceOps (*chainArrForWire, nOldOnLink);
+    const juce::var wire = ChainHost::editOpsToWireVar (wireOps);
+    const int seq = processorRef.writeChainEditCommand (id, wire, juce::var(), "EchoJay V2 build", {});
+    EchoJay_NSLog (("EJChain: build to Link " + id + " goes down the AGENT'S OWN ROAD (edit-cmd seq "
+                    + juce::String (seq) + "): " + juce::String (nOldOnLink) + " removed, "
+                    + juce::String ((int) wireOps.size() - nOldOnLink) + " added. No borrow session "
+                      "is needed for it, which is why this one works when the chain-cmd did not.").toRawUTF8());
+    if (seq < 0)
+    {
+        appendLocalResultBubble ("That rack would not take the build. Nothing was changed.");
+        return;
+    }
+    {
+        auto safeAck = juce::Component::SafePointer<EchoJayEditor> (this);
+        const auto uidForAck = id;
+        processorRef.awaitChainAck (id, seq,
+            [safeAck, uidForAck] (bool ok, juce::String sentence, juce::String technical, int slotsAfter)
+        {
+            if (safeAck == nullptr) return;
+            EchoJay_NSLog (("EJChain: build ack from " + uidForAck + " ok=" + juce::String ((int) ok)
+                            + " slotsAfter=" + juce::String (slotsAfter) + " \"" + sentence + "\" "
+                            + technical).toRawUTF8());
+            if (! ok)
+                safeAck->appendLocalResultBubble ("Nothing was built: "
+                    + (sentence.isNotEmpty() ? sentence : juce::String ("that rack refused the change"))
+                    + ".");
+        }, 12000);
+    }
+    // A COPY THAT SURVIVES, for the same reason it always did: the Link consumes what it is sent,
+    // so after a build there is nothing left to inspect. Now it is the EDIT OPS that were sent.
+    juce::File (dir + "chain-cmd-last-sent.json")
+        .replaceWithText (juce::JSON::toString (wire, true));
+    // pollLinkChainAck is NOT called here any more: awaitChainAck above is the ack road the agent's
+    // adds use, and two pollers watching one ack file is how a build gets reported twice.
 }
 
 void EchoJayEditor::pollLinkChainAck(const juce::String& linkUid, int seq,

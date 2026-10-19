@@ -630,7 +630,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     // `call` BY VALUE (fix 1(b)): this callback is asynchronous - the ack can arrive after doOp has
     // returned - and `call` is a reference parameter, so capturing it by reference would read a dead
     // ToolCall. A copy is cheap (ids, a name and a var) and cannot dangle.
-    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call]
+    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call, edits]
                           (bool ok, juce::String sentence, juce::String technical)
     {
         if (! ok)
@@ -671,7 +671,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         //
         // A structural read-back cannot answer a value question. So a `set` is confirmed against the VALUES.
         if (opName == "set")
-        { confirmValues (call, applyTo, sentence, done); return; }
+        { confirmValues (call, applyTo, edits, sentence, done); return; }
         confirmLanded (applyTo, wantSlots, opName, sentence, done, 0, &call);
     });
 }
@@ -685,7 +685,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
 // The tolerance is per magnitude rather than absolute: a device stores 18 ms as 18.0 and a ratio as 4.0,
 // but a dB value may round, and comparing 0.1 dB with == would make an honest apply look like a failure.
 void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyTo,
-                                juce::String sentence, Done done)
+                                const juce::var& edits, juce::String sentence, Done done, int attempt)
 {
     const auto ss = argVar (call, "settings_structured");
     auto* root = ss.getDynamicObject();
@@ -702,7 +702,34 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     bool haveSlot = false;
     const int slot1 = argInt (call, "slot", haveSlot);
 
-    if (asked == nullptr || ! haveSlot || ! src_.slotParam)
+    // ---- A SET THAT NAMES NO CONTROL CHANGED NOTHING (19 Oct 2026, Sean at 10:55) ------------
+    //
+    // His log, five times over thirteen seconds on the Kick's CL 1B:
+    //     EJAgent: frame tool_call ... name=do ... "set slot 1: "        <- an empty tail
+    //     EJParamApply: slot 1 ("Tube-Tech CL 1B"), 0 result(s)
+    //     EJAgent: step ... DONE undo=set:1792403763330 "the rack took it and now holds 1 slot(s)
+    //              I could not read these values back to confirm them."
+    // Nothing was asked for, nothing was applied, and the step reported DONE with an UNDO TOKEN -
+    // five successes for five no-ops, which is what he read as "could not read these values back".
+    //
+    // The old sentence conflated two states that must never share one: controls were applied but
+    // their displays cannot be read (honest, and kept below), and no control arrived at all (a bad
+    // request, and the thing to say). Counted on the NUMERIC entries, because a mode name is not a
+    // value this road can set and an object full of them is as empty as no object.
+    int askedNumeric = 0;
+    if (asked != nullptr)
+        for (auto& kv : asked->getProperties())
+            if (kv.value.isDouble() || kv.value.isInt() || kv.value.isInt64()) ++askedNumeric;
+    if (askedNumeric == 0)
+    {
+        done (ToolOutcome::failureFor ("bad_request",
+                "that change named no control to set, so nothing was changed. Send the controls as "
+                "settings_structured.controls with numeric values, or say which control and figure "
+                "you mean. Retrying the same call will not change this.",
+                "That change didn't name anything to set, so I've left the slot alone."));
+        return;
+    }
+    if (! haveSlot || ! src_.slotParam)
     {
         // Nothing to compare, or no way to compare it. Say which, rather than reporting a bare success.
         auto* r = new juce::DynamicObject();
@@ -754,6 +781,28 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
 
     if (! missed.isEmpty())
     {
+        // ---- ONE RETRY, BECAUSE THE PLUGIN WAS NOT READY (19 Oct 2026, his 11:03) --------------
+        // The first write after an add is sent while the plugin is still loading its own state, so
+        // it is lost and the read-back finds the default. He saw it as a failure on the card and
+        // the immediate retry took. So the op is sent ONCE more here, before anything is reported:
+        // if the second write lands the card never shows a failure, and if it does not, the failure
+        // below is reported exactly as it was.
+        if (attempt == 0 && ! edits.isVoid() && sinks_.applyChainOps)
+        {
+            const auto aliveR = this->alive();
+            EchoJay_NSLog (("EJAgent: set read-back missed (" + missed.joinIntoString ("; ")
+                            + ") - sending it ONCE more, because a write that lands while the plugin "
+                              "is still loading is lost rather than slow (his 11:03 drum bus)").toRawUTF8());
+            sinks_.applyChainOps (applyTo, edits,
+                                  [this, aliveR, call, applyTo, edits, sentence, done]
+                                  (bool ok2, juce::String, juce::String)
+            {
+                if (aliveR.expired()) return;
+                if (! ok2) { confirmValues (call, applyTo, edits, sentence, done, 1); return; }
+                confirmValues (call, applyTo, edits, sentence, done, 1);
+            });
+            return;
+        }
         // THE WHOLE POINT. The model must not be able to report this as done - and the sentence names the
         // figures, so the closing text can only be built from what actually landed.
         const juce::String why = "the values did not take: " + missed.joinIntoString ("; ")

@@ -471,6 +471,12 @@ private:
     // 21t-d: the Link's own gated tally, fed at the SAME pre-trim tap as the meters. K-weighted, because what it
     // publishes (SHORTMAX, HEARD) sits beside LUFS figures and has to mean the same thing they do.
     echojay::LevelTally levelTally_ { echojay::LevelTally::Weighting::K };
+    /** 19 Oct 2026: the PUBLISHED loudest 3 s - a max-hold of the tally's latest short-term value,
+        kept on the same clock as the integrated figure this frame also carries (cleared with the
+        meter holds when the rack changes, and by nothing else). The tally's own maxShortTermDb
+        belongs to the loudness loop's window, which resets it for every build - publishing that
+        beside meterEngine_'s integrated is what made his "loudest 3 s" read BELOW integrated. */
+    float pubShortMaxDb_ = -200.0f;
     // 21t-i (27 Sep 2026 ruling): THIS CHANNEL'S STORED LEVEL RECORD. The frame feeds V2's strips; this record is
     // what every chat block is composed from, so it is kept across transport stop/start (it is a member), across
     // the editor closing, and across a session save/reopen (it rides this plugin's state). It also rides the rack

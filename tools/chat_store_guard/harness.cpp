@@ -116,6 +116,23 @@ struct EchoJayTabStripTestAccess
     static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
     static const std::vector<WsChat>& chats (EchoJayEditor& e) { return e.workspace.getChats(); }
     static EchoJayWorkspace& store (EchoJayEditor& e) { return e.workspace; }
+    // 19 Oct 2026: the interrupted-run save, driven without a server - the liveness question is
+    // one line in saveInterruptedAgentRun; this is the transform and the store write it calls.
+    static void stopCard (EchoJayEditor& e, EchoJayEditor::ChatMsg& m, const juce::String& why)
+    { e.writeStoppedCardForRun (m, why); }
+    static void appendRow (EchoJayEditor& e, const juce::String& content, const juce::String& json)
+    {
+        EchoJayEditor::ChatMsg m;
+        m.role = "assistant"; m.content = content; m.agentData = json;
+        m.agentRunId = 77;
+        e.chatMessages.push_back (m);
+        e.workspace.appendMessageToChat (e.currentChatId, "assistant", content);
+        // GATES 1 AND 2, which a live run sets for itself when its row is born: this row IS the run
+        // this editor ran, and the chat it ran in is the one open. Without them the recorder refuses
+        // - correctly - and the leg would be testing the gates rather than the save.
+        e.agentRunMsgId_  = 77;
+        e.agentRunChatId_ = e.currentChatId;
+    }
 };
 
 int main()
@@ -568,6 +585,65 @@ int main()
         // and the record still holds exactly one copy of it after all that switching
         check (A::storedCard (*ed, cardChat).isNotEmpty() && A::inStore (*ed, cardChat, "Add a compressor") <= 1,
                "CARD9 ...and the switching added nothing to the record");
+    }
+
+    // ---- INT: A RUN THE WINDOW TOOK WITH IT (19 Oct 2026, Sean at 11:08) ---------------------
+    //
+    // *"I closed the plugin window mid-run (during wait for playback) and on reopen the run had
+    // vanished; only my question bubble remained, no card. A run interrupted by closing the editor
+    // (or Logic) must be saved and come back as its card with the steps so far and 'Stopped: the
+    // plugin was closed mid-run', never disappear."*
+    //
+    // The store had the prose and NOT the card, which is exactly what he read. This drives the save
+    // the destructor now calls, then reads the STORE - the thing a reopen reads - rather than the
+    // editor's own list, which is what died with the window.
+    std::printf ("\n== INT: an interrupted run is in the STORE as a stopped card, with its steps ==\n");
+    {
+        A::toChat (*ed);
+        A::newChat (*ed);
+        const auto chatId = A::chatId (*ed);
+        A::send (*ed, "add a compressor to the kick");
+
+        echojay::agentui::RunView live;
+        live.sessionId = "ses_int"; live.runKey = "key_int";
+        live.statusWord = "Working"; live.running = true; live.finished = false;
+        live.playbackActive = true; live.playbackLine = "Listening... 3 of 8 s";
+        {
+            echojay::agentui::RunStep a;
+            a.id = "st1"; a.label = "Added Tube-Tech CL 1B to slot 1"; a.right = "applied";
+            a.status = (int) EJAgentClient::Step::Status::Done;
+            live.steps.push_back (a);
+            echojay::agentui::RunStep b;
+            b.id = "st2"; b.label = "Waiting for playback";
+            b.status = (int) EJAgentClient::Step::Status::Running;
+            live.steps.push_back (b);
+        }
+        A::appendRow (*ed, "Working on the kick.",
+                      juce::JSON::toString (echojay::agentui::toJson (live), true));
+
+        auto& rows = A::msgs (*ed);
+        A::stopCard (*ed, rows.back(), "Stopped: the plugin was closed mid-run.");
+
+        auto* chat = A::chat (*ed, chatId);
+        juce::String storedJson;
+        if (chat != nullptr)
+            for (const auto& m : chat->messages)
+                if (m.role == "assistant" && m.agentJson.isNotEmpty()) storedJson = m.agentJson;
+        check (storedJson.isNotEmpty(),
+               "INT1 the interrupted run's CARD is in the store  (RED as it stood: only his question "
+               "bubble was, and the card went with the window)",
+               storedJson.isEmpty() ? juce::String ("no agentJson on any assistant row")
+                                    : juce::String ("present"));
+        const auto back = echojay::agentui::fromJson (juce::JSON::parse (storedJson));
+        check (back.closing == "Stopped: the plugin was closed mid-run.",
+               "INT2 ...marked stopped, in the words he asked for", back.closing);
+        check (back.steps.size() == 2
+               && back.steps[0].label.contains ("Tube-Tech CL 1B")
+               && back.steps[1].label.contains ("playback"),
+               "INT3 ...with the steps as far as they got",
+               juce::String ((int) back.steps.size()) + " step(s)");
+        check (back.finished && ! back.running && ! back.playbackActive,
+               "INT4 ...and it comes back finished, not spinning: no live playback on a dead run");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

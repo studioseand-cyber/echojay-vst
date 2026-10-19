@@ -130,6 +130,10 @@ LinkProcessor::LinkProcessor()
         // Drop those holds; integrated LUFS / LRA keep accumulating. Message
         // thread signal only.
         meterEngine_.resetHolds();
+        // 19 Oct 2026: and the published loudest-3 s hold goes with them, for the same reason - it
+        // describes audio this rack no longer produces. It is NOT cleared by a loop window, which
+        // is the whole point of keeping it here rather than reading the tally's max.
+        pubShortMaxDb_ = -200.0f;
     };
 
     // ---- LEVELLING V2 (10 Oct 2026): THIS LINK'S OWN STAGES ------------------------------------------
@@ -1081,8 +1085,24 @@ void LinkProcessor::publishMeterFrame()
     f.fieldsMask |= kFrameHasPreTrim;
     {
         const auto snap = levelTally_.snapshot();
-        if (snap.maxShortTermDb == snap.maxShortTermDb)   // not NaN: a 3 s window has closed
-        { f.shortTermMax = snap.maxShortTermDb; f.fieldsMask |= kFrameHasShortMax; }
+        // ---- THE LOUDEST 3 s AND THE INTEGRATED FIGURE MUST SHARE A WINDOW (19 Oct 2026) ------
+        //
+        // Sean, 10:55 on the Kick's Link: *"check(playback)'s loudest 3 s keeps coming out QUIETER
+        // than integrated (-17.5 vs -12.2 here, same every run). Loudest short-term can't be below
+        // integrated."*  It can't, and the pair was never comparable: `integrated` comes from
+        // meterEngine_ (cleared only when the rack changes) and this used to publish the TALLY's
+        // max-hold, which resetShortTermMax() clears for every loop window - so after a build the
+        // max described the recent quiet seconds while the integrated still covered the loud
+        // section. Two instruments, two windows, published as one pair.
+        //
+        // So the publisher keeps its own max-hold of the LATEST short-term value, on the clock the
+        // integrated figure is on: cleared with the meter holds when the rack changes (above), and
+        // by nothing else. The tally's own max stays exactly as it is - it belongs to the loop's
+        // window and the loop is right to reset it.
+        if (std::isfinite (snap.shortTermDb))
+            pubShortMaxDb_ = juce::jmax (pubShortMaxDb_, snap.shortTermDb);
+        if (pubShortMaxDb_ > -199.0f)
+        { f.shortTermMax = pubShortMaxDb_; f.fieldsMask |= kFrameHasShortMax; }
         f.heardSeconds = snap.heardSeconds;
         f.fieldsMask |= kFrameHasHeard;
         // 21t-f item 5: SHORT90, through the codec that owns the encoding (one byte of the key group's pad -
