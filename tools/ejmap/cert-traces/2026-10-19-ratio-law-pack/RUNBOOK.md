@@ -17,13 +17,10 @@ xattr -dr com.apple.quarantine .
 ```
 bash ratio_law.sh --dry-run products_sean_mac.txt
 ```
-For each product it lists the probe calls:
-- each ratio setting (the lowest, 2:1, 4:1, the highest; the measured setting is skipped) at the tone check's g 2 and g 4 positions;
-- 3 input levels above threshold each.
-
-A ratio control whose readings are non-linear or named (C1's, DPR-402's) says "placed at run time": one extra load reads the plugin's own ratio text on a grid, with no audio, after the licence gate.
-
-It also prints the law at the measured setting from your existing sweep. A unit whose slope changes with depth misses there at its label (the CL 1B by up to 5.2 dB). The note says why one ratio per setting does not describe such units.
+It should list all 20 and refuse none: 231 probe calls, plus one dial-reading load for each of the six C1 variants.
+- **Each ratio setting** (the measured one, the lowest, 2:1, 4:1, the highest) runs at the tone check's g 2 and g 4 positions and at a deep position ("g 0", T near -46 dBFS).
+- **Inputs:** from 6 dB below threshold to 44 dB above, in 2 dB steps (none above -0.5 dBFS). That gives each setting its measured curve, `ratio_law.curves`, in the amount.curve shape.
+- **Placed from their own text:** a ratio dial whose readings are non-linear or named (the C1s, DPR-402) is placed from the plugin's own text, one extra load after the licence gate.
 
 ## 3. The run
 ```
@@ -31,7 +28,7 @@ bash ratio_law.sh products_sean_mac.txt
 ```
 - The preflight runs first (mains power, the probe's signature). If it refuses, nothing runs.
 - Licence gate first. A licence window stops that product: closed, never clicked.
-- A few minutes per product. Results go to `~/Library/ejmap/cert/ratio_law/`, one `.ratio_law.json` per product with the raw traces in `raw/`.
+- **About 1 hour for the 20** (an estimate: 0.25 s per input level was measured on Kathy's Mac, about 9-15 s per call; slower plugin loads add to it). Results go to `~/Library/ejmap/cert/ratio_law/`, one `.ratio_law.json` per product with the raw traces in `raw/`.
 
 ## 4. Send the results to Kathy
 ```
