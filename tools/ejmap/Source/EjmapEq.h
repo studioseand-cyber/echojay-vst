@@ -246,20 +246,33 @@ inline const std::vector<double> kAcceptanceGainsDb { 3.0, -3.0 };
 inline juce::String gridDescription() { return "multitone " + juce::String (kGridLoHz, 0) + " Hz-" + juce::String (kGridHiHz / 1000.0, 1) + " kHz (" + juce::String (kGridAskedHiHz / 1000.0, 0) + " kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (" + juce::String (kGridTones) + " tones; 1/24 = " + juce::String (kQGridTones) + " for Q), -12 dBFS peak; gain map also at -30"; }
 
 // a measured gain-sweep row as the derivations below see it (what the record's gain_sweep rows carry)
-struct GainRow { float norm = 0.0f; juce::String display; Band band; std::optional<double> labelDb; };
+struct GainRow { float norm = 0.0f; juce::String display; Band band; std::optional<double> labelDb; std::optional<double> outOverInDb; };   // outOverInDb: the grid's total output over its input (19 Oct, headroom)
 inline bool usable (const Band& b) { return b.result == "measured" || b.result == "shelf"; }
-inline double figureOf (const Band& b) { return b.result == "shelf" && b.cornerHz > 0.0 ? b.cornerHz : b.centreHz; }
+// A SHELF IS JUDGED BY ITS CORNER ONLY (19 Oct, H-EQ): where it reaches half its plateau. A shelf whose corner lies past the grid has NO
+// figure (0) - its "centre" is only the grid's edge (10 Hz / 23.5 kHz), and read as a figure it put 10 Hz points into H-EQ's LF law
+inline double figureOf (const Band& b) { return b.result == "shelf" ? b.cornerHz : b.centreHz; }
+// the whole grid's output over its input (power sums of the tones): what a position does to the level, for the headroom rule
+inline std::optional<double> gridGainDb (const Position& p)
+{
+    double in = 0.0, out = 0.0; for (const auto& t : p.tones) { if (t.inDb > -300.0) in += std::pow (10.0, t.inDb / 10.0); if (t.outDb > -300.0) out += std::pow (10.0, t.outDb / 10.0); }
+    if (in <= 0.0 || out <= 0.0) return std::nullopt; return 10.0 * std::log10 (out / in);
+}
 
 // THE LEVEL CHECK (section 3): the same gain positions at -12 and -30 dBFS, matched by norm; the largest disagreement in the
 // measured gain. Positions flat at both levels agree (0); a position usable at one level only is a disagreement of its full gain.
 struct LevelCheck { bool ok = false; double worstDb = 0.0; int compared = 0; juce::String verdict, note; };   // verdict: static | level_dependent | dynamic
+// HEADROOM (19 Oct, LinEQ): a position whose -12 dBFS output would pass full scale (the -12 dBFS peak raised by the grid's own gain over
+// kHeadroomDbfs) is the TEST overloading, not the EQ depending on level: it is left out of the comparison, named, and judged at -30 only
+inline constexpr double kHeadroomDbfs = -1.0;
+inline bool overFullScale (const GainRow& atM12) { return atM12.outOverInDb && kLevelDbfs + *atM12.outOverInDb > kHeadroomDbfs; }
 inline LevelCheck levelCheck (const std::vector<GainRow>& atM12, const std::vector<GainRow>& atM30)
 {
-    LevelCheck c;
+    LevelCheck c; juce::StringArray over;
     for (const auto& a : atM12)
         for (const auto& b : atM30)
         {
             if (std::abs (a.norm - b.norm) > 1e-4) continue;
+            if (overFullScale (a)) { over.add (a.display); break; }
             ++c.compared;
             const double ga = usable (a.band) ? a.band.gainDb : a.band.result == "flat" ? 0.0 : std::nan ("");
             const double gb = usable (b.band) ? b.band.gainDb : b.band.result == "flat" ? 0.0 : std::nan ("");
@@ -270,7 +283,8 @@ inline LevelCheck levelCheck (const std::vector<GainRow>& atM12, const std::vect
     if (c.compared == 0) { c.note = "no gain position was read at both levels"; return c; }
     c.ok = true;
     c.verdict = c.worstDb > kDynamicDb ? "dynamic" : c.worstDb > kLevelDependentDb ? "level_dependent" : "static";
-    c.note = "the gain map at -12 and -30 dBFS disagrees by " + juce::String (c.worstDb, 2) + " dB at most over " + juce::String (c.compared) + " position(s)" + (c.verdict == "dynamic" ? ": the response moves with level (dynamic): out of scope for v1" : c.verdict == "level_dependent" ? ": level_dependent (the track-level map applies; flagged)" : "");
+    c.note = "the gain map at -12 and -30 dBFS disagrees by " + juce::String (c.worstDb, 2) + " dB at most over " + juce::String (c.compared) + " position(s)" + (c.verdict == "dynamic" ? ": the response moves with level (dynamic): out of scope for v1" : c.verdict == "level_dependent" ? ": level_dependent (the track-level map applies; flagged)" : "")
+           + (over.isEmpty() ? juce::String() : "; left out (at -12 dBFS the output would pass full scale, judged at -30 only): " + over.joinIntoString (", "));
     return c;
 }
 
@@ -374,6 +388,7 @@ inline void judgeAcceptance (Acceptance& a)
 {
     if (! a.ran) { a.pass = false; return; }
     if (! usable (a.measured)) { a.pass = false; a.why = "no band read at the written setting (" + a.measured.result + ": " + a.measured.reason + ")"; return; }
+    if (figureOf (a.measured) <= 0.0) { a.pass = false; a.why = "a shelf whose corner lies past the grid: no figure to judge"; return; }   // 19 Oct
     a.gainMissDb = a.measured.gainDb - a.gain.promisedDb;
     const double ref = a.figure.stepped ? a.figure.detentHz : a.targetHz;
     a.figureOffPct = 100.0 * (figureOf (a.measured) - ref) / ref;
@@ -496,7 +511,9 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
             juce::Array<juce::var> gm, fm, qm;
             if (const auto* rows = b.getProperty ("gain_sweep", {}).getArray()) for (const auto& r : *rows) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", r.getProperty ("norm", 0.0)); q->setProperty ("display", r.getProperty ("display", "")); const auto res = r.getProperty ("result", "").toString(); q->setProperty ("gain_db", res == "measured" || res == "shelf" ? r.getProperty ("gain_db", {}) : res == "flat" ? juce::var (0.0) : juce::var()); if (res != "measured" && res != "shelf" && res != "flat") q->setProperty ("why", r.getProperty ("reason", res)); gm.add (juce::var (q)); }
             if (const auto* rows = b.getProperty ("freq_sweep", {}).getArray()) for (const auto& r : *rows) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", r.getProperty ("norm", 0.0)); q->setProperty ("display", r.getProperty ("display", "")); const auto res = r.getProperty ("result", "").toString(); const bool ok = res == "measured" || res == "shelf"; const bool rowShelf = r.getProperty ("shape", "").toString().contains ("shelf");
-                if (ok && (rowShelf || shelf) && num (r.getProperty ("corner_hz", {}))) q->setProperty ("corner_hz", r.getProperty ("corner_hz", {})); else if (ok) q->setProperty ("centre_hz", r.getProperty ("centre_hz", {})); else q->setProperty ("why", r.getProperty ("reason", res)); fm.add (juce::var (q)); }
+                if (ok && (rowShelf || shelf) && num (r.getProperty ("corner_hz", {}))) q->setProperty ("corner_hz", r.getProperty ("corner_hz", {}));
+                else if (ok && (rowShelf || shelf)) q->setProperty ("why", "a shelf whose corner lies past the grid: no figure");   // 19 Oct: never the grid's edge as a centre
+                else if (ok) q->setProperty ("centre_hz", r.getProperty ("centre_hz", {})); else q->setProperty ("why", r.getProperty ("reason", res)); fm.add (juce::var (q)); }
             // the Q map: bandwidth at +6 from q_sweep, at +3 from q_sweep_3db, matched by norm
             if (const auto* rows = b.getProperty ("q_sweep", {}).getArray()) for (const auto& r : *rows) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", r.getProperty ("norm", 0.0)); q->setProperty ("display", r.getProperty ("display", "")); q->setProperty ("bandwidth_oct_at_6db", r.getProperty ("result", "") == "measured" ? r.getProperty ("bandwidth_oct", {}) : juce::var());
                 juce::var at3; if (const auto* r3s = b.getProperty ("q_sweep_3db", {}).getArray()) for (const auto& r3 : *r3s) if (std::abs ((double) r3.getProperty ("norm", -1.0) - (double) r.getProperty ("norm", 0.0)) < 1e-4 && r3.getProperty ("result", "") == "measured") at3 = r3.getProperty ("bandwidth_oct", {}); q->setProperty ("bandwidth_oct_at_3db", at3); if (r.getProperty ("result", "") != "measured") q->setProperty ("why", r.getProperty ("reason", r.getProperty ("result", ""))); qm.add (juce::var (q)); }

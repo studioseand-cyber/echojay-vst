@@ -5132,7 +5132,7 @@ inline int runEq (const SweepOptions& opt)
               say ("    gain " + p.text + ": " + b.result + (b.result == "measured" || b.result == "shelf" ? " centre " + juce::String (b.centreHz, 0) + " Hz, gain " + juce::String (b.gainDb, 2) + " dB" + (b.result == "measured" ? ", bw " + juce::String (b.bandwidthOct, 2) + " oct" : " (" + b.shape + ")") : " - " + b.reason));
           }
           if (boostNorm < 0.0f && ! gr.positions.empty()) { boostNorm = gr.positions.back().norm; }
-          for (const auto& p : gr.positions) { eq::GainRow row; row.norm = p.norm; row.display = p.text; row.band = eq::deriveBand (eq::deviation (p, baseline)); row.labelDb = eq::labelNumber (p.text); gainRowsM12.push_back (row); if (row.labelDb && (! bestLowDist || std::abs (*row.labelDb - eq::kBoostLowDb) < *bestLowDist)) { bestLowDist = std::abs (*row.labelDb - eq::kBoostLowDb); boostLowNorm = p.norm; boostLowDb = *row.labelDb; } }
+          for (const auto& p : gr.positions) { eq::GainRow row; row.norm = p.norm; row.display = p.text; row.band = eq::deriveBand (eq::deviation (p, baseline)); row.labelDb = eq::labelNumber (p.text); row.outOverInDb = eq::gridGainDb (p); gainRowsM12.push_back (row); if (row.labelDb && (! bestLowDist || std::abs (*row.labelDb - eq::kBoostLowDb) < *bestLowDist)) { bestLowDist = std::abs (*row.labelDb - eq::kBoostLowDb); boostLowNorm = p.norm; boostLowDb = *row.labelDb; } }
         }
         bo->setProperty ("gain_sweep", gainRows); if (engagedBy.isNotEmpty()) bo->setProperty ("engaged_by", engagedBy);
         // THE LEVEL CHECK (section 3, 7 Oct): the same gain positions at -30 dBFS against their own -30 baseline; > 0.5 dB apart -> level_dependent, > 3 -> dynamic
