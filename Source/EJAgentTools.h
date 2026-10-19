@@ -160,9 +160,20 @@ struct PlaybackReading
     bool  transportKnown = false;    // the host publishes a transport at all (LoudnessLoop's rule: unknown never blocks)
     bool  playing        = false;    // the transport says it is running (meaningful only when transportKnown)
     float heardAboveSeconds = 0.0f;  // gated audio counted SINCE beginPlaybackWindow()
-    float integratedLufs    = std::numeric_limits<float>::quiet_NaN();   // over the window
-    float loudestShortTermLufs = std::numeric_limits<float>::quiet_NaN(); // the loudest 3 s in the window
+    float integratedLufs    = std::numeric_limits<float>::quiet_NaN();
+    float loudestShortTermLufs = std::numeric_limits<float>::quiet_NaN();
     float truePeakDbtp      = std::numeric_limits<float>::quiet_NaN();
+    // ---- WHICH WINDOW EACH FIGURE IS OF (19 Oct 2026, Sean at 12:33) ---------------------------
+    // *"check playback still says loudest 3 s -17.5 LUFS under integrated -14.1. If integrated is
+    // measured over a longer window than the last 8 s, put both on the same window, or name each
+    // window in the payload so B can label it truthfully."*
+    //
+    // On the open rack both come from one tally reset at the same instant, so they ARE one window.
+    // On a Link they are two instruments: the frame's integrated is meterEngine's, kept since the
+    // rack last changed, while the loudest is the level tally's max. The comments here used to say
+    // "over the window" of both, which is the whole of the lie.
+    float loudestWindowSeconds = 0.0f;         // what the loudest figure describes, in seconds
+    bool  integratedIsLongerWindow = false;    // TRUE when the integrated figure is of a longer span
 };
 
 /** WHETHER A STEP CAN BE PUT BACK, AND WHETHER AUTO MAY RUN IT WITHOUT ASKING (Sean's Auto ruling).

@@ -146,6 +146,72 @@ LinkProcessor::LinkProcessor()
         LoudnessLoop::Stage st;
         if (match)
         {
+            // ---- THE PLUGIN'S OWN MAKE-UP FIRST (19 Oct 2026, Sean at 12:27) ------------------
+            //
+            // *"Set the PLUGIN'S OWN make-up/output control (its map's make-up/output role) to bring
+            // the output back to the input loudness... Only use EchoJay's own gain if the plugin has
+            // no output/make-up control, and say so once."*
+            //
+            // Why it is the better stage, beyond his asking: the rack OUT gain is applied AFTER the
+            // chain-output tally (outsideTap), so the loop cannot see its own correction there and
+            // the arithmetic has to account for it. A make-up control is INSIDE the chain, before
+            // the tap, so the verify pass measures the result of its own write - which is what makes
+            // "re-measure once and correct once" mean anything.
+            if (const auto mk = makeupStageSlot(); mk.slot >= 0)
+            {
+                const int    slot     = mk.slot;
+                const auto   semantic = mk.semantic;
+                st.name       = "slot_makeup";
+                st.outsideTap = false;      // inside the chain: the tap sees this write
+                st.ready      = [this, slot, semantic]
+                {
+                    double v = 0.0;
+                    return chainHost.slotParamValue (slot, semantic, v);
+                };
+                st.readDb = [this, slot, semantic] () -> float
+                {
+                    double v = 0.0;
+                    return chainHost.slotParamValue (slot, semantic, v) ? (float) v : 0.0f;
+                };
+                st.writeDb = [this, slot, semantic] (float db)
+                {
+                    // Written through the ordinary edit road, not a back door: that is what puts the
+                    // figure in the slot's own settings text and on the panel, which is where he
+                    // asked to see it ("the new value just shows in the slot's settings").
+                    auto* params = new juce::DynamicObject();
+                    params->setProperty (semantic, (double) juce::jlimit (-24.0f, 24.0f, db));
+                    auto* ss = new juce::DynamicObject();
+                    ss->setProperty ("params", juce::var (params));
+                    auto* op = new juce::DynamicObject();
+                    op->setProperty ("op", "set");
+                    op->setProperty ("slot", slot + 1);               // ops are 1-based
+                    op->setProperty ("settings_structured", juce::var (ss));
+                    juce::Array<juce::var> arr; arr.add (juce::var (op));
+                    auto* envelope = new juce::DynamicObject();
+                    envelope->setProperty ("edit", juce::var (arr));
+                    auto ops = ChainHost::parseChainEditOps (juce::JSON::toString (juce::var (envelope), true));
+                    if (ops.empty())
+                    {
+                        EchoJay_NSLog (("EJLoudness: the make-up write parsed no ops for slot "
+                                        + juce::String (slot + 1) + " - nothing written").toRawUTF8());
+                        return;
+                    }
+                    EchoJay_NSLog (("EJLoudness: level match writes the PLUGIN'S OWN " + semantic
+                                    + " on slot " + juce::String (slot + 1) + " (\""
+                                    + chainHost.getSlotInfo (slot).name + "\") to "
+                                    + juce::String (db, 2) + " dB - his 12:27 rule").toRawUTF8());
+                    chainHost.applyChainEdits (std::move (ops), -1, {}, [] (const juce::StringArray&, int, bool) {});
+                };
+                return st;
+            }
+            // NO MAKE-UP CONTROL ANYWHERE IN THE RACK: EchoJay's own gain, said ONCE.
+            if (! saidNoMakeupControl_)
+            {
+                saidNoMakeupControl_ = true;
+                EchoJay_NSLog ("EJLoudness: no slot on this rack has a make-up or output control in its "
+                               "map, so the level match uses EchoJay's own rack gain instead (said once, "
+                               "his 12:27 rule)");
+            }
             st.name       = "rack_out";
             st.outsideTap = true;   // applied AFTER the chain-output tally the loop measures
             st.ready      = [] { return true; };
@@ -4032,6 +4098,27 @@ void LinkProcessor::pollChainCommand()
 //
 // So the arming lives here, called from both, and from nowhere else: a RESTORE must not re-level a rack the
 // user has since set by hand, which is the one case that has to stay unarmed.
+/** ---- WHICH CONTROL BRINGS THE OUTPUT BACK (19 Oct 2026) ------------------------------------
+    The OUTPUT-MOST slot whose map carries a make-up or an output role, searched from the end of the
+    rack backwards: that is the gain closest to what leaves the rack, so correcting it corrects the
+    whole chain rather than a stage something later re-compresses. `makeup_db` is preferred over
+    `output_db` on one slot because a compressor's make-up is the control the role exists for; an
+    output trim is the same arithmetic when there is no make-up.
+
+    Resolution is slotParamValue's, which reads the PLUGIN through its map and answers false rather
+    than guessing - so a slot with no map, no entry or unparseable display text is simply not a
+    candidate, and the fallback below is reached honestly. */
+LinkProcessor::MakeupStage LinkProcessor::makeupStageSlot() const
+{
+    for (int i = chainHost.getNumSlots() - 1; i >= 0; --i)
+    {
+        double v = 0.0;
+        if (chainHost.slotParamValue (i, "makeup_db", v)) return { i, "makeup_db" };
+        if (chainHost.slotParamValue (i, "output_db", v)) return { i, "output_db" };
+    }
+    return {};
+}
+
 void LinkProcessor::armLoudnessAfterBuild (const juce::String& via)
 {
     if (loudnessLoop_.armFromChain())

@@ -41064,7 +41064,9 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
         if (it->second.valid) nOldOnLink = (int) it->second.rack.slots.size();
     auto wireOps = ChainHost::chainArrayToReplaceOps (*chainArrForWire, nOldOnLink);
     const juce::var wire = ChainHost::editOpsToWireVar (wireOps);
-    const int seq = processorRef.writeChainEditCommand (id, wire, juce::var(), "EchoJay V2 build", {});
+    // intent="build": what makes the Link arm its level match. Without it the 11:15 road sent a
+    // build that looked like an edit, and nothing re-levelled (his 12:27 dbx-160).
+    const int seq = processorRef.writeChainEditCommand (id, wire, juce::var(), "EchoJay V2 build", {}, "build");
     EchoJay_NSLog (("EJChain: build to Link " + id + " goes down the AGENT'S OWN ROAD (edit-cmd seq "
                     + juce::String (seq) + "): " + juce::String (nOldOnLink) + " removed, "
                     + juce::String ((int) wireOps.size() - nOldOnLink) + " added. No borrow session "

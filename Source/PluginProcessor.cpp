@@ -2984,7 +2984,8 @@ bool EchoJayProcessor::ringEndGestureWithUndo (const juce::String& linkUid, uint
 }
 
 int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
-                                             const juce::String& sourceNote, const juce::String& leaseId)
+                                             const juce::String& sourceNote, const juce::String& leaseId,
+                                             const juce::String& intent)
 {
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
@@ -2996,6 +2997,14 @@ int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const j
     cmd->setProperty("editOps",    editOps);
     cmd->setProperty("baseSlots",  baseSlots);
     cmd->setProperty("sourceNote", sourceNote);
+    // ---- THE COMMAND'S PURPOSE, WHEN IT HAS ONE (19 Oct 2026) -------------------------------------
+    // Sean, 12:27: a dbx-160 built first press down the edit-cmd road and *"no level matching
+    // happened: the dbx output L/R stayed 0 and the rack gain 0.0 dB."*  The Link arms its post-build
+    // match on `intent == "build"` (item 4, 14 Oct) and the borrow push has always set it - but the
+    // road the Build button took from 11:15 this morning is this one, which carried no intent at
+    // all, so the Link treated a build as an ordinary edit and correctly declined to re-level. One
+    // road for the ops was right; it also had to carry what the ops were FOR.
+    if (intent.isNotEmpty()) cmd->setProperty("intent", intent);
     // 18 Oct 2026 (queue item 21): THIS SENDER UNDERSTANDS A "busy" ACK. Declared by the sender rather than
     // assumed by the Link, because a main plugin from before today reads any status that is not "ok" as a
     // refusal - so a Link that answered "busy" unasked would turn a queued command into a reported failure in

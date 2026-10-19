@@ -372,6 +372,11 @@ private:
     // Link's own v1 chain build, or a borrowed-rack build pushed as v2 editOps with intent=build. One
     // implementation on purpose: 13a fixed one road and Sean's build came down the other.
     void armLoudnessAfterBuild (const juce::String& via);
+    /** The slot and semantic the level match writes, or slot -1 when no slot has such a control
+        (19 Oct 2026, his 12:27 rule). */
+    struct MakeupStage { int slot = -1; juce::String semantic; };
+    MakeupStage makeupStageSlot() const;
+    bool saidNoMakeupControl_ = false;
     std::vector<ChainSlotSpec> chainModel;
     bool chainBuilding = false;
     // When the build in flight began, and which command seq has already been told "busy" - so the ack is

@@ -625,6 +625,67 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     // The rule is Sean's: a build never reports success unless a readback shows the slots on the target rack.
     // Applied to every STRUCTURAL op, because "the op was acked but the rack is empty" is not special to
     // build - it is what a rack that threw the batch away looks like from here, whatever put it there.
+    // ---- A SET THAT NAMES NOTHING, CAUGHT BEFORE IT IS SENT (19 Oct 2026) ---------------------
+    //
+    // Two of his reports, and they pull in opposite directions until the gate is in the right place:
+    //   10:55  five sets carrying NO control reported DONE with undo tokens - five successes for
+    //          five no-ops ("set slot 1: " with an empty tail, 0 result(s)).
+    //   12:36  my first cut of that refusal fired on *"bell 300 Hz -3.5 dB Q 1.4"* - an EQ band set,
+    //          which carries eq_bands rather than plain controls - and said *"That change didn't
+    //          name anything to set, so I've left the slot alone"* about a band the EQ had already
+    //          applied. A refusal for work that landed is worse than the false success it replaced.
+    //
+    // Both are answered by moving it here, before the ops are sent, and by counting EVERY way a set
+    // can carry values rather than the one shape I happened to look at. If nothing was sent, "left
+    // alone" is literally true; if anything was, this never speaks and the read-back reports what
+    // the slot holds.
+    if (opName == "set")
+    {
+        const auto ss = argVar (call, "settings_structured");
+        int carried = 0;
+        if (auto* root = ss.getDynamicObject())
+        {
+            auto countNumeric = [&carried] (juce::DynamicObject* o)
+            {
+                if (o == nullptr) return;
+                for (auto& kv : o->getProperties())
+                    if (kv.value.isDouble() || kv.value.isInt() || kv.value.isInt64()) ++carried;
+            };
+            countNumeric (root->getProperty ("params").getDynamicObject());
+            countNumeric (root->getProperty ("controls").getDynamicObject());
+            // AN EQ BAND IS A VALUE-CARRYING SHAPE: an array of band objects, each with its own
+            // frequency, gain and Q. His 12:36 case, and the one my gate could not see.
+            if (auto* bands = root->getProperty ("eq_bands").getArray()) carried += bands->size();
+            // ...and anything else the device vocabulary grows: a structured block with properties
+            // in it carried something, whatever it is called. Counted last so a named shape above
+            // is never double-counted into a different meaning.
+            if (carried == 0)
+                for (auto& kv : root->getProperties())
+                    if (kv.name != juce::Identifier ("params") && kv.name != juce::Identifier ("controls"))
+                    {
+                        if (auto* o = kv.value.getDynamicObject()) carried += o->getProperties().size();
+                        else if (auto* a = kv.value.getArray())     carried += a->size();
+                        else if (! kv.value.isVoid())              ++carried;
+                    }
+        }
+        // The flat shape too (fix 1(a)): a set may carry its values at the top level of the call.
+        if (carried == 0)
+            if (auto* top = call.args.getDynamicObject())
+                for (auto& kv : top->getProperties())
+                    if (kv.value.isDouble() || kv.value.isInt() || kv.value.isInt64())
+                        if (kv.name != juce::Identifier ("slot")) ++carried;
+        if (carried == 0)
+        {
+            EchoJay_NSLog (("EJAgent: a set carrying nothing was refused BEFORE it was sent: "
+                            + juce::JSON::toString (call.args, true).substring (0, 160)).toRawUTF8());
+            done (ToolOutcome::failureFor ("bad_request",
+                    "that change named no control to set, so nothing was sent and nothing changed. "
+                    "Send the values as settings_structured.controls (or params, or eq_bands) with "
+                    "numbers in them. Retrying the same call will not change this.",
+                    "That change didn't name anything to set, so I've left the slot alone."));
+            return;
+        }
+    }
     const int wantSlots = structuralWantSlots (call, opName);
     const auto aliveW   = this->alive();
     // `call` BY VALUE (fix 1(b)): this callback is asynchronous - the ack can arrive after doOp has
@@ -702,33 +763,9 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     bool haveSlot = false;
     const int slot1 = argInt (call, "slot", haveSlot);
 
-    // ---- A SET THAT NAMES NO CONTROL CHANGED NOTHING (19 Oct 2026, Sean at 10:55) ------------
-    //
-    // His log, five times over thirteen seconds on the Kick's CL 1B:
-    //     EJAgent: frame tool_call ... name=do ... "set slot 1: "        <- an empty tail
-    //     EJParamApply: slot 1 ("Tube-Tech CL 1B"), 0 result(s)
-    //     EJAgent: step ... DONE undo=set:1792403763330 "the rack took it and now holds 1 slot(s)
-    //              I could not read these values back to confirm them."
-    // Nothing was asked for, nothing was applied, and the step reported DONE with an UNDO TOKEN -
-    // five successes for five no-ops, which is what he read as "could not read these values back".
-    //
-    // The old sentence conflated two states that must never share one: controls were applied but
-    // their displays cannot be read (honest, and kept below), and no control arrived at all (a bad
-    // request, and the thing to say). Counted on the NUMERIC entries, because a mode name is not a
-    // value this road can set and an object full of them is as empty as no object.
-    int askedNumeric = 0;
-    if (asked != nullptr)
-        for (auto& kv : asked->getProperties())
-            if (kv.value.isDouble() || kv.value.isInt() || kv.value.isInt64()) ++askedNumeric;
-    if (askedNumeric == 0)
-    {
-        done (ToolOutcome::failureFor ("bad_request",
-                "that change named no control to set, so nothing was changed. Send the controls as "
-                "settings_structured.controls with numeric values, or say which control and figure "
-                "you mean. Retrying the same call will not change this.",
-                "That change didn't name anything to set, so I've left the slot alone."));
-        return;
-    }
+    // (The "a set that names no control" refusal moved UPSTREAM on 19 Oct - see doOp. It cannot
+    // live here: this function runs inside the apply's ack, so "I've left the slot alone" was said
+    // about a change that had already landed - Sean at 12:36, on an EQ band set that applied.)
     if (! haveSlot || ! src_.slotParam)
     {
         // Nothing to compare, or no way to compare it. Say which, rather than reporting a bare success.

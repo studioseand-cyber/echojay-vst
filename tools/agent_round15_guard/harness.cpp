@@ -163,6 +163,55 @@ int main()
                "...still naming the control, what it holds and what was asked", o.errorMessage.substring (0, 90));
     }
 
+    // ----------------------------------------------- EQ BANDS ARE VALUES (19 Oct 2026, his 12:36)
+    //
+    // *"The set 'bell 300 Hz -3.5 dB Q 1.4' came back 'That change didn't name anything to set, so
+    // I've left the slot alone', but the EchoJay EQ shows band 1 bell 300 Hz -3.5 dB Q 1.40
+    // applied. Your empty-set refusal misfires on EQ band sets (eq_bands / settings_structured, not
+    // plain controls) AND reports a refusal for a change that landed."*
+    //
+    // Both halves were mine, from this morning. The gate counted numeric entries under params and
+    // controls - the one shape I had in front of me - and it sat INSIDE the apply's ack, so its
+    // sentence spoke about a slot that had already been changed. It now runs before the ops are
+    // sent, where "nothing was sent" is a fact, and counts every way a set carries values.
+    std::printf ("== EQ BANDS: a band set is values, and a refusal never follows a change that landed ==\n");
+    {
+        Fixture f; f.held = { {"freq_hz", 300.0} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"eq_bands":[{"band":1,"type":"bell","freq_hz":300,"gain_db":-3.5,"q":1.4}]}})"));
+        check (o.errorCode != "bad_request",
+               "EQ1 an EQ band set is NOT refused as empty  (RED as it stood: \"That change didn't "
+               "name anything to set\" about a band the EQ had applied)",
+               o.ok ? juce::String ("applied") : (o.errorCode + ": " + o.errorMessage.substring (0, 60)));
+        check (! o.userMessage.containsIgnoreCase ("left the slot alone")
+               && ! o.landedLine.containsIgnoreCase ("left the slot alone"),
+               "EQ1b ...and nothing says the slot was left alone",
+               (o.userMessage + " | " + o.landedLine).substring (0, 100));
+        check (f.applyCalls >= 1,
+               "EQ1c ...and the ops were actually SENT, which is what makes the refusal above a lie "
+               "rather than a judgement", juce::String (f.applyCalls) + " apply call(s)");
+    }
+    {
+        // A STRUCTURED BLOCK IN ANY OTHER SHAPE counts too - the vocabulary grows, and a gate that
+        // knows only today's spellings is this defect waiting to happen again.
+        Fixture f; f.held = { {"amount", 1.0} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"shape":{"amount":2.5}}})"));
+        check (o.errorCode != "bad_request",
+               "EQ2 a structured block under a name this build has never seen is still VALUES",
+               o.ok ? juce::String ("applied") : o.errorCode);
+    }
+    {
+        // AND A TRULY EMPTY SET IS STILL REFUSED - his 10:55 case, which is the other direction and
+        // the reason the gate exists at all.
+        Fixture f; f.held = { {"thresh", 10.0} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"params":{}}})"));
+        check (! o.ok && o.errorCode == "bad_request" && f.applyCalls == 0,
+               "EQ3 a truly empty set is still refused, and now BEFORE anything is sent - so \"left "
+               "alone\" is true when it is said", juce::String (f.applyCalls) + " apply call(s)");
+    }
+
     // ---------------------------------------------------------------- EMPTY SET (19 Oct 2026)
     //
     // Sean at 10:55, on the Kick's CL 1B, after B's threshold sets: *"all came back 'could not read

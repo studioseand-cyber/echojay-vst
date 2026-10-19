@@ -484,6 +484,42 @@ int main()
                && std::abs ((double) res.getProperty ("peakDbtp", {}) + 1.3) < 0.05 && ! res.hasProperty ("short"),
                "W2b min_seconds heard: {played:true, seconds, integratedLufs, loudestLufs, peakDbtp}");
         check (r.step ("tc_13")->detail == "Got it, you can stop." && r.client.state() != EJAgentClient::State::Listening, "W2c the row reads \"Got it, you can stop.\" and the wait is over");
+        // ---- PW (19 Oct 2026, his 12:33): EACH FIGURE WITH ITS OWN WINDOW -------------------
+        // *"check playback still says loudest 3 s -17.5 LUFS under integrated -14.1. If integrated
+        // is measured over a longer window than the last 8 s, put both on the same window, or name
+        // each window in the payload so B can label it truthfully."*
+        // This is the THIRD site that reports a loudest-3 s: check(level) and analysisVar were
+        // fixed this morning and this one was missed, which is why he read it again after an
+        // install. The window naming is the part B needs; the withholding is the part that stops an
+        // impossible pair being quotable at all.
+        check (std::abs ((double) res.getProperty ("loudestWindowSeconds", juce::var (0.0))) >= 0.0
+               && res.hasProperty ("integratedWindow"),
+               "PW1 the playback payload NAMES each figure's window, so B can label them truthfully",
+               "integratedWindow=\"" + res.getProperty ("integratedWindow", juce::var()).toString() + "\"");
+
+        // PW2: HIS PAIR, -17.5 UNDER -14.1, WITHHELD WITH ITS REASON.
+        r.round (90);
+        r.tool (R"({"id":"tc_pw","name":"check","args":{"what":"playback","min_seconds":8},"approval":"free"})");
+        r.await ({ "tc_pw" });
+        r.ex.reading = {};
+        r.ex.reading.heardAboveSeconds = 8.0f;
+        r.ex.reading.integratedLufs = -14.1f;            // his figures, exactly
+        r.ex.reading.loudestShortTermLufs = -17.5f;
+        r.ex.reading.integratedIsLongerWindow = true;    // a Link: two instruments, two spans
+        r.ex.reading.loudestWindowSeconds = 8.0f;
+        pumpMs (60);
+        {
+            const auto pw = r.result (0).getProperty ("result", {});
+            check (! pw.hasProperty ("loudestLufs"),
+                   "PW2 a loudest-3 s BELOW the integrated level is withheld from the playback answer "
+                   "too  (RED as it stood: -17.5 was reported beside -14.1, which he read twice)",
+                   juce::JSON::toString (pw).substring (0, 120));
+            check (pw.getProperty ("loudestUnavailable", juce::var()).toString().containsIgnoreCase ("different span"),
+                   "PW2b ...with the reason, not silently");
+            check (pw.getProperty ("integratedWindow", juce::var()).toString().containsIgnoreCase ("longer"),
+                   "PW2c ...and the integrated figure's window is named as the longer one",
+                   pw.getProperty ("integratedWindow", juce::var()).toString());
+        }
 
         r.round (10);
         r.tool (R"({"id":"tc_14","name":"check","args":{"what":"playback","min_seconds":8},"approval":"free"})");

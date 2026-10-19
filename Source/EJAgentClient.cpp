@@ -1477,7 +1477,36 @@ void EJAgentClient::endPlayback (const juce::String& reason)
     {
         o->setProperty ("seconds", juce::String (heard, 1).getDoubleValue());
         setIfFinite (o, "integratedLufs", r.integratedLufs);
-        setIfFinite (o, "loudestLufs", r.loudestShortTermLufs);
+        // ---- EACH FIGURE WITH ITS OWN WINDOW, AND NEVER AN IMPOSSIBLE PAIR (19 Oct 2026) -------
+        //
+        // *"check playback still says loudest 3 s -17.5 LUFS under integrated -14.1... put both on
+        // the same window, or name each window in the payload so B can label it truthfully."*
+        //
+        // This is the THIRD site that reports a loudest-3 s - check(level) and analysisVar were
+        // fixed this morning and this one was missed, which is why he saw it again. Same rule: a max
+        // below the mean cannot be true of one span, so it is withheld with its reason; and the
+        // windows are named either way, so B can label what it does show.
+        {
+            const bool bothKnown = std::isfinite (r.loudestShortTermLufs) && std::isfinite (r.integratedLufs);
+            const bool impossible = bothKnown && r.loudestShortTermLufs < r.integratedLufs - 0.5f;
+            if (! impossible) setIfFinite (o, "loudestLufs", r.loudestShortTermLufs);
+            else
+                o->setProperty ("loudestUnavailable",
+                                "the loudest-3 s figure on that track is measured over a different span "
+                                "from its integrated level, so the two cannot be compared and it is not "
+                                "reported. The integrated figure is sound.");
+            if (r.loudestWindowSeconds > 0.0f)
+                o->setProperty ("loudestWindowSeconds",
+                                juce::String (r.loudestWindowSeconds, 1).getDoubleValue());
+            o->setProperty ("integratedWindow", r.integratedIsLongerWindow
+                                ? "longer than this listen - that track's EchoJay keeps its integrated "
+                                  "level since its rack last changed"
+                                : "this listen");
+            if (impossible)
+                log ("playback: WITHHELD loudestLufs " + juce::String (r.loudestShortTermLufs, 1)
+                     + " - below the integrated " + juce::String (r.integratedLufs, 1)
+                     + " LUFS, which cannot be true of one span (his 12:33)");
+        }
         setIfFinite (o, "peakDbtp", r.truePeakDbtp);
         if (heard < playback_.minSeconds) o->setProperty ("short", true);   // less than asked for; the model can ask again
     }

@@ -1512,6 +1512,18 @@ public:
         plugin's values are not readable here) - which the caller must report as "could not confirm",
         never as success. */
     bool slotParamValue (int slotIndex, const juce::String& paramId, double& out) const;
+    /** ---- CONFIRMED BY POSITION (19 Oct 2026, Sean at 12:31) --------------------------------
+        *"The CL 1B Threshold never reads back."*  His log says the write LANDED and was verified:
+        `Threshold: APPLIED 0.204 (applied (display unverifiable on this plugin))` - the applier
+        checks the parameter's own normalised round-trip, so the control is confirmed; what cannot
+        be done is turning this plugin's display TEXT into a number. The agent's read-back asked
+        only the display road, got nothing, and reported "could not read these values back", which
+        reads as a failure about a setting that is sitting exactly where it was put.
+
+        So this is the other half of the question: did the DIAL confirm this control? Keyed by
+        semantic on both sides (dialApplied holds semanticLabel()), so no map resolution is needed
+        and the two cannot drift. */
+    bool slotControlConfirmedBySemantic (int slotIndex, const juce::String& semantic) const;
     /** The smallest change a mapped control can represent near `near`, in the control's own units,
         read off the SYNCED map by plugin name so it answers for a Link's slot too. 0 = cannot say
         (18 Oct 2026: the read-back tolerance follows the knob, never a fixed 0.05). */

@@ -1347,14 +1347,35 @@ static int guardMain()
 
         // THE EDIT. A value write through the host, which is what an Apply, a trim or a dialled bell is.
         r.setGainDb (-3.0f);
-        for (int k = 0; k < 8 && r.bubbles.size() == bubblesBefore; ++k) { r.loop.tickNow(); pumpMs (10); }
-        const auto said = r.last();
-        check (r.bubbles.size() > bubblesBefore && said.contains ("changed"),
-               "F2-4. THE LOOP SAYS THE CHAIN CHANGED AFTER IT SET THE LEVEL (RED as it stood: it stood on a "
-               "figure that described a chain that no longer existed, which is Sean's 2.8 dB)", said);
-        check (r.loop.lastPills().joinIntoString ("|").contains ("Listen"),
-               "F2-4. ...and offers a way forward rather than only reporting",
-               r.loop.lastPills().joinIntoString ("|"));
+        // Ticked until the LINE appears in the log, not until a bubble does: there is no bubble any
+        // more, so the old wait spun its eight iterations and then asserted on nothing.
+        for (int k = 0; k < 20 && ! r.logs.joinIntoString ("\n").contains ("chain changed"); ++k)
+        { r.loop.tickNow(); pumpMs (10); }
+        // ---- RE-BASELINED TO HIS 19 OCT AFTERNOON RULING --------------------------------------
+        //
+        // *"No automatic second listen or wait after a move. The server will end with 'How's it
+        // sounding?' / 'Sounds good' / 'Run a check', and only Run a check listens again."*
+        //
+        // His 8 Oct rule that staleness is SAID still holds and is still asserted - what changes is
+        // the surface and the offer. It is said on the card LINE (his 19 Oct morning ruling: never a
+        // new unprompted bubble), and it offers NO Listen pill, because the second listen is the
+        // server's to offer now. The silent re-measure from audio already playing is the plugin's
+        // whole part in it.
+        const auto saidLine = r.logs.joinIntoString ("\n");
+        check (saidLine.contains ("verify line:") && saidLine.contains ("chain changed"),
+               "F2-4. THE LOOP SAYS THE CHAIN CHANGED AFTER IT SET THE LEVEL, on the card's own line "
+               "(RED as it stood: it stood on a figure that described a chain that no longer existed, "
+               "which is Sean's 2.8 dB)",
+               saidLine.fromLastOccurrenceOf ("verify line:", false, false).upToFirstOccurrenceOf ("\n", false, false));
+        // AND IT ADDS NOTHING TO THE CHAT. My first cut asserted that lastPills() held no "Listen",
+        // which reads the pills of the last BUBBLE - and with the stale bubble gone that is the ARM
+        // bubble from before the move, whose Listen is an affordance the user already had rather
+        // than a new offer. The thing his ruling actually forbids is the plugin speaking up for a
+        // second listen after a move, and that is a bubble COUNT.
+        check (r.bubbles.size() == bubblesBefore,
+               "F2-4. ...and says it WITHOUT a new bubble: no automatic second listen is offered, "
+               "which is the server's \"Run a check\" to give (his 19 Oct afternoon ruling)",
+               juce::String ((int) bubblesBefore) + " -> " + juce::String ((int) r.bubbles.size()));
         const int afterOne = r.bubbles.size();
         for (int k = 0; k < 6; ++k) { r.loop.tickNow(); pumpMs (10); }
         check (r.bubbles.size() == afterOne,

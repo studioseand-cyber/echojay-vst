@@ -720,8 +720,13 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
                               int countBefore, int countAfter);
     // The ONE chain-command writer (chain-cmd-<uid>.json v:2): editOps + baseSlots (+ leaseId when the sender holds the rack's
     // lease). Used by the editor's Link-tab edit path and by the borrowed-rack push above. Returns the seq or -1.
+    /** `intent` is the command's purpose when it has one beyond "edit these ops": "build" makes the
+        Link arm its post-build level match, exactly as the borrow push's own intent does (item 4,
+        14 Oct). Additive and ignorable - an older Link reads no intent and behaves as it does
+        today. Empty for an ordinary edit, which must never re-level a rack. */
     int  writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
-                               const juce::String& sourceNote, const juce::String& leaseId);
+                               const juce::String& sourceNote, const juce::String& leaseId,
+                               const juce::String& intent = {});
     // ---- ITEM 1 (Sean, 13 Oct 2026): "SENT" IS NOT "APPLIED" --------------------------------------------
     // The agent's apply sink reported success on `seq >= 0`, which is the return of a FILE WRITE. Sean
     // approved a build for the Kick, was told it landed, and the Kick's Link had nothing on it - then the

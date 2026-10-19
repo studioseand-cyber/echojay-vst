@@ -3427,6 +3427,14 @@ double ChainHost::mappedStepFor (const juce::String& pluginName, const juce::Str
     return 0.0;
 }
 
+bool ChainHost::slotControlConfirmedBySemantic (int slotIndex, const juce::String& semantic) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    const auto label = echojay::semanticLabel (semantic);
+    if (label.isEmpty()) return false;
+    return slots_[(size_t) slotIndex].dialApplied.contains (label);
+}
+
 bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, double& out) const
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;

@@ -1522,6 +1522,9 @@ PlaybackReading ExecutorRead::readPlayback()
         if (out.known && finiteLevel (out.levelDb)) r.integratedLufs = out.levelDb;
         if (std::isfinite (out.maxShortTermDb)) r.loudestShortTermLufs = out.maxShortTermDb;
         if (finiteLevel (out.truePeakDb)) r.truePeakDbtp = out.truePeakDb;
+        // ONE TALLY, ONE RESET: on the open rack these two describe the same span (19 Oct).
+        r.loudestWindowSeconds     = out.heardSeconds;
+        r.integratedIsLongerWindow = false;
         return r;
     }
     const auto a = targetAnalysis();
@@ -1531,6 +1534,10 @@ PlaybackReading ExecutorRead::readPlayback()
     if (finiteLevel (a.integratedLufs)) r.integratedLufs = a.integratedLufs;
     if (finiteLevel (a.shortTermMaxLufs)) r.loudestShortTermLufs = a.shortTermMaxLufs;
     if (finiteLevel (a.truePeakMaxDb)) r.truePeakDbtp = a.truePeakMaxDb;
+    // TWO INSTRUMENTS ON A LINK: the frame's integrated is kept since that rack last changed, which
+    // is longer than this window and is why his loudest read BELOW it. Named, not guessed at.
+    r.loudestWindowSeconds     = a.heardSeconds;
+    r.integratedIsLongerWindow = true;
     return r;
 }
 

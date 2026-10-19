@@ -896,10 +896,25 @@ public:
             staleSaid_ = true;
             log ("landing STALE: the chain's gain changed after the Level was set (" + aimWords()
                  + "), so the figure on the card is true of a chain that no longer exists");
-            emit (aim_ == Aim::matchInput
-                      ? juce::String ("The chain changed after I matched the level. Tap Listen and I'll match it again.")
-                      : "The chain changed after I set the level. Tap Listen and I'll check it against " + aimWords() + ".",
-                  -1.0f, false, false, Bubble::Kind::info, { "Listen" });
+            // ---- NO AUTOMATIC SECOND LISTEN, AND NO ASKING FOR ONE (19 Oct 2026, his ruling) --
+            //
+            // *"No automatic second listen or wait after a move. The server will end with 'How's it
+            // sounding?' / 'Sounds good' / 'Run a check', and only Run a check listens again...
+            // Level matching after a build uses audio that's already playing; if there's none, it
+            // waits silently in the background and never holds the run or the card open."*
+            //
+            // This bubble was the plugin asking for the second listen - with a [Listen] pill, in the
+            // chat, unprompted. It goes. What stays is the silent re-verification below, which is
+            // exactly what he describes: it measures from audio that is already playing, and when
+            // none is it sits owed in the background without a window, a pill or a bubble.
+            // SAID, as his 8 Oct ruling requires (F2-4's subject), on the CARD LINE his 19 Oct
+            // morning ruling chose - and with NO pill, because his 19 Oct afternoon ruling gives
+            // the second listen to the server's "Run a check" alone.
+            sayVerifyLine (aim_ == Aim::matchInput
+                               ? juce::String ("The chain changed after the level was matched - "
+                                               "re-measuring from whatever is playing.")
+                               : "The chain changed after the level was set - re-measuring from "
+                                 "whatever is playing.");
             // 19 Oct 2026: AND MEASURE IT AGAIN OURSELVES, if there is a pass left. His 08:07 run
             // went stale because the threshold loop was still settling the compressor - a chain
             // change we caused, 30 s after the match, which the user cannot be expected to chase
@@ -1772,7 +1787,9 @@ public:
     bool   verifyOwed_ = false;
     bool   verifyResetSeen_ = false;
     int    verifyPasses_ = 0;
-    static constexpr float kVerifyTolDb    = 0.7f;   // closer than anyone can hear on a kick
+    // 0.5 dB is HIS figure (12:27: "correct once if it's off by more than 0.5 dB"). It was 0.7
+    // when I wrote the pass this morning, which was my guess at inaudible; his number wins.
+    static constexpr float kVerifyTolDb    = 0.5f;
     static constexpr int   kMaxVerifyPasses = 2;
     Stage  stage_;                     // levelling v2: the gain this loop drives (rack OUT or limiter IN)
     bool   staleSaid_ = false;         // 08c F2: the stale-landing offer is made once per landing
