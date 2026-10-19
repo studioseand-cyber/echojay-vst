@@ -1009,6 +1009,48 @@ int main()
                "SL4 no code and no text still produces a sentence, not a blank or \"an error\"");
     }
 
+    // ---- S86: ONLY "RUN A CHECK" LISTENS AGAIN (19 Oct 2026, B's section 86(1)) --------------
+    //
+    // *"The closing is a talk ask whose text is the closing... Its id starts with tc_check... Only
+    // 'Run a check' listens again and verifies. Under the contract, a check(playback) after the
+    // move is refused in process unless the user tapped 'Run a check'."*  And Sean: *"your
+    // level-match loop is exempt, it's not the agent asking"* - exempt by construction, since the
+    // loop reads the tallies in-process and never asks for a wait.
+    //
+    // Keyed on B's own id marker. My first cut keyed on "has anything been applied", which refused
+    // the waits that come BEFORE a closing - every wait a run legitimately makes - and turned
+    // fifteen assertions in this file red.
+    {
+        Rig r86;
+        r86.client.start ("mix it", "chat_86");     // a session, as every other leg's rig has
+        r86.round (1);
+        r86.tool (R"({"id":"tc_check_1","name":"talk","args":{"text":"Done.","ask":{"question":"How's it sounding?","choices":[{"label":"Sounds good"},{"label":"Run a check"}]}},"approval":"free"})");
+        r86.await ({ "tc_check_1" });
+        pumpMs (20);
+        check (r86.client.askPending(), "S86a the closing ask is up (its id starts with tc_check)");
+
+        r86.round (2);
+        r86.tool (R"({"id":"tc_w1","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r86.await ({ "tc_w1" });
+        pumpMs (60);
+        check (r86.client.state() != EJAgentClient::State::Listening,
+               "S86b a playback wait AFTER the closing is refused - no second listen he did not ask "
+               "for  (RED as it stood: the run opened a window and waited)", r86.client.statusLine());
+        check (r86.step ("tc_w1") != nullptr
+               && r86.step ("tc_w1")->detail.containsIgnoreCase ("Run a check"),
+               "S86c ...and the row names the chip that would allow one",
+               r86.step ("tc_w1") != nullptr ? r86.step ("tc_w1")->detail.substring (0, 90)
+                                             : juce::String ("no step"));
+
+        r86.client.answerAsk ("Run a check");
+        r86.round (3);
+        r86.tool (R"({"id":"tc_w2","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r86.await ({ "tc_w2" });
+        pumpMs (60);
+        check (r86.client.state() == EJAgentClient::State::Listening && r86.client.playback().active,
+               "S86d after \"Run a check\" the wait runs - one tap, one listen", r86.client.statusLine());
+    }
+
     // ---- X: THE CARD AND THE CHAT, FROM HIS 12:05 SESSION (18 Oct 2026) -----------------------
     {
         using namespace echojay::agentui;

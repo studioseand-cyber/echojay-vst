@@ -229,7 +229,13 @@ private:
     // named hook, never "#define private public" (the EchoJayAPIRequestPin idiom).
     friend struct EJAgentClientTestAccess;
     std::function<void (const juce::String& path, const juce::String& body)> postOverride_;
-    ApprovalMode approvalMode_ = ApprovalMode::Ask;   // Sean's default for a new user
+    ApprovalMode approvalMode_ = ApprovalMode::Ask;
+    /** B's section 86(1), 19 Oct 2026: has anything been APPLIED since the last listen, and has the
+        user tapped "Run a check" since then? A playback wait the AGENT asks for is refused when the
+        first is true and the second is not. The level-match loop is exempt by construction: it
+        reads the chain tallies in-process and never asks for a wait. */
+    bool closingAskSeen_    = false;   // the run has shown its closing ask (id "tc_check...")
+    bool userAskedForCheck_ = false;   // ...and the user has tapped "Run a check" since then   // Sean's default for a new user
 
     // ---- transport ------------------------------------------------------------
     struct Cancel

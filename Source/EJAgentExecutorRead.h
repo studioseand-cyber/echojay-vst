@@ -281,6 +281,7 @@ public:
     void doOp  (const ToolCall& call, Done done) override;
     void check (const ToolCall& call, Done done) override;
     void beginPlaybackWindow() override;
+
     PlaybackReading readPlayback() override;
     juce::String captureCheckpoint (const juce::String& label) override;
     juce::String describeOtherChannel (const ToolCall& call) override;   // item 2: the track name, or "" for self

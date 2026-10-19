@@ -1079,6 +1079,26 @@ void EJAgentClient::runStep (Step& s)
 
     auto done = [this, gen, id] (ToolOutcome o) { completeStep (gen, id, std::move (o)); };
 
+    // ---- A CHECK AFTER A MOVE IS THE USER'S TO ASK FOR (19 Oct 2026, B's section 86(1)) -------
+    //
+    // *"Only 'Run a check' listens again and verifies. Under the contract, a check(playback) after
+    // the move is refused in process unless the user tapped 'Run a check'."*  And Sean: *"your
+    // level-match loop is exempt, it's not the agent asking."*
+    //
+    // The exemption needs no flag: the loudness loop reads the chain tallies in-process and never
+    // comes through here. This is only the AGENT asking him to play again, which is what his change
+    // removes.
+    if (isPlaybackWait (call) && closingAskSeen_ && ! userAskedForCheck_)
+    {
+        log ("playback wait REFUSED: the run has shown its closing and the user has not tapped "
+             "\"Run a check\" (B's section 86(1), Sean's no-second-listen change)");
+        completeStep (generation_, s.id, ToolOutcome::failureFor ("check_not_requested",
+                "a listen after a change needs the user's own \"Run a check\" - the closing offers it. "
+                "Nothing has been measured and nothing is waiting. Do not retry: close with the "
+                "result you have.",
+                "I've made the change - tap \"Run a check\" if you'd like me to listen again."));
+        return;
+    }
     if (isPlaybackWait (call))            { beginPlayback (s); return; }
     if (call.name == "talk")
     {
@@ -1089,6 +1109,18 @@ void EJAgentClient::runStep (Step& s)
             pendingAsk_ = ask;
             if (text.isNotEmpty() && ! ask.question.startsWith (text)) pendingAsk_.question = (text + "\n" + ask.question).trim();
             pendingAskId_ = id;
+            // ---- B'S OWN MARKER FOR THE CLOSING (19 Oct 2026, section 86(1)) ------------------
+            // *"The closing is a talk ask whose text is the closing, with 'How's it sounding?' and
+            // the chips 'Sounds good' / 'Run a check'. Its id starts with tc_check."*  So the
+            // closing is identifiable without reading prose, and a playback wait AFTER it is the
+            // second listen his change removes. Keyed on the id B names, rather than on "has
+            // anything been applied": my first cut used the latter and refused the waits that come
+            // BEFORE a closing, which is every wait a run legitimately makes.
+            if (id.startsWithIgnoreCase ("tc_check"))
+            {
+                closingAskSeen_ = true;
+                log ("the closing ask is up (" + id + "): only \"Run a check\" listens again now");
+            }
             setState (State::AwaitingAsk);
             log ("ask card: \"" + pendingAsk_.question + "\" choices=" + pendingAsk_.labels.joinIntoString ("|")
                  + "  freeText=" + juce::String (pendingAsk_.allowFreeText ? "y" : "n")
@@ -1135,6 +1167,7 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
         s->detail      = echojay::params::plainifyLine (o.landedForTheUser());
         s->modelDetail = o.landedLine != s->detail ? o.landedLine : juce::String();
         s->undoToken = o.undoToken;
+
         s->result = o.result;
         if (s->modelDetail.isNotEmpty())
             log ("step " + id + " landed line split: the row shows \"" + s->detail
@@ -1339,6 +1372,13 @@ void EJAgentClient::submitPlan()
 void EJAgentClient::answerAsk (const juce::String& choiceIn, bool typed)
 {
     const auto choice = choiceIn.trim();
+    // 19 Oct 2026 (B's 86(1)): the one chip that buys another listen, matched on the words the
+    // contract names and on nothing else - a tap meaning "sounds good" must not open a window.
+    if (choice.equalsIgnoreCase ("Run a check"))
+    {
+        userAskedForCheck_ = true;
+        log ("the user tapped \"Run a check\": one more listen is allowed");
+    }
     if (! askPending())
     {
         log ("tap \"" + choice + "\" arrived with no question waiting - saying so, not dropping it");
@@ -1387,6 +1427,8 @@ void EJAgentClient::beginPlayback (Step& s)
     playbackStepId_ = s.id;
     playback_ = {};
     playback_.active = true;
+    // The listen is happening, so the tap is spent: one tap buys one listen.
+    userAskedForCheck_ = false;
     playback_.minSeconds = playbackMinSeconds (s.call);
     playback_.startedMs = nowMs();
     playback_.timeoutSeconds = playbackTimeoutS;
