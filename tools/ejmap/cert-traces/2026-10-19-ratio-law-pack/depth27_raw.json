@@ -1,0 +1,644 @@
+[
+ {
+  "name": "API-2500 (m)",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.69,
+    84
+   ],
+   "6-9": [
+    1.72,
+    48
+   ],
+   "9-12": [
+    1.72,
+    36
+   ],
+   ">12": [
+    1.71,
+    44
+   ]
+  },
+  "verdict": "constant, not the label"
+ },
+ {
+  "name": "API-2500 (s)",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.69,
+    83
+   ],
+   "6-9": [
+    1.72,
+    50
+   ],
+   "9-12": [
+    1.72,
+    34
+   ],
+   ">12": [
+    1.71,
+    44
+   ]
+  },
+  "verdict": "constant, not the label"
+ },
+ {
+  "name": "Bettermaker Bus Compressor DSP",
+  "label": 2.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.68,
+    52
+   ],
+   "6-9": [
+    2.0,
+    22
+   ],
+   "9-12": [
+    2.0,
+    15
+   ],
+   ">12": [
+    2.0,
+    11
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "bx_townhouse Buss Compressor",
+  "label": 2.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.96,
+    49
+   ],
+   "6-9": [
+    2.37,
+    26
+   ],
+   "9-12": [
+    2.76,
+    18
+   ],
+   ">12": [
+    3.39,
+    33
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "C1 comp (m)",
+  "label": 4.13,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.03,
+    94
+   ],
+   "6-9": [
+    3.57,
+    47
+   ],
+   "9-12": [
+    5.13,
+    39
+   ],
+   ">12": [
+    2.82,
+    222
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "C1 comp (s)",
+  "label": 4.13,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.03,
+    94
+   ],
+   "6-9": [
+    3.57,
+    47
+   ],
+   "9-12": [
+    5.13,
+    39
+   ],
+   ">12": [
+    2.82,
+    222
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "C1 comp-gate (m)",
+  "label": 4.13,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.03,
+    94
+   ],
+   "6-9": [
+    3.57,
+    47
+   ],
+   "9-12": [
+    5.13,
+    39
+   ],
+   ">12": [
+    2.82,
+    222
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "C1 comp-gate (s)",
+  "label": 4.13,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.03,
+    94
+   ],
+   "6-9": [
+    3.57,
+    47
+   ],
+   "9-12": [
+    5.13,
+    39
+   ],
+   ">12": [
+    2.82,
+    222
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "C1 comp-sc (m)",
+  "label": 4.13,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.03,
+    94
+   ],
+   "6-9": [
+    3.57,
+    47
+   ],
+   "9-12": [
+    5.13,
+    39
+   ],
+   ">12": [
+    2.82,
+    222
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "C1 comp-sc (s)",
+  "label": 4.13,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.03,
+    94
+   ],
+   "6-9": [
+    3.57,
+    47
+   ],
+   "9-12": [
+    5.13,
+    39
+   ],
+   ">12": [
+    2.82,
+    222
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "DPR-402 (m)",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.38,
+    87
+   ],
+   "6-9": [
+    2.86,
+    47
+   ],
+   "9-12": [
+    4.55,
+    39
+   ],
+   ">12": [
+    5.06,
+    154
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "elysia alpha mix",
+  "label": 1.5,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.36,
+    59
+   ],
+   "6-9": [
+    1.47,
+    14
+   ],
+   "9-12": null,
+   ">12": null
+  },
+  "verdict": "constant = label"
+ },
+ {
+  "name": "kHs Compressor",
+  "label": 2.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.0,
+    73
+   ],
+   "6-9": [
+    2.0,
+    43
+   ],
+   "9-12": [
+    2.0,
+    33
+   ],
+   ">12": [
+    2.0,
+    41
+   ]
+  },
+  "verdict": "constant = label"
+ },
+ {
+  "name": "Lindell 254E",
+  "label": 3.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.8,
+    79
+   ],
+   "6-9": [
+    2.44,
+    27
+   ],
+   "9-12": [
+    2.99,
+    23
+   ],
+   ">12": [
+    3.7,
+    55
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "Lindell SBC",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.61,
+    65
+   ],
+   "6-9": [
+    1.72,
+    34
+   ],
+   "9-12": [
+    1.75,
+    15
+   ],
+   ">12": [
+    1.77,
+    6
+   ]
+  },
+  "verdict": "constant, not the label"
+ },
+ {
+  "name": "MCompressor",
+  "label": 1.8,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.5,
+    53
+   ],
+   "6-9": [
+    2.11,
+    35
+   ],
+   "9-12": [
+    1.77,
+    35
+   ],
+   ">12": [
+    1.31,
+    94
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "RCompressor (m)",
+  "label": 4.34,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.08,
+    86
+   ],
+   "6-9": [
+    3.77,
+    56
+   ],
+   "9-12": [
+    5.48,
+    46
+   ],
+   ">12": [
+    3.28,
+    277
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "RCompressor (s)",
+  "label": 4.34,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.08,
+    86
+   ],
+   "6-9": [
+    3.77,
+    56
+   ],
+   "9-12": [
+    5.48,
+    46
+   ],
+   ">12": [
+    3.28,
+    277
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "Solid Bus Comp",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.29,
+    56
+   ],
+   "6-9": [
+    2.67,
+    28
+   ],
+   "9-12": [
+    2.9,
+    26
+   ],
+   ">12": [
+    3.17,
+    58
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "SSL Native Bus Compressor 2",
+  "label": 2.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    1.42,
+    113
+   ],
+   "6-9": [
+    1.85,
+    47
+   ],
+   "9-12": [
+    2.2,
+    31
+   ],
+   ">12": [
+    2.63,
+    57
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "SSL Native X-Comp v6",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    4.0,
+    63
+   ],
+   "6-9": [
+    4.0,
+    37
+   ],
+   "9-12": [
+    4.0,
+    33
+   ],
+   ">12": [
+    4.0,
+    120
+   ]
+  },
+  "verdict": "constant = label"
+ },
+ {
+  "name": "SSL Native X-ValveComp v6",
+  "label": 5.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    3.08,
+    39
+   ],
+   "6-9": [
+    5.0,
+    19
+   ],
+   "9-12": [
+    5.0,
+    17
+   ],
+   ">12": [
+    5.0,
+    39
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "SSLComp (m)",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    3.45,
+    59
+   ],
+   "6-9": [
+    3.92,
+    37
+   ],
+   "9-12": [
+    4.17,
+    33
+   ],
+   ">12": [
+    4.71,
+    120
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "SSLComp (s)",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    3.45,
+    59
+   ],
+   "6-9": [
+    3.92,
+    37
+   ],
+   "9-12": [
+    4.17,
+    33
+   ],
+   ">12": [
+    4.71,
+    120
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "Tube-Tech CL 1B",
+  "label": 6.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    2.11,
+    106
+   ],
+   "6-9": [
+    2.7,
+    65
+   ],
+   "9-12": [
+    3.39,
+    45
+   ],
+   ">12": [
+    6.06,
+    211
+   ]
+  },
+  "verdict": "varies with depth"
+ },
+ {
+  "name": "Unfiltered Audio Zip",
+  "label": 4.14,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    4.17,
+    48
+   ],
+   "6-9": [
+    4.17,
+    35
+   ],
+   "9-12": [
+    4.17,
+    33
+   ],
+   ">12": [
+    4.17,
+    254
+   ]
+  },
+  "verdict": "constant = label"
+ },
+ {
+  "name": "VBC FG-Red",
+  "label": 4.0,
+  "levels": 31,
+  "bands": {
+   "2-6": [
+    4.88,
+    69
+   ],
+   "6-9": [
+    4.76,
+    49
+   ],
+   "9-12": [
+    4.76,
+    41
+   ],
+   ">12": [
+    4.65,
+    191
+   ]
+  },
+  "verdict": "constant, not the label"
+ }
+]
