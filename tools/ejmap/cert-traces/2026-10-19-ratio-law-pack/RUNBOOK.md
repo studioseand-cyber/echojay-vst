@@ -22,7 +22,7 @@ For each product it lists the probe calls:
 
 A ratio control whose readings are non-linear or named (C1's, DPR-402's) says "placed at run time": one extra load reads the plugin's own ratio text on a grid, with no audio, after the licence gate.
 
-It also prints the law at the measured setting from your existing sweep. A soft-knee unit misses there at its label (the CL 1B by up to 5.2 dB) because the knee is wide, not because the label is wrong. The run measures above the knee.
+It also prints the law at the measured setting from your existing sweep. A unit whose slope changes with depth misses there at its label (the CL 1B by up to 5.2 dB). The note says why one ratio per setting does not describe such units.
 
 ## 3. The run
 ```
