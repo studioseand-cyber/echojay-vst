@@ -195,7 +195,7 @@ inline juce::var lookup (const juce::File& w, const juce::var& a, const juce::St
 // --- THE ENGINE: ejmap --wizard in its own process group --------------------------------------------------------------------------------
 struct Engine
 {
-    pid_t pid = -1; juce::String mode;
+    pid_t pid = -1, group = -1; juce::String mode;   // group: the process group it started (its first pid) - kept after it ends, to close what is left
     bool start (const juce::File& exe, const juce::StringArray& args, const juce::File& log, const juce::String& m)
     {
         std::vector<std::string> sv { exe.getFullPathName().toStdString() }; for (const auto& a : args) sv.push_back (a.toStdString());
@@ -207,7 +207,7 @@ struct Engine
         const int rc = posix_spawn (&pid, argv[0], &fa, &at, argv.data(), environ);
         posix_spawn_file_actions_destroy (&fa); posix_spawnattr_destroy (&at);
         if (rc != 0) { pid = -1; return false; }
-        mode = m; return true;
+        mode = m; group = pid; return true;
     }
     bool running() const { return pid > 0; }
     std::optional<int> poll()   // the exit code once it has ended
@@ -290,7 +290,8 @@ public:
         shimmer.tick = [this] { if (wizapp::shimmerOn (screen, pausing, finishing)) repaint(); };   // 15 Oct: the wave by the title and the job lines too
         shimmer.startTimerHz (30);   // 15 Oct: the shimmer moves even while one plugin takes 20 minutes
     }
-    ~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }   // 14 Oct: never leave an engine running
+    ~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause();
+                                  else if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty()) logLine ("quit: closed what the engine left running: " + left.joinIntoString (", ")); }   // 19 Oct   // 14 Oct: never leave an engine running
 
     // closing the window PAUSES: the engine stops cleanly (Phase B's SIGINT), the app quits when it has
     bool requestQuit (bool askFirst = true)
@@ -794,6 +795,8 @@ private:
         repaint(); snapAtQuarters();
         if (const auto code = engine.poll())
         {
+            if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty())   // 19 Oct: nothing the engine started outlives it
+                logLine ("closed what the engine left running: " + left.joinIntoString (", "));
             awake.hold (false); logLine ("engine ended: " + juce::String (*code) + ", keep-awake released");
             if (screen == Screen::measuring) handleCheckpoint();   // the pause's checkpoint (packed just before the engine ended)
             if (quitting) { juce::JUCEApplication::getInstance()->quit(); return; }

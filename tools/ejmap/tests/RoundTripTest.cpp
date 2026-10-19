@@ -10274,7 +10274,7 @@ void testWizardCategories()
                && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") >= 0 && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") < quickLoop.indexOf ("quickCheck (qopt")
                && quickLoop.contains ("quickCacheF.replaceWithText") && step1.contains ("quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver, fmtTag (ir.desc))), {})")
                && run.contains ("if (wizapp::orphaned (getppid())) { ::kill (0, SIGINT); return; }")
-               && app.contains ("~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause(); }"),
+               && app.contains ("~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause();"),   // 19 Oct: then the group is closed (WZ-PROBE-END-1)
                "wizard WZ-SCAN-2: the DB step loads nothing; one count without the out-of-scope-by-type (69 of 1285 draws 5.4%); read-back checks stoppable + cached; orphan engines stop (read: " + juce::String ((int) read) + ")");
     }
     // WZ-QC-1 THE ONE-LOAD READ-BACK CHECK (Kathy, 14 Oct): every control the check reads in ONE probe load (--text-at-norms-multi, each
@@ -12920,6 +12920,43 @@ int main (int, char**)
                && wr.contains ("if (id.instrument) { vrow (id.name, {}, \"out_of_scope\", \"an instrument (the wizard measures effects): not measured\"); continue; }")
                && wr.contains ("id.instrument = readback::vst3FieldOf (r.out, \"instrument\") == \"1\";") && probe.contains ("\\tinstrument\\t%d\\n"),
                "wizard WZ-ARCH-1: a VST3 without this Mac's architecture (Mach-O header, nothing loaded) is wont_load, never loaded; EchoJay's own and instruments are out of scope, said; an unreadable header leaves the load to decide");
+    }
+    // WZ-PROBE-END-1 NOTHING THE ENGINE STARTS OUTLIVES IT (Kathy, 19 Oct: two warm probes hosting UAD strips were still running half an hour
+    // after the run ended). Real processes: (a) a kill reaches every level (a row's probe sits under its section process; the old loops
+    // killed direct children only); (b) a timed-out child takes its grandchildren with it (the old timeout killed the child alone);
+    // (c) the app closes whatever is left in the engine's process group when the engine ends, and on quit
+    {
+        auto alive = [] (const char* sleepArg) {   // the sleep process itself (anchored: the shells whose command lines hold the text don't count)
+            const std::string cmd = std::string ("/usr/bin/pgrep -f '^sleep ") + sleepArg + "$'"; int n = 0;
+            if (FILE* f = popen (cmd.c_str(), "r")) { char buf[64]; while (fgets (buf, sizeof buf, f)) ++n; pclose (f); } return n; };
+        auto spawn = [] (const char* script, bool ownGroup) -> pid_t {
+            std::vector<std::string> sv { "/bin/sh", "-c", script }; std::vector<char*> av; for (auto& x : sv) av.push_back (x.data()); av.push_back (nullptr);
+            posix_spawnattr_t at; posix_spawnattr_init (&at); if (ownGroup) { posix_spawnattr_setflags (&at, POSIX_SPAWN_SETPGROUP); posix_spawnattr_setpgroup (&at, 0); }
+            pid_t p = 0; const int rc = posix_spawn (&p, "/bin/sh", nullptr, &at, av.data(), environ); posix_spawnattr_destroy (&at); return rc == 0 ? p : -1; };
+        // (a) sh -> sh -> sleep: three levels
+        const pid_t a = spawn ("/bin/sh -c 'sleep 91.71; true' & sleep 91.72", false);   // '; true' keeps the inner shell (no exec): three levels
+        for (int w = 0; w < 40 && ejmap::cert::descendantsOf (a).size() < 3; ++w) juce::Thread::sleep (50);   // the tree forms
+        const int levels = (int) ejmap::cert::descendantsOf (a).size(); const int beforeA = alive ("91.71");
+        ejmap::cert::killDescendants (a); kill (a, SIGKILL); { int st = 0; waitpid (a, &st, 0); } juce::Thread::sleep (200);
+        const int afterA = alive ("91.71") + alive ("91.72");
+        // (b) a timed-out child whose grandchild sleeps
+        const auto r = ejmap::cert::runChildDirect ({ "/bin/sh", "-c", "/bin/sh -c 'sleep 92.82; true' & sleep 92.83" }, 500); juce::Thread::sleep (200);
+        const int afterB = alive ("92.82");
+        // (c) the engine's group after the engine: the leader has exited, an orphan stays in its group
+        const pid_t g = spawn ("sleep 93.91 & exit 0", true); { int st = 0; waitpid (g, &st, 0); } juce::Thread::sleep (200);
+        const int orphanBefore = alive ("93.91"); const auto closed = ejmap::wizapp::closeProcessGroup (g); juce::Thread::sleep (200);
+        const int orphanAfter = alive ("93.91"); const auto none = ejmap::wizapp::closeProcessGroup (g);
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (levels >= 3 && beforeA == 1 && afterA == 0 && r.kind == ejmap::cert::ChildResult::Kind::timedOut && afterB == 0
+               && orphanBefore == 1 && closed.size() == 1 && closed[0].startsWith ("sleep (pid ") && orphanAfter == 0 && none.isEmpty()
+               && app.contains ("mode = m; group = pid; return true;") && app.contains ("if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty())   // 19 Oct")
+               && app.contains ("else if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty()) logLine (\"quit: closed what the engine left running: \"")
+               && drv.contains ("inline void killTree (pid_t pid) { killDescendants (pid); kill (pid, SIGKILL); }")
+               && drv.contains ("(19 Oct: every level)\n                killDescendants (pid);\n                kill (pid, SIGKILL);"),
+               "wizard WZ-PROBE-END-1: a kill reaches every level (" + juce::String (levels) + " found), a timed-out child takes its grandchildren, the engine's group is closed when it ends and on quit ('"
+                 + closed.joinIntoString (", ") + "') [a " + juce::String (beforeA) + "/" + juce::String (afterA) + " b " + juce::String ((int) r.kind) + "/" + juce::String (afterB)
+                 + " c " + juce::String (orphanBefore) + "/" + juce::String (orphanAfter) + " none " + juce::String (none.size()) + "]");
     }
     // WZ-NET-1 THE SAFETY NET (Kathy, 18 Oct, CONFIRMED - "must be fixed before beta"): a queued plugin left without an outcome by the last run
     // AND this one is filed not_measurable with what it was left as; one left for the first time, or settled, is untouched; the end guard files

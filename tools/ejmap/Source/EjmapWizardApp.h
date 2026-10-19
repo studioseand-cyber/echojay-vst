@@ -13,6 +13,9 @@
   Pinned in RoundTripTest.cpp (WZ-APP-*).
 */
 #pragma once
+#include <libproc.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include "EjmapWizard.h"
 #include <juce_core/juce_core.h>
@@ -55,6 +58,24 @@ inline juce::String redact (juce::String text, const juce::String& home, const j
     if (user.length() >= 3) text = text.replace (user, "<user>");
     if (host.length() >= 3) text = text.replace (host, "<host>");
     return text.replace ("/Users/", "/<users>/");   // any other account's folder too
+}
+// THE ENGINE'S GROUP AT THE END (Kathy, 19 Oct: two warm probes hosting UAD strips were still running half an hour after the run ended).
+// The engine starts in its own process group, and everything it starts - its rows, their probes, an orphan whose parent died - keeps that
+// group. When the engine has ended, nothing of it should be left: every member still in the group is closed (SIGKILL), and named
+inline std::vector<pid_t> processGroupMembers (pid_t pgid)
+{
+    std::vector<pid_t> out; if (pgid <= 1) return out;
+    int n = proc_listpgrppids (pgid, nullptr, 0); if (n <= 0) return out;
+    std::vector<pid_t> v ((size_t) n + 16); n = proc_listpgrppids (pgid, v.data(), (int) (v.size() * sizeof (pid_t)));
+    for (int i = 0; i < n; ++i) if (v[(size_t) i] > 1 && v[(size_t) i] != getpid()) out.push_back (v[(size_t) i]);
+    return out;
+}
+inline juce::String processName (pid_t p) { char b[PROC_PIDPATHINFO_MAXSIZE] = {}; return proc_pidpath (p, b, sizeof b) > 0 ? juce::File (juce::String::fromUTF8 (b)).getFileName() : juce::String (p); }
+inline juce::StringArray closeProcessGroup (pid_t pgid)   // what it closed ("EchoJayProbe (pid 57694)"); empty = nothing was left
+{
+    juce::StringArray closed;
+    for (pid_t p : processGroupMembers (pgid)) { const auto n = processName (p); if (kill (p, SIGKILL) == 0) closed.add (n + " (pid " + juce::String (p) + ")"); }
+    return closed;
 }
 inline juce::var readSkip (const juce::File& work)
 {
