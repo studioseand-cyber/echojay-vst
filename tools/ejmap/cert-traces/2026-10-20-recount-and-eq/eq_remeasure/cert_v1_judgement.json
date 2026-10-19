@@ -1,0 +1,74 @@
+[
+  {
+    "category": "eq",
+    "product": "LinEQ Broadband (s)",
+    "plugin_id": "AudioUnit|4657707d|12.0.0",
+    "pass": false,
+    "why": "Band1 gain pass (3 positions); Band1 freq not_tested (0 labelled position(s)); Band1 q not_tested (the display is not a Q number); Band2 gain fail ('-10.0' measured -6.60); Band2 freq not_tested (0 labelled position(s)); Band2 q not_tested (the display is not a Q number); Band3 gain fail ('-10.0' measured -8.87); Band3 freq not_tested (0 labelled position(s)); Band3 q not_tested (the display is not a Q number); Band4 gain pass (3 positions); Band4 freq not_tested (0 labelled position(s)); Band4 q not_tested (the display is not a Q number); Band5 gain pass (3 positions); Band5 freq not_tested (0 labelled position(s)); Band5 q not_tested (the display is not a Q number); Band6 gain pass (3 positions); Band6 freq not_tested (0 labelled position(s)); Band6 q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "REQ 6 (m)",
+    "plugin_id": "AudioUnit|58570763|12.0.0",
+    "pass": false,
+    "why": "Band1 gain pass (5 positions); Band1 freq not_tested (0 labelled position(s)); Band1 q not_tested (the display is not a Q number); Band2 gain pass (5 positions); Band2 freq not_tested (0 labelled position(s)); Band2 q not_tested (the display is not a Q number); Band3 gain pass (5 positions); Band3 freq not_tested (0 labelled position(s)); Band3 q not_tested (the display is not a Q number); Band4 gain pass (5 positions); Band4 freq not_tested (0 labelled position(s)); Band4 q not_tested (the display is not a Q number); Band5 gain pass (5 positions); Band5 freq not_tested (0 labelled position(s)); Band5 q not_tested (the display is not a Q number); Band6 gain pass (5 positions); Band6 freq not_tested (0 labelled position(s)); Band6 q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "H-EQ-Light (m)",
+    "plugin_id": "AudioUnit|4f577d63|12.0.0",
+    "pass": false,
+    "why": "HF gain pass (5 positions); HF freq not_tested (0 labelled position(s)); HF q not_tested (the display is not a Q number); HMF gain fail ('-12.00' measured -9.42); HMF freq not_tested (0 labelled position(s)); HMF q not_tested (the display is not a Q number); LF gain pass (5 positions); LF freq not_tested (0 labelled position(s)); LF q not_tested (the display is not a Q number); LMF gain fail ('-12.00' measured -9.41); LMF freq not_tested (0 labelled position(s)); LMF q not_tested (the display is not a Q number); MF gain fail ('-12.00' measured -9.41); MF freq not_tested (0 labelled position(s)); MF q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "H-EQ (s)",
+    "plugin_id": "AudioUnit|4243607d|12.0.0",
+    "pass": false,
+    "why": "HF gain pass (5 positions); HF freq not_tested (0 labelled position(s)); HF q not_tested (the display is not a Q number); HMF gain fail ('-12.00' measured -9.42); HMF freq not_tested (0 labelled position(s)); HMF q not_tested (the display is not a Q number); LF gain pass (5 positions); LF freq not_tested (0 labelled position(s)); LF q not_tested (the display is not a Q number); LMF gain fail ('-12.00' measured -9.41); LMF freq not_tested (0 labelled position(s)); LMF q not_tested (the display is not a Q number); MF gain fail ('-12.00' measured -9.41); MF freq not_tested (0 labelled position(s)); MF q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "H-EQ-Light (s)",
+    "plugin_id": "AudioUnit|4f577d7d|12.0.0",
+    "pass": false,
+    "why": "HF gain pass (5 positions); HF freq not_tested (0 labelled position(s)); HF q not_tested (the display is not a Q number); HMF gain fail ('-12.00' measured -9.42); HMF freq not_tested (0 labelled position(s)); HMF q not_tested (the display is not a Q number); LF gain pass (5 positions); LF freq not_tested (0 labelled position(s)); LF q not_tested (the display is not a Q number); LMF gain fail ('-12.00' measured -9.41); LMF freq not_tested (0 labelled position(s)); LMF q not_tested (the display is not a Q number); MF gain fail ('-12.00' measured -9.41); MF freq not_tested (0 labelled position(s)); MF q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "H-EQ (m)",
+    "plugin_id": "AudioUnit|42436063|12.0.0",
+    "pass": false,
+    "why": "HF gain pass (5 positions); HF freq not_tested (0 labelled position(s)); HF q not_tested (the display is not a Q number); HMF gain fail ('-12.00' measured -9.42); HMF freq not_tested (0 labelled position(s)); HMF q not_tested (the display is not a Q number); LF gain pass (5 positions); LF freq not_tested (0 labelled position(s)); LF q not_tested (the display is not a Q number); LMF gain fail ('-12.00' measured -9.41); LMF freq not_tested (0 labelled position(s)); LMF q not_tested (the display is not a Q number); MF gain fail ('-12.00' measured -9.41); MF freq not_tested (0 labelled position(s)); MF q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "REQ 2 (m)",
+    "plugin_id": "AudioUnit|58570363|12.0.0",
+    "pass": false,
+    "why": "Band1 gain pass (5 positions); Band1 freq not_tested (0 labelled position(s)); Band1 q not_tested (the display is not a Q number); Band6 gain pass (5 positions); Band6 freq not_tested (0 labelled position(s)); Band6 q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "LinEQ Broadband (m)",
+    "plugin_id": "AudioUnit|46577063|12.0.0",
+    "pass": false,
+    "why": "Band1 gain pass (3 positions); Band1 freq not_tested (0 labelled position(s)); Band1 q not_tested (the display is not a Q number); Band2 gain fail ('-10.0' measured -6.60); Band2 freq not_tested (0 labelled position(s)); Band2 q not_tested (the display is not a Q number); Band3 gain fail ('-10.0' measured -8.87); Band3 freq not_tested (0 labelled position(s)); Band3 q not_tested (the display is not a Q number); Band4 gain pass (3 positions); Band4 freq not_tested (0 labelled position(s)); Band4 q not_tested (the display is not a Q number); Band5 gain pass (3 positions); Band5 freq not_tested (0 labelled position(s)); Band5 q not_tested (the display is not a Q number); Band6 gain pass (3 positions); Band6 freq not_tested (0 labelled position(s)); Band6 q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  },
+  {
+    "category": "eq",
+    "product": "REQ 4 (m)",
+    "plugin_id": "AudioUnit|58570563|12.0.0",
+    "pass": false,
+    "why": "Band1 gain pass (5 positions); Band1 freq not_tested (0 labelled position(s)); Band1 q not_tested (the display is not a Q number); Band2 gain pass (5 positions); Band2 freq not_tested (0 labelled position(s)); Band2 q not_tested (the display is not a Q number); Band5 gain pass (5 positions); Band5 freq not_tested (0 labelled position(s)); Band5 q not_tested (the display is not a Q number); Band6 gain pass (5 positions); Band6 freq not_tested (0 labelled position(s)); Band6 q not_tested (the display is not a Q number)",
+    "certified_parts": []
+  }
+]
