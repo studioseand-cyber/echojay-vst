@@ -38,18 +38,20 @@ inline std::vector<std::pair<double, double>> ratioLawPositions (const juce::var
 inline int ratioLawScoreFile (const juce::File& results)
 {
     auto r = juce::JSON::parse (results.loadFileAsString()); if (! r.isObject()) { std::cout << "RATIO-LAW: cannot read " << results.getFullPathName() << std::endl; return 2; }
-    std::vector<ratiolaw::Point> pts;
+    std::vector<ratiolaw::Point> pts; int unread = 0;
     if (const auto* runs = r.getProperty ("runs", {}).getArray())
         for (const auto& run : *runs)
-            if (const auto* ls = run.getProperty ("levels", {}).getArray())
+            if (! run.hasProperty ("labelled_ratio")) ++unread;   // 19 Oct: the setting it landed on was not read - never scored as the aimed ratio
+            else if (const auto* ls = run.getProperty ("levels", {}).getArray())
                 for (const auto& l : *ls)
                 {
-                    ratiolaw::Point p; p.ratio = (double) run.getProperty ("labelled_ratio", run.getProperty ("ratio", 0.0)); p.position = run.getProperty ("position", 0.0); p.T = run.getProperty ("T_dbfs", 0.0);
+                    ratiolaw::Point p; p.ratio = (double) run.getProperty ("labelled_ratio", 0.0); p.position = run.getProperty ("position", 0.0); p.T = run.getProperty ("T_dbfs", 0.0);
                     p.ratioNorm = run.getProperty ("ratio_norm", -1.0); p.ratioText = run.getProperty ("landed_text", "").toString();
                     p.input = l.getProperty ("input_dbfs", 0.0); if (const auto g = l.getProperty ("gr_db", {}); g.isDouble() || g.isInt()) p.gr = (double) g; pts.push_back (p);
                 }
     const auto v = ratiolaw::score (pts, (double) r.getProperty ("knee_db", 0.0), (double) r.getProperty ("measured_ratio", 0.0));
-    if (auto* o = r.getDynamicObject()) { o->setProperty ("ratio_law", ratiolaw::block (v)); o->setProperty ("verdict", v.words); }
+    if (auto* o = r.getDynamicObject()) { auto b = ratiolaw::block (v); if (auto* bo = b.getDynamicObject()) bo->setProperty ("runs_unread", unread); o->setProperty ("ratio_law", b); o->setProperty ("verdict", v.words); }
+    if (unread > 0) std::cout << "  " << unread << " run(s) left unscored: the ratio they landed on was not read" << std::endl;
     results.replaceWithText (juce::JSON::toString (r) + "\n");
     std::cout << "RATIO-LAW: " << r.getProperty ("product", "").toString() << " - " << v.words << std::endl;
     for (const auto& rr : v.ratios) std::cout << "  " << ratiolaw::ratioWords (rr.ratio) << ":1  " << (rr.tested ? (rr.pass ? "PASS  " : "FAIL  ") : "--    ") << rr.why << std::endl;
@@ -75,7 +77,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == ratioName) { ratioCtl = c; ratioIdx = (int) c.getProperty ("index", -1); }
     juce::String refused; auto settings = ratiolaw::settingsFor (ratioCtl, measured, refused, ctl.withMeasured);
     // 19 Oct: a ratio control the record cannot place (non-linear, named positions) is placed at RUN time from the plugin's own texts
-    const bool placeAtRun = ratioIdx >= 0 && settings.empty() && refused.isNotEmpty();
+    const bool placeAtRun = ratioIdx >= 0;   // 19 Oct: ALWAYS from the plugin's own texts at run time (the record's range put Zip's 4.14 at 1.41)
     if (ratioIdx < 0 || (settings.empty() && ! placeAtRun)) { say ("RATIO-LAW: " + product + " - " + (refused.isNotEmpty() ? refused : juce::String ("no ratio setting to test besides the measured one"))); return 3; }
     const auto positions = ratioLawPositions (profile);
     if (positions.empty()) { say ("RATIO-LAW: " + product + " - the profile's tone check has no g 2 / g 4 pick to test at"); return 3; }
@@ -117,8 +119,8 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     say ("RATIO-LAW: " + product + " " + record.getProperty ("version", "").toString() + " - measured at " + juce::String (measured, 1) + ":1 ([" + juce::String (ratioIdx) + "] " + ratioName
          + "), knee " + juce::String (kneeDb, 1) + " dB; " + (placeAtRun ? "the ratio settings placed at run time, then up to " + juce::String (4 * (int) poss.size()) : juce::String ((int) jobs.size())) + " probe call(s):");
     if (placeAtRun)
-    {   say ("  the ratio control cannot be placed from the record (" + refused + "): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at "
-             + juce::String ((int) ratioGrid.size()) + " points - one load, no audio, after the licence gate");
+    {   say ("  " + (refused.isNotEmpty() ? "the ratio control cannot be placed from the record (" + refused + ")" : juce::String ("the record's placement below is a guide only"))
+             + ": every ratio setting is placed at run time at a position whose text the plugin printed (" + juce::String ((int) ratioGrid.size()) + " points read - one load, no audio, after the licence gate); the measured one at the profile's own norm");
         for (const auto& p : poss)
         {   juce::StringArray l; for (double x : p.levels) l.add (juce::String (x, 2));
             say ("  each placed ratio at the g " + juce::String (p.g, 0) + " position (norm " + juce::String (p.norm, 4) + ", T " + juce::String (p.T.T, 2) + " dBFS from the sweep, its slope there "
@@ -147,7 +149,9 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
         if (r.kind == ChildResult::Kind::uiShown) { say ("RATIO-LAW: " + product + " - a window while reading the ratio texts: closed, not clicked; stopped"); return 6; }
         if (! r.cleanExit()) { say ("RATIO-LAW: " + product + " - the ratio texts could not be read: " + r.describe()); return 4; }
         std::vector<std::tuple<double, bool, juce::String>> grid; for (const auto& row : pitch::parseTextGrid (r.out)) grid.push_back ({ row.norm, row.landed, row.text });
-        juce::String why; settings = ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured);
+        juce::String why; settings = ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured, true);
+        if (const auto pn = rt.getProperty ("curve", {})[0].getProperty ("norm", {}); ctl.withMeasured && (pn.isDouble() || pn.isInt()))   // the measured setting: exactly as profiled
+            for (auto& s : settings) if (juce::String (s.why) == "the measured") { s.ratio = measured; s.norm = (double) pn; }
         if (settings.empty()) { say ("RATIO-LAW: " + product + " - read on the plugin: " + (why.isNotEmpty() ? why : juce::String ("no ratio setting besides the measured one"))); return 3; }
         juce::StringArray placed; for (const auto& s : settings) placed.add (ratiolaw::ratioWords (s.ratio) + ":1 (" + s.why + ") at norm " + juce::String (s.norm, 4));
         say ("  placed from the plugin's own texts: " + placed.joinIntoString ("; "));

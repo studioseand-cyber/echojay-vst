@@ -45,7 +45,7 @@ inline std::optional<double> ratioOfText (const juce::String& t)
 // THE SETTINGS: the record's ratio control (its range, or its displayAt points) -> the lowest, 2:1, 4:1 and the highest, each with
 // the norm that writes it; the measured ratio and duplicates skipped; a ratio outside the control's range is not offered
 struct Setting { double ratio = 0.0, norm = 0.0; juce::String why; };
-inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double measuredRatio, juce::String& refused, bool includeMeasured = false)   // includeMeasured: the CONTROL run (19 Oct) measures the measured setting too
+inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double measuredRatio, juce::String& refused, bool includeMeasured = false, bool snapToRead = false)   // includeMeasured: the CONTROL run (19 Oct) measures the measured setting too
 {
     std::vector<std::pair<double, double>> pts;   // (ratio, norm), ascending by norm
     if (const auto* o = ratioControl.getProperty ("displayAt", {}).getDynamicObject())
@@ -73,6 +73,13 @@ inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double m
     {
         if (! includeMeasured && std::abs (r - measuredRatio) < kSameRatio) continue;   // already measured
         bool dup = false; for (const auto& s : out) dup = dup || std::abs (s.ratio - r) < kSameRatio; if (dup) continue;
+        if (snapToRead)   // 19 Oct (Zip, the Lindells): write only where a text was READ - the nearest read ratio, never a norm between reads
+        {   const std::pair<double, double>* best = nullptr;
+            for (const auto& p : pts) if ((r >= kInfRatio) == (p.first >= kInfRatio) && (! best || std::abs (std::log2 (p.first / r)) < std::abs (std::log2 (best->first / r)))) best = &p;
+            if (! best) continue;
+            bool dupRead = false; for (const auto& s : out) dupRead = dupRead || std::abs (s.ratio - best->first) < kSameRatio; if (dupRead) continue;
+            if (! includeMeasured && std::abs (best->first - measuredRatio) < kSameRatio) continue;
+            out.push_back ({ best->first, best->second, why }); continue; }
         if (const auto n = normOf (r)) out.push_back ({ r, *n, why });
     }
     return out;
