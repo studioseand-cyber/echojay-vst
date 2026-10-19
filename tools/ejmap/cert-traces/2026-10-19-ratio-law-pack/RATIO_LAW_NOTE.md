@@ -67,12 +67,12 @@ Median local ratio per GR band (2-6 / 6-9 / 9-12 / beyond 12 dB), from each reco
 - So no v3d: re-deriving `measured_ratio` from disk would not change what the server does.
 
 ## What we propose to supply (your call)
-- **Per tested ratio setting, the measured curve:** input at g dB of GR (`in_at_gr_dbfs`), from the knee upward, as you already have at the measured setting. The ratio law run collects it (the deep inputs need `--levels-above`).
+- **Per tested ratio setting, the measured curve** (`ratio_law.curves`, shape below): input at g dB of GR, from below the knee to the deepest GR reached. The pack collects it (T-6..T+44, a deep position, the measured setting included).
 - **The `measured_ratios` table stays as a summary.** `use_effective` is false for the C1 at every setting, which correctly tells the server not to use a scalar there.
 - **We have NOT changed `measured_ratio` in any profile and made no v3d.** The fix Kathy asked for assumed the C1 would settle at its label above the knee. It doesn't, so a "better" single ratio would mislead in the same way.
 
 ## The check (RATIO_LAW_PACK)
-- **Settings:** the lowest, 2:1, 4:1 and the highest (the measured setting skipped), at the tone check's g 2 and g 4 positions, inputs T+6/9/12. Points under half a knee above T are left out.
+- **Settings:** the lowest, 2:1, 4:1, the highest and the measured one, at the tone check's g 2 and g 4 positions and a deep position, inputs T-6 to T+44 in 2 dB steps. The law's pass/fail leaves out points under half a knee above T; the curves keep every reading.
 - **Non-linear or named ratio dials** (C1, DPR-402) are placed from the plugin's own text, one extra load after the licence gate.
 - **Lists** (B's 27 adjustable; the 18 fixed-ratio are out of scope):
   - `products_sean_mac.txt`: 20: the 7 licence-bound on Kathy's Mac (MCompressor, CL 1B, VBC FG-Red: PACE; the three SSL Native; kHs Compressor) and the 13 Waves profiles (API-2500 m/s, DPR-402, the six C1 variants, SSLComp m/s, RCompressor m/s), served at 15.0.70 while Kathy's Mac has 12.0.0. Dry run: 20 of 20 planned.
@@ -91,10 +91,32 @@ Median local ratio per GR band (2-6 / 6-9 / 9-12 / beyond 12 dB), from each reco
   "effective_ratio": {"2.00": 2.02, "4.00": 3.96, "10.00": 6.1},
   "threshold_shift_db": {"2.00": 0.1, "4.00": 0.0, "10.00": 1.4},
   "measured_ratios": [{"labelled": 10, "effective": 6.1, "worst_db_label": 2.9, "worst_db_effective": 0.3, "use_effective": true, "points": 6}],
+  "curves": [
+    {"ratio": 2.0, "set": "2.00:1", "norm": 0.362847,
+     "curve": [
+       {"norm": 0.8, "eff_threshold_dbfs": -25.4, "in_at_gr_dbfs": {"1": -25.4, "2": -22.61, "3": -20.9, "4": -19.22, "5": -17.5, "6": -15.61, "7": -13.62, "8": -11.6, "9": -9.4, "10": -7.13}},
+       {"norm": 0.6, "eff_threshold_dbfs": -45.6, "in_at_gr_dbfs": {"1": -45.6, "2": -42.86, "15": -12.0}}
+     ]},
+    {"ratio": "inf", "set": "Inf", "norm": 1.0, "curve": [ ... ]}
+  ],
   "rule": "GR = (input - T) x (1 - 1/ratio), T from the measured sweep; pass within 0.5 dB at every point from the knee upward; never past the lowest or highest ratio tested"
 }
 ```
 The numbers above are an example.
+
+**`curves`, exactly** (the agreed per-setting measured curves):
+- One entry per tested ratio setting, **including the measured one**:
+  - `ratio`: the labelled value read back from the plugin, as a number, or `"inf"`;
+  - `set`: the text the plugin printed;
+  - `norm`: the ratio control's norm that was written.
+- `curve`: one entry per threshold position. The shape is **the same as `amount.curve[]` entries**:
+  - `norm` is the threshold control's norm;
+  - `in_at_gr_dbfs` maps whole-dB GR keys `"1"`, `"2"`, … to the input level (dBFS peak, 0.01 dB) at which GR first reaches that many dB, interpolated between adjacent readings;
+  - `eff_threshold_dbfs` equals `in_at_gr_dbfs["1"]` when key 1 exists.
+- **A setting that never reaches 1 dB of GR (1:1, for example) keeps its entry with an empty `curve`.**
+- **Keys run from 1 to the deepest GR read and never beyond.** They are not capped at 12 (the C1 reached 33 dB). A key below the first reading is absent, not guessed.
+- **Positions:** the tone check's g 2 and g 4 picks, plus one deep position (the amount curve's position with T nearest -46 dBFS), so each setting reaches deep GR.
+- **Inputs:** T-6 to T+44 dB in 2 dB steps, up to -0.5 dBFS.
 
 - **Without the block:** the maths only at the measured setting, from the measured curve, as you do now.
 - **`lib/compProfile.js` must accept the field before we send a profile carrying it.** Nothing has been sent.

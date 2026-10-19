@@ -7,7 +7,7 @@
     the call: the tone check's own (--sweep at the position, the profile's engage / neutral writes) with the ratio write swapped - one
     process per (ratio, position), GR read after settling; the landed ratio read back as the plugin prints it.
   Licence gate first (a product the session knows needs a licence is not loaded); a window stops that product. Writes
-  <cert>/ratio_law/<stem>.ratio_law.json (ej_ratio_law_run/1: every reading, the raw traces under raw/) with the verdict and the proposed
+  <cert>/ratio_law/<stem>.ratio_law.json (ej_ratio_law_run/2; 19 Oct: T-6..T+44 and a deep position, per-setting curves: every reading, the raw traces under raw/) with the verdict and the proposed
   ratio_law block. --dry-run prints the plan and loads nothing.
     ejmap --ratio-law --cert <cert folder> --only <product>... [--dry-run] [--probe <path>] [--ejmap-ledger <dir>] [--timeout-s N]
     ejmap --ratio-law-score <results.json>     (our side: the verdict again from the readings - loads nothing)
@@ -45,6 +45,7 @@ inline int ratioLawScoreFile (const juce::File& results)
                 for (const auto& l : *ls)
                 {
                     ratiolaw::Point p; p.ratio = (double) run.getProperty ("labelled_ratio", run.getProperty ("ratio", 0.0)); p.position = run.getProperty ("position", 0.0); p.T = run.getProperty ("T_dbfs", 0.0);
+                    p.ratioNorm = run.getProperty ("ratio_norm", -1.0); p.ratioText = run.getProperty ("landed_text", "").toString();
                     p.input = l.getProperty ("input_dbfs", 0.0); if (const auto g = l.getProperty ("gr_db", {}); g.isDouble() || g.isInt()) p.gr = (double) g; pts.push_back (p);
                 }
     const auto v = ratiolaw::score (pts, (double) r.getProperty ("knee_db", 0.0), (double) r.getProperty ("measured_ratio", 0.0));
@@ -95,9 +96,16 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     {
         const auto T = ratiolaw::thresholdAt (curve, norm);
         if (! T.ok) { say ("RATIO-LAW: " + product + " - no threshold from the sweep at norm " + juce::String (norm, 4) + " (g " + juce::String (g, 0) + "): position skipped"); continue; }
-        std::vector<double> lv; for (double up : (ctl.ups.empty() ? ratiolaw::levelsAboveThreshold() : ctl.ups)) if (T.T + up <= -0.5) lv.push_back (std::round ((T.T + up) * 100.0) / 100.0);
+        std::vector<double> lv; for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups)) if (T.T + up <= -0.5) lv.push_back (std::round ((T.T + up) * 100.0) / 100.0);
         poss.push_back ({ g, norm, T, lv });
     }
+    // THE DEEP POSITION (19 Oct): the amount curve's position whose T sits nearest kDeepT (g 0 in the plan and the files), so each setting's
+    // curve reaches deep GR; only when it is deeper than the picks
+    {   double bestNorm = -1.0, bestD = 1e9; ratiolaw::Line bestT;
+        if (const auto* a = curve.getArray()) for (const auto& c : *a) if (const auto l = ratiolaw::thresholdAtPoint (c); l.ok && std::abs (l.T - ratiolaw::kDeepT) < bestD) { bestD = std::abs (l.T - ratiolaw::kDeepT); bestNorm = c.getProperty ("norm", 0.0); bestT = l; }
+        bool deeper = bestNorm >= 0.0; for (const auto& p : poss) deeper = deeper && bestT.T < p.T.T - 6.0;
+        if (deeper) { std::vector<double> lv; for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups)) if (bestT.T + up <= -0.5) lv.push_back (std::round ((bestT.T + up) * 100.0) / 100.0);
+                      poss.push_back ({ 0.0, bestNorm, bestT, lv }); } }
     std::vector<Job> jobs;
     auto makeJobs = [&] { jobs.clear(); for (const auto& p : poss) for (const auto& s : settings) jobs.push_back ({ s, p.g, p.norm, p.T, p.levels }); };
     makeJobs();
@@ -178,7 +186,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
         say ("  " + juce::String (j.s.ratio, 1) + ":1 at g " + juce::String (j.g, 0) + ": " + r.describe());
     }
     auto* res = new juce::DynamicObject();
-    res->setProperty ("schema", "ej_ratio_law_run/1"); res->setProperty ("product", product); res->setProperty ("plugin_id", pid); res->setProperty ("version", record.getProperty ("version", ""));
+    res->setProperty ("schema", "ej_ratio_law_run/2"); res->setProperty ("product", product); res->setProperty ("plugin_id", pid); res->setProperty ("version", record.getProperty ("version", ""));
     res->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", "")); res->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (true)); res->setProperty ("host", opt.hostVersion);
     res->setProperty ("measured_ratio", measured); res->setProperty ("knee_db", kneeDb); res->setProperty ("ratio_control", ratioName); res->setProperty ("ratio_index", ratioIdx);
     { auto* m = new juce::DynamicObject(); m->setProperty ("ratio", measured); m->setProperty ("worst_db", std::round (atMeasured.worst * 100.0) / 100.0); m->setProperty ("status", atMeasured.status); m->setProperty ("words", atMeasured.words);

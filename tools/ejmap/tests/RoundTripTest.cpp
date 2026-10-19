@@ -4723,11 +4723,36 @@ void testSweepQuietReference()
             check (with.size() == 4 && with[0].ratio == 6.0 && juce::String (with[0].why) == "the measured" && std::abs (with[0].norm - 0.5) < 1e-9 && with[1].ratio == 2.0 && with[3].ratio == 10.0
                    && without.size() == 3 && without[0].ratio == 2.0
                    && run.contains ("ratiolaw::settingsFor (ratioCtl, measured, refused, ctl.withMeasured);") && run.contains ("ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured);")
-                   && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::levelsAboveThreshold() : ctl.ups))")
+                   && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups))")
                    && run.contains ("for (int k = all.size(); --k >= 0;) if (all[k].startsWith (juce::String (i) + \":\")) all.remove (k); all.add (juce::String (i) + \":\" + juce::String (n, 6));")
                    && run.contains ("const auto stem = pid.replace (\"|\", \"_\") + ctl.tag;")
                    && mainSrc.contains ("else if (k == \"--with-measured\") ctl.withMeasured = true;") && mainSrc.contains ("return ejmap::cert::runRatioLawAll (o, cert, only, dry, ctl);"),
                    "cert WZ-RATIO-4: the control run keeps the measured setting (first), takes its own levels, swaps a write on top of the profile's (replaced, not doubled), tags its files; the default is untouched");
+        }
+        // WZ-RATIO-5 THE PER-SETTING CURVES (Kathy, 19 Oct: Sean and B agreed): each (setting, position) yields in_at_gr_dbfs in the served
+        // amount.curve shape - whole-dB keys from 1 to the deepest GR read, the input interpolated at each, the first crossing on a curve that
+        // falls back, never extrapolated; the ladder runs T-6 .. T+44 (2 dB) and a deep position joins the picks; the block carries the curves
+        {
+            using namespace ejmap::ratiolaw;
+            std::vector<std::pair<double, double>> lin; for (double x = -30.0; x <= 0.001; x += 2.0) lin.push_back ({ x, juce::jmax (0.0, (x + 20.0) * 0.75) });
+            const auto m = inAtGr (lin);
+            std::vector<std::pair<double, double>> hump { { -30, 0.0 }, { -28, 4.0 }, { -26, 10.0 }, { -24, 6.0 }, { -22, 12.0 } };
+            const auto h = inAtGr (hump);
+            std::vector<ejmap::ratiolaw::Point> pts;
+            for (double x = -30.0; x <= 0.001; x += 2.0) { ejmap::ratiolaw::Point q; q.ratio = 4.0; q.ratioNorm = 0.479; q.ratioText = "4.00:1"; q.position = 0.6; q.T = -20.0; q.input = x; q.gr = juce::jmax (0.0, (x + 20.0) * 0.75); pts.push_back (q); }
+            const auto blk = block (score (pts, 6.0, 2.0));
+            const auto cvs = blk.getProperty ("curves", {}); const bool haveCurves = cvs.isArray() && cvs.size() > 0;   // a missing block fails, never crashes
+            const auto c0 = haveCurves ? cvs[0] : juce::var(); const auto cl = c0.getProperty ("curve", {}); const auto p0 = cl.isArray() && cl.size() > 0 ? cl[0] : juce::var(); const auto k = p0.getProperty ("in_at_gr_dbfs", {});
+            const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapRatioLawRun.h").loadFileAsString();
+            check (m.size() == 15 && std::abs (m.at (1) - (-20.0 + 4.0 / 3.0)) < 0.006 && std::abs (m.at (15) - 0.0) < 1e-9 && m.count (16) == 0 && std::abs (m.at (6) - (-12.0)) < 1e-9
+                   && h.size() == 12 && std::abs (h.at (5) - (-27.67)) < 1e-9 && std::abs (h.at (7) - (-27.0)) < 1e-9 && std::abs (h.at (10) - (-26.0)) < 1e-9 && std::abs (h.at (11) - (-22.33)) < 1e-9 && h.count (13) == 0
+                   && curveLadder().size() == 26 && curveLadder().front() == -6.0 && curveLadder().back() == 44.0
+                   && (double) c0.getProperty ("ratio", 0.0) == 4.0 && c0.getProperty ("set", "").toString() == "4.00:1" && std::abs ((double) c0.getProperty ("norm", 0.0) - 0.479) < 1e-9
+                   && (double) p0.getProperty ("norm", 0.0) == 0.6 && (double) p0.getProperty ("eff_threshold_dbfs", 0.0) == (double) k.getProperty ("1", 1.0) && k.getDynamicObject() != nullptr && k.getDynamicObject()->getProperties().size() == 15
+                   && haveCurves && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups)) if (T.T + up <= -0.5)")
+                   && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups)) if (bestT.T + up <= -0.5)") && run.contains ("bool deeper = bestNorm >= 0.0; for (const auto& p : poss) deeper = deeper && bestT.T < p.T.T - 6.0;")
+                   && run.contains ("p.ratioNorm = run.getProperty (\"ratio_norm\", -1.0); p.ratioText = run.getProperty (\"landed_text\", \"\").toString();"),
+                   "cert WZ-RATIO-5: per-setting curves in the served shape (whole-dB keys, interpolated, first crossing, never extrapolated: " + juce::String ((int) m.size()) + " keys), the T-6..T+44 ladder, a deep position, the block carries them");
         }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);

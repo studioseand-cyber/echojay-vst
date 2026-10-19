@@ -27,6 +27,11 @@ inline constexpr double kDefaultKneeDb = 6.0;   // a profile that states no knee
 inline constexpr double kSameRatio = 0.05;
 inline constexpr double kInfRatio = 1000.0;     // "Inf" / "inf:1" / the infinity sign: a limiting position - placed only where it is READ, never interpolated to
 inline const std::vector<double>& levelsAboveThreshold() { static const std::vector<double> v { 6.0, 9.0, 12.0 }; return v; }
+// THE CURVE LADDER (19 Oct, Sean and B: per-setting measured curves): T-6 .. T+44 in 2 dB steps, so each setting's curve runs from below the
+// knee to the deepest GR the C1 control reached (34 dB); inputs above -0.5 dBFS are dropped by the caller
+inline const std::vector<double>& curveLadder() { static const std::vector<double> v = [] { std::vector<double> x; for (int u = -6; u <= 44; u += 2) x.push_back ((double) u); return x; }(); return v; }
+inline constexpr double kDeepT = -46.0;   // the deep position: the curve position whose T sits nearest this, so T+44 reaches about -2 dBFS
+inline constexpr int kMaxCurveKey = 40;
 
 // "6:1" / "6.0 : 1" / "6" -> 6; anything else -> nullopt
 inline std::optional<double> ratioOfText (const juce::String& t)
@@ -119,6 +124,7 @@ inline Line thresholdAt (const juce::var& amountCurve, double norm)
 
 // THE SCORING
 struct Point { double ratio = 0.0;          // the LABELLED ratio the write landed on (the plugin's own text, read back)
+               double ratioNorm = -1.0; juce::String ratioText;   // the ratio write and its landed text (the curves carry them)
                double position = 0.0, T = 0.0;  // the threshold position (norm) and its T from the existing sweep
                double input = 0.0;               // dBFS, the same convention as the sweep (peak)
                std::optional<double> gr; };      // measured; none = no reading
@@ -197,6 +203,42 @@ inline Verdict score (const std::vector<Point>& points, double kneeDbIn, double 
     return v;
 }
 
+// THE CURVE OF ONE (setting, position): in_at_gr_dbfs {"1": dBFS, "2": ...} in the served amount.curve format - the input at which GR
+// first reaches each whole dB, interpolated between adjacent readings, from 1 dB to the deepest GR read (never extrapolated)
+inline std::map<int, double> inAtGr (std::vector<std::pair<double, double>> inGr)   // (input dBFS, GR dB)
+{
+    std::sort (inGr.begin(), inGr.end());
+    std::map<int, double> out;
+    for (int g = 1; g <= kMaxCurveKey; ++g)
+        for (size_t i = 0; i + 1 < inGr.size(); ++i)
+        {   const auto [x0, g0] = inGr[i]; const auto [x1, g1] = inGr[i + 1];
+            if (g0 < g && g <= g1 && g1 > g0) { out[g] = std::round ((x0 + (g - g0) * (x1 - x0) / (g1 - g0)) * 100.0) / 100.0; break; } }
+    return out;
+}
+inline juce::var curvesOf (const std::vector<Judged>& points)
+{
+    std::map<double, std::map<double, std::vector<std::pair<double, double>>>> by;   // ratio -> position -> (input, GR)
+    std::map<double, std::pair<double, juce::String>> setOf;
+    for (const auto& j : points) if (j.p.gr) { const double r = std::round (j.p.ratio * 100.0) / 100.0; by[r][j.p.position].push_back ({ j.p.input, *j.p.gr }); if (j.p.ratioNorm >= 0.0) setOf[r] = { j.p.ratioNorm, j.p.ratioText }; }
+    juce::Array<juce::var> curves;
+    for (const auto& [r, ps] : by)
+    {
+        auto* c = new juce::DynamicObject(); c->setProperty ("ratio", r >= kInfRatio ? juce::var ("inf") : juce::var (r));
+        if (setOf.count (r)) { c->setProperty ("set", setOf[r].second); c->setProperty ("norm", setOf[r].first); }
+        juce::Array<juce::var> positions;
+        for (const auto& [pos, pts] : ps)
+        {
+            const auto m = inAtGr (pts); if (m.empty()) continue;
+            auto* p = new juce::DynamicObject(); p->setProperty ("norm", pos);
+            if (m.count (1)) p->setProperty ("eff_threshold_dbfs", m.at (1));
+            auto* k = new juce::DynamicObject(); for (const auto& [g, x] : m) k->setProperty (juce::String (g), x); p->setProperty ("in_at_gr_dbfs", juce::var (k));
+            positions.add (juce::var (p));
+        }
+        c->setProperty ("curve", positions); curves.add (juce::var (c));
+    }
+    return curves;
+}
+
 // THE PROFILE FIELD (proposed): ratio_law {status, tested_ratios, safe_ratios, safe_between, worst_db, knee_db, measured_ratio, ...}.
 // A profile WITHOUT it: the maths only at its measured ratio
 inline juce::var block (const Verdict& v)
@@ -219,6 +261,7 @@ inline juce::var block (const Verdict& v)
         t->setProperty ("worst_db_label", std::round (r.worst * 100.0) / 100.0); t->setProperty ("worst_db_effective", std::round (r.worstEffective * 100.0) / 100.0);
         t->setProperty ("use_effective", r.effectivePass); t->setProperty ("points", r.judged); table.add (juce::var (t)); }
     o->setProperty ("measured_ratios", table);
+    o->setProperty ("curves", curvesOf (v.points));   // 19 Oct: per setting, the measured curve in the served amount.curve shape
     o->setProperty ("rule", "GR = (input - T) x (1 - 1/ratio), T from the measured sweep; pass within 0.5 dB at every point from the knee upward; never past the lowest or highest ratio tested; measured_ratios[].use_effective: the same rule with the effective ratio in place of the label");
     return juce::var (o);
 }

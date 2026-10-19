@@ -846,7 +846,7 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 - **CL 1B and MCompressor:** not measured (licence-bound here). Their figures above stand as data, not as a verdict on their labels.
 
 ### 16.4 The profile field (proposed): `ratio_law`
-- **Fields:** `{status: verified | partial | none, tested_ratios, safe_ratios, safe_between, worst_db, knee_db, measured_ratio, effective_ratio {ratio: value}, threshold_shift_db {ratio: dB}, rule}`.
+- **Fields:** `{status: verified | partial | none, tested_ratios, safe_ratios, safe_between, worst_db, knee_db, measured_ratio, effective_ratio {ratio: value}, threshold_shift_db {ratio: dB}, rule}, measured_ratios[], curves[]}`. `curves[]` (19 Oct, agreed by Sean and B): per setting `{ratio, set, norm, curve: [{norm, eff_threshold_dbfs, in_at_gr_dbfs {"1" .. deepest}}]}`, each curve entry in the amount.curve shape; T-6..T+44, g 2 / g 4 / deep positions; pin WZ-RATIO-5.
 - **Use:** "verified" lets the maths run between the lowest and highest tested ratios; "partial" only at `safe_ratios` (and inside `safe_between`); "none" only at the measured ratio, if that passes.
 - **The default for a profile without the block: the maths only at its measured ratio.**
 - **Sean's validator (`lib/compProfile.js`) must accept the field before we send a profile carrying it.** Until then no profile carries it.
