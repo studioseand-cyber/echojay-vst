@@ -25,6 +25,7 @@ inline constexpr double kPassDb = 0.5;          // predicted vs measured GR, eve
 inline constexpr double kThresholdMoveDb = 0.5; // a ratio's own threshold (from its slope) further than this from T: "threshold moved"
 inline constexpr double kDefaultKneeDb = 6.0;   // a profile that states no knee: points less than 3 dB above T are not judged
 inline constexpr double kSameRatio = 0.05;
+inline constexpr double kSineRmsDb = 3.0103;  // 19 Oct: SERVED dBFS are sine RMS (EjmapProfileExport: our peak level - 3.0103); the probe drives PEAK. In: +, out: -
 inline constexpr double kInfRatio = 1000.0;     // "Inf" / "inf:1" / the infinity sign: a limiting position - placed only where it is READ, never interpolated to
 inline const std::vector<double>& levelsAboveThreshold() { static const std::vector<double> v { 6.0, 9.0, 12.0 }; return v; }
 // THE CURVE LADDER (19 Oct, Sean and B: per-setting measured curves): T-6 .. T+44 in 2 dB steps, so each setting's curve runs from below the
@@ -109,7 +110,7 @@ inline Line thresholdAtPoint (const juce::var& curvePoint)
 {
     std::vector<std::pair<double, double>> pts;
     if (const auto* o = curvePoint.getProperty ("in_at_gr_dbfs", {}).getDynamicObject())
-        for (const auto& p : o->getProperties()) { const int g = p.name.toString().getIntValue(); if (g >= 2 && (p.value.isDouble() || p.value.isInt())) pts.push_back ({ (double) p.value, (double) g }); }
+        for (const auto& p : o->getProperties()) { const int g = p.name.toString().getIntValue(); if (g >= 2 && (p.value.isDouble() || p.value.isInt())) pts.push_back ({ (double) p.value + kSineRmsDb, (double) g }); }   // served RMS -> peak
     return fitLine (pts);
 }
 // T at any norm: the two curve positions around it, each its own line, interpolated (never past the measured curve)
@@ -237,8 +238,9 @@ inline juce::var curvesOf (const std::vector<Judged>& points)
         {
             const auto m = inAtGr (pts); if (m.empty()) continue;
             auto* p = new juce::DynamicObject(); p->setProperty ("norm", pos);
-            if (m.count (1)) p->setProperty ("eff_threshold_dbfs", m.at (1));
-            auto* k = new juce::DynamicObject(); for (const auto& [g, x] : m) k->setProperty (juce::String (g), x); p->setProperty ("in_at_gr_dbfs", juce::var (k));
+            auto rms = [] (double peak) { return std::round ((peak - kSineRmsDb) * 100.0) / 100.0; };   // out in the served convention: sine RMS dBFS
+            if (m.count (1)) p->setProperty ("eff_threshold_dbfs", rms (m.at (1)));
+            auto* k = new juce::DynamicObject(); for (const auto& [g, x] : m) k->setProperty (juce::String (g), rms (x)); p->setProperty ("in_at_gr_dbfs", juce::var (k));
             positions.add (juce::var (p));
         }
         c->setProperty ("curve", positions); curves.add (juce::var (c));
@@ -268,7 +270,7 @@ inline juce::var block (const Verdict& v)
         t->setProperty ("worst_db_label", std::round (r.worst * 100.0) / 100.0); t->setProperty ("worst_db_effective", std::round (r.worstEffective * 100.0) / 100.0);
         t->setProperty ("use_effective", r.effectivePass); t->setProperty ("points", r.judged); table.add (juce::var (t)); }
     o->setProperty ("measured_ratios", table);
-    o->setProperty ("curves", curvesOf (v.points));   // 19 Oct: per setting, the measured curve in the served amount.curve shape
+    o->setProperty ("curves", curvesOf (v.points)); o->setProperty ("level_ref", "sine_rms_dbfs");   // the served convention, as amount.curve   // 19 Oct: per setting, the measured curve in the served amount.curve shape
     o->setProperty ("rule", "GR = (input - T) x (1 - 1/ratio), T from the measured sweep; pass within 0.5 dB at every point from the knee upward; never past the lowest or highest ratio tested; measured_ratios[].use_effective: the same rule with the effective ratio in place of the label");
     return juce::var (o);
 }
@@ -284,7 +286,7 @@ inline Verdict lawAtMeasuredRatio (const juce::var& amountCurve, double measured
             if (const auto* o = c.getProperty ("in_at_gr_dbfs", {}).getDynamicObject())
                 for (const auto& p : o->getProperties())
                     if (p.value.isDouble() || p.value.isInt())
-                    { Point q; q.ratio = measuredRatio; q.position = (double) c.getProperty ("norm", 0.0); q.T = l.T; q.input = (double) p.value; q.gr = (double) p.name.toString().getIntValue(); pts.push_back (q); }
+                    { Point q; q.ratio = measuredRatio; q.position = (double) c.getProperty ("norm", 0.0); q.T = l.T; q.input = (double) p.value + kSineRmsDb; q.gr = (double) p.name.toString().getIntValue(); pts.push_back (q); }
         }
     return score (pts, kneeDb, measuredRatio);
 }

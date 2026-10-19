@@ -1,0 +1,28 @@
+API-2500 (m)                   | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Side-Chai | in-buses 2
+API-2500 (s)                   | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Side-Chai | in-buses 2
+Bettermaker Bus Compressor DSP | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Sidechain | in-buses 2
+bx_townhouse Buss Compressor   | traces {'unconnected': 16} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Input #2", " | in-buses 2
+C1 comp (m)                    | traces {'unconnected': 32} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Side-Chain I | in-buses 2
+C1 comp (s)                    | traces {'unconnected': 32} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Side-Chain I | in-buses 2
+C1 comp-gate (m)               | traces {'enabled_silent': 32} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+C1 comp-gate (s)               | traces {'enabled_silent': 32} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+C1 comp-sc (m)                 | traces {'enabled_silent': 32} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+C1 comp-sc (s)                 | traces {'enabled_silent': 32} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+DPR-402 (m)                    | traces {'enabled_silent': 26} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Side-Chai | in-buses 2
+elysia alpha mix               | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+kHs Compressor                 | traces {'enabled_silent': 24} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Aux # 1", | in-buses 2
+Lindell 254E                   | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Sidechain | in-buses 2
+Lindell SBC                    | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Sidechain | in-buses 2
+MCompressor                    | traces {'enabled_silent': 25} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Sidechain | in-buses 2
+RCompressor (m)                | traces {'unconnected': 30} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Side-Chain I | in-buses 2
+RCompressor (s)                | traces {'unconnected': 30} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Side-Chain I | in-buses 2
+Solid Bus Comp                 | traces {'enabled_silent': 17} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Input #2" | in-buses 2
+SSL Native Bus Compressor 2    | traces {'enabled_silent': 18} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Key Input | in-buses 2
+SSL Native X-Comp v6           | traces {'enabled_silent': 27} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+SSL Native X-ValveComp v6      | traces {'enabled_silent': 16} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+SSLComp (m)                    | traces {'unconnected': 21} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Side-Chain I | in-buses 2
+SSLComp (s)                    | traces {'unconnected': 21} | record.sidechain {"policy": "unconnected", "extraInputBuses": [{"index": 1, "name": "Side-Chain I | in-buses 2
+Tube-Tech CL 1B                | traces {'enabled_silent': 28} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Side Chai | in-buses 2
+Unfiltered Audio Zip           | traces {'enabled_silent': 25} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": [{"index": 1, "name": "Sidechain | in-buses 2
+VBC FG-Red                     | traces {'enabled_silent': 30} | record.sidechain {"policy": "enabled_silent", "extraInputBuses": []} | in-buses 1
+Counter({('enabled_silent',): 20, ('unconnected',): 7})

@@ -4619,7 +4619,7 @@ void testSweepQuietReference()
                    && (double) blk.getProperty ("safe_between", {})[1] == 4.0 && blk.getProperty ("status", "").toString() == "partial" && blk.getProperty ("safe_ratios", {}).size() == 2
                    && st.size() == 3 && st[0].ratio == 2.0 && st[0].norm == 0.0 && std::abs (st[1].norm - 0.25) < 1e-9 && st[2].ratio == 10.0 && st[2].norm == 1.0
                    && at4.size() == 2 && at4[0].ratio == 2.0 && at4[1].ratio == 10.0 && st2.size() == 4 && std::abs (st2[0].ratio - 1.5) < 1e-9 && std::abs (st2[1].norm - 0.1666667) < 1e-6 && std::abs (st2[2].norm - 0.6) < 1e-9 && st2[3].ratio == 8.0 && st2[3].norm == 1.0
-                   && line.ok && std::abs (line.T + 20.0) < 1e-9 && std::abs (line.slope - 1.0) < 1e-9 && mid.ok && std::abs (mid.T + 25.0) < 0.01
+                   && line.ok && std::abs (line.T - (-20.0 + kSineRmsDb)) < 1e-9 && std::abs (line.slope - 1.0) < 1e-9 && mid.ok && std::abs (mid.T - (-25.0 + kSineRmsDb)) < 0.01   // 19 Oct: served RMS -> peak
                    && atMeasured.status == "none" && atMeasured.worst > 1.0 && ratioOfText ("6:1") == 6.0 && ! ratioOfText ("Off"),
                    "cert WZ-RATIO-1: a true ratio verifies (2-10:1); a moving threshold fails (" + juce::String (rr (moving, 2.0).thresholdShift, 2) + " dB at 2:1); a ratio off its label fails (effective "
                      + juce::String (rr (offLabel, 10.0).effectiveRatio, 2) + ":1 for 10:1); soft-knee points under the knee excluded, not failed; partial -> safe 2, 4 only; never past the tested ends");
@@ -4785,6 +4785,29 @@ void testSweepQuietReference()
                    && run.contains ("const bool placeAtRun = ratioIdx >= 0;") && run.contains ("ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured, true);")
                    && run.contains ("for (auto& s : settings) if (juce::String (s.why) == \"the measured\") { s.ratio = measured; s.norm = (double) pn; }"),
                    "cert WZ-RATIO-6: every write at a READ ratio (Zip: 4.14 / 1 / 1.41 / 100), the measured at the profile's norm, an unread landing left unscored");
+        }
+        // WZ-RATIO-7 THE SERVED CONVENTION (Kathy, 19 Oct: Zip read +3.01 dB off its served curve): served dBFS are sine RMS (our peak - 3.0103),
+        // the probe drives peak. T and the measured-setting law convert the served curve IN (+3.0103); the per-setting curves go OUT in sine RMS
+        // with level_ref; a run file from the earlier packs (run/1, run/2: T stored as served) is converted when re-scored. On Zip the fixed
+        // reading matches the served curve to 0.04 dB at norm 0.4 and verifies 1 / 1.94 / 4.14 / 100:1 (shift 0.00)
+        {
+            using namespace ejmap::ratiolaw;
+            const auto pt = juce::JSON::parse (R"({"norm":0.4,"in_at_gr_dbfs":{"2":-44.61,"3":-43.31,"6":-39.31}})");
+            const auto l = thresholdAtPoint (pt);
+            std::vector<ejmap::ratiolaw::Point> pts; for (double x = -50.0; x <= -30.0; x += 2.0) { ejmap::ratiolaw::Point q; q.ratio = 4.0; q.position = 0.4; q.T = -45.0; q.input = x; q.gr = juce::jmax (0.0, (x + 45.0) * 0.75); pts.push_back (q); }
+            const auto blk = block (score (pts, 6.0, 2.0));
+            const auto cv = blk.getProperty ("curves", {}); const auto k = cv.isArray() && cv.size() > 0 && cv[0].getProperty ("curve", {}).size() > 0 ? cv[0].getProperty ("curve", {})[0].getProperty ("in_at_gr_dbfs", {}) : juce::var();
+            auto mkRun = [] (const char* schema) { return juce::String (R"({"schema":")") + schema + R"(","product":"x","knee_db":6.0,"measured_ratio":4.0,"runs":[{"ratio":4.0,"labelled_ratio":4.0,"position":0.4,"T_dbfs":-48.0,"levels":[{"input_dbfs":-39.0,"gr_db":4.5},{"input_dbfs":-36.0,"gr_db":6.75},{"input_dbfs":-33.0,"gr_db":9.0}]}]})"; };
+            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_ratio7.json");
+            tmp.replaceWithText (mkRun ("ej_ratio_law_run/2")); ejmap::cert::ratioLawScoreFile (tmp); const auto old2 = juce::JSON::parse (tmp.loadFileAsString());
+            tmp.replaceWithText (mkRun ("ej_ratio_law_run/3")); ejmap::cert::ratioLawScoreFile (tmp); const auto new3 = juce::JSON::parse (tmp.loadFileAsString()); tmp.deleteFile();
+            const double sh2 = old2.getProperty ("ratio_law", {}).getProperty ("threshold_shift_db", {}).getProperty ("4.00", 99.0), sh3 = new3.getProperty ("ratio_law", {}).getProperty ("threshold_shift_db", {}).getProperty ("4.00", 99.0);
+            const auto atM = lawAtMeasuredRatio (juce::JSON::parse (R"([{"norm":0.4,"in_at_gr_dbfs":{"1":-46.0,"2":-44.67,"4":-42.0,"6":-39.34,"9":-35.34,"12":-31.34}}])"), 4.0, 6.0);
+            check (l.ok && std::abs (l.T - (-47.31 + kSineRmsDb)) < 0.05 && k.isObject() && std::abs ((double) k.getProperty ("4", 0.0) - (-45.0 + 4.0 / 0.75 - kSineRmsDb)) < 0.006
+                   && blk.getProperty ("level_ref", "").toString() == "sine_rms_dbfs"
+                   && std::abs (sh2 - (-45.0 - (-48.0 + kSineRmsDb))) < 0.01 && std::abs (sh3 - 3.0) < 0.01
+                   && atM.status == "verified" && atM.worst < 0.05,
+                   "cert WZ-RATIO-7: served RMS in (+3.0103), curves out in sine RMS with level_ref, earlier run files converted when re-scored (shift " + juce::String (sh2, 2) + " vs " + juce::String (sh3, 2) + "), the measured law on a true 4:1 verifies (" + atM.status + ")");
         }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);

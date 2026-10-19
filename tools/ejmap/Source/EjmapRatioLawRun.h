@@ -7,7 +7,7 @@
     the call: the tone check's own (--sweep at the position, the profile's engage / neutral writes) with the ratio write swapped - one
     process per (ratio, position), GR read after settling; the landed ratio read back as the plugin prints it.
   Licence gate first (a product the session knows needs a licence is not loaded); a window stops that product. Writes
-  <cert>/ratio_law/<stem>.ratio_law.json (ej_ratio_law_run/2; 19 Oct: T-6..T+44 and a deep position, per-setting curves: every reading, the raw traces under raw/) with the verdict and the proposed
+  <cert>/ratio_law/<stem>.ratio_law.json (ej_ratio_law_run/3 - T and inputs in peak, the curves sine RMS as served; 19 Oct: T-6..T+44 and a deep position, per-setting curves: every reading, the raw traces under raw/) with the verdict and the proposed
   ratio_law block. --dry-run prints the plan and loads nothing.
     ejmap --ratio-law --cert <cert folder> --only <product>... [--dry-run] [--probe <path>] [--ejmap-ledger <dir>] [--timeout-s N]
     ejmap --ratio-law-score <results.json>     (our side: the verdict again from the readings - loads nothing)
@@ -39,13 +39,14 @@ inline int ratioLawScoreFile (const juce::File& results)
 {
     auto r = juce::JSON::parse (results.loadFileAsString()); if (! r.isObject()) { std::cout << "RATIO-LAW: cannot read " << results.getFullPathName() << std::endl; return 2; }
     std::vector<ratiolaw::Point> pts; int unread = 0;
+    const auto schema = r.getProperty ("schema", "").toString(); const bool oldT = schema == "ej_ratio_law_run/1" || schema == "ej_ratio_law_run/2";   // 19 Oct: re-scored from disk
     if (const auto* runs = r.getProperty ("runs", {}).getArray())
         for (const auto& run : *runs)
             if (! run.hasProperty ("labelled_ratio")) ++unread;   // 19 Oct: the setting it landed on was not read - never scored as the aimed ratio
             else if (const auto* ls = run.getProperty ("levels", {}).getArray())
                 for (const auto& l : *ls)
                 {
-                    ratiolaw::Point p; p.ratio = (double) run.getProperty ("labelled_ratio", 0.0); p.position = run.getProperty ("position", 0.0); p.T = run.getProperty ("T_dbfs", 0.0);
+                    ratiolaw::Point p; p.ratio = (double) run.getProperty ("labelled_ratio", 0.0); p.position = run.getProperty ("position", 0.0); p.T = (double) run.getProperty ("T_dbfs", 0.0) + (oldT ? ratiolaw::kSineRmsDb : 0.0);   // run/1-2 stored T in the served RMS, run/3 in peak
                     p.ratioNorm = run.getProperty ("ratio_norm", -1.0); p.ratioText = run.getProperty ("landed_text", "").toString();
                     p.input = l.getProperty ("input_dbfs", 0.0); if (const auto g = l.getProperty ("gr_db", {}); g.isDouble() || g.isInt()) p.gr = (double) g; pts.push_back (p);
                 }
@@ -190,7 +191,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
         say ("  " + juce::String (j.s.ratio, 1) + ":1 at g " + juce::String (j.g, 0) + ": " + r.describe());
     }
     auto* res = new juce::DynamicObject();
-    res->setProperty ("schema", "ej_ratio_law_run/2"); res->setProperty ("product", product); res->setProperty ("plugin_id", pid); res->setProperty ("version", record.getProperty ("version", ""));
+    res->setProperty ("schema", "ej_ratio_law_run/3"); res->setProperty ("level_convention", "peak (inputs and T_dbfs); the ratio_law curves are sine RMS like the served profile"); res->setProperty ("product", product); res->setProperty ("plugin_id", pid); res->setProperty ("version", record.getProperty ("version", ""));
     res->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", "")); res->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (true)); res->setProperty ("host", opt.hostVersion);
     res->setProperty ("measured_ratio", measured); res->setProperty ("knee_db", kneeDb); res->setProperty ("ratio_control", ratioName); res->setProperty ("ratio_index", ratioIdx);
     { auto* m = new juce::DynamicObject(); m->setProperty ("ratio", measured); m->setProperty ("worst_db", std::round (atMeasured.worst * 100.0) / 100.0); m->setProperty ("status", atMeasured.status); m->setProperty ("words", atMeasured.words);
