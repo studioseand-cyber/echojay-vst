@@ -322,7 +322,18 @@ int main()
             check (! g.errorMessage.containsIgnoreCase ("is not on the rack"),
                    "...and still never answers about the open rack", g.errorMessage.substring (0, 80));
         }
-        for (const char* what : { "true_peak", "spectrum" })
+        // ---- AND THESE TWO LEFT THE RULE ON 19 OCT 2026 ---------------------------------------
+        // *"check spectrum failed twice with 'The analyser's spectrum cannot be read from a Link
+        // yet'. The full analysis must be reachable for every Link, just like it is when you
+        // capture... never 'cannot be read'."*  The gates were stale in the same way gr's was: the
+        // Link's frame carries the six bands and its true peak, and its rack read carries each
+        // slot's outTpDb, so both branches were refusing data that had already crossed.
+        //
+        // item 8's RULE still stands and still has a leg - a measurement that genuinely cannot be
+        // taken says so once, in words, and says a retry will not help. What changed is WHICH
+        // measurements those are: as of today, none of the three. The loop is therefore empty, and
+        // kept rather than deleted, so the next reader sees the rule and its history in one place.
+        for (const char* what : std::initializer_list<const char*> { })
         {
             const auto o = run (ex, "check", call ("check", juce::String ("{\"what\":\"") + what
                                                             + "\",\"slot\":2,\"channel\":\"uid bb411b8240\"}"));
@@ -339,6 +350,19 @@ int main()
         const auto own = run (ex, "check", call ("check", "{\"what\":\"gr\",\"slot\":1}"));
         check (own.errorCode != "not_available_on_link",
                "the OWN rack is not refused by this rule", own.errorCode);
+        // ---- AND NEITHER IS A LINK, FOR ANY OF THE THREE (19 Oct 2026) ----------------------
+        for (const char* what : { "gr", "true_peak", "spectrum" })
+        {
+            const auto o = run (ex, "check", call ("check", juce::String ("{\"what\":\"") + what
+                                                            + "\",\"slot\":2,\"channel\":\"uid bb411b8240\"}"));
+            check (o.errorCode != "not_available_on_link",
+                   juce::String ("check(") + what + ") on a Link is NOT refused with \"cannot be read "
+                   "from a Link\" any more - his 19 Oct ruling, and the data was already crossing",
+                   o.errorCode.isEmpty() ? juce::String ("answered") : o.errorCode);
+            check (! o.errorMessage.containsIgnoreCase ("cannot be read from a Link"),
+                   juce::String ("...and the sentence is gone from check(") + what + ") too",
+                   o.errorMessage.substring (0, 70));
+        }
     }
 
     // ---------------------------------------------------------------- L7

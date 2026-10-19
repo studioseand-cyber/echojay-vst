@@ -912,6 +912,21 @@ int main()
                "SL3 ...but an unknown code whose text carries a tool id or a contract reference is "
                "REPLACED, not dressed up");
 
+        // ---- B'S SECTION 85(1) (19 Oct 2026): A REAL MESSAGE IS NEVER MASKED ----------------
+        // *"Show the server's error frame message as it comes, never 'I could not reach the
+        // assistant just then'."*  A KNOWN code used to get our canned sentence whatever the server
+        // had written, so a message B had taken trouble over was thrown away. Now the code only
+        // supplies the words when the frame carries none - and SL1/SL3 above still hold, because
+        // machinery is still never the headline (Sean's 17 Oct rule, which this does not touch).
+        const auto bSays = EJAgentClient::plainStopLine ("round_failed",
+            "The model returned no content for round 3 - nothing was changed.");
+        check (bSays == "The model returned no content for round 3 - nothing was changed.",
+               "SL5 a KNOWN code with a real sentence shows the SERVER's words  (RED as it stood: "
+               "\"I could not reach the assistant just then\", whatever B had written)", bSays);
+        const auto bSilent = EJAgentClient::plainStopLine ("round_failed", "");
+        check (bSilent.containsIgnoreCase ("could not reach") || bSilent.isNotEmpty(),
+               "SL5b ...and a frame with no words still gets a sentence from its code", bSilent);
+
         const auto empty = EJAgentClient::plainStopLine ("", "");
         check (empty.isNotEmpty() && ! empty.containsIgnoreCase ("error."),
                "SL4 no code and no text still produces a sentence, not a blank or \"an error\"");

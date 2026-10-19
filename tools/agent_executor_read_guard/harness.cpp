@@ -1607,6 +1607,54 @@ int main()
                juce::JSON::toString (o.result).substring (0, 100));
     }
 
+
+    // ---- AN (19 Oct 2026, his test 7): A LINK'S SPECTRUM ANSWERS ------------------------------
+    //
+    // *"check spectrum failed twice with 'The analyser's spectrum cannot be read from a Link yet'.
+    // The full analysis must be reachable for every Link, just like it is when you capture... check
+    // spectrum on a Link must answer from one of those, never 'cannot be read'."*
+    //
+    // His route 2, in its cheapest form: the Link's own frame already carries the six
+    // pink-referenced bands (analysisFromFrame sets haveBands), which is why look(analysis) read
+    // this very data on that Link in the same session. The gate was a leftover of the kind item 13
+    // removed from check(gr) yesterday.
+    std::printf ("\n== AN: a Link's spectrum and true peak answer from what it publishes ==\n");
+    {
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.linkA.valid = true; h.linkA.heardSeconds = 9.0f;
+        h.linkA.haveBands = true;
+        h.linkA.bandRelDb = { 5.0f, 2.0f, -1.0f, -3.0f, -2.0f, -2.5f };
+        h.linkA.truePeakMaxDb = -3.1f;
+        h.linkA.integratedLufs = -18.0f;
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto o = run (ex, "check", call ("check", R"({"what":"spectrum"})"));
+        check (o.ok, "AN1 check(spectrum) on a Link ANSWERS  (RED as it stood: \"The analyser's "
+                     "spectrum cannot be read from a Link yet\", twice in his test 7)",
+               o.ok ? juce::String ("answered") : (o.errorCode + ": " + o.errorMessage.substring (0, 60)));
+        check (! o.result.getProperty ("spectrum", juce::var()).isVoid(),
+               "AN1b ...with the bands in it", juce::JSON::toString (o.result).substring (0, 110));
+        const auto tp = run (ex, "check", call ("check", R"({"what":"true_peak","slot":1})"));
+        check (tp.errorCode != "not_available_on_link",
+               "AN2 and so does check(true_peak) - the same stale gate, over data the frame carries",
+               tp.ok ? juce::String ("answered") : tp.errorCode);
+    }
+    {
+        // NOTHING PUBLISHED YET IS A PLAYBACK ANSWER, NOT A LINK ANSWER.
+        FakeHost h;
+        h.playing = true; h.transportKnown = true;
+        h.linkA.valid = true; h.linkA.haveBands = false;     // no bands have crossed
+        ExecutorRead ex (h.sources()); ex.setTarget (h.link.uid);
+        const auto o = run (ex, "check", call ("check", R"({"what":"spectrum"})"));
+        check (! o.ok && o.errorCode == "no_spectrum_yet",
+               "AN3 a Link that has published no spectrum yet is refused for THAT reason", o.errorCode);
+        check (! o.errorMessage.containsIgnoreCase ("cannot be read")
+               && ! o.userMessage.containsIgnoreCase ("cannot be read")
+               && o.userMessage.containsIgnoreCase ("play"),
+               "AN3b ...and never \"cannot be read from a Link\" - it says what to do instead",
+               o.userMessage.substring (0, 90));
+    }
+
     std::printf ("\n==== agent_executor_read_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);
     return failures == 0 ? 0 : 1;
 }

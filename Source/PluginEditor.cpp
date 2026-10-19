@@ -41084,10 +41084,27 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             EchoJay_NSLog (("EJChain: build ack from " + uidForAck + " ok=" + juce::String ((int) ok)
                             + " slotsAfter=" + juce::String (slotsAfter) + " \"" + sentence + "\" "
                             + technical).toRawUTF8());
-            if (! ok)
-                safeAck->appendLocalResultBubble ("Nothing was built: "
-                    + (sentence.isNotEmpty() ? sentence : juce::String ("that rack refused the change"))
-                    + ".");
+            // ---- WHO TELLS HIM IT LANDED (B's section 85(2), 19 Oct 2026) -------------------
+            //
+            // *"'Built 2/2' belongs inside the plan card as its steps, not a separate bubble."*
+            // Agreed, and the old "Built N/M" bubble came from pollLinkChainAck, which this road no
+            // longer uses - so during an agent run the card's own step is the only telling, which is
+            // what B asked for. But with the poller gone a USER's Build press would have had no
+            // confirmation in the chat at all, which is a regression on the one case agent-off is
+            // about. So the success line is composed here, through the SAME suppression Sean's #3
+            // put in on 16 Oct: the agent's builds raise agentBuildBubbleSuppress_, a user's press
+            // never does, and that counter is the one author of "whose telling is this".
+            EchoJayEditor::BuildBubble bb;
+            bb.text = ok ? ("Built on \"" + safeAck->channelDisplayLabel (uidForAck) + "\""
+                            + (slotsAfter > 0 ? (" - " + juce::String (slotsAfter) + " plugin"
+                                                 + (slotsAfter == 1 ? "" : "s") + " on the rack.")
+                                              : juce::String (".")))
+                         : ("Nothing was built: "
+                            + (sentence.isNotEmpty() ? sentence : juce::String ("that rack refused the change"))
+                            + ".");
+            bb.dialWarning = ! ok;
+            if (! safeAck->suppressAgentBuildBubble (bb))
+                safeAck->appendLocalResultBubble (bb.text);
         }, 12000);
     }
     // A COPY THAT SURVIVES, for the same reason it always did: the Link consumes what it is sent,

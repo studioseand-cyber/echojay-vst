@@ -1306,8 +1306,13 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     }
     if (what == "true_peak")
     {
-        if (measuringALink (call)) { done (notFromALink ("A true-peak reading")); return; }
-        const auto r = targetRack();
+        // ---- AND A LINK'S TRUE PEAK, FOR THE SAME REASON (19 Oct 2026) -----------------------
+        // *"The full analysis must be reachable for every Link, just like it is when you capture."*
+        // The same stale gate as the spectrum one above: a Link's rack read carries each slot's own
+        // outTpDb (the sidecar publishes it) and its frame carries truePeakMax, so both sources this
+        // branch reads were already crossing. Not in his report, named here because it is the same
+        // defect in the same vocabulary and would have been his next one.
+        const auto r = rackForCall (call);
         if (! r.valid) { done (ToolOutcome::failureFor ("unknown_channel", r.why + knownChannelsSentence(),
                                                         "I could not read that rack.")); return; }
         if (r.slots.empty()) { done (ToolOutcome::failure ("empty_rack", "the rack has no slots")); return; }
@@ -1325,9 +1330,34 @@ void ExecutorRead::check (const ToolCall& call, Done done)
     }
     if (what == "spectrum")
     {
-        if (measuringALink (call)) { done (notFromALink ("The analyser's spectrum")); return; }
+        // ---- A LINK'S SPECTRUM IS PUBLISHED, AND HAS BEEN (19 Oct 2026, his test 7) -----------
+        //
+        // *"check spectrum failed twice with 'The analyser's spectrum cannot be read from a Link
+        // yet'. The full analysis must be reachable for every Link, just like it is when you
+        // capture... check spectrum on a Link must answer from one of those, never 'cannot be
+        // read'."*  And he named the evidence himself: look(analysis) read this very data on that
+        // Link in the same session.
+        //
+        // The refusal was a leftover of the same kind item 13 removed from check(gr) yesterday: the
+        // Link's meter frame carries the six pink-referenced bands (analysisFromFrame sets
+        // haveBands and fills bandRelDb from the frame), and targetAnalysis() returns exactly that
+        // for a Link - so the data the gate was refusing had already crossed. His ROUTE 2 in its
+        // cheapest form: answer from what the Link publishes.
         const auto a = targetAnalysis();
-        if (! a.valid || ! a.haveBands) { done (notPlaying ("a spectrum reading")); return; }
+        if (! a.valid || ! a.haveBands)
+        {
+            // AND THE REFUSAL IS ABOUT PLAYBACK, NOT ABOUT LINKS: "cannot be read from a Link" was
+            // untrue and unactionable. This one says what to do and can change on a retry.
+            done (ToolOutcome::failureFor ("no_spectrum_yet",
+                    juce::String (target_.isNotEmpty() ? "that track's EchoJay has not published a "
+                                                         "spectrum yet"
+                                                       : "no spectrum has been measured here yet")
+                    + " - ask the user to play a few seconds and try again.",
+                    target_.isNotEmpty() ? "I haven't had a spectrum from that track yet - play a few "
+                                           "seconds and I'll read it."
+                                         : "I haven't measured a spectrum yet - play a few seconds."));
+            return;
+        }
         auto v = analysisVar (a);
         auto* o = new juce::DynamicObject();
         o->setProperty ("spectrum", v.getProperty ("spectrum", {}));

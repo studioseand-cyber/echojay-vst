@@ -327,6 +327,30 @@ juce::String EJAgentClient::matchTypedToChoice (const juce::String& typedIn) con
     unrecognised falls back to the server's sentence with the machinery stripped out of it. */
 juce::String EJAgentClient::plainStopLine (const juce::String& code, const juce::String& serverText)
 {
+    // ---- B'S SECTION 85(1), 19 Oct 2026: THE SERVER'S OWN MESSAGE IS THE HEADLINE -----------
+    //
+    // *"Show the server's error frame message as it comes, never 'I could not reach the assistant
+    // just then'."*
+    //
+    // This function was written on 17 Oct for the opposite case: a server whose error text carried
+    // tool ids and contract references, which is not a sentence for this window. B now writes the
+    // sentence, so ours stops being the headline and becomes the FALLBACK for an error frame that
+    // carries no words at all. The code-specific sentences below are kept for exactly that.
+    //
+    // ONE EXCEPTION, AND IT IS SEAN'S OWN RULE OF 17 OCT, WHICH STILL HOLDS: a sentence carrying a
+    // tool id, a byte limit or a contract reference is not a sentence for this window
+    // (agent_client_guard SL1 and SL3 hold both directions of it). B's section 85 is about a real
+    // message being MASKED by a generic one, not about machinery, so the two rulings meet here:
+    // the server's words are the headline whenever they are words, and machinery still never is.
+    {
+        const auto fromServer = serverText.trim();
+        const bool machinery = fromServer.contains ("toolu_")
+                            || fromServer.containsIgnoreCase ("CONTRACT_")
+                            || fromServer.containsIgnoreCase ("8 KB")
+                            || fromServer.contains ("_too_")
+                            || fromServer.contains ("{");
+        if (fromServer.isNotEmpty() && ! machinery) return fromServer;
+    }
     const auto c = code.trim().toLowerCase();
     if (c == "result_too_large" || c == "too_large_to_send")
         return "That answer was too big to send in one go. Ask me again and I will fetch less at a time.";
