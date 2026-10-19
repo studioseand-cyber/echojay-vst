@@ -1,64 +1,5 @@
-RATIO-LAW: 20 product(s) from products_kathy_mac.txt; cert folder /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/88e273c0-b7e5-4c0d-b973-d6dfaace6d8f/scratchpad/rl27/cert
+RATIO-LAW: 7 product(s) from products_kathy_mac.txt; cert folder /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/88e273c0-b7e5-4c0d-b973-d6dfaace6d8f/scratchpad/rl27/cert
 RATIO-LAW: the plan
-RATIO-LAW: API-2500 (m) 15.0.70 - measured at 4.0:1 ([2] Ratio), knee 6.0 dB; 6 probe call(s):
-  1.5:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.2989, T -22.97 dBFS from the sweep, its slope there 0.412): inputs -16.97 / -13.97 / -10.97 dBFS
-  2.0:1 (2:1, norm 0.1000) at the g 2 position (norm 0.2989, T -22.97 dBFS from the sweep, its slope there 0.412): inputs -16.97 / -13.97 / -10.97 dBFS
-  1000.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.2989, T -22.97 dBFS from the sweep, its slope there 0.412): inputs -16.97 / -13.97 / -10.97 dBFS
-  1.5:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.4787, T -27.75 dBFS from the sweep, its slope there 0.414): inputs -21.75 / -18.75 / -15.75 dBFS
-  2.0:1 (2:1, norm 0.1000) at the g 4 position (norm 0.4787, T -27.75 dBFS from the sweep, its slope there 0.414): inputs -21.75 / -18.75 / -15.75 dBFS
-  1000.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.4787, T -27.75 dBFS from the sweep, its slope there 0.414): inputs -21.75 / -18.75 / -15.75 dBFS
-  at the measured 4.0:1, from the existing sweep (no load): no tested ratio follows the law (4:1) (worst 9.73 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: API-2500 (s) 15.0.70 - measured at 4.0:1 ([2] Ratio), knee 6.0 dB; 6 probe call(s):
-  1.5:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.2949, T -22.64 dBFS from the sweep, its slope there 0.411): inputs -16.64 / -13.64 / -10.64 dBFS
-  2.0:1 (2:1, norm 0.1000) at the g 2 position (norm 0.2949, T -22.64 dBFS from the sweep, its slope there 0.411): inputs -16.64 / -13.64 / -10.64 dBFS
-  1000.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.2949, T -22.64 dBFS from the sweep, its slope there 0.411): inputs -16.64 / -13.64 / -10.64 dBFS
-  1.5:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.4763, T -27.46 dBFS from the sweep, its slope there 0.414): inputs -21.46 / -18.46 / -15.46 dBFS
-  2.0:1 (2:1, norm 0.1000) at the g 4 position (norm 0.4763, T -27.46 dBFS from the sweep, its slope there 0.414): inputs -21.46 / -18.46 / -15.46 dBFS
-  1000.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.4763, T -27.46 dBFS from the sweep, its slope there 0.414): inputs -21.46 / -18.46 / -15.46 dBFS
-  at the measured 4.0:1, from the existing sweep (no load): no tested ratio follows the law (4:1) (worst 9.71 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: DPR-402 (m) 15.0.70 - measured at 4.0:1 ([3] Ratio), knee 6.0 dB; 2 probe call(s):
-  1000.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.8070, T -15.10 dBFS from the sweep, its slope there 0.557): inputs -9.10 / -6.10 / -3.10 dBFS
-  1000.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.7337, T -18.56 dBFS from the sweep, its slope there 0.605): inputs -12.56 / -9.56 / -6.56 dBFS
-  at the measured 4.0:1, from the existing sweep (no load): no tested ratio follows the law (4:1) (worst 2.25 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: C1 comp-sc (m) 15.0.70 - measured at 4.1:1 ([5] Comp Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
-  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
-  each placed ratio at the g 2 position (norm 0.8970, T -16.92 dBFS from the sweep, its slope there 0.558): inputs -10.92 / -7.92 / -4.92 dBFS
-  each placed ratio at the g 4 position (norm 0.8532, T -20.41 dBFS from the sweep, its slope there 0.638): inputs -14.41 / -11.41 / -8.41 dBFS
-  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: C1 comp-sc (s) 15.0.70 - measured at 4.1:1 ([5] Comp Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
-  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
-  each placed ratio at the g 2 position (norm 0.8970, T -16.92 dBFS from the sweep, its slope there 0.558): inputs -10.92 / -7.92 / -4.92 dBFS
-  each placed ratio at the g 4 position (norm 0.8532, T -20.41 dBFS from the sweep, its slope there 0.638): inputs -14.41 / -11.41 / -8.41 dBFS
-  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: C1 comp (m) 15.0.70 - measured at 4.1:1 ([4] Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
-  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
-  each placed ratio at the g 2 position (norm 0.8979, T -16.84 dBFS from the sweep, its slope there 0.557): inputs -10.84 / -7.84 / -4.84 dBFS
-  each placed ratio at the g 4 position (norm 0.8541, T -20.34 dBFS from the sweep, its slope there 0.636): inputs -14.34 / -11.34 / -8.34 dBFS
-  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: C1 comp (s) 15.0.70 - measured at 4.1:1 ([4] Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
-  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
-  each placed ratio at the g 2 position (norm 0.8979, T -16.84 dBFS from the sweep, its slope there 0.557): inputs -10.84 / -7.84 / -4.84 dBFS
-  each placed ratio at the g 4 position (norm 0.8541, T -20.34 dBFS from the sweep, its slope there 0.636): inputs -14.34 / -11.34 / -8.34 dBFS
-  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: C1 comp-gate (m) 15.0.70 - measured at 4.1:1 ([13] Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
-  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
-  each placed ratio at the g 2 position (norm 0.8970, T -16.92 dBFS from the sweep, its slope there 0.558): inputs -10.92 / -7.92 / -4.92 dBFS
-  each placed ratio at the g 4 position (norm 0.8532, T -20.41 dBFS from the sweep, its slope there 0.638): inputs -14.41 / -11.41 / -8.41 dBFS
-  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: C1 comp-gate (s) 15.0.70 - measured at 4.1:1 ([13] Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
-  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
-  each placed ratio at the g 2 position (norm 0.8970, T -16.92 dBFS from the sweep, its slope there 0.558): inputs -10.92 / -7.92 / -4.92 dBFS
-  each placed ratio at the g 4 position (norm 0.8532, T -20.41 dBFS from the sweep, its slope there 0.638): inputs -14.41 / -11.41 / -8.41 dBFS
-  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
-RATIO-LAW: --dry-run - nothing loaded
 RATIO-LAW: Lindell 254E 1.2.2 - measured at 3.0:1 ([6] Ratio), knee 6.0 dB; 8 probe call(s):
   1.5:1 (the lowest, norm 0.0000) at the g 2 position (norm 1.0000, T -16.22 dBFS from the sweep, its slope there 0.407): inputs -10.22 / -7.22 / -4.22 dBFS
   2.0:1 (2:1, norm 0.1667) at the g 2 position (norm 1.0000, T -16.22 dBFS from the sweep, its slope there 0.407): inputs -10.22 / -7.22 / -4.22 dBFS
@@ -96,38 +37,6 @@ RATIO-LAW: Solid Bus Comp 1.4.5 - measured at 4.0:1 ([2] Ratio), knee 6.0 dB; 6 
   2.0:1 (2:1, norm 0.1000) at the g 4 position (norm 0.4909, T -25.04 dBFS from the sweep, its slope there 0.610): inputs -19.04 / -16.04 / -13.04 dBFS
   10.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.4909, T -25.04 dBFS from the sweep, its slope there 0.610): inputs -19.04 / -16.04 / -13.04 dBFS
   at the measured 4.0:1, from the existing sweep (no load): no tested ratio follows the law (4:1) (worst 2.60 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: SSLComp (m) 15.0.70 - measured at 4.0:1 ([4] Ratio), knee 6.0 dB; 4 probe call(s):
-  2.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.8990, T -12.85 dBFS from the sweep, its slope there 0.707): inputs -6.85 / -3.85 / -0.85 dBFS
-  10.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.8990, T -12.85 dBFS from the sweep, its slope there 0.707): inputs -6.85 / -3.85 / -0.85 dBFS
-  2.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.8052, T -15.61 dBFS from the sweep, its slope there 0.723): inputs -9.61 / -6.61 / -3.61 dBFS
-  10.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.8052, T -15.61 dBFS from the sweep, its slope there 0.723): inputs -9.61 / -6.61 / -3.61 dBFS
-  at the measured 4.0:1, from the existing sweep (no load): ratio law verified: 4:1 (every tested ratio within 0.5 dB from the knee upward) (worst 0.48 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: SSLComp (s) 15.0.70 - measured at 4.0:1 ([4] Ratio), knee 6.0 dB; 4 probe call(s):
-  2.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.8990, T -12.85 dBFS from the sweep, its slope there 0.707): inputs -6.85 / -3.85 / -0.85 dBFS
-  10.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.8990, T -12.85 dBFS from the sweep, its slope there 0.707): inputs -6.85 / -3.85 / -0.85 dBFS
-  2.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.8052, T -15.61 dBFS from the sweep, its slope there 0.723): inputs -9.61 / -6.61 / -3.61 dBFS
-  10.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.8052, T -15.61 dBFS from the sweep, its slope there 0.723): inputs -9.61 / -6.61 / -3.61 dBFS
-  at the measured 4.0:1, from the existing sweep (no load): ratio law verified: 4:1 (every tested ratio within 0.5 dB from the knee upward) (worst 0.48 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: RCompressor (m) 15.0.70 - measured at 4.3:1 ([3] Ratio), knee 6.0 dB; 6 probe call(s):
-  2.2:1 (the lowest, norm 0.5000) at the g 2 position (norm 0.8560, T -17.32 dBFS from the sweep, its slope there 0.583): inputs -11.32 / -8.32 / -5.32 dBFS
-  4.0:1 (4:1, norm 0.4811) at the g 2 position (norm 0.8560, T -17.32 dBFS from the sweep, its slope there 0.583): inputs -11.32 / -8.32 / -5.32 dBFS
-  50.0:1 (the highest, norm 0.0000) at the g 2 position (norm 0.8560, T -17.32 dBFS from the sweep, its slope there 0.583): inputs -11.32 / -8.32 / -5.32 dBFS
-  2.2:1 (the lowest, norm 0.5000) at the g 4 position (norm 0.7827, T -20.96 dBFS from the sweep, its slope there 0.650): inputs -14.96 / -11.96 / -8.96 dBFS
-  4.0:1 (4:1, norm 0.4811) at the g 4 position (norm 0.7827, T -20.96 dBFS from the sweep, its slope there 0.650): inputs -14.96 / -11.96 / -8.96 dBFS
-  50.0:1 (the highest, norm 0.0000) at the g 4 position (norm 0.7827, T -20.96 dBFS from the sweep, its slope there 0.650): inputs -14.96 / -11.96 / -8.96 dBFS
-  at the measured 4.3:1, from the existing sweep (no load): no tested ratio follows the law (4.3:1) (worst 2.74 dB)
-RATIO-LAW: --dry-run - nothing loaded
-RATIO-LAW: RCompressor (s) 15.0.70 - measured at 4.3:1 ([3] Ratio), knee 6.0 dB; 6 probe call(s):
-  2.2:1 (the lowest, norm 0.5000) at the g 2 position (norm 0.8560, T -17.32 dBFS from the sweep, its slope there 0.583): inputs -11.32 / -8.32 / -5.32 dBFS
-  4.0:1 (4:1, norm 0.4811) at the g 2 position (norm 0.8560, T -17.32 dBFS from the sweep, its slope there 0.583): inputs -11.32 / -8.32 / -5.32 dBFS
-  50.0:1 (the highest, norm 0.0000) at the g 2 position (norm 0.8560, T -17.32 dBFS from the sweep, its slope there 0.583): inputs -11.32 / -8.32 / -5.32 dBFS
-  2.2:1 (the lowest, norm 0.5000) at the g 4 position (norm 0.7827, T -20.96 dBFS from the sweep, its slope there 0.650): inputs -14.96 / -11.96 / -8.96 dBFS
-  4.0:1 (4:1, norm 0.4811) at the g 4 position (norm 0.7827, T -20.96 dBFS from the sweep, its slope there 0.650): inputs -14.96 / -11.96 / -8.96 dBFS
-  50.0:1 (the highest, norm 0.0000) at the g 4 position (norm 0.7827, T -20.96 dBFS from the sweep, its slope there 0.650): inputs -14.96 / -11.96 / -8.96 dBFS
-  at the measured 4.3:1, from the existing sweep (no load): no tested ratio follows the law (4.3:1) (worst 2.74 dB)
 RATIO-LAW: --dry-run - nothing loaded
 RATIO-LAW: elysia alpha mix 1.17.1 - measured at 1.5:1 ([8] Ratio), knee 6.0 dB; 6 probe call(s):
   1.1:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.6447, T -23.74 dBFS from the sweep, its slope there 0.263): inputs -17.74 / -14.74 / -11.74 dBFS

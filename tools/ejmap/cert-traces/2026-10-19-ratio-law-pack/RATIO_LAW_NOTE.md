@@ -75,8 +75,8 @@ Median local ratio per GR band (2-6 / 6-9 / 9-12 / beyond 12 dB), from each reco
 - **Settings:** the lowest, 2:1, 4:1 and the highest (the measured setting skipped), at the tone check's g 2 and g 4 positions, inputs T+6/9/12. Points under half a knee above T are left out.
 - **Non-linear or named ratio dials** (C1, DPR-402) are placed from the plugin's own text, one extra load after the licence gate.
 - **Lists** (B's 27 adjustable; the 18 fixed-ratio are out of scope):
-  - `products_sean_mac.txt`: 7 licence-bound here (MCompressor, CL 1B, VBC FG-Red: PACE; the three SSL Native; kHs Compressor). Dry run: 7 of 7 planned.
-  - `products_kathy_mac.txt`: 20 the guard allows. Dry run: 20 of 20 planned. Kathy runs these.
+  - `products_sean_mac.txt`: 20: the 7 licence-bound on Kathy's Mac (MCompressor, CL 1B, VBC FG-Red: PACE; the three SSL Native; kHs Compressor) and the 13 Waves profiles (API-2500 m/s, DPR-402, the six C1 variants, SSLComp m/s, RCompressor m/s), served at 15.0.70 while Kathy's Mac has 12.0.0. Dry run: 20 of 20 planned.
+  - `products_kathy_mac.txt`: 7 whose installed version equals the served profile's (Lindell 254E, Lindell SBC, Bettermaker, Solid Bus Comp, elysia alpha mix, bx_townhouse, Zip). Dry run: 7 of 7 planned. Kathy runs these.
 
 ## The profile field (proposed): `ratio_law`
 ```json
