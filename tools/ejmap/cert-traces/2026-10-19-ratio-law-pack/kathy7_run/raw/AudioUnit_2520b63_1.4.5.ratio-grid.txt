@@ -1,0 +1,76 @@
+probe: "Solid Bus Comp" | AudioUnit:Effects/aufx,Ni$6,-NI- | uid=2520b63 | arch=arm64 | format=AudioUnit
+
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+sidechain	1	Input #2	2	enabled	self_keyed
+textat	proto	1	index	2	name	Ratio	points	65	instantiated	0.600000	4
+at	0.000000	landed	getValue	0.000000	confirm_ms	500.2	landed_by	render	text	1.5
+at	0.015625	unlanded	getValue	0.000000	confirm_ms	-1.0	landed_by	unlanded	text	1.5
+at	0.031250	unlanded	getValue	0.000000	confirm_ms	-1.0	landed_by	unlanded	text	1.5
+at	0.046875	unlanded	getValue	0.000000	confirm_ms	-1.0	landed_by	unlanded	text	1.5
+at	0.062500	unlanded	getValue	0.000000	confirm_ms	-1.0	landed_by	unlanded	text	1.5
+at	0.078125	unlanded	getValue	0.000000	confirm_ms	-1.0	landed_by	unlanded	text	1.5
+at	0.093750	unlanded	getValue	0.000000	confirm_ms	-1.0	landed_by	unlanded	text	1.5
+at	0.109375	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.125000	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.140625	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.156250	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.171875	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.187500	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.203125	landed	getValue	0.200000	confirm_ms	2.3	landed_by	instack	text	2
+at	0.218750	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.234375	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.250000	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.265625	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.281250	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.296875	unlanded	getValue	0.200000	confirm_ms	-1.0	landed_by	unlanded	text	2
+at	0.312500	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.328125	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.343750	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.359375	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.375000	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.390625	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.406250	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.421875	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.437500	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.453125	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.468750	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.484375	unlanded	getValue	0.400000	confirm_ms	-1.0	landed_by	unlanded	text	3
+at	0.500000	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.515625	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.531250	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.546875	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.562500	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.578125	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.593750	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.609375	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.625000	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.640625	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.656250	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.671875	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.687500	unlanded	getValue	0.600000	confirm_ms	-1.0	landed_by	unlanded	text	4
+at	0.703125	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.718750	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.734375	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.750000	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.765625	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.781250	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.796875	landed	getValue	0.800000	confirm_ms	2.3	landed_by	instack	text	5
+at	0.812500	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.828125	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.843750	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.859375	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.875000	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.890625	unlanded	getValue	0.800000	confirm_ms	-1.0	landed_by	unlanded	text	5
+at	0.906250	unlanded	getValue	1.000000	confirm_ms	-1.0	landed_by	unlanded	text	10
+at	0.921875	unlanded	getValue	1.000000	confirm_ms	-1.0	landed_by	unlanded	text	10
+at	0.937500	unlanded	getValue	1.000000	confirm_ms	-1.0	landed_by	unlanded	text	10
+at	0.953125	unlanded	getValue	1.000000	confirm_ms	-1.0	landed_by	unlanded	text	10
+at	0.968750	unlanded	getValue	1.000000	confirm_ms	-1.0	landed_by	unlanded	text	10
+at	0.984375	unlanded	getValue	1.000000	confirm_ms	-1.0	landed_by	unlanded	text	10
+at	1.000000	landed	getValue	1.000000	confirm_ms	2.3	landed_by	instack	text	10
+stage	done

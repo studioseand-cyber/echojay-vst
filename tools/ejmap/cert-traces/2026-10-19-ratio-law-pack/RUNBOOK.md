@@ -17,10 +17,14 @@ xattr -dr com.apple.quarantine .
 ```
 bash ratio_law.sh --dry-run products_sean_mac.txt
 ```
-It should list all 20 and refuse none: 231 probe calls, plus one dial-reading load for each of the six C1 variants.
+It should list all 20 and refuse none: about 231 probe calls, plus one dial-reading load per plugin.
 - **Each ratio setting** (the measured one, the lowest, 2:1, 4:1, the highest) runs at the tone check's g 2 and g 4 positions and at a deep position ("g 0", T near -46 dBFS).
 - **Inputs:** from 6 dB below threshold to 44 dB above, in 2 dB steps (none above -0.5 dBFS). That gives each setting its measured curve, `ratio_law.curves`, in the amount.curve shape.
-- **Placed from their own text:** a ratio dial whose readings are non-linear or named (the C1s, DPR-402) is placed from the plugin's own text, one extra load after the licence gate.
+- **Placed from their own text, every plugin:** one extra load (no audio, after the licence gate) reads the ratio dial's own text.
+  - Every setting is then written at a position whose text the plugin printed: the nearest one to 2:1 / 4:1, so a stepped dial may give 1.9:1, for example.
+  - The measured setting is written at the profile's own position.
+  - The plan's positions are a guide; the run's own are in its log.
+  - A run whose landed ratio was not read is left unscored, never filed under the ratio aimed at.
 
 ## 3. The run
 ```
