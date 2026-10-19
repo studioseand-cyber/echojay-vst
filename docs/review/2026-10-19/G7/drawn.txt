@@ -1,0 +1,10 @@
+scenario G7
+captured 2026-10-19T08:53:58.650+01:00
+  [user] rig-gr-marker: how much is it doing?
+  [assistant] Read the gain reduction.
+  [assistant] Cue the loudest section, press play, then tap Listen. (matched to input)
+  run row: status=Done changes=1 steps=2 zones=[11:1 change]
+  opening: Read the gain reduction.
+  closing: Read the gain reduction.
+    step "build a compressor on this rack" [done] right="applied" detail="Built EchoJay Compressor. Read back: threshold -24 dB, ratio 4:1." chips=[]
+    step "gain reduction on slot 1" [done] right="" detail="I have not heard anything through this compressor yet, so I cannot say how much it is doing." chips=[]

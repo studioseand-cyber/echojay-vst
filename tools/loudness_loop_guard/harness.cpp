@@ -616,9 +616,26 @@ static int guardMain()
         // opening wrote from a stale reading at the arm and armNoReading() denied it one. The 9 Oct ruling is
         // that the opening lands FROM A MEASUREMENT of this chain, so on sixteen seconds of playback it lands -
         // and that is now asserted here rather than forbidden.
-        check (r.loop.state() == LoudnessLoop::State::armed && ! r.logs.joinIntoString ("\n").contains ("measured:") && r.loop.bubbleCount() == 1, "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing and proposes nothing", "state " + juce::String ((int) r.loop.state()) + ", " + juce::String (r.loop.bubbleCount()) + " bubble(s)");
+        // ---- RE-BASELINED TO HIS RULING (19 Oct 2026) ----------------------------------------
+        // *"Both rules hold, reconciled: J1 stays as 'nothing acts or speaks on the first audio',
+        // but readings gathered from that playback are kept silently and used by the next request
+        // on the same chain (fresh = after the last change to that chain). So the agent never asks
+        // me to play when the current chain was already heard."*
+        //
+        // The subject is unchanged and is still 18g's: sixteen seconds of playback with no tap must
+        // not propose, must not measure a window, and must not say a word - the arm bubble is still
+        // the only thing on screen. What is NEW is the clause after it, asserted in J1d: the
+        // readings are KEPT, and the next request uses them instead of asking him to play again.
+        check (r.loop.state() == LoudnessLoop::State::armed && ! r.logs.joinIntoString ("\n").contains ("measured:") && r.loop.bubbleCount() == 1, "J1. nothing ACTS or SPEAKS on the first audio - and what it heard is KEPT for the next request", "state " + juce::String ((int) r.loop.state()) + ", " + juce::String (r.loop.bubbleCount()) + " bubble(s)");
         check (std::abs (r.levelGain() - 9.0f) <= 1.5f, "J1. ...and the OPENING landed from that audio, on this chain (08c F2)", "Level " + f1 (r.levelGain()) + " dB (want about +9.0: -18.0 in, target -9.0)");
         check (r.loop.listen() && r.loop.state() == LoudnessLoop::State::waitAudio, "J1. Listen starts the window");
+        // J1d: AND IT STARTS FROM WHAT WAS ALREADY HEARD. The taps are not cleared by that request,
+        // because nothing has changed this chain since they began counting - so the window the tap
+        // opened already holds the sixteen seconds he played. RED before 19 Oct: startWindow reset
+        // both taps unconditionally, which is why "how much is it doing" answered "I have no fresh
+        // reading from that track yet" about a chain he had just played through.
+        check (r.logs.joinIntoString ("\n").contains ("window: KEEPING the"),
+               "J1d. ...from the audio ALREADY heard on this chain, not from a cleared tap");
         r.runWindow();
         // With the opening already landed the window has nothing left to propose, which is the right answer and
         // is what leg I has always allowed for.
@@ -761,7 +778,7 @@ static int guardMain()
         check (r.armNoReading() && r.h.getSlotInfo (0).name == "EJ Test Limiter", "J6. a third-party limiter whose ceiling READ BACK is kept", r.h.getSlotInfo (0).name);
     }
 #else
-    for (const char* leg : { "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing",
+    for (const char* leg : { "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", "J1. nothing ACTS or SPEAKS on the first audio - and what it heard is KEPT for the next request",
                              "J2. after Go: hold with the after-verb bubble, no window runs", "J2b. ...and 10 silent ticks change nothing (no \"Tap Check\" bubble, no measurement)", "J2b. Check starts the window", "J2b. ...which measures",
                              "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", "J4. Done: one bubble, the loop holds", "J4. after Done a louder section is neither measured nor proposed on (the watch is over)",
                              "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot" })

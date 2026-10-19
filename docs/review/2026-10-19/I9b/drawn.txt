@@ -1,0 +1,8 @@
+scenario I9b
+captured 2026-10-19T08:58:57.806+01:00
+  [user] rig-tpown-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change]
+  opening: Added it to this rack, with the setting you asked for.
+  closing: Added it to this rack, with the setting you asked for.
+    step "add a real third-party plugin to THIS rack, with a setting" [done] right="applied" detail="Added Renaissance Axx (s). Read back: threshold -30." chips=[]

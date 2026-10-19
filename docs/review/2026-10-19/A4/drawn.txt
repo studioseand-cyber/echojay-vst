@@ -1,0 +1,12 @@
+scenario A4
+captured 2026-10-19T08:47:01.509+01:00
+  [user] rig: does the box clear?
+  [assistant] mock reply, sent quickly.
+  [user] rig-midreply-marker
+  [assistant] mock reply held back so the window could be closed mid-reply, then finished.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it, with the setting you asked for.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change]
+  opening: Added it, with the setting you asked for.
+  closing: Added it, with the setting you asked for.
+    step "add a real third-party plugin, with a setting" [done] right="applied" detail="Added Renaissance Axx (s). Read back: threshold -30." chips=[]

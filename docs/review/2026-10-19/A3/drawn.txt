@@ -1,0 +1,9 @@
+scenario A3
+captured 2026-10-19T08:47:03.111+01:00
+  [assistant] The chain changed after I matched the level. Tap Listen and I'll match it again.
+  [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change]
+  opening: Added it to this rack, with the setting you asked for.
+  closing: Added it to this rack, with the setting you asked for.
+    step "add a real third-party plugin to THIS rack, with a setting" [done] right="applied" detail="Added Renaissance Axx (s). Read back: threshold -30." chips=[]

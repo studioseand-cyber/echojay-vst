@@ -1,0 +1,10 @@
+scenario G2
+captured 2026-10-19T08:59:23.136+01:00
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it, with the setting you asked for.
+  [user] rig-builtinset-marker: add the compressor to the kick
+  [assistant] Added the EchoJay Compressor.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change]
+  opening: Added the EchoJay Compressor.
+  closing: Added the EchoJay Compressor.
+    step "add the EchoJay Compressor with a threshold and a ratio" [done] right="applied" detail="Added EchoJay Compressor. Read back: threshold -20 dB, ratio 4:1." chips=[]

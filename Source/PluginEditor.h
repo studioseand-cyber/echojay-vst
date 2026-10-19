@@ -2687,6 +2687,14 @@ private:
         how a card's measured height and its painted pixels part company. */
     int  agentRowWidth() const;
     float agentRunPhase_  = 0.0f;  // the spinner's phase; advanced by the editor's own 20 Hz timer
+    // 19 Oct 2026: which chat message is the loudness loop's current card, and its text before any
+    // verify line was added - so the verify line goes ON the card and a second one REPLACES it.
+    // 19 Oct 2026: the last stall reason named for a rack, so the 1 Hz engage tick says why once
+    // rather than every second - or, as it did before today, never.
+    juce::String borrowStallSaid_;
+    juce::String borrowStallWhy_;      // the reason the panel's derived status line shows
+    int          loopCardIdx_ = -1;
+    juce::String loopCardBase_;
     juce::StringArray agentExpandedRows_;   // Details open, BY STEP ID (item 3's rule, 13 Oct)
     juce::Rectangle<int> agentRowPaintRect_;      // what the ticker repaints while a run is live
     /** ---- EVERY CARD'S ZONES, EACH STAMPED WITH ITS OWN MESSAGE (19 Oct 2026) --------------

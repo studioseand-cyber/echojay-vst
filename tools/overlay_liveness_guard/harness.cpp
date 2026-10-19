@@ -28,6 +28,10 @@ struct EchoJayAlignTestAccess
 {
     static juce::String want (EchoJayProcessor& p)    { return p.rackLockWantUid_; }
     static juce::String pending (EchoJayProcessor& p) { return p.pendingAutoEngage_; }
+    // 19 Oct 2026: (b3) has to MAKE the state his session was in - a held lock with nothing
+    // pending - and the product has no road to it, which is why it could not recover from it.
+    static void clearPending (EchoJayProcessor& p) { p.pendingAutoEngage_.clear(); }
+    static void setPending (EchoJayProcessor& p, const juce::String& uid) { p.pendingAutoEngage_ = uid; }
 };
 struct EchoJayTabStripTestAccess
 {
@@ -36,6 +40,13 @@ struct EchoJayTabStripTestAccess
     static void tickEditor (EchoJayEditor& e)           { if (e.chainViewUid().isNotEmpty()) e.refreshLinkRackCache (false); e.refreshChainPanelForView (false); e.borrowSelectionTick(); }
     static void xPress (EchoJayEditor& e, int i)        { e.chainListPanel.onRemoveSlot (i); }
     static bool editBlocked (EchoJayEditor& e)          { return e.chainListPanel.editBlocked; }
+    // 19 Oct 2026: what the panel SAYS while a rack will not engage - the thing his four silent
+    // minutes had none of.
+    static juce::String panelStatus (EchoJayEditor& e)  { return e.chainListPanel.statusText; }
+    // The GATE's own reason, which is the derived value (lockLine) rather than the status line -
+    // the status line is outranked by any in-flight note, and in this harness a "Rescanned: 2425
+    // plugins" note owns it, which is what my first cut of (b3) read back.
+    static juce::String lockWhy (EchoJayEditor& e)      { return e.chainListPanel.remoteWriteLockWhy; }
     static bool overlayVisible (EchoJayEditor& e)       { return e.chainListPanel.editGate.isVisible(); }
     static bool pillOrange (EchoJayEditor& e)           { return e.chainListPanel.rackBtn.findColour (juce::TextButton::textColourOffId) == juce::Colour (0xffFFB020); }
     static juce::String readInFlight (EchoJayEditor& e) { return e.borrowReadInFlightUid_; }
@@ -143,6 +154,29 @@ int main()
     }
     if (reengagedAt < 0) show ("after 12 re-ticks", proc, *ed);
     check (reengagedAt > 0 && proc.rackLockHeldFor (kUid), "(b2) after the auto-release the want survives / re-arms and the borrow RE-ENGAGES (Held + borrowed)", "tick " + juce::String (reengagedAt));
+
+    // ---- (b3) NOT WRITTEN, AND WHY (19 Oct 2026) ---------------------------------------------
+    //
+    // The change this round makes to the engage path - a rack whose lock is HELD but whose session
+    // never engaged now carries a REASON (PluginEditor's lockLine block, which had `break` for that
+    // case and so said nothing at all) - has NO LEG HERE, deliberately rather than by oversight.
+    //
+    // Four cuts were tried and each proved something other than the change:
+    //   1. "the session recovers from held-with-nothing-pending" PASSED with the fix removed
+    //      (engaged at tick 2 either way) - an unfalsifiable green, which is worse than no leg.
+    //   2. the re-arm itself is not observable: the same editor tick that sets pendingAutoEngage_
+    //      engages the session and clears it again.
+    //   3. the panel's status line is outranked by any in-flight note; this harness has a
+    //      "Rescanned: 2425 plugins" note owning it.
+    //   4. asserting the gate's own derived reason read back "" - the state in this fixture is not
+    //      the one the sentence is about (v.remote / the lock state move when the session is
+    //      released and the pending engage is pointed elsewhere), and standing his state up needs
+    //      a path through the editor I could not find in the time.
+    //
+    // What IS in the build and will diagnose the next occurrence: the engage tick names each of its
+    // three dead ends in the log once per rack (EJBorrow: not engaging <uid> - <why>), where before
+    // today all three returned silently. That is what his 08:52 log had none of, and it is the
+    // thing to read first if "Connecting to rack…" ever stands again.
 
     std::printf ("\n==== overlay_liveness_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

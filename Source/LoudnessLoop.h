@@ -582,7 +582,9 @@ public:
         // the same tap for this (08c F2). Resetting the song's reading here would have been a regression dressed
         // up as a fix.
         host_.resetChainInLoopLevels();
+        talliesResetAtRev_ = host_.getChainValueRevision();   // 19 Oct: the arm's window, stamped
         openingOwed_ = true; openingResetSeen_ = false;
+        verifyOwed_ = false; verifyResetSeen_ = false; verifyPasses_ = 0;
         log (juce::String ("opening gain OWED: the chain tallies are reset, so the landing is measured on this ")
              + "chain rather than on an integrated figure that predates its dials. Aim: " + aimWords()
              + ". No peak-headroom cap (7 Oct ruling): the ceiling and the loud-window GR check are the safety."
@@ -911,7 +913,31 @@ public:
         // ran in the measuring states could never see the case it exists for (Sean's two EQ bells at 20:05).
         // 19 Oct 2026: and the verify pass runs in the same state, right after it - the loop stays
         // ARMED through both, which is why the opening landing lives here in the first place.
-        if (state_ == State::armed) { tryOpeningLanding(); tryVerifyLanding(); return; }
+        if (state_ == State::armed)
+        {
+            tryOpeningLanding();
+            tryVerifyLanding();
+            // ---- PLAYBACK AS THE LISTEN: HELD FOR HIS RULING (19 Oct 2026) ------------------
+            // *"If the DAW has been playing, that IS the listen. Playback before a change counts as
+            // the measure-first listen (use it, don't ask)."*
+            //
+            // Written, run, and HELD - not shipped. It turns two of his own legs red, because they
+            // encode the rule it narrows:
+            //   J1    "NO window runs on the first audio: 16 s of audio without Listen measures
+            //          nothing and proposes nothing" (18g item 1), which is the same situation seen
+            //          from the other side; and
+            //   F2-4  "...and offers a way forward rather than only reporting", a knock-on of the
+            //          window opening on its own.
+            // Re-baselining two of his legs to fit a change made while he was out is exactly the
+            // move this tree has a rule against, so the code is in the commit message rather than in
+            // the build, and it goes in the moment he says which rule wins.
+            //
+            // The OTHER half of the same ruling - "playback after the change counts as the verify
+            // listen, no Listen press" - is shipped: tryVerifyLanding measures from whatever audio
+            // follows the write, and the tally reset is what makes audio from before the change
+            // unable to verify it.
+            return;
+        }
         if (state_ != State::waitAudio && state_ != State::measuring && state_ != State::tracking) return;   // proposed / hold / quietAsked: nothing runs on its own
         const auto out = host_.getChainOutLevels();
         const float counted = out.heardAboveSeconds;
@@ -1354,10 +1380,22 @@ private:
     /** 19 Oct 2026: owe a verification. The OUT tap is reset so the next reading is of the chain
         as it stands AFTER the write; the input aim is not re-measured, because the thing being
         checked is whether the output now sits where the input was. */
+    /** TRUE when the taps hold a reading that is BOTH long enough to mean something and of the
+        chain as it stands now. The second half is the whole of his rule: audio heard before the
+        last change describes a chain that no longer exists, and may never verify or measure it. */
+    bool keptReadingIsFresh() const
+    {
+        if (talliesResetAtRev_ < 0) return false;
+        if (host_.getChainValueRevision() != talliesResetAtRev_) return false;
+        const auto out = host_.getChainOutLevels();
+        return out.known && out.heardSeconds >= echojay::LevelTally::kHeardFloorSeconds;
+    }
+
     void armVerify (const juce::String& why)
     {
         if (verifyPasses_ >= kMaxVerifyPasses) return;
         host_.resetChainOutLevels();
+        talliesResetAtRev_ = host_.getChainValueRevision();   // after the write: this is the chain now
         verifyOwed_ = true; verifyResetSeen_ = false;
         log ("verify OWED after " + why + ": the output tap is reset, so the next reading is of the "
              "chain as it stands now. Aim " + fmt (target_) + " LUFS, tolerance "
@@ -1396,12 +1434,19 @@ private:
                  + juce::String (outNow.windowSeconds, 1) + " s of playback at Level "
                  + fmtSigned (currentGainDb()) + " dB" + busGainNote());
             noteLanded();
-            emit (aim_ == Aim::matchInput
-                      ? juce::String ("Matched and checked: it now measures ") + fmt (heard)
-                        + " LUFS out against " + fmt (target_) + " LUFS in."
-                      : juce::String ("Set and checked: it now measures ") + fmt (heard)
-                        + " LUFS against " + aimWords() + ".",
-                  -1.0f, false, false, Bubble::Kind::info, {});
+            sayVerifyLine (aim_ == Aim::matchInput
+                               ? "Level matched: out within " + juce::String (std::abs (off), 1)
+                                 + " dB of in (" + fmt (heard) + " against " + fmt (target_) + " LUFS)"
+                               : "Level set: within " + juce::String (std::abs (off), 1) + " dB of "
+                                 + aimWords() + " (" + fmt (heard) + " LUFS)");
+            // ---- AND IT IS A LINE, NOT A BUBBLE (19 Oct 2026) ------------------------------
+            // My first cut emitted "Matched and checked: ..." here, and loudness_loop_guard's J1
+            // went red: *"NO window runs on the first audio"* (18g item 1) - the loop had put a
+            // second bubble on screen before he had tapped anything. The leg is right and the rule
+            // is his: the opening landing is allowed to happen by itself, but it is not allowed to
+            // start a conversation. A verification that PASSED is not news - the card already shows
+            // the figure - so it goes to the log. A correction and a give-up DO speak, below,
+            // because those are things that happened rather than things that did not.
             return;
         }
         if (verifyPasses_ < kMaxVerifyPasses)
@@ -1413,6 +1458,10 @@ private:
                  + fmtSigned (cur) + " -> " + fmtSigned (want) + " dB and is measured again. This is "
                  "the correction his 08:07 build never made.");
             if (std::abs (want - cur) >= 0.05f) writeGainDb (want);
+            sayVerifyLine ("Level was " + juce::String (std::abs (off), 1) + " dB "
+                           + (off > 0.0f ? "loud" : "quiet") + " after the change ("
+                           + fmt (heard) + " against " + fmt (target_) + " LUFS), so I moved it "
+                           + fmtSigned (want - cur) + " dB and am measuring again");
             armVerify ("a correction of " + fmtSigned (-off) + " dB");
             return;
         }
@@ -1422,10 +1471,9 @@ private:
              + fmt (heard) + " LUFS against an aim of " + fmt (target_) + " LUFS (" + fmtSigned (off)
              + " dB). Not corrected again - something else is moving the level while this measures.");
         noteLanded();
-        emit (juce::String ("I got it to ") + fmt (heard) + " LUFS against " + fmt (target_)
-              + " LUFS and stopped there - something else is changing the level while I measure. "
-                "Tap Listen and I'll try again.",
-              -1.0f, false, false, Bubble::Kind::info, { "Listen" });
+        sayVerifyLine ("Level is " + juce::String (std::abs (off), 1) + " dB off ("
+                       + fmt (heard) + " against " + fmt (target_) + " LUFS) and I stopped "
+                       "correcting - something else is changing the level while I measure");
     }
 
     bool pastResolveDeadline() const
@@ -1503,10 +1551,34 @@ private:
     void startWindow()
     {
         host_.setChainOutCountFloor (kCountFloorLufs);
-        host_.resetChainOutLevels();
+        // ---- WHAT WAS ALREADY HEARD IS NOT THROWN AWAY (19 Oct 2026, his ruling) ---------------
+        //
+        // This reset both taps unconditionally, so a Listen tap - or a Check, or the agent's own
+        // request - DISCARDED the playback that had just happened and asked him to play again. That
+        // is the "I have no fresh reading from that track yet" he read three times, and on his 08:07
+        // build it is why a chain he had been playing through had to be played through again.
+        //
+        // His rule: a reading of THIS chain is kept and used by the next request. So the taps are
+        // reset only when what they hold is stale - which, by his definition, means the chain has
+        // changed since they started counting. Nothing is kept across a change, ever: that is the
+        // other half of the same ruling, and it is what makes a verification honest.
+        // KEEP, OR CLEAR - and either way the window itself still STARTS. My first cut returned
+        // early here, which skipped the state transition at the end of this function: listen()
+        // then reported success while the loop sat in `armed`, and loudness_loop_guard's J1 would
+        // have caught it ("Listen starts the window"). The only thing his ruling changes is
+        // whether what was heard is thrown away.
+        const bool keep = keptReadingIsFresh();
+        if (keep)
+        {
+            const auto out = host_.getChainOutLevels();
+            log ("window: KEEPING the " + juce::String (out.heardSeconds, 1) + " s already heard on this "
+                 "chain (his 19 Oct ruling) - nothing has changed it since, so this request measures "
+                 "what was played rather than asking for it again");
+        }
+        if (! keep) host_.resetChainOutLevels();
         // 08c F2: the loop's INPUT window is restarted with the output one, so a match compares the two over the
         // same span. The song's integrated reading (getChainInLevels) is untouched, as ruled.
-        host_.resetChainInLoopLevels();
+        if (! keep) host_.resetChainInLoopLevels();
         // ---- 08c F2 (9 Oct, final): A WINDOW SUPERSEDES THE OWED OPENING, and this is the ruling it serves.
         // I tried the other way - a window that completes while the opening is owed TAKES it, one uncapped write,
         // then restarts - because it stops a quick Listen landing short by the per-pass clamp. The gate showed
@@ -1520,7 +1592,11 @@ private:
         // play, then tap Listen"). A user who taps Listen with nothing played gets the ordinary loop: measure,
         // propose, Go. That can take two passes, and two honest passes beat one silent jump.
         openingOwed_ = false;
-        host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
+        if (! keep)
+        {
+            host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
+            talliesResetAtRev_ = host_.getChainValueRevision();   // 19 Oct: from here, "fresh" means this
+        }
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
         // ---- AND THE STAGE TAP, which is the GR estimate's MINUEND (10 Oct 2026) -----------------------
         // The note that stood here said "no Level slot, so no Level meters to reset" and stopped there. It
@@ -1604,6 +1680,23 @@ public:
         // user immediately after they pressed Go.
         noteLanded();
     }
+    /** ---- THE VERIFY LINE (19 Oct 2026, his ruling) -----------------------------------------
+        *"A clean verify shouldn't be silent: show it as a line in the existing card ("Level
+        matched: out within 0.3 dB of in"), never as a new unprompted bubble. A correction or a
+        give-up gets the same line plus what it did."*
+
+        So this is deliberately NOT emit(): a bubble is history and is appended, which is what put
+        a second bubble on screen before he had tapped anything and turned loudness_loop_guard's J1
+        red. The line goes onto the card the landing already drew. */
+    std::function<void (const juce::String& line)> onVerifyLine;
+    void sayVerifyLine (const juce::String& line)
+    {
+        verifyLine_ = line;
+        log ("verify line: " + line);
+        if (onVerifyLine) onVerifyLine (line);
+    }
+    juce::String verifyLine() const { return verifyLine_; }
+
     void emit (const juce::String& text, float progress, bool replace, bool final, Bubble::Kind kind = Bubble::Kind::info, juce::StringArray pills = {})
     {
         lastBubble_ = text; lastKind_ = kind; lastPills_ = pills;
@@ -1664,6 +1757,18 @@ public:
     // is made and verified again; after kMaxVerifyPasses the loop stops moving and says plainly
     // how close it got, because a loop that keeps correcting is how a trim walked from -8.6 to
     // -19.1 dB in three seconds in his 08:07 log.
+    // ---- WHAT WAS ALREADY HEARD, AND WHETHER IT IS OF THIS CHAIN (19 Oct 2026, his ruling) ----
+    // *"J1 stays as 'nothing acts or speaks on the first audio', but readings gathered from that
+    // playback are kept silently and used by the next request on the same chain (fresh = after the
+    // last change to that chain). So the agent never asks me to play when the current chain was
+    // already heard."*
+    //
+    // The chain's VALUE revision is exactly "the last change to that chain" - it moves on every gain
+    // write, trim, wet, loop move and structural edit (ChainHost::bumpChainValue), which is why
+    // noteLanded already stamps it. Stamped whenever the taps are reset, so "fresh" is a comparison
+    // rather than a guess about elapsed time.
+    int    talliesResetAtRev_ = -1;
+    juce::String verifyLine_;          // 19 Oct: the card's own line about the verification
     bool   verifyOwed_ = false;
     bool   verifyResetSeen_ = false;
     int    verifyPasses_ = 0;

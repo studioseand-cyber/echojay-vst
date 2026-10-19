@@ -35,6 +35,7 @@
 // the display parse have to be the plugin's own arithmetic, not a re-implementation of it in the rig - a
 // rig that computed its own fp would pass a map the product could never have matched.
 #include "EJPaceCheck.h"
+#include <regex>
 #include "viz/EedGrMeter.h"   // E7: the meter's label geometry is a pure function, so a row can hold it   // the standing rule: this rig never loads a licence-bound bundle
 #include "EchoJayParamMaps.h"
 #include "EchoJayParamApply.h"
@@ -663,6 +664,31 @@ struct Track
     /** One block of real audio: a -12 dBFS 220 Hz tone. The level matters - the
         loudness loop only arms and lands when it has heard something, so a rig
         that fed silence would prove nothing about item 4. */
+    /** 19 Oct 2026: a KICK-SHAPED pass, for the rows that measure a percentile. The steady tone
+        below cannot have a loudest and a typical - every hop is the same level, so p90 == p50 by
+        construction and a row asserting they DIFFER would be asserting a property of the signal
+        this rig feeds rather than of the product. This alternates one loud hop with four quiet
+        ones, which is what a kick track looks like to a 100 ms hop. */
+    void processOneBlockKick (double sr)
+    {
+        const int n = buf.getNumSamples();
+        const int blocksPerHop = juce::jmax (1, (int) std::lround (sr * 0.1 / (double) n));
+        const int hop = (kickBlock_ / blocksPerHop) % 5;
+        ++kickBlock_;
+        const float amp = hop == 0 ? 0.5f : 0.02f;        // about -9 dBFS RMS against about -37
+        for (int i = 0; i < n; ++i)
+        {
+            const float v = amp * (float) std::sin (phase);
+            phase += 2.0 * juce::MathConstants<double>::pi * 220.0 / sr;
+            if (phase > 2.0 * juce::MathConstants<double>::pi) phase -= 2.0 * juce::MathConstants<double>::pi;
+            buf.setSample (0, i, v);
+            buf.setSample (1, i, v);
+        }
+        midi.clear();
+        plugin->processBlock (buf, midi);
+    }
+    int kickBlock_ = 0;
+
     void processOneBlock (double sr)
     {
         const int n = buf.getNumSamples();
@@ -4676,7 +4702,20 @@ int main (int argc, char* argv[])
             // measurement, with a plain line saying EchoJay does not read their reduction meter.
             // The half of this row that still bites is the half he wrote it for: it must never
             // blame silence. Kept, with the vocabulary the product now uses.
-            const bool saysUncertified = words.containsIgnoreCase ("does not read")
+            // ---- AND E3's SUBJECT IS NOW THE OTHER HALF (19 Oct 2026) -------------------------
+            // Today's full run shows what it actually gets: *"gain reduction on the third-party
+            // slot = Press play and I'll measure that."*  Under his 18 Oct ruling that is the TRUE
+            // answer for a slot nothing has been heard on - this row deliberately does not play -
+            // so "says it cannot measure that one" is no longer a sentence the product owns.
+            // The half that still bites, and the half he wrote the row for, is that it must never
+            // blame SILENCE while audio is playing; asking for playback when there is none is not
+            // that. So the ask counts as an honest answer here, and the measurement road gets its
+            // own row with audio in it (I9d below).
+            const bool asksForPlayback = words.containsIgnoreCase ("press play")
+                                      || words.containsIgnoreCase ("play the")
+                                      || words.containsIgnoreCase ("i'll measure");
+            const bool saysUncertified = asksForPlayback
+                                      || words.containsIgnoreCase ("does not read")
                                       || words.containsIgnoreCase ("no GR meter is read")
                                       || words.containsIgnoreCase ("cannot read its own")
                                       || words.containsIgnoreCase ("not certified")
@@ -5574,6 +5613,126 @@ int main (int argc, char* argv[])
         else
             scenSkip ("I9c", "the Link's mirrored card carries the plugin's figure too",
                       tp.ok ? juce::String ("no Link in the registry this run") : tp.why, "A");
+
+        // ---- I9d: WHAT A THIRD-PARTY COMPRESSOR ON A LINK HEARD (19 Oct 2026, his ask) ----------
+        //
+        // *"When the RMS fix is in... an I9c rig row with a non-iLok third-party compressor on a
+        // Link reporting distinct loudest/typical input RMS."*
+        //
+        // The row's whole point is the word DISTINCT, and that is why it feeds kick-shaped audio:
+        // the rig's steady 220 Hz tone has one level, so every 100 ms hop is identical and p90 ==
+        // p50 by construction - a row asserting they differ on that signal would be asserting a
+        // property of this rig's oscillator. One loud hop in five, which is what his kick looks
+        // like to the instrument.
+        //
+        // The plugin is tp.name, which is Renaissance Axx on his machine: a compressor, and not
+        // PACE-wrapped (prepareThirdParty refuses a licence-bound bundle outright, his standing
+        // rule), so nothing here can raise an iLok prompt.
+        if (tp.ok)
+        {
+            const auto liveUid = usableLinkUid (rig.freshState(), true);
+            // WHICH TRACK IS THAT UID? The audio has to go through the Link that holds the plugin,
+            // so the row resolves the uid to one of the two Link tracks it launched, by the name
+            // the registry carries. A uid it cannot place is a skip, not a guess: pumping the wrong
+            // track would measure silence and report it as the product's answer.
+            Track* feed = nullptr;
+            juce::String linkName;
+            if (liveUid.isNotEmpty())
+            {
+                linkName = linkRowOf (rig.freshState(), liveUid).getProperty ("name", juce::var()).toString();
+                if (linkName == lk1.trackName || linkName.containsIgnoreCase ("Kick")) feed = &lk1;
+                else if (linkName == lk2.trackName)                                     feed = &lk2;
+            }
+            bool aimed = false;
+            juce::String aimNote;
+            if (liveUid.isNotEmpty() && feed != nullptr)
+            {
+                const auto ack = rig.send (echojay::rig::cmd::workOn, args1 ("uid", liveUid), 8000);
+                aimed   = (bool) ack.getProperty ("ok", false);
+                aimNote = ack.getProperty ("note", juce::var()).toString();
+            }
+            if (! aimed)
+            {
+                scenSkip ("I9d", "a third-party compressor on a Link reports distinct loudest and "
+                                 "typical input RMS",
+                          liveUid.isEmpty()
+                            ? juce::String ("no usable Link in this run's state, so there is no Link "
+                                            "slot to measure. NEVER counted as a pass.")
+                            : (feed == nullptr
+                                 ? "the live Link \"" + linkName + "\" (" + liveUid + ") is not one of "
+                                   "the two tracks this run feeds audio to, so its slot would be "
+                                   "measuring silence. NEVER counted as a pass."
+                                 : "work_on was REFUSED for " + liveUid + " (\"" + aimNote + "\")"),
+                          "A");
+            }
+            else
+            {
+                // 1. the compressor onto that Link's rack, through the agent, as a user would
+                const auto added = askAgent (rig, "rig-thirdparty-marker: add " + tp.name + " and set its "
+                                                  + tp.paramName, 120000);
+                juce::String slot1;
+                rig.until ([&] (const juce::var& stv)
+                {
+                    if (auto* arr = linkRowOf (stv, liveUid).getProperty ("slotsDetail", juce::var()).getArray())
+                        if (! arr->isEmpty())
+                            slot1 = (*arr)[0].getProperty ("name", juce::var()).toString();
+                    return slot1.containsIgnoreCase (tp.name);
+                }, 15000);
+
+                // 2. KICK-SHAPED PLAYBACK, long enough to fill the hop ring past its floor. 80 hops
+                //    is 8 s of gated audio; this feeds about 3 s, which is well past the 1 s floor
+                //    and keeps the row's wall-clock honest.
+                for (int i = 0; i < 300; ++i)
+                {
+                    feed->processOneBlockKick (sr);
+                    v2.processOneBlock (sr);                     // the main keeps running too
+                    if ((i % 15) == 0) Rig::pump (10);
+                }
+                Rig::pump (60);                                  // let the Link publish its sidecar
+
+                // 3. ask the question the user asks
+                const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
+                const auto st = rig.freshState();
+                juce::String rowWords;
+                if (auto* arr = st.getProperty ("agentRow", juce::var()).getProperty ("steps", juce::var()).getArray())
+                    for (const auto& sv : *arr)
+                        rowWords << sv.getProperty ("label",  juce::var()).toString() << " = "
+                                 << sv.getProperty ("detail", juce::var()).toString() << "; ";
+                const auto words = rowWords + " " + r.stepWords + " " + r.text + " " + r.failDetail;
+
+                // THE TWO FIGURES, READ OUT OF THE ROW THE USER SEES. "input -9.4 loudest / -14.8
+                // typical" - the labelled text this round added, which is the only place a user or
+                // this row can read them from without asking the plugin a second question.
+                float loud = 0.0f, typ = 0.0f;
+                bool parsed = false;
+                {
+                    const std::string u = words.toStdString();
+                    std::smatch m;
+                    const std::regex re (R"(input\s+(-?\d+\.?\d*)\s+loudest\s*/\s*(-?\d+\.?\d*)\s+typical)");
+                    if (std::regex_search (u, m, re) && m.size() == 3)
+                    {
+                        loud = (float) std::atof (m[1].str().c_str());
+                        typ  = (float) std::atof (m[2].str().c_str());
+                        parsed = true;
+                    }
+                }
+                const bool distinct = parsed && (loud - typ) > 1.0f;
+                const bool unitSaid = words.contains ("dBFS RMS");
+                scen ("I9d", "a third-party compressor on a Link reports DISTINCT loudest and typical "
+                             "input RMS over the playback window",
+                      r.ran() && slot1.containsIgnoreCase (tp.name) && parsed && distinct && unitSaid,
+                      "slot 1 of \"" + linkName + "\" holds \"" + slot1 + "\" (the add "
+                      + (added.ran() ? "ran" : "did NOT run") + "); parsed loudest=" + juce::String (loud, 1)
+                      + " typical=" + juce::String (typ, 1) + " (want a gap over 1 dB), unit said="
+                      + (unitSaid ? "yes" : "NO") + "; the run said: \"" + words.substring (0, 220)
+                      + "\"  (RED before this round: the two figures were the same 1 dB bin centre, "
+                      "twice - his \"both exactly -15.5 on a kick\")",
+                      "A", v2.editor.get(), st, &r);
+            }
+        }
+        else
+            scenSkip ("I9d", "a third-party compressor on a Link reports distinct loudest and typical "
+                             "input RMS", tp.why, "A");
 
         // =====================================================================================
         //  THE REST OF THE MATRIX THE RIG CAN RUN (Sean, 16 Oct: *"only 29 of ~60 scenarios ran"*)

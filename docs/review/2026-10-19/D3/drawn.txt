@@ -1,0 +1,8 @@
+scenario D3
+captured 2026-10-19T08:59:46.682+01:00
+  [user] rig-undoadd-marker: add a gate
+  [assistant] Added an EchoJay Gate.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change]
+  opening: Added an EchoJay Gate.
+  closing: Added an EchoJay Gate.
+    step "add an EchoJay Gate" [done] right="applied" detail="Added EchoJay Gate. Read back: threshold -30 dB." chips=[]

@@ -13010,7 +13010,21 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     if (v.remote)
         switch (processorRef.rackLockState())
         {
-            case EchoJayProcessor::RackLockState::Held: break;
+            case EchoJayProcessor::RackLockState::Held:
+                // ---- HELD, BUT NOT ENGAGED, SAYS SO (19 Oct 2026, Sean at 08:52) --------------
+                // This was `break` - no sentence at all - so a rack whose lock is held but whose
+                // session never engaged showed the resting hint while the Build gate refused with
+                // "Connecting to rack…". That is the state he sat in for four minutes with nothing
+                // to read. The reason comes from the engage tick when it has one (borrowStallWhy_),
+                // and otherwise says plainly what is happening, which is not "connecting".
+                if (! processorRef.borrowActive() || processorRef.borrowUid() != chainViewUid())
+                {
+                    writeLocked = true;
+                    lockLine = borrowStallWhy_.isNotEmpty()
+                                   ? borrowStallWhy_
+                                   : juce::String ("Getting this rack ready to edit...");
+                }
+                break;
             case EchoJayProcessor::RackLockState::HeldByOther:
                 writeLocked = true;
                 lockLine = "This rack is locked by "
@@ -13466,15 +13480,68 @@ void EchoJayEditor::borrowSelectionTick()
             p.pendingAutoEngage_ = view;
             p.setRackLockWant(view);
         }
+        // ---- AND THE HELD-BUT-NEVER-ENGAGED RACK (19 Oct 2026, Sean, 08:52) -------------------
+        //
+        // *"Why is the Kick's Link rack 'Connecting' at all when the Link has been live the whole
+        // session?"*  His log answers it exactly: `08:51:59 EJRackLock: acquired uid=bb411b8240`,
+        // held until 08:56:10, and not one EJBorrow line in between - so the lock was taken and the
+        // read that engages the session never started. The gate then says "Connecting to rack…"
+        // (chainLockStateText maps Held-not-engaged to those words), his Build was refused, the
+        // queue kept it, and at 08:53:00 it expired after 20 s with nothing built.
+        //
+        // The re-arm above was written for the IDLE case (overlay_liveness_guard leg b2) and this
+        // is its twin: the lock is HELD for the rack on screen, nothing is pending, no read is in
+        // flight, and no session is active - a state that cannot recover on its own, because every
+        // path that would start the read needs pendingAutoEngage_ to be set and nothing sets it
+        // again. One line of log per re-arm, not per tick, so this cannot become a spinning loop
+        // that looks like progress.
+        else if (view.isNotEmpty() && ! p.borrowApplyInFlight_ && borrowReadInFlightUid_.isEmpty()
+                 && ! p.borrowActive() && p.pendingAutoEngage_.isEmpty()
+                 && p.rackLockHeldFor (view))
+        {
+            EchoJay_NSLog(("EJRackLock: re-armed for " + view + " - the lock is HELD here but no "
+                           "session was ever engaged and nothing was pending, which is a state that "
+                           "cannot recover by itself (his 08:52 \"Connecting to rack\" that never "
+                           "ended)").toRawUTF8());
+            p.pendingAutoEngage_ = view;
+        }
     }
     if (p.borrowApplyInFlight_) return;
     if (borrowReadInFlightUid_.isNotEmpty()) return;   // Defect R: one read at a time
     const juce::String want = p.pendingAutoEngage_;
-    if (want.isEmpty() || want != chainViewUid()) return;
+    // ---- A DEAD END THAT SAYS NOTHING IS WHAT HE WAS LOOKING AT (19 Oct 2026) -----------------
+    // All three of these returns were silent, and the user-facing text for every one of them is
+    // "Connecting to rack…" - a sentence that describes none of them and implies all of them will
+    // end. Said ONCE per reason per rack (borrowStallSaid_), because this tick runs at 1 Hz and a
+    // line per tick would bury the log it is supposed to explain.
+    auto sayStallOnce = [this, &p] (const juce::String& uid, const juce::String& why)
+    {
+        const juce::String k = uid + "|" + why;
+        if (borrowStallSaid_ == k) return;
+        borrowStallSaid_ = k;
+        // STORED, not written: the panel's status line is DERIVED on every refresh (the lockLine
+        // block), so a direct write here was overwritten within the tick - which is what
+        // overlay_liveness_guard (b3) caught, reading back "Rescanning..." instead of the reason.
+        // The derivation reads this.
+        borrowStallWhy_ = why;
+        EchoJay_NSLog(("EJBorrow: not engaging " + uid + " - " + why).toRawUTF8());
+    };
+    if (want.isEmpty() || want != chainViewUid())
+    {
+        if (! chainViewUid().isEmpty() && ! p.borrowActive())
+            sayStallOnce (chainViewUid(), want.isEmpty()
+                              ? juce::String ("nothing has asked to engage this rack yet")
+                              : "a different rack (" + want + ") is waiting to engage");
+        return;
+    }
     bool capable = false;
     if (auto it = p.linkRackCache.find(want); it != p.linkRackCache.end())
         capable = it->second.rack.borrowCapable;
-    if (! capable) return;        // read-only view; the tick retries as the cache fills
+    if (! capable)
+    {   // read-only view; the tick retries as the cache fills - but it says so now
+        sayStallOnce (want, "this Link has not published a rack this build can edit yet");
+        return;
+    }
     // THE LOCK GATES THE ATTEMPT, quietly (26 Aug regression): selection
     // claims the rack lock ASYNCHRONOUSLY, and the old tick cleared
     // pendingAutoEngage_ before a startBorrow that refuses while the lock
@@ -13482,7 +13549,12 @@ void EchoJayEditor::borrowSelectionTick()
     // and remote clicks only select: no plugin editor could open. The
     // pending uid is cleared ONLY once the session is live; until the lock
     // lands the tick just waits, banner-free, and retries at 1Hz.
-    if (! p.rackLockHeldFor(want)) return;
+    if (! p.rackLockHeldFor(want))
+    {
+        sayStallOnce (want, "waiting for this rack's lock");
+        return;
+    }
+    borrowStallSaid_.clear(); borrowStallWhy_.clear();   // the road is open; the next stall is news
     startBorrow(want);
     if (p.borrowActive()) p.pendingAutoEngage_.clear();
 }
@@ -29394,8 +29466,34 @@ void EchoJayEditor::armLoudnessLoopIfTargeted()
         // 21r item 1: NO SECOND WRITE. appendLocalResultBubble has already appended this message to the workspace
         // chat; appending it again here put TWO copies in the store, and a reload then drew the arm bubble twice.
         // One emit, one bubble, one stored row.
+        // 19 Oct 2026: remember which message this card is, so the verify line can go ON it rather
+        // than beside it. The base text is kept because a second verification REPLACES the line it
+        // wrote rather than stacking lines on the card.
+        ed->loopCardIdx_  = (int) ed->chatMessages.size() - 1;
+        ed->loopCardBase_ = b.text;
         ed->workspace.requestMutationSync();
         ed->resized(); ed->repaint();
+    };
+    // ---- THE VERIFY LINE GOES ON THE CARD (19 Oct 2026, his ruling) ------------------------------
+    // *"A clean verify shouldn't be silent: show it as a line in the existing card... never as a new
+    // unprompted bubble."*  So this does not append a message: it writes onto the one the landing
+    // already drew, and a later verification rewrites that line instead of adding another.
+    loop.onVerifyLine = [safeThis](const juce::String& line)
+    {
+        if (safeThis == nullptr) return;
+        auto* ed = safeThis.getComponent();
+        if (ed->loopCardIdx_ < 0 || ed->loopCardIdx_ >= (int) ed->chatMessages.size()) return;
+        auto& m = ed->chatMessages[(size_t) ed->loopCardIdx_];
+        const juce::String was = m.content;
+        m.content = (ed->loopCardBase_.isNotEmpty() ? ed->loopCardBase_ : m.content) + "\n" + line;
+        // The store and the processor's replay list are keyed by the TEXT (the idiom the settle line
+        // uses twenty lines down), so all three are updated from the one old string.
+        for (int k = ed->processorRef.chatContents.size() - 1; k >= 0; --k)
+            if (ed->processorRef.chatContents[k] == was) { ed->processorRef.chatContents.set (k, m.content); break; }
+        for (auto& h : ed->processorRef.chatHistory) if (h.content == was) { h.content = m.content; break; }
+        ed->workspace.updateAssistantText (ed->currentChatId, was, m.content);
+        ed->resized(); ed->repaint();
+        EchoJay_NSLog (("EJLoudness: verify line onto the card: " + line).toRawUTF8());
     };
     loop.logLine = [](const juce::String& line) { EchoJay_NSLog(line.toRawUTF8()); };   // 18e (item 5): every measurement, trim, branch and bubble
     // 18e: the loop itself inserts an EchoJay Level slot when a loudness-target chain has none (LoudnessLoop::ensureLevelSlot).

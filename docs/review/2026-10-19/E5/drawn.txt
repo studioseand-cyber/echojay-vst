@@ -1,0 +1,8 @@
+scenario E5
+captured 2026-10-19T08:50:31.275+01:00
+  [user] rig-rawids-marker: set the attack and release
+  [assistant] Set the attack and release.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change]
+  opening: Set the attack and release.
+  closing: Set the attack and release.
+    step "set slot 1: attack 20, release 60, band 1 frequency 240" [done] right="applied" detail="Done." chips=[]
