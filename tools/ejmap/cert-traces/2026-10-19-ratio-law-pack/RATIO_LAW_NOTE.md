@@ -120,7 +120,8 @@ The numbers above are an example.
 - **Keys run from 1 to the deepest GR read and never beyond.** They are not capped at 12 (the C1 reached 33 dB). A key below the first reading is absent, not guessed.
 - **Positions:** the tone check's g 2 and g 4 picks, plus one deep position (the amount curve's position with T nearest -46 dBFS), so each setting reaches deep GR.
 - **Inputs:** T-6 to T+44 dB in 2 dB steps, up to -0.5 dBFS.
-- **A built-in check:** the measured setting is re-measured too. Its `threshold_shift_db` should be about 0; if it isn't, that run's curves are offset from the served curve (Kathy's 7 show 2-4.4 dB; see ratio_law_kathy_19oct.zip).
+- **The convention:** the curves are **sine RMS dBFS** like `amount.curve` (`level_ref: sine_rms_dbfs`). The probe drives peak, and the conversion is ours.
+- **A built-in check:** the measured setting is re-measured too. Its `threshold_shift_db` should be under about 1 dB (0.00 on a hard knee; soft knees show their curvature). Kathy's 7: 0.0-0.9 dB.
 
 - **Without the block:** the maths only at the measured setting, from the measured curve, as you do now.
 - **`lib/compProfile.js` must accept the field before we send a profile carrying it.** Nothing has been sent.
