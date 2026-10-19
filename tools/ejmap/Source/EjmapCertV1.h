@@ -102,7 +102,7 @@ inline Result judgeEq (const juce::var& d)
     if (const auto* bs = listOf (d.getProperty ("bands", {})))
         for (const auto& b : *bs)
         {
-            if (b.getProperty ("verdict", "").toString() != "measured") continue;
+            if (! eq::measuredBand (b.getProperty ("verdict", "").toString())) continue;   // 19 Oct: an engaged band is judged (REQ); its switch is in the draft
             const auto band = b.getProperty ("name", "").toString();
             auto g = labelled ("gain", b.getProperty ("gain_map", {}), "gain_db", [] (double) { return 1.0; }, 3, 1.0, 12.0);
             Part f { "freq", "not_tested", "" };

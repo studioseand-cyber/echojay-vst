@@ -4814,6 +4814,36 @@ void testSweepQuietReference()
                    && run.contains ("for (auto& s : settings) if (juce::String (s.why) == \"the measured\") { s.ratio = measured; s.norm = (double) pn; }"),
                    "cert WZ-RATIO-6: every write at a READ ratio (Zip: 4.14 / 1 / 1.41 / 100), the measured at the profile's norm, an unread landing left unscored");
         }
+        // WZ-EQ-REQ-1 REQ (Kathy's fix plan B, 19 Oct): an engaged band (needs_engage: measured once its switch was on, the switch in the draft)
+        // counts as measured for the wizard's acceptance and is judged by v1 certification - REQ 2/4/6's 13 such bands read -18 -> -18.0 and
+        // passed 36 of 36 writes yet counted 0. A band whose every gain reads the same response (REQ Band 1: instantiated "Hi-Pass", -34.2 dB at
+        // every gain) is GAIN-INERT, and the shape search writes its own type control at a shape gain moves ("Band1 Type", never "Band1 Type All")
+        {
+            using namespace ejmap::eq;
+            auto bandJ = [] (const char* verdict, bool pass) { auto* b = new juce::DynamicObject(); b->setProperty ("verdict", verdict);
+                juce::Array<juce::var> acc; if (juce::String (verdict) != "not_static") for (int k = 0; k < 4; ++k) { auto* a = new juce::DynamicObject(); a->setProperty ("ran", true); a->setProperty ("pass", pass); acc.add (juce::var (a)); }
+                b->setProperty ("acceptance", acc); return juce::var (b); };
+            auto* prof = new juce::DynamicObject(); prof->setProperty ("bands", juce::Array<juce::var> { bandJ ("not_static", false), bandJ ("needs_engage", true), bandJ ("needs_engage", true), bandJ ("needs_engage", true), bandJ ("needs_engage", true), bandJ ("needs_engage", true) });
+            juce::String why = "5 band(s) measured (the wizard's count is pinned on the wizard branch)"; const bool accepted = true; const juce::var keepProf (prof);
+            auto row = [] (const char* res, double g) { Band b; b.result = res; b.gainDb = g; return b; };
+            const std::vector<Band> req1 { row ("shelf", -34.2), row ("shelf", -34.2), row ("shelf", -34.2), row ("shelf", -34.2), row ("shelf", -34.2), row ("shelf", -34.2), row ("shelf", -34.2) };
+            const std::vector<Band> moving { row ("measured", -18.0), row ("measured", -12.0), row ("flat", 0.0), row ("measured", 12.0) };
+            const std::vector<Band> flat { row ("flat", 0.0), row ("flat", 0.0) };
+            const std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> ctls {
+                { 0, "Band1 On/Off", true, { { "Off", 0.0f }, { "On", 1.0f } } },
+                { 1, "Band1 Type", true, { { "Bell", 0.0f }, { "Low-Shelf", 0.333333f }, { "Hi-Pass", 0.666667f }, { "Low-RShelv", 1.0f } } },
+                { 11, "Band1 Type All", true, { { "Bell", 0.0f }, { "Low-Shelf", 0.333333f }, { "Hi-Pass", 0.666667f }, { "Low-RShelv", 1.0f } } },
+                { 6, "Band6 Type", true, { { "Bell", 0.0f }, { "Hi-Shelf", 0.333333f } } } };
+            const auto sc = shapeCandidates ("Band1", ctls, { 2, 3, 4 });
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            const auto v1 = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertV1.h").loadFileAsString();
+            check (accepted && why.startsWith ("5 band(s) measured") && measuredBand ("needs_engage") && measuredBand ("measured") && ! measuredBand ("level_dependent") && ! measuredBand ("not_static")
+                   && gainInert (req1) && ! gainInert (moving) && ! gainInert (flat)
+                   && sc.size() == 1 && sc[0].index == 1 && sc[0].onText == "Bell" && sc[0].onNorm == 0.0f
+                   && drv.contains ("for (const auto& c : eq::shapeCandidates (band.key, switches, bandControlIdx))") && drv.contains ("engagedBy = (engagedBy.isEmpty() ? juce::String() : engagedBy + \", \") + c.name + \" = '\" + c.onText + \"'\";")
+                   && v1.contains ("if (! eq::measuredBand (b.getProperty (\"verdict\", \"\").toString())) continue;"),
+                   "cert WZ-EQ-REQ-1: engaged bands count and are judged (" + why + "); REQ Band 1 is gain-inert and gets its own type at '" + (sc.empty() ? juce::String ("?") : sc[0].onText) + "'");
+        }
         // WZ-RATIO-7 THE SERVED CONVENTION (Kathy, 19 Oct: Zip read +3.01 dB off its served curve): served dBFS are sine RMS (our peak - 3.0103),
         // the probe drives peak. T and the measured-setting law convert the served curve IN (+3.0103); the per-setting curves go OUT in sine RMS
         // with level_ref; a run file from the earlier packs (run/1, run/2: T stored as served) is converted when re-scored. On Zip the fixed

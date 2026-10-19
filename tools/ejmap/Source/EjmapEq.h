@@ -205,6 +205,31 @@ inline std::vector<EngageCandidate> engageCandidates (const juce::String& bandKe
     std::sort (out.begin(), out.end(), [] (const EngageCandidate& a, const EngageCandidate& b) { return a.shared != b.shared ? a.shared > b.shared : a.index < b.index; });
     return out;
 }
+// GAIN-INERT (19 Oct, REQ Band 1): every gain position reads the same response though the band is not flat - the band sits in a TYPE gain
+// cannot move (REQ instantiates Band 1 as "Hi-Pass": -34.2 dB at every gain from -18 to +18)
+// THE SHAPE SEARCH: the band's own type control (every name token the band's or a type word: "Band1 Type", not "Band1 Type All") at the
+// first text naming a shape gain moves - bell / peak / parametric first, then a shelf
+inline std::vector<EngageCandidate> shapeCandidates (const juce::String& bandKey, const std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>>& controls, const std::vector<int>& exclude)
+{
+    std::vector<EngageCandidate> out;
+    juce::StringArray keyToks = juce::StringArray::fromTokens (bandKey.toLowerCase(), " -_/", "\"'"); keyToks.removeEmptyStrings();
+    for (const auto& [idx, name, isSwitch, texts] : controls)
+    {
+        if (std::find (exclude.begin(), exclude.end(), idx) != exclude.end() || texts.empty()) continue;
+        juce::StringArray nameToks = juce::StringArray::fromTokens (name.toLowerCase(), " -_/", "\"'"); nameToks.removeEmptyStrings();
+        int shared = 0, typeWord = 0, foreign = 0;
+        for (const auto& t : nameToks) { if (keyToks.contains (t)) ++shared; else if (t == "type" || t == "shape" || t == "mode" || t == "filter") ++typeWord; else ++foreign; }
+        if (shared == 0 || typeWord == 0 || foreign > 0) continue;
+        for (const char* want : { "bell", "peak", "parametric", "shelf" })
+        {
+            const std::pair<const juce::String, float>* hit = nullptr;
+            for (const auto& kv : texts) if (kv.first.toLowerCase().contains (want)) { hit = &kv; break; }
+            if (hit != nullptr) { EngageCandidate c; c.index = idx; c.name = name; c.onNorm = hit->second; c.onText = hit->first; c.shared = shared; out.push_back (c); break; }
+        }
+    }
+    std::sort (out.begin(), out.end(), [] (const EngageCandidate& a, const EngageCandidate& b) { return a.shared != b.shared ? a.shared > b.shared : a.index < b.index; });
+    return out;
+}
 // A pool control the MEASURED fallback may read as a band's gain: not one whose name already says frequency or Q (REQ 2's
 // "Band1 Frq" moves the tone's level by 92 dB as a low-cut's corner crosses it - a frequency, never a gain; 6 Oct)
 inline bool measuredGainCandidate (const juce::String& name) { const auto r = bandRole (name); return r != BandRole::freq && r != BandRole::q; }
@@ -248,6 +273,13 @@ inline juce::String gridDescription() { return "multitone " + juce::String (kGri
 // a measured gain-sweep row as the derivations below see it (what the record's gain_sweep rows carry)
 struct GainRow { float norm = 0.0f; juce::String display; Band band; std::optional<double> labelDb; std::optional<double> outOverInDb; };   // outOverInDb: the grid's total output over its input (19 Oct, headroom)
 inline bool usable (const Band& b) { return b.result == "measured" || b.result == "shelf"; }
+inline constexpr double kInertDb = 0.5;
+inline bool gainInert (const std::vector<Band>& rows)
+{
+    int n = 0; double lo = 1e9, hi = -1e9;
+    for (const auto& b : rows) { if (! usable (b)) return false; ++n; lo = juce::jmin (lo, b.gainDb); hi = juce::jmax (hi, b.gainDb); }
+    return n >= 2 && hi - lo < kInertDb;
+}
 // A SHELF IS JUDGED BY ITS CORNER ONLY (19 Oct, H-EQ): where it reaches half its plateau. A shelf whose corner lies past the grid has NO
 // figure (0) - its "centre" is only the grid's edge (10 Hz / 23.5 kHz), and read as a figure it put 10 Hz points into H-EQ's LF law
 inline double figureOf (const Band& b) { return b.result == "shelf" ? b.cornerHz : b.centreHz; }
@@ -329,6 +361,9 @@ inline juce::String bandVerdict (const std::vector<GainRow>& rows, const LevelCh
     if (stepped) { reason = "frequency or gain only at detents"; return "stepped"; }
     reason = {}; return "measured";
 }
+// A MEASURED BAND for the counts and v1 certification (19 Oct, REQ): measured, or measured once its switch was on (needs_engage: the switch is
+// written with it - the draft's engage). REQ 2/4/6's 13 engaged bands read -18 -> -18.0 dB and passed 36 of 36 acceptance writes, yet counted 0
+inline bool measuredBand (const juce::String& verdict) { return verdict == "measured" || verdict == "needs_engage"; }
 inline bool serverMayUse (const juce::String& verdict) { return verdict == "measured" || verdict == "stepped" || verdict == "level_dependent" || verdict == "needs_engage"; }
 
 // THE ACCEPTANCE (section 7): two figures inside the band's measured range, +3 and -3 dB at each - the norms computed as the server
