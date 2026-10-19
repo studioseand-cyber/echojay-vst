@@ -73,7 +73,10 @@ Median local ratio per GR band (2-6 / 6-9 / 9-12 / beyond 12 dB), from each reco
 
 ## The check (RATIO_LAW_PACK)
 - **Settings:** the lowest, 2:1, 4:1, the highest and the measured one, at the tone check's g 2 and g 4 positions and a deep position, inputs T-6 to T+44 in 2 dB steps. The law's pass/fail leaves out points under half a knee above T; the curves keep every reading.
-- **Non-linear or named ratio dials** (C1, DPR-402) are placed from the plugin's own text, one extra load after the licence gate.
+- **Every ratio dial is placed from the plugin's own text at run time** (one extra load after the licence gate).
+  - Every write lands where a text was read; the measured setting goes at the profile's own norm.
+  - A run whose landed ratio was not read is left unscored (`runs_unread`).
+  - Kathy's first run of her 7 showed why: the record's range put Zip's 4.14:1 write at 1.41:1, and the Lindells' 2:1 / 4:1 landed between detents and printed nothing.
 - **Lists** (B's 27 adjustable; the 18 fixed-ratio are out of scope):
   - `products_sean_mac.txt`: 20: the 7 licence-bound on Kathy's Mac (MCompressor, CL 1B, VBC FG-Red: PACE; the three SSL Native; kHs Compressor) and the 13 Waves profiles (API-2500 m/s, DPR-402, the six C1 variants, SSLComp m/s, RCompressor m/s), served at 15.0.70 while Kathy's Mac has 12.0.0. Dry run: 20 of 20 planned.
   - `products_kathy_mac.txt`: 7 whose installed version equals the served profile's (Lindell 254E, Lindell SBC, Bettermaker, Solid Bus Comp, elysia alpha mix, bx_townhouse, Zip). Dry run: 7 of 7 planned. Kathy runs these.
@@ -117,6 +120,7 @@ The numbers above are an example.
 - **Keys run from 1 to the deepest GR read and never beyond.** They are not capped at 12 (the C1 reached 33 dB). A key below the first reading is absent, not guessed.
 - **Positions:** the tone check's g 2 and g 4 picks, plus one deep position (the amount curve's position with T nearest -46 dBFS), so each setting reaches deep GR.
 - **Inputs:** T-6 to T+44 dB in 2 dB steps, up to -0.5 dBFS.
+- **A built-in check:** the measured setting is re-measured too. Its `threshold_shift_db` should be about 0; if it isn't, that run's curves are offset from the served curve (Kathy's 7 show 2-4.4 dB; see ratio_law_kathy_19oct.zip).
 
 - **Without the block:** the maths only at the measured setting, from the measured curve, as you do now.
 - **`lib/compProfile.js` must accept the field before we send a profile carrying it.** Nothing has been sent.

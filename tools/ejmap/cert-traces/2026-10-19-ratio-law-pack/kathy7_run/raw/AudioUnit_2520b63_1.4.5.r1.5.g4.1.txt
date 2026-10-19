@@ -1,0 +1,62 @@
+probe: "Solid Bus Comp" | AudioUnit:Effects/aufx,Ni$6,-NI- | uid=2520b63 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Threshold	positions	1	levels	24
+spec	hz	997.000	hold_s	2.500	discard_s	2.200	win_s	0.300	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000	noise_lo	0.0	noise_hi	0.0	seed	0
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+sidechain	1	Input #2	2	enabled	self_keyed
+config	main_in	2	main_out	2	latency	0	sr	48000
+param	0	0.597580	Threshold	3.9 dB
+param	1	0.289580	Makeup	2.2 dB
+param	2	0.600000	Ratio	4
+param	3	0.000000	-	-
+param	4	1.000000	Attack	30 ms
+param	5	0.000000	Release	0.1 s
+param	6	1.000000	Output	  0.0 dB
+param	7	0.000000	Dry	-Inf dB
+param	8	0.000000	SC Mode	Off
+param	9	0.500000	SC Gain	0.0 dB
+param	10	1.000000	Link L/R	On
+set	1	0.187500	confirm_ms	501.9	getValue	0.187500	landed_by	render	render_blocks	1	text	-0.3 dB
+set	3	0.000000	confirm_ms	2.3	getValue	0.000000	landed_by	instack	render_blocks	0	text	-
+set	4	1.000000	confirm_ms	2.3	getValue	1.000000	landed_by	instack	render_blocks	0	text	30 ms
+set	5	0.000000	confirm_ms	2.3	getValue	0.000000	landed_by	instack	render_blocks	0	text	0.1 s
+set	6	1.000000	confirm_ms	2.3	getValue	1.000000	landed_by	instack	render_blocks	0	text	  0.0 dB
+set	7	0.000000	confirm_ms	2.3	getValue	0.000000	landed_by	instack	render_blocks	0	text	-Inf dB
+set	8	0.000000	confirm_ms	2.3	getValue	0.000000	landed_by	instack	render_blocks	0	text	Off
+set	9	0.500000	confirm_ms	2.3	getValue	0.500000	landed_by	instack	render_blocks	0	text	0.0 dB
+set	10	1.000000	confirm_ms	2.4	getValue	1.000000	landed_by	instack	render_blocks	0	text	On
+set	2	0.000000	confirm_ms	500.9	getValue	0.000000	landed_by	render	render_blocks	1	text	1.5
+stage	position
+pos	0	norm	0.490933	confirm_ms	500.54	slices	216	instack_match	0	getValue	0.490933	landed_by	render	render_blocks	1	text_ms	20.7	reads	2	text	-0.4 dB
+hold	0	-90.00	level_db	-93.3118	in_rms_db	-93.0103	tone_frac	0.9998	ch	-93.3118,-93.3118	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	-93.3120,-93.3105,-93.3094,-93.3102,-93.3118,-93.3120,-93.3105,-93.3094	nonfinite	0	out_peak_db	-90.3005	out_true_peak_db	-90.3001	out_true_peak_cubic_db	-90.3005	in_peak_db	-90.0000
+hold	0	-84.00	level_db	-87.3114	in_rms_db	-87.0103	tone_frac	0.9999	ch	-87.3114,-87.3114	doubled	0	last_move_db	-0.0014	final_move_db	-0.0014	win	-87.3098,-87.3095,-87.3110,-87.3121,-87.3114,-87.3098,-87.3095,-87.3110	nonfinite	0	out_peak_db	-84.3005	out_true_peak_db	-84.3001	out_true_peak_cubic_db	-84.3005	in_peak_db	-84.0000
+hold	0	-78.00	level_db	-81.3094	in_rms_db	-81.0103	tone_frac	1.0000	ch	-81.3094,-81.3094	doubled	0	last_move_db	-0.0003	final_move_db	-0.0003	win	-81.3101,-81.3117,-81.3120,-81.3106,-81.3094,-81.3101,-81.3117,-81.3120	nonfinite	0	out_peak_db	-78.3005	out_true_peak_db	-78.3001	out_true_peak_cubic_db	-78.1861	in_peak_db	-78.0000
+hold	0	-72.00	level_db	-75.3109	in_rms_db	-75.0103	tone_frac	1.0000	ch	-75.3109,-75.3109	doubled	0	last_move_db	0.0016	final_move_db	0.0016	win	-75.3121,-75.3115,-75.3099,-75.3095,-75.3109,-75.3121,-75.3115,-75.3099	nonfinite	0	out_peak_db	-72.3005	out_true_peak_db	-72.3001	out_true_peak_cubic_db	-72.3005	in_peak_db	-72.0000
+hold	0	-66.00	level_db	-69.3121	in_rms_db	-69.0103	tone_frac	0.9997	ch	-69.3121,-69.3121	doubled	0	last_move_db	-0.0005	final_move_db	-0.0005	win	-69.3107,-69.3095,-69.3100,-69.3116,-69.3121,-69.3107,-69.3095,-69.3100	nonfinite	0	out_peak_db	-66.3005	out_true_peak_db	-66.3001	out_true_peak_cubic_db	-66.3005	in_peak_db	-66.0000
+hold	0	-60.00	level_db	-63.3100	in_rms_db	-63.0103	tone_frac	1.0000	ch	-63.3100,-63.3100	doubled	0	last_move_db	-0.0013	final_move_db	-0.0013	win	-63.3095,-63.3107,-63.3121,-63.3116,-63.3100,-63.3095,-63.3107,-63.3121	nonfinite	0	out_peak_db	-60.3005	out_true_peak_db	-60.3001	out_true_peak_cubic_db	-60.3005	in_peak_db	-60.0000
+hold	0	-54.00	level_db	-57.3099	in_rms_db	-57.0103	tone_frac	1.0000	ch	-57.3099,-57.3099	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-57.3115,-57.3121,-57.3109,-57.3095,-57.3099,-57.3115,-57.3121,-57.3109	nonfinite	0	out_peak_db	-54.3005	out_true_peak_db	-54.3001	out_true_peak_cubic_db	-53.9111	in_peak_db	-54.0000
+hold	0	-48.00	level_db	-51.3120	in_rms_db	-51.0103	tone_frac	0.9997	ch	-51.3120,-51.3120	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-51.3117,-51.3101,-51.3094,-51.3106,-51.3120,-51.3117,-51.3101,-51.3094	nonfinite	0	out_peak_db	-48.3005	out_true_peak_db	-48.3001	out_true_peak_cubic_db	-48.3005	in_peak_db	-48.0000
+hold	0	-31.04	level_db	-34.4210	in_rms_db	-34.0503	tone_frac	1.0000	ch	-34.4210,-34.4210	doubled	0	last_move_db	-0.0016	final_move_db	-0.0016	win	-34.4050,-34.4197,-34.4214,-34.4221,-34.4210,-34.4196,-34.4198,-34.4214	nonfinite	0	out_peak_db	-31.4105	out_true_peak_db	-31.4101	out_true_peak_cubic_db	-31.4105	in_peak_db	-31.0400
+hold	0	-29.04	level_db	-32.6447	in_rms_db	-32.0503	tone_frac	1.0000	ch	-32.6447,-32.6447	doubled	0	last_move_db	0.0002	final_move_db	0.0002	win	-32.5961,-32.6467,-32.6471,-32.6455,-32.6447,-32.6458,-32.6473,-32.6471	nonfinite	0	out_peak_db	-29.6357	out_true_peak_db	-29.6353	out_true_peak_cubic_db	-29.1734	in_peak_db	-29.0400
+hold	0	-27.04	level_db	-30.9618	in_rms_db	-30.0503	tone_frac	0.9999	ch	-30.9618,-30.9618	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-30.8914,-30.9608,-30.9601,-30.9602,-30.9618,-30.9626,-30.9616,-30.9601	nonfinite	0	out_peak_db	-27.9509	out_true_peak_db	-27.9505	out_true_peak_cubic_db	-27.9509	in_peak_db	-27.0400
+hold	0	-25.04	level_db	-29.3429	in_rms_db	-28.0503	tone_frac	0.9998	ch	-29.3429,-29.3429	doubled	0	last_move_db	-0.0010	final_move_db	-0.0010	win	-29.2543,-29.3395,-29.3415,-29.3430,-29.3429,-29.3414,-29.3405,-29.3415	nonfinite	0	out_peak_db	-26.3315	out_true_peak_db	-26.3311	out_true_peak_cubic_db	-26.3315	in_peak_db	-25.0400
+hold	0	-23.04	level_db	-27.7718	in_rms_db	-26.0503	tone_frac	1.0000	ch	-27.7718,-27.7718	doubled	0	last_move_db	-0.0009	final_move_db	-0.0009	win	-27.6726,-27.7721,-27.7742,-27.7733,-27.7718,-27.7718,-27.7733,-27.7743	nonfinite	0	out_peak_db	-24.7625	out_true_peak_db	-24.7621	out_true_peak_cubic_db	-24.7625	in_peak_db	-23.0400
+hold	0	-21.04	level_db	-26.2435	in_rms_db	-24.0503	tone_frac	1.0000	ch	-26.2435,-26.2435	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-26.1362,-26.2437,-26.2436,-26.2426,-26.2435,-26.2450,-26.2451,-26.2436	nonfinite	0	out_peak_db	-23.2336	out_true_peak_db	-23.2331	out_true_peak_cubic_db	-23.2335	in_peak_db	-21.0400
+hold	0	-19.04	level_db	-24.7486	in_rms_db	-22.0503	tone_frac	0.9997	ch	-24.7486,-24.7486	doubled	0	last_move_db	0.0001	final_move_db	0.0001	win	-24.6312,-24.7448,-24.7460,-24.7475,-24.7486,-24.7477,-24.7462,-24.7460	nonfinite	0	out_peak_db	-21.7368	out_true_peak_db	-21.7365	out_true_peak_cubic_db	-21.7368	in_peak_db	-19.0400
+hold	0	-17.04	level_db	-23.2765	in_rms_db	-20.0503	tone_frac	1.0000	ch	-23.2765,-23.2765	doubled	0	last_move_db	-0.0016	final_move_db	-0.0016	win	-23.1526,-23.2747,-23.2778,-23.2780,-23.2765,-23.2754,-23.2762,-23.2778	nonfinite	0	out_peak_db	-20.2664	out_true_peak_db	-20.2660	out_true_peak_cubic_db	-20.2663	in_peak_db	-17.0400
+hold	0	-15.04	level_db	-21.8268	in_rms_db	-18.0503	tone_frac	1.0000	ch	-21.8268,-21.8268	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-21.7005,-21.8278,-21.8286,-21.8271,-21.8268,-21.8282,-21.8293,-21.8286	nonfinite	0	out_peak_db	-18.8176	out_true_peak_db	-18.8171	out_true_peak_cubic_db	-18.2347	in_peak_db	-15.0400
+hold	0	-13.04	level_db	-20.3981	in_rms_db	-16.0503	tone_frac	0.9998	ch	-20.3981,-20.3981	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-20.2666,-20.3954,-20.3958,-20.3965,-20.3981,-20.3984,-20.3970,-20.3958	nonfinite	0	out_peak_db	-17.3868	out_true_peak_db	-17.3864	out_true_peak_cubic_db	-17.3868	in_peak_db	-13.0400
+hold	0	-11.04	level_db	-18.9820	in_rms_db	-14.0503	tone_frac	0.9998	ch	-18.9820,-18.9820	doubled	0	last_move_db	-0.0013	final_move_db	-0.0013	win	-18.8450,-18.9784,-18.9813,-18.9826,-18.9820,-18.9804,-18.9800,-18.9813	nonfinite	0	out_peak_db	-15.9709	out_true_peak_db	-15.9703	out_true_peak_cubic_db	-15.9706	in_peak_db	-11.0400
+hold	0	-9.04	level_db	-17.5766	in_rms_db	-12.0503	tone_frac	1.0000	ch	-17.5766,-17.5766	doubled	0	last_move_db	-0.0005	final_move_db	-0.0005	win	-17.4391,-17.5770,-17.5792,-17.5779,-17.5766,-17.5771,-17.5787,-17.5792	nonfinite	0	out_peak_db	-14.5675	out_true_peak_db	-14.5669	out_true_peak_cubic_db	-14.5672	in_peak_db	-9.0400
+hold	0	-7.04	level_db	-16.1850	in_rms_db	-10.0503	tone_frac	1.0000	ch	-16.1850,-16.1850	doubled	0	last_move_db	0.0016	final_move_db	0.0016	win	-16.0459,-16.1842,-16.1842,-16.1837,-16.1850,-16.1863,-16.1859,-16.1843	nonfinite	0	out_peak_db	-13.1746	out_true_peak_db	-13.1742	out_true_peak_cubic_db	-13.1746	in_peak_db	-7.0400
+hold	0	-5.04	level_db	-14.8024	in_rms_db	-8.0503	tone_frac	0.9997	ch	-14.8024,-14.8024	doubled	0	last_move_db	-0.0004	final_move_db	-0.0004	win	-14.6584,-14.7981,-14.8001,-14.8018,-14.8024,-14.8011,-14.7998,-14.8002	nonfinite	0	out_peak_db	-11.7907	out_true_peak_db	-11.7901	out_true_peak_cubic_db	-11.7904	in_peak_db	-5.0400
+hold	0	-3.04	level_db	-13.4239	in_rms_db	-6.0503	tone_frac	1.0000	ch	-13.4239,-13.4239	doubled	0	last_move_db	-0.0014	final_move_db	-0.0014	win	-13.2790,-13.4227,-13.4258,-13.4255,-13.4239,-13.4232,-13.4244,-13.4258	nonfinite	0	out_peak_db	-10.4142	out_true_peak_db	-10.4133	out_true_peak_cubic_db	-10.4136	in_peak_db	-3.0400
+hold	0	-1.04	level_db	-12.0534	in_rms_db	-4.0503	tone_frac	1.0000	ch	-12.0534,-12.0534	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	-11.9097,-12.0540,-12.0546,-12.0532,-12.0534,-12.0550,-12.0557,-12.0546	nonfinite	0	out_peak_db	-9.0440	out_true_peak_db	-9.0430	out_true_peak_cubic_db	-8.5853	in_peak_db	-1.0400
+reread	0	steady
+timing	wall_ms	3036.3	audio_s	60.000
+stage	done

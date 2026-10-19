@@ -1,0 +1,14 @@
+probe: "bx_townhouse Buss Compressor" | AudioUnit:Effects/aumf,bxth,Brwx | uid=417f6e76 | arch=arm64 | format=AudioUnit
+
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+sidechain	1	Input #2	2	enabled	self_keyed
+textat	proto	1	index	5	name	Ratio	points	3	instantiated	0.000000	2:1
+at	0.000000	landed	getValue	0.000000	confirm_ms	2.3	landed_by	instack	text	2:1
+at	0.500000	landed	getValue	0.500000	confirm_ms	2.3	landed_by	instack	text	4:1
+at	1.000000	landed	getValue	1.000000	confirm_ms	2.3	landed_by	instack	text	10:1
+stage	done

@@ -1,0 +1,19 @@
+probe: "Lindell SBC" | AudioUnit:Effects/aufx,Lsbc,Brwx | uid=6f747363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+stage	configure
+policy	sidechain	self-keyed (as EchoJay 04e)	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+sidechain	1	Sidechain	2	enabled	self_keyed
+textat	proto	1	index	8	name	Ratio	points	7	instantiated	0.500000	4:1
+at	0.000000	landed	getValue	0.000000	confirm_ms	2.1	landed_by	instack	text	1.5:1
+at	0.166667	landed	getValue	0.166667	confirm_ms	2.3	landed_by	instack	text	2:1
+at	0.333333	landed	getValue	0.333333	confirm_ms	2.3	landed_by	instack	text	3:1
+at	0.500000	landed	getValue	0.500000	confirm_ms	2.2	landed_by	instack	text	4:1
+at	0.666667	landed	getValue	0.666667	confirm_ms	2.2	landed_by	instack	text	6:1
+at	0.833333	landed	getValue	0.833333	confirm_ms	2.3	landed_by	instack	text	10:1
+at	1.000000	landed	getValue	1.000000	confirm_ms	2.3	landed_by	instack	text	Inf
+stage	done
