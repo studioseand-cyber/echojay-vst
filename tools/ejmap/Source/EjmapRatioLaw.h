@@ -25,12 +25,14 @@ inline constexpr double kPassDb = 0.5;          // predicted vs measured GR, eve
 inline constexpr double kThresholdMoveDb = 0.5; // a ratio's own threshold (from its slope) further than this from T: "threshold moved"
 inline constexpr double kDefaultKneeDb = 6.0;   // a profile that states no knee: points less than 3 dB above T are not judged
 inline constexpr double kSameRatio = 0.05;
+inline constexpr double kInfRatio = 1000.0;     // "Inf" / "inf:1" / the infinity sign: a limiting position - placed only where it is READ, never interpolated to
 inline const std::vector<double>& levelsAboveThreshold() { static const std::vector<double> v { 6.0, 9.0, 12.0 }; return v; }
 
 // "6:1" / "6.0 : 1" / "6" -> 6; anything else -> nullopt
 inline std::optional<double> ratioOfText (const juce::String& t)
 {
     const auto s = t.trim().upToFirstOccurrenceOf (":", false, false).trim();
+    if (s.equalsIgnoreCase ("inf") || s == juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x9e"))) return kInfRatio;   // 19 Oct: DPR-402's "Inf"
     if (s.isEmpty() || ! s.containsOnly ("0123456789.")) return std::nullopt;
     const double v = s.getDoubleValue(); return v >= 1.0 ? std::optional<double> (v) : std::nullopt;
 }
@@ -50,8 +52,10 @@ inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double m
     auto normOf = [&] (double r) -> std::optional<double> {
         if (linear) { const double a = rg.getProperty ("at0", 0.0), b = rg.getProperty ("at1", 0.0); if (std::abs (b - a) < 1e-9) return std::nullopt;
                       const double n = (r - a) / (b - a); return n >= -1e-9 && n <= 1.0 + 1e-9 ? std::optional<double> (juce::jlimit (0.0, 1.0, n)) : std::nullopt; }
+        for (const auto& [r0, n0] : pts) if (std::abs (r - r0) < 1e-9) return n0;   // a reading itself (a named position, the first norm that reads it)
         for (size_t i = 0; i + 1 < pts.size(); ++i)
         {   const auto [r0, n0] = pts[i]; const auto [r1, n1] = pts[i + 1];
+            if (r0 >= kInfRatio || r1 >= kInfRatio) continue;   // never interpolated towards a limiting position
             if ((r - r0) * (r - r1) <= 0.0 && std::abs (r1 - r0) > 1e-9) return n0 + (n1 - n0) * (r - r0) / (r1 - r0); }
         return std::nullopt; };
     double lo = 1e9, hi = -1e9;
@@ -66,6 +70,15 @@ inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double m
     }
     return out;
 }
+// A ratio control the record cannot place (non-linear, or named positions): the plugin's own texts, read on a grid at run time after the
+// licence gate (one load, no audio), stand in for displayAt. Only LANDED reads count: a read the write did not reach says nothing about its norm
+inline juce::var controlFromGrid (const std::vector<std::tuple<double, bool, juce::String>>& grid)   // (norm, landed, text)
+{
+    auto* d = new juce::DynamicObject();
+    for (const auto& [n, landed, t] : grid) if (landed) d->setProperty (juce::String (n, 6), t);
+    auto* c = new juce::DynamicObject(); c->setProperty ("displayAt", juce::var (d)); return juce::var (c);
+}
+inline juce::String ratioWords (double r) { return r >= kInfRatio ? juce::String ("inf") : juce::String (r, 2); }
 
 // THE THRESHOLD FROM THE EXISTING SWEEP: at one curve position, the line through its (input at g dB, g) points for g >= 2 (the 1 dB point
 // sits in the knee) - GR = s x (input - T); T is where that line meets 0 and s the measured slope (effective ratio 1 / (1 - s))
@@ -108,7 +121,8 @@ struct Point { double ratio = 0.0;          // the LABELLED ratio the write land
                double input = 0.0;               // dBFS, the same convention as the sweep (peak)
                std::optional<double> gr; };      // measured; none = no reading
 struct Judged { Point p; double predicted = 0.0, error = 0.0; bool judged = false, pass = false; juce::String why; };
-struct RatioResult { double ratio = 0.0; bool tested = false, pass = false, thresholdMoved = false; double worst = 0.0, effectiveRatio = 0.0, thresholdShift = 0.0; int judged = 0, excluded = 0; juce::String why; };
+struct RatioResult { double ratio = 0.0; bool tested = false, pass = false, thresholdMoved = false; double worst = 0.0, effectiveRatio = 0.0, thresholdShift = 0.0; int judged = 0, excluded = 0; juce::String why;
+                     double worstEffective = 0.0; bool effectivePass = false; };   // 19 Oct: the same points against the EFFECTIVE ratio (T from the sweep)
 struct Verdict { juce::String status;   // "verified" | "partial" | "none"
                  std::vector<RatioResult> ratios; std::vector<Judged> points; std::vector<double> tested, safe; std::optional<std::pair<double, double>> safeBetween;
                  double worst = 0.0, kneeDb = kDefaultKneeDb, measuredRatio = 0.0; juce::String words; };
@@ -150,10 +164,16 @@ inline Verdict score (const std::vector<Point>& points, double kneeDbIn, double 
         if (slopeN > 0) { const double s = slopeSum / slopeN; rr.effectiveRatio = s < 1.0 - 1e-6 ? 1.0 / (1.0 - s) : 1e9; }
         if (shiftN > 0) { rr.thresholdShift = shiftSum / shiftN; rr.thresholdMoved = std::abs (rr.thresholdShift) > kThresholdMoveDb; }
         rr.tested = rr.judged > 0;
+        // THE MEASURED RATIOS (19 Oct): the server may use the effective ratio instead of the label - the same judged points, the same T
+        if (rr.tested && rr.effectiveRatio > 0.0)
+        {   const double k = rr.effectiveRatio > 1e8 ? 1.0 : 1.0 - 1.0 / rr.effectiveRatio;
+            for (const auto& j : js) if (j.judged) rr.worstEffective = juce::jmax (rr.worstEffective, std::abs (*j.p.gr - juce::jmax (0.0, (j.p.input - j.p.T) * k)));
+            rr.effectivePass = rr.worstEffective <= kPassDb; }
         rr.pass = rr.tested && std::all_of (js.begin(), js.end(), [] (const Judged& j) { return ! j.judged || j.pass; });   // every judged point, one rule
         rr.why = ! rr.tested ? "no point above the knee - not tested (excluded, not failed)"
                : juce::String (rr.judged) + " point(s) judged, worst " + juce::String (rr.worst, 2) + " dB"
                  + (rr.effectiveRatio > 0.0 ? ", effective " + (rr.effectiveRatio > 1e8 ? juce::String ("limiting") : juce::String (rr.effectiveRatio, 2) + ":1") : juce::String())
+                 + (rr.effectiveRatio > 0.0 ? " (worst " + juce::String (rr.worstEffective, 2) + " dB with it: " + (rr.effectivePass ? "PASS" : "FAIL") + ")" : juce::String())
                  + (shiftN > 0 ? ", threshold " + juce::String (rr.thresholdShift >= 0 ? "+" : "") + juce::String (rr.thresholdShift, 2) + " dB" + (rr.thresholdMoved ? " (MOVED)" : "") : juce::String());
         if (rr.tested) { v.tested.push_back (r); v.worst = juce::jmax (v.worst, rr.worst); if (rr.pass) v.safe.push_back (r); }
         v.ratios.push_back (rr);
@@ -188,7 +208,16 @@ inline juce::var block (const Verdict& v)
     for (const auto& r : v.ratios) if (r.tested) { const auto k = juce::String (r.ratio, 2); eff->setProperty (k, r.effectiveRatio > 1e8 ? juce::var ("limiting") : juce::var (std::round (r.effectiveRatio * 100.0) / 100.0));
                                                    mv->setProperty (k, std::round (r.thresholdShift * 100.0) / 100.0); }
     o->setProperty ("effective_ratio", juce::var (eff)); o->setProperty ("threshold_shift_db", juce::var (mv));
-    o->setProperty ("rule", "GR = (input - T) x (1 - 1/ratio), T from the measured sweep; pass within 0.5 dB at every point from the knee upward; never past the lowest or highest ratio tested");
+    // THE MEASURED RATIOS TABLE (19 Oct): labelled setting -> effective ratio, the worst error with the label and with the effective ratio;
+    // "use_effective" = within 0.5 dB with the effective ratio at every point from the knee upward - only inside the tested range
+    juce::Array<juce::var> table;
+    for (const auto& r : v.ratios) if (r.tested)
+    {   auto* t = new juce::DynamicObject(); t->setProperty ("labelled", r.ratio >= kInfRatio ? juce::var ("inf") : juce::var (r.ratio));
+        t->setProperty ("effective", r.effectiveRatio > 1e8 ? juce::var ("limiting") : juce::var (std::round (r.effectiveRatio * 100.0) / 100.0));
+        t->setProperty ("worst_db_label", std::round (r.worst * 100.0) / 100.0); t->setProperty ("worst_db_effective", std::round (r.worstEffective * 100.0) / 100.0);
+        t->setProperty ("use_effective", r.effectivePass); t->setProperty ("points", r.judged); table.add (juce::var (t)); }
+    o->setProperty ("measured_ratios", table);
+    o->setProperty ("rule", "GR = (input - T) x (1 - 1/ratio), T from the measured sweep; pass within 0.5 dB at every point from the knee upward; never past the lowest or highest ratio tested; measured_ratios[].use_effective: the same rule with the effective ratio in place of the label");
     return juce::var (o);
 }
 

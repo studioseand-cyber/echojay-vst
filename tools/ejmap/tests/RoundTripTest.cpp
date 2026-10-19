@@ -4637,6 +4637,80 @@ void testSweepQuietReference()
                    && mainSrc.contains ("if (a == \"--ratio-law\")") && mainSrc.contains ("if (a == \"--ratio-law-score\" && i + 1 < argc)"),
                    "cert WZ-RATIO-2: the dry run loads nothing; the tone check's call with only the ratio write swapped; licence gate first; the labelled ratio read back");
         }
+        // WZ-PROBE-END-1 NOTHING THE ENGINE STARTS OUTLIVES IT (Kathy, 19 Oct: two warm probes hosting UAD strips were still running half an hour
+        // after the run ended). Real processes: (a) a kill reaches every level (a row's probe sits under its section process; the old loops
+        // killed direct children only); (b) a timed-out child takes its grandchildren with it (the old timeout killed the child alone);
+        // (the app's group close is pinned on the wizard branch)
+        {
+            auto alive = [] (const char* sleepArg) {   // the sleep process itself (anchored: the shells whose command lines hold the text don't count)
+                const std::string cmd = std::string ("/usr/bin/pgrep -f '^sleep ") + sleepArg + "$'"; int n = 0;
+                if (FILE* f = popen (cmd.c_str(), "r")) { char buf[64]; while (fgets (buf, sizeof buf, f)) ++n; pclose (f); } return n; };
+            auto spawn = [] (const char* script, bool ownGroup) -> pid_t {
+                std::vector<std::string> sv { "/bin/sh", "-c", script }; std::vector<char*> av; for (auto& x : sv) av.push_back (x.data()); av.push_back (nullptr);
+                posix_spawnattr_t at; posix_spawnattr_init (&at); if (ownGroup) { posix_spawnattr_setflags (&at, POSIX_SPAWN_SETPGROUP); posix_spawnattr_setpgroup (&at, 0); }
+                pid_t p = 0; const int rc = posix_spawn (&p, "/bin/sh", nullptr, &at, av.data(), environ); posix_spawnattr_destroy (&at); return rc == 0 ? p : -1; };
+            // (a) sh -> sh -> sleep: three levels
+            const pid_t a = spawn ("/bin/sh -c 'sleep 91.71; true' & sleep 91.72", false);   // '; true' keeps the inner shell (no exec): three levels
+            for (int w = 0; w < 40 && ejmap::cert::descendantsOf (a).size() < 3; ++w) juce::Thread::sleep (50);   // the tree forms
+            const int levels = (int) ejmap::cert::descendantsOf (a).size(); const int beforeA = alive ("91.71");
+            ejmap::cert::killDescendants (a); kill (a, SIGKILL); { int st = 0; waitpid (a, &st, 0); } juce::Thread::sleep (200);
+            const int afterA = alive ("91.71") + alive ("91.72");
+            // (b) a timed-out child whose grandchild sleeps
+            const auto r = ejmap::cert::runChildDirect ({ "/bin/sh", "-c", "/bin/sh -c 'sleep 92.82; true' & sleep 92.83" }, 500); juce::Thread::sleep (200);
+            const int afterB = alive ("92.82");
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (levels >= 3 && beforeA == 1 && afterA == 0 && r.kind == ejmap::cert::ChildResult::Kind::timedOut && afterB == 0
+                   && drv.contains ("inline void killTree (pid_t pid) { killDescendants (pid); kill (pid, SIGKILL); }")
+                   && drv.contains ("(19 Oct: every level)\n                killDescendants (pid);\n                kill (pid, SIGKILL);"),
+                   "cert WZ-PROBE-END-1: a kill reaches every level (" + juce::String (levels) + " found), a timed-out child takes its grandchildren (the app's group close is pinned on the wizard branch) [a "
+                     + juce::String (beforeA) + "/" + juce::String (afterA) + " b " + juce::String ((int) r.kind) + "/" + juce::String (afterB) + "]");
+        }
+        // WZ-RATIO-3 THE MEASURED RATIOS + RUN-TIME PLACEMENT (Kathy, 19 Oct): per tested setting the effective ratio and the worst error with it
+        // (T from the sweep, the same points from the knee upward) - a ratio off its label but true to its slope is usable at its effective ratio;
+        // a moving threshold is not. "Inf" is a ratio, placed only where read; a non-linear / named control is placed from the plugin's own
+        // LANDED texts at run time, after the licence gate, never in the dry run
+        {
+            using namespace ejmap::ratiolaw;
+            const double T0 = -20.0;
+            auto gr = [] (double L, double tt, double rt, double k) { const double s = 1.0 - 1.0 / rt, x = L - tt;
+                if (k > 0.0 && std::abs (x) <= k / 2.0) return s * (x + k / 2.0) * (x + k / 2.0) / (2.0 * k); return x > 0.0 ? s * x : 0.0; };
+            auto fake = [&] (std::function<double (double)> trueRatio, std::function<double (double)> trueT, double k, std::vector<double> ups) {
+                std::vector<ejmap::ratiolaw::Point> pts;
+                for (double label : { 2.0, 4.0, 10.0 }) for (double pos : { 0.2, 0.3 })
+                    for (double up : ups) { ejmap::ratiolaw::Point p; p.ratio = label; p.position = pos; p.T = T0; p.input = T0 + up; p.gr = gr (p.input, trueT (label), trueRatio (label), k); pts.push_back (p); }
+                return pts; };
+            auto rr = [] (const ejmap::ratiolaw::Verdict& v, double r) { for (const auto& x : v.ratios) if (std::abs (x.ratio - r) < 1e-9) return x; return ejmap::ratiolaw::RatioResult(); };
+            const auto offLabel = score (fake ([] (double r) { return 1.0 + 0.6 * (r - 1.0); }, [&] (double) { return T0; }, 0.0, { 6.0, 9.0, 12.0 }), 6.0, 6.0);
+            const auto moving = score (fake ([] (double r) { return r; }, [&] (double r) { return T0 + 0.5 * (r - 6.0); }, 0.0, { 6.0, 9.0, 12.0 }), 6.0, 6.0);
+            const auto soft = score (fake ([] (double r) { return r; }, [&] (double) { return T0; }, 16.0, { 2.0, 4.0, 9.0, 12.0, 14.0 }), 16.0, 6.0);
+            const auto tbl = block (offLabel).getProperty ("measured_ratios", {});
+            juce::var row10; if (const auto* a = tbl.getArray()) for (const auto& x : *a) if (std::abs ((double) x.getProperty ("labelled", 0.0) - 10.0) < 1e-9) row10 = x;
+            // DPR-402's named positions, measured at 4.0: only Inf is left, at its own read
+            juce::String w1; const auto dpr = settingsFor (juce::JSON::parse (R"({"displayAt":{"0.000":"Out","0.500":"4.0","1.000":"Inf"}})"), 4.0, w1);
+            // never interpolated towards Inf: 1.5 .. Inf offers the lowest and Inf only, no 2:1 / 4:1 placed between
+            juce::String w2; const auto toInf = settingsFor (juce::JSON::parse (R"({"displayAt":{"0.000":"1.5:1","1.000":"Inf"}})"), 6.0, w2);
+            // C1-shaped grid read on the plugin (non-linear, inverted past the top); a read the write did not reach is not used
+            const auto c1 = controlFromGrid ({ { 0.0, true, "0.50:1" }, { 0.25, true, "1.15:1" }, { 0.5, true, "4.58:1" }, { 0.65, true, "13.69:1" }, { 0.9, false, "99:1" }, { 1.0, true, "-5.00:1" } });
+            juce::String w3; const auto c1s = settingsFor (c1, 4.13, w3);
+            juce::String w4; const auto c1rec = settingsFor (juce::JSON::parse (R"({"displayAt":{"0.000":"0.50:1","0.500":"4.58:1","1.000":"-5.00:1"},"range":{"linear":false}})"), 4.13, w4);
+            const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapRatioLawRun.h").loadFileAsString();
+            const int dry = run.indexOf ("if (dryRun) { say (\"RATIO-LAW: --dry-run - nothing loaded\"); return 0; }"), gate = run.indexOf ("licenceGate (opt, desc)"), grid = run.indexOf ("\"--text-at-norms\", juce::String (ratioIdx)");
+            check (! rr (offLabel, 10.0).pass && rr (offLabel, 10.0).effectivePass && rr (offLabel, 10.0).worstEffective < 1e-6 && rr (offLabel, 2.0).effectivePass
+                   && ! rr (moving, 2.0).effectivePass && std::abs (rr (moving, 2.0).worstEffective - 1.0) < 1e-6
+                   && rr (soft, 4.0).effectivePass && rr (soft, 4.0).worstEffective < 1e-6
+                   && tbl.size() == 3 && std::abs ((double) row10.getProperty ("effective", 0.0) - 6.4) < 1e-9 && (double) row10.getProperty ("worst_db_label", 0.0) > 0.5
+                   && (double) row10.getProperty ("worst_db_effective", 1.0) == 0.0 && (bool) row10.getProperty ("use_effective", false) && (int) row10.getProperty ("points", 0) == 6
+                   && ratioOfText ("Inf") == kInfRatio && ratioOfText ("inf:1") == kInfRatio && ! ratioOfText ("Out")
+                   && dpr.size() == 1 && dpr[0].ratio == kInfRatio && dpr[0].norm == 1.0
+                   && toInf.size() == 2 && toInf[0].ratio == 1.5 && toInf[1].ratio == kInfRatio && toInf[1].norm == 1.0
+                   && c1rec.empty() && w4.isNotEmpty()
+                   && c1s.size() == 4 && std::abs (c1s[0].ratio - 1.15) < 1e-9 && c1s[0].norm == 0.25 && std::abs (c1s[1].norm - (0.25 + 0.25 * 0.85 / 3.43)) < 1e-9
+                   && std::abs (c1s[2].norm - (0.25 + 0.25 * 2.85 / 3.43)) < 1e-9 && std::abs (c1s[3].ratio - 13.69) < 1e-9 && c1s[3].norm == 0.65
+                   && run.contains ("const bool placeAtRun = ratioIdx >= 0 && settings.empty() && refused.isNotEmpty();")
+                   && dry > 0 && gate > dry && grid > gate,
+                   "cert WZ-RATIO-3: effective ratio usable when the slope holds (10:1 label, 6.40:1 effective, worst 0.00 dB with it); a moving threshold is not ("
+                     + juce::String (rr (moving, 2.0).worstEffective, 2) + " dB); Inf placed at its read only; C1 placed from landed texts at run time, after the licence gate, never in the dry run");
+        }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
         check (rungOf (bent, 1) == "-66/-60" && ! bent.skipped.contains (1) && rungOf (bent, 0) == "-54/-48",

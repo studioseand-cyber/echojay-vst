@@ -161,6 +161,31 @@ using windowwatch::parentOf;
 using windowwatch::inTreeOf;
 
 inline juce::Array<juce::var> windowsOwnedByTreeDetails (pid_t root, bool onScreenOnly = true) { return windowwatch::describeWindows (root, onScreenOnly); }
+// THE WHOLE TREE (Kathy, 19 Oct: two warm probes hosting UAD strips outlived the run): every descendant of root, found level by level
+// (a child's children too - a strips row's probe sits under the row's own section process), killed deepest first. The old loops killed
+// root's DIRECT children only, so a grandchild probe was left running, orphaned, until the app quit
+inline std::vector<pid_t> descendantsOf (pid_t root)
+{
+    std::vector<pid_t> out, level { root };
+    for (int depth = 0; depth < 32 && ! level.empty(); ++depth)
+    {
+        std::vector<pid_t> next;
+        for (pid_t p : level)
+        {
+            int n = proc_listchildpids (p, nullptr, 0); if (n <= 0) continue;
+            std::vector<pid_t> kids ((size_t) n + 8); n = proc_listchildpids (p, kids.data(), (int) (kids.size() * sizeof (pid_t)));
+            for (int c = 0; c < n; ++c) if (kids[(size_t) c] > 1 && std::find (out.begin(), out.end(), kids[(size_t) c]) == out.end()) { out.push_back (kids[(size_t) c]); next.push_back (kids[(size_t) c]); }
+        }
+        level = next;
+    }
+    return out;
+}
+inline int killDescendants (pid_t root)   // SIGKILL to every descendant, deepest first; how many were signalled
+{
+    const auto d = descendantsOf (root); int n = 0;
+    for (auto it = d.rbegin(); it != d.rend(); ++it) if (kill (*it, SIGKILL) == 0) ++n;
+    return n;
+}
 inline juce::StringArray windowsOwnedByTree (pid_t root, bool onScreenOnly = true)
 {
     juce::StringArray owners;
@@ -301,16 +326,8 @@ inline ChildResult runChildDirect (const juce::StringArray& args, int timeoutMs,
                 r.windowsInTree = shown;
                 r.windowDetails = windowsOwnedByTreeDetails (pid, watch.onScreenOnly);   // the title and text, before the kill (Sean, 6 Oct)
                 { juce::Array<juce::var> arr; for (const auto& w : r.windowDetails) arr.add (w); std::cout << "windows\t" << juce::JSON::toString (juce::var (arr), true) << std::endl; }
-                // The whole tree goes: the wrapper's UI process is a child of the probe.
-                for (int k = 0; k < 16; ++k)
-                {
-                    bool any = false;
-                    int n = proc_listchildpids (pid, nullptr, 0);
-                    std::vector<pid_t> kids ((size_t) juce::jmax (0, n) + 8);
-                    n = proc_listchildpids (pid, kids.data(), (int) (kids.size() * sizeof (pid_t)));
-                    for (int c = 0; c < n; ++c) if (kids[(size_t) c] > 1) { kill (kids[(size_t) c], SIGKILL); any = true; }
-                    if (! any) break;
-                }
+                // The whole tree goes: the wrapper's UI process is a child of the probe; a row's warm probe a child of its section (19 Oct: every level)
+                killDescendants (pid);
                 kill (pid, SIGKILL);
                 waitpid (pid, &status, 0);
                 uiKilled = reaped = true;
@@ -322,6 +339,7 @@ inline ChildResult runChildDirect (const juce::StringArray& args, int timeoutMs,
         { lastGuardScan = now; if (const auto g = phaseb::declaredGuardS (collected.toString())) { guardRead = true; effTimeoutMs = (int) std::lround (1000.0 * phaseb::effectiveGuardS (timeoutMs / 1000.0, *g)); } }
         if (timeoutPassed (t0, now, effTimeoutMs))
         {
+            killDescendants (pid);   // 19 Oct: a timed-out row takes its probes with it (they were left running, orphaned)
             kill (pid, SIGKILL);
             waitpid (pid, &status, 0);
             killed = reaped = true;
@@ -383,17 +401,7 @@ inline juce::String afterReady (const juce::String& s)
     const int at = s.indexOf ("ejprobe-ready\t"); if (at < 0) return s;
     const int nl = s.indexOf (at, "\n"); return nl < 0 ? juce::String() : s.substring (nl + 1);
 }
-inline void killTree (pid_t pid)
-{
-    for (int k = 0; k < 16; ++k)
-    {
-        bool any = false; int n = proc_listchildpids (pid, nullptr, 0);
-        std::vector<pid_t> kids ((size_t) juce::jmax (0, n) + 8); n = proc_listchildpids (pid, kids.data(), (int) (kids.size() * sizeof (pid_t)));
-        for (int c = 0; c < n; ++c) if (kids[(size_t) c] > 1) { kill (kids[(size_t) c], SIGKILL); any = true; }
-        if (! any) break;
-    }
-    kill (pid, SIGKILL);
-}
+inline void killTree (pid_t pid) { killDescendants (pid); kill (pid, SIGKILL); }   // 19 Oct: every level, not the direct children only
 struct Server
 {
     pid_t pid = 0; int toServer = -1, fromServer = -1; juce::StringArray key; bool readySeen = false; int requests = 0, restarts = 0;
