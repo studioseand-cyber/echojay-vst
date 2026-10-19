@@ -1,0 +1,7 @@
+RATIO-LAW: C1 comp (m) 15.0.70 - measured at 4.1:1 ([4] Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
+  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
+  each placed ratio at the g 2 position (norm 0.8979, T -16.84 dBFS from the sweep, its slope there 0.557): inputs -13.84 / -10.84 / -7.84 / -4.84 / -1.84 dBFS
+  each placed ratio at the g 4 position (norm 0.8541, T -20.34 dBFS from the sweep, its slope there 0.636): inputs -17.34 / -14.34 / -11.34 / -8.34 / -5.34 / -2.34 dBFS
+  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
+RATIO-LAW: C1 comp (m) - installed version 12.0.0 differs from the record's 15.0.70 (section 11: a profile is not used across versions)
+lowref rc=5

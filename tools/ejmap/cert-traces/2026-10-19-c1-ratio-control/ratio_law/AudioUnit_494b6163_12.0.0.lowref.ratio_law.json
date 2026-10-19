@@ -1,0 +1,717 @@
+{
+  "schema": "ej_ratio_law_run/1",
+  "product": "C1 comp (m)",
+  "plugin_id": "AudioUnit|494b6163|12.0.0",
+  "version": "12.0.0",
+  "map_fp": "SCRATCH-CONTROL-12.0.0 (built from the 15.0.70 profile; not a profile)",
+  "measuredAt": "2026-10-19T11:39:30.378+01:00",
+  "host": "0.1.0",
+  "measured_ratio": 4.13,
+  "knee_db": 6.0,
+  "ratio_control": "Ratio",
+  "ratio_index": 4,
+  "measured_ratio_law": {
+    "ratio": 4.13,
+    "worst_db": 2.78,
+    "status": "none",
+    "words": "no tested ratio follows the law (4.1:1)"
+  },
+  "control": {
+    "with_measured": true,
+    "levels_above_t": [
+      3.0,
+      6.0,
+      9.0,
+      12.0,
+      15.0,
+      18.0,
+      21.0,
+      24.0,
+      27.0,
+      30.0,
+      33.0,
+      36.0,
+      39.0,
+      42.0
+    ],
+    "extra_sets": "",
+    "tag": ".lowref"
+  },
+  "runs": [
+    {
+      "ratio": 4.13,
+      "ratio_why": "the measured",
+      "ratio_norm": 0.484375,
+      "g": 2.0,
+      "position": 0.8,
+      "T_dbfs": -25.609999999999999,
+      "sweep_slope": 0.652,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r4.1.g2.1.txt",
+      "landed_text": "4.13:1",
+      "labelled_ratio": 4.13,
+      "quiet_check_db": 0.030699999999996,
+      "levels": [
+        {
+          "input_dbfs": -22.609999999999999,
+          "gr_db": 1.35
+        },
+        {
+          "input_dbfs": -19.609999999999999,
+          "gr_db": 2.36
+        },
+        {
+          "input_dbfs": -16.609999999999999,
+          "gr_db": 3.74
+        },
+        {
+          "input_dbfs": -13.609999999999999,
+          "gr_db": 5.47
+        },
+        {
+          "input_dbfs": -10.609999999999999,
+          "gr_db": 7.52
+        },
+        {
+          "input_dbfs": -7.61,
+          "gr_db": 9.81
+        },
+        {
+          "input_dbfs": -4.61,
+          "gr_db": 12.25
+        },
+        {
+          "input_dbfs": -1.61,
+          "gr_db": 14.73
+        }
+      ]
+    },
+    {
+      "ratio": 1.0,
+      "ratio_why": "the lowest",
+      "ratio_norm": 0.21875,
+      "g": 2.0,
+      "position": 0.8,
+      "T_dbfs": -25.609999999999999,
+      "sweep_slope": 0.652,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r1.0.g2.1.txt",
+      "landed_text": "1.00:1",
+      "labelled_ratio": 1.0,
+      "quiet_check_db": -0.002099999999999,
+      "levels": [
+        {
+          "input_dbfs": -22.609999999999999,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -19.609999999999999,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -16.609999999999999,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -13.609999999999999,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -10.609999999999999,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -7.61,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -4.61,
+          "gr_db": 0.0
+        },
+        {
+          "input_dbfs": -1.61,
+          "gr_db": -0.0
+        }
+      ]
+    },
+    {
+      "ratio": 2.0,
+      "ratio_why": "2:1",
+      "ratio_norm": 0.362847222222222,
+      "g": 2.0,
+      "position": 0.8,
+      "T_dbfs": -25.609999999999999,
+      "sweep_slope": 0.652,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r2.0.g2.1.txt",
+      "landed_text": "2.00:1",
+      "labelled_ratio": 2.0,
+      "quiet_check_db": 0.026699999999998,
+      "levels": [
+        {
+          "input_dbfs": -22.609999999999999,
+          "gr_db": 1.17
+        },
+        {
+          "input_dbfs": -19.609999999999999,
+          "gr_db": 2.03
+        },
+        {
+          "input_dbfs": -16.609999999999999,
+          "gr_db": 3.18
+        },
+        {
+          "input_dbfs": -13.609999999999999,
+          "gr_db": 4.58
+        },
+        {
+          "input_dbfs": -10.609999999999999,
+          "gr_db": 6.16
+        },
+        {
+          "input_dbfs": -7.61,
+          "gr_db": 7.82
+        },
+        {
+          "input_dbfs": -4.61,
+          "gr_db": 9.44
+        },
+        {
+          "input_dbfs": -1.61,
+          "gr_db": 10.93
+        }
+      ]
+    },
+    {
+      "ratio": 4.0,
+      "ratio_why": "4:1",
+      "ratio_norm": 0.479296875,
+      "g": 2.0,
+      "position": 0.8,
+      "T_dbfs": -25.609999999999999,
+      "sweep_slope": 0.652,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r4.0.g2.1.txt",
+      "landed_text": "4.00:1",
+      "labelled_ratio": 4.0,
+      "quiet_check_db": 0.030700000000003,
+      "levels": [
+        {
+          "input_dbfs": -22.609999999999999,
+          "gr_db": 1.35
+        },
+        {
+          "input_dbfs": -19.609999999999999,
+          "gr_db": 2.35
+        },
+        {
+          "input_dbfs": -16.609999999999999,
+          "gr_db": 3.73
+        },
+        {
+          "input_dbfs": -13.609999999999999,
+          "gr_db": 5.46
+        },
+        {
+          "input_dbfs": -10.609999999999999,
+          "gr_db": 7.5
+        },
+        {
+          "input_dbfs": -7.61,
+          "gr_db": 9.779999999999999
+        },
+        {
+          "input_dbfs": -4.61,
+          "gr_db": 12.199999999999999
+        },
+        {
+          "input_dbfs": -1.61,
+          "gr_db": 14.65
+        }
+      ]
+    },
+    {
+      "ratio": 48.57,
+      "ratio_why": "the highest",
+      "ratio_norm": 0.796875,
+      "g": 2.0,
+      "position": 0.8,
+      "T_dbfs": -25.609999999999999,
+      "sweep_slope": 0.652,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r48.6.g2.1.txt",
+      "landed_text": "48.57:1",
+      "labelled_ratio": 48.57,
+      "quiet_check_db": 0.031700000000001,
+      "levels": [
+        {
+          "input_dbfs": -22.609999999999999,
+          "gr_db": 1.39
+        },
+        {
+          "input_dbfs": -19.609999999999999,
+          "gr_db": 2.44
+        },
+        {
+          "input_dbfs": -16.609999999999999,
+          "gr_db": 3.87
+        },
+        {
+          "input_dbfs": -13.609999999999999,
+          "gr_db": 5.69
+        },
+        {
+          "input_dbfs": -10.609999999999999,
+          "gr_db": 7.87
+        },
+        {
+          "input_dbfs": -7.61,
+          "gr_db": 10.35
+        },
+        {
+          "input_dbfs": -4.61,
+          "gr_db": 13.06
+        },
+        {
+          "input_dbfs": -1.61,
+          "gr_db": 15.91
+        }
+      ]
+    },
+    {
+      "ratio": 4.13,
+      "ratio_why": "the measured",
+      "ratio_norm": 0.484375,
+      "g": 4.0,
+      "position": 0.6,
+      "T_dbfs": -45.82,
+      "sweep_slope": 0.647,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r4.1.g4.1.txt",
+      "landed_text": "4.13:1",
+      "labelled_ratio": 4.13,
+      "quiet_check_db": 0.056899999999999,
+      "levels": [
+        {
+          "input_dbfs": -42.82,
+          "gr_db": 1.36
+        },
+        {
+          "input_dbfs": -39.82,
+          "gr_db": 2.35
+        },
+        {
+          "input_dbfs": -36.82,
+          "gr_db": 3.7
+        },
+        {
+          "input_dbfs": -33.82,
+          "gr_db": 5.41
+        },
+        {
+          "input_dbfs": -30.82,
+          "gr_db": 7.44
+        },
+        {
+          "input_dbfs": -27.82,
+          "gr_db": 9.720000000000001
+        },
+        {
+          "input_dbfs": -24.82,
+          "gr_db": 12.15
+        },
+        {
+          "input_dbfs": -21.82,
+          "gr_db": 14.630000000000001
+        },
+        {
+          "input_dbfs": -18.82,
+          "gr_db": 17.059999999999999
+        },
+        {
+          "input_dbfs": -15.82,
+          "gr_db": 19.390000000000001
+        },
+        {
+          "input_dbfs": -12.82,
+          "gr_db": 21.530000000000001
+        },
+        {
+          "input_dbfs": -9.82,
+          "gr_db": 23.440000000000001
+        },
+        {
+          "input_dbfs": -6.82,
+          "gr_db": 25.100000000000001
+        },
+        {
+          "input_dbfs": -3.82,
+          "gr_db": 26.489999999999998
+        }
+      ]
+    },
+    {
+      "ratio": 1.0,
+      "ratio_why": "the lowest",
+      "ratio_norm": 0.21875,
+      "g": 4.0,
+      "position": 0.6,
+      "T_dbfs": -45.82,
+      "sweep_slope": 0.647,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r1.0.g4.1.txt",
+      "landed_text": "1.00:1",
+      "labelled_ratio": 1.0,
+      "quiet_check_db": -0.002099999999999,
+      "levels": [
+        {
+          "input_dbfs": -42.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -39.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -36.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -33.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -30.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -27.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -24.82,
+          "gr_db": 0.0
+        },
+        {
+          "input_dbfs": -21.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -18.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -15.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -12.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -9.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -6.82,
+          "gr_db": -0.0
+        },
+        {
+          "input_dbfs": -3.82,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "ratio": 2.0,
+      "ratio_why": "2:1",
+      "ratio_norm": 0.362847222222222,
+      "g": 4.0,
+      "position": 0.6,
+      "T_dbfs": -45.82,
+      "sweep_slope": 0.647,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r2.0.g4.1.txt",
+      "landed_text": "2.00:1",
+      "labelled_ratio": 2.0,
+      "quiet_check_db": 0.050200000000004,
+      "levels": [
+        {
+          "input_dbfs": -42.82,
+          "gr_db": 1.18
+        },
+        {
+          "input_dbfs": -39.82,
+          "gr_db": 2.02
+        },
+        {
+          "input_dbfs": -36.82,
+          "gr_db": 3.15
+        },
+        {
+          "input_dbfs": -33.82,
+          "gr_db": 4.54
+        },
+        {
+          "input_dbfs": -30.82,
+          "gr_db": 6.11
+        },
+        {
+          "input_dbfs": -27.82,
+          "gr_db": 7.76
+        },
+        {
+          "input_dbfs": -24.82,
+          "gr_db": 9.390000000000001
+        },
+        {
+          "input_dbfs": -21.82,
+          "gr_db": 10.890000000000001
+        },
+        {
+          "input_dbfs": -18.82,
+          "gr_db": 12.199999999999999
+        },
+        {
+          "input_dbfs": -15.82,
+          "gr_db": 13.289999999999999
+        },
+        {
+          "input_dbfs": -12.82,
+          "gr_db": 14.15
+        },
+        {
+          "input_dbfs": -9.82,
+          "gr_db": 14.82
+        },
+        {
+          "input_dbfs": -6.82,
+          "gr_db": 15.33
+        },
+        {
+          "input_dbfs": -3.82,
+          "gr_db": 15.699999999999999
+        }
+      ]
+    },
+    {
+      "ratio": 4.0,
+      "ratio_why": "4:1",
+      "ratio_norm": 0.479296875,
+      "g": 4.0,
+      "position": 0.6,
+      "T_dbfs": -45.82,
+      "sweep_slope": 0.647,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r4.0.g4.1.txt",
+      "landed_text": "4.00:1",
+      "labelled_ratio": 4.0,
+      "quiet_check_db": 0.056799999999996,
+      "levels": [
+        {
+          "input_dbfs": -42.82,
+          "gr_db": 1.36
+        },
+        {
+          "input_dbfs": -39.82,
+          "gr_db": 2.34
+        },
+        {
+          "input_dbfs": -36.82,
+          "gr_db": 3.69
+        },
+        {
+          "input_dbfs": -33.82,
+          "gr_db": 5.4
+        },
+        {
+          "input_dbfs": -30.82,
+          "gr_db": 7.42
+        },
+        {
+          "input_dbfs": -27.82,
+          "gr_db": 9.68
+        },
+        {
+          "input_dbfs": -24.82,
+          "gr_db": 12.1
+        },
+        {
+          "input_dbfs": -21.82,
+          "gr_db": 14.550000000000001
+        },
+        {
+          "input_dbfs": -18.82,
+          "gr_db": 16.960000000000001
+        },
+        {
+          "input_dbfs": -15.82,
+          "gr_db": 19.239999999999998
+        },
+        {
+          "input_dbfs": -12.82,
+          "gr_db": 21.34
+        },
+        {
+          "input_dbfs": -9.82,
+          "gr_db": 23.199999999999999
+        },
+        {
+          "input_dbfs": -6.82,
+          "gr_db": 24.800000000000001
+        },
+        {
+          "input_dbfs": -3.82,
+          "gr_db": 26.149999999999999
+        }
+      ]
+    },
+    {
+      "ratio": 48.57,
+      "ratio_why": "the highest",
+      "ratio_norm": 0.796875,
+      "g": 4.0,
+      "position": 0.6,
+      "T_dbfs": -45.82,
+      "sweep_slope": 0.647,
+      "probe": "exit 0",
+      "raw": "raw/AudioUnit_494b6163_12.0.0.lowref.r48.6.g4.1.txt",
+      "landed_text": "48.57:1",
+      "labelled_ratio": 48.57,
+      "quiet_check_db": 0.058500000000002,
+      "levels": [
+        {
+          "input_dbfs": -42.82,
+          "gr_db": 1.4
+        },
+        {
+          "input_dbfs": -39.82,
+          "gr_db": 2.43
+        },
+        {
+          "input_dbfs": -36.82,
+          "gr_db": 3.83
+        },
+        {
+          "input_dbfs": -33.82,
+          "gr_db": 5.63
+        },
+        {
+          "input_dbfs": -30.82,
+          "gr_db": 7.78
+        },
+        {
+          "input_dbfs": -27.82,
+          "gr_db": 10.24
+        },
+        {
+          "input_dbfs": -24.82,
+          "gr_db": 12.94
+        },
+        {
+          "input_dbfs": -21.82,
+          "gr_db": 15.779999999999999
+        },
+        {
+          "input_dbfs": -18.82,
+          "gr_db": 18.73
+        },
+        {
+          "input_dbfs": -15.82,
+          "gr_db": 21.73
+        },
+        {
+          "input_dbfs": -12.82,
+          "gr_db": 24.75
+        },
+        {
+          "input_dbfs": -9.82,
+          "gr_db": 27.780000000000001
+        },
+        {
+          "input_dbfs": -6.82,
+          "gr_db": 30.82
+        },
+        {
+          "input_dbfs": -3.82,
+          "gr_db": 33.850000000000001
+        }
+      ]
+    }
+  ],
+  "ratio_law": {
+    "status": "partial",
+    "tested_ratios": [
+      1.0,
+      2.0,
+      4.0,
+      4.13,
+      48.57
+    ],
+    "safe_ratios": [
+      1.0
+    ],
+    "safe_between": null,
+    "worst_db": 7.73,
+    "knee_db": 6.0,
+    "measured_ratio": 4.13,
+    "effective_ratio": {
+      "1.00": 0.0,
+      "2.00": 1.8,
+      "4.00": 3.0,
+      "4.13": 3.06,
+      "48.57": 4.6
+    },
+    "threshold_shift_db": {
+      "1.00": 0.0,
+      "2.00": 0.7,
+      "4.00": 2.71,
+      "4.13": 2.76,
+      "48.57": 3.61
+    },
+    "measured_ratios": [
+      {
+        "labelled": 1.0,
+        "effective": 0.0,
+        "worst_db_label": 0.0,
+        "worst_db_effective": 0.0,
+        "use_effective": false,
+        "points": 22
+      },
+      {
+        "labelled": 2.0,
+        "effective": 1.8,
+        "worst_db_label": 5.3,
+        "worst_db_effective": 2.96,
+        "use_effective": false,
+        "points": 22
+      },
+      {
+        "labelled": 4.0,
+        "effective": 3.0,
+        "worst_db_label": 5.35,
+        "worst_db_effective": 2.6,
+        "use_effective": false,
+        "points": 22
+      },
+      {
+        "labelled": 4.13,
+        "effective": 3.06,
+        "worst_db_label": 5.34,
+        "worst_db_effective": 2.66,
+        "use_effective": false,
+        "points": 22
+      },
+      {
+        "labelled": 48.57,
+        "effective": 4.6,
+        "worst_db_label": 7.73,
+        "worst_db_effective": 3.96,
+        "use_effective": false,
+        "points": 22
+      }
+    ],
+    "rule": "GR = (input - T) x (1 - 1/ratio), T from the measured sweep; pass within 0.5 dB at every point from the knee upward; never past the lowest or highest ratio tested; measured_ratios[].use_effective: the same rule with the effective ratio in place of the label"
+  },
+  "verdict": "safe ratios: 1:1 of 1:1, 2:1, 4:1, 4.1:1, 48.6:1 tested"
+}

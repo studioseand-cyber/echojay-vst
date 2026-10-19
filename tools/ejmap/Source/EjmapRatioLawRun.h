@@ -56,7 +56,10 @@ inline int ratioLawScoreFile (const juce::File& results)
     return 0;
 }
 
-inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, const juce::String& product, bool dryRun)
+// THE CONTROL RUN (Kathy, 19 Oct): the measured setting too, other input levels above T, writes swapped on top of the profile's
+// (a detector mode), and a tag so a second pass never overwrites the first. Default: the check as Sean runs it
+struct RatioLawControl { bool withMeasured = false; std::vector<double> ups; std::vector<std::pair<int, double>> sets; juce::String tag; };
+inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, const juce::String& product, bool dryRun, const RatioLawControl& ctl = {})
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto pf = ratioLawProfileFor (cert, product); if (! pf.existsAsFile()) { say ("RATIO-LAW: " + product + " - no profile in " + cert.getChildFile ("profiles").getFullPathName()); return 2; }
@@ -69,7 +72,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     if (ratioName.isEmpty() || measured <= 0.0) { say ("RATIO-LAW: " + product + " - the profile has no ratio control / measured ratio: nothing to check (the maths stays at its fixed ratio)"); return 3; }
     juce::var ratioCtl; int ratioIdx = -1;
     if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "").toString() == ratioName) { ratioCtl = c; ratioIdx = (int) c.getProperty ("index", -1); }
-    juce::String refused; auto settings = ratiolaw::settingsFor (ratioCtl, measured, refused);
+    juce::String refused; auto settings = ratiolaw::settingsFor (ratioCtl, measured, refused, ctl.withMeasured);
     // 19 Oct: a ratio control the record cannot place (non-linear, named positions) is placed at RUN time from the plugin's own texts
     const bool placeAtRun = ratioIdx >= 0 && settings.empty() && refused.isNotEmpty();
     if (ratioIdx < 0 || (settings.empty() && ! placeAtRun)) { say ("RATIO-LAW: " + product + " - " + (refused.isNotEmpty() ? refused : juce::String ("no ratio setting to test besides the measured one"))); return 3; }
@@ -92,7 +95,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     {
         const auto T = ratiolaw::thresholdAt (curve, norm);
         if (! T.ok) { say ("RATIO-LAW: " + product + " - no threshold from the sweep at norm " + juce::String (norm, 4) + " (g " + juce::String (g, 0) + "): position skipped"); continue; }
-        std::vector<double> lv; for (double up : ratiolaw::levelsAboveThreshold()) if (T.T + up <= -0.5) lv.push_back (std::round ((T.T + up) * 100.0) / 100.0);
+        std::vector<double> lv; for (double up : (ctl.ups.empty() ? ratiolaw::levelsAboveThreshold() : ctl.ups)) if (T.T + up <= -0.5) lv.push_back (std::round ((T.T + up) * 100.0) / 100.0);
         poss.push_back ({ g, norm, T, lv });
     }
     std::vector<Job> jobs;
@@ -127,7 +130,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) { say ("RATIO-LAW: " + product + " - " + vm); return 5; }
     if (const auto gate = licenceGate (opt, desc); gate.stop.isNotEmpty()) { say ("RATIO-LAW: " + product + " - " + gate.stop); return 6; }
     const auto outDir = cert.getChildFile ("ratio_law"); const auto raw = outDir.getChildFile ("raw"); raw.createDirectory();
-    const auto stem = pid.replace ("|", "_");
+    const auto stem = pid.replace ("|", "_") + ctl.tag;
     if (placeAtRun)   // THE PLACEMENT (19 Oct): the ratio's own texts on the grid; the landed ratio is read back again in every call
     {
         juce::StringArray gs; for (float g : ratioGrid) gs.add (juce::String (g, 6));
@@ -136,7 +139,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
         if (r.kind == ChildResult::Kind::uiShown) { say ("RATIO-LAW: " + product + " - a window while reading the ratio texts: closed, not clicked; stopped"); return 6; }
         if (! r.cleanExit()) { say ("RATIO-LAW: " + product + " - the ratio texts could not be read: " + r.describe()); return 4; }
         std::vector<std::tuple<double, bool, juce::String>> grid; for (const auto& row : pitch::parseTextGrid (r.out)) grid.push_back ({ row.norm, row.landed, row.text });
-        juce::String why; settings = ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why);
+        juce::String why; settings = ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured);
         if (settings.empty()) { say ("RATIO-LAW: " + product + " - read on the plugin: " + (why.isNotEmpty() ? why : juce::String ("no ratio setting besides the measured one"))); return 3; }
         juce::StringArray placed; for (const auto& s : settings) placed.add (ratiolaw::ratioWords (s.ratio) + ":1 (" + s.why + ") at norm " + juce::String (s.norm, 4));
         say ("  placed from the plugin's own texts: " + placed.joinIntoString ("; "));
@@ -147,6 +150,7 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     {
         if (phasebStop() != 0) { say ("RATIO-LAW: stopped - nothing written for the calls not made"); break; }
         juce::StringArray all; for (const auto& x : sets) if (! x.startsWith (juce::String (ratioIdx) + ":")) all.add (x);
+        for (const auto& [i, n] : ctl.sets) { for (int k = all.size(); --k >= 0;) if (all[k].startsWith (juce::String (i) + ":")) all.remove (k); all.add (juce::String (i) + ":" + juce::String (n, 6)); }   // the control's swap replaces the profile's write
         all.add (juce::String (ratioIdx) + ":" + juce::String (j.s.norm, 6));
         juce::String lv = quiet; for (size_t k = 0; k < j.levels.size(); ++k) lv << juce::String (j.levels[k], 2) << (k + 1 < j.levels.size() ? "," : "");
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
@@ -179,14 +183,17 @@ inline int runRatioLawOne (const SweepOptions& opt, const juce::File& cert, cons
     res->setProperty ("measured_ratio", measured); res->setProperty ("knee_db", kneeDb); res->setProperty ("ratio_control", ratioName); res->setProperty ("ratio_index", ratioIdx);
     { auto* m = new juce::DynamicObject(); m->setProperty ("ratio", measured); m->setProperty ("worst_db", std::round (atMeasured.worst * 100.0) / 100.0); m->setProperty ("status", atMeasured.status); m->setProperty ("words", atMeasured.words);
       res->setProperty ("measured_ratio_law", juce::var (m)); }
+    { auto* c = new juce::DynamicObject(); c->setProperty ("with_measured", ctl.withMeasured); juce::Array<juce::var> u; for (double x : ctl.ups) u.add (x); c->setProperty ("levels_above_t", u);
+      juce::StringArray ss; for (const auto& [i, n] : ctl.sets) ss.add (juce::String (i) + ":" + juce::String (n, 6)); c->setProperty ("extra_sets", ss.joinIntoString (",")); c->setProperty ("tag", ctl.tag);
+      res->setProperty ("control", juce::var (c)); }
     res->setProperty ("runs", runs);
     const auto file = outDir.getChildFile (stem + ".ratio_law.json"); file.replaceWithText (juce::JSON::toString (juce::var (res)) + "\n");
     return ratioLawScoreFile (file);
 }
-inline int runRatioLawAll (const SweepOptions& opt, const juce::File& cert, const juce::StringArray& only, bool dryRun)
+inline int runRatioLawAll (const SweepOptions& opt, const juce::File& cert, const juce::StringArray& only, bool dryRun, const RatioLawControl& ctl = {})
 {
     if (only.isEmpty()) { std::cout << "RATIO-LAW: name the products with --only (the list of single-ratio profiles)" << std::endl; return 2; }
-    int worst = 0; for (const auto& p : only) worst = juce::jmax (worst, runRatioLawOne (opt, cert, p, dryRun));
+    int worst = 0; for (const auto& p : only) worst = juce::jmax (worst, runRatioLawOne (opt, cert, p, dryRun, ctl));
     return worst;
 }
 } // namespace ejmap::cert
