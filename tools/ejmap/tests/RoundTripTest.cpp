@@ -4706,7 +4706,7 @@ void testSweepQuietReference()
                    && c1rec.empty() && w4.isNotEmpty()
                    && c1s.size() == 4 && std::abs (c1s[0].ratio - 1.15) < 1e-9 && c1s[0].norm == 0.25 && std::abs (c1s[1].norm - (0.25 + 0.25 * 0.85 / 3.43)) < 1e-9
                    && std::abs (c1s[2].norm - (0.25 + 0.25 * 2.85 / 3.43)) < 1e-9 && std::abs (c1s[3].ratio - 13.69) < 1e-9 && c1s[3].norm == 0.65
-                   && run.contains ("const bool placeAtRun = ratioIdx >= 0 && settings.empty() && refused.isNotEmpty();")
+                   && run.contains ("const bool placeAtRun = ratioIdx >= 0;")
                    && dry > 0 && gate > dry && grid > gate,
                    "cert WZ-RATIO-3: effective ratio usable when the slope holds (10:1 label, 6.40:1 effective, worst 0.00 dB with it); a moving threshold is not ("
                      + juce::String (rr (moving, 2.0).worstEffective, 2) + " dB); Inf placed at its read only; C1 placed from landed texts at run time, after the licence gate, never in the dry run");
@@ -4722,7 +4722,7 @@ void testSweepQuietReference()
             const auto mainSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
             check (with.size() == 4 && with[0].ratio == 6.0 && juce::String (with[0].why) == "the measured" && std::abs (with[0].norm - 0.5) < 1e-9 && with[1].ratio == 2.0 && with[3].ratio == 10.0
                    && without.size() == 3 && without[0].ratio == 2.0
-                   && run.contains ("ratiolaw::settingsFor (ratioCtl, measured, refused, ctl.withMeasured);") && run.contains ("ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured);")
+                   && run.contains ("ratiolaw::settingsFor (ratioCtl, measured, refused, ctl.withMeasured);") && run.contains ("ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured, true);")
                    && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups))")
                    && run.contains ("for (int k = all.size(); --k >= 0;) if (all[k].startsWith (juce::String (i) + \":\")) all.remove (k); all.add (juce::String (i) + \":\" + juce::String (n, 6));")
                    && run.contains ("const auto stem = pid.replace (\"|\", \"_\") + ctl.tag;")
@@ -4753,6 +4753,66 @@ void testSweepQuietReference()
                    && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::curveLadder() : ctl.ups)) if (bestT.T + up <= -0.5)") && run.contains ("bool deeper = bestNorm >= 0.0; for (const auto& p : poss) deeper = deeper && bestT.T < p.T.T - 6.0;")
                    && run.contains ("p.ratioNorm = run.getProperty (\"ratio_norm\", -1.0); p.ratioText = run.getProperty (\"landed_text\", \"\").toString();"),
                    "cert WZ-RATIO-5: per-setting curves in the served shape (whole-dB keys, interpolated, first crossing, never extrapolated: " + juce::String ((int) m.size()) + " keys), the T-6..T+44 ladder, a deep position, the block carries them");
+        }
+        // WZ-EQ-SHELF-1 A SHELF IS JUDGED BY ITS CORNER ONLY (Kathy, 19 Oct; H-EQ 18 Oct): a shelf whose corner lies past the grid has no
+        // figure - its "centre" is the grid's edge. H-EQ LF's law took 10 Hz for labels 2842..21096, so the acceptance aimed at 126.1 / 1589.3 Hz
+        // (10 x 2004^(1/3), ^(2/3)) and wrote "5040 .. 22". With the rule the targets come from the corners only (152 .. 20036 Hz)
+        {
+            using namespace ejmap::eq;
+            auto shelf = [] (double corner) { Band b; b.result = "shelf"; b.shape = "low_shelf"; b.centreHz = 10.0; b.cornerHz = corner; b.gainDb = 6.34; return b; };
+            const std::vector<std::tuple<float, const char*, double>> lf { { 0.0f, "22", 152.0 }, { 0.1667f, "68", 499.4 }, { 0.3333f, "216", 1136.5 }, { 0.5f, "679", 7323.9 }, { 0.6667f, "2135", 20036.2 },
+                                                                           { 0.7917f, "5040", 0.0 }, { 0.8333f, "6711", 0.0 }, { 1.0f, "21096", 0.0 } };
+            std::vector<FreqPoint> pts; for (const auto& [n, d, c] : lf) { const auto b = shelf (c); if (usable (b) && figureOf (b) > 0.0) pts.push_back ({ n, d, figureOf (b) }); }   // the driver's own predicate
+            const auto t = acceptanceTargets (pts, false);
+            Band peak; peak.result = "measured"; peak.centreHz = 1000.0;
+            Acceptance a; a.ran = true; a.measured = shelf (0.0); a.gain.promisedDb = 3.0; a.targetHz = 500.0; judgeAcceptance (a);
+            const auto eqSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapEq.h").loadFileAsString();
+            check (figureOf (shelf (0.0)) == 0.0 && figureOf (shelf (500.0)) == 500.0 && figureOf (peak) == 1000.0 && pts.size() == 5 && t.size() == 2
+                   && std::abs (t[0].targetHz - 152.0 * std::pow (20036.2 / 152.0, 1.0 / 3.0)) < 0.5 && std::abs (t[1].targetHz - 152.0 * std::pow (20036.2 / 152.0, 2.0 / 3.0)) < 1.0
+                   && ! t[0].display.contains ("5040") && ! t[1].display.contains ("5040") && ! a.pass && a.why.contains ("past the grid")
+                   && eqSrc.contains ("else if (ok && (rowShelf || shelf)) q->setProperty (\"why\", \"a shelf whose corner lies past the grid: no figure\");"),
+                   "cert WZ-EQ-SHELF-1: a shelf without a corner has no figure (targets " + (t.size() == 2 ? juce::String (t[0].targetHz, 1) + " / " + juce::String (t[1].targetHz, 1) : juce::String ("?")) + " Hz from the corners only; acceptance and the draft never use the grid's edge)");
+        }
+        // WZ-EQ-HEAD-1 HEADROOM IS NOT LEVEL DEPENDENCE (Kathy, 19 Oct; LinEQ 18 Oct): Band2 +30 read 27.34 dB at -12 dBFS and 29.22 at -30, every
+        // other position equal; the -12 dBFS output there was 20.3 dB over its input (-4.0 dBFS rms, peaks past full scale). Such a position is
+        // left out of the comparison and named; a real level dependence below full scale still flags
+        {
+            using namespace ejmap::eq;
+            auto row = [] (float n, const char* d, double g, std::optional<double> over) { GainRow r; r.norm = n; r.display = d; r.band.result = "measured"; r.band.gainDb = g; r.outOverInDb = over; return r; };
+            const std::vector<GainRow> m12 { row (0.0f, "-30.0", -10.51, -0.9), row (0.6667f, "10.0", 9.31, 3.9), row (1.0f, "30.0", 27.34, 20.3) };
+            const std::vector<GainRow> m30 { row (0.0f, "-30.0", -10.51, -0.9), row (0.6667f, "10.0", 9.31, 3.9), row (1.0f, "30.0", 29.22, 22.2) };
+            const auto lin = levelCheck (m12, m30);
+            std::vector<GainRow> real12 = m30; real12[1].band.gainDb = 8.0;   // a 1.31 dB disagreement where the output stays far below full scale
+            const auto real = levelCheck (real12, m30);
+            Position p; p.tones = { { 100.0, -42.0, -40.0 }, { 200.0, -42.0, -36.0 } };
+            const auto gg = gridGainDb (p);
+            const auto drvSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (drvSrc.contains ("row.labelDb = eq::labelNumber (p.text); row.outOverInDb = eq::gridGainDb (p); gainRowsM12.push_back (row);")
+                   && lin.ok && lin.verdict == "static" && lin.compared == 2 && lin.note.contains ("left out") && lin.note.contains ("30.0")
+                   && real.verdict == "level_dependent" && real.compared == 2 && overFullScale (row (1.0f, "x", 0.0, 11.5)) && ! overFullScale (row (1.0f, "x", 0.0, 10.5)) && ! overFullScale (row (1.0f, "x", 0.0, std::nullopt))
+                   && gg && std::abs (*gg - (10.0 * std::log10 ((std::pow (10.0, -4.0) + std::pow (10.0, -3.6)) / (2.0 * std::pow (10.0, -4.2))))) < 1e-9,
+                   "cert WZ-EQ-HEAD-1: a position whose -12 dBFS output passes full scale is left out of the level check (LinEQ +30: " + lin.verdict + "); real level dependence still flags (" + real.verdict + ")");
+        }
+        // WZ-RATIO-6 EVERY WRITE WHERE A TEXT WAS READ (Kathy's 7, 19 Oct: the record's range put Zip's 4.14 at 1.41, its 2:1 at 1.00; the
+        // Lindells' 2:1 / 4:1 landed between detents and printed nothing - and were scored as the ratio aimed at). Now: the plugin's texts are
+        // read at run time for EVERY product, each target goes to the nearest READ ratio (never a norm between reads), the measured setting to
+        // the profile's own norm, and a run whose landed ratio was not read is left unscored
+        {
+            using namespace ejmap::ratiolaw;
+            const auto zip = controlFromGrid ({ { 0.0, true, "1" }, { 0.25, true, "1.41" }, { 0.5, true, "4.14" }, { 0.75, true, "20" }, { 1.0, true, "100" } });
+            juce::String w; const auto st = settingsFor (zip, 4.14, w, true, true);
+            bool allRead = true; for (const auto& x : st) allRead = allRead && (x.norm == 0.0 || x.norm == 0.25 || x.norm == 0.5 || x.norm == 0.75 || x.norm == 1.0);
+            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_ratio6.json");
+            tmp.replaceWithText (R"({"product":"x","knee_db":6.0,"measured_ratio":4.0,"runs":[
+                {"ratio":2.0,"labelled_ratio":2.0,"position":0.5,"T_dbfs":-20.0,"levels":[{"input_dbfs":-14.0,"gr_db":3.0},{"input_dbfs":-11.0,"gr_db":4.5},{"input_dbfs":-8.0,"gr_db":6.0}]},
+                {"ratio":4.0,"position":0.5,"T_dbfs":-20.0,"levels":[{"input_dbfs":-14.0,"gr_db":1.0},{"input_dbfs":-11.0,"gr_db":1.5},{"input_dbfs":-8.0,"gr_db":2.0}]}]})");
+            const int rc = ejmap::cert::ratioLawScoreFile (tmp); const auto back = juce::JSON::parse (tmp.loadFileAsString()); tmp.deleteFile();
+            const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapRatioLawRun.h").loadFileAsString();
+            check (st.size() == 4 && allRead && st[0].ratio == 4.14 && st[0].norm == 0.5 && std::abs (st[2].ratio - 1.41) < 1e-9 && st[2].norm == 0.25 && st.back().ratio == 100.0
+                   && rc == 0 && (int) back.getProperty ("ratio_law", {}).getProperty ("runs_unread", -1) == 1 && back.getProperty ("ratio_law", {}).getProperty ("tested_ratios", {}).size() == 1
+                   && run.contains ("const bool placeAtRun = ratioIdx >= 0;") && run.contains ("ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured, true);")
+                   && run.contains ("for (auto& s : settings) if (juce::String (s.why) == \"the measured\") { s.ratio = measured; s.norm = (double) pn; }"),
+                   "cert WZ-RATIO-6: every write at a READ ratio (Zip: 4.14 / 1 / 1.41 / 100), the measured at the profile's norm, an unread landing left unscored");
         }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
