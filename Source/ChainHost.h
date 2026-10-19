@@ -1524,6 +1524,9 @@ public:
         semantic on both sides (dialApplied holds semanticLabel()), so no map resolution is needed
         and the two cannot drift. */
     bool slotControlConfirmedBySemantic (int slotIndex, const juce::String& semantic) const;
+    /** The dial's confirmed-control labels for a slot, comma-joined, for the sidecar to carry to
+        the main plugin (19 Oct 2026). Empty when the dial confirmed nothing. */
+    juce::String slotDialConfirmedLabels (int slotIndex) const;
     /** The smallest change a mapped control can represent near `near`, in the control's own units,
         read off the SYNCED map by plugin name so it answers for a Link's slot too. 0 = cannot say
         (18 Oct 2026: the read-back tolerance follows the knob, never a fixed 0.05). */

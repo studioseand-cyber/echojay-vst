@@ -795,7 +795,23 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         if (! (want.isDouble() || want.isInt() || want.isInt64())) continue;   // a mode name, not a number
         const double wanted = (double) want;
         double got = 0.0;
-        if (! src_.slotParam (applyTo, slot1, id, got)) { unreadable.add (id); continue; }
+        if (! src_.slotParam (applyTo, slot1, id, got))
+        {
+            // ---- CONFIRMED BY POSITION IS CONFIRMED (19 Oct 2026, his 12:31) ------------------
+            // *"The CL 1B Threshold never reads back."*  It had been written and verified: the
+            // applier checks the parameter's own normalised round-trip and logged "APPLIED 0.204
+            // (applied (display unverifiable on this plugin))". Only the display TEXT cannot be
+            // read as a number - and asking just the display road turned a landed setting into
+            // "could not read these values back", which reads as a failure.
+            if (src_.slotControlConfirmed && src_.slotControlConfirmed (applyTo, slot1, id))
+            {
+                matched.add (id + " (set, confirmed by its position)");
+                matchedPlain.add (echojay::semanticLabel (id) + " (set; this plugin's display cannot "
+                                  "be read, so it was confirmed by the knob's position)");
+                continue;
+            }
+            unreadable.add (id); continue;
+        }
         const double tol = readBackTolerance (slotName, id, wanted);
         if (std::abs (got - wanted) <= tol)
         {

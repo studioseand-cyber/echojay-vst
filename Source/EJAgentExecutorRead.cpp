@@ -1860,6 +1860,23 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         out.outCrestKnown   = ss.outCrestKnown;  out.outCrestDb = ss.outCrestDb;
         return out;
     };
+    // ---- DID THE DIAL CONFIRM IT, EVEN UNREADABLY (19 Oct 2026, his 12:31) ---------------------
+    s.slotControlConfirmed = [p] (const juce::String& uid, int slot1Based, const juce::String& semantic) -> bool
+    {
+        if (slot1Based < 1 || semantic.isEmpty()) return false;
+        if (uid.isEmpty())
+            return p->getChainHost().slotControlConfirmedBySemantic (slot1Based - 1, semantic);
+        // A LINK: the fact crosses in the sidecar's dialOk list, keyed by the semantic's own label -
+        // the same key ChainHost uses, so the two sides cannot mean different controls.
+        int err = 0; const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return false;
+        const auto rc = LinkShm::readRackSidecar (dir, uid);
+        if (! rc.valid || slot1Based > (int) rc.slots.size()) return false;
+        const auto label = echojay::semanticLabel (semantic);
+        if (label.isEmpty()) return false;
+        return juce::StringArray::fromTokens (rc.slots[(size_t) (slot1Based - 1)].dialConfirmed, ",", "")
+                   .contains (label);
+    };
     s.slotParam = [p] (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out) -> bool
     {
         if (slot1Based < 1 || paramId.isEmpty()) return false;

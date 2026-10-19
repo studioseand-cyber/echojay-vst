@@ -8,6 +8,11 @@
 #include "PluginProcessor.h"
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b): the shared sidecar slot fill
 #include "EedLimiterProcessor.h"
+// 19 Oct 2026: the compressor's registration is a STATIC registrar in its own translation unit, and
+// a static library drops a TU nothing references - which is why findByName("EchoJay Compressor")
+// came back null in this guard while the Limiter and Level (whose types it names) were found. The
+// include plus the symbol reference below is what pulls the TU in and runs its registrar.
+#include "EedCompressorProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
 #include "EedLevelEditor.h"   // 22 Sep 2026 (item 8): the card's readout tags
@@ -51,8 +56,182 @@ int main()
     check (dev != nullptr, "the slot processor is an EedLevelProcessor");
     if (dev == nullptr) return 1;
     { auto* pp = new juce::DynamicObject(); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("input_db", 0.0); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (1, juce::var (w)); }
-    juce::Random rng (11);
-    // baseline: unity
+    // ---- TAP: IN IS BEFORE THE PLUGIN AND OUT IS AFTER IT (19 Oct 2026, his 12:59) ------------
+    //
+    // *"The in/out figures again say loud parts UP, quiet parts DOWN and crest OPENING, the exact
+    // mirror image of a compressor with make-up. Strong suspicion: your input and output
+    // measurements are swapped."*
+    //
+    // Inspection says they are not - SlotPreTrim pushes the in tally from "what the plugin is about
+    // to hear" and SlotWetBlend pushes the out tally from the buffer arriving at it, which is the
+    // plugin's output - so inspection cannot settle it and a DIRECTION test can. A compressor with
+    // make-up, fed loud and quiet passages, must raise the quiet parts more than the loud ones and
+    // must CLOSE the crest. If the taps are crossed, every one of these flips sign.
+    {
+        juce::ignoreUnused (EedCompressorProcessor::schema());   // forces the registrar's TU to link
+        const auto* cmp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (cmp == nullptr)
+            check (false, "TAP0 the EchoJay Compressor is registered (the leg's subject)");
+        else
+        {
+            EchoJayProcessor cp; cp.prepareToPlay (48000.0, 512);
+            auto& ch = cp.getChainHost();
+            check (EchoJayBorrowHostTestAccess::loadBuiltin (ch, BuiltinDeviceRegistry::descriptionFor (*cmp)).isEmpty()
+                   && ch.getNumSlots() == 1, "TAP0 a compressor is in slot 1");
+            // HARD COMPRESSION WITH MAKE-UP: the whole point is that in and out must differ in a
+            // direction only one tap order can produce.
+            {
+                auto* pp = new juce::DynamicObject();
+                pp->setProperty ("threshold_db", -28.0);
+                pp->setProperty ("ratio",         8.0);
+                pp->setProperty ("attack_ms",     5.0);
+                pp->setProperty ("release_ms",  120.0);
+                pp->setProperty ("makeup_db",    12.0);
+                auto* w = new juce::DynamicObject();
+                w->setProperty ("params", juce::var (pp));
+                // setSlotStructuredSettings is the public road and raises the settingsAttached
+                // trigger itself - the apply is the host's, not this leg's to call.
+                ch.setSlotStructuredSettings (0, juce::var (w));
+                // a few blocks let the attach settle; this harness has no message loop to pump
+                juce::Random settle (7);
+                noise (cp, 0.001f, 8, settle);
+            }
+            // GROUND FIRST: did the device actually TAKE the settings? A compressor at its defaults
+            // cannot say anything about tap order, and reading the figures as if it had would be
+            // the "legs model the host" mistake this tree has written down twice.
+            if (auto* cdev = dynamic_cast<EedDeviceProcessor*> (ch.getSlotProcessor (0)))
+            {
+                const double th = cdev->getParamValue ("threshold_db");
+                const double ra = cdev->getParamValue ("ratio");
+                const double mk = cdev->getParamValue ("makeup_db");
+                check (std::abs (th + 28.0) < 0.5 && std::abs (ra - 8.0) < 0.5 && std::abs (mk - 12.0) < 0.5,
+                       "TAP0b the compressor TOOK the settings (threshold -28, ratio 8, make-up +12) - "
+                       "without this the figures below are a device at its defaults",
+                       "threshold " + f1 ((float) th) + ", ratio " + f1 ((float) ra)
+                       + ", make-up " + f1 ((float) mk));
+            }
+            juce::Random r2 (29);   // its own generator: the leg below has one called rng
+            ch.resetAllLevels();
+            // A KICK-SHAPED PASS: loud bursts over a quiet bed, so the compressor has something to
+            // do and the two passages can be compared separately.
+            for (int cycle = 0; cycle < 40; ++cycle)
+            {
+                noise (cp, 0.40f, 6, r2);     // the hit
+                noise (cp, 0.02f, 24, r2);    // the tail
+            }
+            // IS THE PLUGIN EVEN IN CIRCUIT? With +12 dB of make-up the output must be far louder
+            // than the input; if it is level with it, the slot is not processing in this harness and
+            // the figures cannot answer his question at all. The device's own reduction meter is the
+            // cheapest way to tell those two apart, and telling them apart is the difference between
+            // reporting a product defect and reporting a fixture that proves nothing.
+            {
+                const auto pic = ch.slotPicture (0);
+                check (pic.grKnown && pic.grDb > 1.0f,
+                       "TAP0c the compressor is actually COMPRESSING in this harness (its own meter "
+                       "reports reduction) - without this the in/out comparison below is two taps on "
+                       "an idle slot",
+                       pic.grKnown ? ("reduction " + f1 (pic.grDb) + " dB") : juce::String ("its meter reports nothing"));
+            }
+            // WHICH SIDE IS WHICH: the device's own in/out meters are ground truth for this slot,
+            // so comparing them with the two tallies names the side each tally is actually on.
+            {   // slotPicture carries the slot's own in/out LUFS, from the device's meters
+                const auto pic2 = ch.slotPicture (0);
+                std::printf ("    [TAP diag] picture in %.2f / out %.2f  (gr %.2f)\n",
+                             (double) pic2.inLufs, (double) pic2.outLufs, (double) pic2.grDb);
+            }
+            const auto lv = ch.getSlotLevels (0);
+            std::printf ("    [TAP diag] tally in levelDb %.2f  out levelDb %.2f\n",
+                         (double) lv.in.levelDb, (double) lv.out.levelDb);
+            std::printf ("    [TAP diag] hop ring counts: in %d  out %d   (each gated on its OWN level)\n",
+                         lv.in.hopLevelCount, lv.out.hopLevelCount);
+            float inTyp = 0.0f, inLoud = 0.0f, outTyp = 0.0f, outLoud = 0.0f, inCrest = 0.0f, outCrest = 0.0f;
+            const bool gotIn  = lv.in.hopLevelPercentiles (inTyp, inLoud)   && lv.in.hopCrest (inCrest);
+            const bool gotOut = lv.out.hopLevelPercentiles (outTyp, outLoud) && lv.out.hopCrest (outCrest);
+            check (lv.measured && gotIn && gotOut,
+                   "TAP1 both legs measured something to compare",
+                   "in " + f1 (inTyp) + "/" + f1 (inLoud) + "  out " + f1 (outTyp) + "/" + f1 (outLoud));
+            if (gotIn && gotOut)
+            {
+                // ---- WHAT THE DYNAMIC CASE CAN AND CANNOT ASSERT (19 Oct 2026) ---------------
+                //
+                // My first cut asserted the idealised compressor: quiet parts lifted more than loud
+                // ones, crest closing. Both failed, and B's section 87 read the same shape in Sean's
+                // 12:59 payload as "in and out swapped".
+                //
+                // TAP4 below disproves the swap outright - a constant tone below the threshold comes
+                // out EXACTLY +6 dB with +6 dB of make-up, through the percentiles, the crest ring
+                // and the gated level alike. So the dynamic shape is not a crossing: a slow-attack
+                // compressor passes the transient and squashes the body, which lowers RMS while the
+                // peak stands - and that OPENS a crest. An opto on a kick is the clearest case of it.
+                //
+                // So the direction cannot be asserted from dynamics, and asserting it anyway is how
+                // a leg comes to claim something about compressors that is not true of all of them.
+                // The figures are PRINTED, so the next reader sees them, and the directional claim
+                // lives in TAP4 where one number decides it.
+                std::printf ("    [TAP dyn] quiet %+.2f dB, loud %+.2f dB, crest %.2f -> %.2f "
+                             "(a slow attack legitimately opens a crest - see TAP4 for the direction)\n",
+                             (double) (outTyp - inTyp), (double) (outLoud - inLoud),
+                             (double) inCrest, (double) outCrest);
+                check (std::isfinite (outTyp) && std::isfinite (outCrest),
+                       "TAP2 the dynamic pass produces figures for both legs (their DIRECTION is not "
+                       "assertable from dynamics - TAP4 settles that, and B's section 87 read this "
+                       "shape as a swap it is not)",
+                       "quiet " + f1 (outTyp - inTyp) + " dB, loud " + f1 (outLoud - inLoud) + " dB");
+            }
+        }
+    }
+
+    // ---- TAP4: THE STATIC TEST, WHICH NO DYNAMICS CAN CONFUSE (19 Oct 2026) ------------------
+    //
+    // B's section 87 reads his 12:59 payload as "in and out swapped": input -10.2/-13.6, output
+    // -13.5/-17.3, crest 8.7 -> 15.9. My own leg reproduces that SHAPE - and in the same run the
+    // GATED levels go the right way (in -19.68, out -17.66, output louder), from the same two
+    // tallies. A swap cannot be true of one pair and false of the other, so the dynamic test cannot
+    // settle it: a slow-attack compressor legitimately drops RMS while letting transients through,
+    // which opens a crest and lowers both percentiles.
+    //
+    // So: a CONSTANT tone BELOW the threshold, where the compressor does nothing but pass it and
+    // add its make-up. Then out MUST be in + make-up. If it is, the taps are sound and the dynamic
+    // figures are describing real behaviour; if it is not, something between the taps and the
+    // payload is crossed. One number decides it.
+    {
+        const auto* cmp4 = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (cmp4 != nullptr)
+        {
+            EchoJayProcessor p4; p4.prepareToPlay (48000.0, 512);
+            auto& h4 = p4.getChainHost();
+            EchoJayBorrowHostTestAccess::loadBuiltin (h4, BuiltinDeviceRegistry::descriptionFor (*cmp4));
+            {
+                auto* pp = new juce::DynamicObject();
+                pp->setProperty ("threshold_db", -6.0);     // well ABOVE the tone: nothing compresses
+                pp->setProperty ("ratio",         4.0);
+                pp->setProperty ("makeup_db",     6.0);     // the only thing acting on it
+                auto* w = new juce::DynamicObject();
+                w->setProperty ("params", juce::var (pp));
+                h4.setSlotStructuredSettings (0, juce::var (w));
+            }
+            juce::Random r4 (5);
+            h4.resetAllLevels();
+            noise (p4, 0.02f, 400, r4);                     // about -34 dBFS, far below -6
+            const auto lv4 = h4.getSlotLevels (0);
+            const auto pic4 = h4.slotPicture (0);
+            float inT = 0.0f, inL = 0.0f, outT = 0.0f, outL = 0.0f;
+            const bool got4 = lv4.in.hopLevelPercentiles (inT, inL) && lv4.out.hopLevelPercentiles (outT, outL);
+            std::printf ("    [TAP4 diag] in %.2f/%.2f  out %.2f/%.2f  gatedIn %.2f gatedOut %.2f  gr %.2f\n",
+                         (double) inT, (double) inL, (double) outT, (double) outL,
+                         (double) lv4.in.levelDb, (double) lv4.out.levelDb, (double) pic4.grDb);
+            check (got4 && pic4.grDb < 0.5f,
+                   "TAP4 nothing is compressing (the tone is far below the threshold), so make-up is "
+                   "the only thing acting", "gr " + f1 (pic4.grDb) + " dB");
+            check (got4 && outT > inT + 4.0f && outL > inL + 4.0f,
+                   "TAP4b the OUTPUT is about 6 dB louder than the INPUT, in both percentiles - which "
+                   "is the make-up, and is only true if `in` is the tap before the plugin and `out` "
+                   "the one after (B's section 87 reads his payload as the two being swapped)",
+                   "in " + f1 (inT) + "/" + f1 (inL) + " -> out " + f1 (outT) + "/" + f1 (outL));
+        }
+    }
+
+    juce::Random rng (11);    // baseline: unity
     dev->resetMeters(); h.resetAllLevels(); noise (proc, 0.05f, 800, rng);
     const auto in0 = dev->inputLevels(), out0 = dev->outputLevels();
     check (std::isfinite (in0.shortTermDb) && std::isfinite (out0.shortTermDb) && std::abs (out0.shortTermDb - in0.shortTermDb) < 0.2f, "at 0 dB the output meter reads the input meter (short-term)", f1 (in0.shortTermDb) + " -> " + f1 (out0.shortTermDb));

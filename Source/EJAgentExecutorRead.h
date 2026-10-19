@@ -136,6 +136,18 @@ struct Sources
         which is the only thing readable across the process boundary. False = not readable, which the caller
         reports as "could not confirm" and never as success. */
     std::function<bool (const juce::String& uid, int slot1Based, const juce::String& paramId, double& out)> slotParam;
+    /** ---- CONFIRMED BY POSITION (19 Oct 2026, his 12:31) -------------------------------------
+        TRUE when the DIAL confirmed this control as applied even though its display text cannot be
+        read as a number. The CL 1B's Threshold is the case: *"APPLIED 0.204 (applied (display
+        unverifiable on this plugin)) landed 0.1"* - the applier checks the parameter's own
+        normalised round-trip, so the write is verified; what fails is turning the plugin's display
+        into a figure. Without this the read-back asked only the display road, got nothing, and
+        reported "could not read these values back" about a setting sitting exactly where it was
+        put - which he read as "the Threshold never reads back".
+
+        Keyed by semantic, as slotParam is, so the two roads cannot disagree about which control is
+        meant. FALSE whenever the answer is not known, never a guess. */
+    std::function<bool (const juce::String& uid, int slot1Based, const juce::String& semantic)> slotControlConfirmed;
 
     /** ---- IS THIS SLOT'S DIAL STILL RUNNING? (16 Oct 2026, the joint live pass) --------------------
         "" uid = the own rack, else a Link's. TRUE while the slot's dial is PENDING: the map has been

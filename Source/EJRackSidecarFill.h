@@ -90,6 +90,7 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
                 // so this side and the open rack's cannot take them differently.
                 back.inRmsKnown        = lv.in.hopLevelPercentiles (back.inTypicalRmsDb, back.inLoudestRmsDb);
                 back.inRmsSeconds      = lv.in.hopLevelSeconds();
+                back.dialConfirmed     = host.slotDialConfirmedLabels (i);
                 back.outRmsKnown       = lv.out.hopLevelPercentiles (back.outTypicalRmsDb, back.outLoudestRmsDb);
                 back.inCrestKnown      = lv.in.hopCrest  (back.inCrestDb);
                 back.outCrestKnown     = lv.out.hopCrest (back.outCrestDb);

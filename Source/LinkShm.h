@@ -1447,6 +1447,13 @@ struct RackSidecarSlot {
     float outLoudestRmsDb = -200.0f, outTypicalRmsDb = -200.0f;
     bool  inCrestKnown = false, outCrestKnown = false;
     float inCrestDb = 0.0f, outCrestDb = 0.0f;
+    /** ---- WHICH CONTROLS THE DIAL CONFIRMED (19 Oct 2026, his 12:31) ------------------------
+        Comma-joined semantic LABELS the dial confirmed as applied - including the ones it could
+        only confirm by their normalised position, because the plugin's display text cannot be read
+        as a number (the CL 1B's Threshold). Without this crossing, a read-back on a Link could only
+        ask the display road and reported a landed setting as unreadable.
+        LAST, same positional-brace-init rule as every field above it. */
+    juce::String dialConfirmed;
 };
 struct RackSidecar {
     bool  valid = false;
@@ -2280,6 +2287,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
                 so->setProperty ("outLoudRms", (double) s.outLoudestRmsDb);
                 so->setProperty ("outTypRms",  (double) s.outTypicalRmsDb);
             }
+            if (s.dialConfirmed.isNotEmpty()) so->setProperty ("dialOk", s.dialConfirmed);
             if (s.inCrestKnown)  so->setProperty ("inCrest",  (double) s.inCrestDb);
             if (s.outCrestKnown) so->setProperty ("outCrest", (double) s.outCrestDb);
         }
@@ -2401,6 +2409,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
                         s.outLoudestRmsDb = (float)(double) so->getProperty ("outLoudRms");
                         s.outTypicalRmsDb = (float)(double) so->getProperty ("outTypRms");
                     }
+                    s.dialConfirmed = so->getProperty ("dialOk").toString();
                     s.inCrestKnown  = so->hasProperty ("inCrest");
                     if (s.inCrestKnown)  s.inCrestDb  = (float)(double) so->getProperty ("inCrest");
                     s.outCrestKnown = so->hasProperty ("outCrest");
