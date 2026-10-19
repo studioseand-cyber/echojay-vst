@@ -40,7 +40,7 @@ inline std::optional<double> ratioOfText (const juce::String& t)
 // THE SETTINGS: the record's ratio control (its range, or its displayAt points) -> the lowest, 2:1, 4:1 and the highest, each with
 // the norm that writes it; the measured ratio and duplicates skipped; a ratio outside the control's range is not offered
 struct Setting { double ratio = 0.0, norm = 0.0; juce::String why; };
-inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double measuredRatio, juce::String& refused)
+inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double measuredRatio, juce::String& refused, bool includeMeasured = false)   // includeMeasured: the CONTROL run (19 Oct) measures the measured setting too
 {
     std::vector<std::pair<double, double>> pts;   // (ratio, norm), ascending by norm
     if (const auto* o = ratioControl.getProperty ("displayAt", {}).getDynamicObject())
@@ -62,9 +62,11 @@ inline std::vector<Setting> settingsFor (const juce::var& ratioControl, double m
     if (linear) { lo = juce::jmin ((double) rg.getProperty ("at0", 0.0), (double) rg.getProperty ("at1", 0.0)); hi = juce::jmax ((double) rg.getProperty ("at0", 0.0), (double) rg.getProperty ("at1", 0.0)); }
     else for (const auto& [r, n] : pts) { lo = juce::jmin (lo, r); hi = juce::jmax (hi, r); }
     std::vector<Setting> out;
-    for (const auto& [r, why] : std::vector<std::pair<double, const char*>> { { lo, "the lowest" }, { 2.0, "2:1" }, { 4.0, "4:1" }, { hi, "the highest" } })
+    std::vector<std::pair<double, const char*>> targets { { lo, "the lowest" }, { 2.0, "2:1" }, { 4.0, "4:1" }, { hi, "the highest" } };
+    if (includeMeasured) targets.insert (targets.begin(), { measuredRatio, "the measured" });
+    for (const auto& [r, why] : targets)
     {
-        if (std::abs (r - measuredRatio) < kSameRatio) continue;   // already measured
+        if (! includeMeasured && std::abs (r - measuredRatio) < kSameRatio) continue;   // already measured
         bool dup = false; for (const auto& s : out) dup = dup || std::abs (s.ratio - r) < kSameRatio; if (dup) continue;
         if (const auto n = normOf (r)) out.push_back ({ r, *n, why });
     }

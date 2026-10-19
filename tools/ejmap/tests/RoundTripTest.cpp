@@ -4683,6 +4683,24 @@ void testSweepQuietReference()
                    "cert WZ-RATIO-3: effective ratio usable when the slope holds (10:1 label, 6.40:1 effective, worst 0.00 dB with it); a moving threshold is not ("
                      + juce::String (rr (moving, 2.0).worstEffective, 2) + " dB); Inf placed at its read only; C1 placed from landed texts at run time, after the licence gate, never in the dry run");
         }
+        // WZ-RATIO-4 THE CONTROL RUN (Kathy, 19 Oct: "measure at the setting the profile was taken at and at 2:1, 4:1, highest"): --with-measured
+        // keeps the measured setting (first) beside the others; --levels-above replaces T + 6/9/12; --set swaps a write ON TOP of the profile's
+        // (the profile's write for that control is removed, not doubled); --tag keeps a second pass from overwriting the first. The default is untouched
+        {
+            using namespace ejmap::ratiolaw;
+            const auto cl = juce::JSON::parse (R"({"displayAt":{"0.000":"2:1","0.500":"6:1","1.000":"10:1"},"range":{"at0":2.0,"at1":10.0,"linear":true}})");
+            juce::String w1, w2; const auto with = settingsFor (cl, 6.0, w1, true), without = settingsFor (cl, 6.0, w2);
+            const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapRatioLawRun.h").loadFileAsString();
+            const auto mainSrc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+            check (with.size() == 4 && with[0].ratio == 6.0 && juce::String (with[0].why) == "the measured" && std::abs (with[0].norm - 0.5) < 1e-9 && with[1].ratio == 2.0 && with[3].ratio == 10.0
+                   && without.size() == 3 && without[0].ratio == 2.0
+                   && run.contains ("ratiolaw::settingsFor (ratioCtl, measured, refused, ctl.withMeasured);") && run.contains ("ratiolaw::settingsFor (ratiolaw::controlFromGrid (grid), measured, why, ctl.withMeasured);")
+                   && run.contains ("for (double up : (ctl.ups.empty() ? ratiolaw::levelsAboveThreshold() : ctl.ups))")
+                   && run.contains ("for (int k = all.size(); --k >= 0;) if (all[k].startsWith (juce::String (i) + \":\")) all.remove (k); all.add (juce::String (i) + \":\" + juce::String (n, 6));")
+                   && run.contains ("const auto stem = pid.replace (\"|\", \"_\") + ctl.tag;")
+                   && mainSrc.contains ("else if (k == \"--with-measured\") ctl.withMeasured = true;") && mainSrc.contains ("return ejmap::cert::runRatioLawAll (o, cert, only, dry, ctl);"),
+                   "cert WZ-RATIO-4: the control run keeps the measured setting (first), takes its own levels, swaps a write on top of the profile's (replaced, not doubled), tags its files; the default is untouched");
+        }
         // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
         const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
         check (rungOf (bent, 1) == "-66/-60" && ! bent.skipped.contains (1) && rungOf (bent, 0) == "-54/-48",

@@ -1,0 +1,24 @@
+RATIO-LAW: C1 comp (m) 12.0.0 - measured at 4.1:1 ([4] Ratio), knee 6.0 dB; the ratio settings placed at run time, then up to 8 probe call(s):
+  the ratio control cannot be placed from the record (the ratio control has neither a linear range nor two ratio readings to place a ratio by): the lowest, 2:1, 4:1 and the highest are placed at run time from the plugin's own text at 65 points - one load, no audio, after the licence gate
+  each placed ratio at the g 2 position (norm 0.8000, T -25.61 dBFS from the sweep, its slope there 0.652): inputs -22.61 / -19.61 / -16.61 / -13.61 / -10.61 / -7.61 / -4.61 / -1.61 dBFS
+  each placed ratio at the g 4 position (norm 0.6000, T -45.82 dBFS from the sweep, its slope there 0.647): inputs -42.82 / -39.82 / -36.82 / -33.82 / -30.82 / -27.82 / -24.82 / -21.82 / -18.82 / -15.82 / -12.82 / -9.82 / -6.82 / -3.82 dBFS
+  at the measured 4.1:1, from the existing sweep (no load): no tested ratio follows the law (4.1:1) (worst 2.78 dB)
+  placed from the plugin's own texts: 4.13:1 (the measured) at norm 0.4844; 1.00:1 (the lowest) at norm 0.2188; 2.00:1 (2:1) at norm 0.3628; 4.00:1 (4:1) at norm 0.4793; 48.57:1 (the highest) at norm 0.7969
+  4.1:1 at g 2: exit 0
+  1.0:1 at g 2: exit 0
+  2.0:1 at g 2: exit 0
+  4.0:1 at g 2: exit 0
+  48.6:1 at g 2: exit 0
+  4.1:1 at g 4: exit 0
+  1.0:1 at g 4: exit 0
+  2.0:1 at g 4: exit 0
+  4.0:1 at g 4: exit 0
+  48.6:1 at g 4: exit 0
+RATIO-LAW: C1 comp (m) - safe ratios: 1:1 of 1:1, 2:1, 4:1, 4.1:1, 48.6:1 tested
+  1.00:1  PASS  22 point(s) judged, worst 0.00 dB
+  2.00:1  FAIL  22 point(s) judged, worst 5.30 dB, effective 1.80:1 (worst 2.96 dB with it: FAIL), threshold +0.70 dB (MOVED)
+  4.00:1  FAIL  22 point(s) judged, worst 5.35 dB, effective 3.00:1 (worst 2.60 dB with it: FAIL), threshold +2.71 dB (MOVED)
+  4.13:1  FAIL  22 point(s) judged, worst 5.34 dB, effective 3.06:1 (worst 2.66 dB with it: FAIL), threshold +2.76 dB (MOVED)
+  48.57:1  FAIL  22 point(s) judged, worst 7.73 dB, effective 4.60:1 (worst 3.96 dB with it: FAIL), threshold +3.61 dB (MOVED)
+  at the measured 4.13:1 (the existing sweep, no new load): no tested ratio follows the law (4.1:1)
+lowref rc=0
