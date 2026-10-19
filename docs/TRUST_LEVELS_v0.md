@@ -815,7 +815,7 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
 - **The call:** the tone check's own (`--sweep` at the position, the profile's engage / neutral writes), with only the ratio write swapped. One process per (ratio, position); GR read after settling; the landed ratio read back as the plugin prints it.
 - **Licence gate first;** a window stops that product.
 - **`--dry-run`** prints the plan and the law at the measured ratio from the existing sweep, and loads nothing.
-- **Pack:** `FOR_SEAN_19oct/RATIO_LAW_PACK` (`ratio_law.sh`, `products.txt`: the CL 1B first).
+- **Pack:** `FOR_SEAN_19oct/RATIO_LAW_PACK` (`ratio_law.sh [--dry-run] <list>`; `products_sean_mac.txt` 7 licence-bound, `products_kathy_mac.txt` 20 guard-allowed, from B's 27 adjustable single-ratio profiles).
 
 ### 16.2 The scoring (EjmapRatioLaw.h; `ejmap --ratio-law-score <results.json>` on our side)
 - **T** is the line through the existing sweep's (input at g dB, g) points for g >= 2 at that position, interpolated between positions.
@@ -828,16 +828,47 @@ Only certified bands appear in `bands`. `certified_parts` on the unit lists "ban
   - Never past the lowest or highest tested ratio.
 - **Pins:** WZ-RATIO-1 (fake plugins: a true ratio verifies; a moving threshold fails and says how far; a ratio off its label fails with its effective ratio; soft-knee points under the knee are excluded, not failed; partial gives only the safe ones; settings skip the measured ratio and duplicates; T from a sweep point) and WZ-RATIO-2 (the dry run loads nothing; only the ratio write is swapped; licence gate first; the label is read back).
 
-### 16.3 The CL 1B, from its existing sweep (no load)
-- At its measured "6:1" the law misses by **up to 5.19 dB**. Its GR rises at 0.45 / 0.54 dB per dB at the g 2 / g 4 positions; a true 6:1 would be 0.83.
-- The profile already says so: `ratio.curve[0].measured_ratio` 1.74, and `fit.model` ratio 1.5.
-- **The formula over-predicts the CL 1B even at 6:1.** Its own measured curve (in_at_gr) is what passed the tone check.
+### 16.3 The CL 1B, and why measured_ratio is not a true ratio (audit 19 Oct, data on disk only; CORRECTS the first draft)
+- **The first draft said the CL 1B's label is wrong. It was not sent, and the data does not support it.**
+- **measured_ratio** (EjmapSweep.h): 1 / (1 - the median dGR/dInput), over every adjacent 2 dB pair at every position where both readings sit in 0.5-12 dB GR. Hold 2.5 s, read 0.3 s. **There is no knee handling**, so on a soft-knee unit it averages through the knee.
+- **fit.model ratio** (EjmapProfileExport.h): a minimax grid search, R in {1.5 … 20} and knee in {0 … 12}, over every in-band reading. The CL 1B's 1.5 is the grid floor, with a worst error of 2.75 dB. It is a model check, not a ratio.
+- **Slope by GR depth, as a ratio:**
+  - CL 1B: 1.14 / 1.71 / 2.22 / 2.70 / 3.36 / **6.06** at 0.5-2 / 2-4 / 4-6 / 6-9 / 9-12 / >12 dB.
+  - C1 comp (m) (4.13): **5.06** at 9-12, 2.82 deeper. The control below measured this as the plugin's overshoot-then-fall.
+  - MCompressor (1.8): 1.80 at 9-12, steeper near the knee and shallower deeper (1.31); its median 2.17 is neither. Not measured here (PACE).
+  - X-Comp (4.0): 4.00 everywhere.
+- **The C1 control (19 Oct, Kathy's Mac; cert-traces/2026-10-19-c1-ratio-control):**
+  - Sean's 15.0.70 profile is refused by version on this Mac's 12.0.0, so a labelled 12.0.0 scratch control ran: identical controls, the profile's other values read back, the ratio dial placed from its own text, inputs T+3..T+42, settled.
+  - **Result:** the local ratio crosses the label, overshoots (4.13:1 setting: 5.77 at 13 dB GR), then falls (1.86 at 26 dB). It is the same at both positions, so it is the plugin's static curve.
+  - The law misses by up to 5.3 dB with the label, and 2.6-4.0 dB with the fitted effective ratio. **The audit's 5.06 is the plugin's overshoot**, not dial placement and not the knee alone.
+  - Low/Peak Ref is a +28.45 dB level reference (identical GR); C1 has no knee control.
+- **Verdict:** measured_ratio is not a true ratio (method), and for the C1 the label is not one either (plugin). No scalar describes the C1 at a setting. **The measured_ratio "fix" was NOT made and no v3d was built:** its premise (a settled slope at the label above the knee) failed on the C1. Proposed instead: the measured curve per ratio setting. Sean's call.
+- **CL 1B and MCompressor:** not measured (licence-bound here). Their figures above stand as data, not as a verdict on their labels.
 
 ### 16.4 The profile field (proposed): `ratio_law`
 - **Fields:** `{status: verified | partial | none, tested_ratios, safe_ratios, safe_between, worst_db, knee_db, measured_ratio, effective_ratio {ratio: value}, threshold_shift_db {ratio: dB}, rule}`.
 - **Use:** "verified" lets the maths run between the lowest and highest tested ratios; "partial" only at `safe_ratios` (and inside `safe_between`); "none" only at the measured ratio, if that passes.
 - **The default for a profile without the block: the maths only at its measured ratio.**
 - **Sean's validator (`lib/compProfile.js`) must accept the field before we send a profile carrying it.** Until then no profile carries it.
+
+### 16.5 The measured ratios (19 Oct, Kathy; pin WZ-RATIO-3)
+- **Per tested setting:** the labelled ratio (the plugin's own text, read back), its **effective ratio** (1 / (1 - the slope of GR against input at that setting, from the knee upward)), the worst error with the label, and the worst error with the effective ratio. T comes from the existing sweep, and the points are the same ones.
+- **`use_effective`:** every point from the knee upward is within 0.5 dB with the effective ratio, inside the tested range (false for the C1 at every setting). The server may then use the effective ratio in place of the label at that setting.
+  - A threshold that moves with ratio fails both ways; the table says by how much.
+- **Block:** `ratio_law.measured_ratios: [{labelled, effective, worst_db_label, worst_db_effective, use_effective, points}]`.
+- **"Inf" is a ratio** (DPR-402's named top position). It is placed only where it is read and never interpolated towards.
+- **Non-linear or named ratio controls** (the six C1 variants, DPR-402) are placed at run time. One extra load reads the control's own text on a grid (65 points, or each step), after the licence gate, never in the dry run; only reads the write reached count. The landed ratio is read back again in every call.
+- **1.5 vs 1.74 for the CL 1B:** 1.5 is `fit.model`'s grid floor (a minimax shape fit), and 1.74 is `measured_ratio` (the median slope through the knee). Neither is the true ratio above the knee (6.06:1 beyond 12 dB of GR, from the same sweep). The table replaces both for settings other than the measured one.
+
+### 16.6 The 27 from raw readings, and re-derive vs re-measure (19 Oct; data on disk only)
+- **Median local ratio per GR band from each record's raw sweep** (at the measured setting).
+  - **Constant = label (4):** kHs Compressor, X-Comp v6, Zip, elysia alpha mix (two bands only).
+  - **Constant, not the label (4):** API-2500 m/s 1.7 for "4:1", Lindell SBC 1.6-1.8 for "4", VBC FG-Red 4.65-4.88 for "4".
+  - **Varies with depth (19):** the rest. C1 and RCompressor overshoot then fall; CL 1B, townhouse, 254E, SSL Bus 2, Solid Bus and SSLComp rise with depth; MCompressor falls.
+- **The whole-dB in_at_gr curves are too coarse** for this (X-Comp read 3.92-4.33 from them, 4.00 from the raw readings), so the raw readings were used.
+- **Re-derive from disk: none needed.** The server uses the measured curve at the measured setting.
+- **Re-measure: all 27 at their other settings** (RATIO_LAW_PACK; 7 on Sean's Mac, 20 on Kathy's).
+- **No v3d** (v3c unchanged).
 
 ## 17. The recount with the 18 Oct night run, 19 Oct (data on disk only; nothing loaded, nothing sent)
 | format | certified | mapped | unsure | testable | can't test on this Mac |

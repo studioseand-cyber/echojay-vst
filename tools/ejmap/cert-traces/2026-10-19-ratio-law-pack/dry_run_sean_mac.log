@@ -1,0 +1,68 @@
+RATIO-LAW: 7 product(s) from products_sean_mac.txt; cert folder /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/88e273c0-b7e5-4c0d-b973-d6dfaace6d8f/scratchpad/rl27/cert
+RATIO-LAW: the plan
+RATIO-LAW: SSL Native Bus Compressor 2 1.3.4 - measured at 2.0:1 ([0] Ratio), knee 6.0 dB; 4 probe call(s):
+  1.5:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.7977, T -24.43 dBFS from the sweep, its slope there 0.302): inputs -18.43 / -15.43 / -12.43 dBFS
+  4.0:1 (4:1, norm 0.5000) at the g 2 position (norm 0.7977, T -24.43 dBFS from the sweep, its slope there 0.302): inputs -18.43 / -15.43 / -12.43 dBFS
+  1.5:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.5947, T -29.74 dBFS from the sweep, its slope there 0.380): inputs -23.74 / -20.74 / -17.74 dBFS
+  4.0:1 (4:1, norm 0.5000) at the g 4 position (norm 0.5947, T -29.74 dBFS from the sweep, its slope there 0.380): inputs -23.74 / -20.74 / -17.74 dBFS
+  at the measured 2.0:1, from the existing sweep (no load): no tested ratio follows the law (2:1) (worst 3.85 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: SSL Native X-Comp v6 6.6.7 - measured at 4.0:1 ([3] Ratio), knee 6.0 dB; 6 probe call(s):
+  1.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.5307, T -18.00 dBFS from the sweep, its slope there 0.750): inputs -12.00 / -9.00 / -6.00 dBFS
+  2.0:1 (2:1, norm 0.1718) at the g 2 position (norm 0.5307, T -18.00 dBFS from the sweep, its slope there 0.750): inputs -12.00 / -9.00 / -6.00 dBFS
+  50.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.5307, T -18.00 dBFS from the sweep, its slope there 0.750): inputs -12.00 / -9.00 / -6.00 dBFS
+  1.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.4857, T -20.71 dBFS from the sweep, its slope there 0.749): inputs -14.71 / -11.71 / -8.71 dBFS
+  2.0:1 (2:1, norm 0.1718) at the g 4 position (norm 0.4857, T -20.71 dBFS from the sweep, its slope there 0.749): inputs -14.71 / -11.71 / -8.71 dBFS
+  50.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.4857, T -20.71 dBFS from the sweep, its slope there 0.749): inputs -14.71 / -11.71 / -8.71 dBFS
+  at the measured 4.0:1, from the existing sweep (no load): ratio law verified: 4:1 (every tested ratio within 0.5 dB from the knee upward) (worst 0.15 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: SSL Native X-ValveComp v6 6.6.13 - measured at 5.0:1 ([5] Ratio), knee 6.0 dB; 8 probe call(s):
+  1.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.5062, T -18.49 dBFS from the sweep, its slope there 0.765): inputs -12.49 / -9.49 / -6.49 dBFS
+  2.0:1 (2:1, norm 0.1263) at the g 2 position (norm 0.5062, T -18.49 dBFS from the sweep, its slope there 0.765): inputs -12.49 / -9.49 / -6.49 dBFS
+  4.0:1 (4:1, norm 0.3788) at the g 2 position (norm 0.5062, T -18.49 dBFS from the sweep, its slope there 0.765): inputs -12.49 / -9.49 / -6.49 dBFS
+  30.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.5062, T -18.49 dBFS from the sweep, its slope there 0.765): inputs -12.49 / -9.49 / -6.49 dBFS
+  1.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.4152, T -21.69 dBFS from the sweep, its slope there 0.769): inputs -15.69 / -12.69 / -9.69 dBFS
+  2.0:1 (2:1, norm 0.1263) at the g 4 position (norm 0.4152, T -21.69 dBFS from the sweep, its slope there 0.769): inputs -15.69 / -12.69 / -9.69 dBFS
+  4.0:1 (4:1, norm 0.3788) at the g 4 position (norm 0.4152, T -21.69 dBFS from the sweep, its slope there 0.769): inputs -15.69 / -12.69 / -9.69 dBFS
+  30.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.4152, T -21.69 dBFS from the sweep, its slope there 0.769): inputs -15.69 / -12.69 / -9.69 dBFS
+  at the measured 5.0:1, from the existing sweep (no load): no tested ratio follows the law (5:1) (worst 1.25 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: VBC FG-Red 1.3.5 - measured at 4.0:1 ([1] Ratio), knee 6.0 dB; 6 probe call(s):
+  1.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.1817, T -12.06 dBFS from the sweep, its slope there 0.797): inputs -6.06 / -3.06 dBFS
+  2.0:1 (2:1, norm 0.1667) at the g 2 position (norm 0.1817, T -12.06 dBFS from the sweep, its slope there 0.797): inputs -6.06 / -3.06 dBFS
+  10.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.1817, T -12.06 dBFS from the sweep, its slope there 0.797): inputs -6.06 / -3.06 dBFS
+  1.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.2327, T -14.63 dBFS from the sweep, its slope there 0.794): inputs -8.63 / -5.63 / -2.63 dBFS
+  2.0:1 (2:1, norm 0.1667) at the g 4 position (norm 0.2327, T -14.63 dBFS from the sweep, its slope there 0.794): inputs -8.63 / -5.63 / -2.63 dBFS
+  10.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.2327, T -14.63 dBFS from the sweep, its slope there 0.794): inputs -8.63 / -5.63 / -2.63 dBFS
+  at the measured 4.0:1, from the existing sweep (no load): no tested ratio follows the law (4:1) (worst 0.69 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: Tube-Tech CL 1B 2.5.62 - measured at 6.0:1 ([1] Ratio), knee 6.0 dB; 6 probe call(s):
+  2.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.2025, T -18.20 dBFS from the sweep, its slope there 0.445): inputs -12.20 / -9.20 / -6.20 dBFS
+  4.0:1 (4:1, norm 0.2500) at the g 2 position (norm 0.2025, T -18.20 dBFS from the sweep, its slope there 0.445): inputs -12.20 / -9.20 / -6.20 dBFS
+  10.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.2025, T -18.20 dBFS from the sweep, its slope there 0.445): inputs -12.20 / -9.20 / -6.20 dBFS
+  2.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.2362, T -22.51 dBFS from the sweep, its slope there 0.538): inputs -16.51 / -13.51 / -10.51 dBFS
+  4.0:1 (4:1, norm 0.2500) at the g 4 position (norm 0.2362, T -22.51 dBFS from the sweep, its slope there 0.538): inputs -16.51 / -13.51 / -10.51 dBFS
+  10.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.2362, T -22.51 dBFS from the sweep, its slope there 0.538): inputs -16.51 / -13.51 / -10.51 dBFS
+  at the measured 6.0:1, from the existing sweep (no load): no tested ratio follows the law (6:1) (worst 5.19 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: kHs Compressor 2.1.0 - measured at 2.0:1 ([4] Ratio), knee 6.0 dB; 6 probe call(s):
+  1.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.5334, T -17.81 dBFS from the sweep, its slope there 0.500): inputs -11.81 / -8.81 / -5.81 dBFS
+  4.0:1 (4:1, norm 0.3333) at the g 2 position (norm 0.5334, T -17.81 dBFS from the sweep, its slope there 0.500): inputs -11.81 / -8.81 / -5.81 dBFS
+  1000.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.5334, T -17.81 dBFS from the sweep, its slope there 0.500): inputs -11.81 / -8.81 / -5.81 dBFS
+  1.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.4468, T -21.81 dBFS from the sweep, its slope there 0.500): inputs -15.81 / -12.81 / -9.81 dBFS
+  4.0:1 (4:1, norm 0.3333) at the g 4 position (norm 0.4468, T -21.81 dBFS from the sweep, its slope there 0.500): inputs -15.81 / -12.81 / -9.81 dBFS
+  1000.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.4468, T -21.81 dBFS from the sweep, its slope there 0.500): inputs -15.81 / -12.81 / -9.81 dBFS
+  at the measured 2.0:1, from the existing sweep (no load): ratio law verified: 2:1 (every tested ratio within 0.5 dB from the knee upward) (worst 0.09 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: MCompressor 14.16.0 - measured at 1.8:1 ([6] Ratio), knee 6.0 dB; 8 probe call(s):
+  1.0:1 (the lowest, norm 0.0000) at the g 2 position (norm 0.3314, T -20.61 dBFS from the sweep, its slope there 0.471): inputs -14.61 / -11.61 / -8.61 dBFS
+  2.0:1 (2:1, norm 0.1053) at the g 2 position (norm 0.3314, T -20.61 dBFS from the sweep, its slope there 0.471): inputs -14.61 / -11.61 / -8.61 dBFS
+  4.0:1 (4:1, norm 0.3158) at the g 2 position (norm 0.3314, T -20.61 dBFS from the sweep, its slope there 0.471): inputs -14.61 / -11.61 / -8.61 dBFS
+  20.0:1 (the highest, norm 1.0000) at the g 2 position (norm 0.3314, T -20.61 dBFS from the sweep, its slope there 0.471): inputs -14.61 / -11.61 / -8.61 dBFS
+  1.0:1 (the lowest, norm 0.0000) at the g 4 position (norm 0.2771, T -24.26 dBFS from the sweep, its slope there 0.467): inputs -18.26 / -15.26 / -12.26 dBFS
+  2.0:1 (2:1, norm 0.1053) at the g 4 position (norm 0.2771, T -24.26 dBFS from the sweep, its slope there 0.467): inputs -18.26 / -15.26 / -12.26 dBFS
+  4.0:1 (4:1, norm 0.3158) at the g 4 position (norm 0.2771, T -24.26 dBFS from the sweep, its slope there 0.467): inputs -18.26 / -15.26 / -12.26 dBFS
+  20.0:1 (the highest, norm 1.0000) at the g 4 position (norm 0.2771, T -24.26 dBFS from the sweep, its slope there 0.467): inputs -18.26 / -15.26 / -12.26 dBFS
+  at the measured 1.8:1, from the existing sweep (no load): no tested ratio follows the law (1.8:1) (worst 4.90 dB)
+RATIO-LAW: --dry-run - nothing loaded
+RATIO-LAW: --dry-run: nothing loaded
