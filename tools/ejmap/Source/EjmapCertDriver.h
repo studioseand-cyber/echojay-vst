@@ -5162,6 +5162,25 @@ inline int runEq (const SweepOptions& opt)
                 }
                 if (engagedBy.isEmpty()) say ("    engage search: " + juce::String (tried) + " switch(es) tried, the band stays flat");
             } }
+          // THE SHAPE SEARCH (19 Oct, REQ Band 1): the same response at every gain -> the band's own type control at a shape gain moves, written
+          // with the band's switch on every sweep of it and recorded with it (engaged_by / the draft's engage)
+          { std::vector<eq::Band> bs; for (const auto& p : gr.positions) bs.push_back (eq::deriveBand (eq::deviation (p, baseline)));
+            if (eq::gainInert (bs))
+            {
+                int tried = 0; bool moved = false;
+                for (const auto& c : eq::shapeCandidates (band.key, switches, bandControlIdx))
+                {
+                    if (++tried > 2) break;
+                    auto sets = engageSets; sets.add (juce::String (c.index) + ":" + juce::String (c.onNorm, 6));
+                    auto [gr2, r2] = response (tag + ".gain.s" + juce::String (c.index), gIdx, normsFor (gIdx, 7), sets);
+                    if (r2.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                    std::vector<eq::Band> b2; for (const auto& p : gr2.positions) b2.push_back (eq::deriveBand (eq::deviation (p, baseline)));
+                    moved = ! b2.empty() && ! eq::gainInert (b2);
+                    say ("    shape search: [" + juce::String (c.index) + "] " + c.name + " -> '" + c.onText + "': " + (moved ? "gain now moves the band" : "still the same at every gain"));
+                    if (moved) { gr = gr2; engageSets = sets; engagedBy = (engagedBy.isEmpty() ? juce::String() : engagedBy + ", ") + c.name + " = '" + c.onText + "'"; break; }
+                }
+                if (! moved) say ("    shape search: " + juce::String (tried) + " type control(s) tried, gain still moves nothing");
+            } }
           { auto fig = [] (const eq::Band& b, const std::vector<std::pair<double, double>>& dev) { roleevidence::Figure f; if (b.result == "measured" || b.result == "shelf") { f.ok = true; f.bandGainDb = b.gainDb; f.centreHz = b.result == "shelf" && b.cornerHz > 0.0 ? b.cornerHz : b.centreHz; if (b.result == "measured") f.bandwidthOct = b.bandwidthOct; } else if (b.result == "flat") { f.ok = true; f.bandGainDb = 0.0; }
                              std::vector<double> ds; for (const auto& [hz, d] : dev) ds.push_back (d); if (! ds.empty()) { std::sort (ds.begin(), ds.end()); f.levelShiftDb = ds[ds.size() / 2]; } return f; };
             if (! gr.positions.empty()) { const auto d0 = eq::deviation (gr.positions.front(), baseline), d1 = eq::deviation (gr.positions.back(), baseline); gFirst = fig (eq::deriveBand (d0), d0); gLast = fig (eq::deriveBand (d1), d1); } }

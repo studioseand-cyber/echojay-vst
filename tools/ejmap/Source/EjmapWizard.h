@@ -229,7 +229,7 @@ inline bool eqAccepted (const juce::var& eqProfile, juce::String& why)
     if (const auto* bands = eqProfile.getProperty ("bands", {}).getArray())
         for (const auto& b : *bands)
         {
-            if (b.getProperty ("verdict", "").toString() == "measured") ++measured;
+            if (eq::measuredBand (b.getProperty ("verdict", "").toString())) ++measured;   // 19 Oct: an engaged band counts (REQ)
             if (const auto* acc = b.getProperty ("acceptance", {}).getArray()) for (const auto& a : *acc)
             { if ((bool) a.getProperty ("ran", false)) { ++ran; if (! (bool) a.getProperty ("pass", false)) ++failed; } else { ++notRun; if (notRunWhy.isEmpty()) notRunWhy = a.getProperty ("why", "").toString(); } }
         }
