@@ -35,6 +35,7 @@ bash ratio_law.sh products_sean_mac.txt
 - **About 1 hour for the 20** (an estimate: 0.25 s per input level was measured on Kathy's Mac, about 9-15 s per call; slower plugin loads add to it). Results go to `~/Library/ejmap/cert/ratio_law/`, one `.ratio_law.json` per product with the raw traces in `raw/`.
 
 ## 4. Send the results to Kathy
+(If you ran the earlier pack tonight, send those results too: they are salvaged, and you get a short top-up list instead of a full re-run.)
 ```
 cd ~/Library/ejmap/cert && zip -rq ~/Desktop/ratio_law_19oct.zip ratio_law
 ```

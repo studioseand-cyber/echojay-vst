@@ -1,0 +1,7 @@
+Solid Bus Comp                 none     shift at measured +0.51 dB | safe [] of [1.5, 2.0, 4.0, 10.0] | unread 0 | level_ref sine_rms_dbfs
+Unfiltered Audio Zip           verified shift at measured +0.00 dB | safe [1.0, 1.94, 4.14, 100.0] of [1.0, 1.94, 4.14, 100.0] | unread 0 | level_ref sine_rms_dbfs
+bx_townhouse Buss Compressor   none     shift at measured +0.68 dB | safe [] of [2.0, 4.0, 10.0] | unread 0 | level_ref sine_rms_dbfs
+elysia alpha mix               none     shift at measured -0.26 dB | safe [] of [1.1, 1.5, 2.0, 2.4] | unread 0 | level_ref sine_rms_dbfs
+Lindell 254E                   none     shift at measured +0.89 dB | safe [] of [1.5, 2.0, 3.0, 4.0, 6.0] | unread 0 | level_ref sine_rms_dbfs
+Bettermaker Bus Compressor DSP none     shift at measured +0.25 dB | safe [] of [1.0, 2.0, 4.0, 5.0] | unread 0 | level_ref sine_rms_dbfs
+Lindell SBC                    none     shift at measured +0.14 dB | safe [] of [1.5, 2.0, 4.0, 1000.0] | unread 0 | level_ref sine_rms_dbfs
