@@ -954,6 +954,8 @@ inline int runWizard (const WizardOptions& wo)
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
         p.row->setProperty ("state", st);
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
+        if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty ("also_categories", {}).getArray())   // 20 Oct: a tail with both roles -> both passes
+            for (const auto& c : *al) { enqueue (ir.desc.name, c.toString()); p.row->setProperty ("also_categories", sig.getProperty ("also_categories", {})); }
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
     }
     }   // the signature reads' warm probe closes here

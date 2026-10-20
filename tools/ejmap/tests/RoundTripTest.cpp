@@ -13248,6 +13248,44 @@ int main (int, char**)
                && poll.contains ("logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine));"),
                "wizard WZ-PLOG-1: a progress line every 30 s and at every stage change, with the bar, the shown %, the counter and its %, the share and skipped ('" + lm + "')");
     }
+    // WZ-TAIL-1 A TAIL WITH BOTH ROLES, SECTION BY SECTION (Kathy, 20 Oct): the controls decide - never the categoriser picking one. The
+    // 20 Oct run's own names: CLA Effects / EKramer FX / GW VoiceCentric / CLA Epic hold both (measured as both, the other role's sections
+    // silenced: a mute on, a switch off, a level / send at 0 - never "Size" at 0); Enigma holds a delay only ("Pre Delay" alone is not a
+    // reverb); MCombMB (feedback only) and MDrumEnhancer (a detector's delay) hold none -> review
+    {
+        using namespace ejmap::tailroles;
+        auto names = [] (std::initializer_list<const char*> ns, std::map<juce::String, std::map<juce::String, float>> texts = {}) { Controls c; int i = 0; for (const char* n : ns) { c.push_back ({ i, n, texts.count (n) > 0, texts.count (n) ? texts[n] : std::map<juce::String, float> {} }); ++i; } return c; };
+        const auto claFx = names ({ "Send Delay", "Sensitivity", "Balance", "EQ Color", "EQ", "Distortion Color", "Distortion", "Reverb Color", "Reverb", "Short Delay Color", "Short Delay", "Long Delay Color", "Long Delay", "Pitch Color", "Pitch", "Output", "Direct" });
+        const auto ekr = names ({ "FX Type", "Sensitivity", "Meter Switch", "Output", "Dly", "Dly Mix", "Size", "Brightness", "Verb Mix", "Direct" });
+        const std::map<juce::String, std::map<juce::String, float>> onOff { { "Delay On/Off", { { "Off", 0.0f }, { "On", 1.0f } } }, { "Reverb On/Off", { { "Off", 0.0f }, { "On", 1.0f } } } };
+        const auto gw = names ({ "Input", "Intensity", "Delay", "Delay On/Off", "Doubler", "Doubler On/Off", "Reverb", "Reverb On/Off", "Output" }, onOff);
+        const auto epic = names ({ "Input", "Output", "Mix", "SlapSolo", "SlapMute", "SlapLevel", "TapeMute", "TapeLevel", "PlateMute", "PlateLevel", "RoomMute", "HallMute", "SpaceMute", "MasterDlyMod", "TapeTap1", "SlapTime", "TapeFbk" });
+        const auto enigma = names ({ "Rate", "Mix", "Pre Delay", "Feedback On/off", "Inv Feedback", "FB Decay Time", "FB Delay", "FB Density" });
+        const auto comb = names ({ "Cloud -> Feedback", "Band 1 - Filter 1 - Feedback", "Band 1 - Filter 2 - Feedback" });
+        const auto drum = names ({ "Dynamics - Delay", "EQ 1 - Detector delay 1", "EQ 2 - Detector delay 2" });
+        auto has = [] (const std::vector<Write>& ws, const char* c, double norm) { for (const auto& w : ws) if (w.control == c && std::abs (w.norm - norm) < 1e-6) return true; return false; };
+        auto names_ = [] (const std::vector<Write>& ws) { juce::StringArray a; for (const auto& w : ws) a.add (w.control); return a; };
+        const auto rFx = rolesOf (claFx), rEk = rolesOf (ekr), rGw = rolesOf (gw), rEp = rolesOf (epic), rEn = rolesOf (enigma), rCo = rolesOf (comb), rDr = rolesOf (drum);
+        const auto fxRev = silence (claFx, Role::reverb), fxDel = silence (claFx, Role::delay), ekRev = silence (ekr, Role::reverb), gwRev = silence (gw, Role::reverb), epRev = silence (epic, Role::reverb), epDel = silence (epic, Role::delay);
+        ejmap::categorise::Signatures tail; tail.tailRead = true; tail.rt60s = 2.0; tail.repeats = 0;
+        const auto both = ejmap::categorise::decide (tail, {}, true, &rFx), none = ejmap::categorise::decide (tail, {}, true, &rCo), oneDelay = ejmap::categorise::decide (tail, {}, true, &rEn), old = ejmap::categorise::decide (tail, {});
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (wordsOf ("SlapMute") == juce::StringArray { "slap", "mute" } && wordsOf ("TapeTap1Syn OnOff") == juce::StringArray { "tape", "tap", "1", "syn", "on", "off" }
+               && rFx.delay && rFx.reverb && rEk.delay && rEk.reverb && rGw.delay && rGw.reverb && rEp.delay && rEp.reverb
+               && rEn.delay && ! rEn.reverb && ! rCo.delay && ! rCo.reverb && ! rDr.delay && ! rDr.reverb
+               && fxRev.size() == 1 && has (fxRev, "Reverb", 0.0) && has (fxDel, "Send Delay", 0.0) && has (fxDel, "Short Delay", 0.0) && has (fxDel, "Long Delay", 0.0) && ! names_ (fxDel).contains ("Short Delay Color")
+               && ekRev.size() == 1 && has (ekRev, "Verb Mix", 0.0) && ! names_ (ekRev).contains ("Size")
+               && gwRev.size() == 1 && has (gwRev, "Reverb On/Off", 0.0)
+               && has (epRev, "PlateMute", 1.0) && has (epRev, "RoomMute", 1.0) && has (epRev, "HallMute", 1.0) && has (epRev, "SpaceMute", 1.0) && has (epDel, "SlapMute", 1.0) && has (epDel, "TapeMute", 1.0) && ! names_ (epDel).contains ("PlateMute")
+               && both.settled && both.category == "reverb" && both.also == juce::StringArray { "delay" } && both.why.contains ("both measured, section by section")
+               && ! none.settled && none.why.contains ("review") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && ! old.settled
+               && run.contains ("if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty (\"also_categories\", {}).getArray())")
+               && run.contains ("for (const auto& c : *al) { enqueue (ir.desc.name, c.toString());")
+               && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("const auto mg = customdefault::mergePresets (presetRestore.before, tailroles::presetOf (isolationWrites));")
+               && drv.contains ("const auto d = categorise::decide (sg, row.proposed, true, &tr);"),
+               "wizard WZ-TAIL-1: a tail with both roles is measured as both, each pass with the other's sections silenced (CLA Effects reverb pass silences '" + names_ (fxDel).joinIntoString ("', '") + "'); one role -> that role; none -> review");
+    }
     // WZ-NET-1 THE SAFETY NET (Kathy, 18 Oct, CONFIRMED - "must be fixed before beta"): a queued plugin left without an outcome by the last run
     // AND this one is filed not_measurable with what it was left as; one left for the first time, or settled, is untouched; the end guard files
     // before it builds the left list, so a carry-on never ends on the same "Almost done" twice
