@@ -111,6 +111,30 @@ if [ "$BRANCH" = "feat/ejmap" ] || echo "$STAGED" | grep -qE '^tools/(ejmap|ejex
         echo "  ok  ejmap-roundtrip-test: $(echo "$out" | grep -E 'checks' | tail -1)"
       fi
     fi
+    # EVERY APP TARGET TOO (20 Oct 2026, Kathy). The gate built only the test program, so when EjmapWizard.h stopped compiling inside
+    # the wizard apps (the test program included the missing header first) every commit stayed green until a DMG build failed. A
+    # target this branch does not have (the wizard apps on feat/ejmap-cert) is said, not skipped silently. A build that relinks the
+    # probe leaves it unsigned: said, because the probe must be re-signed before it loads anything.
+    TARGETS=$(cmake --build "$BUILD" --target help 2>/dev/null)
+    for tgt in ejmap EchoJayProbe ejmap-wizard-test ejmap-wizard-beta; do
+      if echo "$TARGETS" | grep -qE "^\.\.\. $tgt\$"; then
+        echo "  building $tgt..."
+        tout=$(cmake --build "$BUILD" --target "$tgt" -j8 2>&1)
+        if [ $? -ne 0 ]; then
+          echo "GATE FAIL: $tgt did not BUILD"
+          echo "$tout" | grep -E 'error:' | head -6
+          FAILED=1
+        else
+          RAN="$RAN $tgt"
+        fi
+      else
+        echo "  $tgt: not a target on this branch -- out of scope, not a pass"
+      fi
+    done
+    PROBE="$BUILD/EchoJayProbe_artefacts/RelWithDebInfo/EchoJayProbe"
+    if [ -f "$PROBE" ] && ! codesign -v "$PROBE" >/dev/null 2>&1; then
+      echo "  NOTE: EchoJayProbe was relinked and is UNSIGNED -- re-sign it before it loads a plugin"
+    fi
   fi
 fi
 
