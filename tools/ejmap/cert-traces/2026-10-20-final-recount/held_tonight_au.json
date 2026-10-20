@@ -1,0 +1,1377 @@
+[
+ {
+  "product": "UAD Ampeg B15N",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Korg SDD-3000",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Softube Vintage Amp Room",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Maag EQ4",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_refinement",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Precision Limiter",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD elysia alpha mix",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 6729]) at stage prepare (process neutral-13); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Vertigo VSM-3",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 88RS Legacy",
+  "state": "crashed",
+  "why": "probe crashed mid-trace: 1 of 1 trace(s) end before the probe's end marker (AudioUnit_71166669_11.2.0.eq.b26.base.1); not ok, not re-run (delete the row to re-run); crash report: no crash report found (macOS may not have written one)"
+ },
+ {
+  "product": "UAD Marshall Plexi Super Lead 1959",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD SPL Transient Designer",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Marshall Bluesbreaker 1962",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD 4K Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Ampeg SVTVR",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Manley Massive Passive",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Manley Variable Mu",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 6922]) at stage prepare (process neutral-19); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Manley Reference Mic Preamp",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Fuchs Overdrive Supreme 50",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Precision Delay Mod",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD SPL Vitalizer MK2-T",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Oxford Limiter",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Pure Plate",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Precision Reflection Engine",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD MDWEQ5-3B",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_saturator V2",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD elysia alpha master",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Roland RE-201",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Sound Machine Wood Works",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Helios Type 69 Legacy",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD dbx 160",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD EMT 250",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Chandler Limited Curve Bender",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Manley Massive Passive MST",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Hitsville EQ",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Eden WT800",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Suhr SE100",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD UA 1176LN Legacy",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_digital V2",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Pultec EQP-1A Legacy",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Chandler Limited Zener Limiter",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Empirical Labs Distressor",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 6785]) at stage prepare (process neutral-8); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD RealVerb-Pro",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_digital V2 Mono",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Precision Delay Mod L",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD AMS RMX16",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD MDWEQ5-5B",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD UA 1176SE Legacy",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7347]) at stage reference (process ref); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Chandler GAV19T",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 1073 Legacy",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Friedman BE100",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Teletronix LA-3A",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Moog Multimode Filter",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Ampeg SVT3Pro",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD 4K Buss Compressor",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_digital V3",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Precision Enhancer Hz",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Teletronix LA-2",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7216]) at stage prepare (process neutral-4); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Hitsville EQ Mastering",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Fuchs Train II",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_masterdesk Classic",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Teletronix LA-2A Legacy",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7245]) at stage reference (process ref); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD bx_digital V3 mix",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Oxford Dynamic EQ",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Helios Type 69",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD CS-1",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Oxford EQ",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Valley People Dyna-mite",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Softube Bass Amp Room 8x10",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Sphere Mic Collection",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Neve 1073SE Legacy",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Friedman DS40",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Marshall Silver Jubilee 2555",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Moog Multimode Filter SE",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Neve 31102",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD EP-34 Tape Echo",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Teletronix LA-2A Gray",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7238]) at stage prepare (process neutral-5); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Hitsville Reverb Chambers",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Ocean Way Mic Collection",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD AMS Neve DFC Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Precision Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Fairchild 670 Legacy",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Oxford Envolution",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD TS Overdrive",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Trident A-Range",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Oxford Inflator",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Tonelux Tilt",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Softube Amp Room Half-Stack",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Sphere Mic Collection 180",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Precision Equalizer",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Vertigo VSC-2",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7408]) at stage prepare (process neutral-7); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Neve 33609 C",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7016]) at stage prepare (process neutral-25); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Precision Maximizer",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Marshall JMP 2203",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 31102SE",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Ocean Way Studios",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Teletronix LA-2A Silver",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7251]) at stage prepare (process neutral-5); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD AKG BX 20",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Putnam Mic Collection",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Diezel Herbert",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve Preamp",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "Auto-Tune EFX",
+  "state": "crashed",
+  "why": "it could not be mapped (crashed)"
+ },
+ {
+  "product": "AVOX SYBIL",
+  "state": "crashed",
+  "why": "it could not be mapped (crashed)"
+ },
+ {
+  "product": "UAD Cambridge",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Pultec-Pro Legacy",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Precision Multiband",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 33609SE",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Precision Enhancer kHz",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Harrison 32C",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Empirical Labs FATSO Sr",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Studer A800",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD API 550A",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 88RS",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "bloom",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD DreamVerb",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "C6 (m)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "C6 (s)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "C6-SideChain (m)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "C6-SideChain (s)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "UAD Century Tube Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Roland CE-1",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Neve 1081",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Precision De-Esser",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Harrison 32C SE",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Empirical Labs FATSO Jr",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Lexicon 224",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD API 560",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Oxide Tape",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "C4 (m)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "C4 (s)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "UAD V76 Preamp",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD EMT 140",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Roland Dimension D",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Neve 1081SE",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Precision Buss Compressor",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7094]) at stage prepare (process neutral-6); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Cooper Time Cube",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD UA 1176 Rev A",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Thermionic Culture Vulture",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Fender 55 Tweed Deluxe",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD MXR Flanger-Doubler",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Moog Multimode Filter XL",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Hemisphere Mic Collection",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "SSL Fusion HF Compressor",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Capitol Chambers",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD SSL E Channel Strip Legacy",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Galaxy Tape Echo",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD UA 175-B",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD SSL G Bus Compressor Legacy",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7182]) at stage prepare (process neutral-1); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Precision K-Stereo",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "LinMB (m)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "LinMB (s)",
+  "state": "held",
+  "why": "held: no server category (a known multiband: EJ Map's list)"
+ },
+ {
+  "product": "Low Control",
+  "state": "demo",
+  "why": "a demo version: its output drops out 4 time(s) on a steady tone (579 dB, first at 10 s) - not measured, not sent"
+ },
+ {
+  "product": "UAD LA-6176 Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Studio D Chorus",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD UA 176",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD UA 1176LN Rev E",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7337]) at stage prepare (process neutral-7); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Pultec EQP-1A",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "NEOLD U17",
+  "state": "needs_licence",
+  "why": "licence suspected: never processes - the output is the input, unchanged by every control tried (Input -> 0.0: 0.00 dB; Input -> 1.0: 0.00 dB; Output -> 0.0: 0.00 dB; Output -> 1.0: 0.00 dB) - not measured"
+ },
+ {
+  "product": "NEOLD U2A",
+  "state": "needs_licence",
+  "why": "licence suspected: processing never runs: output unchanged by every control including Power (Power -> 0.0 (from 'On'): 0.00 dB; Drive -> 1.0 (from '25.0 %'): 0.00 dB; Gain -> 1.0 (from '24.0'): 0.00 dB); the remedy is activation and a re-run (ruled 5 Oct); --retry-licence re-checks it"
+ },
+ {
+  "product": "NEOLD V76U73",
+  "state": "needs_licence",
+  "why": "licence suspected: processing never runs: output unchanged by every control including Power (Power -> 0.0 (from 'On'): 0.00 dB; Makeup Gain -> 1.0 (from '0.0'): 0.00 dB; Trim -> 0.0 (from '0.0'): 0.00 dB); the remedy is activation and a re-run (ruled 5 Oct); --retry-licence re-checks it"
+ },
+ {
+  "product": "UAD Brigade Chorus",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Avalon VT-737sp",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Little Labs VOG",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Pultec MEQ-5",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Manley VOXBOX",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 1084",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Ampex ATR-102",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Pultec HLF-3C",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "SSL 4K B",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "SSL 4K E",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Neve 2254 E",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 6957]) at stage prepare (process neutral-14); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "SSL Fusion Stereo Image",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "bx_crispyscale",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "UAD UA 1176AE",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7312]) at stage prepare (process neutral-7); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD API Vision Channel Strip Legacy",
+  "state": "crashed",
+  "why": "probe crashed mid-trace: 1 of 1 trace(s) end before the probe's end marker (AudioUnit_14616669_11.2.0.eq.b22.base.1); not ok, not re-run (delete the row to re-run); crash report: no crash report found (macOS may not have written one)"
+ },
+ {
+  "product": "GTR Tuner (m)",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "The God Particle",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "freqtube",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "UAD Raw",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Bermuda Triangle",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Ibanez Tube Screamer TS808",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD API 2500",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Neve 2254 E Dual",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Fairchild 670",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD SSL E Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD API Preamp",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "WS LOWEND",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "UAD UA 610-A",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Fairchild 660",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD SSL G Bus Compressor",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD API Vision Channel Strip",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD UA 610-B",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Neve 1073",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD ADA STD-1 Stereo Tapped Delay",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Softube Bass Amp Room",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Tonelux Tilt Live",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD ENGL Savage 120",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "bx_distorange",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "bx_greenscreamer",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "bx_megasingle",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "bx_opto Pedal",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "bx_yellowdrive",
+  "state": "needs_licence",
+  "why": "no sound at all: a steady tone in, digital silence out (activation / licence) - not measured"
+ },
+ {
+  "product": "APB C-18 Compressor",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "APB C673-A Compressor",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "UAD AMS RMX16 Expanded",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "APB ChickenHead",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "UAD Shadow Hills Mastering Compressor",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7147]) at stage reference (process c2.ref); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD Summit Audio TLA-100A",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Tube-Tech CL 1B mk II",
+  "state": "needs_licence",
+  "why": "window at the probe's load (batch): STOPPED: A WINDOW (recorded, not called a licence fact): a window appeared in the probe's tree (EchoJayProbe [pid 7287]) at stage reference (process ref); the product was stopped at once, nothing derived; not retried until --retry-licence"
+ },
+ {
+  "product": "UAD OTO Biscuit 8-bit Effects",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "APB El Moo",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "UAD Softube Metal Amp Room",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Dytronics Tri-Stereo Chorus",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Auto-Tune Realtime Access",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "Weiss Deess",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD SPL TwinTube",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Marshall Plexi Classic",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Oxford SuprEsser DS",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Millennia NSEQ-2",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Friedman Buxom Betty",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "APB L-18 Limiter",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "UAD Dangerous BAX EQ Master",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Gallien Krueger 800RB",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Diezel VH4",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "APB MC-3 MultiComp",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "APB MooTube",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "UAD Dangerous BAX EQ Mix",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD ADA Flanger",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD ENGL E646 VS",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Lexicon 480L",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD C-Suite C-Vox",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD ENGL E765 RT",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Ampeg SVTVR Classic",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD AMS DMX 15-80 S",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "APB Royal Mu",
+  "state": "needs_hardware",
+  "why": "APB unit not connected (no McDSP APB unit in the I/O registry or the hardware listing); not loaded"
+ },
+ {
+  "product": "UAD Tube-Tech CL 1B",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Ocean Way Mic Collection 180",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD C-Suite C-Axe",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Tube-Tech PE 1C",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Putnam Mic Collection 180",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Tube-Tech ME 1B",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD bx_masterdesk",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD bx_tuner",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Suhr PT100",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Softube Vocoder",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "UAD Eventide H910 Harmonizer",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "Auto-Tune Vocodist",
+  "state": "demo",
+  "why": "a demo version: its output drops out 13 time(s) on a steady tone (34 dB, first at 7 s) - not measured, not sent"
+ },
+ {
+  "product": "H3000 Factory",
+  "state": "needs_licence",
+  "why": "needs a licence - skipped (it showed a licence window here before; not loaded again)"
+ },
+ {
+  "product": "MSpectralDynamics",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (24 dB, first at 28 s) - not measured, not sent"
+ },
+ {
+  "product": "MSpectralDynamicsMini",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (24 dB, first at 31 s) - not measured, not sent"
+ },
+ {
+  "product": "MLimiterX",
+  "state": "demo",
+  "why": "a demo version: its output drops out 3 time(s) on a steady tone (21 dB, first at 31 s) - not measured, not sent"
+ },
+ {
+  "product": "MDynamics",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (23 dB, first at 3 s) - not measured, not sent"
+ },
+ {
+  "product": "MDynamicsMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 11 s) - not measured, not sent"
+ },
+ {
+  "product": "MLimiterMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 3 time(s) on a steady tone (22 dB, first at 4 s) - not measured, not sent"
+ },
+ {
+  "product": "MDynamicsMBLarge",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 21 s) - not measured, not sent"
+ },
+ {
+  "product": "MUltraMaximizer",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (25 dB, first at 28 s) - not measured, not sent"
+ },
+ {
+  "product": "MAutoVolume",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (25 dB, first at 10 s) - not measured, not sent"
+ },
+ {
+  "product": "MBassador",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (24 dB, first at 21 s) - not measured, not sent"
+ },
+ {
+  "product": "MDrumLeveler",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 23 s) - not measured, not sent"
+ },
+ {
+  "product": "MModernCompressor",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (24 dB, first at 41 s) - not measured, not sent"
+ },
+ {
+  "product": "MMorph",
+  "state": "demo",
+  "why": "a demo version: its output drops out 4 time(s) on a steady tone (23 dB, first at 7 s) - not measured, not sent"
+ },
+ {
+  "product": "MPhatik",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (22 dB, first at 33 s) - not measured, not sent"
+ },
+ {
+  "product": "MPolySaturator",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 26 s) - not measured, not sent"
+ },
+ {
+  "product": "MTurboCompMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 4 time(s) on a steady tone (24 dB, first at 8 s) - not measured, not sent"
+ },
+ {
+  "product": "MTurboComp",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (23 dB, first at 33 s) - not measured, not sent"
+ },
+ {
+  "product": "MVocoder",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (27 dB, first at 14 s) - not measured, not sent"
+ },
+ {
+  "product": "MBitFunMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 5 s) - not measured, not sent"
+ },
+ {
+  "product": "MWaveShaperMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 1 time(s) on a steady tone (29 dB, first at 21 s) - not measured, not sent"
+ },
+ {
+  "product": "MHarmonizerMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 15 s) - not measured, not sent"
+ },
+ {
+  "product": "MRingModulatorMB",
+  "state": "demo",
+  "why": "a demo version: its output drops out 2 time(s) on a steady tone (24 dB, first at 5 s) - not measured, not sent"
+ },
+ {
+  "product": "Waves Tune (m)",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "Waves Tune (s)",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "Waves Tune LT (m)",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "Waves Tune LT (s)",
+  "state": "wont_load",
+  "why": "it could not be mapped (wont_load)"
+ },
+ {
+  "product": "UAD Auto-Tune Realtime Advanced",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ },
+ {
+  "product": "UAD Auto-Tune Realtime X",
+  "state": "needs_licence",
+  "why": "a licence or sign-in window appeared when it loaded - closed, never clicked; not measured"
+ }
+]
