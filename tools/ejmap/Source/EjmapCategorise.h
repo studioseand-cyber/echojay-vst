@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "EjmapTailRoles.h"
 #include "EjmapEq.h"
 #include "EjmapReverbDelay.h"
 #include "EjmapSaturation.h"
@@ -108,14 +109,14 @@ inline void readPitch (Signatures& s, const pitch::PitchMeasured& m, double detu
     s.pitchMoveCents = std::abs (r.residualCents - r.inputCents); s.pitchRead = true;
 }
 
-struct Decision { juce::String category, why; bool settled = false; };
+struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; };   // also (20 Oct): a tail with both roles is measured as both
 // releaseRule (12 Oct, Kathy): a compressor's RELEASE after the burst reads as a short tail, and the tail check ran first (Lindell 254E:
 // RT60 0.40 s, the gain moves 3.14 dB, flat to 0.14 dB -> "reverb or delay"). A gain that moves with level AND is flat across the tones
 // (span under kFreqDb: a broadband gain change, not a filter) now wins over a tail shorter than kReleaseTailS. From the data (12 Oct):
 // compressors' tails 0.40 (254E) and 0.66 s (XLA-3), flat (0.14, 0.50 dB); reverbs / delays with a tail never level-dependent over
 // 0.62 dB; the level-dependent tails in Sean's 605 (CLA Effects 34.7 dB span, FilterFreak2 20.6, Absynth 5 MFX 4.95) are NOT flat and
 // stay reverb / delay for review. kReleaseTailS 1.5 s = over twice the longest compressor release seen. false = the rule before 12 Oct
-inline Decision decide (const Signatures& s, const juce::StringArray& proposed, bool releaseRule = true)
+inline Decision decide (const Signatures& s, const juce::StringArray& proposed, bool releaseRule = true, const tailroles::Roles* roles = nullptr)
 {
     Decision d;
     auto settle = [&] (const char* c, const juce::String& why) { d.category = c; d.why = why; d.settled = true; return d; };
@@ -130,6 +131,16 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
         const auto tl = "a tail (RT60 " + juce::String (*s.rt60s, 2) + " s, " + juce::String (s.repeats) + " repeat(s) found)";
         if (proposed.contains ("delay") && ! proposed.contains ("reverb")) return settle ("delay", tl + "; the words say delay");
         if (proposed.contains ("reverb") && ! proposed.contains ("delay")) return settle ("reverb", tl + "; the words say reverb");
+        // 20 Oct (Kathy): the CONTROLS decide, section by section - never the categoriser picking one; review only when neither role is found
+        if (roles != nullptr && (roles->delay || roles->reverb))
+        {
+            const auto secs = [] (const juce::StringArray& a) { return "'" + a.joinIntoString ("', '") + "'"; };
+            if (roles->delay && roles->reverb)
+            { d.category = "reverb"; d.also = { "delay" }; d.settled = true;
+              d.why = tl + "; the controls hold a delay (" + secs (roles->delaySections) + ") and a reverb (" + secs (roles->reverbSections) + "): both measured, section by section"; return d; }
+            if (roles->delay) return settle ("delay", tl + "; the controls hold a delay (" + secs (roles->delaySections) + ") and no reverb");
+            return settle ("reverb", tl + "; the controls hold a reverb (" + secs (roles->reverbSections) + ") and no delay");
+        }
         if (*s.rt60s >= kReverbS && s.repeats == 0 && proposed.isEmpty()) { d.category = "reverb"; d.why = tl + " and no word: leaning reverb (a feedback delay reads the same): review"; return d; }
         d.category = proposed.contains ("delay") ? "delay" : "reverb"; d.why = tl + "; reverb or delay: review"; return d;
     }
@@ -146,12 +157,13 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
     d.category = proposed.size() == 1 ? proposed[0] : juce::String(); d.why = "no signature held" + (proposed.isEmpty() ? juce::String ("; no word proposed") : "; proposed by words: " + proposed.joinIntoString (" / ")) + ": review"; return d;
 }
 
-struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed; bool settled = false, measured = false; Signatures sig; double seconds = 0.0; };
+struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed, also; bool settled = false, measured = false; Signatures sig; double seconds = 0.0; };
 inline juce::var rowVar (const Row& r)
 {
     auto* o = new juce::DynamicObject(); o->setProperty ("product", r.product); o->setProperty ("vendor", r.vendor); o->setProperty ("type", r.typeCode); o->setProperty ("identity", r.identity); if (r.kind.isNotEmpty()) o->setProperty ("kind", r.kind);
     if (r.outOfScope.isNotEmpty()) { o->setProperty ("out_of_scope", r.outOfScope); o->setProperty ("category", r.outOfScope); o->setProperty ("settled", true); return juce::var (o); }
     o->setProperty ("proposed_by_words", r.proposed.joinIntoString (", ")); o->setProperty ("category", r.category.isNotEmpty() ? juce::var (r.category) : juce::var()); o->setProperty ("settled", r.settled); o->setProperty ("why", r.why); o->setProperty ("measured", r.measured);
+    if (! r.also.isEmpty()) o->setProperty ("also_categories", juce::Array<juce::var> (r.also.begin(), r.also.size()));   // 20 Oct: measured as both
     if (r.measured)
     {
         auto* sg = new juce::DynamicObject(); const auto& s = r.sig;
