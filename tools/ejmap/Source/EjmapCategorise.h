@@ -109,7 +109,51 @@ inline void readPitch (Signatures& s, const pitch::PitchMeasured& m, double detu
     s.pitchMoveCents = std::abs (r.residualCents - r.inputCents); s.pitchRead = true;
 }
 
-struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; };   // also (20 Oct): a tail with both roles is measured as both
+struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; };
+// FLAT AT DEFAULT (Kathy, 20 Oct - group 2): a unit whose drive sits at zero shows no signature at all (Lindell 80 / 50 / 69 Bus with THD
+// down, Denise Bass XL's Drive, Orange Clip's Input Level). Its DRIVE / INPUT control is found by name, raised to kDriveRaiseNorm, written
+// as part of the neutral setting, and the reads are taken again. Every read is RELATIVE - the gain move between two levels at the same
+// setting, the spread across the tones, the harmonics against the fundamental - so the louder output a raised drive gives is never the
+// effect itself; the decision says how far the level moved and that it is not the signature
+inline constexpr double kDriveRaiseNorm = 0.75;
+// RAISED FROM ITS DEFAULT (21 Oct, the first real run: StandardCLIP opens its Input Gain above 0.75, and 0.75 took it DOWN 12 dB): the
+// drive goes three quarters of the way from its default to the top - 0.75 from 0, never below where it opened; none when it opens at the top
+inline std::optional<double> raisedNorm (double defNorm)
+{ if (defNorm >= 0.99) return std::nullopt; return juce::jmax (defNorm, defNorm + kDriveRaiseNorm * (1.0 - juce::jmax (0.0, defNorm))); }
+// the probe's opening values ("param <idx> <norm> <name> <text>", printed before any write by the response mode)
+inline std::optional<double> openingNorm (const juce::String& probeOut, int index)
+{
+    for (const auto& line : juce::StringArray::fromLines (probeOut))
+    {   const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() >= 3 && f[0] == "param" && f[1].getIntValue() == index && f[1].containsOnly ("0123456789")) return f[2].getDoubleValue(); }
+    return std::nullopt;
+}
+inline bool flatAtDefault (const Signatures& s)
+{
+    return s.responseRead && s.freqSpanDb < kFreqDb && s.levelDepDb < kLevelDb && ! (s.tailRead && s.rt60s && *s.rt60s >= kTailS)
+        && ! (s.harmRead && s.thdHiDb >= kThdAudibleDb);
+}
+// the drive control: automatable, non-meter controls only (the caller filters); first by the drive words, then an input / pre gain;
+// never an output, a mix, a meter, a ceiling, a threshold or a switch
+// a SWITCH is never the drive (21 Oct, S1 Imager: "MS/LR Input" is a mode, and raising it changed nothing but the routing): the caller
+// leaves out the controls with 2..4 steps; the words of a routing ("ms", "lr", "mid", "side", "stereo") are excluded too
+inline std::optional<std::pair<int, juce::String>> driveControl (const std::vector<std::pair<int, juce::String>>& controls)
+{
+    auto words = [] (const juce::String& n) { return tailroles::wordsOf (n); };
+    auto excluded = [] (const juce::StringArray& w) {
+        for (const char* t : { "out", "output", "mix", "dry", "wet", "meter", "peak", "ceiling", "threshold", "solo", "link", "mode", "type", "bypass", "power", "phase", "mute", "unity", "trim", "cut", "freq", "frequency", "q", "ms", "lr", "mid", "side", "stereo" })
+            if (w.contains (t)) return true;
+        return false; };
+    for (const auto* tier : { "drive thd saturation sat heat push crunch grit character colour color warmth enhancement enhance excite boost strength amount",
+                              "input pre" })
+    {
+        const auto tierWords = juce::StringArray::fromTokens (tier, " ", "");
+        for (const auto& [i, n] : controls)
+        {   const auto w = words (n); if (excluded (w)) continue;
+            for (const auto& t : tierWords) if (w.contains (t)) return std::make_pair (i, n); }
+    }
+    return std::nullopt;
+}
+   // also (20 Oct): a tail with both roles is measured as both
 // releaseRule (12 Oct, Kathy): a compressor's RELEASE after the burst reads as a short tail, and the tail check ran first (Lindell 254E:
 // RT60 0.40 s, the gain moves 3.14 dB, flat to 0.14 dB -> "reverb or delay"). A gain that moves with level AND is flat across the tones
 // (span under kFreqDb: a broadband gain change, not a filter) now wins over a tail shorter than kReleaseTailS. From the data (12 Oct):
@@ -157,22 +201,54 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
     d.category = proposed.size() == 1 ? proposed[0] : juce::String(); d.why = "no signature held" + (proposed.isEmpty() ? juce::String ("; no word proposed") : "; proposed by words: " + proposed.joinIntoString (" / ")) + ": review"; return d;
 }
 
-struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed, also; bool settled = false, measured = false; Signatures sig; double seconds = 0.0; };
+struct NeutralWrite { int index = -1; double norm = 0.0; juce::String control, text, why; };
+struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed, also; bool settled = false, measured = false; Signatures sig; double seconds = 0.0;
+             std::vector<NeutralWrite> neutralWrites; std::optional<double> levelMoveDb; std::optional<Signatures> sigAtDefault; };
+// the broadband LEVEL of a response at its first position: the median gain (out - in) over the readable tones, 60 Hz .. 16 kHz
+inline std::optional<double> levelOf (const eq::Response& r)
+{
+    if (! r.ok || r.positions.empty()) return std::nullopt;
+    std::vector<double> g; for (const auto& t : r.positions.front().tones) if (t.inDb > -500.0 && t.outDb > -500.0 && t.hz >= 60.0 && t.hz <= 16000.0) g.push_back (t.outDb - t.inDb);
+    if (g.size() < 10) return std::nullopt; return medianOf (g);
+}
+// DECIDE AGAIN WITH THE DRIVE RAISED (Kathy, 20 Oct - group 2). The reads are taken again at the raised drive and decided by the same
+// rule; a LEVEL change is never the effect: when the raised reads are still flat at default the answer stays unsettled, whatever the
+// output level did, and the why says how far it moved
+inline Decision decideRaised (const Signatures& raised, const juce::StringArray& proposed, const tailroles::Roles* roles,
+                              const NeutralWrite& drive, std::optional<double> levelMoveDb)
+{
+    const auto lvl = levelMoveDb ? "; the output level moved " + juce::String (*levelMoveDb, 1) + " dB (a level change, not counted as the signature)" : juce::String ("; the level move was not read");
+    const auto raisedWhy = "flat at default; '" + drive.control + "' raised to " + juce::String (drive.norm, 2) + (drive.text.isNotEmpty() ? " ('" + drive.text + "')" : juce::String()) + " as part of the neutral setting" + lvl;
+    if (flatAtDefault (raised))
+    { Decision d; d.category = proposed.size() == 1 ? proposed[0] : juce::String(); d.why = raisedWhy + "; still no signature with it raised: review"; return d; }
+    auto d = decide (raised, proposed, true, roles); d.why = raisedWhy + "; then " + d.why; return d;
+}
+inline juce::var sigVar (const Signatures& s)
+{
+    auto* sg = new juce::DynamicObject();
+    if (s.responseRead) { sg->setProperty ("level_dependence_db", std::round (s.levelDepDb * 100.0) / 100.0); sg->setProperty ("frequency_span_db", std::round (s.freqSpanDb * 100.0) / 100.0); }
+    if (s.tailRead) { sg->setProperty ("rt60_s", s.rt60s ? juce::var (std::round (*s.rt60s * 100.0) / 100.0) : juce::var()); sg->setProperty ("repeats", s.repeats); }
+    if (s.harmRead) { sg->setProperty ("thd_db_at_m30", std::round (s.thdLoDb * 10.0) / 10.0); sg->setProperty ("thd_db_at_m6", std::round (s.thdHiDb * 10.0) / 10.0); if (s.sidebandDb) sg->setProperty ("sideband_db", std::round (*s.sidebandDb * 10.0) / 10.0); }
+    if (s.pitchRead) sg->setProperty ("pitch_move_cents", std::round (s.pitchMoveCents * 10.0) / 10.0);
+    juce::Array<juce::var> ns; for (const auto& n : s.notes) ns.add (n); sg->setProperty ("notes", ns);
+    return juce::var (sg);
+}
 inline juce::var rowVar (const Row& r)
 {
     auto* o = new juce::DynamicObject(); o->setProperty ("product", r.product); o->setProperty ("vendor", r.vendor); o->setProperty ("type", r.typeCode); o->setProperty ("identity", r.identity); if (r.kind.isNotEmpty()) o->setProperty ("kind", r.kind);
     if (r.outOfScope.isNotEmpty()) { o->setProperty ("out_of_scope", r.outOfScope); o->setProperty ("category", r.outOfScope); o->setProperty ("settled", true); return juce::var (o); }
     o->setProperty ("proposed_by_words", r.proposed.joinIntoString (", ")); o->setProperty ("category", r.category.isNotEmpty() ? juce::var (r.category) : juce::var()); o->setProperty ("settled", r.settled); o->setProperty ("why", r.why); o->setProperty ("measured", r.measured);
     if (! r.also.isEmpty()) o->setProperty ("also_categories", juce::Array<juce::var> (r.also.begin(), r.also.size()));   // 20 Oct: measured as both
+    if (! r.neutralWrites.empty())   // 20 Oct (group 2): the drive raised for the reads, part of the plugin's neutral setting
+    {   juce::Array<juce::var> nw;
+        for (const auto& w : r.neutralWrites) { auto* x = new juce::DynamicObject(); x->setProperty ("index", w.index); x->setProperty ("control", w.control); x->setProperty ("norm", w.norm);
+                                                if (w.text.isNotEmpty()) x->setProperty ("text", w.text); x->setProperty ("why", w.why); nw.add (juce::var (x)); }
+        o->setProperty ("neutral_writes", nw); if (r.levelMoveDb) o->setProperty ("level_move_db", *r.levelMoveDb); }
     if (r.measured)
     {
-        auto* sg = new juce::DynamicObject(); const auto& s = r.sig;
-        if (s.responseRead) { sg->setProperty ("level_dependence_db", std::round (s.levelDepDb * 100.0) / 100.0); sg->setProperty ("frequency_span_db", std::round (s.freqSpanDb * 100.0) / 100.0); }
-        if (s.tailRead) { sg->setProperty ("rt60_s", s.rt60s ? juce::var (std::round (*s.rt60s * 100.0) / 100.0) : juce::var()); sg->setProperty ("repeats", s.repeats); }
-        if (s.harmRead) { sg->setProperty ("thd_db_at_m30", std::round (s.thdLoDb * 10.0) / 10.0); sg->setProperty ("thd_db_at_m6", std::round (s.thdHiDb * 10.0) / 10.0); if (s.sidebandDb) sg->setProperty ("sideband_db", std::round (*s.sidebandDb * 10.0) / 10.0); }
-        if (s.pitchRead) sg->setProperty ("pitch_move_cents", std::round (s.pitchMoveCents * 10.0) / 10.0);
-        juce::Array<juce::var> ns; for (const auto& n : s.notes) ns.add (n); sg->setProperty ("notes", ns);
-        o->setProperty ("signatures", juce::var (sg)); o->setProperty ("seconds", std::round (r.seconds));
+        o->setProperty ("signatures", sigVar (r.sig));
+        if (r.sigAtDefault) o->setProperty ("signatures_at_default", sigVar (*r.sigAtDefault));   // 20 Oct: the reads before the drive was raised
+        o->setProperty ("seconds", std::round (r.seconds));
     }
     return juce::var (o);
 }

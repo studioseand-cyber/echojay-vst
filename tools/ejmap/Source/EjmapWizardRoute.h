@@ -218,6 +218,15 @@ inline constexpr int kWaveShellLoadTimeoutMs = 30000;
 inline juce::String waveShellOf (const juce::String& bundleFileName)
 { return bundleFileName.startsWithIgnoreCase ("WaveShell") ? bundleFileName.upToLastOccurrenceOf (".component", false, false) : juce::String(); }
 inline juce::String wavesSkippedWhy (const juce::String& shell, const juce::String& what) { return "Waves plugins skipped - check Waves Central (" + shell + " " + what + ")"; }
+// A LOAD WITH NO PARAMETERS (21 Oct, group 3): what the probe's own paramcount line says, never a cause it did not see
+inline juce::String noParametersWhy (const juce::String& probeOut)
+{
+    for (const auto& line : juce::StringArray::fromLines (probeOut))
+    {   const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        if (f.size() >= 7 && f[0] == "paramcount" && f[1] == "at_create" && f[3] == "after_prepare" && f[5] == "after_render")
+            return "it loaded, but publishes no parameters (" + f[2] + " at create, " + f[4] + " after prepare, " + f[6] + " after render): nothing for EchoJay to set"; }
+    return "it loaded, but its parameter list was empty: nothing for EchoJay to set";
+}
 struct ShellGuard
 {
     bool isBad (const juce::String& shell) { std::lock_guard<std::mutex> g (m); return shell.isNotEmpty() && bad.count (shell) > 0; }

@@ -126,6 +126,9 @@ inline std::vector<Write> silence (const Controls& controls, Role role)
         { rank = 2; x.norm = 0.0; x.why = "its level at the minimum"; }
         else if (w.joinIntoString (" ") == p.section && ! isParameterWord (w[w.size() - 1])) { rank = 3; x.norm = 0.0; x.why = "its send (named only by the section) at the minimum"; }
         if (rank == 99) continue;
+        // A LEVEL THAT IS A SWITCH (21 Oct, CLA Effects: "Send Delay" opens "Off" at 1.0 and 0.0 is "Hold/Throw" - the minimum turned the
+        // throw ON): a control whose own texts show "Off" is written to its Off, whatever its words say
+        if (rank >= 2) { juce::String t; const double off = normOfText (texts, { "off" }, -1.0, t); if (off >= 0.0) { rank = 1; x.norm = off; x.set = t; x.why = "its own text 'Off'"; } }
         if (x.set.isEmpty()) x.set = juce::String (x.norm, 3);
         x.why = "section '" + p.section + "': " + x.why; all.push_back ({ rank, x });
     }

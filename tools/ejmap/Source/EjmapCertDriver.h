@@ -3776,7 +3776,43 @@ inline categorise::Row categoriseOne (const SweepOptions& opt, const InstalledRe
         row.measured = ! window; row.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
         if (window) { row.why = "a window appeared during the reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); return row; }
         const auto tr = tailroles::rolesOf (tailroles::controlsFromListParams (lp.out));   // 20 Oct: the controls, for a tail's roles
-        const auto d = categorise::decide (sg, row.proposed, true, &tr); row.category = d.category; row.why = d.why; row.settled = d.settled; row.also = d.also;
+        auto d = categorise::decide (sg, row.proposed, true, &tr);
+        // FLAT AT DEFAULT (Kathy, 20 Oct - group 2): the drive / input control raised, written as part of the neutral setting, the reads
+        // taken again with it in every set= list; the level it moved is recorded and never decides (decideRaised)
+        if (! d.settled && categorise::flatAtDefault (sg))
+        {
+            std::vector<std::pair<int, juce::String>> ctls; for (const auto& [i, lr] : parseListParams (lp.out)) if (lr.automatable && ! lr.meta && ! (lr.numSteps >= 2 && lr.numSteps <= 4)) ctls.push_back ({ i, lr.name });
+            const auto dc = categorise::driveControl (ctls);
+            const auto opened = dc ? categorise::openingNorm (r30.out, dc->first) : std::nullopt;
+            const auto up0 = categorise::raisedNorm (opened ? *opened : 0.0);
+            if (dc && ! up0) d.why += "; flat at default, and its drive '" + dc->second + "' already opens at the top";
+            else if (dc)
+            {
+                categorise::NeutralWrite w; w.index = dc->first; w.control = dc->second; w.norm = *up0;
+                w.why = "flat at default: the drive / input control raised so the unit shows its signature";
+                const auto set = "set=" + juce::String (w.index) + ":" + juce::String (w.norm, 6);
+                categorise::Signatures up;
+                const auto u30 = guard (run ("drive_resp30", { "--response", "ctl=" + juce::String (ctl), "norms=current", set, "tones=121", "lo=20", "hi=20000", "db=-30", "hold=1.0", "discard=0.5" }));
+                const auto u12 = window ? ChildResult() : guard (run ("drive_resp12", { "--response", "ctl=" + juce::String (ctl), "norms=current", set, "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" }));
+                const auto upLo = eq::parseResponse (u30.cleanExit() ? u30.out : juce::String());
+                categorise::readResponses (up, upLo, eq::parseResponse (u12.cleanExit() ? u12.out : juce::String()));
+                const auto ut = window ? ChildResult() : guard (run ("drive_tail", { "--tail", "db=-12", "burst_ms=300", "tail_s=3", "hz=997", "win_ms=1", set }));
+                categorise::readTail (up, reverbdelay::parseTail (ut.cleanExit() ? ut.out : juce::String()));
+                const auto uh30 = window ? ChildResult() : guard (run ("drive_harm30", { "--response", "ctl=" + juce::String (ctl), "norms=current", set, "tones=1", "lo=997", "harmonics=5", "db=-30", "hold=1.0", "discard=0.5" }));
+                const auto uh6 = window ? ChildResult() : guard (run ("drive_harm6", { "--response", "ctl=" + juce::String (ctl), "norms=current", set, "tones=1", "lo=997", "harmonics=5", "db=-6", "hold=1.0", "discard=0.5" }));
+                categorise::readHarmonics (up, saturation::parseHarmonics (uh30.cleanExit() ? uh30.out : juce::String()), saturation::parseHarmonics (uh6.cleanExit() ? uh6.out : juce::String()));
+                // the text the drive showed, from the probe's own set line; an unlanded write refuses the read, so nothing is decided on it
+                for (const auto& line : juce::StringArray::fromLines (u30.out))
+                { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == w.index) { const int t = f.indexOf ("text"); if (t >= 0 && t + 1 < f.size()) w.text = f[t + 1]; } }
+                row.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+                if (window) { row.why = "a window appeared during the raised-drive reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); return row; }
+                std::optional<double> move; if (const auto a = categorise::levelOf (eq::parseResponse (r30.cleanExit() ? r30.out : juce::String())), b = categorise::levelOf (upLo); a && b) move = *b - *a;
+                if (! up.responseRead && ! up.tailRead && ! up.harmRead) up.notes.add ("raised drive: no read (the write may not have landed: see the drive_* traces)");
+                else { d = categorise::decideRaised (up, row.proposed, &tr, w, move); row.sigAtDefault = sg; row.sig = up; row.neutralWrites.push_back (w); row.levelMoveDb = move; }
+            }
+            else d.why += "; flat at default and no drive / input control found by name";   // (a switch is never the drive)
+        }
+        row.category = d.category; row.why = d.why; row.settled = d.settled; row.also = d.also;
         say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
         return row;
     }
@@ -3828,7 +3864,18 @@ inline int runCategoriseRedecide (const juce::File& folder, const juce::File& ou
         categorise::readHarmonics (sg, saturation::parseHarmonics (rd ("harm30")), saturation::parseHarmonics (rd ("harm6")));
         categorise::readPitch (sg, pitch::parsePitch (rd ("pitch")), 30.0);
         const auto proposed = categorise::categoriesFromWords (p.getProperty ("product", "").toString(), p.getProperty ("vendor", "").toString(), p.getProperty ("kind", "").toString());
-        const auto oldD = categorise::decide (sg, proposed, false), newD = categorise::decide (sg, proposed, true);
+        auto oldD = categorise::decide (sg, proposed, false), newD = categorise::decide (sg, proposed, true);
+        if (const auto* nws = p.getProperty ("neutral_writes", {}).getArray(); nws != nullptr && ! nws->isEmpty())   // 20 Oct: raised-drive rows replay from their drive_* traces
+        {
+            const auto& nv = nws->getReference (0); categorise::NeutralWrite w; w.index = (int) nv.getProperty ("index", -1); w.norm = (double) nv.getProperty ("norm", 0.0);
+            w.control = nv.getProperty ("control", "").toString(); w.text = nv.getProperty ("text", "").toString();
+            categorise::Signatures up;
+            categorise::readResponses (up, eq::parseResponse (rd ("drive_resp30")), eq::parseResponse (rd ("drive_resp12")));
+            categorise::readTail (up, reverbdelay::parseTail (rd ("drive_tail")));
+            categorise::readHarmonics (up, saturation::parseHarmonics (rd ("drive_harm30")), saturation::parseHarmonics (rd ("drive_harm6")));
+            std::optional<double> move; if (p.hasProperty ("level_move_db")) move = (double) p.getProperty ("level_move_db", 0.0);
+            oldD = newD = categorise::decideRaised (up, proposed, nullptr, w, move);
+        }
         const auto storedCat = p.getProperty ("category", "").toString(); const bool storedSettled = (bool) p.getProperty ("settled", false);
         if (oldD.category == storedCat && oldD.settled == storedSettled) ++faithful;
         else { ++unfaithful; unfaithfulL.add ("  " + p.getProperty ("product", "").toString() + ": stored " + storedCat + (storedSettled ? "" : " (unsettled)") + ", replay " + oldD.category + (oldD.settled ? "" : " (unsettled)")); }

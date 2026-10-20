@@ -13289,8 +13289,70 @@ int main (int, char**)
                && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "set\t7\t0.000000\tconfirm_ms\t3\tgetValue\t1.0\tlanded_by\tunlanded\ttext\tOn\n").size() == 1
                && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "set\t7\t0.000000\tconfirm_ms\t3\tgetValue\t0.0\tlanded_by\tpump\ttext\tOff\nset\t7\t1.0\tlanded_by\tunlanded\n").isEmpty()   // the FIRST line is the silencing write
                && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "").size() == 1
-               && drv.contains ("const auto d = categorise::decide (sg, row.proposed, true, &tr);"),
+               && drv.contains ("auto d = categorise::decide (sg, row.proposed, true, &tr);"),
                "wizard WZ-TAIL-1: a tail with both roles is measured as both, each pass with the other's sections silenced (CLA Effects reverb pass silences '" + names_ (fxDel).joinIntoString ("', '") + "'); one role -> that role; none -> review");
+    }
+    // WZ-TAIL-2 A LEVEL THAT IS A SWITCH (21 Oct, the CLA Effects check run): "Send Delay" opens "Off" at 1.0, and 0.0 is "Hold/Throw" - the
+    // minimum turned the throw ON in the reverb pass; a control whose own texts show "Off" is written to its Off. WZ-NOPARAM-1 (group 3):
+    // Waves Tune / Tune LT / GTR Tuner load cleanly and publish 0 parameters at create, after prepare and after render - filed
+    // not_measurable with what the probe printed, never "won't load"
+    {
+        using namespace ejmap::tailroles;
+        Controls fx { { 0, "Send Delay", true, { { "Hold/Throw", 0.0f }, { "Off", 1.0f } } }, { 10, "Short Delay", false, { { "-10.0", 0.0f }, { "0.0", 0.5f } } }, { 8, "Reverb", false, {} } };
+        const auto del = silence (fx, Role::delay);
+        auto at = [&] (const char* c) { for (const auto& w : del) if (w.control == c) return w.norm; return -1.0; };
+        const auto wt = juce::String ("probe: \"Waves Tune (m)\"\nstage\tprepare\n\nparamcount\tat_create\t0\tafter_prepare\t0\tafter_render\t0\n");
+        const auto why = ejmap::wizroute::noParametersWhy (wt), whyNone = ejmap::wizroute::noParametersWhy ("");
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (at ("Send Delay") == 1.0 && del.front().control == "Send Delay" && del.front().set == "Off" && at ("Short Delay") == 0.0
+               && why == "it loaded, but publishes no parameters (0 at create, 0 after prepare, 0 after render): nothing for EchoJay to set"
+               && whyNone.contains ("parameter list was empty") && ! why.contains ("load on") && ! whyNone.contains ("load on")
+               && run.contains ("if (r.cleanExit() && ps.empty()) { early[d.name] = \"not_measurable\"; earlyWhy[d.name] = wizroute::noParametersWhy (r.out);")
+               && run.indexOf ("if (r.cleanExit() && ps.empty()) { early[d.name]") < run.indexOf ("if (! r.cleanExit() || ps.empty()) { early[d.name]"),
+               "wizard WZ-TAIL-2 / WZ-NOPARAM-1: a switch named like a level is silenced at its own 'Off' (Send Delay -> " + juce::String (at ("Send Delay")) + "); a clean load with no parameters is '" + why + "'");
+    }
+    // WZ-FLAT-1 FLAT AT DEFAULT (Kathy, 20 Oct - group 2): a unit with no signature at its default has its drive / input control found by
+    // name (the 20 Oct run's names: Lindell 80 / 50 Bus -> THD, Orange Clip -> Input Level, Noveltech -> Enhancement, Denise -> Drive,
+    // bx_enhancer -> Boost Gain; never an output, a ceiling or a trim; OneKnob Filter / S1 Imager -> none), raised to 0.75, recorded as a
+    // neutral write, and the reads taken again; a LEVEL change is never the effect: still flat with it raised -> unsettled, however far the
+    // level moved
+    {
+        using namespace ejmap::categorise;
+        auto ctls = [] (std::initializer_list<const char*> ns) { std::vector<std::pair<int, juce::String>> c; int i = 0; for (const char* n : ns) c.push_back ({ i++, n }); return c; };
+        auto pick = [&] (std::initializer_list<const char*> ns) { const auto d = driveControl (ctls (ns)); return d ? d->second : juce::String ("-"); };
+        Signatures flat; flat.responseRead = flat.tailRead = flat.harmRead = true; flat.freqSpanDb = 0.2; flat.levelDepDb = 0.05; flat.thdLoDb = -95.0; flat.thdHiDb = -90.0;
+        Signatures sat = flat; sat.thdLoDb = -70.0; sat.thdHiDb = -38.0;                     // THD rises 32 dB to audible: saturation
+        Signatures eqd = flat; eqd.freqSpanDb = 5.0;
+        Signatures tailed = flat; tailed.rt60s = 1.2;
+        NeutralWrite w; w.index = 0; w.control = "THD"; w.norm = kDriveRaiseNorm; w.text = "75 %";
+        const auto stillFlat = decideRaised (flat, { "saturation" }, nullptr, w, 6.0), raisedSat = decideRaised (sat, {}, nullptr, w, 4.5);
+        Row r; r.measured = true; r.sig = sat; r.sigAtDefault = flat; r.neutralWrites.push_back (w); r.levelMoveDb = 4.5;
+        const auto rv = rowVar (r);
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (pick ({ "THD", "Trim", "Output Level", "Level", "TMT Link", "Input Level", "TMT Channel" }) == "THD"
+               && pick ({ "Output Level", "Cut", "THD", "TMT Link", "Level", "Phase", "Unity", "Pre Gain", "Input Level", "TMT Channel" }) == "THD"
+               && pick ({ "Input Ceiling", "Threshold", "Active", "Input Level" }) == "Input Level"
+               && pick ({ "Input Gain", "Output Gain", "Enhancement" }) == "Enhancement"
+               && pick ({ "Style", "Mix", "Output gain", "Input gain", "Drive" }) == "Drive"
+               && pick ({ "Power", "Input Gain", "Boost Gain" }) == "Boost Gain"
+               && pick ({ "Filter", "Resonance" }) == "-" && pick ({ "Gain", "Width", "Rotation", "Asymmetry" }) == "-"
+               && pick ({ "Output Drive" }) == "-" && pick ({ "Input Trim" }) == "-" && pick ({ "MS/LR Input", "Width" }) == "-"   // S1 Imager (21 Oct): a routing is not a drive
+               && raisedNorm (0.0) == std::optional<double> (0.75) && std::abs (*raisedNorm (0.875) - 0.96875) < 1e-9 && ! raisedNorm (1.0) && *raisedNorm (0.5) > 0.5   // never below where it opened (StandardCLIP)
+               && openingNorm ("param\t3\t0.875000\tInput Gain\t0.00dB\nset\t3\t0.968750\n", 3) == std::optional<double> (0.875) && ! openingNorm ("param\t3\t0.5\tX\t\n", 4)
+               && drv.contains ("if (lr.automatable && ! lr.meta && ! (lr.numSteps >= 2 && lr.numSteps <= 4)) ctls.push_back ({ i, lr.name });")
+               && drv.contains ("const auto opened = dc ? categorise::openingNorm (r30.out, dc->first) : std::nullopt;") && drv.contains ("w.norm = *up0;") && drv.contains ("const auto up0 = categorise::raisedNorm (opened ? *opened : 0.0);")
+               && flatAtDefault (flat) && ! flatAtDefault (sat) && ! flatAtDefault (eqd) && ! flatAtDefault (tailed) && ! [] { Signatures s; return flatAtDefault (s); }()
+               && ! stillFlat.settled && stillFlat.why.contains ("moved 6.0 dB (a level change, not counted as the signature)") && stillFlat.why.contains ("still no signature") && stillFlat.why.contains ("'THD' raised to 0.75 ('75 %')")
+               && raisedSat.settled && raisedSat.category == "saturation" && raisedSat.why.contains ("as part of the neutral setting") && raisedSat.why.contains ("; then THD rises")
+               && rv.getProperty ("neutral_writes", {}).getArray() != nullptr && rv.getProperty ("neutral_writes", {})[0].getProperty ("control", "") == juce::var ("THD")
+               && (double) rv.getProperty ("level_move_db", 0.0) == 4.5 && rv.getProperty ("signatures_at_default", {}).hasProperty ("thd_db_at_m6")
+               && (double) rv.getProperty ("signatures_at_default", {}).getProperty ("thd_db_at_m6", 0.0) == -90.0 && (double) rv.getProperty ("signatures", {}).getProperty ("thd_db_at_m6", 0.0) == -38.0
+               && drv.contains ("if (! d.settled && categorise::flatAtDefault (sg))")
+               && drv.contains ("guard (run (\"drive_resp30\", { \"--response\", \"ctl=\" + juce::String (ctl), \"norms=current\", set,")
+               && drv.contains ("guard (run (\"drive_tail\", { \"--tail\", \"db=-12\", \"burst_ms=300\", \"tail_s=3\", \"hz=997\", \"win_ms=1\", set }))")
+               && drv.contains ("d = categorise::decideRaised (up, row.proposed, &tr, w, move); row.sigAtDefault = sg; row.sig = up; row.neutralWrites.push_back (w); row.levelMoveDb = move;")
+               && drv.contains ("oldD = newD = categorise::decideRaised (up, proposed, nullptr, w, move);"),
+               "wizard WZ-FLAT-1: flat at default -> the drive / input control raised to 0.75 as a neutral write, the reads taken again; a level change never settles ('" + stillFlat.why + "')");
     }
     // WZ-NET-1 THE SAFETY NET (Kathy, 18 Oct, CONFIRMED - "must be fixed before beta"): a queued plugin left without an outcome by the last run
     // AND this one is filed not_measurable with what it was left as; one left for the first time, or settled, is untouched; the end guard files

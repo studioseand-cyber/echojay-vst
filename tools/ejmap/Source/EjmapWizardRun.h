@@ -903,6 +903,9 @@ inline int runWizard (const WizardOptions& wo)
             { early[d.name] = "waves_skipped"; earlyWhy[d.name] = wizroute::wavesSkippedWhy (shell, shells.why (shell).isNotEmpty() ? shells.why (shell) : juce::String ("did not load")); say ("  " + d.name + ": " + earlyWhy[d.name]); prog.finished (d.name, true); return; }
             if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licenceMemF, wizroute::pluginId (uid, d.version, fmtTag (d))); early[d.name] = "needs_licence"; say ("  " + d.name + ": a window appeared (licence?) - closed, not clicked; not mapped"); prog.finished (d.name, true); return; }
             const auto ps = paramsOfList (r.out);
+            // 21 Oct (group 3): a clean load with an EMPTY list is not "won't load" - Waves Tune / Tune LT / GTR Tuner load and pass audio and
+            // publish no parameter at create, after prepare or after render (the probe's paramcount line): nothing for EchoJay to set
+            if (r.cleanExit() && ps.empty()) { early[d.name] = "not_measurable"; earlyWhy[d.name] = wizroute::noParametersWhy (r.out); say ("  " + d.name + ": " + earlyWhy[d.name]); prog.finished (d.name, true); return; }
             if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
             const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
             const auto cat = wizard::wizardCategory (d.name, catalogue);
