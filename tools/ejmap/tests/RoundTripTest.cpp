@@ -4863,8 +4863,9 @@ void testSweepQuietReference()
                    "cert WZ-EQ-HZ-1: a bare number counts as Hz only on a control that declares Hz (REQ 6: " + partOf (hz, "Band3 freq") + "; mismatched " + partOf (mism, "Band3 freq") + "; no unit " + partOf (none, "Band3 freq") + ")");
         }
         // WZ-EQ-SHELFG-1 A SHELF WHOSE CORNER MOVES WITH GAIN (Kathy, 20 Oct; H-EQ LF: 629 Hz at +6, 1363 Hz at -6) is mapped at -6 / -3 / +3 / +6
-        // and certified PER GAIN: a gain's frequency part passes when every acceptance write at that gain ran and passed; a symmetric shelf (H-EQ
-        // HF: 1989 / 1987 Hz) is not re-mapped
+        // and certified PER GAIN: a gain's frequency part passes when every acceptance write at that gain ran and passed. H-EQ HF moves with the
+        // SIZE of the gain (1987 at +-6, 2730 at +-18) and is mapped per gain too; a textbook shelf (corner within 5 %) is not. Each gain's map
+        // is written at the gain map's inverse for that gain (20 Oct: "nearest swept position" put +3 at the flat 0 dB)
         {
             using namespace ejmap::eq;
             auto row = [] (double lab, const char* res, double corner) { GainRow r; r.labelDb = lab; r.display = juce::String (lab, 1); r.norm = (float) ((lab + 18.0) / 36.0); r.band.result = res; r.band.cornerHz = corner; return r; };
@@ -4883,7 +4884,10 @@ void testSweepQuietReference()
                 auto* d = new juce::DynamicObject(); d->setProperty ("bands", juce::Array<juce::var> { juce::var (b) }); return ejmap::certv1::judgeEq (juce::var (d)); };
             const auto withG = shelfDraft (true), without = shelfDraft (false);
             check (withG.pass && ! without.pass, "cert WZ-EQ-SHELFG-1b: a shelf certifies at the gain whose writes pass (with per-gain maps " + juce::String ((int) withG.pass) + ", without " + juce::String ((int) without.pass) + ")");
-            check (cornerMovesWithGain (lf) && ! cornerMovesWithGain (hf) && near != nullptr && std::abs (*near->labelDb - (-6.0)) < 1e-9
+            const std::vector<GainRow> fixed { row (-12, "shelf", 1000.0), row (-6, "shelf", 1010.0), row (0, "flat", 0), row (6, "shelf", 995.0), row (12, "shelf", 1020.0) };   // a textbook shelf: corner within 5 %
+            check (cornerMovesWithGain (lf) && cornerMovesWithGain (hf) && ! cornerMovesWithGain (fixed) && near != nullptr && std::abs (*near->labelDb - (-6.0)) < 1e-9
+                   && drv.contains ("const auto gi = eq::normForGain (gainRowsM12, gdb, sweep::isSteppedControl (sweep::findControl (base, gIdx)));")
+                   && drv.contains ("juce::StringArray gs = engageSets; gs.add (juce::String (gIdx) + \":\" + juce::String (gi.norm, 6));")
                    && p3.state == "pass" && m3.state == "fail" && none.state == "not_tested" && kShelfGainsDb == std::vector<double> { -6.0, -3.0, 3.0, 6.0 }
                    && drv.contains ("if (fIdx >= 0 && eq::cornerMovesWithGain (gainRowsM12))") && drv.contains ("if (! freqByGain.empty())\n                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t }); }"),
                    "cert WZ-EQ-SHELFG-1: a shelf whose corner moves with gain is mapped per gain and certified per gain (+3 " + p3.state + ", -3 " + m3.state + "); a symmetric shelf is not re-mapped");

@@ -5223,8 +5223,10 @@ inline int runEq (const SweepOptions& opt)
             juce::Array<juce::var> fbg;
             for (double gdb : eq::kShelfGainsDb)
             {
-                const auto* gr0 = eq::gainRowNearest (gainRowsM12, gdb); if (gr0 == nullptr) continue;
-                juce::StringArray gs = engageSets; gs.add (juce::String (gIdx) + ":" + juce::String (gr0->norm, 6));
+                // written at the gain map's own inverse for that gain (as the acceptance writes it) - never the nearest swept position
+                const auto gi = eq::normForGain (gainRowsM12, gdb, sweep::isSteppedControl (sweep::findControl (base, gIdx)));
+                if (! gi.ok) { say ("    shelf at " + juce::String (gdb, 0) + " dB: not mapped (" + gi.why + ")"); continue; }
+                juce::StringArray gs = engageSets; gs.add (juce::String (gIdx) + ":" + juce::String (gi.norm, 6));
                 auto [fr2, r2] = response (tag + ".freqG" + juce::String (gdb, 0), fIdx, normsFor (fIdx, 7), gs);
                 if (r2.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
                 std::vector<eq::FreqPoint> pts; juce::Array<juce::var> rows;
@@ -5235,8 +5237,8 @@ inline int runEq (const SweepOptions& opt)
                     else q->setProperty ("why", b.result == "shelf" ? juce::String ("a shelf whose corner lies past the grid: no figure") : b.result + (b.reason.isNotEmpty() ? ": " + b.reason : juce::String()));
                     rows.add (juce::var (q)); }
                 freqByGain[gdb] = pts;
-                auto* g = new juce::DynamicObject(); g->setProperty ("gain_db", gdb); g->setProperty ("gain_display", gr0->display); g->setProperty ("gain_norm", gr0->norm); g->setProperty ("rows", rows); fbg.add (juce::var (g));
-                say ("    shelf at " + juce::String (gdb > 0 ? "+" : "") + juce::String (gdb, 0) + " dB ('" + gr0->display + "'): " + juce::String ((int) pts.size()) + " corner(s) read");
+                auto* g = new juce::DynamicObject(); g->setProperty ("gain_db", gdb); g->setProperty ("gain_display", gi.display); g->setProperty ("gain_norm", gi.norm); g->setProperty ("rows", rows); fbg.add (juce::var (g));
+                say ("    shelf at " + juce::String (gdb > 0 ? "+" : "") + juce::String (gdb, 0) + " dB (gain norm " + juce::String (gi.norm, 4) + ", '" + gi.display + "'): " + juce::String ((int) pts.size()) + " corner(s) read");
             }
             bo->setProperty ("freq_by_gain", fbg);
         }
