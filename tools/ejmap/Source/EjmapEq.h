@@ -377,18 +377,16 @@ inline juce::String bandVerdict (const std::vector<GainRow>& rows, const LevelCh
 }
 // A MEASURED BAND for the counts and v1 certification (19 Oct, REQ): measured, or measured once its switch was on (needs_engage: the switch is
 // written with it - the draft's engage). REQ 2/4/6's 13 engaged bands read -18 -> -18.0 dB and passed 36 of 36 acceptance writes, yet counted 0
-// A SHELF WHOSE CORNER MOVES WITH GAIN (20 Oct, H-EQ LF: 629 Hz at +6, 1363 Hz at -6): the corners at the gain labels nearest -6 and +6
-// differ by more than kCornerMovePct - one frequency law cannot place it at every gain, so it is mapped at several
+// A SHELF WHOSE CORNER MOVES WITH GAIN (20 Oct): H-EQ LF 629 Hz at +6 / 1363 at -6, and H-EQ HF 1987 at +-6 / 2157 at +-12 / 2730 at +-18
+// (it moves with the SIZE of the gain, the same both ways). Any two shelf readings of the gain sweep whose corners differ by more than
+// kCornerMovePct - one frequency law cannot place it at every gain, so it is mapped at several
 inline constexpr double kCornerMovePct = 5.0;
 inline const std::vector<double> kShelfGainsDb { -6.0, -3.0, 3.0, 6.0 };
 inline bool cornerMovesWithGain (const std::vector<GainRow>& rows)
 {
-    const GainRow* lo = nullptr; const GainRow* hi = nullptr;
-    for (const auto& r : rows) if (r.labelDb && r.band.result == "shelf" && r.band.cornerHz > 0.0)
-    {   if (! lo || std::abs (*r.labelDb + 6.0) < std::abs (*lo->labelDb + 6.0)) lo = &r;
-        if (! hi || std::abs (*r.labelDb - 6.0) < std::abs (*hi->labelDb - 6.0)) hi = &r; }
-    if (! lo || ! hi || lo == hi || *lo->labelDb >= 0.0 || *hi->labelDb <= 0.0) return false;
-    return std::abs (hi->band.cornerHz / lo->band.cornerHz - 1.0) * 100.0 > kCornerMovePct && std::abs (lo->band.cornerHz / hi->band.cornerHz - 1.0) * 100.0 > kCornerMovePct;
+    double lo = 0.0, hi = 0.0; int n = 0;
+    for (const auto& r : rows) if (r.band.result == "shelf" && r.band.cornerHz > 0.0) { lo = n == 0 ? r.band.cornerHz : juce::jmin (lo, r.band.cornerHz); hi = n == 0 ? r.band.cornerHz : juce::jmax (hi, r.band.cornerHz); ++n; }
+    return n >= 2 && (hi / lo - 1.0) * 100.0 > kCornerMovePct;
 }
 // the gain position whose label is nearest a gain (the shelf's per-gain map is taken there)
 inline const GainRow* gainRowNearest (const std::vector<GainRow>& rows, double gdb)
