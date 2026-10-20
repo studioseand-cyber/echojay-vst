@@ -21,6 +21,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include "EjmapEq.h"   // 20 Oct: eq::measuredBand (the engaged-band count) - every target that includes this header must see it
 
 namespace ejmap::wizard
 {
