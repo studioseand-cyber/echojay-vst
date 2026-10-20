@@ -13282,7 +13282,12 @@ int main (int, char**)
                && ! none.settled && none.why.contains ("review") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && ! old.settled
                && run.contains ("if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty (\"also_categories\", {}).getArray())")
                && run.contains ("for (const auto& c : *al) { enqueue (ir.desc.name, c.toString());")
-               && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("const auto mg = customdefault::mergePresets (presetRestore.before, tailroles::presetOf (isolationWrites));")
+               && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("if (si >= 0) args.set (si, \"set=\" + isoSets + \",\" + args[si].substring (4)); else args.add (\"set=\" + isoSets); }")
+               && drv.contains ("isolationUnlanded = tailroles::unlanded (isolationWrites, r.out);") && ! drv.contains ("tailroles::presetOf (isolationWrites));\n        setenv")
+               && [] { std::map<juce::String, float> t; keepEndmost (t, "Off", 0.0f); keepEndmost (t, "Off", 0.5f); keepEndmost (t, "On", 1.0f); return t["Off"] == 0.0f && t["On"] == 1.0f; }()   // GW VoiceCentric: "Off" at 0 and 0.5
+               && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "set\t7\t0.000000\tconfirm_ms\t3\tgetValue\t1.0\tlanded_by\tunlanded\ttext\tOn\n").size() == 1
+               && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "set\t7\t0.000000\tconfirm_ms\t3\tgetValue\t0.0\tlanded_by\tpump\ttext\tOff\nset\t7\t1.0\tlanded_by\tunlanded\n").isEmpty()   // the FIRST line is the silencing write
+               && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "").size() == 1
                && drv.contains ("const auto d = categorise::decide (sg, row.proposed, true, &tr);"),
                "wizard WZ-TAIL-1: a tail with both roles is measured as both, each pass with the other's sections silenced (CLA Effects reverb pass silences '" + names_ (fxDel).joinIntoString ("', '") + "'); one role -> that role; none -> review");
     }

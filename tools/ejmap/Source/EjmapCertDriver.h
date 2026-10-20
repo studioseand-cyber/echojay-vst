@@ -5705,8 +5705,18 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     if (kind != "reverb" && kind != "delay") { say ("RD: '" + opt.product + "' is category '" + kind + "' in the ledger; say --kind reverb or --kind delay"); return 2; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("reverbdelay"); outDir.createDirectory();
     int processN = 0;
+    // 20 Oct: the other role's sections silenced IN every tail call's own set= list (written after prepare, with audio pumping - an
+    // EJ_PROBE_PRESET write comes before prepare and Waves refused it: GW VoiceCentric's Reverb On/Off stayed On), first so the pass's own
+    // writes still win on their controls; the first tail call's set lines say whether each landed
+    std::vector<tailroles::Write> isolationWrites; juce::String isoSets; bool isoChecked = false; juce::StringArray isolationUnlanded;
     auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
-        const auto r = runProbeCall (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".reverbdelay." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+        const bool tailCall = isoSets.isNotEmpty() && args.contains ("--tail");
+        if (tailCall) { int si = -1; for (int i = 0; i < args.size(); ++i) if (args[i].startsWith ("set=")) si = i;
+                        if (si >= 0) args.set (si, "set=" + isoSets + "," + args[si].substring (4)); else args.add ("set=" + isoSets); }
+        const auto r = runProbeCall (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".reverbdelay." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        if (tailCall && ! isoChecked && r.cleanExit()) { isoChecked = true; isolationUnlanded = tailroles::unlanded (isolationWrites, r.out);
+            if (! isolationUnlanded.isEmpty()) std::cout << "RD: a silencing write did NOT land: " << isolationUnlanded.joinIntoString (", ") << " - the other role may still sound in this pass (recorded)" << std::endl; }
+        return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     const auto fx = sampledFixture (opt, desc, raw, stem, "reverbdelay", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet", "sync", "tempo sync", "note", "division", "subdivision", "beat", "rate", "delay", "time", "pre-delay", "predelay", "pre delay", "pre", "decay", "reverb time", "rt60", "length", "size", "tail", "feedback", "regen", "regeneration", "repeats", "fb" });
     if (! fx.ok) { say ("RD: " + fx.why); return 1; }
@@ -5715,22 +5725,19 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     // the plugin's own restore writes: a section write wins only on its own controls), and this pass's roles come from its own sections
     tailroles::Controls trCtls;
     if (const auto* cs = base.getProperty ("controls", {}).getArray())
-        for (const auto& c : *cs) { std::map<juce::String, float> texts; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue();
+        for (const auto& c : *cs) { std::map<juce::String, float> texts; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) tailroles::keepEndmost (texts, kv.value.toString(), (float) kv.name.toString().getDoubleValue());
                                     trCtls.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString(), sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2, texts }); }
     const auto trRoles = tailroles::rolesOf (trCtls);
     const bool isolate = trRoles.delay && trRoles.reverb;
     const auto otherRole = kind == "delay" ? tailroles::Role::reverb : tailroles::Role::delay;
-    const auto isolationWrites = isolate ? tailroles::silence (trCtls, otherRole) : std::vector<tailroles::Write>();
-    struct PresetRestore { bool set = false; juce::String before; bool had = false;
-        ~PresetRestore() { if (! set) return; if (had) setenv ("EJ_PROBE_PRESET", before.toRawUTF8(), 1); else unsetenv ("EJ_PROBE_PRESET"); } } presetRestore;
+    if (isolate) isolationWrites = tailroles::silence (trCtls, otherRole);
     if (! isolationWrites.empty())
     {
-        const char* prev = std::getenv ("EJ_PROBE_PRESET"); presetRestore.had = prev != nullptr; presetRestore.before = prev != nullptr ? juce::String::fromUTF8 (prev) : juce::String();
-        const auto mg = customdefault::mergePresets (presetRestore.before, tailroles::presetOf (isolationWrites));
-        setenv ("EJ_PROBE_PRESET", mg.preset.toRawUTF8(), 1); presetRestore.set = true;
+        isoSets = tailroles::presetOf (isolationWrites);
         juce::StringArray w; for (const auto& x : isolationWrites) w.add (x.control + " (" + x.why + ")");
         say ("RD: both a delay and a reverb in its controls: the " + juce::String (tailroles::roleName (otherRole)) + " sections silenced for this " + kind + " pass - " + w.joinIntoString ("; "));
     }
+
     // THE CONTROLS BY NAME (a prototype's rule, said in the proposal): the first match of each role
     struct Ctl { int index = -1; juce::String name; bool word = false; int steps = 0; double onNorm = 1.0, offNorm = 0.0; juce::String onText, offText; };
     Ctl mix, timeCtl, decayCtl, feedback, sync, note;
@@ -5772,7 +5779,8 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
     if (! isolationWrites.empty())   // 20 Oct: the record says which sections were silenced and how
     {   juce::Array<juce::var> iw; for (const auto& x : isolationWrites) { auto* w = new juce::DynamicObject(); w->setProperty ("control", x.control); w->setProperty ("index", x.index); w->setProperty ("norm", x.norm); w->setProperty ("set", x.set); w->setProperty ("why", x.why); iw.add (juce::var (w)); }
-        o->setProperty ("sections_silenced", iw); o->setProperty ("sections_silenced_role", tailroles::roleName (otherRole)); }
+        o->setProperty ("sections_silenced", iw); o->setProperty ("sections_silenced_role", tailroles::roleName (otherRole));
+        if (! isolationUnlanded.isEmpty()) o->setProperty ("sections_silenced_unlanded", isolationUnlanded.joinIntoString (", ")); }
     int measured = 0; juce::Array<juce::var> roleNotes;
     auto readTail = [&] (const juce::String& tag, const juce::StringArray& args, bool& window) -> Tail { const auto r = run (tag, args); if (r.kind == ChildResult::Kind::uiShown) window = true; return parseTail (r.cleanExit() ? r.out : juce::String()); };
     bool windowSeen = false;

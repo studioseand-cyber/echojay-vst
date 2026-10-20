@@ -93,6 +93,14 @@ inline Roles rolesOf (const Controls& controls)
     }
     return r;
 }
+// A TEXT SHOWN AT SEVERAL POSITIONS keeps the one nearest an END of the travel (20 Oct, GW VoiceCentric: "Off" at 0.0 and 0.5 - the last one
+// won, 0.5 never landed on the two-step switch and the reverb stayed On through the "silenced" pass)
+inline void keepEndmost (std::map<juce::String, float>& texts, const juce::String& text, float norm)
+{
+    auto toEnd = [] (float n) { return juce::jmin (n, 1.0f - n); };
+    const auto it = texts.find (text);
+    if (it == texts.end() || toEnd (norm) < toEnd (it->second)) texts[text] = norm;
+}
 // the norm of the first text that matches one of the words (else the fallback)
 inline double normOfText (const std::map<juce::String, float>& texts, std::initializer_list<const char*> words, double fallback, juce::String& textOut)
 {
@@ -121,6 +129,19 @@ inline std::vector<Write> silence (const Controls& controls, Role role)
         if (it == best.end() || rank < it->second.first) best[p.section] = { rank, x };
     }
     for (const auto& [sec, rw] : best) { auto x = rw.second; x.why = "section '" + sec + "': " + x.why; out.push_back (x); }
+    return out;
+}
+// DID THE SILENCING LAND (20 Oct)? The probe prints each write it made - "preset <idx> ..." (EJ_PROBE_PRESET) or "set <idx> ..." (a mode's
+// set= list) - with "landed_by <how>". The writes whose line says "unlanded" (or that have no line at all) did not silence anything; the
+// FIRST line for an index is the silencing write (it leads the set= list)
+inline juce::StringArray unlanded (const std::vector<Write>& ws, const juce::String& probeOut)
+{
+    std::map<int, juce::String> how;
+    for (const auto& line : juce::StringArray::fromLines (probeOut))
+    {   const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() < 2 || (f[0] != "preset" && f[0] != "set")) continue;
+        const int lb = f.indexOf ("landed_by"); if (how.count (f[1].getIntValue()) == 0) how[f[1].getIntValue()] = lb >= 0 && lb + 1 < f.size() ? f[lb + 1] : juce::String ("?"); }
+    juce::StringArray out;
+    for (const auto& w : ws) { const auto it = how.find (w.index); if (it == how.end() || it->second == "unlanded" || it->second == "?") out.add (w.control + (it == how.end() ? " (no preset line)" : " (unlanded)")); }
     return out;
 }
 inline juce::String presetOf (const std::vector<Write>& ws)   // the probe's EJ_PROBE_PRESET form: "index:norm,..."
