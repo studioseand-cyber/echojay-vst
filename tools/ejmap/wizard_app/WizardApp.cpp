@@ -461,6 +461,7 @@ private:
     static juce::String hostName() { char h[256] = {}; gethostname (h, sizeof h - 1); return juce::String (h).upToFirstOccurrenceOf (".", false, false); }
     juce::var appState() const { const auto v = juce::JSON::parse (cfg.work.getChildFile ("app_state.json").loadFileAsString()); return v.isObject() ? v : juce::var (new juce::DynamicObject()); }
     void setState (const char* k, bool v) { auto s = appState(); s.getDynamicObject()->setProperty (k, v); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (s)); }
+    wizapp::ProgressLogClock progressClock;   // 20 Oct: the progress line's clock
     void logLine (const juce::String& s) { cfg.work.getChildFile ("app.log").appendText (juce::Time::getCurrentTime().toISO8601 (true) + " " + s + "\n"); }
 
     juce::StringArray engineArgs (bool measure)
@@ -793,6 +794,9 @@ private:
             else { barValue = 0.0; barLeft = "Getting ready"; barRight = {}; }   // the first second, before the engine's first progress
         }
         repaint(); snapAtQuarters();
+        // 20 Oct (Kathy): the progress line - every 30 s and at every stage change - so a tester's log shows what the screen showed
+        if (wizapp::progressLogDue (progressClock, wizapp::screenName (screen) + "|" + stage + "|" + stepText, juce::Time::getMillisecondCounterHiRes()))
+            logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine));
         if (const auto code = engine.poll())
         {
             if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty())   // 19 Oct: nothing the engine started outlives it

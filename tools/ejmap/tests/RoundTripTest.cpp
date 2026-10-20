@@ -13227,6 +13227,25 @@ int main (int, char**)
                  + closed.joinIntoString (", ") + "') [a " + juce::String (beforeA) + "/" + juce::String (afterA) + " b " + juce::String ((int) r.kind) + "/" + juce::String (afterB)
                  + " c " + juce::String (orphanBefore) + "/" + juce::String (orphanAfter) + " none " + juce::String (none.size()) + "]");
     }
+    // WZ-PLOG-1 THE PROGRESS LOG (Kathy, 20 Oct): every 30 s and at every stage change the app writes what the screen showed - bar %, the %
+    // text, the counter and its own %, the engine's share, skipped - so a tester's app.log proves the bar never froze or disagreed
+    {
+        using namespace ejmap::wizapp;
+        ProgressLogClock c;
+        const bool first = progressLogDue (c, "measuring|Measuring|Step 3", 1000.0), early = progressLogDue (c, "measuring|Measuring|Step 3", 11000.0),
+                   at30 = progressLogDue (c, "measuring|Measuring|Step 3", 31000.0), change = progressLogDue (c, "measuring|Packing|Step 3", 32000.0), again = progressLogDue (c, "measuring|Packing|Step 3", 33000.0);
+        const auto pm = juce::JSON::parse (R"({"stage":"Measuring","measure_progress":{"done":19,"total":389,"skipped":83,"share":0.0533}})");
+        const auto lm = progressLogLine ("measuring", pm, "Step 3 of 3 - measuring", 0.053, "5.3%", "19 of 389 done - 83 skipped");
+        const auto ls = progressLogLine ("scan", juce::JSON::parse (R"({"stage":"Checking"})"), "Step 2 of 3", 0.41, "41.0%", "312 plugins checked");
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto poll = app.fromFirstOccurrenceOf ("void pollEngine()", false, false).upToFirstOccurrenceOf ("if (const auto code = engine.poll())", false, false);
+        check (first && ! early && at30 && change && ! again && kProgressLogEveryS == 30.0
+               && lm == "progress | screen measuring | stage Measuring | step Step 3 of 3 - measuring | bar 5.3% | shown '5.3%' | counter '19 of 389 done - 83 skipped' (4.9%) | share 5.3% | skipped 83"
+               && ls.startsWith ("progress | screen scan | stage Checking | step Step 2 of 3 | bar 41.0% | shown '41.0%' | counter '312 plugins checked'") && ls.endsWith ("| skipped 0")
+               && poll.contains ("if (wizapp::progressLogDue (progressClock, wizapp::screenName (screen) + \"|\" + stage + \"|\" + stepText, juce::Time::getMillisecondCounterHiRes()))")
+               && poll.contains ("logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine));"),
+               "wizard WZ-PLOG-1: a progress line every 30 s and at every stage change, with the bar, the shown %, the counter and its %, the share and skipped ('" + lm + "')");
+    }
     // WZ-NET-1 THE SAFETY NET (Kathy, 18 Oct, CONFIRMED - "must be fixed before beta"): a queued plugin left without an outcome by the last run
     // AND this one is filed not_measurable with what it was left as; one left for the first time, or settled, is untouched; the end guard files
     // before it builds the left list, so a carry-on never ends on the same "Almost done" twice

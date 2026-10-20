@@ -517,6 +517,28 @@ inline juce::String counterWords (const juce::var& progress, bool measuringScree
         return juce::String ((int) mp.getProperty ("done", 0)) + " of " + juce::String ((int) mp.getProperty ("total", 0)) + " done" + (sk > 0 ? " - " + juce::String (sk) + " skipped" : juce::String()); }
     return progress.hasProperty ("plugins_done") ? pluginsDoneWords ((int) progress.getProperty ("plugins_done", 0)) : juce::String();
 }
+// THE PROGRESS LOG (Kathy, 20 Oct): what the tester SAW, written to app.log every kProgressLogEveryS and at every stage change, so a log proves
+// the bar never froze and never disagreed with its counter: the screen, the engine stage, the step line, the bar's % (what is drawn), the %
+// text shown beside it, the counter as shown and as its own %, the engine's share, and the skipped count
+inline constexpr double kProgressLogEveryS = 30.0;
+struct ProgressLogClock { juce::String lastKey; double lastMs = -1.0; };
+inline bool progressLogDue (ProgressLogClock& c, const juce::String& stageKey, double nowMs)
+{
+    if (stageKey == c.lastKey && c.lastMs >= 0.0 && nowMs - c.lastMs < kProgressLogEveryS * 1000.0) return false;
+    c.lastKey = stageKey; c.lastMs = nowMs; return true;
+}
+inline juce::String progressLogLine (const juce::String& screen, const juce::var& progress, const juce::String& stepText, double barValue, const juce::String& barRight, const juce::String& counter)
+{
+    const auto mp = progress.getProperty ("measure_progress", {});
+    juce::String l = "progress | screen " + screen + " | stage " + progress.getProperty ("stage", "").toString() + " | step " + (stepText.isEmpty() ? juce::String ("-") : stepText)
+                   + " | bar " + juce::String (juce::jlimit (0.0, 1.0, barValue) * 100.0, 1) + "% | shown '" + barRight + "' | counter '" + counter + "'";
+    if (mp.isObject())
+    {   const int done = (int) mp.getProperty ("done", 0), total = (int) mp.getProperty ("total", 0);
+        if (total > 0) l << " (" << juce::String (100.0 * done / total, 1) << "%)";
+        l << " | share " << juce::String (juce::jlimit (0.0, 1.0, (double) mp.getProperty ("share", 0.0)) * 100.0, 1) << "% | skipped " << (int) mp.getProperty ("skipped", 0); }
+    else l << " | skipped " << (int) progress.getProperty ("skipped", 0);
+    return l;
+}
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring
 // FINISH NOW (Kathy, 13 Oct): the app writes this file in the engine's folder, then stops it as a pause does; the engine, seeing it after
 // the stop, packs what landed instead of ending as stopped. A disk stop never finishes (there may be no room to pack)
