@@ -5140,6 +5140,9 @@ inline int runEq (const SweepOptions& opt)
         if (! baseR.ok || baseR.positions.empty() || baseR.positions[0].tones.size() < 8) { say ("    baseline failed (" + (baseR.refused.isNotEmpty() ? baseR.refused : br.describe()) + ")"); continue; }
         const auto& baseline = baseR.positions[0];
         auto* bo = new juce::DynamicObject(); bo->setProperty ("band", band.key); bo->setProperty ("gain_control", band.gainNames.front()); bo->setProperty ("freq_control", band.freqNames.front()); if (! band.qs.empty()) bo->setProperty ("q_control", band.qNames.front());
+        if (fIdx >= 0) if (const auto u = sweep::findControl (base, fIdx).getProperty ("unit", "").toString(); u.isNotEmpty()) bo->setProperty ("freq_unit", u);   // 20 Oct: the declared unit
+        { juce::String tn; if (const int ti = eq::typeControlOf (band.key, switches, &tn); ti >= 0)   // 20 Oct (Kathy's rule): the band's type and its DEFAULT on the map
+          { bo->setProperty ("type_control", tn); bo->setProperty ("type_default", sweep::findControl (base, ti).getProperty ("defaultOnInstantiate", {}).getProperty ("display", "")); } }
         // GAIN sweep
         juce::Array<juce::var> gainRows; float boostNorm = -1.0f; double boostDb = 0.0; std::optional<double> bestBoostDist;
         float boostLowNorm = -1.0f; double boostLowDb = 0.0; std::optional<double> bestLowDist;   // the +3 dB position for the Q map's second gain (section 3)
@@ -5177,7 +5180,8 @@ inline int runEq (const SweepOptions& opt)
                     std::vector<eq::Band> b2; for (const auto& p : gr2.positions) b2.push_back (eq::deriveBand (eq::deviation (p, baseline)));
                     moved = ! b2.empty() && ! eq::gainInert (b2);
                     say ("    shape search: [" + juce::String (c.index) + "] " + c.name + " -> '" + c.onText + "': " + (moved ? "gain now moves the band" : "still the same at every gain"));
-                    if (moved) { gr = gr2; engageSets = sets; engagedBy = (engagedBy.isEmpty() ? juce::String() : engagedBy + ", ") + c.name + " = '" + c.onText + "'"; break; }
+                    if (moved) { gr = gr2; engageSets = sets;   // measured at that type; NOT part of engage: EchoJay never changes a band's type unless the user asks (20 Oct)
+                                 bo->setProperty ("type_control", c.name); bo->setProperty ("type_measured", c.onText); bo->setProperty ("shape_changed", true); break; }
                 }
                 if (! moved) say ("    shape search: " + juce::String (tried) + " type control(s) tried, gain still moves nothing");
             } }
@@ -5253,6 +5257,31 @@ inline int runEq (const SweepOptions& opt)
             }
         }
         bo->setProperty ("freq_sweep", freqRows); bo->setProperty ("boost_norm", boostNorm); bo->setProperty ("boost_label_db", boostDb);
+        // A SHELF WHOSE CORNER MOVES WITH GAIN (20 Oct, Kathy): its frequency mapped at -6, -3, +3 and +6 dB (the gain positions whose labels
+        // sit nearest), each map on its own; the acceptance at +3 / -3 uses the map taken at that gain
+        std::map<double, std::vector<eq::FreqPoint>> freqByGain;
+        if (fIdx >= 0 && eq::cornerMovesWithGain (gainRowsM12))
+        {
+            juce::Array<juce::var> fbg;
+            for (double gdb : eq::kShelfGainsDb)
+            {
+                const auto* gr0 = eq::gainRowNearest (gainRowsM12, gdb); if (gr0 == nullptr) continue;
+                juce::StringArray gs = engageSets; gs.add (juce::String (gIdx) + ":" + juce::String (gr0->norm, 6));
+                auto [fr2, r2] = response (tag + ".freqG" + juce::String (gdb, 0), fIdx, normsFor (fIdx, 7), gs);
+                if (r2.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+                std::vector<eq::FreqPoint> pts; juce::Array<juce::var> rows;
+                for (const auto& p : fr2.positions)
+                {   const auto b = eq::deriveBand (eq::deviation (p, baseline));
+                    auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.norm); q->setProperty ("display", p.text);
+                    if (b.result == "shelf" && b.cornerHz > 0.0) { q->setProperty ("corner_hz", std::round (b.cornerHz * 10.0) / 10.0); pts.push_back ({ p.norm, p.text, b.cornerHz }); }
+                    else q->setProperty ("why", b.result == "shelf" ? juce::String ("a shelf whose corner lies past the grid: no figure") : b.result + (b.reason.isNotEmpty() ? ": " + b.reason : juce::String()));
+                    rows.add (juce::var (q)); }
+                freqByGain[gdb] = pts;
+                auto* g = new juce::DynamicObject(); g->setProperty ("gain_db", gdb); g->setProperty ("gain_display", gr0->display); g->setProperty ("gain_norm", gr0->norm); g->setProperty ("rows", rows); fbg.add (juce::var (g));
+                say ("    shelf at " + juce::String (gdb > 0 ? "+" : "") + juce::String (gdb, 0) + " dB ('" + gr0->display + "'): " + juce::String ((int) pts.size()) + " corner(s) read");
+            }
+            bo->setProperty ("freq_by_gain", fbg);
+        }
         // Q positions at the boost: the 1/24-octave grid (section 3: narrow notches fall on a tone) against its own 1/24 baseline, at +6 AND +3 dB
         // so a proportional-Q band is visible (the bandwidth differs between the two gains)
         juce::Array<juce::var> qRows, qRows3; bool proportionalQ = false; std::optional<bool> proportionalKnown;
@@ -5309,12 +5338,17 @@ inline int runEq (const SweepOptions& opt)
             auto runAcceptance = [&] (bool steppedFreqA, bool steppedGainA)
             {
                 acc.clear(); passN = 0; ranN = 0; int unlanded = 0;
-                const auto targets = eq::acceptanceTargets (freqPoints, steppedFreqA); const bool steppedGain = steppedGainA;
-            if (targets.empty()) say ("    acceptance: fewer than two usable frequency positions: no figure targets");
-            for (const auto& t : targets)
+                const bool steppedGain = steppedGainA;
+                // 20 Oct: a shelf mapped per gain takes each acceptance gain's targets from ITS map (one write per target); else both gains share
+                std::vector<std::pair<std::vector<double>, eq::FigureTarget>> plan;
+                if (! freqByGain.empty())
+                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t }); }
+                else for (const auto& t : eq::acceptanceTargets (freqPoints, steppedFreqA)) plan.push_back ({ eq::kAcceptanceGainsDb, t });
+            if (plan.empty()) say ("    acceptance: fewer than two usable frequency positions: no figure targets");
+            for (const auto& [gains, t] : plan)
             {
                 std::vector<eq::Acceptance> pair; juce::StringArray gnorms;
-                for (double gdb : eq::kAcceptanceGainsDb) { eq::Acceptance a; a.targetDb = gdb; a.targetHz = t.targetHz; a.figure = t; a.gain = eq::normForGain (gainRowsM12, gdb, steppedGain); pair.push_back (a); if (a.gain.ok) gnorms.add (juce::String (a.gain.norm, 6)); }
+                for (double gdb : gains) { eq::Acceptance a; a.targetDb = gdb; a.targetHz = t.targetHz; a.figure = t; a.gain = eq::normForGain (gainRowsM12, gdb, steppedGain); pair.push_back (a); if (a.gain.ok) gnorms.add (juce::String (a.gain.norm, 6)); }
                 if (! gnorms.isEmpty())
                 {
                     juce::StringArray asets = engageSets; asets.add (juce::String (fIdx) + ":" + juce::String (t.norm, 6));

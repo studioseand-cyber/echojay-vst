@@ -96,6 +96,26 @@ inline Part monotonic (const char* name, const juce::var& list, const char* key,
 inline bool ok (const Part& p) { return p.state == "pass"; }
 inline bool notFail (const Part& p) { return p.state != "fail"; }
 
+// 20 Oct (Kathy): a bare-number frequency label counts as Hz ONLY when the band's frequency control declares Hz; the measured centre must
+// then match it within the same tolerance (1/6 octave) as a label that shows Hz
+inline bool labelIsHz (const juce::String& display, const juce::String& declaredUnit)
+{
+    if (showsHz (display)) return true;
+    const auto u = declaredUnit.trim().toLowerCase(); const auto d = display.trim();
+    return u == "hz" && d.isNotEmpty() && d.containsOnly ("0123456789.");
+}
+// 20 Oct (Kathy): a shelf mapped at several gains is certified PER GAIN - the frequency part at a gain passes when every acceptance write
+// at that gain ran and passed (at least two figures), fails when one ran and failed, else not_tested
+inline Part shelfFreqAtGain (const juce::var& acceptance, double gdb)
+{
+    int ran = 0, passed = 0;
+    if (const auto* a = acceptance.getArray()) for (const auto& x : *a)
+        if (std::abs ((double) x.getProperty ("target_db", 99.0) - gdb) < 1e-6 && (bool) x.getProperty ("ran", false)) { ++ran; if ((bool) x.getProperty ("pass", false)) ++passed; }
+    const auto name = juce::String ("freq at ") + (gdb > 0 ? "+" : "") + juce::String (gdb, 0) + " dB";
+    if (ran >= 2 && passed == ran) return { name, "pass", juce::String (ran) + " acceptance write(s) at this gain" };
+    if (ran > passed) return { name, "fail", juce::String (ran - passed) + " of " + juce::String (ran) + " write(s) at this gain missed" };
+    return { name, "not_tested", juce::String (ran) + " write(s) at this gain" };
+}
 inline Result judgeEq (const juce::var& d)
 {
     Result r; bool anyGood = false, anyFail = false;
@@ -109,7 +129,7 @@ inline Result judgeEq (const juce::var& d)
             {
                 int n = 0; double worst = -1.0; juce::String w;
                 if (const auto* l = listOf (b.getProperty ("freq_map", {})))
-                    for (const auto& x : *l) { double c = 0.0, lab = 0.0; if (! num (x, "centre_hz", c) || ! showsHz (x.getProperty ("display", "").toString()) || ! trust::numberOf (x.getProperty ("display", "").toString(), lab) || lab <= 0.0 || c <= 0.0) continue;
+                    for (const auto& x : *l) { double c = 0.0, lab = 0.0; if (! num (x, "centre_hz", c) || ! labelIsHz (x.getProperty ("display", "").toString(), b.getProperty ("freq_unit", "").toString()) || ! trust::numberOf (x.getProperty ("display", "").toString(), lab) || lab <= 0.0 || c <= 0.0) continue;
                         ++n; const double oct = std::abs (std::log2 (c / lab)); if (oct > 1.0 / 6.0 && oct > worst) { worst = oct; w = "'" + x.getProperty ("display", "").toString().trim() + "' measured " + juce::String (c, 1) + " Hz"; } }
                 const auto fc = b.getProperty ("freq_control", "").toString();
                 const bool fixed = (fc.isEmpty() || fc == "(none)") && ! b.getProperty ("freq_map", {}).isArray();
@@ -127,7 +147,10 @@ inline Result judgeEq (const juce::var& d)
                 if (n >= 3) q = worst >= 0.0 ? Part { "q", "fail", w } : Part { "q", "pass", juce::String (n) + " positions" };
             }
             for (auto* p : { &g, &f, &q }) { p->name = band + " " + p->name; r.parts.push_back (*p); }
-            if (ok (g) && (ok (f) || f.state == "not_applicable")) anyGood = true;
+            bool shelfGainOk = false;   // 20 Oct: a shelf mapped per gain is certified at the gains whose own writes all pass
+            if (const auto* fg = b.getProperty ("freq_by_gain", {}).getArray(); fg != nullptr && ! fg->isEmpty())
+                for (double gdb : { -3.0, 3.0 }) { auto pg = shelfFreqAtGain (b.getProperty ("acceptance", {}), gdb); pg.name = band + " " + pg.name; r.parts.push_back (pg); shelfGainOk = shelfGainOk || ok (pg); if (pg.state == "fail") anyFail = true; }
+            if (ok (g) && (ok (f) || f.state == "not_applicable" || shelfGainOk)) anyGood = true;
             if (! notFail (g) || ! notFail (f) || ! notFail (q)) anyFail = true;
         }
     r.pass = anyGood; (void) anyFail;   // certified for the bands that pass; a failing band is left out (certifiedParts says which)
