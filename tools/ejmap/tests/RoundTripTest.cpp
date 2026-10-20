@@ -4840,9 +4840,72 @@ void testSweepQuietReference()
             check (accepted && why.startsWith ("5 band(s) measured") && measuredBand ("needs_engage") && measuredBand ("measured") && ! measuredBand ("level_dependent") && ! measuredBand ("not_static")
                    && gainInert (req1) && ! gainInert (moving) && ! gainInert (flat)
                    && sc.size() == 1 && sc[0].index == 1 && sc[0].onText == "Bell" && sc[0].onNorm == 0.0f
-                   && drv.contains ("for (const auto& c : eq::shapeCandidates (band.key, switches, bandControlIdx))") && drv.contains ("engagedBy = (engagedBy.isEmpty() ? juce::String() : engagedBy + \", \") + c.name + \" = '\" + c.onText + \"'\";")
+                   && drv.contains ("for (const auto& c : eq::shapeCandidates (band.key, switches, bandControlIdx))") && drv.contains ("bo->setProperty (\"type_control\", c.name); bo->setProperty (\"type_measured\", c.onText); bo->setProperty (\"shape_changed\", true); break; }")
+                   && ! drv.contains ("engagedBy + \", \") + c.name")   // 20 Oct (Kathy): the type is never part of engage
                    && v1.contains ("if (! eq::measuredBand (b.getProperty (\"verdict\", \"\").toString())) continue;"),
                    "cert WZ-EQ-REQ-1: engaged bands count and are judged (" + why + "); REQ Band 1 is gain-inert and gets its own type at '" + (sc.empty() ? juce::String ("?") : sc[0].onText) + "'");
+        }
+        // WZ-EQ-HZ-1 A BARE-NUMBER FREQUENCY LABEL (Kathy, 20 Oct): counts as Hz for v1 EQ certification ONLY when the band's frequency control
+        // declares Hz, and the measured centre must still match it (1/6 octave). REQ 6's real draft: its labels are "173", "578" (unit Hz)
+        {
+            using namespace ejmap::certv1;
+            const auto src = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-20-recount-and-eq/eq_remeasure/drafts/AudioUnit_58570763_12.0.0.eq_profile.draft.json").loadFileAsString());
+            auto variant = [&] (const juce::String& unit, double centreScale) {
+                auto d = juce::JSON::parse (juce::JSON::toString (src));
+                if (const auto* bs = d.getProperty ("bands", {}).getArray()) for (const auto& b : *bs)
+                {   if (auto* o = b.getDynamicObject()) { if (unit.isNotEmpty()) o->setProperty ("freq_unit", unit); else o->removeProperty ("freq_unit"); }
+                    if (const auto* fm = b.getProperty ("freq_map", {}).getArray()) for (const auto& x : *fm) if (auto* xo = x.getDynamicObject()) if (xo->hasProperty ("centre_hz")) xo->setProperty ("centre_hz", (double) xo->getProperty ("centre_hz") * centreScale); }
+                return judgeEq (d); };
+            auto partOf = [] (const Result& r, const juce::String& n) { for (const auto& p : r.parts) if (p.name == n) return p.state; return juce::String ("absent"); };
+            const auto hz = variant ("Hz", 1.0), mism = variant ("Hz", 1.6), none = variant ("", 1.0), khz = variant ("kHz", 1.0);
+            check (src.isObject() && hz.pass && partOf (hz, "Band3 freq") == "pass" && partOf (mism, "Band3 freq") == "fail" && partOf (none, "Band3 freq") == "not_tested" && ! none.pass
+                   && partOf (khz, "Band3 freq") == "not_tested" && labelIsHz ("173", "Hz") && labelIsHz ("1.2 kHz", "") && ! labelIsHz ("173", "") && ! labelIsHz ("173", "dB") && ! labelIsHz ("-", "Hz"),
+                   "cert WZ-EQ-HZ-1: a bare number counts as Hz only on a control that declares Hz (REQ 6: " + partOf (hz, "Band3 freq") + "; mismatched " + partOf (mism, "Band3 freq") + "; no unit " + partOf (none, "Band3 freq") + ")");
+        }
+        // WZ-EQ-SHELFG-1 A SHELF WHOSE CORNER MOVES WITH GAIN (Kathy, 20 Oct; H-EQ LF: 629 Hz at +6, 1363 Hz at -6) is mapped at -6 / -3 / +3 / +6
+        // and certified PER GAIN: a gain's frequency part passes when every acceptance write at that gain ran and passed; a symmetric shelf (H-EQ
+        // HF: 1989 / 1987 Hz) is not re-mapped
+        {
+            using namespace ejmap::eq;
+            auto row = [] (double lab, const char* res, double corner) { GainRow r; r.labelDb = lab; r.display = juce::String (lab, 1); r.norm = (float) ((lab + 18.0) / 36.0); r.band.result = res; r.band.cornerHz = corner; return r; };
+            const std::vector<GainRow> lf { row (-18, "shelf", 403.1), row (-12, "shelf", 658.4), row (-6, "shelf", 1362.7), row (0, "flat", 0), row (6, "shelf", 629.3), row (12, "shelf", 289.0), row (18, "shelf", 166.9) };
+            const std::vector<GainRow> hf { row (-18, "shelf", 2743.1), row (-12, "shelf", 2160.3), row (-6, "shelf", 1989.2), row (0, "flat", 0), row (6, "shelf", 1986.8), row (12, "shelf", 2154.5), row (18, "shelf", 2719.7) };
+            auto acc = [] (double g, bool pass) { auto* o = new juce::DynamicObject(); o->setProperty ("target_db", g); o->setProperty ("ran", true); o->setProperty ("pass", pass); return juce::var (o); };
+            const juce::var accs (juce::Array<juce::var> { acc (3.0, true), acc (3.0, true), acc (-3.0, true), acc (-3.0, false) });
+            const auto p3 = ejmap::certv1::shelfFreqAtGain (accs, 3.0), m3 = ejmap::certv1::shelfFreqAtGain (accs, -3.0), none = ejmap::certv1::shelfFreqAtGain (juce::var(), 3.0);
+            const auto* near = gainRowNearest (lf, -3.0);
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            // the band certifies at a gain whose own writes pass (a shelf's freq part by label is never testable: it has corners only)
+            const auto reqd = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-20-recount-and-eq/eq_remeasure/drafts/AudioUnit_58570763_12.0.0.eq_profile.draft.json").loadFileAsString());
+            auto shelfDraft = [&] (bool perGain) { auto* b = new juce::DynamicObject(); b->setProperty ("name", "LF"); b->setProperty ("verdict", "measured"); b->setProperty ("gain_map", reqd.getProperty ("bands", {})[2].getProperty ("gain_map", {}));
+                b->setProperty ("freq_control", "LF Freq"); b->setProperty ("freq_map", juce::JSON::parse (R"([{"norm":0.0,"display":"22","corner_hz":152.0},{"norm":0.5,"display":"679","corner_hz":7323.9}])")); b->setProperty ("acceptance", accs);
+                if (perGain) b->setProperty ("freq_by_gain", juce::JSON::parse (R"([{"gain_db":3.0,"rows":[]},{"gain_db":-3.0,"rows":[]}])"));
+                auto* d = new juce::DynamicObject(); d->setProperty ("bands", juce::Array<juce::var> { juce::var (b) }); return ejmap::certv1::judgeEq (juce::var (d)); };
+            const auto withG = shelfDraft (true), without = shelfDraft (false);
+            check (withG.pass && ! without.pass, "cert WZ-EQ-SHELFG-1b: a shelf certifies at the gain whose writes pass (with per-gain maps " + juce::String ((int) withG.pass) + ", without " + juce::String ((int) without.pass) + ")");
+            check (cornerMovesWithGain (lf) && ! cornerMovesWithGain (hf) && near != nullptr && std::abs (*near->labelDb - (-6.0)) < 1e-9
+                   && p3.state == "pass" && m3.state == "fail" && none.state == "not_tested" && kShelfGainsDb == std::vector<double> { -6.0, -3.0, 3.0, 6.0 }
+                   && drv.contains ("if (fIdx >= 0 && eq::cornerMovesWithGain (gainRowsM12))") && drv.contains ("if (! freqByGain.empty())\n                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t }); }"),
+                   "cert WZ-EQ-SHELFG-1: a shelf whose corner moves with gain is mapped per gain and certified per gain (+3 " + p3.state + ", -3 " + m3.state + "); a symmetric shelf is not re-mapped");
+        }
+        // WZ-EQ-TYPE-1 ECHOJAY NEVER CHANGES A BAND'S TYPE UNLESS THE USER ASKS (Kathy, 20 Oct): the band's type control and its default ride the
+        // map; a band measured at another type is marked (shape_changed, type_measured) and listed in shape_changed_bands; engage never carries a type
+        {
+            using namespace ejmap::eq;
+            const std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>> ctls {
+                { 0, "Band1 On/Off", true, { { "Off", 0.0f }, { "On", 1.0f } } }, { 1, "Band1 Type", true, { { "Bell", 0.0f }, { "Hi-Pass", 0.666667f } } },
+                { 11, "Band1 Type All", true, { { "Bell", 0.0f } } }, { 6, "Band6 Type", true, { { "Bell", 0.0f } } } };
+            juce::String tn; const int ti = typeControlOf ("Band1", ctls, &tn);
+            const auto rec = juce::JSON::parse (R"({"grid":"g","bands":[{"band":"Band1","verdict":"needs_engage","engaged_by":"Band1 On/Off = 'On'","gain_control":"Band1 Gain","freq_control":"Band1 Frq","type_control":"Band1 Type","type_default":"Hi-Pass","type_measured":"Bell","shape_changed":true,"freq_unit":"Hz","freq_by_gain":[{"gain_db":3.0,"rows":[]}]},{"band":"Band6","verdict":"measured","gain_control":"Band6 Gain","freq_control":"Band6 Frq","type_control":"Band6 Type","type_default":"Hi-Shelf"}]})");
+            const auto dr = profileDraft (rec, juce::var(), juce::var(), "draft", "spec");
+            const auto b1 = dr.getProperty ("bands", {})[0], b6 = dr.getProperty ("bands", {})[1];
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (ti == 1 && tn == "Band1 Type" && b1.getProperty ("type_default", "").toString() == "Hi-Pass" && b1.getProperty ("type_measured", "").toString() == "Bell" && (bool) b1.getProperty ("shape_changed", false)
+                   && ! b1.getProperty ("engage", "").toString().contains ("Type") && b1.getProperty ("freq_unit", "").toString() == "Hz" && b1.getProperty ("freq_by_gain", {}).size() == 1
+                   && b6.getProperty ("type_default", "").toString() == "Hi-Shelf" && ! b6.hasProperty ("shape_changed")
+                   && dr.getProperty ("shape_changed_bands", {}).size() == 1 && dr.getProperty ("shape_changed_bands", {})[0].toString() == "Band1"
+                   && drv.contains ("bo->setProperty (\"type_default\", sweep::findControl (base, ti).getProperty (\"defaultOnInstantiate\", {}).getProperty (\"display\", \"\"));"),
+                   "cert WZ-EQ-TYPE-1: the band's type and default ride the map; a type change is marked (shape_changed_bands " + juce::String (dr.getProperty ("shape_changed_bands", {}).size()) + "), never in engage");
         }
         // WZ-RATIO-7 THE SERVED CONVENTION (Kathy, 19 Oct: Zip read +3.01 dB off its served curve): served dBFS are sine RMS (our peak - 3.0103),
         // the probe drives peak. T and the measured-setting law convert the served curve IN (+3.0103); the per-setting curves go OUT in sine RMS

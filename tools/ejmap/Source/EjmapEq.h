@@ -207,6 +207,20 @@ inline std::vector<EngageCandidate> engageCandidates (const juce::String& bandKe
 }
 // GAIN-INERT (19 Oct, REQ Band 1): every gain position reads the same response though the band is not flat - the band sits in a TYPE gain
 // cannot move (REQ instantiates Band 1 as "Hi-Pass": -34.2 dB at every gain from -18 to +18)
+// THE BAND'S TYPE CONTROL (20 Oct): every name token the band's or a type word ("Band1 Type", never "Band1 Type All"); -1 when none
+inline int typeControlOf (const juce::String& bandKey, const std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>>& controls, juce::String* nameOut = nullptr)
+{
+    juce::StringArray keyToks = juce::StringArray::fromTokens (bandKey.toLowerCase(), " -_/", "\"'"); keyToks.removeEmptyStrings();
+    int best = -1, bestShared = 0;
+    for (const auto& [idx, name, isSwitch, texts] : controls)
+    {
+        juce::StringArray nameToks = juce::StringArray::fromTokens (name.toLowerCase(), " -_/", "\"'"); nameToks.removeEmptyStrings();
+        int shared = 0, typeWord = 0, foreign = 0;
+        for (const auto& t : nameToks) { if (keyToks.contains (t)) ++shared; else if (t == "type" || t == "shape" || t == "mode" || t == "filter") ++typeWord; else ++foreign; }
+        if (shared > bestShared && typeWord > 0 && foreign == 0) { best = idx; bestShared = shared; if (nameOut) *nameOut = name; }
+    }
+    return best;
+}
 // THE SHAPE SEARCH: the band's own type control (every name token the band's or a type word: "Band1 Type", not "Band1 Type All") at the
 // first text naming a shape gain moves - bell / peak / parametric first, then a shelf
 inline std::vector<EngageCandidate> shapeCandidates (const juce::String& bandKey, const std::vector<std::tuple<int, juce::String, bool, std::map<juce::String, float>>>& controls, const std::vector<int>& exclude)
@@ -363,6 +377,25 @@ inline juce::String bandVerdict (const std::vector<GainRow>& rows, const LevelCh
 }
 // A MEASURED BAND for the counts and v1 certification (19 Oct, REQ): measured, or measured once its switch was on (needs_engage: the switch is
 // written with it - the draft's engage). REQ 2/4/6's 13 engaged bands read -18 -> -18.0 dB and passed 36 of 36 acceptance writes, yet counted 0
+// A SHELF WHOSE CORNER MOVES WITH GAIN (20 Oct, H-EQ LF: 629 Hz at +6, 1363 Hz at -6): the corners at the gain labels nearest -6 and +6
+// differ by more than kCornerMovePct - one frequency law cannot place it at every gain, so it is mapped at several
+inline constexpr double kCornerMovePct = 5.0;
+inline const std::vector<double> kShelfGainsDb { -6.0, -3.0, 3.0, 6.0 };
+inline bool cornerMovesWithGain (const std::vector<GainRow>& rows)
+{
+    const GainRow* lo = nullptr; const GainRow* hi = nullptr;
+    for (const auto& r : rows) if (r.labelDb && r.band.result == "shelf" && r.band.cornerHz > 0.0)
+    {   if (! lo || std::abs (*r.labelDb + 6.0) < std::abs (*lo->labelDb + 6.0)) lo = &r;
+        if (! hi || std::abs (*r.labelDb - 6.0) < std::abs (*hi->labelDb - 6.0)) hi = &r; }
+    if (! lo || ! hi || lo == hi || *lo->labelDb >= 0.0 || *hi->labelDb <= 0.0) return false;
+    return std::abs (hi->band.cornerHz / lo->band.cornerHz - 1.0) * 100.0 > kCornerMovePct && std::abs (lo->band.cornerHz / hi->band.cornerHz - 1.0) * 100.0 > kCornerMovePct;
+}
+// the gain position whose label is nearest a gain (the shelf's per-gain map is taken there)
+inline const GainRow* gainRowNearest (const std::vector<GainRow>& rows, double gdb)
+{
+    const GainRow* best = nullptr; for (const auto& r : rows) if (r.labelDb && (! best || std::abs (*r.labelDb - gdb) < std::abs (*best->labelDb - gdb))) best = &r;
+    return best;
+}
 inline bool measuredBand (const juce::String& verdict) { return verdict == "measured" || verdict == "needs_engage"; }
 inline bool serverMayUse (const juce::String& verdict) { return verdict == "measured" || verdict == "stepped" || verdict == "level_dependent" || verdict == "needs_engage"; }
 
@@ -553,6 +586,14 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
             if (const auto* rows = b.getProperty ("q_sweep", {}).getArray()) for (const auto& r : *rows) { auto* q = new juce::DynamicObject(); q->setProperty ("norm", r.getProperty ("norm", 0.0)); q->setProperty ("display", r.getProperty ("display", "")); q->setProperty ("bandwidth_oct_at_6db", r.getProperty ("result", "") == "measured" ? r.getProperty ("bandwidth_oct", {}) : juce::var());
                 juce::var at3; if (const auto* r3s = b.getProperty ("q_sweep_3db", {}).getArray()) for (const auto& r3 : *r3s) if (std::abs ((double) r3.getProperty ("norm", -1.0) - (double) r.getProperty ("norm", 0.0)) < 1e-4 && r3.getProperty ("result", "") == "measured") at3 = r3.getProperty ("bandwidth_oct", {}); q->setProperty ("bandwidth_oct_at_3db", at3); if (r.getProperty ("result", "") != "measured") q->setProperty ("why", r.getProperty ("reason", r.getProperty ("result", ""))); qm.add (juce::var (q)); }
             o->setProperty ("gain_map", gm); o->setProperty ("freq_map", fm); o->setProperty ("q_map", qm);
+            // 20 Oct (Kathy): the frequency control's declared unit (a bare-number label counts as Hz only when the control says Hz)
+            if (b.hasProperty ("freq_unit")) o->setProperty ("freq_unit", b.getProperty ("freq_unit", ""));
+            // 20 Oct (Kathy's rule): EchoJay never changes a band's type unless the user asks - the band's type control and its DEFAULT
+            // are on the map; a band measured at another type says so (shape_changed + type_measured) and its maps are used only when the
+            // band already sits at that type or the user asks
+            for (const char* k : { "type_control", "type_default", "type_measured", "shape_changed" }) if (b.hasProperty (k)) o->setProperty (k, b.getProperty (k, {}));
+            // 20 Oct (Kathy): a shelf whose corner moves with gain is mapped at several gains; each gain's map and acceptance stand alone
+            if (b.hasProperty ("freq_by_gain")) o->setProperty ("freq_by_gain", b.getProperty ("freq_by_gain", {}));
             o->setProperty ("level_dependent_db", b.hasProperty ("level_dependent_db") ? b.getProperty ("level_dependent_db", {}) : juce::var());
             if (b.hasProperty ("acceptance")) o->setProperty ("acceptance", b.getProperty ("acceptance", {}));
             if (! serverMayUse (verdict)) notes.add ("Band '" + b.getProperty ("band", "").toString() + "': " + verdict + (b.getProperty ("verdict_reason", "").toString().isNotEmpty() ? " (" + b.getProperty ("verdict_reason", "").toString() + ")" : juce::String()) + ": not usable by the server");
@@ -560,6 +601,9 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
             bands.add (juce::var (o));
         }
     P->setProperty ("bands", bands);
+    {   juce::Array<juce::var> changed;   // 20 Oct: the bands measured at a type other than their default (the server respects the user's type)
+        for (const auto& b : bands) if ((bool) b.getProperty ("shape_changed", false)) changed.add (b.getProperty ("name", ""));
+        P->setProperty ("shape_changed_bands", changed); }
     P->setProperty ("default_bands", defaultBands (bands, notes));   // v0.2: by measured range
     P->setProperty ("neutral", rec.hasProperty ("neutral") ? rec.getProperty ("neutral", {}) : juce::var (juce::Array<juce::var>()));
     P->setProperty ("notes", notes);
