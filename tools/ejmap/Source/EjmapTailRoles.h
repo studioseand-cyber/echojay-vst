@@ -107,11 +107,13 @@ inline double normOfText (const std::map<juce::String, float>& texts, std::initi
     for (const char* w : words) for (const auto& [t, n] : texts) if (t.trim().equalsIgnoreCase (w)) { textOut = t; return n; }
     return fallback;
 }
-// SILENCE A ROLE: one write per section of that role - its mute ON, else its on/off OFF (a bypass ON), else its level / mix / send /
-// amount / volume at the minimum, else a control named only by the section ("Reverb", "Short Delay": a send level) at the minimum
+// SILENCE A ROLE BY EVERY MEANS A SECTION OFFERS (20 Oct, CLA Epic: its PlateMute opens On, yet PlateLevel still moved the tail - a
+// plugin's "mute" is not always silence): its mute ON, its on/off OFF (a bypass ON), its level / mix / send / amount / volume at the
+// minimum, and a control named only by the section ("Reverb", "Short Delay": a send level) at the minimum - every one of them, one write
+// per control, the switches first
 inline std::vector<Write> silence (const Controls& controls, Role role)
 {
-    std::vector<Write> out; std::map<juce::String, std::pair<int, Write>> best;   // section -> (rank, write); lower rank wins
+    std::vector<Write> out; std::map<juce::String, std::pair<int, Write>> best; std::vector<std::pair<int, Write>> all;   // every silencing write, ranked
     for (const auto& [idx, name, sw, texts] : controls)
     {
         const auto p = place (name); if (p.role != role) continue;
@@ -125,11 +127,11 @@ inline std::vector<Write> silence (const Controls& controls, Role role)
         else if (w.joinIntoString (" ") == p.section && ! isParameterWord (w[w.size() - 1])) { rank = 3; x.norm = 0.0; x.why = "its send (named only by the section) at the minimum"; }
         if (rank == 99) continue;
         if (x.set.isEmpty()) x.set = juce::String (x.norm, 3);
-        auto it = best.find (p.section);
-        if (it == best.end() || rank < it->second.first) best[p.section] = { rank, x };
+        x.why = "section '" + p.section + "': " + x.why; all.push_back ({ rank, x });
     }
-    for (const auto& [sec, rw] : best) { auto x = rw.second; x.why = "section '" + sec + "': " + x.why; out.push_back (x); }
-    return out;
+    std::stable_sort (all.begin(), all.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [rank, x] : all) out.push_back (x);
+    (void) best; return out;
 }
 // DID THE SILENCING LAND (20 Oct)? The probe prints each write it made - "preset <idx> ..." (EJ_PROBE_PRESET) or "set <idx> ..." (a mode's
 // set= list) - with "landed_by <how>". The writes whose line says "unlanded" (or that have no line at all) did not silence anything; the

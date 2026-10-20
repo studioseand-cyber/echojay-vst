@@ -13276,13 +13276,14 @@ int main (int, char**)
                && rEn.delay && ! rEn.reverb && ! rCo.delay && ! rCo.reverb && ! rDr.delay && ! rDr.reverb
                && fxRev.size() == 1 && has (fxRev, "Reverb", 0.0) && has (fxDel, "Send Delay", 0.0) && has (fxDel, "Short Delay", 0.0) && has (fxDel, "Long Delay", 0.0) && ! names_ (fxDel).contains ("Short Delay Color")
                && ekRev.size() == 1 && has (ekRev, "Verb Mix", 0.0) && ! names_ (ekRev).contains ("Size")
-               && gwRev.size() == 1 && has (gwRev, "Reverb On/Off", 0.0)
+               && gwRev.size() == 2 && gwRev[0].control == "Reverb On/Off" && has (gwRev, "Reverb On/Off", 0.0) && has (gwRev, "Reverb", 0.0)   // every means, the switch first
+               && has (epRev, "PlateLevel", 0.0) && ! [&] { for (const auto& w : epRev) if (w.control == "PlateMute") return false; else if (w.control == "PlateLevel") return true; return false; }()   // mutes before levels
                && has (epRev, "PlateMute", 1.0) && has (epRev, "RoomMute", 1.0) && has (epRev, "HallMute", 1.0) && has (epRev, "SpaceMute", 1.0) && has (epDel, "SlapMute", 1.0) && has (epDel, "TapeMute", 1.0) && ! names_ (epDel).contains ("PlateMute")
                && both.settled && both.category == "reverb" && both.also == juce::StringArray { "delay" } && both.why.contains ("both measured, section by section")
                && ! none.settled && none.why.contains ("review") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && ! old.settled
                && run.contains ("if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty (\"also_categories\", {}).getArray())")
                && run.contains ("for (const auto& c : *al) { enqueue (ir.desc.name, c.toString());")
-               && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("if (si >= 0) args.set (si, \"set=\" + isoSets + \",\" + args[si].substring (4)); else args.add (\"set=\" + isoSets); }")
+               && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("if (isolate && tailroles::place (n).role == otherRole) continue;   // 20 Oct (CLA Epic)") && drv.contains ("if (si >= 0) args.set (si, \"set=\" + isoSets + \",\" + args[si].substring (4)); else args.add (\"set=\" + isoSets); }")
                && drv.contains ("isolationUnlanded = tailroles::unlanded (isolationWrites, r.out);") && ! drv.contains ("tailroles::presetOf (isolationWrites));\n        setenv")
                && [] { std::map<juce::String, float> t; keepEndmost (t, "Off", 0.0f); keepEndmost (t, "Off", 0.5f); keepEndmost (t, "On", 1.0f); return t["Off"] == 0.0f && t["On"] == 1.0f; }()   // GW VoiceCentric: "Off" at 0 and 0.5
                && unlanded ({ Write { 7, 0.0, "Reverb On/Off" } }, "set\t7\t0.000000\tconfirm_ms\t3\tgetValue\t1.0\tlanded_by\tunlanded\ttext\tOn\n").size() == 1

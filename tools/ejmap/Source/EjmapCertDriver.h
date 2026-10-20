@@ -5799,6 +5799,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             {
                 const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
                 if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n) || idx == sync.index || idx == note.index) continue;
+                if (isolate && tailroles::place (n).role == otherRole) continue;   // 20 Oct (CLA Epic): the role test never un-silences the other role (PlateLevel to full)
                 if (! fx.sampled.empty() && fx.sampled.count (idx) == 0 && idx != mix.index && idx != timeCtl.index && idx != decayCtl.index && idx != feedback.index) continue;
                 if (++probed > kUnnamedCap) break;
                 roleevidence::Figure fa, fb;
