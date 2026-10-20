@@ -1,0 +1,20 @@
+kHs Compressor               | measured setting not read (no comparison)
+DPR-402 (m)                  | at 4.0:1 vs served: worst 0.13 dB over 12 keys | per position [(0.233333, -0.13, 12)]
+C1 comp-sc (m)               | at 4.13:1 vs served: worst 0.06 dB over 12 keys | per position [(0.6, -0.06, 12)]
+C1 comp-sc (s)               | at 4.13:1 vs served: worst 0.06 dB over 12 keys | per position [(0.6, -0.06, 12)]
+C1 comp-gate (m)             | at 4.13:1 vs served: worst 0.06 dB over 12 keys | per position [(0.6, -0.06, 12)]
+C1 comp-gate (s)             | at 4.13:1 vs served: worst 0.06 dB over 12 keys | per position [(0.6, -0.06, 12)]
+C1 comp (m)                  | at 4.13:1 vs served: worst 0.06 dB over 12 keys | per position [(0.6, -0.06, 12)]
+C1 comp (s)                  | at 4.13:1 vs served: worst 0.06 dB over 12 keys | per position [(0.6, -0.06, 12)]
+API-2500 (m)                 | at 4.0:1 vs served: worst 0.05 dB over 12 keys | per position [(0.933333, -0.05, 12)]
+API-2500 (s)                 | at 4.0:1 vs served: worst 0.04 dB over 12 keys | per position [(0.933333, -0.04, 12)]
+Tube-Tech CL 1B              | at 6.0:1 vs served: worst 0.06 dB over 12 keys | per position [(0.577778, 0.06, 12)]
+SSLComp (m)                  | at 4.0:1 vs served: worst 0.05 dB over 12 keys | per position [(0.066667, 0.05, 12)]
+SSLComp (s)                  | at 4.0:1 vs served: worst 0.05 dB over 12 keys | per position [(0.066667, 0.05, 12)]
+RCompressor (m)              | measured setting not read (no comparison)
+RCompressor (s)              | measured setting not read (no comparison)
+MCompressor                  | measured setting not read (no comparison)
+SSL Native X-ValveComp v6    | measured setting not read (no comparison)
+SSL Native X-Comp v6         | measured setting not read (no comparison)
+VBC FG-Red                   | at 4.0:1 vs served: worst 0.04 dB over 12 keys | per position [(0.866667, -0.04, 12)]
+SSL Native Bus Compressor 2  | measured setting not read (no comparison)
