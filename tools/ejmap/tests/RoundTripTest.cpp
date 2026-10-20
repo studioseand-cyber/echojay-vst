@@ -13237,11 +13237,13 @@ int main (int, char**)
         const auto pm = juce::JSON::parse (R"({"stage":"Measuring","measure_progress":{"done":19,"total":389,"skipped":83,"share":0.0533}})");
         const auto lm = progressLogLine ("measuring", pm, "Step 3 of 3 - measuring", 0.053, "5.3%", "19 of 389 done - 83 skipped");
         const auto ls = progressLogLine ("scan", juce::JSON::parse (R"({"stage":"Checking"})"), "Step 2 of 3", 0.41, "41.0%", "312 plugins checked");
+        const auto lr = progressLogLine ("scan", juce::JSON::parse (R"({"stage":"Scanning"})"), "Step 1 of 3", 0.4799, barPercentWords (0.4799), "412 plugins looked at");   // the 20 Oct rehearsal: 48.0 vs 47.9
         const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
         const auto poll = app.fromFirstOccurrenceOf ("void pollEngine()", false, false).upToFirstOccurrenceOf ("if (const auto code = engine.poll())", false, false);
         check (first && ! early && at30 && change && ! again && kProgressLogEveryS == 30.0
                && lm == "progress | screen measuring | stage Measuring | step Step 3 of 3 - measuring | bar 5.3% | shown '5.3%' | counter '19 of 389 done - 83 skipped' (4.9%) | share 5.3% | skipped 83"
                && ls.startsWith ("progress | screen scan | stage Checking | step Step 2 of 3 | bar 41.0% | shown '41.0%' | counter '312 plugins checked'") && ls.endsWith ("| skipped 0")
+               && lr.contains ("| bar 47.9% | shown '47.9%' |")   // the log prints the bar exactly as the screen does
                && poll.contains ("if (wizapp::progressLogDue (progressClock, wizapp::screenName (screen) + \"|\" + stage + \"|\" + stepText, juce::Time::getMillisecondCounterHiRes()))")
                && poll.contains ("logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine));"),
                "wizard WZ-PLOG-1: a progress line every 30 s and at every stage change, with the bar, the shown %, the counter and its %, the share and skipped ('" + lm + "')");

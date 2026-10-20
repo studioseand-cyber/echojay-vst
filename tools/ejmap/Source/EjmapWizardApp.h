@@ -531,7 +531,7 @@ inline juce::String progressLogLine (const juce::String& screen, const juce::var
 {
     const auto mp = progress.getProperty ("measure_progress", {});
     juce::String l = "progress | screen " + screen + " | stage " + progress.getProperty ("stage", "").toString() + " | step " + (stepText.isEmpty() ? juce::String ("-") : stepText)
-                   + " | bar " + juce::String (juce::jlimit (0.0, 1.0, barValue) * 100.0, 1) + "% | shown '" + barRight + "' | counter '" + counter + "'";
+                   + " | bar " + barPercentWords (barValue) + " | shown '" + barRight + "' | counter '" + counter + "'";
     if (mp.isObject())
     {   const int done = (int) mp.getProperty ("done", 0), total = (int) mp.getProperty ("total", 0);
         if (total > 0) l << " (" << juce::String (100.0 * done / total, 1) << "%)";
