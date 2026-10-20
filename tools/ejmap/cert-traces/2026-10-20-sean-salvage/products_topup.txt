@@ -1,0 +1,11 @@
+# Top-up for Sean (20 Oct): run ONCE with the fixed pack (RATIO_LAW_PACK from FOR_SEAN_19oct, cert 6802eefa):
+#     bash ratio_law.sh products_topup.txt
+# SSL Native Bus Compressor 2: open it once in Logic first so its PACE / iLok licence is authorised (last night it stopped on a PACE window).
+kHs Compressor
+RCompressor (m)
+RCompressor (s)
+MCompressor
+SSL Native X-ValveComp v6
+SSL Native X-Comp v6
+VBC FG-Red
+SSL Native Bus Compressor 2
