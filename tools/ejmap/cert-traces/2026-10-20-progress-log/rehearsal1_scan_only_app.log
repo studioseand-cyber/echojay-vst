@@ -1,0 +1,19 @@
+2026-10-20T18:08:54.919+01:00 open (normal): welcome
+2026-10-20T18:08:54.919+01:00 small run (test_only_plugins): Unfiltered Audio Zip, Lindell SBC | qualify minimum 25
+2026-10-20T18:08:54.919+01:00 jobs: 1 (8 performance cores, 3.6 GB free)
+2026-10-20T18:08:54.919+01:00 screen: welcome
+2026-10-20T18:08:57.444+01:00 signed in (STUB): acct_stub_ce1b0908f7
+2026-10-20T18:08:57.444+01:00 screen: consent
+2026-10-20T18:09:00.051+01:00 consent: I agree (2026-10-20T18:09:00.051+01:00)
+2026-10-20T18:09:00.051+01:00 lookup before the scan (STUB): already_contributed 0
+2026-10-20T18:09:00.055+01:00 engine started: scan (pid 75344), keep-awake held
+2026-10-20T18:09:00.055+01:00 screen: scan
+2026-10-20T18:09:00.249+01:00 progress | screen scan | stage  | step Step 1 of 3 - Looking for plugins | bar 0.0% | shown '0.0%' | counter '' | skipped 0
+2026-10-20T18:09:02.866+01:00 progress | screen scan | stage Scanning | step Step 1 of 3 - Looking for plugins | bar 48.0% | shown '47.9%' | counter '412 plugins looked at' | skipped 0
+2026-10-20T18:09:03.583+01:00 progress | screen scan | stage Done | step Step 2 of 3 - Checking your plugins | bar 100.0% | shown '100.0%' | counter '0 plugins checked' | skipped 0
+2026-10-20T18:09:03.583+01:00 engine ended: 0, keep-awake released
+2026-10-20T18:09:03.584+01:00 lookup (STUB): {"already_contributed": false, "count": 0, "minimum": 25, "eligible": false, "endpoint": "https://www.echojay.ai/api/wizard/v1/lookup"}
+2026-10-20T18:09:03.584+01:00 scan done: 0 to measure, estimate 0 s at --jobs 1
+2026-10-20T18:09:03.584+01:00 scan done: 0 to measure, estimate 0 s at --jobs 1
+2026-10-20T18:09:03.584+01:00 screen: scan_done
+2026-10-20T18:09:06.383+01:00 not eligible / nothing to measure: done, nothing runs
