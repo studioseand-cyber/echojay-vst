@@ -5064,6 +5064,8 @@ void testSweepQuietReference()
         const auto strip = byName ("Scheps Omni Channel (m)", flat), desk = byName ("bx_masterdesk Pro", flat), tg = byName ("AR TG Mastering Live (m)", flat), mix = byName ("CLA MixDown (s)", flat);
         const auto up = byName ("UltraPitch Shift (m)", flat), ss = byName ("SoundShifter Pitch (s)", flat), fs = byName ("MFreqShifter", flat), pw = byName ("Pitchwheel", flat);
         const auto stripToned = byName ("Scheps Omni Channel (m)", toned);
+        Signatures audible = flat; audible.thdLoDb = -42.0; audible.thdHiDb = -40.0;   // audible THD with no rise: not flat, and nothing settles it
+        const auto stripAudible = byName ("Scheps Omni Channel (m)", audible);
         auto ctls = [] (std::initializer_list<const char*> ns) { std::vector<std::pair<int, juce::String>> c; int i = 0; for (const char* n : ns) c.push_back ({ i++, n }); return c; };
         auto cut = [&] (std::initializer_list<const char*> ns) { const auto c = cutoffControl (ctls (ns)); return c ? c->second : juce::String ("-"); };
         NeutralWrite cw; cw.index = 0; cw.control = "Filter"; cw.norm = 0.75;
@@ -5082,7 +5084,7 @@ void testSweepQuietReference()
         check (! nov.settled && nov.category == "eq" && nov.why.contains ("an enhancer, not an EQ: review") && ! categoriesFromWords ("Noveltech Vocal Enhancer", "", {}).contains ("eq") && ! categoriesFromWords ("SPL Vitalizer exciter", "", {}).contains ("eq")
                && strip.settled && strip.byName && strip.category == "channel_strip" && strip.why.contains ("nothing certifies on the name") && desk.byName && tg.byName && mix.byName && mix.category == "channel_strip"
                && up.byName && up.category == "pitch" && ss.byName && fs.byName && fs.category == "pitch" && pw.byName && pw.category == "pitch"
-               && ! stripToned.byName && ! byName ("Tube EQ", flat).byName   // only when flat, only those two
+               && ! stripToned.byName && ! stripAudible.byName && ! stripAudible.settled && ! byName ("Tube EQ", flat).byName   // only when flat, only those two
                && outOfScope ("aufx", "GTR Stomp 4 (m->s)", {}).contains ("depend on the pedal loaded") && outOfScope ("aufx", "GTR Amp (m)", {}).isEmpty()
                && cut ({ "Filter", "Resonance" }) == "Filter" && cut ({ "HP On", "HP Freq", "LP Freq" }) == "HP Freq" && cut ({ "Gain", "Q", "Filter Type" }) == "-"
                && cutoffMove (0.0) == 0.5 && cutoffMove (1.0) == 0.5 && cutoffMove (0.5) == 0.75 && std::abs (cutoffMove (0.7) - 0.45) < 1e-9
