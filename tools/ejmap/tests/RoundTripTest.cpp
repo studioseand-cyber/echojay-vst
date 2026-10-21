@@ -13561,6 +13561,56 @@ int main (int, char**)
                && grouped && tableS && wizroute::draftUsable ("pitchshift", juce::JSON::parse (R"({"shifts":[{"verdict":"agrees"}]})")) && ! wizroute::draftUsable ("pitchshift", juce::JSON::parse (R"({"shifts":[]})")),
                "wizard WZ-SHIFT-1: '+7 st' expects " + juce::String (e7.outHz, 2) + " Hz (probe note " + juce::String (note7, 2) + ", input detuned " + juce::String (det7, 0) + " c); a reading 1.2 c off agrees, 12 c off does not; pitch by name -> the shift pass");
     }
+    // WZ-FILTER-2 WHAT THE RE-MEASURE ON THIS MAC TAUGHT (22 Oct): LOVEND is a +5.7 dB shelf (never 12 dB down) - no cutoff; OneKnob Filter's
+    // "Filter" reads 0-10 (a knob position, never 1.7 Hz); bx_cleansweep's other 6 dB/oct filter sat in the passband reference (0.74 x / 2 x
+    // its labels) - each position is read against the control's most open one; Order / Parameter / Trigger controls are not cutoffs
+    {
+        using namespace ejmap;
+        auto tr = [] (const std::function<double (double)>& h) { std::vector<std::pair<double, double>> t;
+            for (int k = 0; k < eq::kGridTones; ++k) { const double hz = eq::kGridLoHz * std::pow (eq::kGridHiHz / eq::kGridLoHz, (double) k / (eq::kGridTones - 1)); t.push_back ({ hz, h (hz) }); } return t; };
+        const auto shelf = filter::deriveShape (tr ([] (double f) { return 5.7 / (1.0 + std::pow (f / 150.0, 2.0)); }));
+        auto hp1 = [] (double fc) { return [fc] (double f) { return -10.0 * std::log10 (1.0 + std::pow (fc / f, 2.0)) - 10.0 * std::log10 (1.0 + std::pow (f / 20000.0, 2.0)); }; };   // + the other filter's skirt
+        const std::vector<std::vector<std::pair<double, double>>> ts { tr (hp1 (20.0)), tr (hp1 (200.0)), tr (hp1 (1000.0)) };
+        const int open = filter::openPosition (ts);
+        const auto against = filter::deriveShape (filter::lessOpen (ts[2], ts[open < 0 ? 0 : open])), raw = filter::deriveShape (ts[2]);
+        const auto lp30 = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (f / 30.0, 4.0)); })), lp64 = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (f / 64.0, 4.0)); }));
+        const auto hp8k = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (8000.0 / f, 4.0)); }));
+        const auto e30 = filter::judgeCutoff (lp30, "30 Hz"), e64 = filter::judgeCutoff (lp64, "64 Hz"), e8k = filter::judgeCutoff (hp8k, "8.0 kHz");   // the grid's edge (DrumXchanger's 20 Hz)
+        check (shelf.result == "shelf" && shelf.reason.contains ("a shelf")
+               && ! filter::labelHz ("1.7", "", "Filter") && filter::labelHz ("250", "", "Highpass Cutoff") == 250.0 && filter::labelHz ("250", "Hz", "Knob") == 250.0 && filter::labelHz ("1.2 kHz", "", "Filter") == 1200.0
+               && ! filter::judgeCutoff (raw, "1.7", "", "Filter").judged
+               && ! filter::cutoffNamed ("Lowpass Order") && ! filter::cutoffNamed ("LP Parameter") && ! filter::cutoffNamed ("Trigger Frequency") && filter::cutoffNamed ("Tight Punch Filter") && filter::cutoffNamed ("Lowpass Cutoff")
+               && open == 0 && against.result == "measured" && std::abs (against.cutoffHz - 1000.0) < 30.0 && raw.result == "measured" && std::abs (raw.cutoffHz - 1000.0) > 100.0
+               && filter::openPosition ({ ts[0], ts[1] }) == -1
+               && lp30.result == "measured" && ! e30.judged && e30.why.contains ("the grid's edge") && e64.judged && e64.pass && hp8k.result == "measured" && ! e8k.judged
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString().contains ("const int open = filter::openPosition (tr);")
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString().contains ("const auto s = filter::deriveShape (open >= 0 ? filter::lessOpen (tr[k], tr[(size_t) open]) : tr[k]); const auto j = filter::judgeCutoff (s, p.text, unit, name);"),
+               "wizard WZ-FILTER-2: the shelf refused ('" + shelf.reason + "'); a 1st-order HP at 1 kHz beside a 20 kHz skirt reads " + juce::String (against.cutoffHz, 1) + " Hz against its open position, "
+                 + juce::String (raw.cutoffHz, 1) + " Hz without it");
+    }
+    // WZ-SHIFT-2 WHAT THE RE-MEASURE ON THIS MAC TAUGHT (22 Oct): Waves name intervals ("- 5th", "3rd M", "Unison"); SoundShifter's Pitch is a
+    // ratio (0.7937 read -4.00 st); Pitchwheel shows a raw 0-1 position (read where it goes, judged on nothing; one that never moves is not a
+    // shift); UltraPitch's Min / Max Pitch are the tracker's Hz range, never a shift; one voice at a time (the others and the direct at minimum)
+    {
+        using namespace ejmap;
+        const auto i5 = shift::expected ("- 5th", "", "Voice 1 Pitch"), r = shift::expected ("0.7937", "", "Pitch", "ratio"), pos = shift::expected ("0.5000000", "", "Pitch", "position"), mn = shift::expected ("30 Hz", "", "Min Pitch");
+        std::vector<std::pair<int, juce::String>> up3 { { 0, "Output Gain" }, { 1, "Direct Check" }, { 2, "Direct Level" }, { 7, "Min Pitch" }, { 10, "Voice 1 Level" }, { 12, "Voice 1 Pitch" },
+                                                         { 15, "Voice 2 Level" }, { 17, "Voice 2 Pitch" }, { 20, "Voice 3 Level" }, { 22, "Voice 3 Pitch" }, { 23, "Voice 3 Formant" } };
+        juce::StringArray iso; for (const auto& [i, n] : shift::isolationWrites (up3, "Voice 1 Pitch")) iso.add (juce::String (i) + ":" + juce::String (n, 1));
+        juce::StringArray sn; for (const auto& c : shift::shiftControls (up3)) sn.add (c.second);
+        auto rd = [] (double c) { shift::Reading x; x.read = x.steady = true; x.shiftCents = c; return x; };
+        const auto moves = shift::unlabelledVerdict ({ rd (-602.5), rd (-201.0), rd (0.0), rd (201.0), rd (604.0) }), still = shift::unlabelledVerdict ({ rd (0.0), rd (1.0), rd (-0.5) });
+        check (shift::intervalSemitones ("- 5th") == -7.0 && shift::intervalSemitones ("3rd M") == 4.0 && shift::intervalSemitones ("2nd m") == 1.0 && shift::intervalSemitones ("-Octave") == -12.0
+               && shift::intervalSemitones ("Unison") == 0.0 && shift::intervalSemitones ("Octave") == 12.0 && ! shift::intervalSemitones ("5TH")
+               && i5.ok && i5.unit == "interval" && std::abs (i5.outHz - 146.83) < 0.01 && r.ok && std::abs (r.outHz - 174.61) < 0.01 && std::abs (r.cents + 400.0) < 0.1 && ! pos.ok && ! mn.ok
+               && shift::labelKind ({ "0.5000", "1.0000", "2.0000" }, "", "Pitch") == "ratio" && shift::labelKind ({ "0.0000000", "0.5000000", "1.0000000" }, "", "Pitch Smooth") == "position"
+               && shift::labelKind ({ "-12", "0", "12" }, "", "PitchSemitones") == "shift" && shift::labelKind ({ "0", "0.5", "1" }, "", "PitchCents") == "shift"
+               && iso.joinIntoString (",") == "2:0.0,15:0.0,20:0.0" && sn.joinIntoString (",") == "Voice 1 Pitch,Voice 2 Pitch,Voice 3 Pitch"
+               && moves.verdict == "measured_unlabelled" && std::abs (moves.lowCents + 602.5) < 1e-6 && still.verdict == "not_measured" && still.why.contains ("does not shift")
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString().contains ("for (const auto& [i, n] : shift::isolationWrites (controls, name)) addSet (i, n,")
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString().contains ("if (! sets.isEmpty()) a.add (\"sets=\" + sets.joinIntoString (\",\"));"),
+               "wizard WZ-SHIFT-2: '- 5th' expects " + juce::String (i5.outHz, 2) + " Hz; ratio 0.7937 expects " + juce::String (r.outHz, 2) + " Hz; voice 1 read with '" + iso.joinIntoString (",") + "'; " + moves.why);
+    }
     // WZ-NEUTRAL-1 THE RAISED DRIVE IN THE MEASURING PASSES (Kathy, 21 Oct, decision 3): a categorised row's neutral_writes go with the plugin
     // into Phase B ("--neutral-sets" -> EJ_PROBE_NEUTRAL_SETS), at the FRONT of every set= list of the child's probe calls (the pass's own
     // write to the same control still wins), never into a mode without one; every record's "neutral" list says the raised value; a signature

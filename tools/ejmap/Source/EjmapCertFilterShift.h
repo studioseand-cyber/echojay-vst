@@ -41,9 +41,16 @@ inline FilterControlRead readFilterControl (const ResponseCall& response, const 
     if (cr.kind == ChildResult::Kind::uiShown) { fr.window = true; fr.row = juce::var (o); return fr; }
     juce::Array<juce::var> ps; std::vector<std::pair<filter::Shape, filter::Judged>> rows; juce::StringArray types;
     if (! r.ok) o->setProperty ("refused", r.refused.isNotEmpty() ? r.refused : cr.describe());
-    for (const auto& p : r.positions)
+    std::vector<std::vector<std::pair<double, double>>> tr; for (const auto& p : r.positions) tr.push_back (filter::transferOf (p));
+    const int open = filter::openPosition (tr);   // 22 Oct: each position against the control's most open one
+    if (open >= 0) { auto* b = new juce::DynamicObject(); b->setProperty ("norm", r.positions[(size_t) open].norm); b->setProperty ("display", r.positions[(size_t) open].text);
+                     b->setProperty ("why", "the most open position: every other is read against it, so what this control does not move cancels"); o->setProperty ("open_position", juce::var (b)); }
+    const auto unit = ctl.getProperty ("unit", "").toString();
+    for (size_t k = 0; k < r.positions.size(); ++k)
     {
-        const auto s = filter::deriveShape (filter::transferOf (p)); const auto j = filter::judgeCutoff (s, p.text);
+        const auto& p = r.positions[k];
+        if ((int) k == open) { filter::Shape s0; s0.result = "open"; s0.reason = "the most open position (the reference)"; s0.tones = (int) tr[k].size(); rows.push_back ({ s0, {} }); ps.add (filter::shapeVar (s0, {}, p.norm, p.text)); continue; }
+        const auto s = filter::deriveShape (open >= 0 ? filter::lessOpen (tr[k], tr[(size_t) open]) : tr[k]); const auto j = filter::judgeCutoff (s, p.text, unit, name);
         rows.push_back ({ s, j }); ps.add (filter::shapeVar (s, j, p.norm, p.text)); if (s.type.isNotEmpty()) types.add (s.type);
         say ("    [" + juce::String (idx) + "] " + name + " '" + p.text + "': " + s.result + (s.result == "measured" ? " " + s.type + " -3 dB " + juce::String (s.cutoffHz, 1) + " Hz"
              + (s.slopeBasis.isNotEmpty() ? ", " + juce::String (s.slopeDbOct, 1) + " dB/oct" : juce::String()) + (s.resonanceDb > 0.0 ? ", resonance +" + juce::String (s.resonanceDb, 1) + " dB" : juce::String()) : " (" + s.reason + ")")
@@ -167,22 +174,40 @@ inline int runPitchShift (const SweepOptions& opt)
         const auto tg = run ("c" + juce::String (idx) + ".textgrid", { "--text-at-norms", juce::String (idx), grid.joinIntoString (",") });
         if (tg.kind == ChildResult::Kind::uiShown) { say ("SHIFT: a window appeared; stopping"); return 5; }
         std::vector<std::pair<float, juce::String>> labelled; for (const auto& r : pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String())) if (r.landed) labelled.push_back ({ (float) r.norm, r.text });
-        const auto pick = shift::pickPositions (labelled, unit, name);
-        say ("  [" + juce::String (idx) + "] " + name + ": " + juce::String ((int) labelled.size()) + " label(s) read, " + juce::String ((int) pick.size()) + " position(s) with a shift to read");
+        juce::StringArray texts; for (const auto& l : labelled) texts.add (l.second);
+        const auto kind = shift::labelKind (texts, unit, name); o->setProperty ("labels", kind);
+        // 22 Oct: the measuring writes for THIS control - the mix wet, the other voices' and the direct level at their minimum
+        juce::StringArray sets; juce::Array<juce::var> mw;
+        auto addSet = [&] (int i, float n, const juce::String& why) { if (i == idx) return; sets.add (juce::String (i) + ":" + juce::String (n, 6));
+                                                                   auto* w = new juce::DynamicObject(); w->setProperty ("index", i); w->setProperty ("norm", n); w->setProperty ("why", why); mw.add (juce::var (w)); };
+        if (wet) addSet (wet->first, wet->second, "the mix fully wet");
+        for (const auto& [i, n] : shift::isolationWrites (controls, name)) addSet (i, n, "another voice / the direct signal at its minimum: one pitch at a time");
+        if (! mw.isEmpty()) o->setProperty ("measuring_writes", mw);
+        auto pick = shift::pickPositions (labelled, unit, name, kind);
+        const bool unlabelled = pick.empty();
+        if (unlabelled) for (int k = 0; k < 7; ++k) pick.push_back ({ (float) k / 6.0f, {} });   // 22 Oct: no shift in its labels - read where it goes, judge nothing
+        say ("  [" + juce::String (idx) + "] " + name + ": " + juce::String ((int) labelled.size()) + " label(s) read (" + kind + "), "
+             + (unlabelled ? juce::String ("no shift in them: 7 unlabelled positions") : juce::String ((int) pick.size()) + " position(s) with a shift to read") + (sets.isEmpty() ? juce::String() : "; writes " + sets.joinIntoString (",")));
         juce::Array<juce::var> ps; std::vector<shift::Reading> rs;
         for (const auto& [norm, text] : pick)
         {
-            const auto e = shift::expected (text, unit, name); const auto [note, detune] = shift::noteAndDetune (e);
+            shift::Expect e; if (unlabelled) { e.ok = true; e.outHz = shift::kInHz; e.unit = "none"; } else e = shift::expected (text, unit, name, kind);
+            const auto [note, detune] = shift::noteAndDetune (e);
             juce::StringArray a { "--sweep-pitch", "ctl=" + juce::String (idx), "norms=" + juce::String (norm, 6), "gen=static", "note=" + juce::String (note, 4), "cents=" + juce::String (detune, 2), "hold=2", "db=-18" };
-            if (wet && wet->first != idx) a.add ("sets=" + juce::String (wet->first) + ":" + juce::String (wet->second, 6));
+            if (! sets.isEmpty()) a.add ("sets=" + sets.joinIntoString (","));
             const auto pr = run ("c" + juce::String (idx) + ".n" + juce::String (norm, 3), a);
             if (pr.kind == ChildResult::Kind::uiShown) { say ("SHIFT: a window appeared; stopping"); return 5; }
             const auto m = pitch::parsePitch (pr.cleanExit() ? pr.out : juce::String ("refused " + pr.describe()));
             shift::Reading r; if (! m.ok || m.positions.empty()) r.why = "the probe read nothing (" + (m.refused.isNotEmpty() ? m.refused : pr.describe()) + ")"; else r = shift::readPosition (m.positions.front(), e);
-            rs.push_back (r); ps.add (shift::readingVar (r, e, norm, text));
-            say ("    '" + text + "' (expects " + juce::String (e.outHz, 2) + " Hz): " + r.why);
+            const auto shown = text.isNotEmpty() ? text : (m.positions.empty() ? juce::String() : m.positions.front().text);
+            if (unlabelled && r.read) r.why = "out " + juce::String (r.outHz, 2) + " Hz: a shift of " + juce::String (r.shiftCents / 100.0, 2) + " st (unlabelled)";
+            rs.push_back (r); auto rv = shift::readingVar (r, e, norm, shown); if (unlabelled) if (auto* ro = rv.getDynamicObject()) { ro->removeProperty ("expected_out_hz"); ro->removeProperty ("expected_cents"); ro->removeProperty ("agrees"); ro->removeProperty ("error_cents"); }
+            ps.add (rv);
+            say ("    '" + shown + "'" + (unlabelled ? juce::String() : " (expects " + juce::String (e.outHz, 2) + " Hz)") + ": " + r.why);
         }
-        const auto v = shift::controlVerdict (rs);
+        shift::Verdict v;
+        if (unlabelled) { const auto u = shift::unlabelledVerdict (rs); v.verdict = u.verdict; v.why = u.why; }
+        else v = shift::controlVerdict (rs);
         o->setProperty ("positions", ps); o->setProperty ("verdict", v.verdict); o->setProperty ("why", v.why); o->setProperty ("tolerance_cents", shift::kAgreeCents);
         say ("  [" + juce::String (idx) + "] " + name + ": " + v.verdict + " - " + v.why);
         rows.add (juce::var (o)); if (v.verdict != "not_measured") ++measured; if (v.verdict == "agrees") ++agreed;

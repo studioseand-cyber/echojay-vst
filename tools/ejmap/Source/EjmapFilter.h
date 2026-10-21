@@ -30,6 +30,7 @@ namespace ejmap::filter
 inline constexpr double kFlatSpanDb = 3.0;          // a response that spans less than this has no edge inside the grid
 inline constexpr double kTypeDb = 3.0;              // the two ends must differ by this for a high- or low-pass
 inline constexpr double kResonanceFloorDb = 0.5;    // a peak under this over the passband is no resonance
+inline constexpr double kStopDb = 12.0;             // a filter's response falls at least this far under its passband inside the grid; less is a shelf (LOVEND, 22 Oct)
 inline constexpr int kEndSkip = 3, kEndSpan = 12;   // the passband: 12 tones (one octave) from 3 tones in from its end
 inline constexpr int kMinTones = 24;
 inline constexpr double kCutoffTolPct = eq::kAcceptFigurePct;   // the EQ acceptance's frequency tolerance
@@ -40,6 +41,7 @@ struct Shape
     juce::String result;                 // measured | flat | no_edge | edge_outside | too_few_tones
     juce::String type;                   // highpass | lowpass
     double cutoffHz = 0.0, passbandDb = 0.0, slopeDbOct = 0.0, resonanceDb = 0.0, resonanceHz = 0.0;
+    double refLoHz = 0.0, refHiHz = 0.0;     // the passband reference's tones (its octave at the grid's end)
     juce::String slopeBasis;             // "-6 to -18 dB" | "-6 to -12 dB" | "" (not read)
     juce::String reason; int tones = 0;
 };
@@ -84,7 +86,11 @@ inline Shape deriveShape (const std::vector<std::pair<double, double>>& t)
     if (std::abs (highEnd - lowEnd) < kTypeDb)
     { s.result = "no_edge"; s.reason = "both ends of the grid read within " + juce::String (kTypeDb, 0) + " dB (" + juce::String (lowEnd, 1) + " / " + juce::String (highEnd, 1) + " dB): not a high- or low-pass shape"; return s; }
     const bool high = highEnd > lowEnd; s.type = high ? "highpass" : "lowpass"; s.passbandDb = high ? highEnd : lowEnd;
+    // A SHELF IS NOT A FILTER (22 Oct, LOVEND on this Mac: +5.7 dB under its corner, never 12 dB down): no cutoff is read from it
+    if (s.passbandDb - lo < kStopDb)
+    { s.result = "shelf"; s.reason = "the response falls only " + juce::String (s.passbandDb - lo, 1) + " dB under its passband inside the grid (" + juce::String (kStopDb, 0) + " needed): a shelf, or a filter whose stopband lies past the grid"; return s; }
     const int start = high ? n - 1 - kEndSkip : kEndSkip, step = high ? -1 : 1;
+    { const int a = high ? juce::jmax (0, n - kEndSkip - kEndSpan) : kEndSkip, b = high ? n - 1 - kEndSkip : juce::jmin (n - 1, kEndSkip + kEndSpan - 1); s.refLoHz = t[(size_t) a].first; s.refHiHz = t[(size_t) b].first; }
     int at3 = -1;
     const auto c3 = crossing (t, start, step, s.passbandDb - 3.0, &at3);
     // the resonance: the peak over the passband between the passband end and the cutoff
@@ -102,22 +108,36 @@ inline Shape deriveShape (const std::vector<std::pair<double, double>>& t)
     return s;
 }
 
-// THE LABEL: a frequency the display states ("1.2 kHz", "120 Hz", "4k", "250"); never a percentage, dB, ms, a word or a note name
-inline std::optional<double> labelHz (const juce::String& display)
+// THE LABEL: a frequency the display states ("1.2 kHz", "120 Hz", "4k"); a BARE number ("250") only when the control's unit or name says
+// frequency (22 Oct, OneKnob Filter on this Mac: its "Filter" reads 0-10, a knob position, and was judged as 1.7 Hz); never a percentage,
+// dB, ms, an order, a word or a note name
+inline bool namesFrequency (const juce::String& unit, const juce::String& name)
+{
+    if (unit.containsIgnoreCase ("hz")) return true;
+    const auto w = tailroles::wordsOf (name); for (const char* t : { "freq", "frequency", "frq", "cutoff", "hz", "khz", "corner", "cut" }) if (w.contains (t)) return true;
+    return false;
+}
+inline std::optional<double> labelHz (const juce::String& display, const juce::String& unit = {}, const juce::String& name = {})
 {
     const auto l = display.trim().toLowerCase();
     if (l.isEmpty() || l.contains ("%") || l.contains ("db") || l.contains ("ms") || l.contains ("sec") || l.contains ("oct") || l.contains ("st") || l.contains ("cent")) return std::nullopt;
     const auto v = eq::labelNumber (display); if (! v || *v <= 0.0) return std::nullopt;
+    const bool stated = l.contains ("hz") || l.contains ("k");
+    if (! stated && ! namesFrequency (unit, name)) return std::nullopt;
     return *v;
 }
 
 struct Judged { bool judged = false, pass = false; double labelHz = 0.0, offPct = 0.0; juce::String why; };
-inline Judged judgeCutoff (const Shape& s, const juce::String& display)
+inline Judged judgeCutoff (const Shape& s, const juce::String& display, const juce::String& unit = {}, const juce::String& name = {})
 {
-    Judged j; const auto lab = labelHz (display);
+    Judged j; const auto lab = labelHz (display, unit, name);
     if (! lab) { j.why = "no frequency in the label '" + display + "'"; return j; }
     j.labelHz = *lab;
     if (s.result != "measured") { j.why = "no cutoff read (" + s.result + ")"; return j; }
+    // THE GRID'S EDGE (22 Oct, SPL DrumXchanger's low-pass at '20 Hz' read 23.4: 17 % off, while 64 Hz-6.8 kHz read within 0.4 %): a cutoff within an
+    // octave of the passband reference sits inside the octave that reference is read from - its -3 dB point cannot be read; not judged
+    if ((s.type == "lowpass" && s.cutoffHz < 2.0 * s.refHiHz) || (s.type == "highpass" && s.cutoffHz > 0.5 * s.refLoHz))
+    { j.why = "the cutoff " + juce::String (s.cutoffHz, 1) + " Hz lies within an octave of the passband reference (" + juce::String (s.refLoHz, 0) + "-" + juce::String (s.refHiHz, 0) + " Hz, the grid's edge): not judged"; return j; }
     j.judged = true; j.offPct = 100.0 * (s.cutoffHz - *lab) / *lab; j.pass = std::abs (j.offPct) <= kCutoffTolPct;
     j.why = "the -3 dB point " + juce::String (s.cutoffHz, 1) + " Hz is " + juce::String (j.offPct, 1) + " % off the label " + juce::String (*lab, 1) + " Hz (tolerance " + juce::String (kCutoffTolPct, 0) + " %)";
     return j;
@@ -144,7 +164,8 @@ inline constexpr int kMaxControls = 4;
 inline bool cutoffNamed (const juce::String& name)
 {
     const auto w = tailroles::wordsOf (name); bool bad = false, good = false;
-    for (const char* t : { "gain", "resonance", "reso", "res", "q", "slope", "type", "mode", "mix", "level", "output", "input", "drive", "on", "off", "bypass", "enable", "power", "punch", "amount", "volume" }) bad = bad || w.contains (t);
+    for (const char* t : { "gain", "resonance", "reso", "res", "q", "slope", "type", "mode", "mix", "level", "output", "input", "drive", "on", "off", "bypass", "enable", "power", "amount", "volume",
+                           "order", "parameter", "character", "style", "steep", "pole", "poles", "trigger", "detect", "sidechain", "sc", "key", "link", "solo", "listen", "auto" }) bad = bad || w.contains (t);   // 22 Oct: bx_cleansweep Pro's Order / LP Parameter, DrumXchanger's Trigger Frequency
     for (const char* t : { "cutoff", "freq", "frequency", "filter", "hp", "lp", "hpf", "lpf", "highpass", "lowpass", "sweep" }) good = good || w.contains (t);
     return good && ! bad;
 }
@@ -171,6 +192,27 @@ inline std::vector<std::pair<int, juce::String>> eqPassBands (const std::vector<
         const auto w = tailroles::wordsOf (n); bool gainWord = false; for (const char* t : { "gain", "db", "level", "boost", "atten", "attenuation", "on", "off", "slope", "q" }) gainWord = gainWord || w.contains (t);
         const bool cutOnly = eq::bandRole (n) == eq::BandRole::gain && passBandNamed (n) && ! gainWord;
         if ((eq::bandRole (n) == eq::BandRole::freq || cutOnly) && passBandNamed (n) && (cutOnly || ! gainKeys.count (eq::bandKey (n))) && (int) out.size() < kMaxControls) out.push_back ({ i, n }); }
+    return out;
+}
+
+// THE MOST OPEN POSITION (22 Oct, bx_cleansweep on this Mac: its other 6 dB/oct filter's skirt sat in the passband reference, so the high-pass
+// read 0.74 x its label and the low-pass 2 x): every position is read against the control's own most open one - the position whose response
+// spans least - so whatever does not move with this control (the other filter, the plugin's colour) cancels. -1 with fewer than 3 positions
+inline int openPosition (const std::vector<std::vector<std::pair<double, double>>>& transfers)
+{
+    if (transfers.size() < 3) return -1;
+    int best = -1; double bestSpan = 1e9;
+    for (size_t k = 0; k < transfers.size(); ++k)
+    {   if (transfers[k].size() < (size_t) kMinTones) continue;
+        double lo = 1e9, hi = -1e9; for (const auto& [hz, d] : transfers[k]) { lo = juce::jmin (lo, d); hi = juce::jmax (hi, d); }
+        if (hi - lo < bestSpan) { bestSpan = hi - lo; best = (int) k; } }
+    return best;
+}
+// a transfer less the open position's, tone by tone (matched by frequency; a tone missing from either is left out)
+inline std::vector<std::pair<double, double>> lessOpen (const std::vector<std::pair<double, double>>& t, const std::vector<std::pair<double, double>>& open)
+{
+    std::vector<std::pair<double, double>> out;
+    for (const auto& [hz, d] : t) for (const auto& [h2, d2] : open) if (std::abs (hz - h2) <= 1e-6 * hz) { out.push_back ({ hz, d - d2 }); break; }
     return out;
 }
 
