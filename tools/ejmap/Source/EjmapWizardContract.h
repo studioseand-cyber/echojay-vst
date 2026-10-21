@@ -333,7 +333,16 @@ struct Outbox
     }
 };
 
-struct RunInfo { juce::String runId, consentAcceptedAt; int queueSize = 0; };
+struct RunInfo { juce::String runId, consentAcceptedAt; int queueSize = 0; juce::StringArray collection; };
+// THE RUN'S COLLECTION (Kathy, 21 Oct; contract v1 §3 / §5): the catalogue check's plugin_ids, Apple's own plugins left out - the list the
+// server already saw, kept for "once per plugin collection" and for the independence of a second tester
+inline juce::StringArray collectionFromRequest (const juce::var& request)
+{
+    juce::StringArray ids;
+    if (const auto* a = request.getProperty ("plugins", {}).getArray())
+        for (const auto& p : *a) if (! p.getProperty ("vendor", "").toString().trim().equalsIgnoreCase ("Apple")) ids.addIfNotAlreadyThere (p.getProperty ("plugin_id", "").toString());
+    ids.removeEmptyStrings(); return ids;
+}
 inline Reply ensureRun (Session& s, const RunInfo& run, const juce::String& appVersion = "0.3.0")
 {
     auto* body = new juce::DynamicObject(); body->setProperty ("run_id", run.runId);
@@ -341,6 +350,7 @@ inline Reply ensureRun (Session& s, const RunInfo& run, const juce::String& appV
     c->setProperty ("arch", juce::SystemStats::getCpuModel().containsIgnoreCase ("Apple") ? "arm64" : "x86_64"); body->setProperty ("client", juce::var (c));
     auto* k = new juce::DynamicObject(); k->setProperty ("version", kConsentVersion); k->setProperty ("accepted_at", run.consentAcceptedAt); body->setProperty ("consent", juce::var (k));
     body->setProperty ("queue_size", run.queueSize);
+    juce::Array<juce::var> col; for (const auto& id : run.collection) col.add (id); body->setProperty ("collection", col);
     return s.call ("POST", "runs", juce::var (body));
 }
 
@@ -395,7 +405,7 @@ inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, cons
 }
 
 // --- THE RUN'S END (contract §5): the server decides; the wizard shows ----------------------------------------------------------------
-struct Completion { bool done = false; Reply reply; juce::StringArray missing; bool eligible = false, issuedNow = false; juce::String code, message; int months = 0; };
+struct Completion { bool done = false; Reply reply; juce::StringArray missing; bool eligible = false, issuedNow = false; juce::String code, message, reason; int months = 0; };
 inline Completion complete (Session& s, const juce::String& runId, const juce::String& kind, const juce::var& queue, const juce::var& outcomes, const juce::StringArray& resultIds)
 {
     Completion c; auto* body = new juce::DynamicObject(); body->setProperty ("kind", kind); body->setProperty ("queue", queue); body->setProperty ("outcomes", outcomes);
@@ -407,6 +417,7 @@ inline Completion complete (Session& s, const juce::String& runId, const juce::S
     const auto p = c.reply.json.getProperty ("promo", {});
     c.done = true; c.eligible = (bool) p.getProperty ("eligible", false); c.issuedNow = (bool) p.getProperty ("issued_now", false);
     c.code = p.getProperty ("code", "").toString(); c.message = p.getProperty ("message", "").toString(); c.months = (int) p.getProperty ("months", 0);
+    c.reason = p.getProperty ("reason", "").toString();   // 21 Oct: e.g. collection_already_claimed
     if (! c.eligible) c.code = {};   // a code only with the server's "eligible": never shown otherwise
     return c;
 }

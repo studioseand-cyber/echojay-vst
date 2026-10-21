@@ -488,9 +488,11 @@ private:
     juce::CriticalSection runLock; juce::String cachedRunId, cachedConsentAt; int cachedQueue = 0;
     std::atomic<int> sentN { 0 }, pendingN { 0 }, rejectedN { 0 }, failures { 0 }; std::atomic<bool> offlineNow { false }, signInNow { false }, completing { false };
     double nextTryMs = 0.0; juce::String netWords;   // netWords: the last plain words a call left for a screen
-    wizcontract::RunInfo runInfo() { const juce::ScopedLock l (runLock); return { cachedRunId, cachedConsentAt, cachedQueue }; }
+    juce::StringArray cachedCollection;   // 21 Oct: the run's plugin collection (contract v1 §3), from the catalogue request
+    wizcontract::RunInfo runInfo() { const juce::ScopedLock l (runLock); return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection }; }
     void cacheRun() { const auto st = appState(); const juce::ScopedLock l (runLock); cachedRunId = st.getProperty ("run_id", "").toString(); cachedConsentAt = st.getProperty ("consent_at", "").toString();
-                      cachedQueue = (int) juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()).getProperty ("to_measure", 0); }
+                      cachedQueue = (int) juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()).getProperty ("to_measure", 0);
+                      cachedCollection = wizcontract::collectionFromRequest (juce::JSON::parse (requestFile().loadFileAsString())); }
     void uploadTick()
     {   // THE LIVE UPLOAD (contract v1 §4): one result per request, in order, from the outbox; offline / busy -> back-off (5 s .. 10 min); a
         // rejected result is kept apart with the server's words; a sign-in problem waits for the user. Nothing is lost by a quit

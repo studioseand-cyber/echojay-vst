@@ -78,7 +78,8 @@ inline Answer fromCatalogue (const juce::var& answers, const juce::String& pid)
     if (st == "have") { a.rule = Rule::A; a.why = "EchoJay already has it (" + e.getProperty ("level", "mapped").toString() + ")"; return a; }
     if (st == "held" && reason == "pending_review") { a.rule = Rule::pendingReview; a.why = "another tester already sent it: waiting for review"; return a; }
     if (st == "held") { a.rule = Rule::C; a.heldWhy = "held by EchoJay (" + (reason.isNotEmpty() ? reason : juce::String ("no reason given")) + "): not measured"; return a; }
-    a.rule = Rule::C; a.why = st.isEmpty() ? juce::String ("the catalogue check gave no answer: measured") : reason == "fingerprint_differs" ? juce::String ("EchoJay has another build of it: measured") : juce::String ("EchoJay needs it");
+    a.rule = Rule::C; a.why = st.isEmpty() ? juce::String ("the catalogue check gave no answer: measured") : reason == "fingerprint_differs" ? juce::String ("EchoJay has another build of it: measured")
+                            : reason == "verify" ? juce::String ("EchoJay has one tester's map: measuring it here can verify it") : juce::String ("EchoJay needs it");   // 21 Oct: a second tester certifies (contract §4b)
     return a;
 }
 

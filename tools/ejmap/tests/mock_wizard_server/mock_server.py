@@ -26,7 +26,8 @@ PROFILE_SCHEMAS = {"ej_comp_profile/1", "ej_eq_profile/1", "ej_saturation_profil
 
 LOCK = threading.RLock()   # re-entrant: a handler holding it also logs the request through _send
 STATE = {
-    "config": {"client_id": "ejwiz-mock", "qualify_minimum": 25, "access_ttl_s": 3600, "force_429_once": False},
+    "config": {"client_id": "ejwiz-mock", "qualify_minimum": 25, "access_ttl_s": 3600, "force_429_once": False,
+               "collection_threshold": 0.95, "collection_min_size": 20, "agree_tolerance": 0.5},
     "devices": {},        # device_code -> {user_code, account_id, approved, denied, expires}
     "access": {},         # access token -> {account_id, expires, family}
     "refresh": {},        # refresh token -> {account_id, family, used}
@@ -37,12 +38,46 @@ STATE = {
     "holding": {},        # account_id -> {result_id: body}    (NEVER served)
     "rejected": [],
     "promos": {},         # account_id -> code
+    "served": {},         # plugin_id -> {level: mapped_unverified | certified, account, run, files, category, disagreed: n}   (contract v1 §4b)
     "requests": [],       # (method, path, status) - for the tests; never a body or a token
 }
 
 
 def now():
     return time.time()
+
+
+def similarity(a, b):
+    """contract v1 §5: |A ∩ B| / max(|A|, |B|) over exact plugin_ids"""
+    a, b = set(a or []), set(b or [])
+    return len(a & b) / max(len(a), len(b)) if a and b else 0.0
+
+
+def near_identical(a, b):
+    c = STATE["config"]
+    return len(set(a or [])) >= c["collection_min_size"] and len(set(b or [])) >= c["collection_min_size"] and similarity(a, b) >= c["collection_threshold"]
+
+
+def numbers(x, path=""):
+    if isinstance(x, bool):
+        return {}
+    if isinstance(x, (int, float)):
+        return {path: float(x)}
+    out = {}
+    if isinstance(x, dict):
+        for k, v in x.items():
+            out.update(numbers(v, path + "/" + k))
+    elif isinstance(x, list):
+        for i, v in enumerate(x):
+            out.update(numbers(v, path + "/%d" % i))
+    return out
+
+
+def agree(files_a, files_b):
+    """the stand-in for 'the same dial within the category's tolerance': every number both results carry within agree_tolerance"""
+    na, nb = numbers(files_a), numbers(files_b)
+    shared = set(na) & set(nb)
+    return bool(shared) and all(abs(na[k] - nb[k]) <= STATE["config"]["agree_tolerance"] for k in shared)
 
 
 def err(code, message, status, **extra):
@@ -112,6 +147,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 s = {k: v for k, v in STATE.items() if k not in ("access", "refresh", "devices", "dead_families")}
                 s["holding_counts"] = {a: len(r) for a, r in STATE["holding"].items()}
+                s["served"] = {pid: {k: v for k, v in sv.items() if k != "files"} for pid, sv in STATE["served"].items()}
                 s.pop("holding")
             return self._send(200, s)
         if path == "/api/wizard/v1/me":
@@ -203,6 +239,15 @@ class Handler(BaseHTTPRequestHandler):
         out = []
         for p in plugins:
             pid = p.get("plugin_id", "")
+            sv = STATE["served"].get(pid)
+            if sv is not None and pid not in STATE["catalogue"]:   # a tester's result, at its level (contract v1 §4b)
+                if sv["level"] == "certified":
+                    out.append({"plugin_id": pid, "status": "have", "level": "certified", "category": sv.get("category")})
+                elif sv["account"] == self._account()[0]:
+                    out.append({"plugin_id": pid, "status": "have", "level": "mapped_unverified", "category": sv.get("category")})
+                else:
+                    out.append({"plugin_id": pid, "status": "need", "reason": "verify", "category": sv.get("category")})
+                continue
             c = STATE["catalogue"].get(pid)
             if c is None:
                 out.append({"plugin_id": pid, "status": "need", "category": None})
@@ -226,7 +271,8 @@ class Handler(BaseHTTPRequestHandler):
                 if r["account_id"] != acct:
                     return self._send(*err("run_conflict", "This run belongs to another account. Sign in with the account you started it with.", 409))
                 return self._send(200, {"run_id": rid, "created": False})
-            STATE["runs"][rid] = {"account_id": acct, "consent": body.get("consent"), "client": body.get("client"), "results": {}, "accepted_profiles": 0, "completed": False}
+            STATE["runs"][rid] = {"account_id": acct, "consent": body.get("consent"), "client": body.get("client"), "results": {}, "accepted_profiles": 0, "completed": False,
+                                  "collection": list(body.get("collection") or [])}
         return self._send(201, {"run_id": rid, "created": True})
 
     def _result(self, acct, rid, result_id):
@@ -268,6 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             run["results"][result_id] = sha
             if doc["kind"] == "profile" and doc["plugin"]["plugin_id"] not in STATE["catalogue"]:
                 run["accepted_profiles"] += 1
+                promote(doc, acct, rid, run)
             STATE["holding"].setdefault(acct, {})[result_id] = doc   # the HOLDING area - never served
         return self._send(201, {"status": "accepted", "result_id": result_id, "stored": "holding"})
 
@@ -287,16 +334,20 @@ class Handler(BaseHTTPRequestHandler):
             accepted = run["accepted_profiles"]
             minimum = STATE["config"]["qualify_minimum"]
             res = {"status": "complete", "results_received": len(run["results"]), "results_accepted": accepted}
+            claimed_setup = any(r is not run and r.get("promo_code") and r["account_id"] != acct and near_identical(r.get("collection"), run.get("collection"))
+                                for r in STATE["runs"].values())
             if acct in STATE["promos"]:
                 code = STATE["promos"][acct]
                 if run.get("promo_code") == code:   # the same run asking again: the same code, not issued now
                     res["promo"] = {"eligible": True, "code": code, "months": 1, "issued_now": False, "expires": "2027-01-31", "message": "Thank you - here's your free month."}
                 else:
-                    res["promo"] = {"eligible": False, "message": "Your account already has its free month."}
+                    res["promo"] = {"eligible": False, "reason": "account_already_claimed", "message": "Your account already has its free month."}
+            elif claimed_setup:   # contract v1 §5: once per plugin collection - near-identical to one that already earned a code
+                res["promo"] = {"eligible": False, "reason": "collection_already_claimed", "message": "The free month has already been claimed for this setup."}
             elif body.get("kind") != "finished" or not all_final:
-                res["promo"] = {"eligible": False, "message": "The free month needs a finished run - this one stopped early."}
+                res["promo"] = {"eligible": False, "reason": "not_finished", "message": "The free month needs a finished run - this one stopped early."}
             elif accepted < minimum:
-                res["promo"] = {"eligible": False, "message": "The free month needs at least %d new plugins that pass our checks; this run had %d." % (minimum, accepted)}
+                res["promo"] = {"eligible": False, "reason": "below_minimum", "message": "The free month needs at least %d new plugins that pass our checks; this run had %d." % (minimum, accepted)}
             else:
                 code = "EJ-FREE-" + secrets.token_hex(4).upper()
                 STATE["promos"][acct] = code
@@ -326,9 +377,35 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/__mock/catalogue":
                 STATE["catalogue"].update(body)
                 return self._send(200, {})
+            if path == "/__mock/verify":   # our own verification certifies (contract v1 §4b)
+                sv = STATE["served"].get(body.get("plugin_id", ""))
+                if sv:
+                    sv["level"], sv["certified_by"] = "certified", "echojay_verification"
+                return self._send(200, {"level": sv["level"] if sv else None})
             if path == "/__mock/tokens_known":   # the tests ask whether a string is a live token, never the reverse
                 return self._send(200, {"known": body.get("token") in STATE["access"] or body.get("token") in STATE["refresh"]})
         return self._send(*err("not_found", "", 404))
+
+
+def promote(doc, acct, rid, run):
+    """contract v1 §4b: the first passing result is served mapped_unverified; an INDEPENDENT second tester (another account, a collection
+    not near-identical to the first's, another run) who agrees within tolerance makes it certified; one who disagrees leaves it for review"""
+    pid = doc["plugin"]["plugin_id"]
+    sv = STATE["served"].get(pid)
+    if sv is None:
+        STATE["served"][pid] = {"level": "mapped_unverified", "account": acct, "run": rid, "files": doc.get("files"),
+                                "category": (doc.get("payload") or {}).get("category"), "disagreed": 0, "not_independent": 0}
+        return
+    if sv["level"] != "mapped_unverified":
+        return
+    first_run = STATE["runs"].get(sv["run"], {})
+    if acct == sv["account"] or rid == sv["run"] or near_identical(first_run.get("collection"), run.get("collection")):
+        sv["not_independent"] += 1
+        return
+    if agree(sv["files"], doc.get("files")):
+        sv["level"], sv["certified_by"] = "certified", "second_tester"
+    else:
+        sv["disagreed"] += 1
 
 
 def validate(doc, rid, result_id):

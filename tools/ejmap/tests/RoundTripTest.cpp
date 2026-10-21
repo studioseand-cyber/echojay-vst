@@ -13492,7 +13492,7 @@ int main (int, char**)
             MemoryTokenStore store;
             auto remember = [&] { if (const auto t = store.load()) { secrets.push_back (t->access); secrets.push_back (t->refresh); } };
             Session s (ep, tx, store, [&] (const juce::String& l) { logLines.add (l); });
-            hook ("/__mock/config", "{\"qualify_minimum\": 2}");
+            hook ("/__mock/config", "{\"qualify_minimum\": 2, \"collection_min_size\": 1}");
             hook ("/__mock/catalogue", "{\"AudioUnit|aaaa0001|1.0\": {\"status\": \"have\", \"level\": \"certified\", \"category\": \"compressor\"}, \"AudioUnit|aaaa0003|1.0\": {\"status\": \"held\", \"reason\": \"pending_review\"}, \"AudioUnit|aaaa0006|1.0\": {\"status\": \"held\", \"reason\": \"blocked\"}}");
 
             // 1. SIGN-IN: pending until the browser approves; then the tokens are in the store, and only there
@@ -13508,8 +13508,9 @@ int main (int, char**)
             for (const char* id : { "aaaa0001", "aaaa0002", "aaaa0003", "aaaa0004", "aaaa0006" })
             { auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", "AudioUnit|" + juce::String (id) + "|1.0"); o->setProperty ("name", "Plug " + juce::String (id)); o->setProperty ("vendor", "V");
               o->setProperty ("version", "1.0"); o->setProperty ("format", "AudioUnit"); o->setProperty ("type", "aufx"); o->setProperty ("fingerprint", juce::var()); plist.add (juce::var (o)); }
-            auto* reqO = new juce::DynamicObject(); reqO->setProperty ("plugins", plist);
-            const auto cc = catalogueCheck (s, juce::var (reqO));
+            auto* reqO = new juce::DynamicObject(); reqO->setProperty ("plugins", plist); const juce::var reqV (reqO);
+            const auto cc = catalogueCheck (s, reqV);
+            const auto kathyCollection = collectionFromRequest (reqV);
             using ejmap::wizroute::fromCatalogue; using ejmap::wizroute::Rule;
             const auto aHave = fromCatalogue (cc.answers, "AudioUnit|aaaa0001|1.0"), aNeed = fromCatalogue (cc.answers, "AudioUnit|aaaa0002|1.0"), aPend = fromCatalogue (cc.answers, "AudioUnit|aaaa0003|1.0"),
                        aHeld = fromCatalogue (cc.answers, "AudioUnit|aaaa0006|1.0"), aNone = fromCatalogue (cc.answers, "AudioUnit|ffff0000|1.0"), aOtherVer = fromCatalogue (cc.answers, "AudioUnit|aaaa0001|1.1");
@@ -13520,11 +13521,11 @@ int main (int, char**)
 
             // 3. RESULTS: the engine's pack as one document per plugin; a checkpoint only what is final; each once; drained in order
             const juce::String runId = "run_" + juce::String::toHexString (0x1234abcd5678ef90LL);
-            const RunInfo run { runId, "2026-10-21T19:00:02Z", 3 };
+            const RunInfo run { runId, "2026-10-21T19:00:02Z", 3, kathyCollection };
             const auto r1 = ensureRun (s, run), r1b = ensureRun (s, run);
             const auto bundle = work.getChildFile ("bundle"); bundle.getChildFile ("profiles").createDirectory();
             auto profileFile = [&] (const juce::String& id, const juce::String& schema)
-            { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json"; bundle.getChildFile (rel).replaceWithText ("{\"schema\": \"" + schema + "\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}}"); return rel; };
+            { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json"; bundle.getChildFile (rel).replaceWithText ("{\"schema\": \"" + schema + "\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}, \"amount\": {\"g_db\": 1.0, \"curve\": [0.0, 2.0, 4.0]}}"); return rel; };
             auto manifestWith = [&] (const juce::String& profilesJson, const juce::String& skippedJson)
             { return juce::JSON::parse ("{\"profiles\": [" + profilesJson + "], \"skipped\": [" + skippedJson + "]}"); };
             const auto m1 = manifestWith ("{\"product\": \"Plug aaaa0002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"map_fp\": \"fp2\", \"profile\": \"" + profileFile ("aaaa0002", "ej_comp_profile/1") + "\"},"
@@ -13596,6 +13597,55 @@ int main (int, char**)
                    && c3.done && ! c3.eligible && c3.code.isEmpty() && c3.message.contains ("already has its free month"),
                    "contract WZ-CONTRACT-8: the server's promo - '" + c1.code + "' issued once, the same code asked again (issued_now false), none for a second run ('" + c3.message + "')");
 
+            // 8b. ONCE PER PLUGIN COLLECTION, AND THE TWO SERVING LEVELS (Kathy, 21 Oct): another account with Kathy's collection is refused
+            // "already claimed for this setup"; its results still count but cannot certify (not independent); the same account with a
+            // DIFFERENT collection earns its code and certifies the one it agrees with; a disagreement stays unverified; our own
+            // verification certifies too
+            MemoryTokenStore store2; Session s2 (ep, tx, store2, [&] (const juce::String& l) { logLines.add (l); });
+            auto dev2 = s2.startDevice(); secrets.push_back (dev2.deviceCode); hook ("/__mock/approve", "{\"account_id\": \"acct_mock_other\"}");
+            juce::String w2; const auto p2 = s2.pollOnce (dev2, w2); if (const auto t2 = store2.load()) { secrets.push_back (t2->access); secrets.push_back (t2->refresh); }
+            const auto cc2 = catalogueCheck (s2, reqV), ccK = catalogueCheck (s, reqV);
+            auto statusOf = [] (const CatalogueResult& c, const char* pid) { return c.answers.getProperty ("by_plugin_id", {}).getProperty (juce::Identifier (pid), {}); };
+            const auto vOther = statusOf (cc2, "AudioUnit|aaaa0002|1.0"), vKathy = statusOf (ccK, "AudioUnit|aaaa0002|1.0");
+            const auto bundle2 = work.getChildFile ("bundle2"); bundle2.getChildFile ("profiles").createDirectory();
+            auto profile2 = [&] (const juce::String& id, double g) { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json";
+                bundle2.getChildFile (rel).replaceWithText ("{\"schema\": \"ej_comp_profile/1\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}, \"amount\": {\"g_db\": " + juce::String (g) + ", \"curve\": [0.0, 2.0, 4.0]}}"); return rel; };
+            auto sendRun = [&] (const juce::String& rid, const juce::StringArray& collection, const juce::String& profilesJson, const juce::String& boxName)
+            {
+                ensureRun (s2, RunInfo { rid, "2026-10-21T19:00:02Z", 1, collection });
+                Outbox b2 { work.getChildFile (boxName) };
+                ejmap::wizresults::emit (ejmap::wizresults::fromPack (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "]}"), bundle2, rid, true, {}, {}), b2, {});
+                drain (s2, b2, RunInfo { rid, "t", 1, collection });
+                juce::Array<juce::var> q, o; juce::StringArray sids;
+                for (const auto& f : b2.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) sids.add (Outbox::resultIdOf (f));
+                return complete (s2, rid, "finished", juce::var (q), juce::var (o), sids);
+            };
+            auto prof = [&] (const char* id, double g) { return "{\"product\": \"Plug " + juce::String (id) + "\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|" + juce::String (id) + "|1.0\", \"profile\": \"" + profile2 (id, g) + "\"}"; };
+            const juce::String runX = "run_" + juce::String::toHexString (0x00000000aaaa0001LL).paddedLeft ('0', 16), runY = "run_" + juce::String::toHexString (0x00000000bbbb0002LL).paddedLeft ('0', 16);
+            const auto cX = sendRun (runX, kathyCollection, prof ("aaaa0002", 1.2), "box_x");                     // the SAME setup as Kathy's
+            const auto levelAfterX = mockState().getProperty ("served", {}).getProperty ("AudioUnit|aaaa0002|1.0", {});
+            const auto cY = sendRun (runY, juce::StringArray { "AudioUnit|bbbb0001|1.0", "AudioUnit|bbbb0002|1.0", "AudioUnit|aaaa0002|1.0" },
+                                     prof ("aaaa0002", 1.3) + "," + prof ("aaaa0004", 4.0), "box_y");           // another setup: agrees on 0002 (0.3), not on 0004 (3.0)
+            const auto served = mockState().getProperty ("served", {});
+            const auto l2 = served.getProperty ("AudioUnit|aaaa0002|1.0", {}), l4 = served.getProperty ("AudioUnit|aaaa0004|1.0", {});
+            const auto cc3 = catalogueCheck (s2, reqV);
+            hook ("/__mock/verify", "{\"plugin_id\": \"AudioUnit|aaaa0004|1.0\"}");
+            const auto l4v = mockState().getProperty ("served", {}).getProperty ("AudioUnit|aaaa0004|1.0", {});
+            const auto withApple = juce::JSON::parse ("{\"plugins\": [{\"plugin_id\": \"AudioUnit|1|1\", \"vendor\": \"Apple\"}, {\"plugin_id\": \"AudioUnit|2|1\", \"vendor\": \"V\"}, {\"plugin_id\": \"AudioUnit|2|1\", \"vendor\": \"V\"}]}");
+            check (p2 == Poll::ok && kathyCollection.size() == 5 && collectionFromRequest (withApple) == juce::StringArray { "AudioUnit|2|1" }
+                   && vOther.getProperty ("status", "") == juce::var ("need") && vOther.getProperty ("reason", "") == juce::var ("verify")
+                   && vKathy.getProperty ("status", "") == juce::var ("have") && vKathy.getProperty ("level", "") == juce::var ("mapped_unverified")
+                   && ejmap::wizroute::fromCatalogue (cc2.answers, "AudioUnit|aaaa0002|1.0").rule == ejmap::wizroute::Rule::C
+                   && ejmap::wizroute::fromCatalogue (cc2.answers, "AudioUnit|aaaa0002|1.0").why.contains ("verify")
+                   && cX.done && ! cX.eligible && cX.code.isEmpty() && cX.reason == "collection_already_claimed" && cX.message == "The free month has already been claimed for this setup."
+                   && levelAfterX.getProperty ("level", "") == juce::var ("mapped_unverified") && (int) levelAfterX.getProperty ("not_independent", 0) == 1
+                   && cY.done && cY.eligible && cY.code.startsWith ("EJ-FREE-") && cY.code != c1.code
+                   && l2.getProperty ("level", "") == juce::var ("certified") && l2.getProperty ("certified_by", "") == juce::var ("second_tester")
+                   && l4.getProperty ("level", "") == juce::var ("mapped_unverified") && (int) l4.getProperty ("disagreed", 0) == 1
+                   && statusOf (cc3, "AudioUnit|aaaa0002|1.0").getProperty ("level", "") == juce::var ("certified")
+                   && l4v.getProperty ("level", "") == juce::var ("certified") && l4v.getProperty ("certified_by", "") == juce::var ("echojay_verification"),
+                   "contract WZ-CONTRACT-13: once per plugin collection - another account on Kathy's setup: '" + cX.message + "' (" + cX.reason + "); its result cannot certify; another setup earns '"
+                   + cY.code + "' and certifies the result it agrees with; a disagreement stays unverified; our own verification certifies");
             // 9. AN EXPIRED TOKEN refreshes once (rotated); a REUSED refresh token kills the family -> sign in again, results kept
             const auto oldRefresh = store.load()->refresh;
             hook ("/__mock/expire_access", "{}");
@@ -13681,6 +13731,8 @@ int main (int, char**)
                && app.contains ("c = wizcontract::complete (*session, runInfo().runId, kind, m.getProperty (\"queue\", {}), m.getProperty (\"outcomes\", {}), ids);")
                && app.contains ("if (c.eligible && c.code.isNotEmpty())") && ! app.contains ("EJ-FREE")   // the code is the server's
                && app.contains ("text = wizapp::knownWords (el.known, n) + \". \" + text; } }")   // the measuring screen keeps the check's words (the 21 Oct rehearsal lost them)
+               && app.contains ("cachedCollection = wizcontract::collectionFromRequest (juce::JSON::parse (requestFile().loadFileAsString())); }")   // 21 Oct: once per plugin collection
+               && app.contains ("return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection };")
                && app.contains ("wizcontract::catalogueCheck (*session, req);") && app.contains ("barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);")
                && cm.contains ("EJ_WIZARD_SERVER_URL=\"${EJ_WIZARD_BETA_SERVER_URL}\" EJ_WIZARD_OAUTH_CLIENT_ID=\"${EJ_WIZARD_BETA_CLIENT_ID}\"")
                && cm.contains ("target_link_libraries(ejmap-wizard-beta PRIVATE \"-framework IOKit\" \"-framework Security\")")
