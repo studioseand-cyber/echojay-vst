@@ -32,6 +32,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <atomic>
 #include "EjmapSchema.h"
 #include "EjmapDiskStamp.h"
 
@@ -460,6 +461,9 @@ struct RunSummary
 class Ledger
 {
 public:
+    /** How many times this Ledger has read the whole ledger file (21 Oct): the cost test counts passes, never wall-clock time, so it
+        cannot fail on a busy Mac. */
+    int fullLedgerReads() const { return fullReads.load(); }
     /** rootOverride exists so the watchdog test can prove expiry against a
         throwaway directory instead of the tester's real ledger. Default is the
         real location; nothing in the app passes anything else.
@@ -986,7 +990,7 @@ public:
         // One JSON object per line. Append-only, survives a mid-write crash
         // losing at most the final line.
         juce::StringArray lines;
-        lines.addLines (ledgerFile.loadFileAsString());
+        lines.addLines (ledgerFile.loadFileAsString()); ++fullReads;
         for (const auto& line : lines)
         {
             if (line.trim().isEmpty()) continue;
@@ -1150,6 +1154,7 @@ public:
     }
 
 private:
+    mutable std::atomic<int> fullReads { 0 };
     /** Rows the watchdog had to write lock-free get folded into the ledger on
         the next launch, so there is one place to look. Losing them to a second
         file nobody reads would be the silent-drop class wearing a hat.
@@ -1201,7 +1206,7 @@ private:
             return e;
 
         juce::StringArray lines;
-        lines.addLines (ledgerFile.loadFileAsString());
+        lines.addLines (ledgerFile.loadFileAsString()); ++fullReads;
         for (const auto& line : lines)
         {
             if (line.trim().isEmpty()) continue;
@@ -1486,7 +1491,7 @@ private:
             return;
 
         juce::StringArray lines;
-        lines.addLines (ledgerFile.loadFileAsString());
+        lines.addLines (ledgerFile.loadFileAsString()); ++fullReads;
         for (const auto& line : lines)
         {
             if (line.trim().isEmpty()) continue;

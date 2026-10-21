@@ -677,6 +677,7 @@ inline int runWizard (const WizardOptions& wo)
     struct Pending { size_t i; wizroute::Decision d; juce::DynamicObject* row; };
     std::vector<Pending> toMap, toCategorise;
     auto typeOf = [] (const juce::PluginDescription& d) { return d.pluginFormatName == "VST3" ? juce::String ("aufx") : d.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false); };   // a VST3 is an effect here
+    std::map<juce::String, std::vector<categorise::NeutralWrite>> neutralByStem;   // 21 Oct: the raised drives, by plugin stem
     std::set<juce::String> limiterKnown;   // 13 Oct: limiters whose limiter pass the database holds (their compressor pass alone is queued)
     auto enqueue = [&] (const juce::String& name, const juce::String& cat, const juce::StringArray& passes = {}, bool limKnown = false)
     { for (const auto& pb : passes.isEmpty() ? wizroute::phaseBFor (cat) : passes) queues[pb].addIfNotAlreadyThere (name); if (limKnown) limiterKnown.insert (name); };
@@ -936,7 +937,8 @@ inline int runWizard (const WizardOptions& wo)
         const auto& ir = plugins[p.i]; const auto pid = p.row->getProperty ("plugin_id").toString(); p.row->setProperty ("map_fp", fpOf (ir.desc));
         if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); p.row->setProperty ("why", earlyWhy.count (ir.desc.name) ? earlyWhy[ir.desc.name] : "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
         juce::var sig;
-        if (cache.hasProperty (pid)) { sig = cache[juce::Identifier (pid)]; prog.finished (ir.desc.name, false); say ("  " + ir.desc.name + ": signature reads from categorised.json (not loaded again)"); }
+        // 21 Oct: a signature read under older rules is read again (Kathy's 21 Oct rules change what the same reads decide)
+        if (cache.hasProperty (pid) && cache[juce::Identifier (pid)].getProperty ("rules", "").toString() == categorise::kRulesVersion) { sig = cache[juce::Identifier (pid)]; prog.finished (ir.desc.name, false); say ("  " + ir.desc.name + ": signature reads from categorised.json (not loaded again)"); }
         else
         {
             if (const auto cshell = shellOfId (ir.desc.fileOrIdentifier); shells.isBad (cshell))
@@ -945,7 +947,7 @@ inline int runWizard (const WizardOptions& wo)
             auto cOpt = catOpt; cOpt.timeoutMs = loadTimeoutFor (ir.desc.fileOrIdentifier);
             const auto r = categoriseOne (cOpt, ir, {}, bundlesAll, catRaw);
             if (wizardStop() != 0) return stoppedInScan ("reading signatures");   // a read cut short by the stop is never cached
-            sig = categorise::rowVar (r); sig.getDynamicObject()->setProperty ("reads_ran", r.measured);
+            sig = categorise::rowVar (r); sig.getDynamicObject()->setProperty ("reads_ran", r.measured); sig.getDynamicObject()->setProperty ("rules", categorise::kRulesVersion);
             cache.getDynamicObject()->setProperty (pid, sig); cacheF.replaceWithText (juce::JSON::toString (cache));
             prog.finished (ir.desc.name, false);
         }
@@ -957,6 +959,8 @@ inline int runWizard (const WizardOptions& wo)
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
         p.row->setProperty ("state", st);
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
+        // 21 Oct (Kathy, decision 3): the raised drive goes with the plugin into its measuring passes (the probe's instance only)
+        if (d.route == wizroute::Route::measure) if (const auto nw = wizroute::neutralWritesOf (sig); ! nw.empty()) { neutralByStem[phaseBStem (ir.desc)] = nw; p.row->setProperty ("neutral_raised", sig.getProperty ("neutral_writes", {})); }
         if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty ("also_categories", {}).getArray())   // 20 Oct: a tail with both roles -> both passes
             for (const auto& c : *al) { enqueue (ir.desc.name, c.toString()); p.row->setProperty ("also_categories", sig.getProperty ("also_categories", {})); }
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
@@ -1265,7 +1269,7 @@ inline int runWizard (const WizardOptions& wo)
         // earlier run never counts
         out.getChildFile (wizapp::kFinishRequestFile).deleteFile();
         // THE MEASURING ORDER: one Phase B pass per group, most valuable first; a stop (130) ends the order there
-        auto optW = opt; optW.wizardQueues = true; optW.limiterPassKnown = limiterKnown; int pbCode = 0;
+        auto optW = opt; optW.wizardQueues = true; optW.limiterPassKnown = limiterKnown; optW.neutralByStem = neutralByStem; int pbCode = 0;
         // 13 Oct (beta item 2): the measuring stops cleanly when the disk runs low - checked at most every 10 s, a stop like Ctrl-C
         bool diskStopped = false; double lastDiskCheck = -1.0e9;
         phaseb::extraStop() = [&] {

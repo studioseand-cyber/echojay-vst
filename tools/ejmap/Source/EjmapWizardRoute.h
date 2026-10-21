@@ -218,6 +218,15 @@ inline constexpr int kWaveShellLoadTimeoutMs = 30000;
 inline juce::String waveShellOf (const juce::String& bundleFileName)
 { return bundleFileName.startsWithIgnoreCase ("WaveShell") ? bundleFileName.upToLastOccurrenceOf (".component", false, false) : juce::String(); }
 inline juce::String wavesSkippedWhy (const juce::String& shell, const juce::String& what) { return "Waves plugins skipped - check Waves Central (" + shell + " " + what + ")"; }
+// THE RAISED DRIVE OF A CATEGORISED ROW (21 Oct): its neutral_writes, as the measuring passes take them
+inline std::vector<categorise::NeutralWrite> neutralWritesOf (const juce::var& sig)
+{
+    std::vector<categorise::NeutralWrite> out;
+    if (const auto* a = sig.getProperty ("neutral_writes", {}).getArray())
+        for (const auto& v : *a) { categorise::NeutralWrite w; w.index = (int) v.getProperty ("index", -1); w.norm = (double) v.getProperty ("norm", 0.0); w.control = v.getProperty ("control", "").toString();
+                                   w.text = v.getProperty ("text", "").toString(); w.why = v.getProperty ("why", "").toString(); if (w.index >= 0) out.push_back (w); }
+    return out;
+}
 // A LOAD WITH NO PARAMETERS (21 Oct, group 3): what the probe's own paramcount line says, never a cause it did not see
 inline juce::String noParametersWhy (const juce::String& probeOut)
 {

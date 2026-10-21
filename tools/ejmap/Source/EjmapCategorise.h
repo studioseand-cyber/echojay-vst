@@ -39,6 +39,8 @@ inline constexpr double kLevelDb = 1.0, kFreqDb = 3.0, kThdRiseDb = 6.0, kThdAud
 
 inline juce::StringArray tokens (const juce::String& s) { auto t = juce::StringArray::fromTokens (s.toLowerCase(), " -_/()[]:.,", "\"'"); t.removeEmptyStrings(); return t; }
 inline bool hasAny (const juce::StringArray& tk, std::initializer_list<const char*> ws) { for (const auto& t : tk) for (const char* w : ws) if (t == w) return true; return false; }
+// a word INSIDE a token (21 Oct, Kathy's group 4: "UltraPitch", "SoundShifter", "FilterFreak1" are one token each)
+inline bool hasInside (const juce::StringArray& tk, std::initializer_list<const char*> ws) { for (const auto& t : tk) for (const char* w : ws) if (t.contains (w)) return true; return false; }
 
 // 1. out of scope
 inline juce::String outOfScope (const juce::String& typeCode, const juce::String& name, const juce::String& kind)
@@ -46,6 +48,8 @@ inline juce::String outOfScope (const juce::String& typeCode, const juce::String
     const auto t4 = typeCode.substring (0, 4);
     if (t4 == "aumu" || t4 == "augn" || t4 == "aumi") return t4 == "aumi" ? "midi" : "instrument";   // aumf (a music effect: an effect taking MIDI) stays IN scope
     const auto tk = tokens (name + " " + kind);
+    // GTR STOMP (Kathy, 21 Oct): a pedal board whose controls depend on the pedal loaded in it - skipped, filed with that reason
+    if (name.containsIgnoreCase ("GTR Stomp")) return "pedal board: its controls depend on the pedal loaded";
     if (hasAny (tk, { "meter", "meters", "metering", "analyser", "analyzer", "analysis", "scope", "spectrum", "lufs", "loudness", "visualizer", "visualiser", "oscilloscope", "correlation" })) return "meter";
     if (hasAny (tk, { "utility", "trim", "pan", "panner", "routing", "router", "dither", "tone", "generator", "phase", "polarity", "downmix", "downmixer", "mono", "send", "return", "latency", "delaycomp", "monitor", "monitoring", "switcher", "matrix", "patch" })) return "utility";
     return {};
@@ -56,12 +60,14 @@ inline juce::StringArray categoriesFromWords (const juce::String& name, const ju
 {
     const auto tk = tokens (name + " " + kind); juce::StringArray out; (void) vendor;
     if (hasAny (tk, { "comp", "compressor", "compression", "limiter", "limit", "gate", "expander", "dynamics", "leveler", "leveller", "maximizer", "maximiser", "transient", "deesser", "de-esser", "ducker", "opto", "vca", "fet", "bus", "buss", "sbc" })) out.add ("dynamics");
-    if (hasAny (tk, { "eq", "equalizer", "equaliser", "filter", "tilt", "shelf", "hpf", "lpf", "lowcut", "highcut", "notch", "exciter", "enhancer" })) out.add ("eq");
+    if (hasAny (tk, { "eq", "equalizer", "equaliser", "filter", "tilt", "shelf", "hpf", "lpf", "lowcut", "highcut", "notch" }) || hasInside (tk, { "filter" })) out.add ("eq");   // 21 Oct (Kathy): an enhancer / exciter is not an EQ
     if (hasAny (tk, { "reverb", "verb", "plate", "hall", "room", "chamber", "spring", "ambience", "convolution" })) out.add ("reverb");
     if (hasAny (tk, { "delay", "echo", "tap", "taps", "repeater", "slapback" })) out.add ("delay");
     if (hasAny (tk, { "saturation", "saturator", "sat", "distortion", "drive", "overdrive", "tape", "tube", "valve", "clipper", "clip", "fuzz", "bitcrusher", "crusher", "amp", "amplifier", "cabinet", "console", "preamp", "warmth", "harmonics", "subharmonic", "bass" })) out.add ("saturation");
-    if (hasAny (tk, { "pitch", "tuner", "tune", "autotune", "harmonizer", "harmoniser", "vocoder", "formant", "octave", "shifter", "doubler", "transpose" })) out.add ("pitch");
+    if (hasAny (tk, { "pitch", "tuner", "tune", "autotune", "harmonizer", "harmoniser", "vocoder", "formant", "octave", "shifter", "doubler", "transpose" }) || hasInside (tk, { "pitch", "shifter" })) out.add ("pitch");
     if (hasAny (tk, { "chorus", "flanger", "phaser", "tremolo", "vibrato", "modulation", "rotary", "leslie", "ensemble", "wobble", "stereo", "imager", "widener", "width", "haas", "auto-pan", "autopan" })) out.add ("modulation");
+    // CHANNEL STRIPS BY NAME (Kathy, 21 Oct): a strip's modules are off at default, so its name routes it (measurement still decides)
+    if (hasAny (tk, { "channel", "strip", "channelstrip", "masterdesk", "mixdown", "mastering" })) out.add ("channel_strip");
     return out;
 }
 
@@ -109,13 +115,14 @@ inline void readPitch (Signatures& s, const pitch::PitchMeasured& m, double detu
     s.pitchMoveCents = std::abs (r.residualCents - r.inputCents); s.pitchRead = true;
 }
 
-struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; };
+struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; bool byName = false; };
 // FLAT AT DEFAULT (Kathy, 20 Oct - group 2): a unit whose drive sits at zero shows no signature at all (Lindell 80 / 50 / 69 Bus with THD
 // down, Denise Bass XL's Drive, Orange Clip's Input Level). Its DRIVE / INPUT control is found by name, raised to kDriveRaiseNorm, written
 // as part of the neutral setting, and the reads are taken again. Every read is RELATIVE - the gain move between two levels at the same
 // setting, the spread across the tones, the harmonics against the fundamental - so the louder output a raised drive gives is never the
 // effect itself; the decision says how far the level moved and that it is not the signature
-inline constexpr double kDriveRaiseNorm = 0.75;
+inline constexpr double kDriveRaiseNorm = 0.75, kResonantSpanDb = 10.0;
+inline constexpr const char* kRulesVersion = "2026-10-21";   // the wizard re-reads a cached signature taken under other rules
 // RAISED FROM ITS DEFAULT (21 Oct, the first real run: StandardCLIP opens its Input Gain above 0.75, and 0.75 took it DOWN 12 dB): the
 // drive goes three quarters of the way from its default to the top - 0.75 from 0, never below where it opened; none when it opens at the top
 inline std::optional<double> raisedNorm (double defNorm)
@@ -185,6 +192,10 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
             if (roles->delay) return settle ("delay", tl + "; the controls hold a delay (" + secs (roles->delaySections) + ") and no reverb");
             return settle ("reverb", tl + "; the controls hold a reverb (" + secs (roles->reverbSections) + ") and no delay");
         }
+        // A RESONANT FILTER (Kathy, 21 Oct: FilterFreak1 / 2 - span 11.8 / 20.6 dB, a 0.36 / 0.38 s tail): a filter's name, a span over
+        // kResonantSpanDb and a short tail with no repeats is the filter's resonance ringing, not a reverb or a delay
+        if (proposed.contains ("eq") && s.responseRead && s.freqSpanDb >= kResonantSpanDb && *s.rt60s < kReverbS && s.repeats == 0)
+            return settle ("eq", tl + "; the name says filter and the gain spans " + juce::String (s.freqSpanDb, 1) + " dB across the tones: the tail is the filter's resonance ringing");
         if (*s.rt60s >= kReverbS && s.repeats == 0 && proposed.isEmpty()) { d.category = "reverb"; d.why = tl + " and no word: leaning reverb (a feedback delay reads the same): review"; return d; }
         d.category = proposed.contains ("delay") ? "delay" : "reverb"; d.why = tl + "; reverb or delay: review"; return d;
     }
@@ -196,6 +207,10 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
     if (s.harmRead && s.thdHiDb >= kThdAudibleDb && s.thdHiDb - s.thdLoDb >= kThdRiseDb) return settle ("saturation", "THD rises " + juce::String (s.thdHiDb - s.thdLoDb, 1) + " dB from -30 to -6 dBFS (" + juce::String (s.thdHiDb, 1) + " dB at -6)" + (s.responseRead && s.levelDepDb >= kLevelDb ? "; the gain also moves " + juce::String (s.levelDepDb, 2) + " dB with level (a coloured compressor reads here too)" : juce::String()));
     if (s.responseRead && s.levelDepDb >= kLevelDb) return settle ("dynamics", "the gain moves " + juce::String (s.levelDepDb, 2) + " dB between -30 and -12 dBFS on the same tones");
     if (s.responseRead && s.freqSpanDb >= kFreqDb && s.levelDepDb < kLevelDb) return settle ("eq", "the gain spans " + juce::String (s.freqSpanDb, 1) + " dB across the tones, level-independent");
+    // ROUTED BY NAME (Kathy, 21 Oct): a channel strip or a pitch tool that shows nothing at its default takes its name's category - a
+    // category only ROUTES the measurement; nothing certifies on its name
+    if (proposed.size() == 1 && (proposed[0] == "channel_strip" || proposed[0] == "pitch") && flatAtDefault (s))
+    { d.category = proposed[0]; d.settled = true; d.byName = true; d.why = "no signature at its default; routed by its name (" + proposed[0] + "): the measuring pass decides, nothing certifies on the name"; return d; }
     // nothing held: the proposal alone decides only when it is a single word AND the reads say "inert at instantiate" is plausible
     if (proposed.size() == 1 && s.responseRead && s.freqSpanDb < kFreqDb && s.levelDepDb < kLevelDb) { d.category = proposed[0]; d.why = "no signature at the instantiate state (flat, level-independent, no tail, no THD rise); the name's single proposal stands, unsettled: review"; return d; }
     d.category = proposed.size() == 1 ? proposed[0] : juce::String(); d.why = "no signature held" + (proposed.isEmpty() ? juce::String ("; no word proposed") : "; proposed by words: " + proposed.joinIntoString (" / ")) + ": review"; return d;
@@ -203,7 +218,7 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
 
 struct NeutralWrite { int index = -1; double norm = 0.0; juce::String control, text, why; };
 struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed, also; bool settled = false, measured = false; Signatures sig; double seconds = 0.0;
-             std::vector<NeutralWrite> neutralWrites; std::optional<double> levelMoveDb; std::optional<Signatures> sigAtDefault; };
+             std::vector<NeutralWrite> neutralWrites, categoryWrites; bool byName = false; std::optional<double> levelMoveDb; std::optional<Signatures> sigAtDefault; };
 // the broadband LEVEL of a response at its first position: the median gain (out - in) over the readable tones, 60 Hz .. 16 kHz
 inline std::optional<double> levelOf (const eq::Response& r)
 {
@@ -211,6 +226,30 @@ inline std::optional<double> levelOf (const eq::Response& r)
     std::vector<double> g; for (const auto& t : r.positions.front().tones) if (t.inDb > -500.0 && t.outDb > -500.0 && t.hz >= 60.0 && t.hz <= 16000.0) g.push_back (t.outDb - t.inDb);
     if (g.size() < 10) return std::nullopt; return medianOf (g);
 }
+// A FILTER FLAT AT DEFAULT (Kathy, 21 Oct, group 4): its CUTOFF is moved and the response read again - a measurement move to see the
+// category, never part of the neutral setting (category_writes). The cutoff by name: cutoff / freq / frequency / filter / hp / lp / sweep,
+// never a gain, a resonance, a slope, a type, a mix or a level; a switch is left out by the caller
+inline std::optional<std::pair<int, juce::String>> cutoffControl (const std::vector<std::pair<int, juce::String>>& controls)
+{
+    for (const auto& [i, n] : controls)
+    {   const auto w = tailroles::wordsOf (n); bool bad = false, good = false;
+        for (const char* t : { "gain", "resonance", "reso", "res", "q", "slope", "type", "mode", "mix", "level", "output", "input", "drive", "on", "off", "bypass", "enable", "power" }) bad = bad || w.contains (t);
+        for (const char* t : { "cutoff", "freq", "frequency", "filter", "hp", "lp", "hpf", "lpf", "highpass", "lowpass", "sweep" }) good = good || w.contains (t);
+        if (good && ! bad) return std::make_pair (i, n); }
+    return std::nullopt;
+}
+// where the cutoff goes: from an end (a filter left wide open) to the middle; from near the middle a quarter of the travel away from it
+inline double cutoffMove (double opened)
+{ if (opened < 0.25 || opened > 0.75) return 0.5; return opened <= 0.5 ? opened + 0.25 : opened - 0.25; }
+inline Decision decideCutoff (const Signatures& moved, const NeutralWrite& w)
+{
+    Decision d; const auto what = "flat at default; its cutoff '" + w.control + "' moved to " + juce::String (w.norm, 2) + (w.text.isNotEmpty() ? " ('" + w.text + "')" : juce::String()) + " to read it (not part of the neutral setting)";
+    if (moved.responseRead && moved.freqSpanDb >= kFreqDb && moved.levelDepDb < kLevelDb) { d.category = "eq"; d.settled = true; d.why = what + "; the gain then spans " + juce::String (moved.freqSpanDb, 1) + " dB across the tones, level-independent: a filter"; return d; }
+    d.why = what + "; still no filter shape (span " + juce::String (moved.freqSpanDb, 1) + " dB): review"; return d;
+}
+// A CLIPPER AFTER THE DRIVE RAISE (Kathy, 21 Oct): THD rising = saturation (as decided); a gain that falls with level (a ceiling) = limiter
+inline Decision clipAfterRaise (Decision d, bool clipName)
+{ if (clipName && d.settled && d.category == "dynamics") { d.category = "limiter"; d.why += "; a clipper whose gain falls with level: a ceiling, so limiter"; } return d; }
 // DECIDE AGAIN WITH THE DRIVE RAISED (Kathy, 20 Oct - group 2). The reads are taken again at the raised drive and decided by the same
 // rule; a LEVEL change is never the effect: when the raised reads are still flat at default the answer stays unsettled, whatever the
 // output level did, and the why says how far it moved
@@ -221,7 +260,10 @@ inline Decision decideRaised (const Signatures& raised, const juce::StringArray&
     const auto raisedWhy = "flat at default; '" + drive.control + "' raised to " + juce::String (drive.norm, 2) + (drive.text.isNotEmpty() ? " ('" + drive.text + "')" : juce::String()) + " as part of the neutral setting" + lvl;
     if (flatAtDefault (raised))
     { Decision d; d.category = proposed.size() == 1 ? proposed[0] : juce::String(); d.why = raisedWhy + "; still no signature with it raised: review"; return d; }
-    auto d = decide (raised, proposed, true, roles); d.why = raisedWhy + "; then " + d.why; return d;
+    auto d = decide (raised, proposed, true, roles); d.why = raisedWhy + "; then " + d.why;
+    // AN ENHANCER IS NOT AN EQ (Kathy, 21 Oct: the two Noveltechs): a tone change made by raising a drive / enhance control goes to review
+    if (d.category == "eq") { d.settled = false; d.why += "; a tone change from raising '" + drive.control + "' is an enhancer, not an EQ: review"; }
+    return d;
 }
 inline juce::var sigVar (const Signatures& s)
 {
@@ -244,6 +286,12 @@ inline juce::var rowVar (const Row& r)
         for (const auto& w : r.neutralWrites) { auto* x = new juce::DynamicObject(); x->setProperty ("index", w.index); x->setProperty ("control", w.control); x->setProperty ("norm", w.norm);
                                                 if (w.text.isNotEmpty()) x->setProperty ("text", w.text); x->setProperty ("why", w.why); nw.add (juce::var (x)); }
         o->setProperty ("neutral_writes", nw); if (r.levelMoveDb) o->setProperty ("level_move_db", *r.levelMoveDb); }
+    if (! r.categoryWrites.empty())   // 21 Oct (group 4): a filter's cutoff moved to read its category - never part of the neutral setting
+    {   juce::Array<juce::var> cw;
+        for (const auto& w : r.categoryWrites) { auto* x = new juce::DynamicObject(); x->setProperty ("index", w.index); x->setProperty ("control", w.control); x->setProperty ("norm", w.norm);
+                                                 if (w.text.isNotEmpty()) x->setProperty ("text", w.text); x->setProperty ("why", w.why); cw.add (juce::var (x)); }
+        o->setProperty ("category_writes", cw); }
+    if (r.byName) o->setProperty ("settled_by", "name");   // 21 Oct: routed by its name - the measuring pass decides
     if (r.measured)
     {
         o->setProperty ("signatures", sigVar (r.sig));

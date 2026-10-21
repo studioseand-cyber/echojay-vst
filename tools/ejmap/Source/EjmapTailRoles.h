@@ -13,6 +13,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <functional>
 #include <map>
 #include <optional>
 #include <tuple>
@@ -111,12 +112,13 @@ inline double normOfText (const std::map<juce::String, float>& texts, std::initi
 // plugin's "mute" is not always silence): its mute ON, its on/off OFF (a bypass ON), its level / mix / send / amount / volume at the
 // minimum, and a control named only by the section ("Reverb", "Short Delay": a send level) at the minimum - every one of them, one write
 // per control, the switches first
-inline std::vector<Write> silence (const Controls& controls, Role role)
+// the silencing of every control whose SECTION the selector names (an empty section: not this one's)
+inline std::vector<Write> silenceWhere (const Controls& controls, const std::function<juce::String (const juce::String&)>& sectionOf)
 {
-    std::vector<Write> out; std::map<juce::String, std::pair<int, Write>> best; std::vector<std::pair<int, Write>> all;   // every silencing write, ranked
+    std::vector<Write> out; std::vector<std::pair<int, Write>> all;   // every silencing write, ranked
     for (const auto& [idx, name, sw, texts] : controls)
     {
-        const auto p = place (name); if (p.role != role) continue;
+        Placed p; p.section = sectionOf (name); if (p.section.isEmpty()) continue;
         const auto w = wordsOf (name); Write x; x.index = idx; x.control = name; int rank = 99;
         if (w.contains ("mute")) { rank = 0; x.norm = normOfText (texts, { "on", "mute", "muted" }, 1.0, x.set); x.why = "its mute on"; }
         else if (w.contains ("bypass")) { rank = 1; x.norm = normOfText (texts, { "on", "bypass", "bypassed" }, 1.0, x.set); x.why = "its bypass on"; }
@@ -134,7 +136,30 @@ inline std::vector<Write> silence (const Controls& controls, Role role)
     }
     std::stable_sort (all.begin(), all.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
     for (const auto& [rank, x] : all) out.push_back (x);
-    (void) best; return out;
+    return out;
+}
+inline std::vector<Write> silence (const Controls& controls, Role role)
+{ return silenceWhere (controls, [role] (const juce::String& n) { const auto p = place (n); return p.role == role ? p.section : juce::String(); }); }
+
+// THE OTHER EFFECTS IN A TAIL PASS (Kathy, 21 Oct: CLA Effects' Pitch section was taken as the reverb's mix): a section named by an effect
+// that is neither reverb nor delay - pitch, distortion, drive, saturation, eq, chorus, flanger, phaser, doubler, modulation, tremolo,
+// vibrato, crusher, compressor - is silenced too, by the same means, and its controls are never this pass's
+inline bool isEffectWord (const juce::String& w)
+{ for (const char* t : { "pitch", "distortion", "dist", "drive", "saturation", "sat", "eq", "chorus", "flanger", "phaser", "doubler", "modulation", "tremolo", "vibrato", "crusher", "bitcrush", "comp", "compressor", "harmonizer", "octaver" }) if (w == t) return true; return false; }
+inline juce::String effectSection (const juce::String& name)
+{
+    if (place (name).role != Role::none) return {};
+    const auto w = wordsOf (name); juce::StringArray key;
+    for (const auto& x : w) { key.add (x); if (isEffectWord (x)) return key.joinIntoString (" "); }
+    return {};
+}
+inline std::vector<Write> silenceEffects (const Controls& controls) { return silenceWhere (controls, [] (const juce::String& n) { return effectSection (n); }); }
+// when: a plugin holding both tail roles (a multi-effect), or two or more other effect sections - never a single delay's own "Saturation"
+inline bool silencesEffects (const Roles& r, const Controls& controls)
+{
+    if (r.delay && r.reverb) return true;
+    juce::StringArray secs; for (const auto& c : controls) { const auto sct = effectSection (std::get<1> (c)); if (sct.isNotEmpty()) secs.addIfNotAlreadyThere (sct); }
+    return secs.size() >= 2 && (r.delay || r.reverb);
 }
 // DID THE SILENCING LAND (20 Oct)? The probe prints each write it made - "preset <idx> ..." (EJ_PROBE_PRESET) or "set <idx> ..." (a mode's
 // set= list) - with "landed_by <how>". The writes whose line says "unlanded" (or that have no line at all) did not silence anything; the
