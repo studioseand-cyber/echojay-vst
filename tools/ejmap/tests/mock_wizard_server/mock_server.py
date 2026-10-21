@@ -24,7 +24,8 @@ FINAL_STATES = {"measured", "not_measurable", "needs_licence", "needs_hardware",
 PROFILE_SCHEMAS = {"ej_comp_profile/1", "ej_eq_profile/1", "ej_saturation_profile/1", "ej_tonecheck/1", "ej_limiter_profile/1",
                    "ej_deesser_profile/1", "ej_gate_profile/1", "ej_transient_profile/1", "ej_reverb_delay_profile/1", "ej_tuner_profile/1"}
 
-LOCK = threading.RLock()   # re-entrant: a handler holding it also logs the request through _send
+LOCK = threading.RLock()
+RECORD = {"dir": None, "scenario": "unlabelled", "seq": 0}   # --record DIR: every exchange written raw (scrub before sharing: tools/ejmap/scripts/make_mock_for_b.py)   # re-entrant: a handler holding it also logs the request through _send
 STATE = {
     "config": {"client_id": "ejwiz-mock", "qualify_minimum": 25, "access_ttl_s": 3600, "force_429_once": False,
                "collection_threshold": 0.95, "collection_min_size": 20, "agree_tolerance": 0.5},
@@ -32,8 +33,8 @@ STATE = {
     "access": {},         # access token -> {account_id, expires, family}
     "refresh": {},        # refresh token -> {account_id, family, used}
     "dead_families": set(),
-    "accounts": {"acct_mock_kathy": {"display_name": "Kathy"}, "acct_mock_other": {"display_name": "Other tester"}, "acct_mock_third": {"display_name": "Third tester"}, "acct_mock_fourth": {"display_name": "Fourth tester"}},
-    "checked": {},        # account_id -> set of plugin_ids it sent to /catalogue/check (the server's own record; contract v1 §5)
+    "accounts": {"acct_mock_a": {"display_name": "Tester A"}, "acct_mock_b": {"display_name": "Tester B"}, "acct_mock_c": {"display_name": "Tester C"}, "acct_mock_d": {"display_name": "Tester D"}},
+    "checked": {},        # (account_id, run_id) -> set of plugin_ids checked under that run (the server's own record; contract v1 §2 / §5)
     "catalogue": {},      # plugin_id -> {status, level, category, reason, fingerprint}
     "runs": {},           # run_id -> {account_id, consent, results: {result_id: sha}, completed: bool}
     "holding": {},        # account_id -> {result_id: body}    (NEVER served)
@@ -94,7 +95,38 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # --- plumbing -------------------------------------------------------------------------------------------------------------------
+    def _record(self, status, body):
+        path = urlparse(self.path).path
+        if not RECORD["dir"] or path in ("/__mock/scenario", "/__mock/state"):
+            return
+        h = {k: v for k, v in self.headers.items() if k.lower() in ("authorization", "content-type", "content-encoding", "x-ej-content-sha256", "x-ej-client")}
+        rb, ctype, enc = getattr(self, "_rb", b""), self.headers.get("Content-Type", ""), self.headers.get("Content-Encoding", "")
+        if enc == "gzip":
+            try:
+                plain = gzip.decompress(rb)
+                req = {"gzip_json": json.loads(plain.decode()),
+                       "sha_header_matched": hashlib.sha256(plain).hexdigest() == self.headers.get("X-EJ-Content-SHA256", "")}
+            except Exception:
+                req = {"gzip_undecodable_bytes": len(rb)}
+        elif "x-www-form-urlencoded" in ctype:
+            req = {"form": {k: v[0] for k, v in parse_qs(rb.decode()).items()}}
+        elif rb:
+            try:
+                req = {"json": json.loads(rb.decode())}
+            except ValueError:
+                req = {"raw": rb.decode(errors="replace")}
+        else:
+            req = {}
+        with LOCK:
+            RECORD["seq"] += 1
+            rec = {"scenario": RECORD["scenario"], "seq": RECORD["seq"], "test_hook": path.startswith("/__mock/"),
+                   "request": dict({"method": self.command, "path": path, "headers": h}, **req),
+                   "response": {"status": status, "body": body}}
+            with open(os.path.join(RECORD["dir"], "%05d.json" % RECORD["seq"]), "w") as f:
+                json.dump(rec, f, indent=1)
+
     def _send(self, status, body, headers=None):
+        self._record(status, body)
         raw = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -108,7 +140,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _raw_body(self, limit=MAX_COMPRESSED + 1):
         n = int(self.headers.get("Content-Length") or 0)
-        return self.rfile.read(min(n, limit)) if n > 0 else b""
+        self._rb = self.rfile.read(min(n, limit)) if n > 0 else b""
+        return self._rb
 
     def _form(self):
         return {k: v[0] for k, v in parse_qs(self._raw_body().decode()).items()}
@@ -147,7 +180,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/__mock/state":
             with LOCK:
                 s = {k: v for k, v in STATE.items() if k not in ("access", "refresh", "devices", "dead_families", "checked")}
-                s["checked_counts"] = {a: len(c) for a, c in STATE["checked"].items()}
+                s["checked_counts"] = {"%s|%s" % k: len(c) for k, c in STATE["checked"].items()}
                 s["holding_counts"] = {a: len(r) for a, r in STATE["holding"].items()}
                 s["served"] = {pid: {k: v for k, v in sv.items() if k != "files"} for pid, sv in STATE["served"].items()}
                 s.pop("holding")
@@ -236,12 +269,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _catalogue(self, body):
         plugins = body.get("plugins") or []
+        rid = body.get("run_id") or ""
+        if not (rid.startswith("run_") and len(rid) == 20):   # contract v1 §2 (agreed 21 Oct): every check carries the run it belongs to
+            return self._send(*err("run_id_required", "", 400))
         if len(plugins) > 2000:
             return self._send(*err("too_many", "", 413))
         out = []
         acct = self._account()[0]
         with LOCK:
-            STATE["checked"].setdefault(acct, set()).update(p.get("plugin_id", "") for p in plugins)
+            STATE["checked"].setdefault((acct, rid), set()).update(p.get("plugin_id", "") for p in plugins)
         for p in plugins:
             pid = p.get("plugin_id", "")
             sv = STATE["served"].get(pid)
@@ -340,7 +376,7 @@ class Handler(BaseHTTPRequestHandler):
             outcomes = body.get("outcomes") or []
             all_final = all(o.get("state") in FINAL_STATES for o in outcomes) and len(outcomes) >= len(body.get("queue") or [])
             accepted = run["accepted_profiles"]
-            checked = len(set(run.get("collection") or []) & STATE["checked"].get(acct, set()))
+            checked = len(set(run.get("collection") or []) & STATE["checked"].get((acct, rid), set()))   # tied by run_id + account
             minimum = STATE["config"]["qualify_minimum"]
             res = {"status": "complete", "results_received": len(run["results"]), "results_accepted": accepted, "plugins_checked": checked}
             claimed_setup = any(r is not run and r.get("promo_code") and r["account_id"] != acct and near_identical(r.get("collection"), run.get("collection"))
@@ -357,7 +393,7 @@ class Handler(BaseHTTPRequestHandler):
                 res["promo"] = {"eligible": False, "reason": "not_finished", "message": "The free month needs a finished run - this one stopped early."}
             elif run.get("tampered", 0) > 0:
                 res["promo"] = {"eligible": False, "reason": "failed_checks", "message": "Some results didn't pass EchoJay's checks, so the free month can't be given for this run."}
-            elif checked < minimum:   # contract v1 §5 (Sean, 21 Oct): plugins CHECKED in the run, from the server's own records - not new uploads
+            elif checked < minimum:   # contract v1 §5 (agreed 21 Oct): plugins CHECKED in the run, from the server's own records - not new uploads
                 res["promo"] = {"eligible": False, "reason": "below_minimum", "message": "The free month needs at least %d plugins checked in a finished run; this run checked %d." % (minimum, checked)}
             else:
                 code = "EJ-FREE-" + secrets.token_hex(4).upper()
@@ -372,7 +408,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/__mock/approve":   # the browser step: approve the waiting sign-in(s) for an account
                 for d in STATE["devices"].values():
                     if not d["approved"] and not d["denied"]:
-                        d["approved"], d["account_id"] = True, body.get("account_id", "acct_mock_kathy")
+                        d["approved"], d["account_id"] = True, body.get("account_id", "acct_mock_a")
                 return self._send(200, {})
             if path == "/__mock/deny":
                 for d in STATE["devices"].values():
@@ -387,6 +423,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, STATE["config"])
             if path == "/__mock/catalogue":
                 STATE["catalogue"].update(body)
+                return self._send(200, {})
+            if path == "/__mock/scenario":   # labels the exchanges that follow (recording only)
+                RECORD["scenario"] = body.get("name", "unlabelled")
                 return self._send(200, {})
             if path == "/__mock/verify":   # our own verification certifies (contract v1 §4b)
                 sv = STATE["served"].get(body.get("plugin_id", ""))
@@ -454,7 +493,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--port-file")
+    ap.add_argument("--record", help="write every exchange (raw: real tokens) into this folder - scrub before sharing")
     a = ap.parse_args()
+    if a.record:
+        os.makedirs(a.record, exist_ok=True)
+        RECORD["dir"] = a.record
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)   # localhost only
     if a.port_file:
         tmp = a.port_file + ".tmp"

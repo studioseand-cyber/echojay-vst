@@ -565,10 +565,11 @@ private:
     void checkCatalogue()
     {
         barLeft = "Checking with EchoJay"; repaint();
-        onNet ([this]
+        const auto rid = runId();   // 21 Oct (Sean): every check carries the run id (made at consent, kept for the run)
+        onNet ([this, rid]
         {
             const auto req = juce::JSON::parse (requestFile().loadFileAsString());
-            wizcontract::CatalogueResult cr; { std::lock_guard<std::mutex> l (netMutex); cr = wizcontract::catalogueCheck (*session, req); }
+            wizcontract::CatalogueResult cr; { std::lock_guard<std::mutex> l (netMutex); cr = wizcontract::catalogueCheck (*session, req, rid); }
             onUi ([this, cr]
             {
                 if (! cr.ok)
@@ -784,7 +785,7 @@ private:
                 if (kNetworked)
                 {   // 21 Oct: the consent's version and time travel with the run (contract v1 §3); then the plugin list and the server's check
                     auto st = appState(); st.getDynamicObject()->setProperty ("consent_at", juce::Time::getCurrentTime().toISO8601 (true)); st.getDynamicObject()->setProperty ("consent_version", wizcontract::kConsentVersion);
-                    cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();
+                    cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); runId(); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();   // 21 Oct (Sean): the run id exists before the first check
                     show (Screen::scan); break;
                 }
                 {   // /lookup before anything loads: an account or a Mac that has already taken part runs nothing (STUB)

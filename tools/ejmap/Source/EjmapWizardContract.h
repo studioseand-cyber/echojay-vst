@@ -267,10 +267,11 @@ private:
 // --- THE CATALOGUE CHECK (contract §2) -----------------------------------------------------------------------------------------------
 // the answers the engine reads (--catalogue-answers): { "by_plugin_id": { pid: {status, level, category, reason} }, "known": N, "need": M }
 struct CatalogueResult { bool ok = false; Reply reply; juce::var answers; int have = 0, need = 0, held = 0; };
-// runId: PENDING B's PLAN (contract v1 §2) - tying the check to the run. Off by default (empty: nothing sent); when B settles the shape,
-// passing the run id here is the whole client change
-inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, const juce::String& runId = {})
+// runId: EVERY check carries the run it belongs to (Sean, 21 Oct; contract v1 §2) - the wizard makes the run id before the check; the
+// server ties checks to the run by run_id + account. A check without one is refused here, never sent
+inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, const juce::String& runId)
 {
+    if (runId.isEmpty()) { CatalogueResult none; none.reply.error = "no_run_id"; none.reply.message = "The wizard has no run yet - this is a bug, please report it."; return none; }
     CatalogueResult cr; auto* by = new juce::DynamicObject(); juce::var byV (by);
     const auto* all = request.getProperty ("plugins", {}).getArray(); if (all == nullptr) { cr.ok = true; }
     juce::String version;
@@ -278,7 +279,7 @@ inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, con
     {
         juce::Array<juce::var> chunk; for (int i = from; i < juce::jmin (all->size(), from + kCatalogueChunk); ++i) chunk.add ((*all)[i]);
         auto* body = new juce::DynamicObject(); body->setProperty ("plugins", chunk);
-        if (runId.isNotEmpty()) body->setProperty ("run_id", runId);
+        body->setProperty ("run_id", runId);
         cr.reply = s.call ("POST", "catalogue/check", juce::var (body));
         if (! cr.reply.ok()) return cr;
         version = cr.reply.json.getProperty ("categories_version", "").toString();
