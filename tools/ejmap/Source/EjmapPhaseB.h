@@ -21,6 +21,7 @@
 #include <vector>
 #include <map>
 #include <optional>
+#include <cstdio>
 
 namespace ejmap::phaseb
 {
@@ -75,7 +76,7 @@ inline void writeAtomic (const juce::File& f, const juce::String& text)
 {
     const auto tmp = f.getSiblingFile (f.getFileName() + ".tmp");
     tmp.replaceWithText (text, false, false, "\n");
-    f.deleteFile(); tmp.moveFileTo (f);   // rename: the file is either absent or whole
+    if (std::rename (tmp.getFullPathName().toRawUTF8(), f.getFullPathName().toRawUTF8()) != 0) { f.deleteFile(); tmp.moveFileTo (f); }   // 22 Oct: one-step rename (old or new, never none); the old way only if that fails
 }
 // THE RAW TRACE, gzipped beside the records; the target is cleared first because a FileOutputStream APPENDS
 constexpr int kGzipWindowBits = 15 + 16;   // a real gzip file (gunzip opens it); 0 would be a bare zlib stream, which gunzip refuses

@@ -5101,6 +5101,11 @@ inline int runLimiter (const SweepOptions& opt)
 // Per band: the gain control at 7 norms (freq and Q as instantiated); the frequency control at 7 norms with the gain at the
 // position nearest +6 dB (else its top); each Q position at that gain. Every response is read against the band's baseline
 // (everything as instantiated) and derived to centre / gain / bandwidth, against the labels.
+// 22 Oct (Kathy, call 3): an EQ's HPF / LPF bands (a frequency control named high / low pass or cut, in a band with no gain control - eq::bandsFrom
+// drops them) read by the filter measurement; defined in EjmapCertFilterShift.h, included at the end of this file
+using ResponseCall = std::function<std::pair<eq::Response, ChildResult> (const juce::String& tag, int ctl, const juce::StringArray& norms, const juce::StringArray& sets)>;
+inline juce::Array<juce::var> readEqPassBands (const ResponseCall& response, const juce::var& base, const std::vector<std::pair<int, juce::String>>& controls,
+                                               const std::function<void (const juce::String&)>& say, bool& window, int& measured);
 inline int runEq (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -5152,6 +5157,7 @@ inline int runEq (const SweepOptions& opt)
     // numeric control at its two ends on the multitone, against the unit's own no-write baseline; one whose response shows a band
     // (the eq_gain signature: a peak or shelf of >= 1 dB that is not a level shift of the whole grid) is a band with that gain
     // control and no frequency / Q control, recorded "unnamed". Nothing moving the measure gets a record saying so.
+    const ResponseCall passResponse = [&] (const juce::String& t, int c, const juce::StringArray& n, const juce::StringArray& s) { return response (t, c, n, s); };
     std::set<int> measuredBands;
     if (bands.empty())
     {
@@ -5199,8 +5205,11 @@ inline int runEq (const SweepOptions& opt)
             juce::StringArray names; for (const auto& [i, n] : controls) names.add (n); say ("  controls: " + names.joinIntoString (", "));
             auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_eq_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends showed no band");
             o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("bands", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
+            bool win = false; int fm = 0; const auto fb = readEqPassBands (passResponse, base, controls, say, win, fm);   // 22 Oct: its HPF / LPF bands
+            if (win) { say ("EQ: a window appeared; stopping"); return 5; }
+            if (! fb.isEmpty()) o->setProperty ("filter_bands", fb);
             outDir.getChildFile (stem + ".eq.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
-            return 4;
+            return fm > 0 ? 0 : 4;
         }
     }
     // THE SWITCHES (5 Oct R8a): every two-step or word-valued control with its texts, for the band engage search
@@ -5489,7 +5498,10 @@ inline int runEq (const SweepOptions& opt)
             }
     }
     sayRoles (say, roles, "frequency and q signatures need a boosted band: unnamed controls are probed for the gain signature only");
+    bool passWindow = false; int passMeasured = 0; const auto passBands = readEqPassBands (passResponse, base, controls, say, passWindow, passMeasured);   // 22 Oct: HPF / LPF
+    if (passWindow) { say ("EQ: a window appeared; stopping"); return 5; }
     auto* o = new juce::DynamicObject();
+    if (! passBands.isEmpty()) o->setProperty ("filter_bands", passBands);
     setRoles (o, roles, "unnamed controls probed for the gain signature only (frequency / q need a boosted band)");
     o->setProperty ("schema", "ej_eq_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.2, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
@@ -5503,12 +5515,13 @@ inline int runEq (const SweepOptions& opt)
     say ("EQ: -> " + outDir.getChildFile (stem + ".eq.json").getFullPathName() + (engaged > 0 ? " (" + juce::String (engaged) + " band(s) engaged by a switch the search found)" : juce::String()));
     // THE DRAFT ej_eq_profile/1 (section 6), from the record, cert/phaseb/eq/drafts/
     {
-        const auto D = eq::profileDraft (rec, drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())),
+        auto D = eq::profileDraft (rec, drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())),
                                          drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, eq::gridDescription()), drafts::statusLine ("EQ_PROFILE_SPEC"), drafts::specTag ("EQ_PROFILE_SPEC"));
+        if (! passBands.isEmpty()) if (auto* dO = D.getDynamicObject()) dO->setProperty ("filter_bands", passBands);   // 22 Oct: the HPF / LPF bands, as the filter pass reads them
         const auto f = drafts::draftFile (opt.out, stem, "eq_profile"); const auto problem = drafts::writeDraft (f, D);
         say (problem.isEmpty() ? "EQ: draft ej_eq_profile/1 -> " + f.getFullPathName() : "EQ: " + problem);
     }
-    return measured > 0 ? 0 : 4;
+    return measured + passMeasured > 0 ? 0 : 4;
 }
 
 // SATURATION: LEVEL CHANGE AND HARMONIC SHARE AGAINST DRIVE (roadmap 2.5; PROTOTYPE, 5 Oct overnight B5). Reuses the sweep
@@ -9014,3 +9027,5 @@ inline int runReviewZip (const juce::File& subject, const juce::File& against, c
 }
 
 } // namespace ejmap::cert
+
+#include "EjmapCertFilterShift.h"   // 22 Oct: the filter and pitch-shift passes (they use the probe calls above)

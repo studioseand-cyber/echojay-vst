@@ -5050,6 +5050,34 @@ void testSweepQuietReference()
                && drv.contains ("oldD = newD = categorise::decideRaised (up, proposed, nullptr, w, move);"),
                "cert WZ-FLAT-1: flat at default -> the drive / input control raised to 0.75 as a neutral write, the reads taken again; a level change never settles ('" + stillFlat.why + "')");
     }
+    // CERT-22 (carried from feat/ejmap-wizard, Kathy's 22 Oct calls 3-5): Mic Mod raised to modulation -> review; the filter measurement
+    // (-3 dB cutoff, slope, resonance; shelves refused; a bare number is Hz only on a frequency control; read against the most open position;
+    // the grid's edge not judged); the pitch-shift measurement (labels: semitones / cents / intervals / ratios; one voice at a time)
+    {
+        using namespace ejmap;
+        categorise::Signatures mm; mm.responseRead = mm.harmRead = true; mm.freqSpanDb = 0.4; mm.levelDepDb = 0.1; mm.thdLoDb = -38.0; mm.thdHiDb = -36.0; mm.sidebandDb = -17.7; mm.harmDb = -19.7;
+        categorise::NeutralWrite ts; ts.index = 3; ts.control = "Tube Saturation"; ts.norm = 0.75; ts.text = "75";
+        const auto mic = categorise::decideRaised (mm, categorise::categoriesFromWords ("Mic Mod", "", {}), nullptr, ts, 7.4);
+        auto tr = [] (const std::function<double (double)>& h) { std::vector<std::pair<double, double>> t;
+            for (int k = 0; k < eq::kGridTones; ++k) { const double hz = eq::kGridLoHz * std::pow (eq::kGridHiHz / eq::kGridLoHz, (double) k / (eq::kGridTones - 1)); t.push_back ({ hz, h (hz) }); } return t; };
+        const auto hp2 = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (1000.0 / f, 4.0)); }));
+        const auto shelf = filter::deriveShape (tr ([] (double f) { return 5.7 / (1.0 + std::pow (f / 150.0, 2.0)); }));
+        auto hp1 = [] (double fc) { return [fc] (double f) { return -10.0 * std::log10 (1.0 + std::pow (fc / f, 2.0)) - 10.0 * std::log10 (1.0 + std::pow (f / 20000.0, 2.0)); }; };
+        const std::vector<std::vector<std::pair<double, double>>> tsx { tr (hp1 (20.0)), tr (hp1 (200.0)), tr (hp1 (1000.0)) };
+        const int open = filter::openPosition (tsx); const auto against = filter::deriveShape (filter::lessOpen (tsx[2], tsx[open < 0 ? 0 : open]));
+        const auto lp30 = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (f / 30.0, 4.0)); }));
+        const auto e7 = shift::expected ("+7 st", "", "Pitch"), i5 = shift::expected ("- 5th", "", "Voice 1 Pitch"), r = shift::expected ("0.7937", "", "Pitch", "ratio");
+        juce::StringArray iso; for (const auto& [i, n] : shift::isolationWrites ({ { 2, "Direct Level" }, { 10, "Voice 1 Level" }, { 12, "Voice 1 Pitch" }, { 15, "Voice 2 Level" } }, "Voice 1 Pitch")) iso.add (juce::String (i));
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto mainCpp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        check (! mic.settled && mic.category == "modulation" && mic.why.contains ("never out of scope")
+               && hp2.result == "measured" && std::abs (hp2.cutoffHz - 1000.0) < 10.0 && shelf.result == "shelf" && open == 0 && std::abs (against.cutoffHz - 1000.0) < 30.0
+               && filter::judgeCutoff (hp2, "1.04 kHz").pass && ! filter::judgeCutoff (hp2, "1.1 kHz").pass && ! filter::labelHz ("1.7", "", "Filter") && ! filter::judgeCutoff (lp30, "30 Hz").judged
+               && e7.ok && std::abs (e7.outHz - 329.628) < 0.01 && i5.ok && std::abs (i5.outHz - 146.83) < 0.01 && r.ok && std::abs (r.outHz - 174.61) < 0.01 && iso.joinIntoString (",") == "2,15"
+               && drv.contains ("const auto passBands = readEqPassBands (passResponse, base, controls, say, passWindow, passMeasured);") && drv.contains ("#include \"EjmapCertFilterShift.h\"")
+               && mainCpp.contains ("return a == \"--cert-filter\" ? ejmap::cert::runFilter (o) : ejmap::cert::runPitchShift (o);"),
+               "cert CERT-22: Mic Mod -> review; HP -3 dB " + juce::String (hp2.cutoffHz, 1) + " Hz; against the open position " + juce::String (against.cutoffHz, 1) + " Hz; '+7 st' expects " + juce::String (e7.outHz, 2) + " Hz");
+    }
     // WZ-RULES-21 KATHY'S 21 OCT DECISIONS: enhancers to review (never eq); channel strips and pitch tools routed by name when flat (a category
     // only routes the measurement); a filter flat at default has its cutoff moved and read (category_writes, never neutral); a resonant
     // filter's ring is eq; a clipper's ceiling is a limiter; GTR Stomp is skipped with its reason; in a tail pass the other effect sections are
