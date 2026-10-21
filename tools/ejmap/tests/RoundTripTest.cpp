@@ -11560,7 +11560,7 @@ void testWizardCategories()
         auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_demo_" + juce::String (juce::Random::getSystemRandom().nextInt64())); work.createDirectory();
         const auto dd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/demo_check");
         std::vector<juce::PluginDescription> ds; for (auto [n, u] : { std::pair<const char*, int> { "MTurboComp", 1 }, { "elysia mpressor", 2 } }) { juce::PluginDescription d; d.name = n; d.uniqueId = u; d.version = "1.0"; ds.push_back (d); }
-        int calls = 0;
+        std::atomic<int> calls { 0 };   // 21 Oct: the fake runs on the check's worker threads - a plain int lost counts under load
         auto fake = [&] (const juce::StringArray& a) { ++calls; ejmap::cert::ChildResult r; r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0;
             // 15 Oct (the sound check): a dry output is asked whether any control moves it - the fake lists an Output, and moving it changes the tone
             if (a.contains ("--list-params")) { r.out = "0\tOutput\tdB\t2147483647\t0\t1\t0\n"; return r; }
@@ -11568,7 +11568,7 @@ void testWizardCategories()
             r.out = dd.getChildFile (moved || a[1] == "MTurboComp" ? "MTurboComp.burst.txt" : "elysia_mpressor.burst.txt").loadFileAsString(); return r; };
         ejmap::cert::wizardStop() = 0;
         const auto v1 = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
-        const int after1 = calls;
+        const int after1 = calls.load();
         const auto v2 = ejmap::cert::demoCheckForWizard (ds, 2, fake, juce::File ("/nonexistent/probe"), work.getChildFile ("demo_checks.json"));
         work.deleteRecursively();
         const bool mpDry = ejmap::cert::soundcheck::dry (dd.getChildFile ("elysia_mpressor.burst.txt").loadFileAsString());
@@ -12346,7 +12346,7 @@ void testCustomDefault()
         const auto seanT = dir.getChildFile ("mmorph.sean.txt").loadFileAsString(), hereT = dir.getChildFile ("mmorph.here.txt").loadFileAsString();
         const auto seanB = parseBlock (seanT);
         auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_cd8_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
-        int calls = 0;
+        std::atomic<int> calls { 0 };   // 21 Oct: the fake runs on the check's worker threads - a plain int lost counts under load
         auto fake = [&] (const juce::StringArray& a) { ++calls; ejmap::cert::ChildResult r; r.kind = ejmap::cert::ChildResult::Kind::exited; r.code = 0; r.out = a[0] == "/usr/bin/env" ? seanT : hereT; return r; };
         juce::PluginDescription d; d.name = "MMorph"; d.uniqueId = 0x4d4d6f72; d.version = "14.16";
         ejmap::cert::SweepOptions o; o.out = tmp; o.probe = juce::File ("/nonexistent/probe");
@@ -13379,6 +13379,8 @@ int main (int, char**)
         const auto strip = byName ("Scheps Omni Channel (m)", flat), desk = byName ("bx_masterdesk Pro", flat), tg = byName ("AR TG Mastering Live (m)", flat), mix = byName ("CLA MixDown (s)", flat);
         const auto up = byName ("UltraPitch Shift (m)", flat), ss = byName ("SoundShifter Pitch (s)", flat), fs = byName ("MFreqShifter", flat), pw = byName ("Pitchwheel", flat);
         const auto stripToned = byName ("Scheps Omni Channel (m)", toned);
+        Signatures audible = flat; audible.thdLoDb = -42.0; audible.thdHiDb = -40.0;   // audible THD with no rise: not flat, and nothing settles it
+        const auto stripAudible = byName ("Scheps Omni Channel (m)", audible);
         auto ctls = [] (std::initializer_list<const char*> ns) { std::vector<std::pair<int, juce::String>> c; int i = 0; for (const char* n : ns) c.push_back ({ i++, n }); return c; };
         auto cut = [&] (std::initializer_list<const char*> ns) { const auto c = cutoffControl (ctls (ns)); return c ? c->second : juce::String ("-"); };
         NeutralWrite cw; cw.index = 0; cw.control = "Filter"; cw.norm = 0.75;
@@ -13397,7 +13399,7 @@ int main (int, char**)
         check (! nov.settled && nov.category == "eq" && nov.why.contains ("an enhancer, not an EQ: review") && ! categoriesFromWords ("Noveltech Vocal Enhancer", "", {}).contains ("eq") && ! categoriesFromWords ("SPL Vitalizer exciter", "", {}).contains ("eq")
                && strip.settled && strip.byName && strip.category == "channel_strip" && strip.why.contains ("nothing certifies on the name") && desk.byName && tg.byName && mix.byName && mix.category == "channel_strip"
                && up.byName && up.category == "pitch" && ss.byName && fs.byName && fs.category == "pitch" && pw.byName && pw.category == "pitch"
-               && ! stripToned.byName && ! byName ("Tube EQ", flat).byName   // only when flat, only those two
+               && ! stripToned.byName && ! stripAudible.byName && ! stripAudible.settled && ! byName ("Tube EQ", flat).byName   // only when flat, only those two
                && outOfScope ("aufx", "GTR Stomp 4 (m->s)", {}).contains ("depend on the pedal loaded") && outOfScope ("aufx", "GTR Amp (m)", {}).isEmpty()
                && cut ({ "Filter", "Resonance" }) == "Filter" && cut ({ "HP On", "HP Freq", "LP Freq" }) == "HP Freq" && cut ({ "Gain", "Q", "Filter Type" }) == "-"
                && cutoffMove (0.0) == 0.5 && cutoffMove (1.0) == 0.5 && cutoffMove (0.5) == 0.75 && std::abs (cutoffMove (0.7) - 0.45) < 1e-9
