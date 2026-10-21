@@ -13624,6 +13624,8 @@ int main (int, char**)
             const juce::String runX = "run_" + juce::String::toHexString (0x00000000aaaa0001LL).paddedLeft ('0', 16), runY = "run_" + juce::String::toHexString (0x00000000bbbb0002LL).paddedLeft ('0', 16);
             const auto cX = sendRun (runX, kathyCollection, prof ("aaaa0002", 1.2), "box_x");                     // the SAME setup as Kathy's
             const auto levelAfterX = mockState().getProperty ("served", {}).getProperty ("AudioUnit|aaaa0002|1.0", {});
+            const auto reqY = juce::JSON::parse ("{\"plugins\": [{\"plugin_id\": \"AudioUnit|bbbb0001|1.0\", \"vendor\": \"V\"}, {\"plugin_id\": \"AudioUnit|bbbb0002|1.0\", \"vendor\": \"V\"}, {\"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"vendor\": \"V\"}]}");
+            catalogueCheck (s2, reqY);   // 21 Oct (Sean): the minimum counts plugins CHECKED - this account checks run Y's
             const auto cY = sendRun (runY, juce::StringArray { "AudioUnit|bbbb0001|1.0", "AudioUnit|bbbb0002|1.0", "AudioUnit|aaaa0002|1.0" },
                                      prof ("aaaa0002", 1.3) + "," + prof ("aaaa0004", 4.0), "box_y");           // another setup: agrees on 0002 (0.3), not on 0004 (3.0)
             const auto served = mockState().getProperty ("served", {});
@@ -13646,6 +13648,37 @@ int main (int, char**)
                    && l4v.getProperty ("level", "") == juce::var ("certified") && l4v.getProperty ("certified_by", "") == juce::var ("echojay_verification"),
                    "contract WZ-CONTRACT-13: once per plugin collection - another account on Kathy's setup: '" + cX.message + "' (" + cX.reason + "); its result cannot certify; another setup earns '"
                    + cY.code + "' and certifies the result it agrees with; a disagreement stays unverified; our own verification certifies");
+            // 8c. THE MINIMUM COUNTS PLUGINS CHECKED, NOT NEW UPLOADS (Sean, 21 Oct; contract v1 §5), from the server's own records: a third
+            // account's finished run with nothing uploaded - 1 of its 3 collection plugins checked -> "this run checked 1"; once it has checked
+            // 2 (the minimum here) the same run earns a code with 0 uploads. A fourth account whose upload failed the cheat checks gets none
+            auto signInAs = [&] (MemoryTokenStore& st, const juce::String& acct) -> Session&
+            { auto* ss = new Session (ep, tx, st, [&] (const juce::String& l) { logLines.add (l); }); auto d = ss->startDevice(); secrets.push_back (d.deviceCode);
+              hook ("/__mock/approve", "{\"account_id\": \"" + acct + "\"}"); juce::String ww; ss->pollOnce (d, ww); if (const auto t = st.load()) { secrets.push_back (t->access); secrets.push_back (t->refresh); } return *ss; };
+            MemoryTokenStore store3, store4; std::unique_ptr<Session> s3 (&signInAs (store3, "acct_mock_third")), s4 (&signInAs (store4, "acct_mock_fourth"));
+            auto req1 = [] (std::initializer_list<const char*> ids) { juce::String j = "{\"plugins\": ["; bool first = true; for (const char* i : ids) { j << (first ? "" : ",") << "{\"plugin_id\": \"AudioUnit|" << i << "|1.0\", \"vendor\": \"V\"}"; first = false; } return juce::JSON::parse (j + "]}"); };
+            const juce::StringArray colZ { "AudioUnit|cccc0001|1.0", "AudioUnit|cccc0002|1.0", "AudioUnit|cccc0003|1.0" };
+            const juce::String runZ = "run_" + juce::String::toHexString (0x00000000cccc0003LL).paddedLeft ('0', 16), runW = "run_" + juce::String::toHexString (0x00000000dddd0004LL).paddedLeft ('0', 16);
+            catalogueCheck (*s3, req1 ({ "cccc0001" }));
+            ensureRun (*s3, RunInfo { runZ, "t", 0, colZ });
+            const juce::var noQ (juce::Array<juce::var> {});
+            const auto z1 = complete (*s3, runZ, "finished", noQ, noQ, {});
+            catalogueCheck (*s3, req1 ({ "cccc0002" }));
+            const auto z2 = complete (*s3, runZ, "finished", noQ, noQ, {});
+            catalogueCheck (*s4, req1 ({ "dddd0001", "dddd0002", "dddd0003" }));
+            const juce::StringArray colW { "AudioUnit|dddd0001|1.0", "AudioUnit|dddd0002|1.0", "AudioUnit|dddd0003|1.0" };
+            ensureRun (*s4, RunInfo { runW, "t", 0, colW });
+            {   // a result whose SHA-256 does not match its body: a tampered upload (the cheat checks)
+                const auto body = juce::String ("{\"schema\": \"ej_wizard_result/1\"}"); const auto gz = gzip (body);
+                s4->call ("PUT", "runs/" + runW + "/results/" + resultIdFor (runW, "outcome", "AudioUnit|dddd0001|1.0"), {}, &gz, juce::String::repeatedString ("0", 64));
+            }
+            const auto w1 = complete (*s4, runW, "finished", noQ, noQ, {});
+            const auto st4 = mockState();
+            check (z1.done && ! z1.eligible && z1.reason == "below_minimum" && z1.message == "The free month needs at least 2 plugins checked in a finished run; this run checked 1."
+                   && (int) z1.reply.json.getProperty ("plugins_checked", -1) == 1 && (int) z1.reply.json.getProperty ("results_accepted", -1) == 0
+                   && z2.done && z2.eligible && z2.code.startsWith ("EJ-FREE-") && (int) z2.reply.json.getProperty ("plugins_checked", -1) == 2 && (int) z2.reply.json.getProperty ("results_received", -1) == 0
+                   && w1.done && ! w1.eligible && w1.reason == "failed_checks" && w1.message.contains ("didn't pass EchoJay's checks") && (int) w1.reply.json.getProperty ("plugins_checked", -1) == 3
+                   && (int) st4.getProperty ("checked_counts", {}).getProperty ("acct_mock_third", 0) == 2,
+                   "contract WZ-CONTRACT-14: the minimum counts plugins CHECKED in a finished run ('" + z1.message + "'; then a code with 0 uploads), from the server's records; a failed cheat check gets none ('" + w1.message + "')");
             // 9. AN EXPIRED TOKEN refreshes once (rotated); a REUSED refresh token kills the family -> sign in again, results kept
             const auto oldRefresh = store.load()->refresh;
             hook ("/__mock/expire_access", "{}");
@@ -13685,7 +13718,8 @@ int main (int, char**)
     {
         using namespace ejmap::wizcontract;
         juce::StringArray seen; std::vector<HttpResponse> script;
-        Transport fake = [&] (const HttpRequest& rq) { seen.add (rq.method + " " + rq.url.fromFirstOccurrenceOf ("/api/wizard/v1/", false, false)); HttpResponse r; if (script.empty()) { r.network = true; return r; } r = script.front(); script.erase (script.begin()); return r; };
+        juce::StringArray bodies;
+        Transport fake = [&] (const HttpRequest& rq) { seen.add (rq.method + " " + rq.url.fromFirstOccurrenceOf ("/api/wizard/v1/", false, false)); bodies.add (rq.body.toString()); HttpResponse r; if (script.empty()) { r.network = true; return r; } r = script.front(); script.erase (script.begin()); return r; };
         auto resp = [] (int st, const char* body) { HttpResponse r; r.status = st; r.body = body; return r; };
         MemoryTokenStore ms; Tokens t; t.access = "at_x"; t.refresh = "rt_x"; t.accountId = "acct"; ms.save (t);
         Session s (Endpoints { "http://127.0.0.1:9", "c" }, fake, ms);
@@ -13694,6 +13728,10 @@ int main (int, char**)
         script = { resp (200, "{\"results\":[{\"plugin_id\":\"AudioUnit|a|1\",\"status\":\"have\"}],\"categories_version\":\"v\"}") };
         const auto req = juce::JSON::parse ("{\"plugins\":[{\"plugin_id\":\"AudioUnit|a|1\"},{\"plugin_id\":\"AudioUnit|b|1\"}]}");
         const auto cr = catalogueCheck (s, req);
+        const auto bodyDefault = bodies[bodies.size() - 1];
+        script = { resp (200, "{\"results\":[],\"categories_version\":\"v\"}") };
+        catalogueCheck (s, req, "run_0000000000000009");   // PENDING B's PLAN (contract v1 §2): the client can carry it
+        const auto bodyWithRun = bodies[bodies.size() - 1];
         const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_contract12_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
         Outbox box { work.getChildFile ("outbox") }; box.put ("res_aaaa", "{\"x\":1}");
         seen.clear(); script = { resp (404, "{\"error\":\"run_not_found\"}"), resp (201, "{\"run_id\":\"run_0000000000000001\",\"created\":true}"), resp (201, "{\"status\":\"accepted\"}") };
@@ -13702,6 +13740,7 @@ int main (int, char**)
         work.deleteRecursively();
         check (c.done && ! c.eligible && c.code.isEmpty() && c.message == "not this time"
                && cr.ok && cr.have == 1 && cr.need == 1 && ejmap::wizroute::fromCatalogue (cr.answers, "AudioUnit|b|1").rule == ejmap::wizroute::Rule::C
+               && ! bodyDefault.contains ("run_id") && juce::JSON::parse (bodyWithRun).getProperty ("run_id", "") == juce::var ("run_0000000000000009") && juce::JSON::parse (bodyWithRun).getProperty ("plugins", {}).size() == 2
                && sentAfterRun && seen.size() == 3 && seen[0].startsWith ("PUT runs/run_0000000000000001/results/res_aaaa") && seen[1] == "POST runs" && seen[2].startsWith ("PUT runs/"),
                "contract WZ-CONTRACT-12: a code with eligible:false is never shown; an unanswered plugin is a need; a lost run is created again, then the result sent (" + seen.joinIntoString (" | ") + ")");
     }

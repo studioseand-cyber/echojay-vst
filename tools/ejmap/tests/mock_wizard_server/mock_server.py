@@ -32,7 +32,8 @@ STATE = {
     "access": {},         # access token -> {account_id, expires, family}
     "refresh": {},        # refresh token -> {account_id, family, used}
     "dead_families": set(),
-    "accounts": {"acct_mock_kathy": {"display_name": "Kathy"}, "acct_mock_other": {"display_name": "Other tester"}},
+    "accounts": {"acct_mock_kathy": {"display_name": "Kathy"}, "acct_mock_other": {"display_name": "Other tester"}, "acct_mock_third": {"display_name": "Third tester"}, "acct_mock_fourth": {"display_name": "Fourth tester"}},
+    "checked": {},        # account_id -> set of plugin_ids it sent to /catalogue/check (the server's own record; contract v1 §5)
     "catalogue": {},      # plugin_id -> {status, level, category, reason, fingerprint}
     "runs": {},           # run_id -> {account_id, consent, results: {result_id: sha}, completed: bool}
     "holding": {},        # account_id -> {result_id: body}    (NEVER served)
@@ -145,7 +146,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/__mock/state":
             with LOCK:
-                s = {k: v for k, v in STATE.items() if k not in ("access", "refresh", "devices", "dead_families")}
+                s = {k: v for k, v in STATE.items() if k not in ("access", "refresh", "devices", "dead_families", "checked")}
+                s["checked_counts"] = {a: len(c) for a, c in STATE["checked"].items()}
                 s["holding_counts"] = {a: len(r) for a, r in STATE["holding"].items()}
                 s["served"] = {pid: {k: v for k, v in sv.items() if k != "files"} for pid, sv in STATE["served"].items()}
                 s.pop("holding")
@@ -237,6 +239,9 @@ class Handler(BaseHTTPRequestHandler):
         if len(plugins) > 2000:
             return self._send(*err("too_many", "", 413))
         out = []
+        acct = self._account()[0]
+        with LOCK:
+            STATE["checked"].setdefault(acct, set()).update(p.get("plugin_id", "") for p in plugins)
         for p in plugins:
             pid = p.get("plugin_id", "")
             sv = STATE["served"].get(pid)
@@ -294,6 +299,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(*err("too_large", "One result was too big to send and wasn't used.", 413))
         sha = hashlib.sha256(plain).hexdigest()
         if sha != self.headers.get("X-EJ-Content-SHA256", ""):
+            run["tampered"] = run.get("tampered", 0) + 1
             return self._send(*err("rejected", "A result arrived damaged and wasn't used.", 422, reason="sha_mismatch"))
         with LOCK:
             seen = run["results"].get(result_id)
@@ -309,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
         if bad:
             with LOCK:
                 STATE["rejected"].append({"result_id": result_id, "reason": bad[0]})
+                if bad[0] in ("bad_envelope", "bad_result_id", "identity_mismatch"):   # the cheat checks (contract v1 §5)
+                    run["tampered"] = run.get("tampered", 0) + 1
             return self._send(*err("rejected", bad[1], 422, reason=bad[0]))
         with LOCK:
             run["results"][result_id] = sha
@@ -332,8 +340,9 @@ class Handler(BaseHTTPRequestHandler):
             outcomes = body.get("outcomes") or []
             all_final = all(o.get("state") in FINAL_STATES for o in outcomes) and len(outcomes) >= len(body.get("queue") or [])
             accepted = run["accepted_profiles"]
+            checked = len(set(run.get("collection") or []) & STATE["checked"].get(acct, set()))
             minimum = STATE["config"]["qualify_minimum"]
-            res = {"status": "complete", "results_received": len(run["results"]), "results_accepted": accepted}
+            res = {"status": "complete", "results_received": len(run["results"]), "results_accepted": accepted, "plugins_checked": checked}
             claimed_setup = any(r is not run and r.get("promo_code") and r["account_id"] != acct and near_identical(r.get("collection"), run.get("collection"))
                                 for r in STATE["runs"].values())
             if acct in STATE["promos"]:
@@ -346,8 +355,10 @@ class Handler(BaseHTTPRequestHandler):
                 res["promo"] = {"eligible": False, "reason": "collection_already_claimed", "message": "The free month has already been claimed for this setup."}
             elif body.get("kind") != "finished" or not all_final:
                 res["promo"] = {"eligible": False, "reason": "not_finished", "message": "The free month needs a finished run - this one stopped early."}
-            elif accepted < minimum:
-                res["promo"] = {"eligible": False, "reason": "below_minimum", "message": "The free month needs at least %d new plugins that pass our checks; this run had %d." % (minimum, accepted)}
+            elif run.get("tampered", 0) > 0:
+                res["promo"] = {"eligible": False, "reason": "failed_checks", "message": "Some results didn't pass EchoJay's checks, so the free month can't be given for this run."}
+            elif checked < minimum:   # contract v1 §5 (Sean, 21 Oct): plugins CHECKED in the run, from the server's own records - not new uploads
+                res["promo"] = {"eligible": False, "reason": "below_minimum", "message": "The free month needs at least %d plugins checked in a finished run; this run checked %d." % (minimum, checked)}
             else:
                 code = "EJ-FREE-" + secrets.token_hex(4).upper()
                 STATE["promos"][acct] = code

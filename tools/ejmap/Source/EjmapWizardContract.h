@@ -267,7 +267,9 @@ private:
 // --- THE CATALOGUE CHECK (contract §2) -----------------------------------------------------------------------------------------------
 // the answers the engine reads (--catalogue-answers): { "by_plugin_id": { pid: {status, level, category, reason} }, "known": N, "need": M }
 struct CatalogueResult { bool ok = false; Reply reply; juce::var answers; int have = 0, need = 0, held = 0; };
-inline CatalogueResult catalogueCheck (Session& s, const juce::var& request)
+// runId: PENDING B's PLAN (contract v1 §2) - tying the check to the run. Off by default (empty: nothing sent); when B settles the shape,
+// passing the run id here is the whole client change
+inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, const juce::String& runId = {})
 {
     CatalogueResult cr; auto* by = new juce::DynamicObject(); juce::var byV (by);
     const auto* all = request.getProperty ("plugins", {}).getArray(); if (all == nullptr) { cr.ok = true; }
@@ -276,6 +278,7 @@ inline CatalogueResult catalogueCheck (Session& s, const juce::var& request)
     {
         juce::Array<juce::var> chunk; for (int i = from; i < juce::jmin (all->size(), from + kCatalogueChunk); ++i) chunk.add ((*all)[i]);
         auto* body = new juce::DynamicObject(); body->setProperty ("plugins", chunk);
+        if (runId.isNotEmpty()) body->setProperty ("run_id", runId);
         cr.reply = s.call ("POST", "catalogue/check", juce::var (body));
         if (! cr.reply.ok()) return cr;
         version = cr.reply.json.getProperty ("categories_version", "").toString();
