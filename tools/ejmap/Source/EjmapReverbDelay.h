@@ -292,6 +292,29 @@ inline RolePick pickRole (const juce::String& role, int namedIndex, const std::m
     r.why = namedIndex >= 0 ? "the name's nominee [" + juce::String (namedIndex) + "] does not show the " + role + " signature and no other control does" : "no control shows the " + role + " signature";
     return r;
 }
+// MIX AND TIME NEVER SHARE A CONTROL (Kathy, 21 Oct: CLA Epic's "Mix" read as time - at Mix 0 the output is all dry, so the onset reads
+// 0.5 ms): a control showing the MIX signature is never the time / pre-delay control; one showing the TIME signature is never the mix
+// (7 Oct, bx_delay2500's Time L reads as dry at time 0). A control showing both goes by its name - a mix word keeps it the mix, a time
+// word the time - and with neither it is neither
+struct MixTimeExclusions { std::set<int> notMix, notTime; };
+inline MixTimeExclusions mixTimeExclusions (const std::map<int, std::map<juce::String, double>>& scores, const std::map<int, juce::String>& names)
+{
+    MixTimeExclusions e;
+    auto has = [&] (int i, const char* role) { return scores.count (i) && scores.at (i).count (role) && scores.at (i).at (role) > 0.0; };
+    for (const auto& [i, m] : scores)
+    {
+        const bool mixL = has (i, "mix"), timeL = has (i, "time"); (void) m;
+        if (timeL && ! mixL) e.notMix.insert (i);
+        if (mixL && ! timeL) e.notTime.insert (i);
+        if (mixL && timeL)
+        {   const auto n = names.count (i) ? names.at (i).toLowerCase() : juce::String();
+            const bool mixName = n.contains ("mix") || n.contains ("wet") || n.contains ("dry") || n.contains ("blend");
+            const bool timeName = ! mixName && (n.contains ("time") || n.contains ("delay") || n.contains ("dly") || n.contains ("pre"));
+            if (! mixName) e.notMix.insert (i);
+            if (! timeName) e.notTime.insert (i); }
+    }
+    return e;
+}
 // the strength of a role's signature between two ends (the driver's scores)
 // THE TIME MIDPOINT (7 Oct, SSL X-Delay's "Tap 1 Level"): muting a tap moves the onset to the next tap, so a level control can show the time
 // signature at its ends. A time control puts the onset at its norm-0.5 position STRICTLY BETWEEN its ends (at least kMidFrac of the span from

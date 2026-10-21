@@ -2659,14 +2659,17 @@ void testCountingCost()
 
     ejmap::Ledger l (root);
 
+    const int r0 = l.fullLedgerReads();
     const auto t0 = juce::Time::getMillisecondCounterHiRes();
     auto ev = l.retryEvidenceFor (subject, "load");
+    const int onePassReads = l.fullLedgerReads() - r0;
     const auto onePassMs = juce::Time::getMillisecondCounterHiRes() - t0;
 
     check (ev.attempts > 0, "cost: the pass actually read the subject's rows");
 
     // TEN FAILED LOADS, through the real path, with that ledger underneath.
     // This is the number that decides whether counting can live in the append.
+    const int r1 = l.fullLedgerReads();
     const auto t1 = juce::Time::getMillisecondCounterHiRes();
     for (int i = 0; i < 10; ++i)
     {
@@ -2678,11 +2681,13 @@ void testCountingCost()
         l.endLoad (r);
     }
     const auto tenFailuresMs = juce::Time::getMillisecondCounterHiRes() - t1;
+    const int tenFailureReads = l.fullLedgerReads() - r1;
 
     // A HUNDRED SUCCESSFUL LOADS. The common case by two orders of magnitude:
     // 140,468 of the live ledger's rows are `ok`, so if a success pays the
     // cost of a decision it does not need, the sweep pays it 1,300 times a
     // night.
+    const int r2 = l.fullLedgerReads();
     const auto t2 = juce::Time::getMillisecondCounterHiRes();
     for (int i = 0; i < 100; ++i)
     {
@@ -2694,6 +2699,7 @@ void testCountingCost()
         l.endLoad (r);
     }
     const auto hundredOkMs = juce::Time::getMillisecondCounterHiRes() - t2;
+    const int hundredOkReads = l.fullLedgerReads() - r2;
 
     // Reported as TOTALS with the passes named, not as a per-row average: the
     // ten failures do not each cost a tenth of that number. The first pays for
@@ -2713,15 +2719,19 @@ void testCountingCost()
     // the unit of ruin here; a hundred of them would be 100x this fixture's
     // read. The bound is deliberately generous -- it is catching an order of
     // magnitude, not a regression of milliseconds.
-    check (hundredOkMs < onePassMs * 2.0,
-           "cost: ONE HUNDRED `ok` ROWS COST LESS THAN TWO FULL PASSES -- a "
+    // 21 Oct (Kathy): COUNTED, NOT TIMED - the two checks below compared wall-clock milliseconds and failed once under load (load
+    // average 15). The ledger counts its own whole-file reads; the times above are printed, never asserted. The control: the one pass
+    // reads the file exactly once, so a counter that never moved could not pass
+    check (onePassReads == 1, "cost: the counter counts - one evidence pass is exactly one whole-file read (" + juce::String (onePassReads) + ")");
+    check (hundredOkReads == 0,
+           "cost: ONE HUNDRED `ok` ROWS READ THE FILE ZERO TIMES -- a "
            "successful load does not re-read the ledger");
 
     // And a failure, which DOES need the decision, pays for the file at most
     // once per launch rather than once per row.
-    check (tenFailuresMs < onePassMs * 3.0,
-           "cost: TEN FAILURES COST LESS THAN THREE FULL PASSES -- the count is "
-           "read from the file once, then carried");
+    check (tenFailureReads <= 2,
+           juce::String ("cost: TEN FAILURES READ THE FILE AT MOST TWICE (the tally, the quarantine evidence) -- the count is "
+           "read from the file once, then carried (") + juce::String (tenFailureReads) + " reads)");
 
     root.deleteRecursively();
 }
@@ -5036,9 +5046,92 @@ void testSweepQuietReference()
                && drv.contains ("if (! d.settled && categorise::flatAtDefault (sg))")
                && drv.contains ("guard (run (\"drive_resp30\", { \"--response\", \"ctl=\" + juce::String (ctl), \"norms=current\", set,")
                && drv.contains ("guard (run (\"drive_tail\", { \"--tail\", \"db=-12\", \"burst_ms=300\", \"tail_s=3\", \"hz=997\", \"win_ms=1\", set }))")
-               && drv.contains ("d = categorise::decideRaised (up, row.proposed, &tr, w, move); row.sigAtDefault = sg; row.sig = up; row.neutralWrites.push_back (w); row.levelMoveDb = move;")
+               && drv.contains ("row.sigAtDefault = sg; row.sig = up; row.levelMoveDb = move; if (d.settled) row.neutralWrites.push_back (w);")
                && drv.contains ("oldD = newD = categorise::decideRaised (up, proposed, nullptr, w, move);"),
                "cert WZ-FLAT-1: flat at default -> the drive / input control raised to 0.75 as a neutral write, the reads taken again; a level change never settles ('" + stillFlat.why + "')");
+    }
+    // WZ-RULES-21 KATHY'S 21 OCT DECISIONS: enhancers to review (never eq); channel strips and pitch tools routed by name when flat (a category
+    // only routes the measurement); a filter flat at default has its cutoff moved and read (category_writes, never neutral); a resonant
+    // filter's ring is eq; a clipper's ceiling is a limiter; GTR Stomp is skipped with its reason; in a tail pass the other effect sections are
+    // silenced and never picked; mix and time never share a control
+    {
+        using namespace ejmap::categorise;
+        Signatures flat; flat.responseRead = flat.tailRead = flat.harmRead = true; flat.freqSpanDb = 0.2; flat.levelDepDb = 0.05; flat.thdLoDb = -95.0; flat.thdHiDb = -90.0;
+        Signatures toned = flat; toned.freqSpanDb = 11.7;
+        NeutralWrite enh; enh.index = 2; enh.control = "Enhancement"; enh.norm = 0.75;
+        const auto nov = decideRaised (toned, categoriesFromWords ("Noveltech Vocal Enhancer", "Plugin Alliance", {}), nullptr, enh, -4.5);
+        auto byName = [&] (const char* product, const Signatures& sg) { return decide (sg, categoriesFromWords (product, "", {})); };
+        const auto strip = byName ("Scheps Omni Channel (m)", flat), desk = byName ("bx_masterdesk Pro", flat), tg = byName ("AR TG Mastering Live (m)", flat), mix = byName ("CLA MixDown (s)", flat);
+        const auto up = byName ("UltraPitch Shift (m)", flat), ss = byName ("SoundShifter Pitch (s)", flat), fs = byName ("MFreqShifter", flat), pw = byName ("Pitchwheel", flat);
+        const auto stripToned = byName ("Scheps Omni Channel (m)", toned);
+        auto ctls = [] (std::initializer_list<const char*> ns) { std::vector<std::pair<int, juce::String>> c; int i = 0; for (const char* n : ns) c.push_back ({ i++, n }); return c; };
+        auto cut = [&] (std::initializer_list<const char*> ns) { const auto c = cutoffControl (ctls (ns)); return c ? c->second : juce::String ("-"); };
+        NeutralWrite cw; cw.index = 0; cw.control = "Filter"; cw.norm = 0.75;
+        Signatures cutEq = flat; cutEq.freqSpanDb = 8.0;
+        Decision dyn; dyn.category = "dynamics"; dyn.settled = true; Decision sat = dyn; sat.category = "saturation";
+        Signatures ring; ring.responseRead = ring.tailRead = true; ring.freqSpanDb = 12.0; ring.rt60s = 0.4; Signatures longRing = ring; longRing.rt60s = 1.5;
+        using namespace ejmap::tailroles;
+        auto names = [] (std::initializer_list<const char*> ns) { Controls c; int i = 0; for (const char* n : ns) c.push_back ({ i++, n, false, {} }); return c; };
+        const auto claFx = names ({ "Send Delay", "Sensitivity", "Balance", "EQ Color", "EQ", "Distortion Color", "Distortion", "Reverb Color", "Reverb", "Short Delay Color", "Short Delay", "Long Delay Color", "Long Delay", "Pitch Color", "Pitch", "Output" });
+        const auto echo = names ({ "Echo Time", "Feedback", "Saturation", "Mix" });
+        const auto fxW = silenceEffects (claFx); juce::StringArray fxN; for (const auto& w : fxW) fxN.add (w.control);
+        using ejmap::reverbdelay::mixTimeExclusions;
+        const std::map<int, std::map<juce::String, double>> sc { { 2, { { "mix", 135.0 }, { "time", 250.0 } } }, { 5, { { "mix", 20.0 }, { "time", 80.0 } } }, { 7, { { "mix", 3.0 }, { "time", 3.0 } } }, { 9, { { "mix", 10.0 } } }, { 11, { { "time", 40.0 } } } };
+        const auto ex = mixTimeExclusions (sc, { { 2, "Mix" }, { 5, "Time L" }, { 7, "Knob" }, { 9, "PlateLevel" }, { 11, "Tape Tap1" } });
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (! nov.settled && nov.category == "eq" && nov.why.contains ("an enhancer, not an EQ: review") && ! categoriesFromWords ("Noveltech Vocal Enhancer", "", {}).contains ("eq") && ! categoriesFromWords ("SPL Vitalizer exciter", "", {}).contains ("eq")
+               && strip.settled && strip.byName && strip.category == "channel_strip" && strip.why.contains ("nothing certifies on the name") && desk.byName && tg.byName && mix.byName && mix.category == "channel_strip"
+               && up.byName && up.category == "pitch" && ss.byName && fs.byName && fs.category == "pitch" && pw.byName && pw.category == "pitch"
+               && ! stripToned.byName && ! byName ("Tube EQ", flat).byName   // only when flat, only those two
+               && outOfScope ("aufx", "GTR Stomp 4 (m->s)", {}).contains ("depend on the pedal loaded") && outOfScope ("aufx", "GTR Amp (m)", {}).isEmpty()
+               && cut ({ "Filter", "Resonance" }) == "Filter" && cut ({ "HP On", "HP Freq", "LP Freq" }) == "HP Freq" && cut ({ "Gain", "Q", "Filter Type" }) == "-"
+               && cutoffMove (0.0) == 0.5 && cutoffMove (1.0) == 0.5 && cutoffMove (0.5) == 0.75 && std::abs (cutoffMove (0.7) - 0.45) < 1e-9
+               && decideCutoff (cutEq, cw).settled && decideCutoff (cutEq, cw).category == "eq" && ! decideCutoff (flat, cw).settled && decideCutoff (flat, cw).why.contains ("not part of the neutral setting")
+               && clipAfterRaise (dyn, true).category == "limiter" && clipAfterRaise (sat, true).category == "saturation" && clipAfterRaise (dyn, false).category == "dynamics"
+               && decide (ring, { "eq" }).category == "eq" && decide (ring, { "eq" }).settled && ! decide (longRing, { "eq" }).settled && ! decide (ring, {}).settled
+               && effectSection ("Pitch") == "pitch" && effectSection ("Distortion Color") == "distortion" && effectSection ("Reverb").isEmpty() && effectSection ("Short Delay").isEmpty() && effectSection ("Output").isEmpty()
+               && fxN.contains ("Pitch") && fxN.contains ("Distortion") && fxN.contains ("EQ") && ! fxN.contains ("Reverb") && ! fxN.contains ("Pitch Color") && ! fxN.contains ("Short Delay")
+               && silencesEffects (rolesOf (claFx), claFx) && ! silencesEffects (rolesOf (echo), echo)
+               && ex.notTime.count (2) && ! ex.notMix.count (2) && ex.notMix.count (5) && ! ex.notTime.count (5) && ex.notMix.count (7) && ex.notTime.count (7) && ex.notTime.count (9) && ! ex.notMix.count (9) && ex.notMix.count (11) && ! ex.notTime.count (11)
+               && drv.contains ("const auto pMix = pickRole (\"mix\", mix.index, holds, ex.notMix);") && drv.contains ("std::set<int> notTime = taken; notTime.insert (ex.notTime.begin(), ex.notTime.end());")
+               && drv.contains ("const auto pTime = pickRole (\"time\", timeCtl.index, holds, notTime);")
+               && drv.contains ("if (effects && tailroles::effectSection (k.name).isNotEmpty()) continue;") && drv.contains ("if (effects && tailroles::effectSection (n).isNotEmpty()) continue;")
+               && drv.contains ("isolationWrites.insert (isolationWrites.end(), effectWrites.begin(), effectWrites.end());")
+               && drv.contains ("if (! d.settled && categorise::flatAtDefault (row.sig))") && drv.contains ("row.categoryWrites.push_back (cw);") && ! drv.contains ("row.neutralWrites.push_back (cw)")
+               && drv.contains ("d = categorise::clipAfterRaise (categorise::decideRaised (up, row.proposed, &tr, w, move), categorise::hasInside (categorise::tokens (row.product), { \"clip\" }));")
+               && drv.contains ("row.byName = d.byName;"),
+               "cert WZ-RULES-21: enhancer -> review ('" + nov.why.fromLastOccurrenceOf ("; ", false, false) + "'); strips / pitch by name; cutoff moved; resonant ring = eq; clip ceiling = limiter; GTR Stomp skipped; other effects silenced (" + fxN.joinIntoString (", ") + "); mix/time exclusive");
+    }
+    // WZ-NEUTRAL-1 THE RAISED DRIVE IN THE MEASURING PASSES (Kathy, 21 Oct, decision 3): a categorised row's neutral_writes go with the plugin
+    // into Phase B ("--neutral-sets" -> EJ_PROBE_NEUTRAL_SETS), at the FRONT of every set= list of the child's probe calls (the pass's own
+    // write to the same control still wins), never into a mode without one; every record's "neutral" list says the raised value; a signature
+    // cached under older rules is read again
+    {
+        using namespace ejmap::cert;
+        const juce::String P = "/x/EchoJayProbe";
+        const auto resp = neutralsets::merged ({ P, "Lindell 80 Bus", "AudioUnit:Effects/aufx,L80B,PlAl", "1", "--response", "ctl=0", "norms=current", "set=4:0.2", "db=-30" }, "3:0.875000");
+        const auto tail = neutralsets::merged ({ P, "X", "id", "1", "--tail", "db=-12" }, "3:0.875000");
+        const auto pitch = neutralsets::merged ({ P, "X", "id", "1", "--sweep-pitch", "ctl=1", "sets=2:1" }, "3:0.5");
+        const auto lp = neutralsets::merged ({ P, "X", "id", "1", "--list-params" }, "3:0.5");
+        const auto envd = neutralsets::merged ({ "/usr/bin/env", "EJ_PROBE_SERVE=1", P, "X", "id", "1", "--hits", "x=1" }, "3:0.5");
+        const auto child = neutralsets::merged ({ "/x/ejmap", "--cert-saturation", "X", "--out", "/t" }, "3:0.5");
+        const auto none = neutralsets::merged ({ P, "X", "id", "1", "--response" }, {});
+        auto rec = juce::JSON::parse (R"({"neutral":[{"control":"THD","set":"7.50","norm":0.5},{"control":"Output Level","set":"0.0","norm":0.5}],"bands":[{"neutral":[]}]})");
+        ejmap::categorise::NeutralWrite w; w.index = 3; w.control = "THD"; w.norm = 0.875; w.text = "22.50"; w.why = "flat at default";
+        neutralsets::patch (rec, { w });
+        const auto* nl = rec.getProperty ("neutral", {}).getArray(); const auto* inner = rec.getProperty ("bands", {})[0].getProperty ("neutral", {}).getArray();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto mainCpp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        check (resp.contains ("set=3:0.875000,4:0.2") && resp.size() == 9 && tail[tail.size() - 1] == "set=3:0.875000" && pitch.contains ("sets=3:0.5,2:1")
+               && lp.size() == 5 && envd[envd.size() - 1] == "set=3:0.5" && child.size() == 5 && none.size() == 5
+               && nl != nullptr && nl->size() == 2 && (double) (*nl)[0].getProperty ("norm", 0.0) == 0.875 && (*nl)[0].getProperty ("set", "") == juce::var ("22.50") && (bool) (*nl)[0].getProperty ("raised", false)
+               && (double) (*nl)[1].getProperty ("norm", 0.0) == 0.5 && inner != nullptr && inner->size() == 1 && (*inner)[0].getProperty ("control", "") == juce::var ("THD")
+               && drv.contains ("const auto args = neutralsets::merged (argsIn, neutralsets::fromEnv());")
+               && drv.contains ("{ args.add (\"--neutral-sets\"); args.add (neutralsets::setsOf (nw->second));")
+               && drv.contains ("neutralsets::patch (rec, nw->second); ro->setProperty (\"neutral_raised\", neutralsets::raisedVar (nw->second));")
+               && mainCpp.contains ("else if (k == \"--neutral-sets\") setenv (\"EJ_PROBE_NEUTRAL_SETS\", v.toRawUTF8(), 1);")
+               && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-21",
+               "cert WZ-NEUTRAL-1 (the wizard fills it): the raised drive rides at the front of every set= list of the measuring child (" + resp.joinIntoString (" ").fromFirstOccurrenceOf ("--response", true, false) + "), every neutral list says it, an old cached signature is read again");
     }
 }
 
@@ -10307,9 +10400,10 @@ void testCategoriseRelease()
     check (l.tailRead && l.rt60s && *l.rt60s > 0.3 && *l.rt60s < 0.5 && l.levelDepDb > 3.0 && l.freqSpanDb < 0.5
            && lNew.category == "dynamics" && lNew.settled && lOld.category == "reverb" && ! lOld.settled
            && xNew.category == "dynamics" && xNew.settled && ! xOld.settled
-           && fNew.category == "reverb" && ! fNew.settled && f.freqSpanDb > 3.0 && f.levelDepDb >= 1.0,
+           && fNew.category == "eq" && fNew.settled && fNew.why.contains ("resonance ringing") && f.freqSpanDb > 10.0 && f.levelDepDb >= 1.0   // 21 Oct (Kathy): the resonant filter rule
+           && [&] { const auto un = decide (f, {}); return un.category == "reverb" && ! un.settled; }(),   // the same reads with no filter name stay a tail for review
            "categorise CAT-RELEASE: Lindell 254E (RT60 " + juce::String (l.rt60s ? *l.rt60s : -1.0, 2) + " s, " + juce::String (l.levelDepDb, 2) + " dB, span " + juce::String (l.freqSpanDb, 2)
-           + ") and XLA-3 -> dynamics (were reverb, unsettled); FilterFreak2 (span " + juce::String (f.freqSpanDb, 1) + " dB) stays reverb for review");
+           + ") and XLA-3 -> dynamics (were reverb, unsettled); FilterFreak2 (span " + juce::String (f.freqSpanDb, 1) + " dB, a filter name, a short ring) -> eq (21 Oct, the resonant filter rule)");
 }
 
 /** THE WARM PROBE (14 Oct, carried from feat/ejmap-wizard 7648fef1): --serve and runServed (EjmapCertDriver.h). */

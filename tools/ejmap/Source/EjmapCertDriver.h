@@ -509,8 +509,54 @@ inline ChildResult runServed (const juce::StringArray& args, int timeoutMs, Watc
     if (licenceStampLine().isNotEmpty()) r.out << (r.out.endsWithChar ('\n') || r.out.isEmpty() ? "" : "\n") << licenceStampLine() << "\n";
     return r;
 }
-inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
+// THE RAISED DRIVE IN THE MEASURING PASSES (Kathy, 21 Oct, group 2 decision 3): a plugin that was flat at default and showed its
+// signature with its drive raised is MEASURED with the drive raised. Phase B hands its child "--neutral-sets i:n,..." (EJ_PROBE_NEUTRAL_SETS);
+// every probe call of that child whose mode takes a set= list (sweep, burst, response, tail, hits, ramp, material; sweep-pitch's sets=)
+// gets the writes at the FRONT of its list, after prepare with audio pumping (the route Waves accept; EJ_PROBE_PRESET writes before
+// prepare and Waves refuse it), so a pass's own write to the same control still wins. The probe's own instance only - never the user's.
+namespace neutralsets
 {
+inline juce::String fromEnv() { const char* v = std::getenv ("EJ_PROBE_NEUTRAL_SETS"); return v != nullptr ? juce::String (v) : juce::String(); }
+inline juce::String keyFor (const juce::String& mode)
+{
+    for (const char* m : { "--sweep", "--burst", "--response", "--tail", "--hits", "--ramp", "--material" }) if (mode == m) return "set=";
+    return mode == "--sweep-pitch" ? juce::String ("sets=") : juce::String();
+}
+inline juce::StringArray merged (const juce::StringArray& args, const juce::String& sets)
+{
+    if (sets.isEmpty()) return args;
+    int p = -1; for (int i = 0; i < args.size(); ++i) if (juce::File (args[i]).getFileName() == "EchoJayProbe") { p = i; break; }
+    if (p < 0 || p + 4 >= args.size()) return args;
+    const auto key = keyFor (args[p + 4]); if (key.isEmpty()) return args;
+    auto out = args;
+    for (int i = p + 5; i < out.size(); ++i) if (out[i].startsWith (key)) { const auto rest = out[i].substring (key.length()); out.set (i, key + sets + (rest.isNotEmpty() ? "," + rest : juce::String())); return out; }
+    out.add (key + sets); return out;
+}
+// the record's own words: every "neutral" list in a record / draft / profile takes the raised controls (replacing the opening value), and
+// the record says which were raised and why
+inline void patch (juce::var& v, const std::vector<categorise::NeutralWrite>& ws)
+{
+    if (auto* arr = v.getArray()) { for (auto& x : *arr) patch (x, ws); return; }
+    auto* o = v.getDynamicObject(); if (o == nullptr) return;
+    for (auto& [k, val] : o->getProperties()) { auto x = val; patch (x, ws); }
+    if (auto* nl = o->getProperty ("neutral").getArray())
+        for (const auto& w : ws)
+        {   bool found = false;
+            for (auto& e : *nl) if (auto* eo = e.getDynamicObject(); eo != nullptr && eo->getProperty ("control").toString() == w.control)
+            { eo->setProperty ("norm", w.norm); eo->setProperty ("set", w.text.isNotEmpty() ? w.text : juce::String (w.norm, 3)); eo->setProperty ("raised", true); found = true; }
+            if (! found) { auto* e = new juce::DynamicObject(); e->setProperty ("control", w.control); e->setProperty ("set", w.text.isNotEmpty() ? w.text : juce::String (w.norm, 3)); e->setProperty ("norm", w.norm); e->setProperty ("raised", true); nl->add (juce::var (e)); } }
+}
+inline juce::var raisedVar (const std::vector<categorise::NeutralWrite>& ws)
+{
+    juce::Array<juce::var> a;
+    for (const auto& w : ws) { auto* x = new juce::DynamicObject(); x->setProperty ("index", w.index); x->setProperty ("control", w.control); x->setProperty ("norm", w.norm); if (w.text.isNotEmpty()) x->setProperty ("text", w.text); x->setProperty ("why", w.why); a.add (juce::var (x)); }
+    return juce::var (a);
+}
+inline juce::String setsOf (const std::vector<categorise::NeutralWrite>& ws) { juce::StringArray s; for (const auto& w : ws) s.add (juce::String (w.index) + ":" + juce::String (w.norm, 6)); return s.joinIntoString (","); }
+} // namespace neutralsets
+inline ChildResult runChild (const juce::StringArray& argsIn, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
+{
+    const auto args = neutralsets::merged (argsIn, neutralsets::fromEnv());   // 21 Oct: the raised drive, in every measuring call of this child
     if (probeserve::enabledByEnv() && probeserve::servable (args)) return runServed (args, timeoutMs, watch, clock);
     return runChildDirect (args, timeoutMs, watch, clock);
 }
@@ -1956,6 +2002,7 @@ struct FollowUpProjection
 };
 struct SweepOptions
 {
+    std::map<juce::String, std::vector<categorise::NeutralWrite>> neutralByStem;   // 21 Oct (Kathy): a raised drive per plugin stem, measured under every probe call
     juce::File fixtures, probe, out, ledger = defaultEjmapLedger();
     juce::String product, hostVersion, armLabel;
     bool resumeTraces = false;   // 9 Oct: --resume-traces (the Phase B parent, a timed-out gain row): a complete trace already in raw/ is reused
@@ -3762,6 +3809,13 @@ inline int runCategoriseRedecide (const juce::File& folder, const juce::File& ou
             std::optional<double> move; if (p.hasProperty ("level_move_db")) move = (double) p.getProperty ("level_move_db", 0.0);
             oldD = newD = categorise::decideRaised (up, proposed, nullptr, w, move);
         }
+        if (const auto* cws = p.getProperty ("category_writes", {}).getArray(); cws != nullptr && ! cws->isEmpty() && ! newD.settled)   // 21 Oct: a filter's cutoff move, from its cutoff_* traces
+        {
+            const auto& cv = cws->getReference (0); categorise::NeutralWrite w; w.index = (int) cv.getProperty ("index", -1); w.norm = (double) cv.getProperty ("norm", 0.0);
+            w.control = cv.getProperty ("control", "").toString(); w.text = cv.getProperty ("text", "").toString();
+            categorise::Signatures moved; categorise::readResponses (moved, eq::parseResponse (rd ("cutoff_resp30")), eq::parseResponse (rd ("cutoff_resp12")));
+            oldD = newD = categorise::decideCutoff (moved, w);
+        }
         const auto storedCat = p.getProperty ("category", "").toString(); const bool storedSettled = (bool) p.getProperty ("settled", false);
         if (oldD.category == storedCat && oldD.settled == storedSettled) ++faithful;
         else { ++unfaithful; unfaithfulL.add ("  " + p.getProperty ("product", "").toString() + ": stored " + storedCat + (storedSettled ? "" : " (unsettled)") + ", replay " + oldD.category + (oldD.settled ? "" : " (unsettled)")); }
@@ -3866,10 +3920,35 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
                 if (window) { row.why = "a window appeared during the raised-drive reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
                 std::optional<double> move; if (const auto a = categorise::levelOf (eq::parseResponse (r30.cleanExit() ? r30.out : juce::String())), b = categorise::levelOf (upLo); a && b) move = *b - *a;
                 if (! up.responseRead && ! up.tailRead && ! up.harmRead) up.notes.add ("raised drive: no read (the write may not have landed: see the drive_* traces)");
-                else { d = categorise::decideRaised (up, row.proposed, &tr, w, move); row.sigAtDefault = sg; row.sig = up; row.neutralWrites.push_back (w); row.levelMoveDb = move; }
+                else
+                {   // 21 Oct (Kathy): the raise is part of the neutral setting only when it SHOWED the signature - a raise that changed
+                    // nothing is not carried into the measuring passes
+                    d = categorise::clipAfterRaise (categorise::decideRaised (up, row.proposed, &tr, w, move), categorise::hasInside (categorise::tokens (row.product), { "clip" }));
+                    row.sigAtDefault = sg; row.sig = up; row.levelMoveDb = move; if (d.settled) row.neutralWrites.push_back (w);
+                }
             }
             else d.why += "; flat at default and no drive / input control found by name";   // (a switch is never the drive)
+            // A FILTER FLAT AT DEFAULT (Kathy, 21 Oct): its cutoff moved and the response read again - category_writes, never the neutral
+            // setting; only while nothing is settled and the reads (raised or not) are still flat
+            if (! d.settled && categorise::flatAtDefault (row.sig))
+                if (const auto cc = categorise::cutoffControl (ctls))
+                {
+                    const auto openedC = categorise::openingNorm (r30.out, cc->first);
+                    categorise::NeutralWrite cw; cw.index = cc->first; cw.control = cc->second; cw.norm = categorise::cutoffMove (openedC ? *openedC : 0.0);
+                    cw.why = "flat at default: the cutoff moved to read the filter (a measurement move, not the neutral setting)";
+                    const auto cset = "set=" + juce::String (cw.index) + ":" + juce::String (cw.norm, 6);
+                    const auto c30 = guard (run ("cutoff_resp30", { "--response", "ctl=" + juce::String (ctl), "norms=current", cset, "tones=121", "lo=20", "hi=20000", "db=-30", "hold=1.0", "discard=0.5" }));
+                    const auto c12 = window ? ChildResult() : guard (run ("cutoff_resp12", { "--response", "ctl=" + juce::String (ctl), "norms=current", cset, "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" }));
+                    for (const auto& line : juce::StringArray::fromLines (c30.out))
+                    { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == cw.index) { const int t = f.indexOf ("text"); if (t >= 0 && t + 1 < f.size()) cw.text = f[t + 1]; } }
+                    row.seconds = (juce::Time::getMillisecondCounterHiRes() - t1) / 1000.0;
+                    if (window) { row.why = "a window appeared during the cutoff reads: not loaded again; the words propose " + row.proposed.joinIntoString (" / ") + ": review"; say ("  " + row.product + ": " + row.why); rows.push_back (row); continue; }
+                    categorise::Signatures moved; categorise::readResponses (moved, eq::parseResponse (c30.cleanExit() ? c30.out : juce::String()), eq::parseResponse (c12.cleanExit() ? c12.out : juce::String()));
+                    if (moved.responseRead) { const auto prior = d.why; d = categorise::decideCutoff (moved, cw); d.why = prior + "; " + d.why; row.categoryWrites.push_back (cw); }
+                    else d.why += "; the cutoff move was not read (see the cutoff_* traces)";
+                }
         }
+        row.byName = d.byName;
         row.category = d.category; row.why = d.why; row.settled = d.settled; row.also = d.also;
         say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
         rows.push_back (row);
@@ -5736,11 +5815,14 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     const bool isolate = trRoles.delay && trRoles.reverb;
     const auto otherRole = kind == "delay" ? tailroles::Role::reverb : tailroles::Role::delay;
     if (isolate) isolationWrites = tailroles::silence (trCtls, otherRole);
+    const bool effects = tailroles::silencesEffects (trRoles, trCtls);   // 21 Oct (Kathy): the other effect sections silenced too
+    std::vector<tailroles::Write> effectWrites; if (effects) effectWrites = tailroles::silenceEffects (trCtls);
+    isolationWrites.insert (isolationWrites.end(), effectWrites.begin(), effectWrites.end());
     if (! isolationWrites.empty())
     {
         isoSets = tailroles::presetOf (isolationWrites);
         juce::StringArray w; for (const auto& x : isolationWrites) w.add (x.control + " (" + x.why + ")");
-        say ("RD: both a delay and a reverb in its controls: the " + juce::String (tailroles::roleName (otherRole)) + " sections silenced for this " + kind + " pass - " + w.joinIntoString ("; "));
+        say ("RD: sections silenced for this " + kind + " pass (" + (isolate ? juce::String ("the ") + tailroles::roleName (otherRole) + (effectWrites.empty() ? "" : " and the other effects") : juce::String ("the other effects")) + ") - " + w.joinIntoString ("; "));
     }
 
     // THE CONTROLS BY NAME (a prototype's rule, said in the proposal): the first match of each role
@@ -5764,6 +5846,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
         {
             Ctl k; k.index = (int) c.getProperty ("index", -1); k.name = c.getProperty ("name", "").toString(); k.word = sweep::wordValued (c); k.steps = (int) c.getProperty ("numSteps", 0);
             if (isolate && tailroles::place (k.name).role == otherRole) continue;   // 20 Oct: the other role's sections are silenced, never this pass's controls
+            if (effects && tailroles::effectSection (k.name).isNotEmpty()) continue;   // 21 Oct: nor another effect's
             const auto n = k.name;
             if (mix.index < 0 && ! k.word && answers (n, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet" }) && ! answers (n, { "sync", "lock" })) mix = k;
             else if (sync.index < 0 && answers (n, { "sync", "tempo sync" }) && (k.word || k.steps == 2)) { sync = k; switchPositions (c, sync); }
@@ -5784,7 +5867,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("kind", kind);
     if (! isolationWrites.empty())   // 20 Oct: the record says which sections were silenced and how
     {   juce::Array<juce::var> iw; for (const auto& x : isolationWrites) { auto* w = new juce::DynamicObject(); w->setProperty ("control", x.control); w->setProperty ("index", x.index); w->setProperty ("norm", x.norm); w->setProperty ("set", x.set); w->setProperty ("why", x.why); iw.add (juce::var (w)); }
-        o->setProperty ("sections_silenced", iw); o->setProperty ("sections_silenced_role", tailroles::roleName (otherRole));
+        o->setProperty ("sections_silenced", iw); o->setProperty ("sections_silenced_role", isolate ? juce::String (tailroles::roleName (otherRole)) + (effectWrites.empty() ? "" : " + other effects") : juce::String ("other effects"));
         if (! isolationUnlanded.isEmpty()) o->setProperty ("sections_silenced_unlanded", isolationUnlanded.joinIntoString (", ")); }
     int measured = 0; juce::Array<juce::var> roleNotes;
     auto readTail = [&] (const juce::String& tag, const juce::StringArray& args, bool& window) -> Tail { const auto r = run (tag, args); if (r.kind == ChildResult::Kind::uiShown) window = true; return parseTail (r.cleanExit() ? r.out : juce::String()); };
@@ -5805,6 +5888,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
                 const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
                 if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n) || idx == sync.index || idx == note.index) continue;
                 if (isolate && tailroles::place (n).role == otherRole) continue;   // 20 Oct (CLA Epic): the role test never un-silences the other role (PlateLevel to full)
+                if (effects && tailroles::effectSection (n).isNotEmpty()) continue;   // 21 Oct (CLA Effects: "Pitch" read as the mix): nor another effect's
                 if (! fx.sampled.empty() && fx.sampled.count (idx) == 0 && idx != mix.index && idx != timeCtl.index && idx != decayCtl.index && idx != feedback.index) continue;
                 if (++probed > kUnnamedCap) break;
                 roleevidence::Figure fa, fb;
@@ -5861,9 +5945,10 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     // dry window and reads as dry (bx_delay2500's Time L, 7 Oct)
     auto picksOf = [&] (const std::map<int, std::map<juce::String, double>>& holds) -> std::array<RolePick, 4>
     {
-        std::set<int> timeLike; for (const auto& [i, m] : holds) if (m.count ("time") && m.at ("time") > 0.0) timeLike.insert (i);
-        const auto pMix = pickRole ("mix", mix.index, holds, timeLike); std::set<int> taken; if (pMix.index >= 0) taken.insert (pMix.index);
-        const auto pTime = pickRole ("time", timeCtl.index, holds, taken); if (pTime.index >= 0 && kind == "delay") taken.insert (pTime.index);
+        const auto ex = mixTimeExclusions (holds, nameOf);   // 21 Oct (Kathy): mix and time never share a control
+        const auto pMix = pickRole ("mix", mix.index, holds, ex.notMix); std::set<int> taken; if (pMix.index >= 0) taken.insert (pMix.index);
+        std::set<int> notTime = taken; notTime.insert (ex.notTime.begin(), ex.notTime.end());
+        const auto pTime = pickRole ("time", timeCtl.index, holds, notTime); if (pTime.index >= 0 && kind == "delay") taken.insert (pTime.index);
         return { pMix, pTime, kind == "reverb" ? pickRole ("decay", decayCtl.index, holds, taken) : RolePick(), kind == "delay" ? pickRole ("feedback", feedback.index, holds, taken) : RolePick() };
     };
     std::vector<std::array<RolePick, 4>> passPicks; for (const auto& h : holdsBy) passPicks.push_back (picksOf (h));
@@ -7044,6 +7129,8 @@ inline int runPhaseBDrafts (const SweepOptions& opt, const juce::StringArray& on
     return total > 0 ? 0 : 2;
 }
 inline volatile sig_atomic_t& phasebStop() { static volatile sig_atomic_t f = 0; return f; }   // --phaseb-all: SIGINT / SIGTERM seen (10 Oct, --jobs)
+// a Phase B row's stem (the wizard keys its raised drives by it, 21 Oct)
+inline juce::String phaseBStem (const juce::PluginDescription& d) { return fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId) + "_" + d.version; }
 inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyCategories, const juce::StringArray& onlyProducts, const juce::StringArray& redo = {})
 {
     using namespace phaseb;
@@ -7057,7 +7144,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     const auto scanStops = quarantinedBundles (opt.ledger);
     const auto outcomes = juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString());
     std::map<juce::String, std::vector<PhaseBProduct>> work;
-    auto stemFor = [] (const juce::PluginDescription& d) { return fmtTag (d) + "_" + juce::String::toHexString (d.uniqueId) + "_" + d.version; };
+    auto stemFor = [] (const juce::PluginDescription& d) { return phaseBStem (d); };
     for (const auto& cat : categories())
     {
         if (! phaseb::categoryRuns (cat, onlyCategories, redo)) continue;
@@ -7238,6 +7325,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate" || cat.name == "saturation") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts; a saturator's gain draft) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 if (restorePreset.isNotEmpty()) { args.add ("--preset"); args.add (restorePreset); }   // the custom default restored under every probe process
+                if (const auto nw = opt.neutralByStem.find (pp.stem); nw != opt.neutralByStem.end() && ! nw->second.empty())   // 21 Oct (Kathy): the raised drive, under every measuring call
+                { args.add ("--neutral-sets"); args.add (neutralsets::setsOf (nw->second)); row->setProperty ("neutral_raised", neutralsets::raisedVar (nw->second)); }
                 int reused = 0;
                 if (resumeTraces.count (cat.name + "/" + pp.stem))
                 {
@@ -7335,7 +7424,9 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     const auto dst = catDir.getChildFile (dstName); dst.createDirectory();
                     for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.addIfNotAlreadyThere (dstName + "/" + f.getFileName());
                         if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } }
-                        if (! crashPos.isEmpty()) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("crash_positions", crashPos); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
+                        if (! crashPos.isEmpty()) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("crash_positions", crashPos); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } }
+                        if (const auto nw = opt.neutralByStem.find (pp.stem); nw != opt.neutralByStem.end() && ! nw->second.empty())   // 21 Oct: the raised drive in the record's own neutral
+                        { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { neutralsets::patch (rec, nw->second); ro->setProperty ("neutral_raised", neutralsets::raisedVar (nw->second)); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
                 // THE DRAFT FOR THIS ROW (7 Oct item 5): gaincal / gainall / timing / tuners / multiband derive theirs here from the moved record
