@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "EjmapWizard.h"
+#include "EjmapWizardContract.h"   // 21 Oct: the beta's consent is the contract's
 #include <juce_core/juce_core.h>
 #include <functional>
 
@@ -148,12 +149,12 @@ inline bool needsMeasuring (wizard::Match m, bool quickCheckPassed)
 // 13 Oct (beta items 3, 4, 7, 8): consent before scanning; the beta build (no sign-in, the results saved as one file, no promo); the
 // server's eligibility and once-only answers. Mode is a build flag (EJ_WIZARD_BETA); every rule below takes it, so both are pinned.
 enum class Mode { normal, beta };
-enum class Screen { welcome, consent, scan, alreadyDone, scanDone, crashRecovered, measuring, upload, reward, noCode, betaSaved, paused };   // paused: 13 Oct
+enum class Screen { welcome, consent, scan, alreadyDone, scanDone, crashRecovered, measuring, upload, reward, noCode, betaSaved, paused, signIn };   // paused: 13 Oct; signIn: 21 Oct (the beta's browser sign-in)
 inline juce::String screenName (Screen s)
 {
     switch (s) { case Screen::welcome: return "welcome"; case Screen::consent: return "consent"; case Screen::scan: return "scan"; case Screen::alreadyDone: return "already_done";
                  case Screen::scanDone: return "scan_done"; case Screen::crashRecovered: return "crash_recovered"; case Screen::measuring: return "measuring";
-                 case Screen::upload: return "upload"; case Screen::reward: return "reward"; case Screen::noCode: return "no_code"; case Screen::betaSaved: return "beta_saved"; case Screen::paused: return "paused"; }
+                 case Screen::upload: return "upload"; case Screen::reward: return "reward"; case Screen::noCode: return "no_code"; case Screen::betaSaved: return "beta_saved"; case Screen::paused: return "paused"; case Screen::signIn: return "sign_in"; }
     return {};
 }
 // THE WORK FOLDERS (Kathy, 13 Oct): the beta and the release never share one - "Application Support/EchoJay Wizard Beta" vs "EchoJay Wizard"
@@ -214,6 +215,7 @@ struct Where { bool signedIn = false, consented = false, scanned = false, measur
 struct Copy { juce::String title, text, primary, secondary; };
 inline juce::String consentText (Mode m)
 {
+    if (m == Mode::beta) return wizcontract::consentText();   // 21 Oct (contract v1 §6): the beta sends - exactly what, word for word
     // Kathy, 13 Oct (consent edits): the beta SAVES the results for the user to send; both say they become part of the shared plugin map
     return (m == Mode::beta ? juce::String ("The wizard measures how your audio plugins respond to test tones and saves the results for you to send to EchoJay: ")
                             : juce::String ("The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: "))
@@ -231,9 +233,19 @@ inline Copy diskRefusedCopy (const juce::String& words) { return { "Not enough d
 // the results file (item 4, beta): one zip on the Desktop
 inline juce::String resultsFileName (const juce::Time& t) { return "EchoJay-Wizard-results-" + t.formatted ("%Y-%m-%d") + ".zip"; }
 // AFTER THE SCAN (items 7 / 8): the server's answer decides - already taken part -> nothing runs; else the results with eligibility
-struct Eligibility { bool already = false, eligible = false; int count = 0, minimum = 5; };
+struct Eligibility { bool already = false, eligible = false; int count = 0, minimum = 5, known = 0; };
 inline Eligibility eligibilityOf (const juce::var& v)
-{ Eligibility e; e.already = (bool) v.getProperty ("already_contributed", false); e.eligible = (bool) v.getProperty ("eligible", false); e.count = (int) v.getProperty ("count", 0); e.minimum = (int) v.getProperty ("minimum", 5); return e; }
+{ Eligibility e; e.already = (bool) v.getProperty ("already_contributed", false); e.eligible = (bool) v.getProperty ("eligible", false); e.count = (int) v.getProperty ("count", 0); e.minimum = (int) v.getProperty ("minimum", 5); e.known = (int) v.getProperty ("known", 0); return e; }
+// THE CHECK BEFORE MEASURING (Kathy, 21 Oct): "N already known, M to measure"
+inline juce::String knownWords (int known, int toMeasure) { return juce::String (known) + " already known, " + juce::String (toMeasure) + " to measure"; }
+// THE LIVE UPLOAD's line (21 Oct): what was sent, what waits and why - never a token, never a number the server did not confirm
+inline juce::String uploadLine (int sent, int waiting, int rejected, bool offline, bool signIn)
+{
+    juce::String s = juce::String (sent) + (sent == 1 ? " result sent" : " results sent");
+    if (waiting > 0) s << ", " << waiting << " waiting" << (signIn ? " - please sign in again" : offline ? " - you're offline, they'll go when you're back" : "");
+    if (rejected > 0) s << ", " << rejected << " not accepted";
+    return s;
+}
 // ONE START CARRIES THE WHOLE RUN (Kathy, 15 Oct: the overnight run sat on "Ready to measure - 504 plugins - Start" all night): when
 // there is something to measure (the beta: anything new; the release: eligible) the scan goes straight into measuring - no second
 // button. "Ready to measure" is now the Measuring screen's line (measuringText). Not eligible / nothing new still stops on its screen:
@@ -255,9 +267,9 @@ inline juce::String scanDoneBody (Mode m, int count)
 inline Copy scanDoneCopy (Mode m, const Eligibility& e)
 {
     const auto n = juce::String (e.count) + (e.count == 1 ? " plugin" : " plugins");
-    if (m == Mode::beta)
-        return e.count > 0 ? Copy { "Ready to measure", scanDoneBody (m, e.count), "Start", {} }
-                           : Copy { "Thanks - your plugins are already mapped", "There's nothing to measure right now.", "Done", {} };
+    if (m == Mode::beta)   // 21 Oct: the catalogue check's own count - "N already known, M to measure"
+        return e.count > 0 ? Copy { "Ready to measure", knownWords (e.known, e.count) + ". " + scanDoneBody (m, e.count), "Start", {} }
+                           : Copy { "Thanks - EchoJay already knows your plugins", knownWords (e.known, 0) + ". There's nothing to measure right now.", "Done", {} };
     if (e.eligible) return { "Ready to measure", scanDoneBody (m, e.count), "Start", {} };
     // below the qualify minimum (Kathy, 13 Oct): no reward; when there is something new, say how much and that they may still contribute
     if (e.count > 0) return { "Thanks - your plugins are already mapped", "You have " + n + " we don't have yet - the free month needs " + juce::String (e.minimum) + " or more. You can still contribute them.", "Done", "Contribute anyway (no reward)" };
@@ -418,7 +430,8 @@ inline bool shimmerOn (Screen s, bool pausing, bool finishing) { return s == Scr
 inline double shimmerPhase (double ms) { const double period = 3200.0, sweep = 2400.0; const double k = std::fmod (ms, period); return k < sweep ? k / sweep : -1.0; }
 inline juce::String pausedText (Mode m, bool keptOffline)
 {
-    if (m == Mode::beta) return "It carries on where it stopped - open the wizard any time. Your results so far are in the file on your Desktop: even if you stop early, email it.";
+    if (m == Mode::beta) return keptOffline ? "It carries on where it stopped - open the wizard any time. You're offline: the results so far are kept on this Mac and sent when you're back online."
+                                            : "It carries on where it stopped - open the wizard any time. Every result so far has been sent to EchoJay.";
     return keptOffline ? "It carries on where it stopped - open the wizard any time. You're offline: what's measured so far is saved and will be sent when you're back online. The free month comes when the full run is done."
                        : "It carries on where it stopped - open the wizard any time. What's measured so far has been sent; the free month comes when the full run is done.";
 }
@@ -438,7 +451,7 @@ inline bool tellsATime (const juce::String& s)
     return false;
 }
 // after measuring: the upload (normal) or the saved file (beta: no upload, no promo)
-inline Screen afterMeasure (Mode m) { return m == Mode::beta ? Screen::betaSaved : Screen::upload; }
+inline Screen afterMeasure (Mode m) { (void) m; return Screen::upload; }   // 21 Oct: the beta sends too (its last results, then the run's end)
 // after the upload (normal): the code only when the server granted it on the ACCEPTED results; else its plain message
 inline Screen afterUpload (const juce::var& receipt, const juce::var& promo) { return (bool) receipt.getProperty ("reward_eligible", false) && promo.isObject() ? Screen::reward : Screen::noCode; }
 // FREE DISK (Kathy, 13 Oct, beta item 2): a wizard run writes ~5 MB per plugin (13 plugins: ~70 MB; a 500-plugin Mac ~2.5 GB). It does
@@ -564,7 +577,7 @@ inline bool checkpointDue (double lastMs, double nowMs, double minutes) { return
 struct Choices { juce::String pause, send, line; };
 inline Choices measuringChoices (Mode m)
 {
-    if (m == Mode::beta) return { "Pause - carry on later", "Finish and save what's done", "Even if you stop early, email the file on your Desktop." };
+    if (m == Mode::beta) return { "Pause - carry on later", "Finish and send what's done", "Each result is sent to EchoJay as soon as it's measured." };
     return { "Pause - carry on later", "Send what's done (no free month)", "The free month needs the full run - you can carry on later instead." };
 }
 // JOBS BY MAC (Kathy, 13 Oct): 2 by default; 4 on a Mac with 8+ performance cores AND enough free memory at launch (the serial lane is
@@ -644,11 +657,11 @@ inline juce::String leftWords (const juce::var& left)
 inline Screen openOn (const Where& w, Mode m = Mode::normal)
 {
     if (m == Mode::normal && ! w.signedIn) return Screen::welcome;
-    if (m == Mode::beta && ! w.consented && ! w.scanned && ! w.measureStarted) return Screen::welcome;   // the beta's own welcome, then consent
+    if (m == Mode::beta && ! w.signedIn) return Screen::welcome;   // 21 Oct: the beta signs in (in the browser) first
     if (! w.consented && ! w.scanned && ! w.measureStarted) return Screen::consent;   // 13 Oct: consent before anything is scanned
     if (w.rewarded) return Screen::reward;
     if (w.crashed > 0) return Screen::crashRecovered;             // a crash is said before anything carries on
-    if (m == Mode::beta && w.saved) return Screen::betaSaved;
+    if (m == Mode::beta && w.saved && ! w.uploaded) return Screen::upload;   // 21 Oct: a run that ended but whose end was not reported yet
     if (w.uploaded) return Screen::reward;
     if (w.measureDone) return afterMeasure (m);
     if (w.measureStarted) return Screen::measuring;                // closed or stopped mid-measure: carry on

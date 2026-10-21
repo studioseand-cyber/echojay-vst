@@ -29,7 +29,7 @@ namespace ejmap::wizroute
 enum class Rule { A, B, C, pendingReview };
 // passes (13 Oct, limiters): when not empty, the only Phase B passes still to run (a limiter the database has half of); limiterKnown:
 // the database holds its limiter pass, so its compressor pass may run without a limiter row of this Mac's own
-struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; juce::StringArray passes; bool limiterKnown = false; };
+struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; juce::StringArray passes; bool limiterKnown = false; juce::String heldWhy; };   // heldWhy (21 Oct): the server holds it
 inline juce::String pluginId (const juce::String& uid, const juce::String& version, const juce::String& format = "AudioUnit") { return format + "|" + uid.toLowerCase() + "|" + version; }   // 17 Oct: tagged by format
 // <db>/pending_review.json: [{"plugin_id": "AudioUnit|uid|version", "product": ...}] - what other users already sent as needs_category
 inline std::set<juce::String> loadPending (const juce::File& db)
@@ -66,6 +66,20 @@ inline Answer ask (const std::vector<wizard::DbEntry>& db, const std::set<juce::
     if (pending.count (pid.toLowerCase())) { a.rule = Rule::pendingReview; a.why = "already sent for review by another user"; return a; }
     if (L.match == wizard::Match::sameControls) { a.rule = Rule::B; a.entry = L.entry; a.category = L.entry->category(); a.why = L.why; return a; }
     a.rule = Rule::C; a.category = serverCategory (catalogue, pid, name); a.why = L.why; return a;
+}
+
+// THE SERVER'S CATALOGUE ANSWER (contract v1 §2, 21 Oct): have -> skipped entirely (rule A); held pending_review -> not re-sent; held for
+// another reason -> held, measured nothing; need (or no answer) -> measured, with the server's category when it gave one
+inline Answer fromCatalogue (const juce::var& answers, const juce::String& pid)
+{
+    Answer a; const auto e = answers.getProperty ("by_plugin_id", {}).getProperty (juce::Identifier (pid.isNotEmpty() ? pid : juce::String ("?")), {});
+    const auto st = e.getProperty ("status", "").toString(), reason = e.getProperty ("reason", "").toString();
+    const auto cat = e.getProperty ("category", juce::var()); a.category = cat.isString() ? cat.toString() : juce::String();
+    if (st == "have") { a.rule = Rule::A; a.why = "EchoJay already has it (" + e.getProperty ("level", "mapped").toString() + ")"; return a; }
+    if (st == "held" && reason == "pending_review") { a.rule = Rule::pendingReview; a.why = "another tester already sent it: waiting for review"; return a; }
+    if (st == "held") { a.rule = Rule::C; a.heldWhy = "held by EchoJay (" + (reason.isNotEmpty() ? reason : juce::String ("no reason given")) + "): not measured"; return a; }
+    a.rule = Rule::C; a.why = st.isEmpty() ? juce::String ("the catalogue check gave no answer: measured") : reason == "fingerprint_differs" ? juce::String ("EchoJay has another build of it: measured") : juce::String ("EchoJay needs it");
+    return a;
 }
 
 // --- the route -----------------------------------------------------------------------------------------------------------------------
@@ -296,6 +310,7 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
     if (surround.isNotEmpty()) return { Route::outOfScope, "surround", "out of scope (surround " + surround + ": EchoJay works on mono / stereo tracks): not loaded, not counted" };
     // a known multiband: held at once - never quick-checked, signature-read or queued for the compressor certification
     if (knownMultiband) return { Route::held, "multiband", "held: no server category (a known multiband: EJ Map's list)" };
+    if (a.heldWhy.isNotEmpty()) return { Route::held, a.category, a.heldWhy };   // 21 Oct: the server holds it
     if (a.rule == Rule::B) return { Route::quickCheck, a.category, a.why };
     if (a.category.isNotEmpty())
     {   // the server's names (Sean's 12); an internal label from a local catalogue: multiband -> held, the rest out of scope (never sent)

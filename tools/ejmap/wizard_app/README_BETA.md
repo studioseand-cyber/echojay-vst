@@ -3,11 +3,16 @@
 ## Building it (us)
 
 ```
+cmake -B build-ejmap -DEJ_WIZARD_BETA_SERVER_URL=<staging base URL> -DEJ_WIZARD_BETA_CLIENT_ID=<public OAuth client id>
 cmake --build build-ejmap --target ejmap ejmap-wizard-beta EchoJayProbe -j4
 tools/ejmap/wizard_app/assemble.sh build-ejmap <out folder> --beta --sign "Developer ID Application: Sean Donoghue (8BT5F9B887)" --dmg
 ```
 
-This gives `EchoJay Wizard Beta.app` and `EchoJay Wizard Beta.dmg`. Inside the app:
+This gives `EchoJay Wizard Beta.app` and `EchoJay Wizard Beta.dmg`.
+
+**The server, per build (21 Oct):** the beta talks to the server named at configure time (staging = Sean's test server, live later; contract: `FOR_SEAN_21oct/WIZARD_SERVER_CONTRACT_v1.md`). Without one it says "not connected yet". `assemble.sh` refuses to pack an app that carries anything like a token or a key (`scripts/check_bundle_secrets.sh`).
+
+Inside the app:
 - **Signatures:** the app, its engine (`ejmap`) and its probe (`EchoJayProbe`) are all signed with the team's Developer ID (8BT5F9B887), hardened runtime and a timestamp. The probe and the engine carry the probe's entitlements. The disk image is signed too.
 - **The mock DB:** the 290 agreed references are in Contents/Resources.
 
@@ -40,16 +45,16 @@ If step 2 says **"Operation not permitted"**, macOS has already tried to open th
 3. Do step 2 before opening anything.
 
 **3. Run it.** Open **EchoJay Wizard Beta** from Applications.
-- **The order:** read the short consent paragraph, tick **I agree**, and press Continue. The wizard then checks your plugins and measures the ones EchoJay doesn't know yet.
-- **Leave it running, or pause.** It runs by itself in the background - best left running overnight - and the Mac stays awake. **Pause - carry on later** stops it; opening the wizard again carries on. Every pause (and regular saves while it runs) rewrites the results file on your Desktop, so **even if you stop early, email the file on your Desktop**. **Finish and save what's done** ends the run early.
+- **Sign in:** press **Sign in with EchoJay**. Your browser opens on echojay.ai: sign in there, check the code matches the one in the wizard, and approve. The wizard never sees your password.
+- **The order:** read the consent, tick **I agree**, and press Continue. The wizard lists your plugins, asks EchoJay which it already knows ("N already known, M to measure"), and measures the rest.
+- **Leave it running, or pause.** It runs by itself in the background - best left running overnight - and the Mac stays awake. Each result is sent to EchoJay as soon as it's measured; if you're offline they wait on the Mac and go when you're back. **Pause - carry on later** stops it; opening the wizard again carries on. **Finish and send what's done** ends the run early.
 - **Licence windows:** some plugins may briefly show a licence or sign-in window. That's normal - please don't click it; the wizard closes it, moves on, and won't load that plugin again.
 - **"Waves plugins skipped - check Waves Central"** means one of Waves' shared plugin files didn't load, so the wizard skipped its other Waves plugins rather than wait on each. Open Waves Central, check the plugins and licences there, then open the wizard again.
 - **Free space:** it needs at least 3 GB free.
 
-**4. Send the results.** At the end it says "Your results are ready" and saves **EchoJay-Wizard-results-<date>.zip** on your Desktop.
-- **Show in Finder** points at the file.
-- Email that one file to **admin@signaturestudiosonline.com** (the address is on the screen too).
-- The file holds plugin names, versions, controls and measurements: no audio, no files of yours, nothing personal.
+**4. The end.** When the run is over the wizard tells EchoJay, and EchoJay decides the free month: if you qualify, the wizard shows your code (**Copy code**). Nothing to email.
+- Questions or problems: email **admin@signaturestudiosonline.com**.
+- What is sent: your plugin list (names, makers, versions, formats), the measurements and each measured plugin's controls, and the wizard's and macOS's versions. No audio, no files of yours, nothing personal.
 
 ## What only another Mac can test (not this one)
 

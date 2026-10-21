@@ -14,6 +14,7 @@
 #include "EjmapCertDriver.h"
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
+#include "EjmapWizardResults.h"   // 21 Oct: one result per plugin, into the outbox (contract v1)
 #include "EjmapApbPreflight.h"
 #include "EjmapSelfGuardRun.h"   // 16 Oct: the guard on the developer's own loads (guardedPlugins)
 #include "EjmapReadbackSweepRun.h"   // 17 Oct (rulings 3): the VST3 lane - the bridge read and the probe's VST3 identity line
@@ -29,7 +30,7 @@
 namespace ejmap::cert
 {
 
-struct WizardOptions { SweepOptions opt; juce::File db, skip; juce::StringArray only; bool measure = false, bundle = false, verbose = false, plan = false; juce::String runId; double checkpointMinutes = 60.0; };   // runId / checkpointMinutes: 13 Oct, partial uploads   // plan: the database step only, nothing loaded (plan.json)   // skip: the app's never-retry list (skip.json)
+struct WizardOptions { SweepOptions opt; juce::File db, skip, catalogueRequest, catalogueAnswers, resultsOutbox; juce::StringArray only; bool measure = false, bundle = false, verbose = false, plan = false; juce::String runId; double checkpointMinutes = 60.0; };   // runId / checkpointMinutes: 13 Oct, partial uploads   // plan: the database step only, nothing loaded (plan.json)   // skip: the app's never-retry list (skip.json)
 
 // the map store (read): (uid|version) -> { fp, category }
 struct StoreEntry { juce::String fp, category; };
@@ -528,6 +529,7 @@ inline int runWizard (const WizardOptions& wo)
     const auto db = wizard::loadDb (wo.db);
     const auto catalogue = juce::JSON::parse (wo.db.getChildFile ("categories.json").loadFileAsString());
     const auto dbMultiband = wizroute::loadMultiband (wo.db);
+    const auto catAnswers = wo.catalogueAnswers != juce::File() ? juce::JSON::parse (wo.catalogueAnswers.loadFileAsString()) : juce::var();   // 21 Oct: the server's answers (contract v1 §2)
     {   int idx = 0; for (const auto& e : db) idx += e.indexOnly ? 1 : 0;
         say ("WIZARD: " + juce::String ((int) db.size() - idx) + " profile(s) and " + juce::String (idx) + " mapped draft(s) in the database (" + wo.db.getFileName() + ", a local folder: nothing is fetched)"); }
     // THE NEVER-RETRY LIST (the app's crash recovery): a plugin the wizard went down with is not loaded again, by any stage
@@ -647,6 +649,24 @@ inline int runWizard (const WizardOptions& wo)
         setenv ("EJ_VST3_EXTRAS", xf.getFullPathName().toRawUTF8(), 1);
     }
     prog.setPlugins ((int) plugins.size());
+    // THE CATALOGUE REQUEST (contract v1 §2, 21 Oct): the plugin list the app sends before anything is measured - name, vendor, version,
+    // format, the map fingerprint when an earlier run made one. Nothing is mapped or measured here; the engine ends
+    if (wo.catalogueRequest != juce::File())
+    {
+        juce::Array<juce::var> list;
+        for (const auto& ir : plugins)
+        {   const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
+            const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
+            auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", wizroute::pluginId (uid, ver, fmtTag (ir.desc))); o->setProperty ("name", ir.desc.name);
+            o->setProperty ("vendor", ir.desc.manufacturerName); o->setProperty ("version", ver); o->setProperty ("format", fmtTag (ir.desc));
+            o->setProperty ("type", ir.desc.pluginFormatName == "VST3" ? juce::String ("aufx") : ir.desc.fileOrIdentifier.fromFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false));
+            o->setProperty ("fingerprint", se.fp.isNotEmpty() ? juce::var (se.fp) : juce::var()); list.add (juce::var (o)); }
+        auto* req = new juce::DynamicObject(); req->setProperty ("plugins", list);
+        const auto tmp = wo.catalogueRequest.getSiblingFile (wo.catalogueRequest.getFileName() + ".tmp");
+        tmp.replaceWithText (juce::JSON::toString (juce::var (req)) + "\n"); tmp.moveFileTo (wo.catalogueRequest);
+        say ("WIZARD: the catalogue request: " + juce::String (list.size()) + " plugin(s) -> " + wo.catalogueRequest.getFileName() + " (nothing mapped or measured)");
+        prog.finish ("The plugin list is ready"); return 0;
+    }
     const auto bundlesAll = componentBundles();
     setenv ("EJ_WIZARD_BACKGROUND", "1", 1); jobs::beBackgroundGuest();   // 15 Oct (sharing the Mac): this engine and every child it starts run as background guests
     setenv ("EJ_UAD_NATIVE", "1", 1);   // 15 Oct: UAD by sound, not by device - this process and every child it starts (EjmapUadPreflight.h)
@@ -736,7 +756,7 @@ inline int runWizard (const WizardOptions& wo)
     {
         const auto& ir = plugins[i]; const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
-        const auto ans = wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
+        const auto ans = catAnswers.isObject() ? wizroute::fromCatalogue (catAnswers, wizroute::pluginId (uid, ver, fmtTag (ir.desc))) : wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
         const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name));
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver, fmtTag (ir.desc))); row->setProperty ("format", fmtTag (ir.desc)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
@@ -1134,7 +1154,7 @@ inline int runWizard (const WizardOptions& wo)
             {   // multiband (12 Oct): no server category - listed with its map, NO category field
                 const auto fp = rv.getProperty ("map_fp", "").toString(); const auto mapF = opt.ledger.getChildFile ("maps").getChildFile (fp + ".json");
                 auto* h = new juce::DynamicObject(); h->setProperty ("product", product); h->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); h->setProperty ("map_fp", fp);
-                h->setProperty ("map", fp.isNotEmpty() && mapF.existsAsFile() ? juce::JSON::parse (mapF.loadFileAsString()) : juce::var()); h->setProperty ("why", "held: no server category");
+                h->setProperty ("map", fp.isNotEmpty() && mapF.existsAsFile() ? juce::JSON::parse (mapF.loadFileAsString()) : juce::var()); h->setProperty ("why", rv.getProperty ("why", "").toString().startsWith ("held by EchoJay") ? rv.getProperty ("why", "").toString() : juce::String ("held: no server category"));
                 heldList.add (juce::var (h));
             }
             else if (st == "needs_category" || st == "other_category")
@@ -1205,6 +1225,18 @@ inline int runWizard (const WizardOptions& wo)
             for (const auto& p : wizard::personalProblems (f.loadFileAsString(), home, user, juce::String (host).upToFirstOccurrenceOf (".", false, false)))
                 problems.add (f.getRelativePathFrom (B) + ": " + p);
         if (! problems.isEmpty()) { say ("WIZARD: the bundle is NOT made - it would carry: " + problems.joinIntoString ("; ")); if (! quiet) prog.finish ("Stopped: the bundle would carry something personal (" + problems.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
+        // ONE RESULT PER PLUGIN (contract v1 §4, 21 Oct): the same pack, as one document per plugin into the app's outbox - a checkpoint only
+        // what is final, the last pack the rest; each once, never one with anything personal
+        if (wo.resultsOutbox != juce::File())
+        {
+            std::map<juce::String, wizresults::Identity> idOf; std::map<juce::String, juce::String> pidOfProduct;
+            for (const auto& rv : rows) { const auto pid = rv.getProperty ("plugin_id", "").toString(); if (pid.isEmpty()) continue;
+                                          idOf[pid] = { rv.getProperty ("vendor", "").toString(), rv.getProperty ("product", "").toString() }; pidOfProduct[rv.getProperty ("product", "").toString()] = pid; }
+            wizcontract::Outbox box { wo.resultsOutbox };
+            const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != "checkpoint", idOf, pidOfProduct);
+            const auto em = wizresults::emit (docs, box, [&] (const juce::String& t) { return wizard::personalProblems (t, home, user, juce::String (host).upToFirstOccurrenceOf (".", false, false)); });
+            say ("WIZARD: results for the outbox (" + runKind + "): " + juce::String (em.added) + " new, " + juce::String (em.already) + " already there" + (em.refused > 0 ? ", " + juce::String (em.refused) + " REFUSED (" + em.refusedWhy.joinIntoString ("; ") + ")" : juce::String()));
+        }
         // 13 Oct (partial uploads): the zip and its manifest land by rename, then checkpoint.json names them - the app may read them while
         // the engine still measures
         const auto zip = out.getChildFile ("contribution.zip"); const auto zipTmp = out.getChildFile ("contribution.zip.tmp"); zipTmp.deleteFile();

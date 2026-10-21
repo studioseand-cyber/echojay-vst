@@ -27,6 +27,9 @@
 #include "EjmapWizardApp.h"
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardServer.h"
+#include "EjmapWizardContract.h"   // 21 Oct: the beta's real server (contract v1)
+#include "EjmapKeychain.h"
+#include <mutex>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/IOKitLib.h>
 #include <spawn.h>
@@ -60,6 +63,15 @@ constexpr bool kTest = true;
 #else
 constexpr bool kTest = false;
 #endif
+// THE SERVER, PER BUILD (Kathy, 21 Oct): the beta's base URL and public OAuth client id come from CMake (EJ_WIZARD_BETA_SERVER_URL /
+// EJ_WIZARD_BETA_CLIENT_ID). No secret is ever compiled in: a device-code client is public
+#ifndef EJ_WIZARD_SERVER_URL
+#define EJ_WIZARD_SERVER_URL ""
+#endif
+#ifndef EJ_WIZARD_OAUTH_CLIENT_ID
+#define EJ_WIZARD_OAUTH_CLIENT_ID ""
+#endif
+constexpr bool kNetworked = kMode == wizapp::Mode::beta;   // 21 Oct: the beta's contribution flow is real; the Test build keeps its stub
 #ifndef EJ_WIZARD_BETA_EMAIL
 #define EJ_WIZARD_BETA_EMAIL "admin@signaturestudiosonline.com"   // Kathy, 13 Oct
 #endif
@@ -67,6 +79,7 @@ constexpr bool kTest = false;
 struct Config
 {
     juce::File work, db, store, engine, snapshots, reports;
+    juce::String serverUrl { EJ_WIZARD_SERVER_URL }, clientId { EJ_WIZARD_OAUTH_CLIENT_ID }; bool checkpointSet = false;   // 21 Oct
     int jobs = 0; juce::StringArray only; bool autoMode = false; double autoCloseAfterS = 0.0, checkpointMinutes = 60.0; int autoSendAt = 0, autoPauseAt = 0; bool autoAskClose = false, autoResetTest = false; double snapScanAtPct = -1.0;   // jobs 0: chosen by the Mac (13 Oct)
 };
 
@@ -166,10 +179,13 @@ Config parseArgs (const juce::StringArray& a)
         else if (k == "--auto-ask-close") c.autoAskClose = true;
         else if (k == "--auto-reset-test") c.autoResetTest = true;
         else if (k == "--snap-scan-at") { c.snapScanAtPct = v.getDoubleValue(); ++i; }   // rehearsals: snap the scan screen when its bar first reaches N %   // rehearsals (test build): press Reset test once, snap the welcome screen, quit   // rehearsals: open the close question once while measuring, snap it, keep measuring
-        else if (k == "--checkpoint-minutes") { c.checkpointMinutes = v.getDoubleValue(); ++i; }   // rehearsals: the quiet checkpoint's interval
+        else if (k == "--checkpoint-minutes") { c.checkpointMinutes = v.getDoubleValue(); c.checkpointSet = true; ++i; }
+        else if (k == "--server-url") { if (ejmap::wizcontract::localOverrideAllowed (v)) c.serverUrl = v; ++i; }   // 21 Oct: rehearsals against the mock - THIS Mac only, never another server
+        else if (k == "--client-id") { if (ejmap::wizcontract::localOverrideAllowed (c.serverUrl)) c.clientId = v; ++i; }   // rehearsals: the quiet checkpoint's interval
         else if (k == "--auto-close-after") { c.autoCloseAfterS = v.getDoubleValue(); ++i; }   // rehearsals: the close button, pressed after N s of measuring
     }
     if (c.jobs <= 0) c.jobs = wizapp::jobsFor (performanceCores(), availableMemoryBytes());   // 13 Oct: jobs by Mac
+    if (kNetworked && ! c.checkpointSet) c.checkpointMinutes = 2.0;   // 21 Oct: the results flow out every ~2 min while measuring
     const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
     if (c.db == juce::File()) c.db = wizapp::databaseFolder (kMode, app, c.work);       // beta: the bundled snapshot (read-only); release: the STUB
     if (c.store == juce::File()) c.store = c.work.getChildFile ("store");                // the wizard's own map store (never ~/Library/ejmap)
@@ -268,12 +284,17 @@ public:
         addChildComponent (agree); agree.setButtonText (wizapp::consentTick()); agree.setColour (juce::ToggleButton::textColourId, ink); agree.setColour (juce::ToggleButton::tickColourId, accent);
         agree.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (0xff8a90a0)); agree.onClick = [this] { primary.setEnabled (agree.getToggleState()); };
         device = wizserver::deviceHashOf (platformUuid());
+        if (kNetworked && ep().configured())
+        {   // 21 Oct: the tokens live only in the Keychain (one item per server); the session logs through the app log, redacted
+            keychain = std::make_unique<wizcontract::KeychainTokenStore> (wizcontract::keychainServiceFor (ep().base));
+            session = std::make_unique<wizcontract::Session> (ep(), wizcontract::urlTransport (30000), *keychain, [this] (const juce::String& l) { logLine ("server: " + l); }, "0.3.0");
+        }
         setSize (640, 560);   // 15 Oct (FEELS FROZEN): room for the job lines under the measuring bar
         // WHERE TO OPEN: from the files alone (a crash first)
         crashed = wizapp::recover (cfg.work, engineDir().getChildFile ("inflight"), cfg.reports, juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(),
                                    juce::SystemStats::getLogonName(), hostName());
         wizapp::Where w; const auto st = appState();
-        w.signedIn = cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
+        w.signedIn = kNetworked ? (session != nullptr && session->signedIn()) : cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
         w.measureStarted = (bool) st.getProperty ("measure_started", false); w.measureDone = (bool) st.getProperty ("measure_done", false);
         w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
         w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false);
@@ -287,10 +308,11 @@ public:
         logLine ("jobs: " + juce::String (cfg.jobs) + " (" + juce::String (performanceCores()) + " performance cores, " + juce::String (availableMemoryBytes() / 1073741824.0, 1) + " GB free)");
         show (wizapp::openOn (w, kMode, wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()))));   // 15 Oct: a finished scan carries on into measuring
         startTimer (250);
+        if (kNetworked && session != nullptr && (bool) appState().getProperty ("consented", false)) uploader.startThread();   // 21 Oct: what waits in the outbox goes
         shimmer.tick = [this] { if (wizapp::shimmerOn (screen, pausing, finishing)) repaint(); };   // 15 Oct: the wave by the title and the job lines too
         shimmer.startTimerHz (30);   // 15 Oct: the shimmer moves even while one plugin takes 20 minutes
     }
-    ~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause();
+    ~WizardComponent() override { closing = true; uploader.stopThread (4000); net.removeAllJobs (true, 8000); stopTimer(); awake.hold (false); if (engine.running()) engine.pause();
                                   else if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty()) logLine ("quit: closed what the engine left running: " + left.joinIntoString (", ")); }   // 19 Oct   // 14 Oct: never leave an engine running
 
     // closing the window PAUSES: the engine stops cleanly (Phase B's SIGINT), the app quits when it has
@@ -444,17 +466,156 @@ private:
         const auto f = engineDir().getChildFile ("wizard_state.json"); const auto t = f.getLastModificationTime().toMilliseconds();
         if (t == readyStamp || ! f.existsAsFile()) return; readyStamp = t;
         const int n = (int) juce::JSON::parse (f.loadFileAsString()).getProperty ("to_measure", 0);
-        if (n > 0 && ! pausing && ! finishing) text = wizapp::measuringText (n);
+        if (n > 0 && ! pausing && ! finishing)
+        {   text = wizapp::measuringText (n);
+            if (kNetworked) { const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));   // 21 Oct: the check's own words stay
+                              text = wizapp::knownWords (el.known, n) + ". " + text; } }
     }
     std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false, pausing = false, quitAfterPause = false, forceAsk = false, lastSendKept = false; juce::String soFar, choiceLine; int lastCheckpointSeq = 0; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0, resetTicks = 0; double lastSnapQuarter = -1.0;
     double uploadT0 = 0.0; juce::var account, receipt; const juce::String launchTag = juce::Time::getCurrentTime().formatted ("%H%M%S");
 
     juce::File engineDir() const { return cfg.work.getChildFile ("engine"); }
+    // ===== THE REAL SERVER (Kathy, 21 Oct; contract v1) - the beta only. Every network call runs on `net` (one job at a time, under netMutex);
+    // the uploader thread drains the outbox; screens change on the message thread. No token is ever logged or written to a file =====
+    wizcontract::Endpoints ep() const { return { cfg.serverUrl, cfg.clientId }; }
+    // rehearsals against the mock only (a local --server-url AND EJ_WIZARD_REHEARSAL_QUIET): no browser opened, the clipboard left alone
+    bool rehearsalQuiet() const { return std::getenv ("EJ_WIZARD_REHEARSAL_QUIET") != nullptr && wizcontract::localOverrideAllowed (cfg.serverUrl); }
+    std::unique_ptr<wizcontract::KeychainTokenStore> keychain; std::unique_ptr<wizcontract::Session> session; std::mutex netMutex;
+    wizcontract::DeviceStart deviceFlow; std::atomic<bool> closing { false };
+    juce::File outboxDir() const { return cfg.work.getChildFile ("outbox"); }
+    juce::File answersFile() const { return cfg.work.getChildFile ("catalogue_answers.json"); }
+    juce::File requestFile() const { return cfg.work.getChildFile ("catalogue_request.json"); }
+    juce::CriticalSection runLock; juce::String cachedRunId, cachedConsentAt; int cachedQueue = 0;
+    std::atomic<int> sentN { 0 }, pendingN { 0 }, rejectedN { 0 }, failures { 0 }; std::atomic<bool> offlineNow { false }, signInNow { false }, completing { false };
+    double nextTryMs = 0.0; juce::String netWords;   // netWords: the last plain words a call left for a screen
+    wizcontract::RunInfo runInfo() { const juce::ScopedLock l (runLock); return { cachedRunId, cachedConsentAt, cachedQueue }; }
+    void cacheRun() { const auto st = appState(); const juce::ScopedLock l (runLock); cachedRunId = st.getProperty ("run_id", "").toString(); cachedConsentAt = st.getProperty ("consent_at", "").toString();
+                      cachedQueue = (int) juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()).getProperty ("to_measure", 0); }
+    void uploadTick()
+    {   // THE LIVE UPLOAD (contract v1 §4): one result per request, in order, from the outbox; offline / busy -> back-off (5 s .. 10 min); a
+        // rejected result is kept apart with the server's words; a sign-in problem waits for the user. Nothing is lost by a quit
+        if (session == nullptr) return;
+        wizcontract::Outbox box { outboxDir() };
+        pendingN = box.pendingFiles().size(); sentN = box.count (box.sent()); rejectedN = box.count (box.rejected());
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (pendingN == 0 || now < nextTryMs) return;
+        const auto run = runInfo(); if (run.runId.isEmpty()) return;
+        wizcontract::DrainStats st;
+        { std::lock_guard<std::mutex> l (netMutex); st = wizcontract::drain (*session, box, run, [this] { return closing.load(); }); }
+        offlineNow = st.offline; signInNow = st.signIn || session->needsSignIn;
+        if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
+        else if (st.signIn) nextTryMs = now + 30000.0;
+        else failures = 0;
+        if (st.sent + st.duplicates + st.rejected > 0)
+            logLine ("upload: " + juce::String (st.sent) + " sent, " + juce::String (st.duplicates) + " duplicate, " + juce::String (st.rejected) + " not accepted"
+                     + (st.rejectedWords.isEmpty() ? juce::String() : " (" + st.rejectedWords.joinIntoString ("; ") + ")"));
+        pendingN = box.pendingFiles().size(); sentN = box.count (box.sent()); rejectedN = box.count (box.rejected());
+    }
+    struct Uploader : juce::Thread
+    {
+        WizardComponent& c; explicit Uploader (WizardComponent& o) : juce::Thread ("EchoJay uploader"), c (o) {}
+        void run() override { while (! threadShouldExit()) { c.uploadTick(); wait (1000); } }
+    };
+    Uploader uploader { *this };
+    juce::ThreadPool net { juce::ThreadPoolOptions().withThreadName ("EchoJay server").withNumberOfThreads (1) };
+    template <typename F> void onNet (F&& job) { net.addJob ([this, job = std::forward<F> (job)] { if (! closing) job(); }); }
+    template <typename F> void onUi (F&& f) { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<WizardComponent> (this), f = std::forward<F> (f)] () mutable { if (safe != nullptr) f(); }); }
+    // SIGN-IN (contract v1 §1): the browser opens on echojay.ai; the wizard shows the code to check and polls - it never sees a password
+    void startSignIn()
+    {
+        if (session == nullptr) return;
+        primary.setEnabled (false); text = "Opening your browser..."; repaint();
+        onNet ([this]
+        {
+            wizcontract::DeviceStart d; { std::lock_guard<std::mutex> l (netMutex); d = session->startDevice(); }
+            onUi ([this, d]
+            {
+                deviceFlow = d;
+                if (! d.ok) { netWords = wizcontract::plainWords (d.reply); show (Screen::welcome); return; }
+                if (! rehearsalQuiet()) juce::URL (d.verificationUriComplete.isNotEmpty() ? d.verificationUriComplete : d.verificationUri).launchInDefaultBrowser();
+                logLine (rehearsalQuiet() ? "sign-in: rehearsal - the browser NOT opened (the approval comes from the mock's hook)" : "sign-in: the browser opened on the verification page (the code is on screen)");
+                show (Screen::signIn); pollSignIn();
+            });
+        });
+    }
+    void pollSignIn()
+    {
+        onNet ([this]
+        {
+            auto d = deviceFlow; const double until = juce::Time::getMillisecondCounterHiRes() + 1000.0 * juce::jmax (30, d.expiresIn);
+            while (! closing && juce::Time::getMillisecondCounterHiRes() < until)
+            {
+                juce::Thread::sleep (1000 * d.interval);
+                juce::String words; wizcontract::Poll p;
+                { std::lock_guard<std::mutex> l (netMutex); p = session->pollOnce (d, words); }
+                if (p == wizcontract::Poll::pending || p == wizcontract::Poll::slowDown) continue;
+                onUi ([this, p, words]
+                {
+                    if (p == wizcontract::Poll::ok) { logLine ("signed in as " + session->displayName()); netWords = {}; show (Screen::consent); return; }
+                    logLine ("sign-in did not finish: " + words); netWords = words; show (Screen::welcome);
+                });
+                return;
+            }
+            onUi ([this] { if (screen == Screen::signIn) { netWords = "That sign-in link has expired - try again."; show (Screen::welcome); } });
+        });
+    }
+    // THE CATALOGUE CHECK (contract v1 §2): the engine lists the plugins (nothing measured), the server answers, the engine scans with the answers
+    void checkCatalogue()
+    {
+        barLeft = "Checking with EchoJay"; repaint();
+        onNet ([this]
+        {
+            const auto req = juce::JSON::parse (requestFile().loadFileAsString());
+            wizcontract::CatalogueResult cr; { std::lock_guard<std::mutex> l (netMutex); cr = wizcontract::catalogueCheck (*session, req); }
+            onUi ([this, cr]
+            {
+                if (! cr.ok)
+                {   netWords = wizcontract::plainWords (cr.reply); logLine ("catalogue check failed: " + netWords);
+                    title = "Couldn't reach EchoJay"; text = netWords; showBar = false; primary.setButtonText (session->needsSignIn ? "Sign in again" : "Try again"); primary.setVisible (true); primary.setEnabled (true);
+                    retryCatalogue = true; repaint(); return; }
+                answersFile().replaceWithText (juce::JSON::toString (cr.answers));
+                logLine ("catalogue check: " + wizapp::knownWords (cr.have + cr.held, cr.need) + " (have " + juce::String (cr.have) + ", held " + juce::String (cr.held) + ")");
+                barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);
+            });
+        });
+    }
+    bool retryCatalogue = false;
+    // THE RUN'S END (contract v1 §5): every result sent first; then the server decides and returns the promo (never made here)
+    void reportRunEnd()
+    {
+        if (completing) return; completing = true;
+        onNet ([this]
+        {
+            const auto m = juce::JSON::parse (engineDir().getChildFile ("contribution.manifest.json").loadFileAsString());
+            wizcontract::Outbox box { outboxDir() }; juce::StringArray ids;
+            for (const auto& f : box.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) ids.add (wizcontract::Outbox::resultIdOf (f));
+            const auto kind = m.getProperty ("run", {}).getProperty ("kind", "finished").toString();
+            wizcontract::Completion c; { std::lock_guard<std::mutex> l (netMutex); c = wizcontract::complete (*session, runInfo().runId, kind, m.getProperty ("queue", {}), m.getProperty ("outcomes", {}), ids); }
+            if (! c.missing.isEmpty())
+            {   // the server lacks some: back into the outbox, sent again, then asked again
+                for (const auto& f : box.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) if (c.missing.contains (wizcontract::Outbox::resultIdOf (f))) f.moveFileTo (box.pending().getChildFile (f.getFileName()));
+                logLine ("run end: the server lacked " + juce::String (c.missing.size()) + " result(s) - sending them again"); nextTryMs = 0.0;
+            }
+            onUi ([this, c]
+            {
+                completing = false;
+                if (! c.missing.isEmpty()) return;   // tickUpload asks again once they are sent
+                if (! c.done) { netWords = wizcontract::plainWords (c.reply); logLine ("run end not reported: " + netWords); title = c.reply.network ? "You're offline" : "Couldn't reach EchoJay";
+                                text = netWords + " Your results are kept on this Mac."; showBar = false; primary.setButtonText ("Try again"); primary.setVisible (true); secondary.setButtonText ("Done"); secondary.setVisible (true); repaint(); return; }
+                setState ("uploaded", true);
+                logLine ("run end reported: promo " + juce::String (c.eligible ? (c.issuedNow ? "issued" : "already issued") : "not eligible") + (c.message.isNotEmpty() ? " - " + c.message : juce::String()));
+                if (c.eligible && c.code.isNotEmpty())
+                {   auto* r = new juce::DynamicObject(); r->setProperty ("code", c.code); r->setProperty ("months", c.months); r->setProperty ("message", c.message);
+                    cfg.work.getChildFile ("reward.json").replaceWithText (juce::JSON::toString (juce::var (r))); show (Screen::reward); }
+                else { auto* r = new juce::DynamicObject(); r->setProperty ("reward_message", c.message); cfg.work.getChildFile ("receipt.json").replaceWithText (juce::JSON::toString (juce::var (r))); show (Screen::noCode); }
+            });
+        });
+    }
     // THE RUN ID (13 Oct): made once, when measuring first starts; a pause and a resume days later are the same run
     juce::String runId()
     {
         auto id = appState().getProperty ("run_id", "").toString();
-        if (id.isEmpty()) { id = "run_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()); auto st = appState(); st.getDynamicObject()->setProperty ("run_id", id);
+        if (id.isEmpty()) { id = "run_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()).paddedLeft ('0', 16); auto st = appState();   /* 21 Oct: always 16 hex (contract v1 §3) */ st.getDynamicObject()->setProperty ("run_id", id);
                             cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); logLine ("run id: " + id); }
         return id;
     }
@@ -469,10 +630,13 @@ private:
         juce::StringArray a { "--wizard", "--db", cfg.db.getFullPathName(), "--out", engineDir().getFullPathName(), "--ejmap-ledger", cfg.store.getFullPathName(),
                               "--jobs", juce::String (cfg.jobs), "--skip", cfg.work.getChildFile ("skip.json").getFullPathName() };
         for (const auto& o : cfg.only) { a.add ("--only"); a.add (o); }
+        if (kNetworked && answersFile().existsAsFile()) { a.add ("--catalogue-answers"); a.add (answersFile().getFullPathName()); }   // 21 Oct: the server's answers
+        if (kNetworked && measure) { a.add ("--results-outbox"); a.add (outboxDir().getFullPathName()); }                              // 21 Oct: one result per plugin, sent live
         if (measure) { a.add ("--measure"); a.add ("--bundle"); a.add ("--run-id"); a.add (runId()); a.add ("--checkpoint-minutes"); a.add (juce::String (cfg.checkpointMinutes)); }
         return a;
     }
-    void startEngine (bool measure)
+    void startCatalogueRequest() { startEngine (false, true); }   // 21 Oct: the engine lists the plugins for the server's check, nothing measured
+    void startEngine (bool measure, bool catalogueRequest = false)
     {
         if (const auto dv = wizapp::diskVerdict (wizapp::freeBytes (cfg.work), true); ! dv.ok)   // 13 Oct: never start below the floor
         { const auto c = wizapp::diskRefusedCopy (dv.words); title = c.title; text = c.text; showBar = false; primary.setButtonText (c.primary); primary.setVisible (true); diskRefused = true;
@@ -482,7 +646,9 @@ private:
           juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->show (Screen::paused); }); return; }
         engineDir().createDirectory(); engineDir().getChildFile ("progress.json").deleteFile();
         engineDir().getChildFile ("checkpoint.json").deleteFile();   // 13 Oct: the last launch's checkpoint was handled then (or is in the outbox)   // the last run's "Done 100%" must not flash on the new screen
-        if (! engine.start (cfg.engine, engineArgs (measure), cfg.work.getChildFile ("engine_output.txt"), measure ? "measure" : "scan"))
+        auto args = engineArgs (measure);
+        if (catalogueRequest) { args.removeString ("--catalogue-answers"); args.removeString (answersFile().getFullPathName()); args.add ("--catalogue-request"); args.add (requestFile().getFullPathName()); }
+        if (! engine.start (cfg.engine, args, cfg.work.getChildFile ("engine_output.txt"), catalogueRequest ? "catalogue" : measure ? "measure" : "scan"))
         { title = "Something went wrong"; text = "The measuring engine could not start (" + cfg.engine.getFullPathName() + ")."; repaint(); return; }
         awake.hold (true); logLine ("engine started: " + engine.mode + " (pid " + juce::String (engine.pid) + "), keep-awake held");
     }
@@ -498,6 +664,13 @@ private:
         {
             case Screen::welcome:
                 title = "Help EchoJay learn your plugins";
+                if (kNetworked)
+                {   // 21 Oct: sign in on echojay.ai in the browser - the wizard never sees the password
+                    if (session == nullptr) { title = "Not connected yet"; text = "This build of the EchoJay Wizard isn't connected to EchoJay's server yet."; primary.setButtonText ("Quit"); primary.setVisible (true); break; }
+                    text = netWords.isNotEmpty() ? netWords + " " : juce::String();
+                    text << "Sign in with your EchoJay account - it opens in your browser, and the wizard never sees your password.";
+                    primary.setButtonText ("Sign in with EchoJay"); primary.setVisible (true); break;
+                }
                 if (kMode == wizapp::Mode::beta) { text = "Thank you for testing the EchoJay Wizard. It measures the plugins on this Mac that EchoJay doesn't know yet."; primary.setButtonText ("Continue"); primary.setVisible (true); break; }
                 text = "Sign in with your EchoJay account. What we measure is linked to your account - and so is your reward: a free month.";
                 email.setVisible (true); password.setVisible (true); primary.setButtonText ("Sign in"); primary.setVisible (true); break;
@@ -507,8 +680,14 @@ private:
             case Screen::scan:
                 title = "Looking for plugins"; text = "We're looking at each plugin on this Mac and checking it against what EchoJay already knows.";
                 resetShownProgress();   // 18 Oct (BAR % WRONG): a scan starts a run - nothing shown carries over from the last one
-                showBar = true; barValue = 0.0; barLeft = "Starting"; barRight = {}; startEngine (false); break;
+                showBar = true; barValue = 0.0; barLeft = "Starting"; barRight = {};
+                if (kNetworked) { retryCatalogue = false; requestFile().deleteFile(); startCatalogueRequest(); break; }   // 21 Oct: the list first, then the server's check
+                startEngine (false); break;
             case Screen::alreadyDone: copy (wizapp::alreadyDoneCopy()); break;
+            case Screen::signIn:   // 21 Oct: the code to check in the browser
+                title = "Approve in your browser"; bigCode = deviceFlow.userCode;
+                text = "We've opened echojay.ai in your browser. Check this code matches, then approve EchoJay Wizard.";
+                secondary.setButtonText ("Open the page again"); secondary.setVisible (true); break;
             case Screen::scanDone:
             {
                 const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
@@ -536,24 +715,28 @@ private:
                 showBar = true; barValue = 0.0; barLeft = "Getting ready"; barRight = {}; setState ("measure_started", true); finishing = false; pausing = false;
                 primary.setButtonText (ch.pause); primary.setVisible (true); secondary.setButtonText (ch.send); secondary.setVisible (true); secondary.setEnabled (false);
                 choiceLine = ch.line; soFar = wizapp::measuredSoFarWords (0);
+                if (kNetworked) { runId(); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();
+                                  const auto el = wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()));
+                                  if (el.count > 0) text = wizapp::knownWords (el.known, el.count) + ". " + text; }
                 startEngine (true); break;
             }
             case Screen::paused:
                 {   // 15 Oct: the bar's % (this session's, else the stopped engine's own), never a count
                     const int pct = shownPct > 0 ? shownPct : wizapp::measuringPercent (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()), 0);
                     title = resumeTo == Screen::scan ? juce::String ("Paused") : wizapp::pausedTitle (pct);
-                    text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
+                    text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, kNetworked ? (bool) offlineNow : lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
                 }
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true);
                 anyway.setVisible (dawPaused.isNotEmpty()); break;   // 17 Oct: Carry on anyway, beside the DAW
             case Screen::upload:
                 title = "Sending your results"; text = "Just the measurements - no audio, no plugin files, nothing personal.";
+                if (kNetworked) { setState ("saved", true); nextTryMs = 0.0; }   // 21 Oct: the run is over; its last results go, then its end is reported
                 showBar = true; barValue = 0.0; barLeft = "Sending"; barRight = {}; uploadT0 = juce::Time::getMillisecondCounterHiRes(); break;
             case Screen::reward:
             {
                 const auto rw = juce::JSON::parse (cfg.work.getChildFile ("reward.json").loadFileAsString());
-                title = "Thank you - here's your free month"; bigCode = rw.getProperty ("code", "").toString();
-                text = "Use this code in EchoJay. We've emailed it to you too (" + rw.getProperty ("emailed_to", "").toString() + ").";
+                title = "Thank you - here's your free month"; bigCode = rw.getProperty ("code", "").toString();   // 21 Oct (beta): the SERVER's code, never one made here
+                text = kNetworked ? juce::String ("Use this code in EchoJay.") : "Use this code in EchoJay. We've emailed it to you too (" + rw.getProperty ("emailed_to", "").toString() + ").";
                 {   // nothing dropped (12 Oct): say what went for review instead of being measured
                     const auto m = juce::JSON::parse (engineDir().getChildFile ("contribution/manifest.json").loadFileAsString());
                     const int nc = m.getProperty ("needs_category", {}).size();
@@ -587,6 +770,7 @@ private:
         {
             case Screen::welcome:
             {
+                if (kNetworked) { if (session == nullptr) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); break; } startSignIn(); break; }   // 21 Oct
                 if (kMode == wizapp::Mode::beta) { show (Screen::consent); break; }
                 account = stub::signIn (cfg.work, email.getText().trim(), password.getText());
                 if (account.isVoid()) { text = "Please enter your EchoJay email and password."; repaint(); return; }
@@ -595,6 +779,12 @@ private:
             case Screen::consent:
                 if (! agree.getToggleState()) return;   // the tick is required
                 setState ("consented", true); logLine ("consent: I agree (" + juce::Time::getCurrentTime().toISO8601 (true) + ")");
+                if (kNetworked)
+                {   // 21 Oct: the consent's version and time travel with the run (contract v1 §3); then the plugin list and the server's check
+                    auto st = appState(); st.getDynamicObject()->setProperty ("consent_at", juce::Time::getCurrentTime().toISO8601 (true)); st.getDynamicObject()->setProperty ("consent_version", wizcontract::kConsentVersion);
+                    cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();
+                    show (Screen::scan); break;
+                }
                 {   // /lookup before anything loads: an account or a Mac that has already taken part runs nothing (STUB)
                     if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
                     const auto early = stub::lookup (cfg.work, account, device, juce::var());
@@ -615,12 +805,16 @@ private:
             }
             case Screen::alreadyDone: case Screen::reward: case Screen::noCode: case Screen::betaSaved: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case Screen::measuring: pauseNow ("the Pause button", false); break;
+            case Screen::scan: if (retryCatalogue) { retryCatalogue = false; primary.setVisible (false); if (session != nullptr && session->needsSignIn) { show (Screen::welcome); break; } title = "Checking your plugins"; showBar = true; checkCatalogue(); } break;   // 21 Oct
+            case Screen::upload: if (kNetworked && ! completing) { primary.setVisible (false); secondary.setVisible (false); title = "Sending your results"; showBar = true; nextTryMs = 0.0; } break;   // 21 Oct: Try again
             case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning (a DAW still open pauses it again)
             default: break;
         }
     }
     void onSecondary()
     {
+        if (screen == Screen::signIn) { juce::URL (deviceFlow.verificationUriComplete.isNotEmpty() ? deviceFlow.verificationUriComplete : deviceFlow.verificationUri).launchInDefaultBrowser(); logLine ("sign-in: the page opened again"); }   // 21 Oct
+        if (kNetworked && screen == Screen::upload && secondary.isVisible()) { logLine ("done before the run's end was reported: it is reported on the next launch"); juce::JUCEApplication::getInstance()->quit(); }
         if (screen == Screen::reward) { juce::SystemClipboard::copyTextToClipboard (bigCode); secondary.setButtonText ("Copied"); logLine ("code copied"); }
         if (screen == Screen::betaSaved && savedFile.existsAsFile()) { savedFile.revealToUser(); logLine ("shown in Finder: " + savedFile.getFileName()); }
         if (screen == Screen::scanDone) { logLine ("contribute anyway (no reward)"); show (Screen::measuring); }
@@ -666,7 +860,7 @@ private:
         { auto st = appState(); st.getDynamicObject()->setProperty ("last_checkpoint_at", at); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); }
         lastCheckpointSeq = seq; const auto kind = cp.getProperty ("kind", "").toString();
         const auto zip = engineDir().getChildFile ("contribution.zip"), man = engineDir().getChildFile ("contribution.manifest.json");
-        if (kMode == wizapp::Mode::beta) { saveBetaResults(); logLine ("checkpoint " + juce::String (seq) + " (" + kind + "): the Desktop file rewritten"); return; }
+        if (kNetworked) { logLine ("checkpoint " + juce::String (seq) + " (" + kind + "): its results are in the outbox"); nextTryMs = 0.0; return; }   // 21 Oct: sent live, one per plugin
         if (kind != "checkpoint") return;
         sendOrKeep (zip, man, kind);
     }
@@ -778,6 +972,7 @@ private:
         else
         {   // measuring: the engine's Measuring band (15..97) is the bar; its rescan is "getting ready"
             if (! finishing && ! pausing) { soFar = wizapp::measuredSoFarWords (wizapp::measuredSoFar (p)); secondary.setEnabled (wizapp::finishAvailable (p)); }
+            if (kNetworked && ! pausing) choiceLine = wizapp::uploadLine (sentN, pendingN, rejectedN, offlineNow, signInNow);   // 21 Oct: what the server has, live
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 15 Oct (FEELS FROZEN)
             stepText = wizapp::stepLine (true, (int) p.getProperty ("stage_index", 0)); nowText = wizapp::nowWords (p);   // 18 Oct (NEVER LOOKS FROZEN)
@@ -804,6 +999,11 @@ private:
             awake.hold (false); logLine ("engine ended: " + juce::String (*code) + ", keep-awake released");
             if (screen == Screen::measuring) handleCheckpoint();   // the pause's checkpoint (packed just before the engine ended)
             if (quitting) { juce::JUCEApplication::getInstance()->quit(); return; }
+            if (kNetworked && engine.mode == "catalogue" && ! pausing)
+            {   // 21 Oct: the plugin list is ready - the server's check, then the scan with its answers
+                if (*code == 0 && requestFile().existsAsFile()) { checkCatalogue(); return; }
+                title = "Something went wrong"; text = "The wizard couldn't list your plugins (" + juce::String (*code) + "). Open it again to try once more."; showBar = false; repaint(); return;
+            }
             if (pausing && *code != 0)
             {   // PAUSED (13 Oct): what is done went with the checkpoint; the same run carries on next time
                 pausing = false; logLine ("paused: " + soFar);
@@ -816,8 +1016,14 @@ private:
                 {   // /lookup's answer (STUB): already taken part -> nothing runs; else eligibility for the results screen
                     setState ("scanned", true);
                     if (account.isVoid()) account = juce::JSON::parse (cfg.work.getChildFile ("account.json").loadFileAsString());
-                    eligibility = stub::lookup (cfg.work, account, device, juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()));
-                    cfg.work.getChildFile ("eligibility.json").replaceWithText (juce::JSON::toString (eligibility)); logLine ("lookup (STUB): " + juce::JSON::toString (eligibility, true));
+                    if (kNetworked)
+                    {   // 21 Oct: no stub - the server's check decided what is known; the engine's own count is what is left to measure
+                        const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()); const auto an = juce::JSON::parse (answersFile().loadFileAsString());
+                        auto* e = new juce::DynamicObject(); e->setProperty ("count", (int) ws.getProperty ("to_measure", 0)); e->setProperty ("eligible", true); e->setProperty ("minimum", 0);
+                        e->setProperty ("known", (int) an.getProperty ("have", 0) + (int) an.getProperty ("held", 0)); eligibility = juce::var (e);
+                    }
+                    else eligibility = stub::lookup (cfg.work, account, device, juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()));
+                    cfg.work.getChildFile ("eligibility.json").replaceWithText (juce::JSON::toString (eligibility)); logLine ((kNetworked ? "eligibility (from the catalogue check): " : "lookup (STUB): ") + juce::JSON::toString (eligibility, true));
                     {   // 15 Oct: one Start carries the whole run - straight into measuring when there is something to measure
                         const auto el = wizapp::eligibilityOf (eligibility); const auto next = wizapp::afterScan (el, kMode);
                         const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString());
@@ -830,6 +1036,7 @@ private:
                 case wizapp::AfterEngine::upload:
                     setState ("measure_done", true);
                     if (wizapp::afterMeasure (kMode) == Screen::betaSaved) { saveBetaResults(); setState ("saved", true); }
+                    if (kNetworked) cacheRun();   // 21 Oct: the last pack's results are in the outbox
                     show (wizapp::afterMeasure (kMode)); break;
                 case wizapp::AfterEngine::left:
                 {   // 15 Oct: the run reached the end with plugins left - say what, offer Carry on (never "needs the full run")
@@ -846,7 +1053,16 @@ private:
         }
     }
     void tickUpload()
-    {   // a short bar over the (stubbed) send, then the server's genuine check and the promo
+    {
+        if (kNetworked)
+        {   // 21 Oct: the bar is what the server has confirmed; once nothing waits, the run's end is reported and the server answers the promo
+            const int sent = sentN, waiting = pendingN; const int total = juce::jmax (1, sent + waiting);
+            if (primary.isVisible()) return;   // waiting on the user (Try again)
+            barValue = (double) sent / (double) total; barLeft = wizapp::uploadLine (sent, waiting, rejectedN, offlineNow, signInNow); barRight = {}; repaint(); snapAtQuarters();
+            if (signInNow) { title = "Please sign in again"; text = "Your results are kept on this Mac."; primary.setButtonText ("Sign in with EchoJay"); primary.setVisible (true); showBar = false; screen = Screen::welcome; repaint(); return; }
+            if (waiting == 0 && ! completing && juce::Time::getMillisecondCounterHiRes() - uploadT0 > 1500.0 && wizcontract::Outbox { outboxDir() }.pendingFiles().isEmpty()) { barLeft = "Checking it arrived"; reportRunEnd(); }
+            return;
+        }   // a short bar over the (stubbed) send, then the server's genuine check and the promo
         const double t = (juce::Time::getMillisecondCounterHiRes() - uploadT0) / 2500.0;
         barValue = juce::jlimit (0.0, 1.0, t); barLeft = barValue < 1.0 ? "Sending" : "Checking it arrived"; repaint(); snapAtQuarters();
         if (t < 1.3 || receipt.isObject()) return;
@@ -877,7 +1093,7 @@ private:
         if ((screen == Screen::alreadyDone || screen == Screen::noCode || screen == Screen::betaSaved) && autoTicks == 12) onPrimary();
         if (screen == Screen::reward && autoTicks == 16) onPrimary();
         if ((screen == Screen::scanDone || screen == Screen::crashRecovered) && autoTicks == 12) onPrimary();
-        if (screen == Screen::reward && autoTicks == 8) { onSecondary(); snap ("copied"); }
+        if (screen == Screen::reward && autoTicks == 8 && ! rehearsalQuiet()) { onSecondary(); snap ("copied"); }
         if (screen == Screen::measuring && (cfg.autoSendAt > 0 || cfg.autoPauseAt > 0) && secondary.isEnabled())
         {
             const int n = wizapp::measuredSoFar (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()));

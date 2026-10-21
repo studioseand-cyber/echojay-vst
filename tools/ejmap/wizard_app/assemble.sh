@@ -37,6 +37,8 @@ if [ "$BETA" = 1 ] || [ "$TEST" = 1 ]; then   # 13 Oct (Kathy): the beta's read-
     [ -f "$HERE/beta_db/snapshot.json" ] || { echo "assemble: no beta database at $HERE/beta_db (run scripts/beta_db_snapshot.py)"; exit 2; }
     rm -rf "$R/beta_db"; ditto "$HERE/beta_db" "$R/beta_db"
 fi
+# 21 Oct (Kathy, contract v1): nothing shaped like a token or a key ships - the whole bundle is searched before it is signed or packed
+"$HERE/../scripts/check_bundle_secrets.sh" "$A" || { echo "assemble: REFUSED - the app would carry something like a secret (above)"; exit 4; }
 xattr -dr com.apple.quarantine "$A" 2>/dev/null || true   # a build-tree file can carry a download's flag (12 Oct): leave this Mac clean
 if [ -n "$ID" ]; then
     codesign -f -s "$ID" --timestamp --options runtime --entitlements "$ENT" "$M/EchoJayProbe"

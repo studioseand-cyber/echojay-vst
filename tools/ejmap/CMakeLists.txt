@@ -126,10 +126,14 @@ target_include_directories(ejmap-wizard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Sour
 target_link_libraries(ejmap-wizard PRIVATE juce::juce_gui_basics juce::juce_cryptography
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 if(APPLE)
-    target_link_libraries(ejmap-wizard PRIVATE "-framework IOKit")
+    target_link_libraries(ejmap-wizard PRIVATE "-framework IOKit" "-framework Security")
 endif()
-# THE BETA BUILD (Kathy, 13 Oct, beta item 4): the same app with EJ_WIZARD_BETA - no sign-in, the results saved as one file to email,
-# no upload, no promo. Its own name and bundle id, so a tester can have both.
+# THE BETA BUILD (Kathy, 13 Oct, beta item 4; 21 Oct: the contribution flow made real, contract v1): browser sign-in, the catalogue
+# check, live upload, the server's promo. Its own name and bundle id, so a tester can have both.
+# THE SERVER, PER BUILD (21 Oct): staging = Sean's test server, live later. No secret goes in the app: the OAuth client is public (a
+# client id only). Empty = this build is not connected (it says so). e.g. -DEJ_WIZARD_BETA_SERVER_URL=https://staging.example -DEJ_WIZARD_BETA_CLIENT_ID=...
+set(EJ_WIZARD_BETA_SERVER_URL "" CACHE STRING "the beta wizard's server base URL (https; empty = not connected)")
+set(EJ_WIZARD_BETA_CLIENT_ID "" CACHE STRING "the beta wizard's public OAuth client id (never a secret)")
 juce_add_gui_app(ejmap-wizard-beta
     PRODUCT_NAME            "EchoJay Wizard Beta"
     COMPANY_NAME            "EchoJay"
@@ -140,12 +144,13 @@ juce_add_gui_app(ejmap-wizard-beta
     HARDENED_RUNTIME_ENABLED TRUE)
 target_sources(ejmap-wizard-beta PRIVATE wizard_app/WizardApp.cpp)
 target_compile_definitions(ejmap-wizard-beta PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 EJ_WIZARD_BETA=1
-    JUCE_APPLICATION_NAME_STRING="EchoJay Wizard Beta" JUCE_APPLICATION_VERSION_STRING="0.1.0")
+    JUCE_APPLICATION_NAME_STRING="EchoJay Wizard Beta" JUCE_APPLICATION_VERSION_STRING="0.3.0"
+    EJ_WIZARD_SERVER_URL="${EJ_WIZARD_BETA_SERVER_URL}" EJ_WIZARD_OAUTH_CLIENT_ID="${EJ_WIZARD_BETA_CLIENT_ID}")
 target_include_directories(ejmap-wizard-beta PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source ${CMAKE_CURRENT_SOURCE_DIR}/../../Source)
 target_link_libraries(ejmap-wizard-beta PRIVATE juce::juce_gui_basics juce::juce_cryptography
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 if(APPLE)
-    target_link_libraries(ejmap-wizard-beta PRIVATE "-framework IOKit")
+    target_link_libraries(ejmap-wizard-beta PRIVATE "-framework IOKit" "-framework Security")
 endif()
 
 # THE TEST BUILD (Kathy, 14 Oct): the RELEASE flow (sign-in, upload, promo) with the stub server inside the app, seeded with the beta
@@ -165,7 +170,7 @@ target_include_directories(ejmap-wizard-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(ejmap-wizard-test PRIVATE juce::juce_gui_basics juce::juce_cryptography
     juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 if(APPLE)
-    target_link_libraries(ejmap-wizard-test PRIVATE "-framework IOKit")
+    target_link_libraries(ejmap-wizard-test PRIVATE "-framework IOKit" "-framework Security")
 endif()
 
 #==============================================================================
@@ -214,7 +219,7 @@ target_link_libraries(ejmap-roundtrip-test PRIVATE
 # juce_audio_processors, which references AUGenericView. Same framework
 # ejextract and the ejmap app already link for the same reason.
 if(APPLE)
-    target_link_libraries(ejmap-roundtrip-test PRIVATE "-framework CoreAudioKit" "-framework ApplicationServices")
+    target_link_libraries(ejmap-roundtrip-test PRIVATE "-framework CoreAudioKit" "-framework ApplicationServices" "-framework Security")
 endif()
 
 #==============================================================================

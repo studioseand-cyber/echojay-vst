@@ -92,6 +92,12 @@
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
 #include "EjmapWizardServer.h"
+#include "EjmapWizardContract.h"   // 21 Oct: the server contract v1
+#include "EjmapWizardApp.h"
+#include "EjmapWizardResults.h"
+#if JUCE_MAC
+ #include "EjmapKeychain.h"
+#endif
 #include "EjmapWizardRun.h"   // 13 Oct: the scan's stop (mapForWizard, wizardStop)
 #include "EjmapTrustRun.h"    // 16 Oct: the trust levels, v1 certification of the other categories
 #include "EjmapMultibandV1.h"  // 16 Oct: multiband v1
@@ -10241,7 +10247,7 @@ void testWizardCategories()
         check (read && timed.isEmpty() && tellsATime ("about 27 hours") && tellsATime ("about 2 min left") && tellsATime ("3 days") && tellsATime ("about 20") && tellsATime ("under a minute left")
                && ! tellsATime ("it's best left running overnight") && ! tellsATime ("you can pause any time")
                && scanDoneCopy (Mode::normal, el).text == "We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later. Finish them all to get your free month."
-               && scanDoneCopy (Mode::beta, el).text == "We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later."
+               && scanDoneCopy (Mode::beta, el).text == "0 already known, 625 to measure. We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later."
                && measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")) == "3 of 649"
                && ! app.contains ("eta_words") && ! app.contains ("etaWords") && ! app.contains ("\"line\"")   // 14 Oct: the engine's line (it says "under a minute left") is never read by the app
                && app.contains ("text = sum.containsIgnoreCase (\"disk space\") ? sum :") && ! tellsATime (diskVerdict (1073741824, false).words) && ! tellsATime (diskVerdict (1073741824, true).words) && ! app.contains ("a few minutes") && readmeTimed.isEmpty(),
@@ -10375,17 +10381,17 @@ void testWizardCategories()
             const bool read = run.contains ("inline int runWizard") && app.contains ("class WizardApplication");
             check (read && run.contains ("if (! diskStopped) checkpoint (\"the pause\");") && run.contains ("if (wizapp::checkpointDue (lastCheckpointMs, now, wo.checkpointMinutes))")
                    && run.contains ("R->setProperty (\"run_id\", wo.runId); R->setProperty (\"kind\", runKind);") && run.contains ("M->setProperty (\"queue\", queue); M->setProperty (\"outcomes\", outcomes);")
-                   && app.contains ("if (kMode == wizapp::Mode::beta) { saveBetaResults ();") == false && app.contains ("if (kMode == wizapp::Mode::beta) { saveBetaResults(); logLine (\"checkpoint \"")
+                   && app.contains ("if (kNetworked) { logLine (\"checkpoint \" + juce::String (seq) + \" (\" + kind + \"): its results are in the outbox\"); nextTryMs = 0.0; return; }")   // 21 Oct: the beta sends live
                    && app.contains ("sendOrKeep (zip, man, kind);") && app.contains ("engineDir().getChildFile (\"checkpoint.json\").deleteFile();")
                    && ejmap::wizapp::isNewCheckpoint ("2026-10-13T22:48", "2026-10-13T22:45") && ! ejmap::wizapp::isNewCheckpoint ("2026-10-13T22:45", "2026-10-13T22:45") && ! ejmap::wizapp::isNewCheckpoint ({}, {}) && ejmap::wizapp::checkpointDue (0.0, 3600000.0, 60.0) && ! ejmap::wizapp::checkpointDue (0.0, 3599000.0, 60.0),
-                   "wizard WZ-CKPT-1: a pause and every 60 min pack a checkpoint with the run id, queue and outcomes; release uploads it, beta rewrites the file (read: " + juce::String ((int) read) + ")");
+                   "wizard WZ-CKPT-1: a pause and every 60 min pack a checkpoint with the run id, queue and outcomes; release uploads it, the beta's results already flow (read: " + juce::String ((int) read) + ")");
         }
         // WZ-CHOICE-1 the Measuring screen's two choices and the line (release / beta)
         {
             using namespace ejmap::wizapp;
             const auto r = measuringChoices (Mode::normal), b = measuringChoices (Mode::beta);
             check (r.pause == "Pause - carry on later" && r.send == "Send what's done (no free month)" && r.line == "The free month needs the full run - you can carry on later instead."
-                   && b.pause == "Pause - carry on later" && ! b.send.contains ("free month") && b.line.contains ("even if you stop early, email the file on your Desktop") == false && b.line.containsIgnoreCase ("even if you stop early, email the file on your Desktop"),
+                   && b.pause == "Pause - carry on later" && ! b.send.contains ("free month") && b.send == "Finish and send what's done" && b.line == "Each result is sent to EchoJay as soon as it's measured.",   // 21 Oct: the beta sends live
                    "wizard WZ-CHOICE-1: 'Pause - carry on later' (default) / 'Send what's done (no free month)' + 'The free month needs the full run - you can carry on later instead.'; the beta's own words");
         }
     }
@@ -10553,7 +10559,7 @@ void testWizardCategories()
                && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") >= 0 && quickLoop.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"checking\");") < quickLoop.indexOf ("quickCheck (qopt")
                && quickLoop.contains ("quickCacheF.replaceWithText") && step1.contains ("quickCache.getProperty (juce::Identifier (wizroute::pluginId (uid, ver, fmtTag (ir.desc))), {})")
                && run.contains ("if (wizapp::orphaned (getppid())) { ::kill (0, SIGINT); return; }")
-               && app.contains ("~WizardComponent() override { stopTimer(); awake.hold (false); if (engine.running()) engine.pause();"),   // 19 Oct: then the group is closed (WZ-PROBE-END-1)
+               && app.contains ("~WizardComponent() override { closing = true; uploader.stopThread (4000); net.removeAllJobs (true, 8000); stopTimer(); awake.hold (false); if (engine.running()) engine.pause();"),   // 21 Oct: the network jobs end first   // 19 Oct: then the group is closed (WZ-PROBE-END-1)
                "wizard WZ-SCAN-2: the DB step loads nothing; one count without the out-of-scope-by-type (69 of 1285 draws 5.4%); read-back checks stoppable + cached; orphan engines stop (read: " + juce::String ((int) read) + ")");
     }
     // WZ-QC-1 THE ONE-LOAD READ-BACK CHECK (Kathy, 14 Oct): every control the check reads in ONE probe load (--text-at-norms-multi, each
@@ -10724,18 +10730,21 @@ void testWizardCategories()
         using namespace ejmap::wizapp;
         Where fresh, signedIn, consented, measuredB, savedB; signedIn.signedIn = true; consented = signedIn; consented.consented = true;
         measuredB.consented = measuredB.scanned = measuredB.measureStarted = measuredB.measureDone = true; savedB = measuredB; savedB.saved = true;
-        Where betaConsented; betaConsented.consented = true;
+        Where betaConsented; betaConsented.consented = true; Where betaSigned = betaConsented; betaSigned.signedIn = true;   // 21 Oct: the beta signs in first
+        Where measuredBS = measuredB; measuredBS.signedIn = true;
         const auto ct = consentText (Mode::normal), cb = consentText (Mode::beta);
         check (openOn (fresh, Mode::normal) == Screen::welcome && openOn (signedIn, Mode::normal) == Screen::consent && openOn (consented, Mode::normal) == Screen::scan
-               && openOn (fresh, Mode::beta) == Screen::welcome && openOn (betaConsented, Mode::beta) == Screen::scan && openOn (measuredB, Mode::beta) == Screen::betaSaved && openOn (savedB, Mode::beta) == Screen::betaSaved
-               && openOn (measuredB, Mode::normal) == Screen::welcome && afterMeasure (Mode::normal) == Screen::upload && afterMeasure (Mode::beta) == Screen::betaSaved
-               && ct.contains ("never sends audio") && ct.contains ("folder paths") && ct.contains ("linked to your EchoJay account") && cb.contains ("saved as one file on your Desktop") && ! cb.contains ("account")
+               && openOn (fresh, Mode::beta) == Screen::welcome && openOn (betaConsented, Mode::beta) == Screen::welcome && openOn (betaSigned, Mode::beta) == Screen::scan
+               && openOn (measuredBS, Mode::beta) == Screen::upload && openOn (measuredB, Mode::beta) == Screen::welcome
+               && openOn (measuredB, Mode::normal) == Screen::welcome && afterMeasure (Mode::normal) == Screen::upload && afterMeasure (Mode::beta) == Screen::upload
+               && ct.contains ("never sends audio") && ct.contains ("folder paths") && ct.contains ("linked to your EchoJay account") && cb.contains ("linked to your EchoJay account") && ! cb.contains ("Desktop")
                && ct.contains ("a one-way code made from this Mac's hardware ID - never the ID itself") && ! cb.containsIgnoreCase ("hardware")
                && ct == "The wizard measures how your audio plugins respond to test tones and sends EchoJay the results: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. The results go to EchoJay's servers, linked to your EchoJay account, and become part of EchoJay's shared plugin map, used to help EchoJay control plugins for everyone who uses it. To make sure each Mac takes part once, the wizard also sends a one-way code made from this Mac's hardware ID - never the ID itself."
-               && cb == "The wizard measures how your audio plugins respond to test tones and saves the results for you to send to EchoJay: each plugin's name, maker, version, its list of controls and the measurements. It never sends audio, your files, your projects, your name, your computer's name or folder paths. If you send it, the results become part of EchoJay's shared plugin map. In this beta the results are saved as one file on your Desktop for you to email to us; nothing is sent by the app."
+               && cb == ejmap::wizcontract::consentText() && cb.contains ("the list of your audio plugins (each one's name, maker, version and format)") && cb.contains ("the wizard's version and your macOS version")
+               && cb.contains ("It never sends audio, your projects or files, your name or email, your computer's name, folder paths or anything else about you")   // 21 Oct (contract v1 §6)
                && diskRefusedCopy ("x").primary == "Quit" && diskRefusedCopy ("x").title == "Not enough disk space" && diskRefusedCopy ("x").text == "x"
                && consentTick() == "I agree" && resultsFileName (juce::Time (2026, 9, 13, 10, 0)) == "EchoJay-Wizard-results-2026-10-13.zip",
-               "wizard WZ-FLOW-1: normal = sign in -> consent -> scan -> upload; beta = welcome -> consent -> scan -> the results file (EchoJay-Wizard-results-<date>.zip); the consent says what is and is not sent");
+               "wizard WZ-FLOW-1: normal = sign in -> consent -> scan -> upload; beta (21 Oct) = browser sign-in -> consent -> scan -> live upload -> the server's promo; the consent says exactly what is sent");
     }
     // WZ-ELIG-1 (item 7, the client): the app only SHOWS the server's answer - eligible: N new, a free month; not eligible: already mapped,
     // with "Contribute anyway (no reward)"; the beta never mentions a reward; the code screen only on the server's grant
@@ -11306,7 +11315,7 @@ void testWizardCategories()
                && dawPausedText ("Logic") == "Paused while Logic is open - it carries on by itself when you close it." && ! tellsATime (dawPausedText ("Logic"))
                && app.contains ("if (dawPaused.isEmpty() && (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing && daw.isNotEmpty())")
                && app.contains ("if (screen != Screen::paused || dawPaused.isEmpty()) return;") && app.contains ("if (now - dawQuietSince >= wizapp::kDawQuietS * 1000.0)")
-               && app.contains ("text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, lastSendKept);")
+               && app.contains ("text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, kNetworked ? (bool) offlineNow : lastSendKept);")
                && app.contains ("if (const auto hit = openDaw (dawIgnoredPid); hit.any())   // 15 Oct: a DAW is open - wait, do not start")
                && app.contains ("proc_pidpath (pid, path, sizeof (path))") && ! app.contains ("kill (pids"),
                "wizard WZ-DAW-1: the DAWs by bundle id (17 Oct: not by .app path - helpers no longer count); the calm line; pause by itself, carry on by itself only after its own pause and 10 s quiet; never started with a DAW open; read only");
@@ -13455,6 +13464,213 @@ int main (int, char**)
                && run.contains ("cache[juce::Identifier (pid)].getProperty (\"rules\", \"\").toString() == categorise::kRulesVersion")
                && run.contains ("sig.getDynamicObject()->setProperty (\"rules\", categorise::kRulesVersion);") && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-21",
                "wizard WZ-NEUTRAL-1: the raised drive rides at the front of every set= list of the measuring child (" + resp.joinIntoString (" ").fromFirstOccurrenceOf ("--response", true, false) + "), every neutral list says it, an old cached signature is read again");
+    }
+    // WZ-CONTRACT-1..9 THE SERVER CONTRACT v1 (Kathy, 21 Oct): the wizard's own client (EjmapWizardContract.h, over juce::URL) against the
+    // local mock server that follows the contract (tests/mock_wizard_server/mock_server.py, localhost only, nothing leaves the Mac):
+    // sign-in by device code, the catalogue check, one result per request from the outbox (happy path, offline then reconnect, duplicate,
+    // rejected, rate limited), an expired token refreshed once (and a reused refresh token killing the family), the promo issued by the
+    // server once per account (asked twice: the same code; a second run: none), and no token ever in a log line or a file
+    {
+        using namespace ejmap::wizcontract;
+        const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_contract_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        work.createDirectory();
+        const auto script = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py");
+        const auto portFile = work.getChildFile ("port.txt");
+        juce::ChildProcess mock;
+        const bool started = script.existsAsFile() && mock.start (juce::StringArray { "/usr/bin/python3", script.getFullPathName(), "--port", "0", "--port-file", portFile.getFullPathName() }, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr);
+        for (int i = 0; i < 100 && ! portFile.existsAsFile(); ++i) juce::Thread::sleep (100);
+        const int port = portFile.loadFileAsString().trim().getIntValue();
+        check (started && port > 0, "contract WZ-CONTRACT-0: the mock server starts on localhost (port " + juce::String (port) + ")");
+        if (started && port > 0)
+        {
+            const Endpoints ep { "http://127.0.0.1:" + juce::String (port), "ejwiz-mock" };
+            const auto tx = urlTransport (5000);
+            auto hook = [&] (const juce::String& path, const juce::String& json)
+            { HttpRequest rq; rq.method = "POST"; rq.url = ep.base + path; rq.contentType = "application/json"; rq.body.append (json.toRawUTF8(), (size_t) json.getNumBytesAsUTF8()); return replyOf (tx (rq)); };
+            auto mockState = [&] { HttpRequest rq; rq.url = ep.base + "/__mock/state"; return replyOf (tx (rq)).json; };
+            juce::StringArray logLines; std::vector<juce::String> secrets;   // every token / device code the test ever saw
+            MemoryTokenStore store;
+            auto remember = [&] { if (const auto t = store.load()) { secrets.push_back (t->access); secrets.push_back (t->refresh); } };
+            Session s (ep, tx, store, [&] (const juce::String& l) { logLines.add (l); });
+            hook ("/__mock/config", "{\"qualify_minimum\": 2}");
+            hook ("/__mock/catalogue", "{\"AudioUnit|aaaa0001|1.0\": {\"status\": \"have\", \"level\": \"certified\", \"category\": \"compressor\"}, \"AudioUnit|aaaa0003|1.0\": {\"status\": \"held\", \"reason\": \"pending_review\"}, \"AudioUnit|aaaa0006|1.0\": {\"status\": \"held\", \"reason\": \"blocked\"}}");
+
+            // 1. SIGN-IN: pending until the browser approves; then the tokens are in the store, and only there
+            auto dev = s.startDevice(); secrets.push_back (dev.deviceCode);
+            juce::String words; const auto p0 = s.pollOnce (dev, words);
+            hook ("/__mock/approve", "{\"account_id\": \"acct_mock_kathy\"}");
+            const auto p1 = s.pollOnce (dev, words); remember();
+            check (dev.ok && dev.userCode.length() >= 8 && p0 == Poll::pending && p1 == Poll::ok && s.signedIn() && s.displayName() == "Kathy" && store.load()->accountId == "acct_mock_kathy",
+                   "contract WZ-CONTRACT-1: device sign-in - pending, approved in the browser, the tokens kept in the store (" + juce::String (dev.userCode.length()) + "-char user code)");
+
+            // 2. THE CATALOGUE CHECK: have / need / held per plugin, version-exact; the engine's answers map
+            juce::Array<juce::var> plist;
+            for (const char* id : { "aaaa0001", "aaaa0002", "aaaa0003", "aaaa0004", "aaaa0006" })
+            { auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", "AudioUnit|" + juce::String (id) + "|1.0"); o->setProperty ("name", "Plug " + juce::String (id)); o->setProperty ("vendor", "V");
+              o->setProperty ("version", "1.0"); o->setProperty ("format", "AudioUnit"); o->setProperty ("type", "aufx"); o->setProperty ("fingerprint", juce::var()); plist.add (juce::var (o)); }
+            auto* reqO = new juce::DynamicObject(); reqO->setProperty ("plugins", plist);
+            const auto cc = catalogueCheck (s, juce::var (reqO));
+            using ejmap::wizroute::fromCatalogue; using ejmap::wizroute::Rule;
+            const auto aHave = fromCatalogue (cc.answers, "AudioUnit|aaaa0001|1.0"), aNeed = fromCatalogue (cc.answers, "AudioUnit|aaaa0002|1.0"), aPend = fromCatalogue (cc.answers, "AudioUnit|aaaa0003|1.0"),
+                       aHeld = fromCatalogue (cc.answers, "AudioUnit|aaaa0006|1.0"), aNone = fromCatalogue (cc.answers, "AudioUnit|ffff0000|1.0"), aOtherVer = fromCatalogue (cc.answers, "AudioUnit|aaaa0001|1.1");
+            const auto dHeld = ejmap::wizroute::route (aHeld, {}, {});
+            check (cc.ok && cc.have == 1 && cc.held == 2 && cc.need == 2 && aHave.rule == Rule::A && aHave.category == "compressor" && aPend.rule == Rule::pendingReview
+                   && aNeed.rule == Rule::C && aNeed.heldWhy.isEmpty() && aNone.rule == Rule::C && aOtherVer.rule == Rule::C && dHeld.route == ejmap::wizroute::Route::held && dHeld.why.contains ("blocked"),
+                   "contract WZ-CONTRACT-2: the catalogue check - have " + juce::String (cc.have) + ", held " + juce::String (cc.held) + ", need " + juce::String (cc.need) + "; another version is a need");
+
+            // 3. RESULTS: the engine's pack as one document per plugin; a checkpoint only what is final; each once; drained in order
+            const juce::String runId = "run_" + juce::String::toHexString (0x1234abcd5678ef90LL);
+            const RunInfo run { runId, "2026-10-21T19:00:02Z", 3 };
+            const auto r1 = ensureRun (s, run), r1b = ensureRun (s, run);
+            const auto bundle = work.getChildFile ("bundle"); bundle.getChildFile ("profiles").createDirectory();
+            auto profileFile = [&] (const juce::String& id, const juce::String& schema)
+            { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json"; bundle.getChildFile (rel).replaceWithText ("{\"schema\": \"" + schema + "\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}}"); return rel; };
+            auto manifestWith = [&] (const juce::String& profilesJson, const juce::String& skippedJson)
+            { return juce::JSON::parse ("{\"profiles\": [" + profilesJson + "], \"skipped\": [" + skippedJson + "]}"); };
+            const auto m1 = manifestWith ("{\"product\": \"Plug aaaa0002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"map_fp\": \"fp2\", \"profile\": \"" + profileFile ("aaaa0002", "ej_comp_profile/1") + "\"},"
+                                          "{\"product\": \"Plug aaaa0004\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0004|1.0\", \"map_fp\": \"fp4\", \"profile\": \"" + profileFile ("aaaa0004", "ej_comp_profile/1") + "\"}",
+                                          "{\"product\": \"Plug aaaa0005\", \"plugin_id\": \"AudioUnit|aaaa0005|1.0\", \"state\": \"needs_licence\", \"why\": \"a licence window\"},"
+                                          "{\"product\": \"Plug aaaa0007\", \"plugin_id\": \"AudioUnit|aaaa0007|1.0\", \"state\": \"measuring\"},"
+                                          "{\"product\": \"Plug aaaa0008\", \"plugin_id\": \"AudioUnit|aaaa0008|1.0\", \"state\": \"not_measurable\", \"why\": \"no draft yet\"}");
+            std::map<juce::String, ejmap::wizresults::Identity> idOf { { "AudioUnit|aaaa0002|1.0", { "V", "Plug aaaa0002" } } };
+            const auto docsCp = ejmap::wizresults::fromPack (m1, bundle, runId, false, idOf, {});
+            const auto docsFin = ejmap::wizresults::fromPack (m1, bundle, runId, true, idOf, {});
+            Outbox box { work.getChildFile ("outbox") };
+            const auto e1 = ejmap::wizresults::emit (docsCp, box, {}), e2 = ejmap::wizresults::emit (docsCp, box, {});
+            const auto personalRefused = ejmap::wizresults::emit (docsFin, box, [] (const juce::String& t) { return t.contains ("aaaa0007") ? juce::StringArray { "the home folder" } : juce::StringArray(); });
+            const auto st1 = drain (s, box, run);
+            juce::StringArray ids; for (const auto& d : docsCp) ids.add (d.resultId);
+            check (r1.status == 201 && r1b.status == 200 && docsCp.size() == 3 && docsFin.size() == 5 && e1.added == 3 && e2.already == 3 && personalRefused.refused == 1 && personalRefused.added == 1
+                   && st1.sent == 4 && ! st1.offline && box.pendingFiles().isEmpty() && box.count (box.sent()) == 4
+                   && docsCp[0].resultId == resultIdFor (runId, "profile", "AudioUnit|aaaa0002|1.0") && docsCp[0].body.getProperty ("plugin", {}).getProperty ("vendor", "") == juce::var ("V")
+                   && docsCp[0].body.getProperty ("plugin", {}).getProperty ("fingerprint", "") == juce::var ("fp2") && docsCp[0].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 1,
+                   "contract WZ-CONTRACT-3: one result per plugin - a checkpoint sends 3 of 5 (not 'measuring', not a draft-less not_measurable), the finish the rest, each once; sent " + juce::String (st1.sent));
+
+            // 4. OFFLINE THEN RECONNECT: nothing lost, nothing sent twice
+            Session offline (Endpoints { "http://127.0.0.1:1", "ejwiz-mock" }, tx, store, [&] (const juce::String& l) { logLines.add (l); });
+            const auto m2 = manifestWith ({}, "{\"product\": \"Plug aaaa0009\", \"plugin_id\": \"AudioUnit|aaaa0009|1.0\", \"state\": \"demo\", \"why\": \"a demo\"}");
+            ejmap::wizresults::emit (ejmap::wizresults::fromPack (m2, bundle, runId, false, {}, {}), box, {});
+            const auto stOff = drain (offline, box, run); const int keptOffline = box.pendingFiles().size();
+            const auto stOn = drain (s, box, run);
+            check (stOff.offline && stOff.sent == 0 && keptOffline == 1 && stOn.sent == 1 && box.pendingFiles().isEmpty() && plainWords (Reply { 0, true }).contains ("offline"),
+                   "contract WZ-CONTRACT-4: offline - the result stays in the outbox (" + juce::String (keptOffline) + "), sent on reconnect");
+
+            // 5. DUPLICATE: a result sent again (a lost answer) is a duplicate, stored once
+            const auto sentOne = box.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")[0];
+            const int heldBefore = (int) mockState().getProperty ("holding_counts", {}).getProperty ("acct_mock_kathy", 0);
+            sentOne.copyFileTo (box.pending().getChildFile (sentOne.getFileName())); sentOne.deleteFile();
+            const auto stDup = drain (s, box, run);
+            const int heldAfter = (int) mockState().getProperty ("holding_counts", {}).getProperty ("acct_mock_kathy", 0);
+            check (stDup.duplicates == 1 && stDup.sent == 0 && heldAfter == heldBefore && heldAfter == 5 && box.pendingFiles().isEmpty(),
+                   "contract WZ-CONTRACT-5: a duplicate upload is answered 'duplicate' and stored once (holding " + juce::String (heldBefore) + " -> " + juce::String (heldAfter) + ")");
+
+            // 6. REJECTED: the validator's refusal goes to rejected/ with the server's plain words, never retried
+            const auto m3 = manifestWith ("{\"product\": \"Plug aaaa000a\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000a|1.0\", \"profile\": \"" + profileFile ("aaaa000a", "ej_bogus/9") + "\"}", {});
+            ejmap::wizresults::emit (ejmap::wizresults::fromPack (m3, bundle, runId, false, {}, {}), box, {});
+            const auto stRej = drain (s, box, run), stRej2 = drain (s, box, run);
+            const auto reason = juce::JSON::parse (box.rejected().findChildFiles (juce::File::findFiles, false, "*.reason.json")[0].loadFileAsString());
+            check (stRej.rejected == 1 && stRej.rejectedWords[0].contains ("didn't pass our checks") && stRej2.rejected == 0 && stRej2.sent == 0 && box.count (box.rejected()) == 1
+                   && reason.getProperty ("reason", "") == juce::var ("unknown_schema"),
+                   "contract WZ-CONTRACT-6: a rejected result is kept apart with the words '" + stRej.rejectedWords.joinIntoString ("") + "', never retried");
+
+            // 7. RATE LIMITED: the file waits, in order, for the time the server gave
+            hook ("/__mock/config", "{\"force_429_once\": true}");
+            ejmap::wizresults::emit (ejmap::wizresults::fromPack (manifestWith ({}, "{\"product\": \"Plug aaaa000b\", \"plugin_id\": \"AudioUnit|aaaa000b|1.0\", \"state\": \"silent\"}"), bundle, runId, false, {}, {}), box, {});
+            const auto stRate = drain (s, box, run); const int waited = box.pendingFiles().size(); const auto stRate2 = drain (s, box, run);
+            check (stRate.retryAfterS >= 1 && waited == 1 && stRate2.sent == 1 && backoffSeconds (1) == 5 && backoffSeconds (3) == 20 && backoffSeconds (20) == 600,
+                   "contract WZ-CONTRACT-7: rate limited - kept, retried after " + juce::String (stRate.retryAfterS) + " s; back-off 5 / 20 / 600 s");
+
+            // 8. THE RUN'S END AND THE PROMO: the server decides; a missing result is named; asked twice, the same code; a second run, none
+            juce::Array<juce::var> queue, outcomes;
+            for (const char* id : { "aaaa0002", "aaaa0004", "aaaa0005" }) { queue.add ("AudioUnit|" + juce::String (id) + "|1.0"); auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", "AudioUnit|" + juce::String (id) + "|1.0"); o->setProperty ("state", juce::String (id) == "aaaa0005" ? "needs_licence" : "measured"); outcomes.add (juce::var (o)); }
+            auto allIds = box.allResultIds(); juce::StringArray sentIds; for (const auto& f : box.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) sentIds.add (Outbox::resultIdOf (f));
+            const auto cMissing = complete (s, runId, "finished", queue, outcomes, juce::StringArray { sentIds[0], "res_00000000000000000000000000000000" });
+            const auto c1 = complete (s, runId, "finished", queue, outcomes, sentIds), c2 = complete (s, runId, "finished", queue, outcomes, sentIds);
+            const juce::String run2 = "run_" + juce::String::toHexString (0x7777000011112222LL);
+            ensureRun (s, RunInfo { run2, "2026-10-21T19:00:02Z", 0 });
+            const auto c3 = complete (s, run2, "finished", juce::var (juce::Array<juce::var>()), juce::var (juce::Array<juce::var>()), {});
+            const auto promoOnServer = mockState().getProperty ("promos", {}).getProperty ("acct_mock_kathy", "").toString();
+            check (! cMissing.done && cMissing.missing.contains ("res_00000000000000000000000000000000")
+                   && c1.done && c1.eligible && c1.issuedNow && c1.code.startsWith ("EJ-FREE-") && c1.code == promoOnServer
+                   && c2.done && c2.eligible && ! c2.issuedNow && c2.code == c1.code
+                   && c3.done && ! c3.eligible && c3.code.isEmpty() && c3.message.contains ("already has its free month"),
+                   "contract WZ-CONTRACT-8: the server's promo - '" + c1.code + "' issued once, the same code asked again (issued_now false), none for a second run ('" + c3.message + "')");
+
+            // 9. AN EXPIRED TOKEN refreshes once (rotated); a REUSED refresh token kills the family -> sign in again, results kept
+            const auto oldRefresh = store.load()->refresh;
+            hook ("/__mock/expire_access", "{}");
+            const auto me1 = s.call ("GET", "me"); remember();
+            const bool rotated = store.load().has_value() && store.load()->refresh != oldRefresh;
+            HttpRequest reuse; reuse.method = "POST"; reuse.url = apiUrl (ep, "auth/token"); reuse.contentType = "application/x-www-form-urlencoded";
+            const auto form = formEncode ({ { "grant_type", juce::String ("refresh_token") }, { "refresh_token", oldRefresh }, { "client_id", ep.clientId } }); reuse.body.append (form.toRawUTF8(), (size_t) form.getNumBytesAsUTF8());
+            const auto reused = replyOf (tx (reuse));
+            const auto me2 = s.call ("GET", "me");
+            dev = s.startDevice(); secrets.push_back (dev.deviceCode); hook ("/__mock/deny", "{}"); const auto pDenied = s.pollOnce (dev, words);
+            check (me1.status == 200 && rotated && reused.status == 400 && reused.error == "invalid_grant" && me2.status == 401 && s.needsSignIn && pDenied == Poll::denied && words == "Sign-in was cancelled."
+                   && plainWords (me2).contains ("sign in again") && box.count (box.sent()) >= 6,
+                   "contract WZ-CONTRACT-9: an expired token refreshed once (rotated: " + juce::String ((int) rotated) + "); a reused refresh token killed the family (" + juce::String (me2.status) + "); a denied sign-in said so");
+
+            // 10. NO SECRET ANYWHERE: not one token or device code in a log line or a file the client wrote; redact() on its own
+            juce::String everything = logLines.joinIntoString ("\n");
+            for (const auto& f : work.findChildFiles (juce::File::findFiles, true)) { if (f.getFileName().endsWith (".gz")) { juce::MemoryBlock m; f.loadFileAsData (m); if (const auto pl = gunzip (m)) everything << pl->toString(); } else everything << f.loadFileAsString(); }
+            int leaks = 0; for (const auto& t : secrets) if (t.length() > 8 && everything.contains (t)) ++leaks;
+            const auto red = redact ("{\"access_token\":\"at_abc123\",\"refresh_token\": \"rt_xyz\"} Authorization: Bearer at_abc123 device_code=dc_999&x=1 error token_expired");
+            check (secrets.size() >= 6 && leaks == 0 && logLines.size() > 20 && ! red.contains ("at_abc123") && ! red.contains ("rt_xyz") && ! red.contains ("dc_999") && red.contains ("token_expired") && red.contains ("x=1")
+                   && localOverrideAllowed ("http://127.0.0.1:8787") && localOverrideAllowed ("http://localhost:9") && ! localOverrideAllowed ("https://evil.example") && ! localOverrideAllowed ("http://127.0.0.1.evil.example/"),
+                   "contract WZ-CONTRACT-10: no token or device code in " + juce::String (logLines.size()) + " log lines or any file (" + juce::String ((int) secrets.size()) + " secrets checked, " + juce::String (leaks) + " found); '" + red + "'");
+        }
+        mock.kill(); work.deleteRecursively();
+        // the engine's side, by text: the three flags, the request ends before anything maps, the answers replace the stub lookup, each pack emits
+        const auto mainCpp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (mainCpp.contains ("else if (k == \"--catalogue-request\") w.catalogueRequest = cwdFile (v); else if (k == \"--catalogue-answers\") w.catalogueAnswers = cwdFile (v); else if (k == \"--results-outbox\") w.resultsOutbox = cwdFile (v);")
+               && run.indexOf ("if (wo.catalogueRequest != juce::File())") > 0 && run.indexOf ("if (wo.catalogueRequest != juce::File())") < run.indexOf ("const auto ans = catAnswers.isObject()")
+               && run.contains ("const auto ans = catAnswers.isObject() ? wizroute::fromCatalogue (catAnswers, wizroute::pluginId (uid, ver, fmtTag (ir.desc))) : wizroute::ask (")
+               && run.contains ("const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != \"checkpoint\", idOf, pidOfProduct);")
+               && run.indexOf ("if (! problems.isEmpty()) { say (\"WIZARD: the bundle is NOT made") < run.indexOf ("const auto docs = wizresults::fromPack"),
+               "contract WZ-CONTRACT-11: the engine - --catalogue-request ends before anything is mapped, --catalogue-answers replaces the stub lookup, every pack emits its results after the personal check");
+    }
+    // WZ-BETA-NET-1 THE BETA'S CONTRIBUTION FLOW, MADE REAL (Kathy, 21 Oct): browser sign-in (never a password field), the consent that is the
+    // contract's, the catalogue check before measuring ("N already known, M to measure"), live upload from the outbox with back-off, the
+    // run's end where the SERVER's promo is shown (never made here); the server per build, a --server-url only for this Mac; no secret in
+    // the bundle (assemble refuses); the Test build keeps its stub
+    {
+        using namespace ejmap::wizapp;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto cm = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/CMakeLists.txt").loadFileAsString();
+        const auto asm_ = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/assemble.sh").loadFileAsString();
+        const auto kc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapKeychain.h").loadFileAsString();
+        Eligibility none; none.known = 40;
+        check (knownWords (12, 34) == "12 already known, 34 to measure" && scanDoneCopy (Mode::beta, none).text.startsWith ("40 already known, 0 to measure.")
+               && uploadLine (5, 0, 0, false, false) == "5 results sent" && uploadLine (1, 3, 0, true, false) == "1 result sent, 3 waiting - you're offline, they'll go when you're back"
+               && uploadLine (2, 1, 1, false, true) == "2 results sent, 1 waiting - please sign in again, 1 not accepted"
+               && pausedText (Mode::beta, true).contains ("You're offline") && pausedText (Mode::beta, false).contains ("Every result so far has been sent") && ! pausedText (Mode::beta, false).contains ("Desktop")
+               && consentText (Mode::beta) == ejmap::wizcontract::consentText() && afterMeasure (Mode::beta) == Screen::upload && screenName (Screen::signIn) == "sign_in"
+               && app.contains ("constexpr bool kNetworked = kMode == wizapp::Mode::beta;")
+               && app.contains ("keychain = std::make_unique<wizcontract::KeychainTokenStore> (wizcontract::keychainServiceFor (ep().base));")
+               && app.contains ("else if (k == \"--server-url\") { if (ejmap::wizcontract::localOverrideAllowed (v)) c.serverUrl = v; ++i; }")
+               && app.contains ("juce::URL (d.verificationUriComplete.isNotEmpty() ? d.verificationUriComplete : d.verificationUri).launchInDefaultBrowser();")
+               && app.contains ("if (kNetworked) { if (session == nullptr) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); break; } startSignIn(); break; }")   // the welcome's button: the browser, never email + password
+               && app.contains ("if (kNetworked && answersFile().existsAsFile()) { a.add (\"--catalogue-answers\");") && app.contains ("if (kNetworked && measure) { a.add (\"--results-outbox\");")
+               && app.contains ("st = wizcontract::drain (*session, box, run, [this] { return closing.load(); });")
+               && app.contains ("c = wizcontract::complete (*session, runInfo().runId, kind, m.getProperty (\"queue\", {}), m.getProperty (\"outcomes\", {}), ids);")
+               && app.contains ("if (c.eligible && c.code.isNotEmpty())") && ! app.contains ("EJ-FREE")   // the code is the server's
+               && app.contains ("text = wizapp::knownWords (el.known, n) + \". \" + text; } }")   // the measuring screen keeps the check's words (the 21 Oct rehearsal lost them)
+               && app.contains ("wizcontract::catalogueCheck (*session, req);") && app.contains ("barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);")
+               && cm.contains ("EJ_WIZARD_SERVER_URL=\"${EJ_WIZARD_BETA_SERVER_URL}\" EJ_WIZARD_OAUTH_CLIENT_ID=\"${EJ_WIZARD_BETA_CLIENT_ID}\"")
+               && cm.contains ("target_link_libraries(ejmap-wizard-beta PRIVATE \"-framework IOKit\" \"-framework Security\")")
+               && asm_.indexOf ("check_bundle_secrets.sh\" \"$A\" || {") > 0 && asm_.indexOf ("check_bundle_secrets.sh\" \"$A\" || {") < asm_.indexOf ("codesign -f -s \"$ID\"")
+               && kc.contains ("kSecClassGenericPassword") && kc.contains ("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly") && ! kc.contains ("writeTo") && ! kc.contains ("replaceWithText"),
+               "wizard WZ-BETA-NET-1: the beta signs in in the browser, checks the catalogue first (\"" + knownWords (12, 34) + "\"), sends live, shows the server's code; the server per build; no secret ships");
+#if JUCE_MAC
+        if (std::getenv ("EJ_TEST_KEYCHAIN") != nullptr)
+        {   // run by hand once (never in the gate: it touches the login keychain): a throwaway item written, read back, cleared
+            ejmap::wizcontract::KeychainTokenStore ks ("ai.echojay.wizard|ejmap-roundtrip-test");
+            ejmap::wizcontract::Tokens t; t.access = "at_test_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()); t.refresh = "rt_test_x"; t.accountId = "acct_t"; t.displayName = "T";
+            const bool saved = ks.save (t); const auto back = ks.load(); t.refresh = "rt_test_y"; const bool updated = ks.save (t); const auto back2 = ks.load(); ks.clear(); const auto gone = ks.load();
+            check (saved && back && back->access == t.access && updated && back2 && back2->refresh == "rt_test_y" && ! gone, "wizard WZ-KEYCHAIN-1: the Keychain store writes, updates, reads back and clears its one item");
+        }
+#endif
     }
     // WZ-NET-1 THE SAFETY NET (Kathy, 18 Oct, CONFIRMED - "must be fixed before beta"): a queued plugin left without an outcome by the last run
     // AND this one is filed not_measurable with what it was left as; one left for the first time, or settled, is untouched; the end guard files
