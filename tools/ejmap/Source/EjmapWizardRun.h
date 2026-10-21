@@ -757,7 +757,8 @@ inline int runWizard (const WizardOptions& wo)
         const auto& ir = plugins[i]; const auto uid = juce::String::toHexString (ir.desc.uniqueId).toLowerCase(); const auto ver = ir.desc.version;
         const auto se = store.count (uid + "|" + ver) ? store.at (uid + "|" + ver) : StoreEntry();
         const auto ans = catAnswers.isObject() ? wizroute::fromCatalogue (catAnswers, wizroute::pluginId (uid, ver, fmtTag (ir.desc))) : wizroute::ask (db, pending, catalogue, uid, ver, se.fp, ir.desc.name);
-        const auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name));
+        auto d = wizroute::route (ans, wizard::wizardCategory (ir.desc.name, juce::var()), categorise::outOfScope (typeOf (ir.desc), ir.desc.name, {}), wizroute::isMultiband (dbMultiband, uid), wizroute::surroundLayout (ir.desc.name));
+        if (d.route == wizroute::Route::measure && d.passes.isEmpty()) d.passes = wizroute::passesFor (d.category, ir.desc.name);   // 22 Oct: a filter / a shifter by name
         auto* row = new juce::DynamicObject(); row->setProperty ("product", ir.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (uid, ver, fmtTag (ir.desc))); row->setProperty ("format", fmtTag (ir.desc)); row->setProperty ("map_fp", se.fp);
         row->setProperty ("category", d.category); row->setProperty ("route", wizroute::routeName (d.route)); row->setProperty ("vendor", ir.desc.manufacturerName);
         if (wo.plan) row->setProperty ("identifier", ir.desc.fileOrIdentifier);   // 14 Oct (WaveShell census): the AU type,subtype,manufacturer - plan only
@@ -972,13 +973,15 @@ inline int runWizard (const WizardOptions& wo)
             prog.finished (ir.desc.name, false);
         }
         if (sig.getProperty ("why", "").toString().startsWith ("a window")) wizroute::rememberLicenceWindow (licenceMemF, pid);   // 14 Oct
-        const auto d = wizroute::afterSignature ((bool) sig.getProperty ("reads_ran", false), (bool) sig.getProperty ("settled", false), sig.getProperty ("category", "").toString(),
-                                                 sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString());
+        auto d = wizroute::afterSignature ((bool) sig.getProperty ("reads_ran", false), (bool) sig.getProperty ("settled", false), sig.getProperty ("category", "").toString(),
+                                           sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString());
+        // 22 Oct (Kathy, calls 3 and 4): an EQ read by moving its cutoff, or named a filter -> the filter pass; pitch by name -> the shift pass
+        if (d.route == wizroute::Route::measure) d.passes = wizroute::passesFor (d.category, ir.desc.name, sig.getProperty ("category_writes", {}).size() > 0, sig.getProperty ("settled_by", "").toString() == "name");
         p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
         const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope"
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
         p.row->setProperty ("state", st);
-        if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category);
+        if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category, d.passes);
         // 21 Oct (Kathy, decision 3): the raised drive goes with the plugin into its measuring passes (the probe's instance only)
         if (d.route == wizroute::Route::measure) if (const auto nw = wizroute::neutralWritesOf (sig); ! nw.empty()) { neutralByStem[phaseBStem (ir.desc)] = nw; p.row->setProperty ("neutral_raised", sig.getProperty ("neutral_writes", {})); }
         if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty ("also_categories", {}).getArray())   // 20 Oct: a tail with both roles -> both passes
@@ -1241,11 +1244,11 @@ inline int runWizard (const WizardOptions& wo)
         // the engine still measures
         const auto zip = out.getChildFile ("contribution.zip"); const auto zipTmp = out.getChildFile ("contribution.zip.tmp"); zipTmp.deleteFile();
         juce::ChildProcess z; z.start (juce::StringArray { "/bin/sh", "-c", "cd \"" + B.getFullPathName() + "\" && /usr/bin/zip -qr \"" + zipTmp.getFullPathName() + "\" ." }); z.waitForProcessToFinish (60000);
-        zipTmp.moveFileTo (zip);
-        { const auto mt = out.getChildFile ("contribution.manifest.json.tmp"); mt.replaceWithText (juce::JSON::toString (Mv) + "\n"); mt.moveFileTo (out.getChildFile ("contribution.manifest.json")); }
+        wizapp::replaceAtomically (zipTmp, zip);   // 22 Oct: the app may read it while the engine packs - never absent for a moment
+        { const auto mt = out.getChildFile ("contribution.manifest.json.tmp"); mt.replaceWithText (juce::JSON::toString (Mv) + "\n"); wizapp::replaceAtomically (mt, out.getChildFile ("contribution.manifest.json")); }
         {   auto* c = new juce::DynamicObject(); c->setProperty ("seq", ++checkpointSeq); c->setProperty ("kind", runKind); c->setProperty ("run_id", wo.runId);
             c->setProperty ("zip", "contribution.zip"); c->setProperty ("manifest", "contribution.manifest.json"); c->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true));
-            const auto ct = out.getChildFile ("checkpoint.json.tmp"); ct.replaceWithText (juce::JSON::toString (juce::var (c))); ct.moveFileTo (out.getChildFile ("checkpoint.json")); }
+            const auto ct = out.getChildFile ("checkpoint.json.tmp"); ct.replaceWithText (juce::JSON::toString (juce::var (c))); wizapp::replaceAtomically (ct, out.getChildFile ("checkpoint.json")); }
         say ("WIZARD: contribution bundle -> " + zip.getFileName() + " (" + juce::String (items.size()) + " new profile(s), " + juce::String (confirmations.size()) + " confirmation(s) of another version's profile, "
              + juce::String (skipped.size()) + " skipped with the reason; " + juce::String (zip.getSize() / 1024.0, 1) + " KB; checked: no paths, names or tokens)");
         say ("WIZARD: UPLOAD (stubbed): nothing is sent. A real app shows this list and sends only when the user presses Send.");

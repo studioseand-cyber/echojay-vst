@@ -147,13 +147,36 @@ inline juce::StringArray phaseBFor (const juce::String& c)
     return {};   // modulation, meters, utilities, ...: not measured (sent with the category)
 }
 inline bool measurable (const juce::String& c) { return ! phaseBFor (c).isEmpty(); }
+// FILTERS AND PITCH SHIFTERS (Kathy, 22 Oct, calls 3 and 4): the server's category stays (eq / pitch); the PASS is the filter or the shift
+// measurement - an EQ whose name says filter (or whose category was read by moving a cutoff) has no band gain for the EQ band pass, and
+// a pitch tool routed by its name (flat at default: a shifter at 0) is not a tuner for the tuners pass
+inline bool filterNamed (const juce::String& product)
+{
+    const auto l = product.toLowerCase();
+    for (const char* t : { "filter", "hpf", "lpf", "highpass", "lowpass", "high pass", "low pass", "cleansweep" }) if (l.contains (t)) return true;
+    return false;
+}
+inline bool tunerNamed (const juce::String& product)
+{ const auto l = product.toLowerCase(); for (const char* t : { "tune", "tuner", "melodyne", "correct" }) if (l.contains (t)) return true; return false; }
+inline bool shifterNamed (const juce::String& product)
+{
+    const auto l = product.toLowerCase();
+    for (const char* t : { "shift", "transpos", "octaver", "pitchwheel" }) if (l.contains (t)) return true;
+    return l.contains ("pitch") && ! tunerNamed (product);
+}
+inline juce::StringArray passesFor (const juce::String& category, const juce::String& product, bool cutoffMoved = false, bool pitchByName = false)
+{
+    if (category == "eq" && (cutoffMoved || filterNamed (product))) return { "filters" };
+    if ((category == "pitch" || category == "tuner") && (pitchByName || shifterNamed (product))) return { "pitchshift" };
+    return phaseBFor (category);
+}
 // THE MEASURING ORDER (Kathy, 12 Oct): fastest and most useful first, so a user who stops early has given the most valuable results.
 // Each inner list runs as one Phase B pass (--jobs within it); a stop ends the order there. limitercomp is its own pass AFTER limiter
 // (12 Oct): its work list keeps only limiters whose limiter row is ok (phaseb::compressorPassAllowed), so the limiter rows must exist first.
 inline const std::vector<juce::StringArray>& measureOrder()
 {
-    static const std::vector<juce::StringArray> k { { "wizard" }, { "wizard_eq" }, { "deesser" }, { "limiter" }, { "limitercomp" }, { "saturation" },
-                                                    { "gate", "transient" }, { "tuners" }, { "reverb", "delay" }, { "strips" } };
+    static const std::vector<juce::StringArray> k { { "wizard" }, { "wizard_eq" }, { "filters" }, { "deesser" }, { "limiter" }, { "limitercomp" }, { "saturation" },
+                                                    { "gate", "transient" }, { "tuners", "pitchshift" }, { "reverb", "delay" }, { "strips" } };   // 22 Oct: filters, pitchshift
     return k;
 }
 // a limiter's compressor pass (limitercomp) is sent like any compressor: its profile exported AND its tone check passed at g 2
@@ -164,6 +187,8 @@ inline bool draftUsable (const juce::String& phaseBCategory, const juce::var& dr
 {
     if (! draft.isObject()) return false;
     if (phaseBCategory == "saturation") return ! draft.getProperty ("drive", {}).isVoid();
+    if (phaseBCategory == "filters") return draft.getProperty ("filters", {}).size() > 0;      // 22 Oct: a control with a cutoff read
+    if (phaseBCategory == "pitchshift") return draft.getProperty ("shifts", {}).size() > 0;   // 22 Oct: a control with a shift read
     return true;
 }
 // "N measured so far" (Kathy, 13 Oct; the rehearsal counted OneKnob Pumper, an ok row the certification then refused as a ducker): a landed

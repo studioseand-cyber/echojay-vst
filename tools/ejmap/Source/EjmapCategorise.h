@@ -263,6 +263,9 @@ inline Decision decideRaised (const Signatures& raised, const juce::StringArray&
     auto d = decide (raised, proposed, true, roles); d.why = raisedWhy + "; then " + d.why;
     // AN ENHANCER IS NOT AN EQ (Kathy, 21 Oct: the two Noveltechs): a tone change made by raising a drive / enhance control goes to review
     if (d.category == "eq") { d.settled = false; d.why += "; a tone change from raising '" + drive.control + "' is an enhancer, not an EQ: review"; }
+    // A RAISE THAT MAKES IT "MODULATION" (Kathy, 22 Oct: Mic Mod's 'Tube Saturation' raised read as modulation and was filed out of scope):
+    // a category the raise produced, that EchoJay does not measure, is never an out-of-scope verdict - it goes to review
+    if (d.category == "modulation") { d.settled = false; d.why += "; raising '" + drive.control + "' made it read as modulation, which EchoJay does not measure: review, never out of scope"; }
     return d;
 }
 inline juce::var sigVar (const Signatures& s)

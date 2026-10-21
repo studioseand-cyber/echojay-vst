@@ -22,6 +22,7 @@
 #include <map>
 #include <optional>
 #include <functional>
+#include <cstdio>
 
 namespace ejmap::phaseb
 {
@@ -74,6 +75,9 @@ inline const std::vector<Category>& categories()
         // the user-side wizard (feat/ejmap-wizard): its queue (<out>/wizard_queue.txt), each through the full compressor path; opt-in
         { "wizard",      "--cert-limiter-comp",  "",          {},                              1800.0, "the compressor certification for a plugin the database does not have (the wizard's queue)", true },
         { "wizard_eq",   "--cert-eq",            "",          {},                              2700.0, "the EQ certification for a plugin the database does not have (the wizard's EQ queue)", true },
+        // filters and pitch shifters (Kathy, 22 Oct, calls 3 and 4): the wizard's queues for them, opt-in like its other queues
+        { "filters",     "--cert-filter",        "",          {},                              1500.0, "a text pass + seven grid responses per cutoff control (up to four): ~1-5 min", true },
+        { "pitchshift",  "--cert-pitchshift",    "",          {},                              900.0,  "a 25-point text grid + up to seven 2 s readings per shift control (up to six): ~1-4 min", true },
         { "gainall",     "--cert-gain-cal",      "all",       { "eq", "limiter", "de-esser", "saturation", "amp_sim", "reverb", "delay", "transient_shaper", "gate" }, 600.0, "21 norms x 2-3 levels per gain control + the unnamed pool: ~1-4 min", true } };
     return k;
 }
@@ -89,7 +93,7 @@ inline void writeAtomic (const juce::File& f, const juce::String& text)
 {
     const auto tmp = f.getSiblingFile (f.getFileName() + ".tmp");
     tmp.replaceWithText (text, false, false, "\n");
-    f.deleteFile(); tmp.moveFileTo (f);   // rename: the file is either absent or whole
+    if (std::rename (tmp.getFullPathName().toRawUTF8(), f.getFullPathName().toRawUTF8()) != 0) { f.deleteFile(); tmp.moveFileTo (f); }   // 22 Oct: one-step rename (old or new, never none); the old way only if that fails
 }
 // THE RAW TRACE, gzipped beside the records; the target is cleared first because a FileOutputStream APPENDS
 constexpr int kGzipWindowBits = 15 + 16;   // a real gzip file (gunzip opens it); 0 would be a bare zlib stream, which gunzip refuses

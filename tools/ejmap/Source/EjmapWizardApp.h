@@ -19,6 +19,16 @@
 
 #include "EjmapWizard.h"
 #include "EjmapWizardContract.h"   // 21 Oct: the beta's consent is the contract's
+#include <cstdio>
+namespace ejmap::wizapp
+{
+// THE ATOMIC REPLACE (Kathy, 22 Oct - the bar flicker): juce::File::moveFileTo DELETES the target before it renames, so a reader can find
+// no file at all for a moment (the 21 Oct run's bar dropped to 0 fifteen times). POSIX rename() replaces in one step: a reader sees the
+// old file or the new one, never none
+inline bool replaceAtomically (const juce::File& tmp, const juce::File& dst) { return std::rename (tmp.getFullPathName().toRawUTF8(), dst.getFullPathName().toRawUTF8()) == 0; }
+// a progress read the app may use: a whole JSON object with a stage. An empty or partial read keeps the last good one on screen
+inline bool progressUsable (const juce::var& p) { return p.isObject() && p.getProperty ("stage", "").toString().isNotEmpty(); }
+}
 #include <juce_core/juce_core.h>
 #include <functional>
 
@@ -550,6 +560,11 @@ inline juce::String progressLogLine (const juce::String& screen, const juce::var
         if (total > 0) l << " (" << juce::String (100.0 * done / total, 1) << "%)";
         l << " | share " << juce::String (juce::jlimit (0.0, 1.0, (double) mp.getProperty ("share", 0.0)) * 100.0, 1) << "% | skipped " << (int) mp.getProperty ("skipped", 0); }
     else l << " | skipped " << (int) progress.getProperty ("skipped", 0);
+    // 22 Oct (Kathy: Maag MAGNUM-K held the bar for 28 min): the now line (the plugin + what it is doing) and each running job with its
+    // own steps, so a long single plugin is visibly moving in the log too
+    const auto nw = nowWords (progress); if (nw.isNotEmpty()) l << " | now '" << nw << "'";
+    juce::StringArray js; for (const auto& j : jobLines (progress)) js.add (j.name + (j.fraction >= 0.0 ? " " + juce::String (juce::roundToInt (100.0 * juce::jlimit (0.0, 1.0, j.fraction))) + "%" : juce::String (" checking")));
+    if (! js.isEmpty()) l << " | jobs '" << js.joinIntoString ("; ") << "'";
     return l;
 }
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring

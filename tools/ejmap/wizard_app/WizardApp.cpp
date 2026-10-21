@@ -958,6 +958,12 @@ private:
     void pollEngine()
     {
         const auto p = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString());
+        // 22 Oct (the bar flicker): an empty or partial read changes nothing on screen - the last good one stays; the engine's exit is still seen
+        if (wizapp::progressUsable (p)) showProgress (p);
+        pollEngineExit();
+    }
+    void showProgress (const juce::var& p)
+    {
         const auto stage = p.getProperty ("stage", "").toString(); const double pct = (double) p.getProperty ("percent", 0.0);
         juce::String cur = p.getProperty ("current_latest", "").toString();   // 15 Oct: the most recently started plugin (was the oldest still listed)
         if (cur.isEmpty()) if (const auto* a = p.getProperty ("current", {}).getArray()) if (! a->isEmpty()) cur = (*a)[a->size() - 1].toString();
@@ -995,6 +1001,9 @@ private:
         // 20 Oct (Kathy): the progress line - every 30 s and at every stage change - so a tester's log shows what the screen showed
         if (wizapp::progressLogDue (progressClock, wizapp::screenName (screen) + "|" + stage + "|" + stepText, juce::Time::getMillisecondCounterHiRes()))
             logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine));
+    }
+    void pollEngineExit()
+    {
         if (const auto code = engine.poll())
         {
             if (const auto left = wizapp::closeProcessGroup (engine.group); ! left.isEmpty())   // 19 Oct: nothing the engine started outlives it

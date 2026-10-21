@@ -9859,9 +9859,9 @@ void testWizardCategories()
            && phaseBFor ("reverb") == juce::StringArray { "reverb" } && phaseBFor ("delay") == juce::StringArray { "delay" } && phaseBFor ("channel_strip") == juce::StringArray { "strips" }
            && ! measurable ("modulation") && measurable ("saturation"),
            "wizard WZ-CAT-1: every server category reachable; limiter -> limiter + limitercomp; multiband (held) and modulation not measured");
-    // WZ-CAT-2 THE ORDER: compressors, EQ, de-essers, limiters, saturation, gates / transients, multiband, tuners, reverb / delay, strips last
+    // WZ-CAT-2 THE ORDER: compressors, EQ, filters (22 Oct), de-essers, limiters, saturation, gates / transients, multiband, tuners + pitch shifters (22 Oct), reverb / delay, strips last
     juce::StringArray flat; for (const auto& g : measureOrder()) flat.addArray (g);
-    check (flat == juce::StringArray { "wizard", "wizard_eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "tuners", "reverb", "delay", "strips" }
+    check (flat == juce::StringArray { "wizard", "wizard_eq", "filters", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "tuners", "pitchshift", "reverb", "delay", "strips" }
            && measureOrder().back() == juce::StringArray { "strips" },
            "wizard WZ-CAT-2: the measuring order is Kathy's, strips last; got " + flat.joinIntoString (" > "));
     {   // ... and the limiter's compressor pass is its own pass straight after the limiter's (its list needs the limiter rows)
@@ -12061,7 +12061,7 @@ void testJobs()
 void testPhaseB()
 {
     using namespace ejmap::phaseb;
-    check (categories().size() == 21 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories()[18].name == "wizard" && categoryNamed ("wizard")->optIn && categories()[19].name == "wizard_eq" && categoryNamed ("wizard_eq")->optIn && categoryNamed ("wizard_eq")->mode == "--cert-eq" && categories().back().name == "gainall", "phaseb P1: twenty-one categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, wizard + wizard_eq (opt-in), gain-all)");
+    check (categories().size() == 23 && categories().front().name == "gaincal" && categories()[1].name == "timing" && categories()[2].name == "limiter" && categories()[3].name == "eq" && categories()[4].name == "deesser" && categories()[5].name == "saturation" && categories()[10].name == "multiband" && categories()[11].name == "tuners" && categories()[12].name == "combined" && categories()[13].name == "material" && categories()[14].name == "frequency" && categories()[15].name == "samplerate" && categories()[16].name == "strips" && categories()[17].name == "limitercomp" && categories()[18].name == "wizard" && categoryNamed ("wizard")->optIn && categories()[19].name == "wizard_eq" && categoryNamed ("wizard_eq")->optIn && categoryNamed ("wizard_eq")->mode == "--cert-eq" && categories()[20].name == "filters" && categoryNamed ("filters")->optIn && categories()[21].name == "pitchshift" && categoryNamed ("pitchshift")->optIn && categories().back().name == "gainall", "phaseb P1: twenty-three categories in the priority order (gain-cal, timing, limiter, EQ, de-esser, saturation/amp, reverb, delay, transient, gate, multiband, tuners, combined, material, frequency, samplerate, strips, limitercomp, wizard + wizard_eq (opt-in), filters + pitchshift (opt-in, 22 Oct), gain-all)");
     // LIM-COMP (Kathy's ruling, 10 Oct): limiters through the compressor certification - an opt-in category over the ledger's limiters,
     // its run-all step after transient_gate (a redo step: its resume never re-deletes); a bare --phaseb-all never runs it
     {
@@ -13427,6 +13427,139 @@ int main (int, char**)
                && drv.contains ("d = categorise::clipAfterRaise (categorise::decideRaised (up, row.proposed, &tr, w, move), categorise::hasInside (categorise::tokens (row.product), { \"clip\" }));")
                && drv.contains ("row.byName = d.byName;"),
                "wizard WZ-RULES-21: enhancer -> review ('" + nov.why.fromLastOccurrenceOf ("; ", false, false) + "'); strips / pitch by name; cutoff moved; resonant ring = eq; clip ceiling = limiter; GTR Stomp skipped; other effects silenced (" + fxN.joinIntoString (", ") + "); mix/time exclusive");
+    }
+    // WZ-RULES-22 KATHY'S 22 OCT CALLS (2, 5, 6): (2) THE BAR FLICKER - the engine replaces progress.json in one step (rename: the old file
+    // or the new one, never none; JUCE's moveFileTo deletes the target first), and the app keeps the last good read when a read is empty or
+    // partial; (5) a raise that makes a plugin read as modulation (Mic Mod's 'Tube Saturation') goes to review, never out of scope; (6) the
+    // progress log carries the now line and each job's steps, so a long single plugin (Maag MAGNUM-K, 28 min) is visibly moving
+    {
+        using namespace ejmap;
+        // (2) a writer replacing the file 3000 times while a reader reads it: through replaceAtomically the reader never sees it absent or
+        // short. The old delete-then-move is counted beside it (timing-dependent, so reported, never asserted)
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_atomic_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        dir.createDirectory();
+        const auto f = dir.getChildFile ("progress.json"); const auto body = juce::String ("{\"stage\":\"Measuring\",\"pad\":\"") + juce::String::repeatedString ("x", 4000) + "\"}\n";
+        f.replaceWithText (body);
+        auto race = [&] (bool atomic) {
+            std::atomic<bool> stop { false }; int bad = 0, reads = 0;
+            std::thread w ([&] { for (int i = 0; i < 3000; ++i) { const auto t = f.getSiblingFile ("progress.json.tmp"); t.replaceWithText (body);
+                                                                  if (atomic) wizapp::replaceAtomically (t, f); else { f.deleteFile(); t.moveFileTo (f); } }
+                                 stop = true; });
+            while (! stop) { ++reads; if (! wizapp::progressUsable (juce::JSON::parse (f.loadFileAsString()))) ++bad; }
+            w.join(); return std::pair<int, int> { bad, reads }; };
+        const auto atomicRace = race (true), oldRace = race (false);
+        dir.deleteRecursively();
+        const bool usable = wizapp::progressUsable (juce::JSON::parse (R"({"stage":"Measuring","percent":40})")), empty = wizapp::progressUsable (juce::JSON::parse ("")),
+                   partial = wizapp::progressUsable (juce::JSON::parse (R"({"stage":"Meas)")), noStage = wizapp::progressUsable (juce::JSON::parse (R"({"percent":40})")),
+                   blankStage = wizapp::progressUsable (juce::JSON::parse (R"({"stage":""})"));
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto poll = app.fromFirstOccurrenceOf ("void pollEngine()", false, false).upToFirstOccurrenceOf ("void showProgress", false, false);
+        const auto prog = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardProgress.h").loadFileAsString();
+        const auto pb = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapPhaseB.h").loadFileAsString();
+        // (5) Mic Mod's own reads, 21 Oct: flat at default; raised, energy beside the fundamental (-17.7 dB) over the harmonics (-19.7)
+        using namespace ejmap::categorise;
+        Signatures mm; mm.responseRead = mm.harmRead = true; mm.freqSpanDb = 0.4; mm.levelDepDb = 0.1; mm.thdLoDb = -38.0; mm.thdHiDb = -36.0; mm.sidebandDb = -17.7; mm.harmDb = -19.7;
+        NeutralWrite ts; ts.index = 3; ts.control = "Tube Saturation"; ts.norm = 0.75; ts.text = "75";
+        const auto mic = decideRaised (mm, categoriesFromWords ("Mic Mod", "", {}), nullptr, ts, 7.4);
+        const auto micRoute = wizroute::afterSignature (true, mic.settled, mic.category, {}, mic.why);
+        const auto atDefault = decide (mm, {});   // the same reads with nothing raised: modulation stays what it was (out of scope)
+        // (6) the progress line with the now line and the jobs
+        const auto pl = wizapp::progressLogLine ("measuring", juce::JSON::parse (R"({"stage":"Measuring","now":{"line":"Maag MAGNUM-K: the timing sweep, position 9 of 16"},"jobs_now":[{"product":"Maag MAGNUM-K","fraction":0.4375},{"product":"Tune LT","fraction":-1}],"measure_progress":{"done":15,"total":504,"skipped":0,"share":0.035}})"),
+                                                 "Step 3 of 3 - measuring", 0.035, "3.5%", "15 of 504 done");
+        const auto plBare = wizapp::progressLogLine ("scan", juce::JSON::parse (R"({"stage":"Checking"})"), "Step 2 of 3", 0.41, "41.0%", "312 plugins checked");
+        check (atomicRace.first == 0 && atomicRace.second > 0 && usable && ! empty && ! partial && ! noStage && ! blankStage
+               && poll.contains ("if (wizapp::progressUsable (p)) showProgress (p);") && poll.contains ("pollEngineExit();")
+               && prog.contains ("if (tmp.replaceWithText (juce::JSON::toString (juce::var (o)) + \"\\n\")) wizapp::replaceAtomically (tmp, json_);") && ! prog.contains ("tmp.moveFileTo (json_)")
+               && pb.contains ("if (std::rename (tmp.getFullPathName().toRawUTF8(), f.getFullPathName().toRawUTF8()) != 0) { f.deleteFile(); tmp.moveFileTo (f); }")
+               && ! mic.settled && mic.category == "modulation" && mic.why.contains ("raising 'Tube Saturation' made it read as modulation") && micRoute.route == wizroute::Route::needsCategory
+               && atDefault.settled && atDefault.category == "modulation"
+               && pl.endsWith ("| now 'Maag MAGNUM-K: the timing sweep, position 9 of 16' | jobs 'Maag MAGNUM-K 44%; Tune LT checking'")
+               && plBare.endsWith ("| skipped 0"),   // no now line, no jobs: nothing added
+               "wizard WZ-RULES-22: progress replaced in one step (" + juce::String (atomicRace.first) + " bad of " + juce::String (atomicRace.second) + " reads; the old delete-then-move: "
+                 + juce::String (oldRace.first) + " of " + juce::String (oldRace.second) + "), an empty / partial read keeps the last good; Mic Mod raised -> " + wizroute::routeName (micRoute.route)
+                 + "; the log's now + jobs ('" + pl.fromFirstOccurrenceOf ("| now", true, false) + "')");
+    }
+    // WZ-FILTER-1 THE FILTER MEASUREMENT (Kathy, 22 Oct, call 3): a filter has no band gain (the EQ band pass read 0 bands on every filter of
+    // the 21 Oct run). Cutoff = the -3 dB point from the passband, slope = dB/oct between -6 and -18 dB, resonance = the peak over the
+    // passband; the cutoff judged against its label at the EQ acceptance's 5 %; filter-named plugins (and EQs read by moving a cutoff) go
+    // to the filter pass, never the EQ band pass; an EQ's HPF / LPF bands (no gain control) are read the same way
+    {
+        using namespace ejmap;
+        auto grid = [] (const std::function<double (double)>& h) { eq::Position p; p.norm = 0.5f; p.text = "1.00 kHz";
+            for (int k = 0; k < eq::kGridTones; ++k) { const double hz = eq::kGridLoHz * std::pow (eq::kGridHiHz / eq::kGridLoHz, (double) k / (eq::kGridTones - 1)); p.tones.push_back ({ hz, -12.0, -12.0 + h (hz) }); }
+            return p; };
+        const auto hp2 = filter::deriveShape (filter::transferOf (grid ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (1000.0 / f, 4.0)); })));             // 2-pole Butterworth HP at 1 kHz
+        const auto hp4 = filter::deriveShape (filter::transferOf (grid ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (200.0 / f, 8.0)); })));              // 4-pole at 200 Hz
+        const auto lpQ = filter::deriveShape (filter::transferOf (grid ([] (double f) { const double x = f / 5000.0; return -10.0 * std::log10 (std::pow (1.0 - x * x, 2.0) + std::pow (x / 2.0, 2.0)); })));   // resonant LP, Q 2
+        const auto flat = filter::deriveShape (filter::transferOf (grid ([] (double) { return 0.4; })));
+        const auto bell = filter::deriveShape (filter::transferOf (grid ([] (double f) { return 6.0 * std::exp (-std::pow (std::log2 (f / 1000.0), 2.0) * 4.0); })));
+        const auto low = filter::deriveShape (filter::transferOf (grid ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (4.0 / f, 4.0)); })));                 // HP at 4 Hz: under the grid, flat inside it
+        const auto j1 = filter::judgeCutoff (hp2, "1.04 kHz"), j2 = filter::judgeCutoff (hp2, "1.1 kHz"), j3 = filter::judgeCutoff (hp2, "50 %"), j4 = filter::judgeCutoff (flat, "1.0 kHz");
+        const filter::Judged ok { true, true, 1000.0, 0.5, {} }, miss { true, false, 1000.0, 9.0, {} }, none;
+        const auto v3 = filter::controlVerdict ({ { hp2, ok }, { hp2, ok }, { hp2, ok } }), v2 = filter::controlVerdict ({ { hp2, ok }, { hp2, ok }, { hp2, none } }),
+                   vMiss = filter::controlVerdict ({ { hp2, ok }, { hp2, ok }, { hp2, miss } }), vNone = filter::controlVerdict ({ { flat, none } });
+        std::vector<std::pair<int, juce::String>> cs { { 0, "Highpass Cutoff" }, { 1, "Lowpass Cutoff" }, { 2, "Resonance" }, { 3, "Mix" }, { 4, "Filter On" } };
+        std::vector<std::pair<int, juce::String>> eqc { { 0, "HP Freq" }, { 1, "LP Freq" }, { 2, "Band 1 Gain" }, { 3, "Band 1 Freq" }, { 4, "Low Cut" }, { 5, "HP Slope" }, { 6, "Low Cut On" } };
+        juce::StringArray cut, pass; for (const auto& c : filter::cutoffControls (cs)) cut.add (c.second); for (const auto& c : filter::eqPassBands (eqc)) pass.add (c.second);
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto mainCpp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString();
+        const auto& order = wizroute::measureOrder(); int iEq = -1, iF = -1; for (int g = 0; g < (int) order.size(); ++g) { if (order[(size_t) g].contains ("wizard_eq")) iEq = g; if (order[(size_t) g].contains ("filters")) iF = g; }
+        bool tableF = false; for (const auto& c : phaseb::categories()) if (c.name == "filters" && c.mode == "--cert-filter" && c.optIn) tableF = true;
+        check (hp2.result == "measured" && hp2.type == "highpass" && std::abs (hp2.cutoffHz - 1000.0) < 10.0 && hp2.slopeBasis == "-6 to -18 dB" && hp2.slopeDbOct > 10.0 && hp2.slopeDbOct < 13.0 && hp2.resonanceDb == 0.0
+               && hp4.result == "measured" && std::abs (hp4.cutoffHz - 200.0) < 2.0 && hp4.slopeDbOct > 20.0 && hp4.slopeDbOct < 25.0
+               && lpQ.result == "measured" && lpQ.type == "lowpass" && std::abs (lpQ.resonanceDb - 6.3) < 0.3 && lpQ.cutoffHz > 5000.0 && std::abs (lpQ.resonanceHz - 4677.0) < 300.0
+               && flat.result == "flat" && bell.result == "no_edge" && low.result == "flat"
+               && filter::labelHz ("1.2 kHz") == 1200.0 && filter::labelHz ("120 Hz") == 120.0 && filter::labelHz ("4k") == 4000.0 && ! filter::labelHz ("50 %") && ! filter::labelHz ("-6.0 dB") && ! filter::labelHz ("Off")
+               && j1.judged && j1.pass && std::abs (j1.offPct - (-3.8)) < 0.2 && j2.judged && ! j2.pass && ! j3.judged && ! j4.judged && filter::kCutoffTolPct == eq::kAcceptFigurePct
+               && v3.verdict == "certified" && v2.verdict == "measured" && vMiss.verdict == "measured" && vNone.verdict == "not_measured"
+               && cut.joinIntoString (",") == "Highpass Cutoff,Lowpass Cutoff" && pass.joinIntoString (",") == "HP Freq,LP Freq,Low Cut"
+               && wizroute::passesFor ("eq", "OneKnob Filter (m)") == juce::StringArray { "filters" } && wizroute::passesFor ("eq", "bx_cleansweep V2") == juce::StringArray { "filters" }
+               && wizroute::passesFor ("eq", "LOVEND", true) == juce::StringArray { "filters" } && wizroute::passesFor ("eq", "Pro-Q 3") == juce::StringArray { "wizard_eq" } && wizroute::passesFor ("eq", "LOVEND") == juce::StringArray { "wizard_eq" }
+               && iF == iEq + 1 && tableF && wizroute::draftUsable ("filters", juce::JSON::parse (R"({"filters":[{"verdict":"measured"}]})")) && ! wizroute::draftUsable ("filters", juce::JSON::parse (R"({"filters":[]})"))
+               && run.contains ("if (d.route == wizroute::Route::measure && d.passes.isEmpty()) d.passes = wizroute::passesFor (d.category, ir.desc.name);")
+               && run.contains ("if (d.route == wizroute::Route::measure) d.passes = wizroute::passesFor (d.category, ir.desc.name, sig.getProperty (\"category_writes\", {}).size() > 0, sig.getProperty (\"settled_by\", \"\").toString() == \"name\");")
+               && run.contains ("if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category, d.passes);")
+               && drv.contains ("const auto passBands = readEqPassBands (passResponse, base, controls, say, passWindow, passMeasured);") && drv.contains ("dO->setProperty (\"filter_bands\", passBands);")
+               && drv.contains ("const auto fb = readEqPassBands (passResponse, base, controls, say, win, fm);") && mainCpp.contains ("return a == \"--cert-filter\" ? ejmap::cert::runFilter (o) : ejmap::cert::runPitchShift (o);"),
+               "wizard WZ-FILTER-1: 2-pole HP -3 dB " + juce::String (hp2.cutoffHz, 1) + " Hz, " + juce::String (hp2.slopeDbOct, 1) + " dB/oct; 4-pole " + juce::String (hp4.cutoffHz, 1) + " Hz, " + juce::String (hp4.slopeDbOct, 1)
+                 + " dB/oct; resonant LP +" + juce::String (lpQ.resonanceDb, 2) + " dB at " + juce::String (lpQ.resonanceHz, 0) + " Hz; filters -> the filter pass; EQ pass bands '" + pass.joinIntoString (", ") + "'");
+    }
+    // WZ-SHIFT-1 THE PITCH-SHIFT MEASUREMENT (Kathy, 22 Oct, call 4): a 220 Hz sine through each labelled position of a shift control; the
+    // probe's detector centred on the frequency the label expects (the input detuned back to 220 Hz), so its reading IS the error against
+    // the label at any shift; pitch by name goes to this pass, never the tuners pass
+    {
+        using namespace ejmap;
+        const auto e7 = shift::expected ("+7 st", "", "Pitch"), eM12 = shift::expected ("-12", "", "Semitones"), eC = shift::expected ("700 cents", "", "Fine"), eO = shift::expected ("+1 oct", "", "Shift"),
+                   eHz = shift::expected ("50 Hz", "", "Shift"), eDecl = shift::expected ("+0.5", "Hz", "Frequency"), eFine = shift::expected ("+25", "", "Fine"),
+                   eX = shift::expected ("x2.00", "", "Pitch"), eNote = shift::expected ("C#3", "", "Pitch"), ePct = shift::expected ("50 %", "", "Pitch"), eLow = shift::expected ("-36", "", "Pitch"), eHi = shift::expected ("+36 st", "", "Pitch");
+        const auto [note7, det7] = shift::noteAndDetune (e7);
+        auto pos = [] (double centre, double spread, int n, double conf) { pitch::PitchPosition p; p.landed = true;
+            for (int k = 0; k < n; ++k) { pitch::Window w; w.tMs = 10.7 * k; w.outC = centre + spread * std::sin (k * 0.7); w.outConf = conf; w.outDb = -20.0; p.windows.push_back (w); } return p; };
+        const auto good = shift::readPosition (pos (1.2, 0.5, 187, 0.99), e7), wander = shift::readPosition (pos (0.0, 30.0, 187, 0.99), e7), unread = shift::readPosition (pos (0.0, 0.5, 187, 0.3), e7),
+                   off = shift::readPosition (pos (12.0, 0.5, 187, 0.99), e7), early = shift::readPosition (pos (0.0, 0.5, 40, 0.99), e7);   // 40 windows = 0.43 s: all before the settle
+        const auto vA = shift::controlVerdict ({ good, good, good }), vM = shift::controlVerdict ({ good, good, off }), vN = shift::controlVerdict ({ unread, unread });
+        std::vector<std::pair<int, juce::String>> cs { { 0, "Pitch" }, { 1, "Formant" }, { 2, "Mix" }, { 3, "Fine" }, { 4, "Pitch Mix" }, { 5, "Delay" }, { 6, "Voice 2 Semitones" } };
+        juce::StringArray sn; for (const auto& c : shift::shiftControls (cs)) sn.add (c.second);
+        const auto ww = shift::wetWrite ({ { 0, "Pitch" }, { 1, "Dry/Wet" } }), wd = shift::wetWrite ({ { 0, "Pitch" }, { 1, "Dry" } }), wn = shift::wetWrite ({ { 0, "Pitch" } });
+        std::vector<std::pair<float, juce::String>> lab; for (int k = 0; k <= 24; ++k) lab.push_back ({ k / 24.0f, juce::String (k - 12) + " st" });
+        const auto pk = shift::pickPositions (lab, "", "Pitch");
+        const auto& order = wizroute::measureOrder(); bool grouped = false; for (const auto& g : order) if (g.contains ("tuners") && g.contains ("pitchshift")) grouped = true;
+        bool tableS = false; for (const auto& c : phaseb::categories()) if (c.name == "pitchshift" && c.mode == "--cert-pitchshift" && c.optIn) tableS = true;
+        check (e7.ok && std::abs (e7.outHz - 329.628) < 0.01 && std::abs (e7.cents - 700.0) < 1e-6 && std::abs (note7 - 329.628) < 0.01 && std::abs (det7 + 700.0) < 1e-6
+               && eM12.ok && std::abs (eM12.outHz - 110.0) < 1e-6 && eC.ok && std::abs (eC.outHz - 329.628) < 0.01 && eC.unit == "cents" && eO.ok && std::abs (eO.outHz - 440.0) < 1e-6
+               && eHz.ok && eHz.unit == "hz" && std::abs (eHz.outHz - 270.0) < 1e-6 && eDecl.ok && std::abs (eDecl.outHz - 220.5) < 1e-6 && eFine.ok && eFine.unit == "cents"
+               && ! eX.ok && ! eNote.ok && ! ePct.ok && ! eLow.ok && eHi.ok && std::abs (eHi.outHz - 1760.0) < 1e-6
+               && good.read && good.steady && good.agrees && std::abs (good.errorCents - 1.2) < 0.5 && std::abs (good.shiftCents - 701.2) < 0.5
+               && wander.read && ! wander.steady && ! wander.agrees && ! unread.read && off.read && off.steady && ! off.agrees && ! early.read
+               && vA.verdict == "agrees" && vM.verdict == "measured" && vN.verdict == "not_measured"
+               && sn.joinIntoString (",") == "Pitch,Fine,Voice 2 Semitones" && ww && ww->first == 1 && ww->second == 1.0f && wd && wd->second == 0.0f && ! wn
+               && (int) pk.size() == shift::kMaxPositions && pk.front().second == "-12 st" && pk.back().second == "12 st"
+               && wizroute::passesFor ("pitch", "UltraPitch Shift (m)") == juce::StringArray { "pitchshift" } && wizroute::passesFor ("pitch", "MFreqShifter") == juce::StringArray { "pitchshift" }
+               && wizroute::passesFor ("pitch", "Pitchwheel") == juce::StringArray { "pitchshift" } && wizroute::passesFor ("pitch", "Auto-Tune Access") == juce::StringArray { "tuners" }
+               && wizroute::passesFor ("pitch", "Auto-Tune SoundSoap", false, true) == juce::StringArray { "pitchshift" } && wizroute::passesFor ("pitch", "Waves Tune Real-Time") == juce::StringArray { "tuners" }
+               && grouped && tableS && wizroute::draftUsable ("pitchshift", juce::JSON::parse (R"({"shifts":[{"verdict":"agrees"}]})")) && ! wizroute::draftUsable ("pitchshift", juce::JSON::parse (R"({"shifts":[]})")),
+               "wizard WZ-SHIFT-1: '+7 st' expects " + juce::String (e7.outHz, 2) + " Hz (probe note " + juce::String (note7, 2) + ", input detuned " + juce::String (det7, 0) + " c); a reading 1.2 c off agrees, 12 c off does not; pitch by name -> the shift pass");
     }
     // WZ-NEUTRAL-1 THE RAISED DRIVE IN THE MEASURING PASSES (Kathy, 21 Oct, decision 3): a categorised row's neutral_writes go with the plugin
     // into Phase B ("--neutral-sets" -> EJ_PROBE_NEUTRAL_SETS), at the FRONT of every set= list of the child's probe calls (the pass's own

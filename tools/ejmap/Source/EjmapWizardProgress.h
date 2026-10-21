@@ -70,6 +70,7 @@ inline double defaultSeconds (const juce::String& kind)
     if (kind == "deesser") return 18.0; if (kind == "limiter") return 28.0; if (kind == "limitercomp") return 340.0; if (kind == "saturation") return 11.0;
     if (kind == "gate") return 17.0; if (kind == "transient") return 22.0; if (kind == "multiband") return 51.0; if (kind == "tuners") return 111.0;
     if (kind == "reverb") return 41.0; if (kind == "delay") return 45.0; if (kind == "strips") return 1200.0;
+    if (kind == "filters") return 150.0; if (kind == "pitchshift") return 90.0;   // 22 Oct: the stated estimates until a run measures its own
     return 340.0;   // a compressor: the full path + the tone check
 }
 struct Times
@@ -475,12 +476,12 @@ private:
         o->setProperty ("elapsed_s", std::round (elapsed)); o->setProperty ("eta_s", eta < 0.0 ? juce::var() : juce::var (std::round (eta)));
         o->setProperty ("eta_words", stage_ == Stage::done ? juce::String ("finished") : stopped_ ? juce::String ("stopped") : etaWords (eta)); o->setProperty ("jobs", jobs_);
         auto* tm = new juce::DynamicObject();
-        for (const auto* k : { "map", "check", "demo", "compressor", "eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { auto* e = new juce::DynamicObject(); e->setProperty ("seconds", std::round (times_.perItem (k) * 10.0) / 10.0); e->setProperty ("source", times_.isMeasured (k) ? "measured" : "starting figure"); tm->setProperty (k, juce::var (e)); }
+        for (const auto* k : { "map", "check", "demo", "compressor", "eq", "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips", "filters", "pitchshift" }) { auto* e = new juce::DynamicObject(); e->setProperty ("seconds", std::round (times_.perItem (k) * 10.0) / 10.0); e->setProperty ("source", times_.isMeasured (k) ? "measured" : "starting figure"); tm->setProperty (k, juce::var (e)); }
         o->setProperty ("seconds_per_plugin", juce::var (tm));
         o->setProperty ("line", line); if (summary_.isNotEmpty()) o->setProperty ("summary", summary_);
         o->setProperty ("updated", juce::Time::getCurrentTime().toISO8601 (true));
         const auto tmp = json_.getSiblingFile (json_.getFileName() + ".tmp");
-        if (tmp.replaceWithText (juce::JSON::toString (juce::var (o)) + "\n")) tmp.moveFileTo (json_);
+        if (tmp.replaceWithText (juce::JSON::toString (juce::var (o)) + "\n")) wizapp::replaceAtomically (tmp, json_);   // 22 Oct: never absent for a moment
     }
 
     juce::File json_, markers_; std::ostream& term_; bool live_ = false; int jobs_ = 1;
