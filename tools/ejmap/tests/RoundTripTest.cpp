@@ -13630,6 +13630,31 @@ int main (int, char**)
                && run.indexOf ("if (! problems.isEmpty()) { say (\"WIZARD: the bundle is NOT made") < run.indexOf ("const auto docs = wizresults::fromPack"),
                "contract WZ-CONTRACT-11: the engine - --catalogue-request ends before anything is mapped, --catalogue-answers replaces the stub lookup, every pack emits its results after the personal check");
     }
+    // WZ-CONTRACT-12 WHAT THE MOCK CANNOT FORCE, over a scripted transport: a code the server sends with "eligible": false is never shown; a
+    // plugin the server did not answer is a "need"; a run the server lost is created again and the result sent (in that order)
+    {
+        using namespace ejmap::wizcontract;
+        juce::StringArray seen; std::vector<HttpResponse> script;
+        Transport fake = [&] (const HttpRequest& rq) { seen.add (rq.method + " " + rq.url.fromFirstOccurrenceOf ("/api/wizard/v1/", false, false)); HttpResponse r; if (script.empty()) { r.network = true; return r; } r = script.front(); script.erase (script.begin()); return r; };
+        auto resp = [] (int st, const char* body) { HttpResponse r; r.status = st; r.body = body; return r; };
+        MemoryTokenStore ms; Tokens t; t.access = "at_x"; t.refresh = "rt_x"; t.accountId = "acct"; ms.save (t);
+        Session s (Endpoints { "http://127.0.0.1:9", "c" }, fake, ms);
+        script = { resp (200, "{\"status\":\"complete\",\"promo\":{\"eligible\":false,\"code\":\"EJ-FREE-SNEAKY\",\"message\":\"not this time\"}}") };
+        const auto c = complete (s, "run_0000000000000001", "finished", {}, {}, {});
+        script = { resp (200, "{\"results\":[{\"plugin_id\":\"AudioUnit|a|1\",\"status\":\"have\"}],\"categories_version\":\"v\"}") };
+        const auto req = juce::JSON::parse ("{\"plugins\":[{\"plugin_id\":\"AudioUnit|a|1\"},{\"plugin_id\":\"AudioUnit|b|1\"}]}");
+        const auto cr = catalogueCheck (s, req);
+        const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_contract12_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        Outbox box { work.getChildFile ("outbox") }; box.put ("res_aaaa", "{\"x\":1}");
+        seen.clear(); script = { resp (404, "{\"error\":\"run_not_found\"}"), resp (201, "{\"run_id\":\"run_0000000000000001\",\"created\":true}"), resp (201, "{\"status\":\"accepted\"}") };
+        const auto st = drain (s, box, RunInfo { "run_0000000000000001", "t", 1 });
+        const bool sentAfterRun = st.sent == 1 && box.pendingFiles().isEmpty();
+        work.deleteRecursively();
+        check (c.done && ! c.eligible && c.code.isEmpty() && c.message == "not this time"
+               && cr.ok && cr.have == 1 && cr.need == 1 && ejmap::wizroute::fromCatalogue (cr.answers, "AudioUnit|b|1").rule == ejmap::wizroute::Rule::C
+               && sentAfterRun && seen.size() == 3 && seen[0].startsWith ("PUT runs/run_0000000000000001/results/res_aaaa") && seen[1] == "POST runs" && seen[2].startsWith ("PUT runs/"),
+               "contract WZ-CONTRACT-12: a code with eligible:false is never shown; an unanswered plugin is a need; a lost run is created again, then the result sent (" + seen.joinIntoString (" | ") + ")");
+    }
     // WZ-BETA-NET-1 THE BETA'S CONTRIBUTION FLOW, MADE REAL (Kathy, 21 Oct): browser sign-in (never a password field), the consent that is the
     // contract's, the catalogue check before measuring ("N already known, M to measure"), live upload from the outbox with back-off, the
     // run's end where the SERVER's promo is shown (never made here); the server per build, a --server-url only for this Mac; no secret in
