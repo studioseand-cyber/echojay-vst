@@ -350,6 +350,8 @@ EJ Map keeps its own internal names. The wizard translates **at the server bound
 
 ## 6. Server endpoints (Sean's side; stubbed in the app)
 
+> **21 Oct 2026: the BETA build now follows `WIZARD_SERVER_CONTRACT_v1`** (FOR_SEAN_21oct; the client is `tools/ejmap/Source/EjmapWizardContract.h`, the mock `tools/ejmap/tests/mock_wizard_server/mock_server.py`). It uses browser sign-in (device code), `/catalogue/check`, one result per request and `/runs/{id}/complete`, where the server returns the promo. The sections below describe the stubbed flow the **Test** build still uses.
+
 All are JSON over HTTPS under **`https://www.echojay.ai/api/wizard/v1/`** (Sean, 12 Oct: not api.echojay.ai; `wizserver::baseUrl()`, pin WZ-SRV-1). Authenticated calls carry `Authorization: Bearer <token>`. Errors use HTTP status codes with a body of `{"error": "<code>", "message": "<plain words>"}`. Every call must be idempotent where noted, because the app retries after a pause or a crash.
 
 ### 6.1 Sign in
