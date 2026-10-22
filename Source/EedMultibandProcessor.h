@@ -123,6 +123,56 @@ public:
         return (band >= 0 && band < kNumBands) ? cores_[band].gainReductionDb() : 0.0f;
     }
 
+    // ---- IT REPORTS ITS GAIN REDUCTION (20 Oct 2026, his 12:02 run) ----------------------------
+    //
+    // *"check gr on slot 1 failed twice with 'No audio has been heard for gain reduction on slot 1
+    // yet - the transport is running, so the channel may be silent or muted', while check gr on slot
+    // 2 in the same run read the audio that just left slot 1."*  And then the detail that settled it:
+    // *"slot 1 at 12:02 was the EchoJay 4-BAND Compressor (multiband)."*
+    //
+    // THIS CLASS NEVER OVERRODE reportsGainReduction, so it inherited the base's `false`. Four
+    // siblings say true (compressor, expander, de-esser, gate) and the multiband was simply missed.
+    // ChainHost::slotPicture therefore skipped it, grKnown and pictureValid both stayed false, and
+    // check(gr) fell through to its last branch - the playback answer - which invented a silent or
+    // muted channel for a device that was compressing audibly. The Link's own log was telling the
+    // truth all along: "none of this rack's 1 slot(s) has a reading of its own".
+    //
+    // THE OVERALL FIGURE IS THE DEEPEST BAND, not a sum or a mean. It is what a person reads off a
+    // multiband meter ("how much is it doing"), it is what the slot tile and check(gr) quote, and a
+    // sum would report 8 dB for four bands doing 2 dB each - which is true of nothing. The per-band
+    // detail stays available through gainReductionDb(band) for anything that wants it.
+    //
+    // A BYPASSED BAND IS NOT DOING ANYTHING, so it is skipped: counting it would report whatever its
+    // core last computed before it was switched out.
+    bool reportsGainReduction() const override { return true; }
+
+    float gainReductionDbForHost() const override
+    { return deepestBand ([] (const echojay::DynamicsCore& c) { return c.gainReductionDb(); }); }
+    float gainReductionHeldDbForHost() const override
+    { return deepestBand ([] (const echojay::DynamicsCore& c) { return c.grRecentHoldDb(); }); }
+    float gainReductionLoudestDbForHost() const override
+    { return deepestBand ([] (const echojay::DynamicsCore& c) { return c.grWindowLoudestDb(); }); }
+    float gainReductionPeakDbForHost() const override
+    { return deepestBand ([] (const echojay::DynamicsCore& c) { return c.grWindowPeakDb(); }); }
+    float gainReductionTypicalDbForHost() const override
+    { return deepestBand ([] (const echojay::DynamicsCore& c) { return c.grWindowTypicalDb(); }); }
+
+    /** THE WINDOW'S FRAMES: the MOST any band measured. 0 means nothing was measured, which every
+        caller must report as "not measured" and never as 0 dB - the base class's own rule. The bands
+        share one clock, so the max is the window's length rather than a sum of overlapping ones. */
+    juce::uint64 grWindowFramesForHost() const override
+    {
+        juce::uint64 most = 0;
+        for (int b = 0; b < kNumBands; ++b)
+            if (! bandBypass_[b].load()) most = juce::jmax (most, cores_[b].grWindowFrames());
+        return most;
+    }
+
+    /** EVERY band's window, because the overall figure is taken across all of them: resetting one
+        would leave the next read mixing a fresh band with stale ones. */
+    void resetGrWindowForHost() override
+    { for (auto& c : cores_) c.resetGrWindow(); }
+
     // The level THIS BAND's detector is seeing — the band's own content after
     // the crossover, not the full-range input. Four independent taps, because
     // four independent compressors is what the device is: a single input level
@@ -165,6 +215,18 @@ private:
     void pushCrossovers();
 
     echojay::FourBandSplitter splitter_;
+    /** The deepest reduction any ACTIVE band reports, by whichever core accessor is asked for.
+        Reductions are reported as negative dB by the cores, so "deepest" is the minimum; the result
+        is handed back in the cores' own sign convention, which is what every sibling device does. */
+    template <typename Pick>
+    float deepestBand (Pick pick) const noexcept
+    {
+        float deepest = 0.0f;
+        for (int b = 0; b < kNumBands; ++b)
+            if (! bandBypass_[b].load()) deepest = juce::jmin (deepest, pick (cores_[b]));
+        return deepest;
+    }
+
     echojay::DynamicsCore     cores_[kNumBands];
 
     std::atomic<bool> bandBypass_[kNumBands] { {false}, {false}, {false}, {false} };

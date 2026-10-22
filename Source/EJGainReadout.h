@@ -60,11 +60,26 @@ struct GainReadout : juce::Component, private juce::Timer
         entry.setVisible (false);
         refreshNow();
     }
-    void refreshNow() { if (get) shown = get(); repaint(); }
+    // ---- AN UNREADABLE TRIM KEEPS THE LAST FIGURE (Sean's 21 Oct: flicker, then blank) --------
+    //
+    // NaN from `get` means "I cannot read this right now" - a Link whose sidecar has not been read
+    // yet, or a slot index that has moved under us. It is NOT a value, and it must not become one:
+    // taking it would print "+nan", and treating it as 0 is the blank he saw (a confident +0.0 on a
+    // slot holding +12). So the last KNOWN figure stays on screen and the readout simply does not
+    // move until there is something true to move to.
+    //
+    // This is the same rule every measurement in this build keeps - absent is not zero - applied to
+    // a control rather than to a meter.
+    void refreshNow()
+    {
+        if (get) { const float v = get(); if (v == v) shown = v; }
+        repaint();
+    }
     void timerCallback() override
     {
         if (! get || entry.isVisible()) return;
         const float v = get();
+        if (v != v) return;                                   // NaN: unreadable, keep the last figure
         if (std::abs (v - shown) > 0.005f) { shown = v; repaint(); }
     }
     void resized() override { entry.setBounds (getLocalBounds()); }

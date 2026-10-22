@@ -668,6 +668,112 @@ struct CalibLoop
         return (int) out.size();
     }
 
+    /** ---- dial_on_playback -> A CALIBRATION BLOCK (20 Oct 2026, B's CONTRACT_dial_on_playback) ------
+
+        B sends, beside `settings_structured` on an agent `do add`:
+
+            "dial_on_playback": { "target_gr_db": 3, "control": "Peak Reduction", "rule": "..." }
+
+        and A sets that control on the next playback, silently, with no chat round - the same pattern as
+        the silent slot-OUT match after an add.
+
+        COMPOSED HERE, beside configFromBlock, for the reason stated on that function: both binaries
+        compile this file and a shape built in two places is two shapes. It is also the only way the
+        translation can be asserted - the Link's own call site needs a hosted rack and a running
+        transport, and the decisions below are exactly the kind that look right and are not.
+
+        THREE TRANSLATIONS THAT ARE NOT ONE-TO-ONE:
+
+         (1) `gr_target_db` IS A BAND on the wire. configFromBlock reads it with .getArray() and a
+             SCALAR leaves the default band in place - so passing B's 3 through verbatim would dial to
+             the default and ignore the target entirely, silently. The band whose prose has always been
+             "3 dB" is the non-bus default [2, 3], so T becomes [T-1, T] and the existing wording stays
+             true.
+
+         (2) THE DIRECTION IS NOT IN THE FIELD, and the 28 Sep ruling is that it is never guessed from a
+             name: which way a control makes a compressor work harder follows from what the control IS.
+             That ruling exists because a block declaring the MC 77's "Input" as a threshold made "ease
+             off" compress HARDER. A control whose name says threshold is a threshold, lower-is-harder,
+             and is stepped - that covers B's "Threshold" and the EchoJay Compressor's threshold_db.
+             Anything else, including B's own example of an LA-2A "Peak Reduction" where HIGHER is
+             harder, goes in as actuator "amount", which configFromBlock turns into hold-and-check: it
+             measures the slot against the target, writes nothing to the plugin, and above all does not
+             fall through to driving EchoJay's own input. `whyOut` names the control every time, so the
+             gap is in the log rather than in a guess, and B closes it by sending the sense.
+
+         (3) `makeup_cap_db` = T, which is B's own documented default for a compressor block: the hold
+             may not hand back more gain than the compression took away.
+
+        `addedSlot0` is the slot the add actually landed on, resolved by IDENTITY by the caller - never a
+        wire index, which is a stale pointer the moment a plugin fails to load (remapBlocksToIdentity).
+
+        Returns a void var when there is nothing to start - no object, no control, no numeric target, or
+        no resolved slot - with the reason in `whyOut`, because a dial that does not happen is a thing
+        the log has to be able to say. */
+    static juce::var blockFromDialOnPlayback (const juce::var& dial, int addedSlot0, juce::String& whyOut)
+    {
+        auto* dp = dial.getDynamicObject();
+        if (dp == nullptr) { whyOut = "no dial_on_playback object"; return {}; }
+        const auto control = dp->getProperty ("control").toString().trim();
+        const auto targetV = dp->getProperty ("target_gr_db");
+        const bool haveTarget = targetV.isDouble() || targetV.isInt() || targetV.isInt64();
+        if (control.isEmpty())
+        { whyOut = "dial_on_playback names no control"; return {}; }
+        if (! haveTarget)
+        { whyOut = "dial_on_playback target_gr_db \"" + targetV.toString() + "\" is not a number"; return {}; }
+        if (addedSlot0 < 0)
+        { whyOut = "the slot the add landed on was not resolved, so there is nothing to dial"; return {}; }
+
+        const float target = (float) (double) targetV;
+        // ---- B SENDS THE DIRECTION NOW (his contract addition, 20 Oct 2026) ------------------
+        //
+        // *"`sense` (added 20 Oct after A's note): "higher_is_harder" or "lower_is_harder". It comes
+        // from the profile's measured curve ... It is never taken from the control's name (the 28
+        // Sep ruling). bx_opto's Peak Reduction is higher_is_harder ... `actuator`: "threshold" for
+        // a lower-is-harder threshold control, else "amount". When the curve doesn't say ... `sense`
+        // and `actuator` are left out, and A holds and checks."*
+        //
+        // This is the gap I flagged at 17:00 and B closed. So the FIELD is read first and the name
+        // heuristic is kept only for a sender that does not carry it - which is the right order: a
+        // measured curve beats a guess about a word, and that is the 28 Sep ruling's own reasoning.
+        //
+        // bx_opto's Peak Reduction was the case that held instead of dialling (his 15:47): the name
+        // says nothing a threshold test can read, and B now says higher_is_harder, so it dials.
+        const auto senseWire = dp->getProperty ("sense").toString().trim().toLowerCase();
+        const auto actWire   = dp->getProperty ("actuator").toString().trim().toLowerCase();
+        const bool senseStated = (senseWire == "higher_is_harder" || senseWire == "lower_is_harder");
+        const bool  isThreshold = senseStated ? (actWire == "threshold")
+                                              : control.containsIgnoreCase ("threshold");
+        juce::Array<juce::var> band;
+        band.add (juce::var (target - 1.0f));
+        band.add (juce::var (target));
+        auto* blk = new juce::DynamicObject();
+        blk->setProperty ("slot", addedSlot0 + 1);               // 1-BASED, as the wire is
+        blk->setProperty ("gr_target_db", juce::var (band));
+        blk->setProperty ("mode", "listen");                     // it must DRIVE, not observe
+        // actuator: B's word when B sent one (it already uses this vocabulary), else the kind the
+        // name test decided. "input" is the build's own name for a higher-is-harder named control,
+        // and it STEPS - which is what makes B's sense usable rather than merely recorded.
+        blk->setProperty ("actuator", senseStated ? (actWire == "threshold" ? "threshold"
+                                                   : senseWire == "higher_is_harder" ? "input"
+                                                                                     : "threshold")
+                                                  : (isThreshold ? "threshold" : "amount"));
+        blk->setProperty ("param", control);
+        if (senseStated) blk->setProperty ("sense", senseWire);
+        blk->setProperty ("makeup_cap_db", juce::var (target));
+        whyOut = senseStated
+                   ? "B states the direction of \"" + control + "\" as " + senseWire
+                     + " from the profile's measured curve, so it is STEPPED (never guessed from the "
+                       "name - the 28 Sep ruling)"
+                   : isThreshold
+                   ? "\"" + control + "\" is a THRESHOLD, so lower is harder and it is stepped (B sent "
+                     "no sense for it)"
+                   : "the direction of \"" + control + "\" is not stated by the field and is not guessed "
+                     "from its name (the 28 Sep ruling), so this HOLDS AND CHECKS: it measures the slot "
+                     "against the target and writes nothing to the plugin.";
+        return juce::var (blk);
+    }
+
     static bool configFromBlock (const juce::var& block, int numSlots, bool busBand,
                                  const juce::String& pluginName, Config& out, juce::String& whyOut)
     {
