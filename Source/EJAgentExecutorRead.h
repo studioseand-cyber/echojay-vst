@@ -287,6 +287,10 @@ struct Sources
         ruling; the GR window is the devices' own and is reset at the same moment. */
     std::function<void()> beginGrWindow;
     std::function<bool()> transportKnown, transportPlaying;
+    /** B's keep-playing contract (22 Oct 2026): the plugin a keep_playing dial is still working
+        on, or empty. Bound to the processor, which is where both the names and the dials' state
+        live; absent in a harness, which then answers "nothing is waiting". */
+    std::function<juce::String()> keepPlayingPlugin;
     /** "Only suggest plugins EchoJay can auto-dial" - his Settings toggle, READ LIVE on every
         request (his 09:49: an unmapped plugin was added with it on, because neither agent body
         carried it). Same key the chat road uses: `autoDial`. */

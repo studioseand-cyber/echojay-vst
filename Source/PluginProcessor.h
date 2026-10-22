@@ -1765,6 +1765,13 @@ public:
     };
     std::map<juce::String, LinkRackCacheEntry> linkRackCache;
 
+    /** ---- THE PLUGINS THIS RUN MUST KEEP THE PLAYBACK FOR (B's keep-playing contract) -------
+        Filled when a dial_on_playback carrying `keep_playing` is armed, cleared when a run starts.
+        Read by the executor's keepPlayingPlugin source against each slot's own dialPending, so
+        "still needs the playback" is two facts from two owners and never a cached guess.
+        (docs/CONTRACT_keep_playing_2026-10-22.md, B to A, 22 Oct 2026 - Sean's test 9.) */
+    juce::StringArray keepPlayingFor;
+
     /** LINK MIXER per-strip rack SCROLL offset in pixels, keyed the same way
         the cache is (Link uid, or "MIX BUS" for the pinned strip). ON THE
         PROCESSOR for the standing reason: Logic recreates the editor on

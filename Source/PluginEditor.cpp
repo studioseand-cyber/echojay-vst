@@ -20043,6 +20043,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             // RECORD, which is what takes the actions off it.
             cm.agentData = msg.agentJson;
             if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
+            cm.chatId    = currentChatId;   // the chat being loaded IS this row's (22 Oct ruling)
             cm.editData    = msg.editJson;    // restore edit card + applied state
             cm.editApplied = msg.editApplied; // (editBaseRevision stays -1: the
             cm.editResult  = msg.editResult;  //  revision guard is same-session only)
@@ -20240,6 +20241,9 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 cm.agentData = h.agentJson;
                 cm.entryId   = h.entryId;
                 cm.seq       = h.seq;
+                // The held row already stated its chat - that is how it got past the selector above
+                // - so it is carried, not recomputed (his 22 Oct ruling).
+                cm.chatId    = h.chatId.isNotEmpty() ? h.chatId : currentChatId;
                 if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
                 if (cm.seq <= 0 && currentChatId.isNotEmpty())
                 {
@@ -30134,6 +30138,7 @@ void EchoJayEditor::appendLocalUserBubble(const juce::String& text)
     juce::int64 seq = 0; juce::String id;
     const bool stamped = workspace.lastStampOf (currentChatId, seq, id);
     ChatMsg cm; cm.role = "user"; cm.content = text; cm.seq = seq; cm.entryId = id;
+    cm.chatId = currentChatId;                 // stamped at creation, like the run's row (22 Oct)
     chatMessages.push_back(cm);
     {
         EchoJayProcessor::ChatEntry ce; ce.role = "user"; ce.content = text;
@@ -33439,6 +33444,10 @@ void EchoJayEditor::adoptAgentRunRow()
                 && fromJson (juce::JSON::parse (m.agentData)).runKey == key)
             {
                 if (m.agentRunId == 0) m.agentRunId = ++agentRunIdSeq_;
+                // ADOPTION DOES NOT RE-FILE A ROW (his 22 Oct ruling). The row is this window's to
+                // draw, and it stays the property of the chat it was created in; a row with no
+                // chat of its own takes the one being shown, which is where it was found.
+                if (m.chatId.isEmpty()) m.chatId = currentChatId;
                 agentRunMsgId_ = m.agentRunId;
                 agentRunKey_   = key;
                 // ---- THE CHIPS COME FROM THE CLIENT, NOT THE SNAPSHOT (his 11:22 item 2) ------
@@ -33888,6 +33897,11 @@ void EchoJayEditor::syncAgentRunMessage()
         ChatMsg cm;
         cm.role       = "assistant";
         cm.agentRunId = ++agentRunIdSeq_;
+        // THE CHAT, STAMPED AT CREATION (his 22 Oct ruling). From here on this is the only answer
+        // to "which chat is this row's", and every road that writes or renders it reads this field
+        // rather than asking the client or the window - both of which move when a run is
+        // superseded by a send in a new chat (his test 8).
+        cm.chatId     = currentChatId;
         cm.agentData  = juce::JSON::toString (toJson (seed), true);
         agentRunMsgId_ = cm.agentRunId;
         // THE CHAT THIS RUN BELONGS TO, remembered at birth. The record write is gated on it: he
@@ -34119,10 +34133,29 @@ void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m, bool windowClosing)
     //
     // The member stays as the FALLBACK for a run whose client no longer has one (an older session),
     // and currentChatId is not consulted at all.
-    const auto target = [this]
+    // ---- THE ROW'S OWN CHAT DECIDES, NOT THE CLIENT'S CURRENT ONE (22 Oct 2026) -------------
+    //
+    // *"Make every road that writes or renders a run's row place it only by the chatId stamped at
+    //  creation."*
+    //
+    // THIS WAS THE BUG IN HIS TEST 8. The target was read from the CLIENT - and a run that is
+    // superseded is written down at the moment the next run starts, so `runChatId()` had already
+    // moved to the chat he had just made. The old run's "Stopped" card, eight steps and all, was
+    // filed into a chat it had never run in. The row itself has carried its chat since it was
+    // created; that is the only authority that cannot have moved.
+    const auto target = [this, &m]
     {
-        if (auto* c = agentClient()) if (c->runChatId().isNotEmpty()) return c->runChatId();
-        return agentRunChatId_;
+        if (m.chatId.isNotEmpty()) return m.chatId;
+        // NO STAMP ON THIS ROW: an older row, from before the field existed. The client's own
+        // answer is the fallback and it is SAID, because it is the answer that was wrong.
+        juce::String fallback;
+        if (auto* c = agentClient()) if (c->runChatId().isNotEmpty()) fallback = c->runChatId();
+        if (fallback.isEmpty()) fallback = agentRunChatId_;
+        if (fallback.isNotEmpty())
+            EchoJay_NSLog (("EJAgentRow: this row carries no chat of its own, so its record is going to "
+                            + fallback + " - the client's answer, which is right only while the run on "
+                            "screen is this one (his 22 Oct ruling)").toRawUTF8());
+        return fallback;
     }();
     if (target.isEmpty()) return;
     // (3) NEVER CREATE A CHAT. appendMessageToChat makes one on the fly for an id it does not know,
@@ -34312,6 +34345,15 @@ void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, c
                     { it->answered = "You said: " + text; recorded = true; }
             m->agentData = juce::JSON::toString (echojay::agentui::toJson (v), true);
             ed.resized(); ed.repaint();
+            return;
+        }
+        // THE SEND ROAD ALREADY STAMPED THIS GOAL (22 Oct 2026, his 15:09 fault). It is written
+        // before start() so it takes its place before the run's card does; the client then emits the
+        // same line from in there and it arrives here. Consumed once, by value, so the next run's
+        // goal - or a goal typed twice on purpose - is not swallowed with it.
+        if (ed.agentGoalStampedBySend_.isNotEmpty() && ed.agentGoalStampedBySend_ == text)
+        {
+            ed.agentGoalStampedBySend_.clear();
             return;
         }
         ed.appendLocalUserBubble (text);
@@ -39731,6 +39773,25 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             briefCard_.setVisible (false);
             resized();
         }
+        // ---- HIS 21 OCT RULING, HONOURED ON THIS ROAD TOO (22 Oct 2026, his 15:09 fault) -----
+        //
+        // *"In the Vocal Link's chat I typed 'build a vocal chain', pressed Go, switched to the other
+        //  Link while it was working, then switched back. The Vocal chat now shows the agent card
+        //  ABOVE my message."*
+        //
+        // THE ORDER WAS DECIDED BY WHO REACHED THE STORE FIRST, and this morning changed who that
+        // was. The goal has always been stamped by appendLocalUserBubble - but that is reached from
+        // the client's own "user" transcript line, which comes back out from INSIDE start(). That
+        // was soon enough while a run's card only reached the store when the run ENDED. Since the
+        // fix for his 09:24 fault the card is stored the moment the record opens, which is the first
+        // state change inside start() - BEFORE the transcript line. So the card took the lower place,
+        // and a chat rebuilt from the store (which is what a LINK SWITCH does) drew it above his own
+        // message. The window-reopen road hid it, because there the card is redrawn from the live row.
+        //
+        // So the goal is stamped HERE, before start() - which is where "the moment it's typed"
+        // actually is - and the bridge skips the copy it would otherwise add.
+        appendLocalUserBubble (msg);
+        agentGoalStampedBySend_ = msg;
         agentClient()->start (msg, currentChatId);   // the card appears through onLayoutNeeded
         return;
     }

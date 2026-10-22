@@ -126,6 +126,17 @@ sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce:
         //     INPUT, which is the one correction his ruling of 20 Oct actually asks for there.
         // Neither may gate this, and the log says so where someone would be tempted to add it.
         const auto dials      = LoudnessLoop::dialsOnPlaybackFromOps (ops);
+        // ---- B'S KEEP-PLAYING CONTRACT: WHO THIS RUN MUST KEEP THE PLAYBACK FOR -------------
+        // Recorded as the dials are read, before anything is applied, so the client's question
+        // ("may he stop yet?") can be answered from the moment the first dial is armed. The dials'
+        // own state answers the other half of it; this is only the list of who counts.
+        for (const auto& d : dials)
+            if (d.keepPlaying && d.name.isNotEmpty())
+            {
+                proc_.keepPlayingFor.addIfNotAlreadyThere (d.name);
+                EchoJay_NSLog (("EJLoudness: \"" + d.name + "\" carries keep_playing - this run will not "
+                                "say \"you can stop\" until its dial lands (B's contract of 22 Oct)").toRawUTF8());
+            }
         const auto addedNames = LoudnessLoop::addedNamesFromOps (ops);
         proc_.getChainHost().applyChainEdits (
             std::move (parsed), /*expectedRevision*/ -1, /*baseSlots*/ {},
@@ -860,6 +871,11 @@ bool EJAgentHome::newRunSinceLastKey()
     const int serial = client_->runSerial();
     if (serial == lastSerial_) return false;
     lastSerial_ = serial;
+    // ---- A NEW RUN KEEPS NOBODY'S PLAYBACK YET (B's keep-playing contract, 22 Oct) ----------
+    // Cleared HERE because this is the one predicate both minting roads consult (ensureRunKey and
+    // writeSnapshot), and it is true exactly once per run - so a dial from the last run cannot hold
+    // this one's listen open, and neither road has to remember to do it.
+    proc_.keepPlayingFor.clear();
     return true;
 }
 

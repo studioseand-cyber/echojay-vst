@@ -581,7 +581,34 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
             // bare "ask" summary, the asking step's line IS the question - so the block underneath
             // is a second copy of it. The row wins (it carries the chips), exactly as the no-steps
             // branch below already decided for the same reason.
-            if (v.askQuestion.trim() == r.label.trim()) v.askQuestion.clear();
+            // ---- AND ONCE IS ONCE WHEN THE TWO STRINGS DIFFER (22 Oct 2026, his test 8) -----
+            //
+            // *"the plan is shown TWICE. Once inside the agent step with the Go / Change / Cancel
+            //  chips, then again in full as a plain message below the card."*
+            //
+            // The test above is exact equality on trimmed text, and these two strings stopped being
+            // equal: the step's label is composed when the tool_call frame ARRIVES
+            // (plainifyLine(describeCall)), while the client then PREPENDS the talk's own text to
+            // the question (pendingAsk_.question = text + "\n" + ask.question) so a plan arrives as
+            // one sentence pair. Same sentence, two spellings - and the exact test cannot see it.
+            //
+            // THE RULING IS UNCHANGED (18 Oct): "the row wins, it carries the chips". So:
+            //   the label already says the question  -> drop the block;
+            //   the question says MORE than the label -> the block's text becomes the ROW's, and the
+            //     block goes. Nothing is lost and nothing is said twice, which is what he asked for
+            //     ("if it's ours, render it once, inside the step").
+            if (v.askQuestion.isNotEmpty())
+            {
+                const auto qn = normalisedProse (v.askQuestion);
+                const auto ln = normalisedProse (r.label);
+                if (qn == ln || (qn.isNotEmpty() && ln.contains (qn)))
+                    v.askQuestion.clear();
+                else if (ln.isNotEmpty() && qn.contains (ln))
+                {
+                    r.label = v.askQuestion;     // the fuller sentence, on the row with the chips
+                    v.askQuestion.clear();
+                }
+            }
             r.chips       = pending.labels;
             r.chipNotes   = pending.details;     // "the chips don't show their notes" (18 Oct)
             r.chipHandSet = pending.handSet;

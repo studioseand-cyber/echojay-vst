@@ -304,6 +304,15 @@ public:
     // wait_for_playback support
     virtual void beginPlaybackWindow() = 0;          // "heard" counts from now (the loop-owned tally, not the song's)
     virtual PlaybackReading readPlayback() = 0;
+    /** ---- THE KEEP-PLAYING CONTRACT'S ONE QUESTION (B, 22 Oct 2026) ------------------------
+        The name of a plugin from this run that still needs the playback - a keep_playing dial
+        that has not landed yet - or empty when nothing is waiting on it. The client asks before
+        it tells the user they can stop, which is the whole of the contract's point 1.
+
+        Defaulted, not pure: every other implementer (the guards' stubs, the read-only executor)
+        answers "nothing is waiting" without being touched, and only the road that arms dials has
+        anything to say. */
+    virtual juce::String keepPlayingPlugin() { return {}; }
 
     // undo
     virtual juce::String captureCheckpoint (const juce::String& label) = 0;   // "" = no checkpoint available
@@ -331,6 +340,7 @@ public:
     void check (const ToolCall&, Done done) override { done (ToolOutcome::failure ("not_in_phase", "this build has no agent executor wired (stub)")); }
     void beginPlaybackWindow() override {}
     PlaybackReading readPlayback() override { return {}; }
+    juce::String keepPlayingPlugin() override { return {}; }
     juce::String captureCheckpoint (const juce::String&) override { return {}; }
     void undoStep (const juce::String&, Done done) override { done (ToolOutcome::failure ("not_in_phase", "no executor: nothing was applied, so nothing can be undone")); }
     void undoToCheckpoint (const juce::String&, Done done) override { done (ToolOutcome::failure ("not_in_phase", "no executor: nothing was applied, so nothing can be undone")); }

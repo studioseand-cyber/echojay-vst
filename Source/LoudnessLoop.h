@@ -1264,7 +1264,13 @@ public:
         Each entry keeps the NAME the op added, because the slot is resolved per dial by identity
         (slotTheBatchAdded on that one name) - never by the op's position, which is what an index
         standing in for an identity would be. */
-    struct DialOnOp { juce::String name; juce::var dial; };
+    /** ---- B'S KEEP-PLAYING CONTRACT (docs/CONTRACT_keep_playing_2026-10-22.md) --------------
+        *"Every `do` add (or replace) that carries `dial_on_playback` now also carries
+         "keep_playing": true ... While any slot from this run has keep_playing and its
+         dial_on_playback has not finished, never show "Got it, you can stop"."*
+        Sean's test 9, 15:24: the card said "Got it, you can stop" while the plan's second
+        compressor was still to be set on that same playback. */
+    struct DialOnOp { juce::String name; juce::var dial; bool keepPlaying = false; };
     static std::vector<DialOnOp> dialsOnPlaybackFromOps (const juce::var& ops)
     {
         std::vector<DialOnOp> out;
@@ -1277,7 +1283,8 @@ public:
                     if (! oo->hasProperty ("dial_on_playback")) continue;
                     const auto d = oo->getProperty ("dial_on_playback");
                     if (d.getDynamicObject() == nullptr) continue;
-                    out.push_back ({ oo->getProperty ("name").toString().trim(), d });
+                    out.push_back ({ oo->getProperty ("name").toString().trim(), d,
+                                     (bool) oo->getProperty ("keep_playing") });
                 }
         return out;
     }

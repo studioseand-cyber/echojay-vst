@@ -2271,6 +2271,35 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         h.resetChainOutShortTermMax();
         h.resetChainInShortTermMax();
     };
+    // ---- B'S KEEP-PLAYING CONTRACT, BOUND TO THE RACKS (22 Oct 2026) ----------------------
+    //
+    // *"While any slot from this run has keep_playing and its dial_on_playback has not finished,
+    //  never show 'Got it, you can stop'."*
+    //
+    // TWO FACTS, EACH FROM ITS OWNER: which plugins this run must keep the playback for (the
+    // processor's set, filled when a keep_playing dial is armed) and whether a dial has landed
+    // (dialPending, which the ChainHost computes for the open rack and a Link publishes in its
+    // sidecar). Neither is guessed here and nothing is cached: the answer is read at the moment
+    // the client asks, because a dial lands while the user is playing.
+    s.keepPlayingPlugin = [p] () -> juce::String
+    {
+        if (p->keepPlayingFor.isEmpty()) return {};
+        // the open rack: SlotInfo carries dialPending (ChainHost computes it from the slot's own
+        // DialStatus), which is the fact and not a second copy of it.
+        for (const auto& si : p->getChainHost().getAllSlotInfos())
+            if (si.dialPending && p->keepPlayingFor.contains (si.name))
+                return si.name;
+        // ...and every Link this instance can see, by the rack each one publishes
+        for (const auto& [uid, entry] : p->linkRackCache)
+        {
+            juce::ignoreUnused (uid);
+            if (! entry.valid) continue;
+            for (const auto& sl : entry.rack.slots)
+                if (sl.dialPending && p->keepPlayingFor.contains (sl.name))
+                    return sl.name;
+        }
+        return {};
+    };
     s.transportKnown   = [p] { return p->isTransportKnown(); };
     s.transportPlaying = [p] { return p->isTransportPlaying(); };
     s.chainRevision    = [p] { return p->getChainHost().getChainRevision(); };

@@ -1922,6 +1922,19 @@ private:
             the end and says so. */
         juce::int64  seq = 0;
         juce::String entryId;
+        /** ---- THE ROW'S OWN CHAT (his ruling of 22 Oct 2026, after tests 6 and 8) -----------
+            *"Items 1 and 2 say a run's row is still being placed by the chat on screen, not by its
+             own chatId. Make every road that writes or renders a run's row place it only by the
+             chatId stamped at creation."*
+
+            Stamped when the row is created or adopted, and from then on it is the ONLY answer to
+            "which chat does this row belong to". It exists because the answer used to be computed
+            from the client (`runChatId()`) or from the window (`currentChatId`) at the moment of
+            writing - and when a run is SUPERSEDED by a send in a NEW chat, both of those name the
+            new chat while the row belongs to the old one. That is how a stopped run's card landed
+            in a chat he had just made (his test 8). Empty on rows from before this, which the
+            roads below fall back for, loudly. */
+        juce::String chatId;
         juce::String reviewId;    // non-empty for capture messages; key into workspace.reviews
         bool hasWaveform = false;
         std::vector<WaveformRecorder::ThumbnailPoint> waveform;
@@ -2726,6 +2739,14 @@ private:
     /** The client talks to the editor through this, so the editor does not need to become a
         listener base of its own. The bridge is declared AFTER the client for the destruction
         order A2 named: it removes itself in its destructor, so it must die first. */
+    /** ---- THE GOAL'S PLACE, TAKEN BEFORE THE RUN'S (22 Oct 2026, his 15:09 fault) ----------
+        His 21 Oct ruling: *"Make sure the single stamp gives every user row its place at the moment
+        it's typed, BEFORE the run's entry is created, so this can't happen."*  The send road stamps
+        the goal and names it here; the client then emits the same line from inside start() and the
+        bridge arrives at the same place. This is how there is ONE copy: the name is consumed, not
+        tested over and over. */
+    juce::String agentGoalStampedBySend_;
+
     struct AgentRunBridge : EJAgentClient::Listener
     {
         explicit AgentRunBridge (EchoJayEditor& e) : ed (e) {}

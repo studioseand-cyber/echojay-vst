@@ -1536,6 +1536,30 @@ void EJAgentClient::tickPlayback()
 
     if (heard >= playback_.minSeconds)
     {
+        // ---- B'S KEEP-PLAYING CONTRACT (docs/CONTRACT_keep_playing_2026-10-22.md) -----------
+        //
+        // *"While any slot from this run has keep_playing and its dial_on_playback has not
+        //  finished, never show 'Got it, you can stop' (or any stop prompt)."*
+        //
+        // Sean's test 9 (15:24): the listen had its 8 seconds, the card said he could stop, and
+        // the plan's second compressor was still to set itself on that same playback. The minimum
+        // is about having heard ENOUGH; it says nothing about whether the rack has finished using
+        // what it heard. So the wait continues - and it says why, naming the plugin - until the
+        // dial lands or the whole wait times out. The timeout below is untouched, so this can
+        // extend the listen but never make it endless.
+        if (const auto stillDialling = executor_.keepPlayingPlugin(); stillDialling.isNotEmpty())
+        {
+            const auto line = "Keep it playing while the " + stillDialling
+                            + " sets itself - I'll say when it's done.";
+            if (line != playback_.line)
+            {
+                playback_.line = line;
+                log ("the minimum is reached but " + stillDialling + " is still setting itself on this "
+                     "playback - NOT saying \"you can stop\" (B's keep-playing contract)");
+                changed();
+            }
+            return;
+        }
         playback_.reached = true;
         playback_.line = "Got it, you can stop.";
         endPlayback ("min reached");
