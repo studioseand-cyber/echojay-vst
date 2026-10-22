@@ -1,0 +1,10 @@
+scenario C1-live
+captured 2026-10-22T05:18:24.475+01:00
+  [assistant] Stopped.
+  [user] Add a compressor to this rack and set a gentle threshold
+  [assistant] The EchoJay Compressor was added and confirmed with threshold -10 dB, ratio 2:1, attack 20 ms, release 150 ms, knee 6 dB, makeup 0 dB, mix 100%. Everything on that add was read back and confirmed, nothing was left unconfirmed.
+  run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
+  opening: The EchoJay Compressor was added and confirmed with threshold -10 dB, ratio 2:1, attack 20 ms, release 150 ms, knee 6 dB, makeup 0 dB, mix 100%. Everything on that add was read back and confirmed, nothing was left unconfirmed.
+  closing: The EchoJay Compressor was added and confirmed with threshold -10 dB, ratio 2:1, attack 20 ms, release 150 ms, knee 6 dB, makeup 0 dB, mix 100%. Everything on that add was read back and confirmed, nothing was left unconfirmed.
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "add EchoJay Compressor after slot 1" [done] right="applied" detail="Added EchoJay Compressor in slot 2. Read back: mix 100, threshold -10 dB, ratio 2:1, attack 20 ms, release 150 ms, knee 6 dB, and 1 more." chips=[]

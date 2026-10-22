@@ -1,0 +1,10 @@
+scenario B4
+captured 2026-10-20T10:57:30.502+01:00
+  [user] rig-newinstr-marker: check the gr
+  [assistant] Stopped.
+  [user] rig-row-marker: set the pre-gain
+  [assistant] 
+  run row: status=Working changes=0 steps=1 zones=[7:Stop]
+  opening: 
+  closing: 
+    step "pre-gain 4 dB" [awaiting] right="" detail="" chips=[]

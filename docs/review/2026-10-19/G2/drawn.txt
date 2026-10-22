@@ -1,7 +1,10 @@
 scenario G2
-captured 2026-10-19T08:59:23.136+01:00
+captured 2026-10-19T09:56:58.707+01:00
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it, with the setting you asked for.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
   [user] rig-builtinset-marker: add the compressor to the kick
   [assistant] Added the EchoJay Compressor.
   run row: status=Done changes=1 steps=1 zones=[11:1 change]

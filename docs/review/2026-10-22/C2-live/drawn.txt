@@ -1,0 +1,11 @@
+scenario C2-live
+captured 2026-10-22T05:24:24.403+01:00
+  [user] Add an EchoJay EQ to this rack, then add an EchoJay Compressor before it
+  [assistant] Added EchoJay EQ. Added EchoJay Compressor.
+  run row: status=Done changes=3 steps=4 zones=[11:3 changes,8:Undo all]
+  opening: Added EchoJay EQ. Added EchoJay Compressor.
+  closing: Added EchoJay EQ. Added EchoJay Compressor.
+    step "read the rack" [done] right="" detail="" chips=[]
+    step "add EchoJay EQ" [done] right="applied" detail="Added EchoJay EQ in slot 1." chips=[]
+    step "add EchoJay Compressor" [done] right="applied" detail="Added EchoJay Compressor in slot 2." chips=[]
+    step "move slot 2 to 1" [done] right="applied" detail="Moved." chips=[]

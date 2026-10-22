@@ -1,0 +1,11 @@
+scenario A3-live
+captured 2026-10-22T05:12:22.991+01:00
+  [user] Add Renaissance Axx (s) to this rack and set its Threshold to -30 dB
+  [assistant] Still nothing played in those 60 seconds, so I still can't measure gain reduction on the Renaissance Axx. Go ahead and play the loudest section when you're ready and let me know, and I'll check it then.
+  run row: status=Done changes=1 steps=4 zones=[11:1 change,8:Undo all]
+  opening: Still nothing played in those 60 seconds, so I still can't measure gain reduction on the Renaissance Axx. Go ahead and play the loudest section when you're ready and let me know, and I'll check it then.
+  closing: Still nothing played in those 60 seconds, so I still can't measure gain reduction on the Renaissance Axx. Go ahead and play the loudest section when you're ready and let me know, and I'll check it then.
+    step "add Renaissance Axx (s)" [done] right="applied" detail="Added Renaissance Axx (s) in slot 1. Read back: threshold -30." chips=[]
+    step "wait for playback" [done] right="" detail="Nothing played in 60 seconds - play the loudest section and ask me again." chips=[]
+    step "Play the loudest section of the track and let me know, then I'll measure it." [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Nothing played in 60 seconds - play the loudest section and ask me again." chips=[]

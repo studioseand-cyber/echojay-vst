@@ -1,5 +1,5 @@
 scenario C1
-captured 2026-10-19T08:51:59.635+01:00
+captured 2026-10-19T09:49:32.377+01:00
   [user] rig-nomap-marker: add that compressor
   [assistant] Added Vertigo VSM-3. Settings not confirmed.
   run row: status=Done changes=1 steps=1 zones=[11:1 change]

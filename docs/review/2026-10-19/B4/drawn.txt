@@ -1,5 +1,5 @@
 scenario B4
-captured 2026-10-19T08:48:52.259+01:00
+captured 2026-10-19T09:46:14.348+01:00
   [user] rig-newinstr-marker: check the gr
   [assistant] Stopped.
   [user] rig-row-marker: set the pre-gain

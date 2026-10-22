@@ -1,0 +1,11 @@
+scenario E13-live
+captured 2026-10-22T05:23:33.259+01:00
+  [user] What is the loudness of this rack?
+  [assistant] I only got about 1.2 seconds of audio both times, not enough for a solid integrated loudness reading - the true peak read -9.8 dBTP on what came through, but I can't give you a trustworthy LUFS figure from that short a snippet. If you can let the loudest chorus or section play for a full 8+ seconds, I can get you a real number.
+  run row: status=Done changes=0 steps=4 zones=[11:4 steps]
+  opening: I only got about 1.2 seconds of audio both times, not enough for a solid integrated loudness reading - the true peak read -9.8 dBTP on what came through, but I can't give you a trustworthy LUFS figure from that short a snippet. If you can let the loudest chorus or section play for a full 8+ seconds, I can get you a real number.
+  closing: I only got about 1.2 seconds of audio both times, not enough for a solid integrated loudness reading - the true peak read -9.8 dBTP on what came through, but I can't give you a trustworthy LUFS figure from that short a snippet. If you can let the loudest chorus or section play for a full 8+ seconds, I can get you a real number.
+    step "Playback is stopped, so I need audio to measure loudness. Can you play the mix now?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "I only caught about a second of audio, not enough to get a solid loudness reading. Can you keep the loudest part playing for a bit longer?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]

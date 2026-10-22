@@ -1,0 +1,18 @@
+scenario B1-live
+captured 2026-10-22T05:16:24.142+01:00
+  [user] Make the kick punchier
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=11 zones=[3,3,4:Stop here,4:Try once more,7:Stop]
+  opening: 
+  closing: 
+    step "There are two kick tracks here - which one do you mean?" [done] right="" detail="" chips=[]
+    step "read the rack - on 88_7even Kick_2_01" [done] right="" detail="" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "I'll need to hear the kick first. Is it playing now?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr on slot 1" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]
+    step "Ready to play the loudest section again?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr on slot 1" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]
+    step "What now?" [running] right="your answer?" detail="" chips=[Stop here, Try once more]

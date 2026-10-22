@@ -1,5 +1,5 @@
 scenario A11
-captured 2026-10-19T08:59:34.472+01:00
+captured 2026-10-19T09:57:10.700+01:00
   [user] rig-autoadd-marker: add it
   [assistant] Added a compressor with a threshold of -18 dB.
   run row: status=Done changes=1 steps=1 zones=[11:1 change]

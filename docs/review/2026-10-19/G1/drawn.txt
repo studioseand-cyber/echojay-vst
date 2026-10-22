@@ -1,5 +1,5 @@
 scenario G1
-captured 2026-10-19T08:50:31.225+01:00
+captured 2026-10-19T09:48:08.256+01:00
   [user] rig-rawids-marker: set the attack and release
   [assistant] Set the attack and release.
   run row: status=Done changes=1 steps=1 zones=[11:1 change]
