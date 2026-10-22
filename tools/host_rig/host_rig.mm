@@ -2504,6 +2504,15 @@ int main (int argc, char* argv[])
             const bool landedOnTheRack = liveServerConfigured()
                                            ? std::abs (pg - pgBefore) > 0.05
                                            : std::abs (pg - 6.0) < 0.3;
+            if (liveServerConfigured() && pstr ("agentState") == "awaiting_ask")
+                skip ("ITEM 0b: the plan that was waiting when the window closed is applied by the "
+                      "window that reopened, and the change reads back off the rack",
+                      "the Apply was pressed and accepted (ok=" + ack.getProperty ("ok", juce::var()).toString()
+                      + "), and the live model answered with a QUESTION rather than finishing the plan "
+                      "(state awaiting_ask) - so the figure it would have written does not exist yet. "
+                      "A live model's next move is its own; the scripted road asserts this claim to the "
+                      "letter. Not counted as a pass.");
+            else
             check (landedOnTheRack,
                    "ITEM 0b: the plan that was waiting when the window closed is applied by the window that "
                    "reopened, and the change reads back off the rack",
@@ -2513,6 +2522,12 @@ int main (int argc, char* argv[])
                                              : juce::String ("6 = both scripted lines"))
                    + "), press ok=" + ack.getProperty ("ok", juce::var()).toString()
                    + ", state " + pstr ("agentState"));
+            if (liveServerConfigured() && pstr ("agentRowFinished") != "1")
+                skip ("...and the run's RECORD - kept by the processor, not the window - carries its "
+                      "final statuses and its closing sentence",
+                      "the live run has not finished (state " + pstr ("agentState") + ", steps ["
+                      + pstr ("agentRowSteps") + "]), and a closing is written when a run ENDS.");
+            else
             check (pstr ("agentRowFinished") == "1" && pstr ("agentRowClosing").isNotEmpty(),
                    "...and the run's RECORD - kept by the processor, not the window - carries its final "
                    "statuses and its closing sentence",
@@ -2553,7 +2568,14 @@ int main (int argc, char* argv[])
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             const auto askCard = cardOnScreenFor (Rig::state(), pstr ("agentRunKey"));
             const auto chips   = askCard.getProperty ("cardChips", juce::var()).toString();
-            if (! asked || ! wentAway)
+            if (liveServerConfigured() && ! chips.containsIgnoreCase ("Gentle"))
+                skip ("B2d: a question's CHIPS come back in the chat after the window closed",
+                      "the live model did not ask with these chips this round (card drawn: "
+                      + juce::String (askCard.isObject() ? "yes" : "no") + ", chips [" + chips
+                      + "]). WHICH question it asks is its own, and the marker in the goal means "
+                      "nothing to it; the scripted road asserts the chips to the letter. Not counted "
+                      "as a pass.");
+            else if (! asked || ! wentAway)
                 skip ("B2d: a question's CHIPS come back in the chat after the window closed",
                       ! asked ? juce::String ("the scripted ask never arrived, so there were no chips to lose")
                               : "the close did not destroy the editor: " + v2v.lastCloseNote);
@@ -2682,10 +2704,16 @@ int main (int argc, char* argv[])
                                        && p.getProperty ("agentRunKey", juce::var()).toString().isNotEmpty(); },
                                  40000);
             const bool gone = v2v.lastCloseDestroyedEditor;
+            // ---- THE LIVE ROUND IS SLOWER, AND IT IS NOT 90 SECONDS (22 Oct 2026) ----------
+            // His own 09:24 run took about 100 s wall clock, and a read-heavy round takes longer: the
+            // live road read `steps [done done done done done running]` at the 90 s bound, so every
+            // assertion after it was about a run that was still working. The scripted road is quick
+            // and keeps its short bound; the live road gets four minutes, which is a bound and not a
+            // hope, and what happens when it expires is said below rather than called a failure.
             const bool finished = untilProc ([] (const juce::var& p)
                                   { return ! (bool) p.getProperty ("agentActive", false)
                                            && p.getProperty ("agentRowFinished", juce::var()).toString() == "1"; },
-                                  90000);
+                                  liveServerConfigured() ? 240000 : 90000);
             // Read with NOTHING attached: the slot count is the processor's own line, so this is the
             // build landing while no window exists rather than a window finding it afterwards.
             const int  slotsNoWindow  = (int) pst().getProperty ("procSlots", -1);
@@ -2701,6 +2729,19 @@ int main (int argc, char* argv[])
                       "this build does not publish procSlots, so whether the build landed WHILE no "
                       "window existed cannot be read here - and reading it after a reopen would not "
                       "tell the two apart. Rebuild the bundles from this tree.");
+            else if (liveServerConfigured() && ! finished)
+                skip ("B3: a windowless run finishes its build and applies it (his 22 Oct ruling)",
+                      "the live round was still working when the bound expired (240 s): steps ["
+                      + closedSteps + "]. The ruling is about a run that FINISHES with no window, so a"
+                      " round still in flight is not evidence either way - and the mock road asserts"
+                      " the same claim to the letter. Not counted as a pass.");
+            else if (liveServerConfigured() && roadTaken.isEmpty() && slotsNoWindow == slotsBefore)
+                skip ("B3: a windowless run finishes its build and applies it (his 22 Oct ruling)",
+                      "this live round made no BUILD at all - the model read the rack and answered "
+                      "instead (no build road recorded, rack still " + juce::String (slotsBefore)
+                      + " slot(s)), so there was no windowless build to apply. The goal text is a "
+                      "marker the real model does not read; what it does with it is its own. Not "
+                      "counted as a pass.");
             else
             {
                 check (started && finished && closedSteps.contains ("done") && closedClosing.isNotEmpty(),
@@ -2750,6 +2791,16 @@ int main (int argc, char* argv[])
                     chipWords << s.getProperty ("chips",  juce::var()).toString();
                     if ((bool) s.getProperty ("canUndo", false)) ++undoableSteps;
                 }
+            const bool runIsOver = pstr ("agentRowFinished") == "1"
+                                && ! (bool) pst().getProperty ("agentActive", false);
+            if (! runIsOver)
+                skip ("...and the window that reopened shows ONE card for that run, with its closing "
+                      "and the steps it ran",
+                      "this run is still live (state " + pstr ("agentState") + ", steps ["
+                      + stepWords.trim() + "]), and a closing is written when a run ENDS - so this is "
+                      "the live round's pace, not a missing card. The card itself is asserted above "
+                      "and is there.");
+            else
             check (rows >= 1 && row.getProperty ("closing", juce::var()).toString().isNotEmpty()
                    && stepWords.trim().isNotEmpty(),
                    "...and the window that reopened shows ONE card for that run, with its closing and "
@@ -2757,6 +2808,12 @@ int main (int argc, char* argv[])
                    "window reopens\")",
                    "rows=" + juce::String (rows) + ", steps [" + stepWords.trim() + "], closing \""
                    + row.getProperty ("closing", juce::var()).toString().substring (0, 60) + "\"");
+            if (! runIsOver)
+                skip ("...and UNDO is on it: a run that applied a build with nobody watching must be "
+                      "takeable back by the window that finds it",
+                      "this run is still live, and Undo all appears on a FINISHED run - asserting it "
+                      "mid-round would be asserting the wrong thing.");
+            else
             check ((bool) row.getProperty ("undoAll", false) || undoableSteps > 0,
                    "...and UNDO is on it: a run that applied a build with nobody watching must be "
                    "takeable back by the window that finds it",
@@ -2784,6 +2841,12 @@ int main (int argc, char* argv[])
                    "onScreen cards=" + Rig::state().getProperty ("onScreenCards", juce::var()).toString()
                    + ", user rows=" + juce::String (userRowsOnScreen (Rig::state()))
                    + ", run key " + pstr ("agentRunKey"));
+            if (! runIsOver)
+                skip ("...and that card carries its closing, its steps and Undo all",
+                      "this run is still live (steps " + onScreenCard.getProperty ("cardSteps", juce::var()).toString()
+                      + "), so its closing is not written yet. The CARD is drawn, which is the fault's "
+                      "own subject and is asserted above.");
+            else
             check (onScreenCard.getProperty ("cardClosing", juce::var()).toString().isNotEmpty()
                    && (int) onScreenCard.getProperty ("cardSteps", 0) >= 1
                    && (bool) onScreenCard.getProperty ("cardUndoAll", false),
@@ -3223,6 +3286,15 @@ int main (int argc, char* argv[])
                                                      == p.getProperty ("agentRunKey", juce::var()).toString()
                                                 && p.getProperty ("agentLastBuildRunKey", juce::var()).toString().isNotEmpty(); },
                                        90000);
+            if (liveServerConfigured() && ! ranWithWindow)
+                skip ("...and a build made WHILE it is open takes that road and says so",
+                      "this live round recorded no build for this run (road \""
+                      + pstr ("agentLastBuildRoad") + "\" for run "
+                      + pstr ("agentLastBuildRunKey").substring (0, 8) + ", this run "
+                      + pstr ("agentRunKey").substring (0, 8) + "): the model answered the goal its own "
+                      "way rather than building, so there is no road to read. The scripted road asserts "
+                      "both directions to the letter. Not counted as a pass.");
+            else
             check (ranWithWindow && pstr ("agentLastBuildRoad") == "window",
                    "...and a build made WHILE it is open takes that road and says so - the other "
                    "direction of the fact B3 reads, so \"processor\" there means something",
@@ -8708,6 +8780,258 @@ int main (int argc, char* argv[])
                  + (r.failDetail.isNotEmpty() ? ", user line: " + r.failDetail.substring (0, 120) : ""), &r);
         }
     }
+
+    // =============================================================================================
+    //  B5 AND B6 RUN LAST, AND THAT IS NOT TIDINESS (22 Oct 2026)
+    //
+    //  They were written in the middle of the suite, between R1 and R2, and they disturbed it: B6
+    //  handed on a LIVE run (its wait read the VST3's line while the run was the AU's), and
+    //  sendChatMessage refuses a typed message while a run is in flight - so "the user's own message
+    //  SURVIVED the close" and A4b went red having passed in every run before these rows existed.
+    //  Both rows now stop anything still going and assert the bench is quiet, and both still ran
+    //  before thirty other legs that had never had to tolerate them.
+    //
+    //  A NEW ROW MUST NOT BE ABLE TO REORDER AN ESTABLISHED SUITE. So they run at the end, where the
+    //  only thing after them is the report and the teardown, and nothing downstream can be charged
+    //  to them. Their own subjects need no particular position: a Link switch and a new chat are
+    //  reachable from any state the suite leaves behind.
+    // =============================================================================================
+    // ---- B5: HIS MESSAGE ABOVE THE CARD, THROUGH A LINK SWITCH (his 15:09 fault, 22 Oct) --------
+    //
+    // *"Two Links open, each with its own chat. In the Vocal Link's chat I typed 'build a vocal
+    //  chain', pressed Go, switched to the other Link while it was working, then switched back. The
+    //  Vocal chat now shows the agent card (ASK label, 'Thinking...') ABOVE my 'build a vocal chain'
+    //  message... My message must come first and the agent's card below it."*
+    //
+    // THE ROW HE ASKED FOR, in his own shape: send in a Link's chat, switch Links while the run is
+    // live, switch back, and assert the order BOTH while it is live and after it finishes. It reads
+    // `onScreen` - the rows the window is actually drawing - because the order fault is a fault of
+    // what he sees, and every other 0b row reads state instead.
+    //
+    // WHY IT NEEDS TWO LINKS AND NOT ONE: the switch is what rebuilds the chat from the STORE, and
+    // the store is where the order lives. One Link cannot be switched away from.
+    leg ("B5: a Link switch mid-run leaves his message above the card (his 15:09 fault)");
+    {
+        // A SECOND LINK IS THIS ROW'S GROUND, SO IT WAITS FOR ONE (22 Oct 2026). The rig launches
+        // two out-of-process Links and they arrive in the registry a second or so apart; the first
+        // run of this row looked once, found one, and skipped - a row that skips because it asked
+        // too early is a row that never runs. Twenty seconds, then it says so.
+        juce::String otherUid;
+        rig.until ([&otherUid, &linkUid] (const juce::var& s)
+        {
+            if (auto* arr = s.getProperty ("links", juce::var()).getArray())
+                for (const auto& l : *arr)
+                {
+                    const auto u = l.getProperty ("uid", juce::var()).toString();
+                    if (u.isNotEmpty() && u != linkUid && (bool) l.getProperty ("connected", false))
+                    { otherUid = u; return true; }
+                }
+            return false;
+        }, 20000);
+        const juce::String goal = "rig-rowask-marker: build a vocal chain (switch Links mid-run)";
+        // The processor's own line and a bounded wait on it, as the 0b block has - its copies are
+        // local to that block, and a second pair here is cheaper than widening their scope for one row.
+        // THE AU'S OWN LINE (22 Oct 2026). These rows live in the main section, where the window in
+        // play is the AU's - the VST3's processor is idle here, so reading its line is reading a
+        // plugin that is not running the test. B6 skipped with "the run never reached a waiting
+        // state" while the log showed it waiting: I was looking at the wrong instance.
+        const auto pstB5 = [] { return Rig::processorState ("AU"); };
+        const auto untilProc = [&pstB5] (std::function<bool (const juce::var&)> ok, int ms)
+        {
+            const auto end = juce::Time::getMillisecondCounter() + (juce::uint32) ms;
+            while (juce::Time::getMillisecondCounter() < end)
+            { if (ok (pstB5())) return true; Rig::pump (250); }
+            return ok (pstB5());
+        };
+        // The ORDER, read off what the window draws: the index of his own row against the index of
+        // the run's card. Returns -1 for either when it is not drawn at all.
+        auto orderOf = [] (const juce::var& st, const juce::String& text, int& userAt, int& cardAt)
+        {
+            userAt = cardAt = -1;
+            int i = 0;
+            if (auto* rows = st.getProperty ("onScreen", juce::var()).getArray())
+                for (const auto& r : *rows)
+                {
+                    if (userAt < 0 && r.getProperty ("role", juce::var()).toString() == "user"
+                        && r.getProperty ("text", juce::var()).toString().contains (text))
+                        userAt = i;
+                    if (cardAt < 0 && (bool) r.getProperty ("card", false))
+                        cardAt = i;
+                    ++i;
+                }
+        };
+        if (linkUid.isEmpty() || otherUid.isEmpty())
+            skip ("B5: a Link switch mid-run leaves his message above the card",
+                  "this run has fewer than two connected Links (" + linkUid + ", "
+                  + (otherUid.isEmpty() ? juce::String ("(no second)") : otherUid)
+                  + "), and the switch IS the subject - with one Link there is nowhere to switch to.");
+        else
+        {
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            Rig::pump (800);
+            rig.send (echojay::rig::cmd::sendChat, args1 ("text", goal), 15000);
+            const bool live = untilProc ([] (const juce::var& p)
+                              { const auto s = p.getProperty ("agentState", juce::var()).toString();
+                                return (bool) p.getProperty ("agentActive", false)
+                                    || s == "awaiting_ask" || s == "awaiting_approval"; }, 40000);
+            // THE SWITCH, mid-run, and back - the two presses his test made.
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", otherUid), 10000);
+            Rig::pump (1200);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            Rig::pump (1500);
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            int u1 = -1, c1 = -1;
+            orderOf (Rig::state(), "build a vocal chain", u1, c1);
+            check (live && u1 >= 0 && c1 >= 0 && u1 < c1,
+                   "B5: back in that Link's chat with the run STILL LIVE, his message is drawn ABOVE "
+                   "the run's card  (RED as it shipped at 15:09: the card reached the store on the "
+                   "first state change inside start() and took the lower place, so a chat rebuilt by "
+                   "the switch drew it over his own message)",
+                   "live=" + juce::String ((int) live) + ", his row at " + juce::String (u1)
+                   + ", the card at " + juce::String (c1)
+                   + ", rows " + Rig::state().getProperty ("onScreenCards", juce::var()).toString()
+                   + " card(s) on screen");
+            // ...AND AFTER IT FINISHES, which is the other half he asked for: the stored order must
+            // not be re-decided by the run ending, a chip being answered, or the card growing.
+            rig.send (echojay::rig::cmd::press, args1 ("button", "chip0"), 12000);
+            untilProc ([] (const juce::var& p) { return ! (bool) p.getProperty ("agentActive", false); }, 90000);
+            Rig::pump (1200);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", otherUid), 10000);
+            Rig::pump (900);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            Rig::pump (1500);
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            int u2 = -1, c2 = -1;
+            orderOf (Rig::state(), "build a vocal chain", u2, c2);
+            check (u2 >= 0 && c2 >= 0 && u2 < c2,
+                   "...and after the run FINISHED, through another switch away and back, his message "
+                   "is still above the card - the order is a place taken once, not a thing recomputed "
+                   "on every render",
+                   "his row at " + juce::String (u2) + ", the card at " + juce::String (c2));
+        }
+        // ---- THE BENCH IS LEFT QUIET (the F3 lesson, 22 Oct 2026) --------------------------------
+        // A run left live refuses every typed message after it, by design - last night that cost
+        // five rows their subject, and this row cost two more the same way this evening
+        // ("EJAgent: typed message refused while active"). So: stop anything still going, and prove
+        // it stopped, before handing the bench on.
+        if ((bool) pstB5().getProperty ("agentActive", false))
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        const bool benchQuiet = untilProc ([] (const juce::var& p)
+                                { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+        check (benchQuiet, "...and B5 leaves no run going, so the rows after it can type",
+               "agentActive=" + pstB5().getProperty ("agentActive", juce::var()).toString());
+    }
+
+    // ---- B6: A SUPERSEDED RUN'S CARD STAYS IN ITS OWN CHAT (his test 8, 22 Oct 2026) -----------
+    //
+    // *"the test 7 run was waiting on its chips on the Main mix bus. I made a NEW chat and sent
+    //  'build a mix bus'. The old run's card ('Stopped', 8 steps) appeared in the NEW chat above my
+    //  message."*
+    //
+    // His ruling for both of his order faults: *"Make every road that writes or renders a run's row
+    // place it only by the chatId stamped at creation."*  This row is the second half of that - B5
+    // is the switch, this is the NEW CHAT - and it reads `onScreen`, the rows the window draws,
+    // because the fault is about where a card appears.
+    leg ("B6: a superseded run's card does not follow him into a new chat (his test 8)");
+    {
+        const auto pstB6 = [] { return Rig::processorState ("AU"); };   // the AU's, as B5's note says
+        const auto untilProcB6 = [&pstB6] (std::function<bool (const juce::var&)> ok, int ms)
+        {
+            const auto end = juce::Time::getMillisecondCounter() + (juce::uint32) ms;
+            while (juce::Time::getMillisecondCounter() < end)
+            { if (ok (pstB6())) return true; Rig::pump (250); }
+            return ok (pstB6());
+        };
+        rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
+        Rig::pump (400);
+        rig.send (echojay::rig::cmd::sendChat,
+                  args1 ("text", "rig-rowask-marker: a run left waiting (superseded by a new chat)"), 15000);
+        const bool waiting = untilProcB6 ([] (const juce::var& p)
+                             { const auto s = p.getProperty ("agentState", juce::var()).toString();
+                               return s == "awaiting_ask" || s == "awaiting_approval"; }, 40000);
+        const auto oldKey = pstB6().getProperty ("agentRunKey", juce::var()).toString();
+        // A NEW CHAT, and a new instruction in it - the two presses his test made.
+        rig.send (echojay::rig::cmd::newChat, juce::var (new juce::DynamicObject()), 10000);
+        Rig::pump (900);
+        rig.send (echojay::rig::cmd::sendChat,
+                  args1 ("text", "rig-auto-marker: build a mix bus (in a brand new chat)"), 15000);
+        // ---- THE NEW CHAT HAS TO BE DRAWING SOMETHING BEFORE EITHER HALF MEANS ANYTHING --------
+        //
+        // The first run of this row read `his row at -1, first card at -1`: the window was drawing
+        // NO rows at that moment, so "the old card is not here" was true of an empty list - a claim
+        // that passes whatever the product does. The second check caught it, which is what it is
+        // for; the cure is a GROUND, waited for with a bound, before anything is concluded.
+        const bool newChatDrawn = rig.until ([] (const juce::var& s)
+        {
+            if (auto* rows = s.getProperty ("onScreen", juce::var()).getArray())
+                for (const auto& r : *rows)
+                    if (r.getProperty ("role", juce::var()).toString() == "user"
+                        && r.getProperty ("text", juce::var()).toString().contains ("brand new chat"))
+                        return true;
+            return false;
+        }, 20000);
+        rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+        // Is the OLD run's card being drawn in this new chat?
+        bool oldCardHere = false; int cards = 0, userRows = 0, firstCardAt = -1, firstUserAt = -1, i = 0;
+        if (auto* rows = Rig::state().getProperty ("onScreen", juce::var()).getArray())
+            for (const auto& r : *rows)
+            {
+                const bool isCard = (bool) r.getProperty ("card", false);
+                if (isCard)
+                {
+                    ++cards;
+                    if (firstCardAt < 0) firstCardAt = i;
+                    if (oldKey.isNotEmpty()
+                        && r.getProperty ("cardRunKey", juce::var()).toString() == oldKey)
+                        oldCardHere = true;
+                }
+                if (r.getProperty ("role", juce::var()).toString() == "user")
+                {
+                    ++userRows;
+                    if (firstUserAt < 0) firstUserAt = i;
+                }
+                ++i;
+            }
+        if (! waiting || oldKey.isEmpty())
+            skip ("B6: a superseded run's card does not follow him into a new chat",
+                  "the scripted run never reached a waiting state (state "
+                  + pstB6().getProperty ("agentState", juce::var()).toString()
+                  + ", key \"" + oldKey + "\"), so there was no run to supersede.");
+        else if (! newChatDrawn)
+            skip ("B6: a superseded run's card does not follow him into a new chat",
+                  "the new chat drew nothing within 20 s (onScreen rows: " + juce::String (i)
+                  + "), and an absence asserted against an empty list is not evidence. The run that "
+                    "was superseded is proven elsewhere; this row needs the new chat on screen.");
+        else
+        {
+            check (! oldCardHere,
+                   "B6: the run left waiting in the OTHER chat is NOT drawn in the new one  (RED as it "
+                   "shipped: its \"Stopped\" card was recorded through the CLIENT'S current chat, which "
+                   "had already moved to the chat he just made, so an eight-step card he never ran "
+                   "there appeared above his message)",
+                   "old run " + oldKey.substring (0, 8) + ", cards on screen " + juce::String (cards)
+                   + ", user rows " + juce::String (userRows));
+            check (firstUserAt >= 0 && (firstCardAt < 0 || firstUserAt < firstCardAt),
+                   "...and in the new chat his own message is the first thing in it - above any card "
+                   "the new run draws (the order half of his ruling, here on the new-chat road)",
+                   "his row at " + juce::String (firstUserAt) + ", first card at "
+                   + juce::String (firstCardAt));
+        }
+        // ---- AND THE BENCH IS LEFT QUIET (the F3 lesson; this row broke it this evening) --------
+        // This wait used to read the VST3's line while the run was the AU's, so it waited for
+        // nothing: B6 handed on a LIVE run, and the next legs' typed messages were refused by
+        // design - "the user's own message SURVIVED the close" and A4b both went red for it, having
+        // passed in every earlier run today. Right instance, and a stop if it is still going.
+        if ((bool) pstB6().getProperty ("agentActive", false))
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        const bool quiet = untilProcB6 ([] (const juce::var& p)
+                           { return ! (bool) p.getProperty ("agentActive", false); }, 90000);
+        check (quiet, "...and B6 leaves no run going, so the rows after it can type",
+               "agentActive=" + pstB6().getProperty ("agentActive", juce::var()).toString());
+        Rig::pump (600);
+    }
+
 
     // ---- THE MATRIX REPORT, written before anything is torn down -----------
     // Written on a red run too: the report IS the artefact (matrix section 7).

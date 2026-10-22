@@ -28,6 +28,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
 // The clean-up (rule 4) is part of the FIX, so it cannot exist in the code the red-first pass runs
@@ -128,11 +129,26 @@ struct EchoJayTabStripTestAccess
         m.agentRunId = runId;
         e.chatMessages.push_back (m);
     }
+    /** 22 Oct 2026: a card row that STATES ITS OWN CHAT, which is the whole of his ruling after
+        tests 6 and 8. ChatMsg is private to the editor, so only this friend can name it. */
+    static EchoJayEditor::ChatMsg cardFor (const juce::String& agentJson, int runId,
+                                           const juce::String& chatId)
+    {
+        EchoJayEditor::ChatMsg m;
+        m.role = "assistant"; m.agentData = agentJson; m.agentRunId = runId; m.chatId = chatId;
+        return m;
+    }
     static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
     static const std::vector<WsChat>& chats (EchoJayEditor& e) { return e.workspace.getChats(); }
     static EchoJayWorkspace& store (EchoJayEditor& e) { return e.workspace; }
     // 19 Oct 2026: the interrupted-run save, driven without a server - the liveness question is
     // one line in saveInterruptedAgentRun; this is the transform and the store write it calls.
+    /** 22 Oct 2026: declare a run as THIS window's own, as ui_guard's copy does. The recorder
+        refuses to write for a run that is not the window's (keyed by the run's key since stage D),
+        so a leg that does not set this is a leg that tests the refusal - which cost PL2 a run. */
+    static void ownRun (EchoJayEditor& e, int runId, const juce::String& chatId,
+                        const juce::String& key)
+    { e.agentRunMsgId_ = runId; e.agentRunChatId_ = chatId; e.agentRunKey_ = key; }
     static void stopCard (EchoJayEditor& e, EchoJayEditor::ChatMsg& m, const juce::String& why)
     { e.writeStoppedCardForRun (m, why); }
     static void appendRow (EchoJayEditor& e, const juce::String& content, const juce::String& json)
@@ -1083,6 +1099,145 @@ int main()
                "stored rows " + juce::String (rowsBefore) + " -> "
                + juce::String (after != nullptr ? (int) after->messages.size() : -1)
                + ", replay list " + juce::String ((int) pw.chatHistory.size()));
+    }
+
+    // ---- THE GOAL TAKES ITS PLACE BEFORE THE RUN'S CARD (his 15:09 fault, 22 Oct 2026) ------
+    //
+    // *"In the Vocal Link's chat I typed 'build a vocal chain', pressed Go, switched to the other
+    //  Link while it was working, then switched back. The Vocal chat now shows the agent card ABOVE
+    //  my message. My message must come first and the agent's card below it."*
+    //
+    // His 21 Oct ruling is the rule: the single stamp gives every user row its place AT THE MOMENT
+    // IT IS TYPED, before the run's entry is created. The order is therefore a property of WHEN each
+    // row is stamped, and these legs assert it from both sides - which is the only way to show that
+    // the comparator was never the problem.
+    std::printf ("== THE ORDER OF A RUN: his message first, the card under it (his 15:09 fault) ==\n");
+    {
+        const juce::String goal = "build a vocal chain";
+
+        // (a) THE RIGHT ORDER, which is what the send road now produces: the goal is stamped, THEN
+        //     the run's record is opened and its card stored.
+        {
+            EchoJayProcessor pr;
+            WsChat c; c.id = "chatVocal"; c.title = "Aitch_4_01"; c.trackName = "test project";
+            pr.workspace.addChat (c);
+            pr.workspace.appendMessageToChat ("chatVocal", "user", goal);      // appendLocalUserBubble's own first act
+            const juce::String key = "run-vocal-1";
+            echojay::agentui::RunView v; v.runKey = key; v.opening = "Working on it.";
+            EchoJayProcessor::ChatEntry card; card.role = "assistant";
+            card.agentJson = juce::JSON::toString (echojay::agentui::toJson (v), true);
+            pr.appendChatEntry (std::move (card), "chatVocal", key);
+
+            auto* stored = pr.workspace.findChatById ("chatVocal");
+            juce::int64 userSeq = -1, cardSeq = -1;
+            if (stored != nullptr)
+                for (const auto& m : stored->messages)
+                {
+                    if (m.role == "user"      && m.content == goal) userSeq = m.seq;
+                    if (m.entryId == key)                           cardSeq = m.seq;
+                }
+            check (userSeq > 0 && cardSeq > 0 && chatLogBefore (userSeq, cardSeq),
+                   "OR1 his message is stamped BEFORE the run's card, so the log's own comparator puts "
+                   "it above  (his 15:09 fault: the card reached the store first and a chat rebuilt "
+                   "from it - which is what a LINK SWITCH does - drew the card over his message)",
+                   "user seq " + juce::String (userSeq) + ", card seq " + juce::String (cardSeq));
+
+            // ...and in RENDER order, by the product's own comparator rather than by reading seqs.
+            juce::String firstRole, secondRole;
+            if (stored != nullptr)
+            {
+                auto rows = stored->messages;
+                std::stable_sort (rows.begin(), rows.end(), [] (const WsMessage& a, const WsMessage& b)
+                                  { return chatLogBefore (a.seq, b.seq); });
+                if (rows.size() >= 2) { firstRole = rows[0].role; secondRole = rows[1].role; }
+            }
+            check (firstRole == "user" && secondRole == "assistant",
+                   "OR2 ...and the rendered order is his message, then the card - read through the "
+                   "shipped comparator, not a copy of it",
+                   "[" + firstRole + ", " + secondRole + "]");
+        }
+
+        // (b) THE RED DIRECTION, in the same binary: stamp the CARD first and the order inverts.
+        //     This is his fault exactly, and it is what proves OR1 is about the ORDER OF STAMPING
+        //     and not about the comparator - which was right all along and is untouched.
+        {
+            EchoJayProcessor pr2;
+            WsChat c2; c2.id = "chatVocal2"; c2.title = "Aitch_4_01"; c2.trackName = "test project";
+            pr2.workspace.addChat (c2);
+            const juce::String key2 = "run-vocal-2";
+            echojay::agentui::RunView v2; v2.runKey = key2; v2.opening = "Working on it.";
+            EchoJayProcessor::ChatEntry card2; card2.role = "assistant";
+            card2.agentJson = juce::JSON::toString (echojay::agentui::toJson (v2), true);
+            pr2.appendChatEntry (std::move (card2), "chatVocal2", key2);       // the card FIRST
+            pr2.workspace.appendMessageToChat ("chatVocal2", "user", goal);    // his message after it
+
+            auto* s2 = pr2.workspace.findChatById ("chatVocal2");
+            juce::int64 u2 = -1, c2seq = -1;
+            if (s2 != nullptr)
+                for (const auto& m : s2->messages)
+                {
+                    if (m.role == "user"  && m.content == goal) u2    = m.seq;
+                    if (m.entryId == key2)                      c2seq = m.seq;
+                }
+            check (u2 > 0 && c2seq > 0 && chatLogBefore (c2seq, u2),
+                   "OR3 and stamping the card first puts it ABOVE his message - the fault he read at "
+                   "15:09, reproduced here, so OR1 is a test of the stamping order and not of the "
+                   "comparator",
+                   "card seq " + juce::String (c2seq) + ", user seq " + juce::String (u2));
+        }
+    }
+
+    // ---- A RUN'S CARD IS FILED BY ITS OWN CHAT, NOT THE ONE ON SCREEN (his test 8, 22 Oct) ---
+    //
+    // *"the test 7 run was waiting on its chips on the Main mix bus. I made a NEW chat and sent
+    //  'build a mix bus'. The old run's card ('Stopped', 8 steps) appeared in the NEW chat above my
+    //  message."*  And his ruling: *"Make every road that writes or renders a run's row place it
+    //  only by the chatId stamped at creation."*
+    //
+    // THE SHAPE OF THE BUG, reproduced exactly: a superseded run is written down at the moment the
+    // NEXT run starts, so the client's runChatId has already moved to the new chat - and that is
+    // where the recorder used to file it.
+    std::printf ("== A RUN'S CARD GOES TO ITS OWN CHAT (his test 8) ==\n");
+    {
+        WsChat oldChat; oldChat.id = "chatMixBus"; oldChat.title = "Mix bus";
+        oldChat.trackName = "test project"; A::store (*ed).addChat (oldChat);
+        WsChat newChat; newChat.id = "chatBrandNew"; newChat.title = "New chat";
+        newChat.trackName = "test project"; A::store (*ed).addChat (newChat);
+
+        // The window is on the NEW chat and the run's own key points at the NEW one too - which is
+        // what the client says once the next run has started. The ROW says the old chat.
+        A::openChat (*ed, "chatBrandNew");      // the window is on the chat he just made
+        // THE RUN IS THIS WINDOW'S, and the client's own idea of its chat has ALREADY MOVED to the
+        // new one - which is the state a supersede leaves behind and the whole reason the card used
+        // to be misfiled. The row still states chatMixBus, and that is what must win.
+        A::ownRun (*ed, 4242, "chatBrandNew", "key-super");
+        echojay::agentui::RunView v;
+        v.runKey = "key-super"; v.finished = true; v.statusWord = "Stopped";
+        v.closing = "Stopped. 8 steps before that.";
+        for (int i = 0; i < 8; ++i)
+        { echojay::agentui::RunStep s; s.label = "step " + juce::String (i + 1);
+          s.status = (int) EJAgentClient::Step::Status::Done; v.steps.push_back (s); }
+        auto row = A::cardFor (juce::JSON::toString (echojay::agentui::toJson (v), true), 4242, "chatMixBus");
+        // THE ROAD HIS FAULT CAME DOWN: the stop path, which is what a supersede runs. stopCard
+        // marks the card Stopped and hands it to the recorder - the same two steps the product takes
+        // when a send in a new chat ends the run that was waiting in another.
+        A::stopCard (*ed, row, "Stopped. 8 steps before that.");
+
+        const auto* mix = A::chat (*ed, "chatMixBus");
+        const auto* fresh = A::chat (*ed, "chatBrandNew");
+        int inMix = 0, inNew = 0;
+        if (mix   != nullptr) for (const auto& m : mix->messages)   if (m.agentJson.isNotEmpty()) ++inMix;
+        if (fresh != nullptr) for (const auto& m : fresh->messages) if (m.agentJson.isNotEmpty()) ++inNew;
+        check (inNew == 0,
+               "PL1 a superseded run's card is NOT filed into the chat on screen  (RED as it shipped at "
+               "15:20: the recorder read the CLIENT'S runChatId, which had already moved to the chat he "
+               "had just made, so an eight-step \"Stopped\" card appeared in a chat it never ran in)",
+               "cards in the new chat " + juce::String (inNew)
+               + ", in the run's own chat " + juce::String (inMix));
+        check (inMix == 1,
+               "PL2 ...it is filed in the chat the ROW states, which is where the run actually ran - "
+               "the chatId stamped at creation is the only authority that cannot have moved",
+               "cards in \"chatMixBus\" " + juce::String (inMix));
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

@@ -119,6 +119,10 @@ struct FakeExecutor : ToolExecutor
     }
     void beginPlaybackWindow() override { ++windowsBegun; }
     PlaybackReading readPlayback() override { return reading; }
+    /** B's keep-playing contract (22 Oct 2026): the plugin a keep_playing dial is still setting,
+        or empty. The product reads this from the racks; a fake only has to be able to say both. */
+    juce::String keepPlaying;
+    juce::String keepPlayingPlugin() override { return keepPlaying; }
     juce::String captureCheckpoint (const juce::String& label) override { checkpointLabel = label; return "cp_7"; }
     void undoStep (const juce::String& t, Done done) override { undoneTokens.push_back (t); done (ToolOutcome::success (juce::var())); }
     void undoToCheckpoint (const juce::String& cp, Done done) override { undoneCheckpoint = cp; done (ToolOutcome::success (juce::var())); }
@@ -1614,6 +1618,115 @@ int main()
                      + "\" block=\"" + v.askQuestion + "\"");
             const auto L = layoutRun (v, 0, 0, 420);
             check (L.askQuestion.isEmpty(), "Z4b ...so the layout reserves nothing for the block either");
+        }
+        {
+            // ---- B'S KEEP-PLAYING CONTRACT (docs/CONTRACT_keep_playing_2026-10-22.md) -----------
+            //
+            // *"While any slot from this run has keep_playing and its dial_on_playback has not
+            //  finished, never show 'Got it, you can stop' (or any stop prompt)."*
+            //
+            // Sean's test 9, 15:24: the listen had its 8 seconds, the card said he could stop, and
+            // the plan's second compressor was still to set itself on that same playback. The
+            // minimum is about having heard ENOUGH - it says nothing about whether the rack has
+            // finished using what it heard.
+            //
+            // The executor is the one that knows, so this leg makes it say "the bx_opto is still
+            // setting itself" and then stops saying it, which is the only two states that matter.
+            Rig w;
+            w.ex.keepPlaying = "bx_opto Pedal";        // a dial from this run is still working
+            w.ex.reading.transportKnown    = true;
+            w.ex.reading.playing           = true;
+            w.ex.reading.heardAboveSeconds = 12.0f;    // well past any minimum
+            w.client.start ("build a vocal chain with two compressors", "chat_kp");
+            w.round (1);
+            w.tool (R"EJ({"id":"tc_wait","name":"check","summary":"wait for playback","approval":"free","args":{"what":"playback","min_seconds":8}})EJ");
+            w.await ({ "tc_wait" });
+            pumpMs (120);
+            // THE LINE HE WATCHES IS THE PLAYBACK BLOCK'S, NOT THE STEP'S DETAIL. The client writes
+            // the step's detail at the END, with the outcome (19 Oct: "'Listening... 3 of 8 s' draws
+            // twice" - the progress line belongs to one surface while the wait is live). So this
+            // reads what the card actually draws: RunView::playbackLine. My first cut read the step
+            // and failed on a line the product was right not to have written yet.
+            const auto heldLine = runViewFrom (w.client, {}, true).playbackLine;
+            check (w.client.state() == EJAgentClient::State::Listening
+                   && ! heldLine.containsIgnoreCase ("you can stop"),
+                   "KP1 the minimum is reached and the run does NOT say \"you can stop\" while a "
+                   "keep_playing dial is still setting itself  (RED as it shipped at 15:24: the listen "
+                   "ended on the minimum alone and the second compressor was still to be dialled)",
+                   "state " + juce::String (EJAgentClient::stateName (w.client.state()))
+                   + ", line \"" + heldLine + "\"");
+            check (heldLine.containsIgnoreCase ("bx_opto Pedal"),
+                   "KP2 ...and it says WHICH plugin it is waiting for, so he knows why he is still "
+                   "playing (the contract's own wording: \"I'll say when it's done\")",
+                   "line \"" + heldLine + "\"");
+            // ...AND IT LETS GO. The dial lands; the next tick may say what it always said.
+            w.ex.keepPlaying = {};
+            pumpMs (120);
+            const auto* freedStep = w.step ("tc_wait");
+            const auto freedLine = freedStep != nullptr ? freedStep->detail : juce::String();
+            juce::ignoreUnused (freedLine);
+            check (freedLine.containsIgnoreCase ("you can stop")
+                   || w.client.state() != EJAgentClient::State::Listening,
+                   "KP3 and when the dial has landed the listen ends as it always did - the contract "
+                   "holds the prompt, it does not remove it  (a rule that only ever withheld would be "
+                   "a run he could never stop playing for)",
+                   "state " + juce::String (EJAgentClient::stateName (w.client.state()))
+                   + ", line \"" + freedLine + "\"");
+        }
+        {
+            // ---- THE PLAN, ONCE (his test 8, 22 Oct 2026) ---------------------------------------
+            //
+            // *"the plan is shown TWICE. Once inside the agent step with the Go / Change / Cancel
+            //  chips, then again in full as a plain message below the card."*
+            //
+            // Z4's exact-equality rule could not see this one: B sends the plan as the talk's TEXT
+            // and the question beside it, the client PREPENDS that text to the question (so the card
+            // reads as one sentence pair), and the step's label was composed earlier from the call.
+            // Two spellings of one sentence. The count is what is asserted here - a distinctive
+            // phrase from the plan may appear exactly ONCE anywhere the card draws prose - because
+            // "shown twice" is a claim about the whole card and not about one field.
+            Rig w;
+            w.client.start ("build a vocal chain", "chat_plan");
+            w.round (1);
+            w.tool (R"EJ({"id":"tc_plan","name":"talk","summary":"the plan","approval":"free","args":{"text":"From what was measured: the bus sits at -12 LUFS and the low mids run hot. The plan is a compressor, an EQ and a limiter.","ask":{"question":"Go, change it, or cancel?","choices":[{"label":"Go"},{"label":"Change"},{"label":"Cancel"}],"allowFreeText":false}}})EJ");
+            w.await ({ "tc_plan" });
+            pumpMs (10);
+            const auto v = runViewFrom (w.client, {}, true);
+            const juce::String phrase = "From what was measured";
+            int saidTimes = 0;
+            if (v.opening.contains (phrase)) ++saidTimes;
+            if (v.closing.contains (phrase)) ++saidTimes;
+            if (v.askQuestion.contains (phrase)) ++saidTimes;
+            for (const auto& s : v.steps)
+            {
+                if (s.label.contains (phrase))    ++saidTimes;
+                if (s.detail.contains (phrase))   ++saidTimes;
+                if (s.answered.contains (phrase)) ++saidTimes;
+            }
+            check (saidTimes == 1,
+                   "Z4c the plan is drawn ONCE across the whole card  (RED as it shipped at 15:20: the "
+                   "step's line and the question block below it both carried it, because the client "
+                   "prepends the talk's text to the question and the exact-match rule saw two "
+                   "different strings)",
+                   "said " + juce::String (saidTimes) + " time(s); block=\"" + v.askQuestion.substring (0, 40)
+                   + "\" rows=" + juce::String ((int) v.steps.size()));
+            // ...AND IT IS THE ROW THAT HAS IT, with the chips, which is the ruling the clearing
+            // serves ("the row wins, it carries the chips" - 18 Oct). A rule that cleared the block
+            // and left the plan nowhere would pass the count above and lose his plan.
+            bool onARowWithChips = false;
+            for (const auto& s : v.steps)
+                if (s.label.contains (phrase) && s.chips.size() == 3) onARowWithChips = true;
+            check (onARowWithChips,
+                   "Z4d ...and the one place it is drawn is the STEP that carries Go / Change / Cancel "
+                   "- not the block, and not nowhere",
+                   "steps " + juce::String ((int) v.steps.size()) + ", chips on the plan's row: "
+                   + (v.steps.empty() ? juce::String ("-") : v.steps.back().chips.joinIntoString (", ")));
+            check (v.askQuestion.isEmpty()
+                   && (! v.steps.empty() && v.steps.back().label.contains ("Go, change it, or cancel?")),
+                   "Z4e ...and the question itself is still there, on that same row - the block went, "
+                   "the sentence did not",
+                   "block=\"" + v.askQuestion + "\", row=\""
+                   + (v.steps.empty() ? juce::String() : v.steps.back().label.substring (0, 80)) + "\"");
         }
         {
             // AND THE QUESTION IS NEVER LOST. The block goes because the ROW carries it: a rule that
