@@ -1,9 +1,9 @@
 scenario B2-live
-captured 2026-10-22T04:05:40.480+01:00
+captured 2026-10-22T19:57:48.756+01:00
   [user] Add a compressor to this rack
   [assistant] 
-  run row: status=Waiting for your answer changes=0 steps=2 zones=[4:EchoJay Compressor,7:Stop]
+  run row: status=Waiting for your answer changes=0 steps=2 zones=[4:EchoJay Compressor,4:EchoJay 4-Band Compressor,7:Stop]
   opening: 
   closing: 
     step "read the inventory" [done] right="" detail="" chips=[]
-    step "Which compressor shall I use?" [running] right="your answer?" detail="" chips=[EchoJay Compressor]
+    step "Which compressor should I add to the Mix Bus rack?" [running] right="your answer?" detail="" chips=[EchoJay Compressor, EchoJay 4-Band Compressor]

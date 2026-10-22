@@ -1,0 +1,8 @@
+scenario A4-live
+captured 2026-10-22T19:29:47.997+01:00
+  [user] Add Renaissance Axx (s) to the Kick's rack and set its Threshold
+  [assistant] The change to slot 1: Threshold -18 was sent but not confirmed by the plugin's read-back (threshold) - check it on the plugin.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: The change to slot 1: Threshold -18 was sent but not confirmed by the plugin's read-back (threshold) - check it on the plugin.
+  closing: The change to slot 1: Threshold -18 was sent but not confirmed by the plugin's read-back (threshold) - check it on the plugin.
+    step "set slot 1: Threshold -18 - on 88_7even Kick_2_02" [done] right="applied" detail="read back threshold -18" chips=[]

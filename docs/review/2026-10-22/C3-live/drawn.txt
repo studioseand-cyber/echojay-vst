@@ -1,16 +1,18 @@
 scenario C3-live
-captured 2026-10-22T05:24:57.199+01:00
+captured 2026-10-22T14:35:16.846+01:00
   [user] Add Renaissance Axx (s) to this rack and set its Threshold to -30 dB
-  [assistant] Stopped.
-  run row: status=Done changes=1 steps=9 zones=[3,3,11:1 change,8:Undo all]
-  opening: Stopped.
-  closing: Stopped.
+  [assistant] 
+  run row: status=Waiting for your answer changes=1 steps=11 zones=[12,3,3,4:Stop here,4:Try once more,7:Stop]
+  opening: 
+  closing: 
     step "add Renaissance Axx (s)" [done] right="applied" detail="Added Renaissance Axx (s) in slot 1. Read back: threshold -30." chips=[]
-    step "wait for playback" [done] right="" detail="Playback stopped at 2.5 s - using what was heard." chips=[]
-    step "I only caught 2.5 seconds of playback, not enough for a solid reading. Can you play the loudest section again, for at least 8 seconds?" [done] right="" detail="" chips=[]
-    step "wait for playback" [done] right="" detail="Playback stopped at 2.5 s - using what was heard." chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "Can you play the loudest section of the mix bus for a few seconds so I can measure the gain reduction?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "Ready to play the loudest section now?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
     step "check gr on slot 1" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]
-    step "Playback stopped before I got a full 8 seconds. Can you play the loudest part again and keep it running?" [done] right="" detail="" chips=[]
-    step "wait for playback" [done] right="" detail="Playback stopped at 2.5 s - using what was heard." chips=[]
+    step "I still can't detect any audio actually playing on the mix bus, so I can't get a gain reduction reading right now - it looks like playback isn't reaching the meter - then tap Playing now." [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
     step "check gr on slot 1" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]
-    step "What now?" [done] right="" detail="" chips=[]
+    step "What now?" [running] right="your answer?" detail="" chips=[Stop here, Try once more]

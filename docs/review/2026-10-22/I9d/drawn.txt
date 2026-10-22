@@ -1,5 +1,5 @@
 scenario I9d
-captured 2026-10-22T12:53:22.978+01:00
+captured 2026-10-22T18:57:24.210+01:00
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it, with the setting you asked for.
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold

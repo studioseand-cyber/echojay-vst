@@ -1,5 +1,5 @@
 scenario G7b
-captured 2026-10-22T12:47:55.809+01:00
+captured 2026-10-22T18:51:57.694+01:00
   [assistant] The gain I was levelling with is no longer there - level loop stopped.
   [user] rig-onesentence-marker: add a gate
   [assistant] Added an EchoJay Gate to this rack.

@@ -1,5 +1,5 @@
 scenario A8-live
-captured 2026-10-22T04:14:34.219+01:00
+captured 2026-10-22T14:25:34.431+01:00
   [user] Add Pro-C 2 to this rack
   [assistant] 
   run row: status=Waiting for your answer changes=0 steps=4 zones=[3,4:EchoJay Compressor,4:Pro-C 3,7:Stop]

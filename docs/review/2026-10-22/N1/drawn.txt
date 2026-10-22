@@ -1,18 +1,16 @@
 scenario N1
-captured 2026-10-22T12:38:55.979+01:00
+captured 2026-10-22T19:09:02.486+01:00
   [user] rig-row-marker: set the pre gain, twice (then I close the window)
-  [assistant] Set the pre-gain to 4 dB, then to 6 dB.
+  [assistant] Stopped.
   [user] rig-row-marker: set the pre gain, twice (survive the close)
-  [assistant] Gentle it is - the pre-gain is at 2 dB.
-  [user] rig-rowask-marker: how firm should it be? (chips through a close)
-  [assistant] Set the pre-gain to 4 dB, then to 6 dB.
+  [assistant] Stopped.
   [user] rig-auto-marker: set the pre gain, twice (no window at all)
-  [assistant] Built a compressor on the rack.
+  [assistant] Stopped.
   [user] rig-nowindowbuild-marker: build a compressor on this rack (nothing open while it runs)
+  [assistant] Stopped.
   [user] rig-row-marker: set the pre gain (N1: a row must be drawn)
   [assistant] 
-  run row: status=Waiting for your OK changes=0 steps=2 zones=[1,2,1,2,7:Stop,6:Skip all,5:Apply all]
+  run row: status=Working changes=0 steps=0 zones=[7:Stop]
   opening: 
   closing: 
-    step "pre-gain 4 dB" [awaiting] right="" detail="" chips=[]
-    step "pre-gain 6 dB" [awaiting] right="" detail="" chips=[]
+    step "Thinking…" [running] right="" detail="" chips=[]
