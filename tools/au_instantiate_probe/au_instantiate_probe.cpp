@@ -17,6 +17,7 @@
 #include "probe_write.h"                     // feat/ejmap-cert: --write-test (the whole mode lives there)
 #include "probe_sweep.h"                     // feat/ejmap-cert: --sweep, spec section 4 (the whole mode lives there)
 #include "probe_pitch.h"                     // feat/ejmap-cert: --sweep-pitch, spec section 5 (tuners), 1 Oct
+#include "probe_extract.h"                   // 22 Oct (Kathy, decision 0): --extract, the full map's sweeps
 #include "probe_burst.h"                     // feat/ejmap-cert: --burst, compressor timing PROTOTYPE (roadmap 2.3), 5 Oct
 #include "probe_response.h"                  // feat/ejmap-cert: --response, multitone EQ response PROTOTYPE (roadmap 2.2), 5 Oct
 #include "probe_material.h"                  // feat/ejmap-cert: --material, generated vocal / drums / mix through the pick (accuracy A2), 6 Oct
@@ -86,6 +87,7 @@ static int runRequest (int argc, char** argv, bool serving)
     // "step<TAB>i<TAB>norm<TAB>text" (the panel text read after the AU settled on the run loop), the map builder's source for
     // `positions`. Same rules as list mode: no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>".
     const bool listParams = argc >= 5 && juce::String (argv[4]) == "--list-params";
+    const bool extractM   = argc >= 5 && juce::String (argv[4]) == "--extract";      // 22 Oct: the list rows, then every parameter's sweep (probe_extract.h)
     const bool listSteps  = argc >= 6 && juce::String (argv[4]) == "--list-steps";
     // 21o item 5 (23 Sep 2026): "--sample-text <index>" = SAMPLED-TEXT MODE. A plugin may hold a stepped control while
     // telling the host it is continuous - Auto-Tune Pro reports numSteps 2147483647 and isDiscrete 0 for Scale, Key and
@@ -122,7 +124,7 @@ static int runRequest (int argc, char** argv, bool serving)
     // (param lines), the unit's factory presets (programs / program lines), then loads preset N (default: the first, 0) and prints
     // its block as "fparam" lines; "factory none" when the unit publishes no factory preset
     const bool factoryPreset = argc >= 5 && juce::String (argv[4]) == "--factory-preset";
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || textAtNormsMulti || sweepPitch || burst || response || tail || hits || ramp || materialM || factoryPreset;
+    const bool listMode = listParams || extractM || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || textAtNormsMulti || sweepPitch || burst || response || tail || hits || ramp || materialM || factoryPreset;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -425,6 +427,7 @@ static int runRequest (int argc, char** argv, bool serving)
             std::printf ("%d\t%s\t%s\t%d\t%d\t%d\t%d\n", i, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8(), q->getNumSteps(), q->isDiscrete() ? 1 : 0,
                          q->isAutomatable() ? 1 : 0, q->isMetaParameter() ? 1 : 0);
         }
+        if (extractM) ejprobe::runExtract (*inst);   // 22 Oct: the same rows first, so a --list-params reader reads them unchanged
         return endRun (0, serving);   // a third-party AU's teardown is not this mode's subject
     }
     if (! done)          { std::printf ("RESULT: TIMED OUT creating instance\n"); return serving ? endRun (2, true) : 2; }

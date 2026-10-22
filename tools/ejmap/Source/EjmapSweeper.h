@@ -200,6 +200,143 @@ inline echojay::EffectiveAnchors steppedCollapseTable (const juce::Array<juce::A
     to run, and a caller that cannot settle must say so rather than record a
     read as verified.
 */
+/** THE SWEEP'S PURE HALF (22 Oct, Kathy's decision 0: the wizard saves FULL maps): from the display points to the anchor table - the
+    display's unit family, the unit-aware parse, the shared sanitizer, the stepped collapse, the degenerate-span and identity checks.
+    ONE function for the EJ Map app (sweepOneIndex, after its in-process sweep) and the wizard (the probe's --extract points), so a
+    wizard map is built by the same rules as every map in the store. out.points and out.method are set by the caller. */
+inline void finishOutcome (SweepOutcome& out)
+{
+    // Detect the display's own unit family from the texts. Half the points
+    // must carry it: one stray "Hz" in a label does not make a family.
+    {
+        int hz = 0, db = 0, ms = 0, pct = 0;
+        for (const auto& sp : out.points)
+        {
+            const auto t = sp.t.toLowerCase();
+            if (t.contains ("hz"))                    ++hz;   // covers kHz
+            else if (t.contains ("db"))               ++db;
+            else if (t.contains ("ms") || t.contains (" s") || t.endsWith ("s")) ++ms;
+            else if (t.contains ("%"))                ++pct;
+        }
+        const int half = juce::jmax (1, out.points.size() / 2);
+        out.unitFamily = hz >= half ? "hz" : db >= half ? "db"
+                       : ms >= half ? "ms" : pct >= half ? "pct" : juce::String();
+    }
+
+    // Texts -> raw anchors. Under a declared unit family, the shared
+    // parseDisplayForUnit does the unit arithmetic (kHz x1000, bare-k, s<->ms);
+    // otherwise the corpus parser's raw leading float.
+    juce::Array<juce::Array<float>> raw;
+    for (const auto& sp : out.points)
+    {
+        bool parsed = false;
+        float vf = 0.0f;
+        if (out.unitFamily.isNotEmpty())
+        {
+            bool negInf = false;
+            parsed = echojay::parseDisplayForUnit (sp.t, out.unitFamily, vf, negInf) && ! negInf;
+        }
+        else
+        {
+            double v = 0.0;
+            parsed = echojay::parseLeadingFloat (sp.t, v);
+            vf = (float) v;
+        }
+
+        if (parsed)
+        {
+            juce::Array<float> a;
+            a.add (vf);
+            a.add (sp.n);
+            raw.add (a);
+        }
+        else
+            ++out.unparsedPoints;
+    }
+
+    if (raw.size() < 2)
+    {
+        out.nonNumeric = true;
+        out.reason = "only " + juce::String (raw.size()) + " of "
+                   + juce::String (out.points.size()) + " points parse numerically: "
+                     "mode/position material, not an anchor curve.";
+        return;
+    }
+
+    out.rawAnchors = raw;
+
+    // The shared sanitizer. Rejections are counted, never silent.
+    auto eff = echojay::dominantMonotonicTable (raw);
+    if (! eff.ok)
+    {
+        // The stepped path (steppedCollapseTable above), tried ONLY after the
+        // strict rule refuses -- a table the strict rule accepts never sees it.
+        auto stepped = steppedCollapseTable (raw);
+        if (stepped.ok)
+        {
+            eff.table = stepped.table;
+            eff.ok = true;
+            out.steppedCollapse = raw.size() - stepped.table.size();
+        }
+        else
+        {
+            out.rejectedPoints = raw.size();
+            out.reason = "sanitizer refused: no strictly-monotonic run covers 60% of "
+                       + juce::String (raw.size()) + " parsed points (mirror or garbage "
+                         "shape, and no clean step collapse). Refused, not guessed at.";
+            return;
+        }
+    }
+
+    out.anchors        = eff.table;
+    out.rejectedPoints = raw.size() - eff.table.size();
+    out.anchorsReversed = eff.table.getFirst()[0] > eff.table.getLast()[0];
+
+    // Degenerate span: the same 1e-6 rule applyOne refuses at. Catching it
+    // here means a map that cannot dial is never built, rather than being
+    // built and refused later.
+    float lo = eff.table.getFirst()[0], hi = lo;
+    for (const auto& a : eff.table) { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
+    if (hi - lo < 1.0e-6f)
+    {
+        out.ok = false;
+        out.reason = "degenerate span: sanitized values cover "
+                   + juce::String (hi - lo, 8) + ", which applyOne would refuse. "
+                     "Not anchor material.";
+        return;
+    }
+
+    {
+        bool ident = out.anchors.size() >= 5;
+        for (const auto& a : out.anchors)
+            if (std::abs (a[0] - a[1]) > 0.005f) { ident = false; break; }
+        out.identityDisplay = ident;
+    }
+
+    out.ok = true;
+    out.reason = juce::String (out.anchors.size()) + " anchors ("
+               + out.method + (out.anchorsReversed ? ", descending" : ", ascending")
+               + (out.steppedCollapse > 0
+                    ? ", stepped: " + juce::String (out.steppedCollapse) + " plateau point(s) collapsed"
+                    : juce::String())
+               + (out.rejectedPoints > 0
+                    ? ", " + juce::String (out.rejectedPoints) + " point(s) outside the dominant run"
+                    : juce::String())
+               + (out.unparsedPoints > 0
+                    ? ", " + juce::String (out.unparsedPoints) + " unparsed"
+                    : juce::String())
+               + (out.identityDisplay
+                    ? ", IDENTITY DISPLAY: every value equals its norm, so the display "
+                      "may be fabricated and unit-bearing requests may need the typed path"
+                    : juce::String())
+               + ")";
+}
+/** The same from points read elsewhere (the probe's --extract): method "gettext" | "setread". */
+inline SweepOutcome outcomeFromPoints (const juce::Array<echojay::SweepPoint>& points, const juce::String& method)
+{
+    SweepOutcome out; out.method = method; out.points = points; finishOutcome (out); return out;
+}
+
 inline bool settleDisplayPumped (int ms = 50)
 {
     auto* mm = juce::MessageManager::getInstanceWithoutCreating();
@@ -286,133 +423,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
         out.points = retried;
     }
 
-    // Detect the display's own unit family from the texts. Half the points
-    // must carry it: one stray "Hz" in a label does not make a family.
-    {
-        int hz = 0, db = 0, ms = 0, pct = 0;
-        for (const auto& sp : out.points)
-        {
-            const auto t = sp.t.toLowerCase();
-            if (t.contains ("hz"))                    ++hz;   // covers kHz
-            else if (t.contains ("db"))               ++db;
-            else if (t.contains ("ms") || t.contains (" s") || t.endsWith ("s")) ++ms;
-            else if (t.contains ("%"))                ++pct;
-        }
-        const int half = juce::jmax (1, out.points.size() / 2);
-        out.unitFamily = hz >= half ? "hz" : db >= half ? "db"
-                       : ms >= half ? "ms" : pct >= half ? "pct" : juce::String();
-    }
-
-    // Texts -> raw anchors. Under a declared unit family, the shared
-    // parseDisplayForUnit does the unit arithmetic (kHz x1000, bare-k, s<->ms);
-    // otherwise the corpus parser's raw leading float.
-    juce::Array<juce::Array<float>> raw;
-    for (const auto& sp : out.points)
-    {
-        bool parsed = false;
-        float vf = 0.0f;
-        if (out.unitFamily.isNotEmpty())
-        {
-            bool negInf = false;
-            parsed = echojay::parseDisplayForUnit (sp.t, out.unitFamily, vf, negInf) && ! negInf;
-        }
-        else
-        {
-            double v = 0.0;
-            parsed = echojay::parseLeadingFloat (sp.t, v);
-            vf = (float) v;
-        }
-
-        if (parsed)
-        {
-            juce::Array<float> a;
-            a.add (vf);
-            a.add (sp.n);
-            raw.add (a);
-        }
-        else
-            ++out.unparsedPoints;
-    }
-
-    if (raw.size() < 2)
-    {
-        out.nonNumeric = true;
-        out.reason = "only " + juce::String (raw.size()) + " of "
-                   + juce::String (out.points.size()) + " points parse numerically: "
-                     "mode/position material, not an anchor curve.";
-        out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
-        return out;
-    }
-
-    out.rawAnchors = raw;
-
-    // The shared sanitizer. Rejections are counted, never silent.
-    auto eff = echojay::dominantMonotonicTable (raw);
-    if (! eff.ok)
-    {
-        // The stepped path (steppedCollapseTable above), tried ONLY after the
-        // strict rule refuses -- a table the strict rule accepts never sees it.
-        auto stepped = steppedCollapseTable (raw);
-        if (stepped.ok)
-        {
-            eff.table = stepped.table;
-            eff.ok = true;
-            out.steppedCollapse = raw.size() - stepped.table.size();
-        }
-        else
-        {
-            out.rejectedPoints = raw.size();
-            out.reason = "sanitizer refused: no strictly-monotonic run covers 60% of "
-                       + juce::String (raw.size()) + " parsed points (mirror or garbage "
-                         "shape, and no clean step collapse). Refused, not guessed at.";
-            out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
-            return out;
-        }
-    }
-
-    out.anchors        = eff.table;
-    out.rejectedPoints = raw.size() - eff.table.size();
-    out.anchorsReversed = eff.table.getFirst()[0] > eff.table.getLast()[0];
-
-    // Degenerate span: the same 1e-6 rule applyOne refuses at. Catching it
-    // here means a map that cannot dial is never built, rather than being
-    // built and refused later.
-    float lo = eff.table.getFirst()[0], hi = lo;
-    for (const auto& a : eff.table) { lo = juce::jmin (lo, a[0]); hi = juce::jmax (hi, a[0]); }
-    if (hi - lo < 1.0e-6f)
-    {
-        out.ok = false;
-        out.reason = "degenerate span: sanitized values cover "
-                   + juce::String (hi - lo, 8) + ", which applyOne would refuse. "
-                     "Not anchor material.";
-        out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
-        return out;
-    }
-
-    {
-        bool ident = out.anchors.size() >= 5;
-        for (const auto& a : out.anchors)
-            if (std::abs (a[0] - a[1]) > 0.005f) { ident = false; break; }
-        out.identityDisplay = ident;
-    }
-
-    out.ok = true;
-    out.reason = juce::String (out.anchors.size()) + " anchors ("
-               + out.method + (out.anchorsReversed ? ", descending" : ", ascending")
-               + (out.steppedCollapse > 0
-                    ? ", stepped: " + juce::String (out.steppedCollapse) + " plateau point(s) collapsed"
-                    : juce::String())
-               + (out.rejectedPoints > 0
-                    ? ", " + juce::String (out.rejectedPoints) + " point(s) outside the dominant run"
-                    : juce::String())
-               + (out.unparsedPoints > 0
-                    ? ", " + juce::String (out.unparsedPoints) + " unparsed"
-                    : juce::String())
-               + (out.identityDisplay
-                    ? ", IDENTITY DISPLAY: every value equals its norm, so the display "
-                      "may be fabricated and unit-bearing requests may need the typed path"
-                    : juce::String())
-               + ")";
+    finishOutcome (out);
     out.durationMs = (int) (juce::Time::getMillisecondCounter() - t0);
     return out;
 }

@@ -42,6 +42,7 @@ struct Shape
     juce::String type;                   // highpass | lowpass
     double cutoffHz = 0.0, passbandDb = 0.0, slopeDbOct = 0.0, resonanceDb = 0.0, resonanceHz = 0.0;
     double refLoHz = 0.0, refHiHz = 0.0;     // the passband reference's tones (its octave at the grid's end)
+    double naturalHz = 0.0;                  // the natural frequency estimate (decision 3): the -3 dB point when there is no resonance
     juce::String slopeBasis;             // "-6 to -18 dB" | "-6 to -12 dB" | "" (not read)
     juce::String reason; int tones = 0;
 };
@@ -97,7 +98,17 @@ inline Shape deriveShape (const std::vector<std::pair<double, double>>& t)
     { int pk = -1; double best = -1e9; for (int i = start; i >= 0 && i < n && (at3 < 0 || i != at3); i += step) if (t[(size_t) i].second > best) { best = t[(size_t) i].second; pk = i; }
       if (pk >= 0 && best - s.passbandDb >= kResonanceFloorDb) { s.resonanceDb = best - s.passbandDb; s.resonanceHz = t[(size_t) pk].first; } }
     if (! c3) { s.result = "edge_outside"; s.reason = "the response never falls 3 dB under its passband (" + juce::String (s.passbandDb, 1) + " dB) inside the grid"; return s; }
-    s.result = "measured"; s.cutoffHz = *c3;
+    s.result = "measured"; s.cutoffHz = *c3; s.naturalHz = *c3;
+    // THE NATURAL FREQUENCY (Kathy, 22 Oct, decision 3: certify against the convention the label follows). A resonant second-order section
+    // peaks at G (linear) over its passband with Q^2 = (G^2 + G sqrt (G^2 - 1)) / 2, and at its natural frequency its response is Q over
+    // the passband: the first point past the peak (towards the stopband) where the response falls to 20 log10 Q. An estimate for a
+    // higher-order filter; with no resonance it is the -3 dB point
+    if (s.resonanceDb >= kResonanceFloorDb)
+    {
+        const double G = std::pow (10.0, s.resonanceDb / 20.0), Q = std::sqrt ((G * G + G * std::sqrt (juce::jmax (0.0, G * G - 1.0))) / 2.0);
+        int pk = -1; for (int i = 0; i < n; ++i) if (std::abs (t[(size_t) i].first - s.resonanceHz) < 1e-6) pk = i;
+        if (pk >= 0) if (const auto f0 = crossing (t, pk, step, s.passbandDb + 20.0 * std::log10 (Q))) s.naturalHz = *f0;
+    }
     const auto c6 = crossing (t, at3 - step, step, s.passbandDb - 6.0), c18 = crossing (t, at3 - step, step, s.passbandDb - 18.0), c12 = crossing (t, at3 - step, step, s.passbandDb - 12.0);
     if (c6 && (c18 || c12))
     {
@@ -108,6 +119,15 @@ inline Shape deriveShape (const std::vector<std::pair<double, double>>& t)
     return s;
 }
 
+// A SHELF'S CORNER (decision 8, the EQ's rule: "a shelf is judged by its corner only - where it reaches half its plateau"): walking in from
+// the plateau end, where the response falls to half the plateau's level; nullopt when it never does inside the grid
+inline std::optional<double> shelfCorner (const std::vector<std::pair<double, double>>& t, const Shape& s)
+{
+    if (s.result != "shelf" || (int) t.size() < kMinTones) return std::nullopt;
+    const int n = (int) t.size(); const bool high = s.type == "highpass";
+    double lo = 1e9; for (const auto& [hz, d] : t) lo = juce::jmin (lo, d);
+    return crossing (t, high ? n - 1 - kEndSkip : kEndSkip, high ? -1 : 1, lo + 0.5 * (s.passbandDb - lo));
+}
 // THE LABEL: a frequency the display states ("1.2 kHz", "120 Hz", "4k"); a BARE number ("250") only when the control's unit or name says
 // frequency (22 Oct, OneKnob Filter on this Mac: its "Filter" reads 0-10, a knob position, and was judged as 1.7 Hz); never a percentage,
 // dB, ms, an order, a word or a note name
@@ -128,24 +148,37 @@ inline std::optional<double> labelHz (const juce::String& display, const juce::S
 }
 
 struct Judged { bool judged = false, pass = false; double labelHz = 0.0, offPct = 0.0; juce::String why; };
-inline Judged judgeCutoff (const Shape& s, const juce::String& display, const juce::String& unit = {}, const juce::String& name = {})
+// THE EDGE MARGIN (decision 4, 22 Oct: bx_cleansweep's 6 dB/oct filters missed by 5.2 / 6.4 % at their outermost judged positions): one
+// octave, two for a shallow filter (a slope under kShallowDbOct, or one not read inside the grid - its skirt is wide)
+inline constexpr double kShallowDbOct = 9.0;
+inline double edgeOctaves (const Shape& s) { return s.slopeBasis.isEmpty() || s.slopeDbOct < kShallowDbOct ? 2.0 : 1.0; }
+inline Judged judgeFigure (const Shape& s, double figureHz, const juce::String& display, const juce::String& unit = {}, const juce::String& name = {})
 {
     Judged j; const auto lab = labelHz (display, unit, name);
     if (! lab) { j.why = "no frequency in the label '" + display + "'"; return j; }
     j.labelHz = *lab;
-    if (s.result != "measured") { j.why = "no cutoff read (" + s.result + ")"; return j; }
+    if (s.result != "measured" || figureHz <= 0.0) { j.why = "no cutoff read (" + s.result + ")"; return j; }
     // THE GRID'S EDGE (22 Oct, SPL DrumXchanger's low-pass at '20 Hz' read 23.4: 17 % off, while 64 Hz-6.8 kHz read within 0.4 %): a cutoff within an
     // octave of the passband reference sits inside the octave that reference is read from - its -3 dB point cannot be read; not judged
-    if ((s.type == "lowpass" && s.cutoffHz < 2.0 * s.refHiHz) || (s.type == "highpass" && s.cutoffHz > 0.5 * s.refLoHz))
-    { j.why = "the cutoff " + juce::String (s.cutoffHz, 1) + " Hz lies within an octave of the passband reference (" + juce::String (s.refLoHz, 0) + "-" + juce::String (s.refHiHz, 0) + " Hz, the grid's edge): not judged"; return j; }
-    j.judged = true; j.offPct = 100.0 * (s.cutoffHz - *lab) / *lab; j.pass = std::abs (j.offPct) <= kCutoffTolPct;
-    j.why = "the -3 dB point " + juce::String (s.cutoffHz, 1) + " Hz is " + juce::String (j.offPct, 1) + " % off the label " + juce::String (*lab, 1) + " Hz (tolerance " + juce::String (kCutoffTolPct, 0) + " %)";
+    const double m = std::exp2 (edgeOctaves (s));
+    if ((s.type == "lowpass" && s.cutoffHz < m * s.refHiHz) || (s.type == "highpass" && s.cutoffHz > s.refLoHz / m))
+    { j.why = "the cutoff " + juce::String (s.cutoffHz, 1) + " Hz lies within " + juce::String (edgeOctaves (s), 0) + " octave(s) of the passband reference (" + juce::String (s.refLoHz, 0) + "-" + juce::String (s.refHiHz, 0) + " Hz, the grid's edge): not judged"; return j; }
+    j.judged = true; j.offPct = 100.0 * (figureHz - *lab) / *lab; j.pass = std::abs (j.offPct) <= kCutoffTolPct;
+    j.why = "the figure " + juce::String (figureHz, 1) + " Hz is " + juce::String (j.offPct, 1) + " % off the label " + juce::String (*lab, 1) + " Hz (tolerance " + juce::String (kCutoffTolPct, 0) + " %)";
     return j;
 }
 
+inline Judged judgeCutoff (const Shape& s, const juce::String& display, const juce::String& unit = {}, const juce::String& name = {}) { return judgeFigure (s, s.cutoffHz, display, unit, name); }
+
+// THE CONVENTIONS (decision 3): what a label may name - the -3 dB point, the natural frequency, the resonant peak. A control certifies
+// under ONE convention that holds at EVERY judged position (at least kMinJudged); the first that holds, in this order, is recorded
+inline const juce::StringArray& conventions() { static const juce::StringArray k { "-3 dB point", "natural frequency", "resonant peak" }; return k; }
+inline double figureFor (const Shape& s, const juce::String& convention)
+{ return convention == "natural frequency" ? s.naturalHz : convention == "resonant peak" ? s.resonanceHz : s.cutoffHz; }
+
 // A CONTROL'S VERDICT: certified when at least kMinJudged labelled positions were judged and every one is within; measured when a cutoff
 // was read anywhere; otherwise not_measured
-struct Verdict { juce::String verdict, why; int judged = 0, passed = 0, measured = 0; };
+struct Verdict { juce::String verdict, why, convention; int judged = 0, passed = 0, measured = 0; };
 inline Verdict controlVerdict (const std::vector<std::pair<Shape, Judged>>& rows)
 {
     Verdict v;
@@ -156,6 +189,24 @@ inline Verdict controlVerdict (const std::vector<std::pair<Shape, Judged>>& rows
     v.why = v.judged < kMinJudged ? juce::String (v.judged) + " labelled position(s) judged (" + juce::String (kMinJudged) + " needed to certify)"
                                   : juce::String (v.judged - v.passed) + " of " + juce::String (v.judged) + " labelled cutoffs outside " + juce::String (kCutoffTolPct, 0) + " %";
     return v;
+}
+
+struct Positioned { Shape s; juce::String display; };
+inline Verdict conventionVerdict (const std::vector<Positioned>& ps, const juce::String& unit, const juce::String& name)
+{
+    Verdict best; juce::StringArray misses;
+    for (const auto& c : conventions())
+    {
+        std::vector<std::pair<Shape, Judged>> rows;
+        for (const auto& p : ps) rows.push_back ({ p.s, judgeFigure (p.s, figureFor (p.s, c), p.display, unit, name) });
+        auto v = controlVerdict (rows); v.convention = c;
+        if (v.verdict == "certified") { v.why += " (" + c + ")"; return v; }
+        if (best.verdict.isEmpty() || (best.verdict == "not_measured" && v.verdict != "not_measured")) best = v;
+        if (v.judged > 0) misses.add (c + ": " + juce::String (v.judged - v.passed) + " of " + juce::String (v.judged) + " outside");
+    }
+    best.convention = {};
+    if (best.verdict == "measured" && ! misses.isEmpty()) best.why = "no one convention holds at every judged position (" + misses.joinIntoString ("; ") + ")";
+    return best;
 }
 
 // THE CONTROLS a filter pass sweeps: a cutoff / frequency / filter word and none of the words that name something else (the categoriser's
@@ -224,7 +275,8 @@ inline juce::var shapeVar (const Shape& s, const Judged& j, float norm, const ju
     if (s.result == "measured" || s.result == "edge_outside") o->setProperty ("passband_db", std::round (s.passbandDb * 100.0) / 100.0);
     if (s.result == "measured") o->setProperty ("cutoff_hz", std::round (s.cutoffHz * 10.0) / 10.0);
     if (s.slopeBasis.isNotEmpty()) { o->setProperty ("slope_db_oct", std::round (s.slopeDbOct * 10.0) / 10.0); o->setProperty ("slope_basis", s.slopeBasis); }
-    if (s.resonanceDb > 0.0) { o->setProperty ("resonance_db", std::round (s.resonanceDb * 100.0) / 100.0); o->setProperty ("resonance_hz", std::round (s.resonanceHz * 10.0) / 10.0); }
+    if (s.resonanceDb > 0.0) { o->setProperty ("resonance_db", std::round (s.resonanceDb * 100.0) / 100.0); o->setProperty ("resonance_hz", std::round (s.resonanceHz * 10.0) / 10.0);
+                               o->setProperty ("natural_hz", std::round (s.naturalHz * 10.0) / 10.0); }
     if (j.labelHz > 0.0) o->setProperty ("label_hz", j.labelHz);
     if (j.judged) { o->setProperty ("off_pct", std::round (j.offPct * 10.0) / 10.0); o->setProperty ("within_tolerance", j.pass); }
     o->setProperty ("tones", s.tones);

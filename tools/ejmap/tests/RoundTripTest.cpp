@@ -98,6 +98,7 @@
 #include "EjmapDrafts.h"
 #include "EjmapRunAll.h"
 #include "EjmapTrustRun.h"    // 16 Oct: the trust levels, v1 certification of the other categories
+#include "EjmapFullMap.h"     // 22 Oct: the full map (carried with its pins, CERT-23)
 #include "EjmapMultibandV1.h"  // 16 Oct: multiband v1
 #include "EjmapSelfGuardRun.h" // 16 Oct: the guard
 #include "EjmapReadbackSweepRun.h" // 16 Oct: the read-back-only sweep
@@ -5077,6 +5078,123 @@ void testSweepQuietReference()
                && drv.contains ("const auto passBands = readEqPassBands (passResponse, base, controls, say, passWindow, passMeasured);") && drv.contains ("#include \"EjmapCertFilterShift.h\"")
                && mainCpp.contains ("return a == \"--cert-filter\" ? ejmap::cert::runFilter (o) : ejmap::cert::runPitchShift (o);"),
                "cert CERT-22: Mic Mod -> review; HP -3 dB " + juce::String (hp2.cutoffHz, 1) + " Hz; against the open position " + juce::String (against.cutoffHz, 1) + " Hz; '+7 st' expects " + juce::String (e7.outHz, 2) + " Hz");
+    }
+    // CERT-23 (carried from feat/ejmap-wizard fe7a2859 / 5972915c, 22 Oct): the full map, the log taper, the resonant-filter conventions, the
+    // shallow-filter edge and the voice isolation are shared code; their pins come with them, less the parts that test the wizard's own run
+    // WZ-FULLMAP-1 THE WIZARD SAVES FULL MAPS (Kathy, 22 Oct, decision 0): the store's format (schema 2.4, controls with range / unit /
+    // anchors or labels, the taper), built from the probe's --extract by the EJ Map app's own rules (EjmapSweeper.h finishOutcome) - so a
+    // tester's upload is usable by the server and judged by the same trust rules. Fixtures: IR-L (m->s)'s real extract on this Mac (22 Oct)
+    // and its map-store map (7 Aug sweep, 0.60 / 0.90 missing). Decision 7: the taper is detected and recorded, and the judge uses it
+    {
+        using namespace ejmap;
+        const auto fxDir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures");
+        const auto x = fullmap::parseExtract (fxDir.getChildFile ("extract_irl_22oct.txt").loadFileAsString());
+        const auto b = fullmap::buildControls (x);
+        const auto map = fullmap::buildMap ("fp_irl", "AudioUnit", "49367476", "IR-L (m->s)", "Waves", "12.0.0", "reverb", x, b, "test");
+        const auto wet = map.getProperty ("controls", {}).getProperty ("Wet-Dry", {}), gain = map.getProperty ("controls", {}).getProperty ("Gain", {});
+        const auto wa = trust::anchorsOf (wet), ga = trust::anchorsOf (gain);
+        double at90 = 0.0, at90lin = 0.0; trust::valueAtNorm (wa, 0.9, at90, wet.getProperty ("taper", "").toString());
+        // the store's own map: the same plugin, anchors missing 0.90 - a straight line says 53.1, the inferred taper says 50.0
+        const auto store = juce::JSON::parse (fxDir.getChildFile ("storemap_irl_22oct.json").loadFileAsString());
+        const auto sa = trust::anchorsOf (store.getProperty ("controls", {}).getProperty ("Wet-Dry", {}));
+        double sLin = 0.0, sLog = 0.0; trust::valueAtNorm (sa, 0.9, sLin); trust::valueAtNorm (sa, 0.9, sLog, trust::detectTaper (sa));
+        trust::valueAtNorm (wa, 0.9, at90lin);
+        trust::Readings rd; rd["Wet-Dry"].push_back ({ 0.9, "50.0" });
+        const auto credited = trust::creditMap (store, { { "rehearsal", rd } });
+        // a synthetic extract: an empty name, a duplicate pair, a mode switch, a flat read-out, one not retried, one not swept
+        const auto syn = fullmap::parseExtract ("0\tCutoff\tHz\t2147483647\t0\t1\t0\n1\t\t\t2147483647\t0\t1\t0\n2\tLevel\tdB\t2147483647\t0\t1\t0\n3\tLevel\tdB\t2147483647\t0\t1\t0\n"
+            "4\tMode\t\t2\t1\t1\t0\n5\tMeter\t\t2147483647\t0\t0\t0\n6\tSmooth\t\t2147483647\t0\t1\t0\n7\tLast\t\t2147483647\t0\t1\t0\n"
+            "xparam\t0\tmethod\tgettext\tpoints\t5\tdef\t0.5\tdeftext\t400 Hz\nxpt\t0\t0.000000\t20.0 Hz\nxpt\t0\t0.250000\t89.4 Hz\nxpt\t0\t0.500000\t400 Hz\nxpt\t0\t0.750000\t1.79 kHz\nxpt\t0\t1.000000\t8.00 kHz\n"
+            "xparam\t1\tmethod\tgettext\tpoints\t0\tdef\t0\tdeftext\t\nxparam\t2\tmethod\tgettext\tpoints\t0\tdef\t0\tdeftext\t\nxparam\t3\tmethod\tgettext\tpoints\t0\tdef\t0\tdeftext\t\n"
+            "xparam\t4\tmethod\tgettext\tpoints\t2\tdef\t0\tdeftext\tOff\nxpt\t4\t0.000000\tOff\nxpt\t4\t1.000000\tOn\n"
+            "xparam\t5\tmethod\tflat\tpoints\t11\tdef\t0\tdeftext\t-inf\nxparam\t6\tmethod\tflat_unretried\tpoints\t11\tdef\t0\tdeftext\t0\n"
+            "extract\tdone\tparams\t8\tsetread\t1\tms\t40\n");
+        const auto sb = fullmap::buildControls (syn);
+        juce::StringArray cn, dn; for (const auto& c : sb.controls) cn.add (c.name + ":" + c.kind + (c.duplicate ? "*" : "")); for (const auto& d : sb.declines) dn.add (juce::String (d.index));
+        const auto smap = fullmap::buildMap ("fp_syn", "AudioUnit", "abcd1234", "Syn", "V", "1.0", "eq", syn, sb, "test");
+        const auto ps = fullmap::paramsOf (smap); juce::StringArray pn; for (const auto& [i, n] : ps) pn.add (juce::String (i));
+        const auto probe = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/au_instantiate_probe.cpp").loadFileAsString();
+        check (x.done && x.params.size() == 2 && b.anchored == 2 && b.declines.isEmpty()
+               && map.getProperty ("schema", "").toString() == juce::String (echojay::kMapSchemaString) && map.getProperty ("identity", {}).getProperty ("uid", "").toString() == "49367476"
+               && map.getProperty ("provenance", {}).getProperty ("tester_id", "").toString() == "wizard" && map.getProperty ("provenance", {}).getProperty ("machine_id", "x").toString().isEmpty()
+               && map.getProperty ("declines", {}).isArray() && wet.getProperty ("kind", "").toString() == "anchored" && wa.size() >= 21 && wet.getProperty ("taper", "").toString() == "log"
+               && ! gain.hasProperty ("taper") && ga.size() >= 21 && std::abs (ga.front().value + 50.0) < 1e-6 && std::abs (at90 - 50.0) < 0.05 && std::abs (at90lin - 50.0) < 0.05   // the extract READ 0.900
+               && std::abs (sLin - 53.1) < 0.05 && std::abs (sLog - 50.06) < 0.1 && trust::detectTaper (sa) == "log" && trust::detectTaper (trust::anchorsOf (store.getProperty ("controls", {}).getProperty ("Gain", {}))).isEmpty()
+               && credited.count ("Wet-Dry") && credited.at ("Wet-Dry").judged == 1 && credited.at ("Wet-Dry").failed == 0
+               && cn.joinIntoString (",") == "Cutoff:anchored,Level:anchored*,Mode:mode" && dn.joinIntoString (",") == "1,5,6,7" && sb.declines[0].reason.startsWith ("empty parameter name")
+               && sb.controls[0].unit == "hz" && std::abs (sb.controls[0].rangeHi - 8000.0) < 1e-3 && sb.controls[0].taper == "log" && sb.controls[2].labels.size() == 2
+               && pn.joinIntoString (",") == "0,1,2,3,4,5,6,7" && fullmap::isFull (smap) && fullmap::isFull (map)
+               && probe.contains ("if (extractM) ejprobe::runExtract (*inst);"),
+               "wizard WZ-FULLMAP-1: IR-L's extract -> " + juce::String (b.controls.size()) + " controls (Wet-Dry " + juce::String ((int) wa.size()) + " anchors, taper '" + wet.getProperty ("taper", "").toString()
+                 + "'); the store map at 0.90: straight " + juce::String (sLin, 2) + ", log " + juce::String (sLog, 2) + "; synthetic controls '" + cn.joinIntoString (",") + "' declines '" + dn.joinIntoString (",") + "'");
+    }
+    // WZ-FULLMAP-2 WHAT THE RECOUNT FOUND (22 Oct): StandardCLIP's Clip Type shows "" at 0.30 - the empty label became an empty JSON key,
+    // juce's parser refused the whole map and the recount lost the plugin (934 -> 933). An empty label is left out, every map round-trips
+    // through juce JSON, and the wizard's own map step writes a FULL map from an extract (a parameter list only without one)
+    {
+        using namespace ejmap;
+        const juce::String clip = "0\tClip Type\t\t5\t1\t1\t0\n1\tSilent Switch\t\t2\t1\t1\t0\n"
+            "xparam\t0\tmethod\tgettext\tpoints\t5\tdef\t0\tdeftext\tSoft Clip Classic\nxpt\t0\t0.000000\tSoft Clip Classic\nxpt\t0\t0.100000\tSoft Clip Pro\nxpt\t0\t0.200000\tHard Clip\nxpt\t0\t0.300000\t\nxpt\t0\t0.400000\tRatio 2:1\n"
+            "xparam\t1\tmethod\tgettext\tpoints\t2\tdef\t0\tdeftext\t\nxpt\t1\t0.000000\t \nxpt\t1\t1.000000\t\nextract\tdone\tparams\t2\tsetread\t0\tms\t3\n";
+        const auto x = fullmap::parseExtract (clip); const auto b = fullmap::buildControls (x);
+        const auto map = fullmap::buildMap ("fp_clip", "AudioUnit", "614a4177", "StandardCLIP", "SIR Audio Tools", "1.0.0", "saturation", x, b, "test");
+        const auto back = juce::JSON::parse (juce::JSON::toString (map));
+        juce::StringArray labels; if (const auto* lo = back.getProperty ("controls", {}).getProperty ("Clip Type", {}).getProperty ("labels", {}).getDynamicObject()) for (const auto& l : lo->getProperties()) labels.add (l.name.toString());
+        check (back.isObject() && labels.joinIntoString ("|") == "Soft Clip Classic|Soft Clip Pro|Hard Clip|Ratio 2:1" && b.blankLabels == 3 && b.modes == 1
+               && b.declines.size() == 1 && b.declines[0].reason.contains ("every label is empty"),
+               "wizard WZ-FULLMAP-2: StandardCLIP's labels round-trip ('" + labels.joinIntoString ("|") + "', " + juce::String (b.blankLabels) + " blank left out)");
+    }
+    // WZ-TAPER-2 A TAPER IS CLAIMED ONLY WHERE A STRAIGHT LINE FAILS (decision 7): a gently geometric curve (2 % a step) fits the
+    // geometric rule exactly AND a straight line to 0.02 % - the anchors cannot tell the two apart, so no taper is recorded; doubling a
+    // step (IR-L's shape) misses the line by far more than kTaperLinMiss and is "log"
+    {
+        using namespace ejmap;
+        std::vector<trust::Anchor> gentle, doubling;
+        for (int k = 0; k <= 10; ++k) { gentle.push_back ({ 100.0 * std::pow (1.02, k), k / 10.0 }); doubling.push_back ({ std::pow (2.0, k), k / 10.0 }); }
+        check (trust::detectTaper (gentle).isEmpty() && trust::detectTaper (doubling) == "log",
+               "wizard WZ-TAPER-2: 2 % a step is left linear ('" + trust::detectTaper (gentle) + "'), doubling is log ('" + trust::detectTaper (doubling) + "')");
+    }
+    // WZ-FILTER-3 KATHY'S 22 OCT DECISIONS 3, 4, 5, 8: a resonant filter certifies under the ONE convention its label follows at every judged
+    // position (-3 dB point, natural frequency, resonant peak), recorded; a shallow filter's edge margin is two octaves (bx_cleansweep);
+    // a voice is read with its own switch on and the others off (UltraPitch's "Voice 1 Check" is OFF as instantiated), the switch recorded
+    // as what the intervals depend on; a shelf is read as a shelf by the EQ's shelf measurement (LOVEND)
+    {
+        using namespace ejmap;
+        auto tr = [] (const std::function<double (double)>& h) { std::vector<std::pair<double, double>> t;
+            for (int k = 0; k < eq::kGridTones; ++k) { const double hz = eq::kGridLoHz * std::pow (eq::kGridHiHz / eq::kGridLoHz, (double) k / (eq::kGridTones - 1)); t.push_back ({ hz, h (hz) }); } return t; };
+        auto lpq = [] (double f0, double q) { return [f0, q] (double f) { const double x = f / f0; return -10.0 * std::log10 (std::pow (1.0 - x * x, 2.0) + std::pow (x / q, 2.0)); }; };
+        std::vector<filter::Positioned> res, flat2;
+        for (double f0 : { 200.0, 600.0, 2000.0 }) { res.push_back ({ filter::deriveShape (tr (lpq (f0, 3.0))), juce::String (f0, 0) + " Hz" }); flat2.push_back ({ filter::deriveShape (tr (lpq (f0, 0.7071))), juce::String (f0, 0) + " Hz" }); }
+        const auto vRes = filter::conventionVerdict (res, "", "Cutoff"), vFlat = filter::conventionVerdict (flat2, "", "Cutoff");
+        std::vector<filter::Positioned> mixed { res[0], res[1], { filter::deriveShape (tr (lpq (2000.0, 3.0))), "1300 Hz" } };   // one label off under every convention
+        const auto vMixed = filter::conventionVerdict (mixed, "", "Cutoff");
+        // the edge margin: a 1st-order high-pass at 3.6 kHz (bx_cleansweep's 3843 label) is past the shallow margin; a 2nd-order one there is judged
+        const auto hp1 = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (3643.0 / f, 2.0)); }));
+        const auto hp2 = filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (3643.0 / f, 4.0)); }));
+        const auto j1 = filter::judgeCutoff (hp1, "3843 Hz"), j2 = filter::judgeCutoff (hp2, "3800 Hz");
+        // the shelf: LOVEND's +5.7 dB low shelf, read by the EQ's shelf measurement
+        const auto shelfT = tr ([] (double f) { return 5.7 / (1.0 + std::pow (f / 150.0, 2.0)); }); const auto shelfS = filter::deriveShape (shelfT);
+        const auto shelfC = filter::shelfCorner (shelfT, shelfS);   // half the +5.7 dB plateau: exactly 150 Hz
+        // the voice switches (UltraPitch 3 Voices' own list, 22 Oct)
+        std::vector<std::pair<int, juce::String>> up3 { { 0, "Output Gain" }, { 1, "Direct Check" }, { 2, "Direct Level" }, { 9, "Voice 1 Check" }, { 10, "Voice 1 Level" }, { 12, "Voice 1 Pitch" },
+                                                         { 14, "Voice 2 Check" }, { 15, "Voice 2 Level" }, { 17, "Voice 2 Pitch" }, { 19, "Voice 3 Check" }, { 20, "Voice 3 Level" } };
+        const auto iso = shift::isolation (up3, "Voice 1 Pitch"); juce::StringArray iw; for (const auto& [i, n] : iso.writes) iw.add (juce::String (i) + ":" + juce::String (n, 1));
+        const auto mapV = juce::JSON::parse (R"({"schema":"2.4","controls":{"Voice 1 Pitch":{"name":"Voice 1 Pitch","index":12,"kind":"mode"}}})");
+        const auto withD = fullmap::withDepends (mapV, juce::JSON::parse (R"({"shifts":[{"control":"Voice 1 Pitch","depends_on":{"control":"Voice 1 Check","display":"On"}}]})"));
+        const auto cfs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString();
+        check (vRes.verdict == "certified" && vRes.convention == "natural frequency" && vFlat.verdict == "certified" && vFlat.convention == "-3 dB point"
+               && vMixed.verdict == "measured" && vMixed.convention.isEmpty() && vMixed.why.contains ("no one convention")
+               && std::abs (res[1].s.naturalHz - 600.0) < 30.0 && res[1].s.cutoffHz > 800.0
+               && filter::edgeOctaves (hp1) == 2.0 && filter::edgeOctaves (hp2) == 1.0 && ! j1.judged && j1.why.contains ("2 octave") && j2.judged
+               && shelfS.result == "shelf" && shelfC && std::abs (*shelfC - 150.0) < 3.0 && ! filter::shelfCorner (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (f / 1000.0, 4.0)); }), filter::deriveShape (tr ([] (double f) { return -10.0 * std::log10 (1.0 + std::pow (f / 1000.0, 4.0)); })))
+               && iw.joinIntoString (",") == "1:0.0,2:0.0,9:1.0,14:0.0,15:0.0,19:0.0,20:0.0" && iso.dependsOn.joinIntoString (",") == "Voice 1 Check"
+               && withD.getProperty ("controls", {}).getProperty ("Voice 1 Pitch", {}).getProperty ("depends_on", {}).getProperty ("control", "") == juce::var ("Voice 1 Check")
+               && ! mapV.getProperty ("controls", {}).getProperty ("Voice 1 Pitch", {}).hasProperty ("depends_on")   // the source map untouched
+               && cfs.contains ("fr.verdict = filter::conventionVerdict (pos, unit, name);") && cfs.contains ("if (fr.verdict.convention.isNotEmpty()) o->setProperty (\"convention\", fr.verdict.convention);")
+               && cfs.contains ("if (shelves >= 2 && shelves * 2 >= (int) tr.size())") && cfs.contains ("const auto corner = filter::shelfCorner (tr[k], sh);")
+               && cfs.contains ("o->setProperty (\"depends_on\", juce::var (d));"),
+               "wizard WZ-FILTER-3: Q 3 low-passes certify on the natural frequency (" + juce::String (res[1].s.naturalHz, 1) + " Hz for 600; -3 dB " + juce::String (res[1].s.cutoffHz, 1) + "); Butterworth on the -3 dB point; "
+                 + "1st-order HP at 3.6 kHz not judged ('" + j1.why + "'); LOVEND-like shelf corner " + juce::String (shelfC ? *shelfC : 0.0, 1) + " Hz; voice 1 writes '" + iw.joinIntoString (",") + "'");
     }
     // WZ-RULES-21 KATHY'S 21 OCT DECISIONS: enhancers to review (never eq); channel strips and pitch tools routed by name when flat (a category
     // only routes the measurement); a filter flat at default has its cutoff moved and read (category_writes, never neutral); a resonant
