@@ -2,6 +2,7 @@
 #include "EJRemoteControl.h"   // stage 1: the Link processes its own rack; the lease is control only
 #include "EJCmdRing.h"        // stage 3: the value ring, drained in processBlock
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b): one source for the slot list
+#include "EJSourceType.h"      // round (b): what this channel IS, and where that answer came from
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
 #include <unistd.h>
@@ -141,6 +142,18 @@ LinkProcessor::LinkProcessor()
     //           GAIN, a control that already exists, per Sean's ruling; 08c's staleness machinery handles the
     //           shared ownership rather than the loop fighting the user for the fader.
     // target -> the final limiter slot's own input_db, exactly as the V2 resolves it for its own rack.
+    // The RACK's own gain, independent of whatever stage a match drives (20 Oct 2026) - see the V2
+    // twin: a Level slot's gain is rack-level and must not land on a slot's OUT trim.
+    loudnessLoop_.resolveRackGainStage = [this] () -> LoudnessLoop::Stage
+    {
+        LoudnessLoop::Stage st;
+        st.name       = "rack_out";
+        st.outsideTap = true;
+        st.ready      = [] { return true; };
+        st.readDb     = [this] { return gainDb_.load (std::memory_order_relaxed); };
+        st.writeDb    = [this] (float db) { setGainDb (db); };
+        return st;
+    };
     loudnessLoop_.resolveStage = [this] (bool match) -> LoudnessLoop::Stage
     {
         LoudnessLoop::Stage st;
@@ -157,14 +170,46 @@ LinkProcessor::LinkProcessor()
             // user set the plugin up; EchoJay moving it silently rewrites their setting. The slot's
             // OUT trim is EchoJay's own gain, exists for this, and shows on the card as "OUT -3.9".
             //
-            // outsideTap is TRUE for it: the slot's out TALLY is taken before the slot's out GAIN
-            // (the 21t-k ruling, so the sensor measures the PLUGIN and not what the hold wrote), so
-            // the loop cannot see this correction in its own measurement and the arithmetic has to
-            // account for it - exactly as it does for the rack gain.
-            if (const int slot = outermostSlot(); slot >= 0)
+            // ---- AND IT IS NOT AN OUTSIDE TAP (19 Oct 2026, his 17:00 run) ---------------------
+            //
+            // *"The agent added Tube-Tech CL 1B, Sean played afterwards, and the slot card's OUT
+            // trim never moved."*  It moved twice. The log has the whole arithmetic:
+            //
+            //   opening: chain in -16.6, out -23.2  ->  OUT trim +0.0 -> +6.64 dB      (right)
+            //   verify:  "the output measures -9.8 against an aim of -16.6"  ->  -0.14 dB
+            //   verify:  "-23.3 against -16.6"  ->  stopped
+            //
+            // -23.2 + 6.64 = -16.6, which is the match landing exactly on its aim. The verify read
+            // -9.8, which is -16.6 + 6.64: the gain counted a SECOND time. So it "corrected" by
+            // -6.8 dB, cancelled the match it had just made, and left the trim at -0.14 - which is
+            // what he saw as "never moved".
+            //
+            // I set outsideTap TRUE here reasoning from the 21t-k ruling: the SLOT's out tally is
+            // taken before the slot's out gain, so a sensor reading THAT tally cannot see the trim.
+            // True, and not the tally the loop reads. The loop measures getChainOutLevels() - the
+            // CHAIN's output tally, at the end of the whole chain, downstream of every slot's out
+            // gain - so the trim is already in the reading and effectiveOutDb must not add it again.
+            // (`rack_out` below IS applied after that tally, and keeps outsideTap for that reason.)
+            //
+            // The opening hid the error: it runs with the trim still at 0, where adding it twice
+            // adds nothing. Only the verify, running at +6.64, could expose it - which is why this
+            // arrived as "the trim never moved" rather than as a wrong number.
+            // THE SLOT THE ADD PUT IN, when this build named one (his 17:09 item 2); otherwise the
+            // outermost, which is what every match used before and is still right for a dial.
+            const int namedTarget = (matchTargetSlot_ >= 0 && matchTargetSlot_ < chainHost.getNumSlots()
+                                     && chainHost.getSlotInfo (matchTargetSlot_).name.trim()
+                                            .equalsIgnoreCase (matchTargetName_))
+                                        ? matchTargetSlot_ : -1;
+            if (namedTarget < 0 && matchTargetSlot_ >= 0)
+                EchoJay_NSLog ("EJLoudness: the slot this change added is no longer where it was, so the "
+                               "match uses the outermost slot instead - an identity that moved is not a target");
+            if (const int slot = namedTarget >= 0 ? namedTarget : outermostSlot(); slot >= 0)
             {
                 st.name       = "slot_out";
-                st.outsideTap = true;
+                st.outsideTap = false;   // INSIDE the chain-output tally the loop measures (above)
+                // 19 Oct (his 18:20): the plugin's own name, for the one line a dead slot earns.
+                st.label      = [this, slot] { return slot < chainHost.getNumSlots()
+                                                   ? chainHost.getSlotInfo (slot).name : juce::String(); };
                 st.ready      = [this, slot] { return slot < chainHost.getNumSlots(); };
                 st.readDb     = [this, slot] { return chainHost.getSlotOutGainDb (slot); };
                 st.writeDb    = [this, slot] (float db)
@@ -178,62 +223,98 @@ LinkProcessor::LinkProcessor()
                 };
                 return st;
             }
-            // NO SLOTS AT ALL: EchoJay's rack gain, which is the only gain left to use.
+            // ---- NO SLOT TO WRITE: THE MATCH DOES NOT RUN (Sean's ruling, 20 Oct 2026) --------
+            //
+            // *"A level match with no slot to write does not run. No fallback to rack_out. An empty
+            // rack changes nothing, so there's nothing to match. A loudness TARGET Sean has chosen
+            // on purpose (dynamic, pushed, a level target) is a different feature and may still use
+            // rack_out."*
+            //
+            // What stood here fell back to this Link's own rack gain, and his 18:20 screenshot is
+            // what that costs: a figure on the rack's OUT captioned "level match" for a correction
+            // no slot had asked for. The reasoning in the ruling is the part worth keeping in sight -
+            // a match CORRECTS WHAT THE CHAIN DID TO THE LEVEL, so a chain that did nothing has
+            // nothing to correct, and any number written in that case is describing something else.
+            //
+            // REFUSED BY RETURNING A STAGE THAT IS NOT READY, which is the loop's existing road for
+            // "there is nowhere to put this": arm() tests stageReady() and logs its own refusal. The
+            // name is kept so that line reads properly, and this one says WHY in the ruling's terms.
+            // The TARGET branch below is untouched and still uses rack_out, per the ruling.
             if (! saidNoMakeupControl_)
             {
                 saidNoMakeupControl_ = true;
-                EchoJay_NSLog ("EJLoudness: this rack has no slots, so the level match uses EchoJay's "
-                               "own rack gain (said once)");
+                EchoJay_NSLog ("EJLoudness: this rack has no slots, so there is NO level match - a "
+                               "match corrects what the chain did to the level, and an empty chain "
+                               "did nothing. EchoJay's own rack gain is NOT used as a fallback (his "
+                               "ruling of 20 Oct); a loudness TARGET he chose on purpose still may. "
+                               "(said once)");
             }
-            st.name       = "rack_out";
-            st.outsideTap = true;   // applied AFTER the chain-output tally the loop measures
-            st.ready      = [] { return true; };
-            st.readDb  = [this] { return gainDb_.load (std::memory_order_relaxed); };
-            st.writeDb = [this] (float db) { setGainDb (db); };   // clamps, mirrors to the slot, dirty-marks
+            st.name  = "slot_out";     // what it WOULD have been, so the refusal line names it
+            st.ready = [] { return false; };
             return st;
         }
         st.name  = "limiter_in";
-        st.ready = [this]
+        // ---- THE SLOT IS NAMED WHEN B NAMED IT (his evening contract, 20 Oct 2026) -----------
+        // This addressed `n - 1` - the LAST slot - which is an index standing in for an identity and
+        // would drive a different plugin's input the moment a later add went after the limiter (the
+        // 17:09 lesson). A dial names its slot; everything else still takes the last, which is what
+        // every target before this round did.
+        const int named = loudnessLoop_.namedLimiterSlot;
+        // B's named CONTROL is no longer a road for the push (his 17:22 ruling): the IN trim is the
+        // only one. It is still what the ceiling check and the read-back name, so it stays read -
+        // here it is deliberately unused.
+        juce::ignoreUnused (loudnessLoop_.namedLimiterControl);
+        const int useSlot = (named >= 0 && named < chainHost.getNumSlots()) ? named : -1;
+        st.ready = [this, useSlot]
         {
             const int n = chainHost.getNumSlots();
+            if (useSlot >= 0) return useSlot < n;   // B named it: its presence is the whole test
             return n > 0 && ChainHost::isLimiterLikeName (chainHost.getSlotInfo (n - 1).name);
         };
-        // THE IN GAIN, AND NOT EVERY LIMITER HAS ONE. An EchoJay Limiter carries input_db (L's hand-off: the in
-        // gain for this move, ramped in the engine). A THIRD-PARTY limiter does not, and writing input_db at it
-        // is a param it skips - which is why leg D read a landing of 0.00 against a third-party limiter last.
-        // So: input_db where the device has it, the slot's own PRE-TRIM otherwise, which ChainHost provides for
-        // any slot of any brand.
-        st.readDb = [this] () -> float
+        // ---- THE TARGET DRIVES THE SLOT CARD'S IN TRIM (his 17:22 ruling, 21 Oct 2026) --------
+        //
+        // *"The limiter target drives the slot card's IN trim (the pre-trim before the plugin) on
+        // EVERY limiter, ours and third-party, never the plugin's own input control. One road, the
+        // same as the OUT match, and immune to mis-mapped input controls."*
+        //
+        // THREE ROADS BECAME ONE. What stood here tried input_db (ours), then B's named control
+        // (a third party), then the slot's pre-trim - and the read and the write had already been
+        // caught out of step once, which is two of the three roads disagreeing in a single pair.
+        // His MLimiterX hour is the case against the named control: a name matched, written, and
+        // confirmed from its own echo, on a plugin whose knob never moved. EchoJay's own trim node
+        // needs no map, no name and no display; it exists on every slot of every brand, and it is
+        // the same road the OUT match already writes, so both land on the card he is looking at.
+        //
+        // The label is for the one line a dead slot earns, as before.
+        st.label  = [this, useSlot] () -> juce::String
+        {
+            const int n = chainHost.getNumSlots();
+            const int i = useSlot >= 0 ? useSlot : n - 1;
+            return (i >= 0 && i < n) ? chainHost.getSlotInfo (i).name : juce::String();
+        };
+        st.readDb = [this, useSlot] () -> float
         {
             const int n = chainHost.getNumSlots(); if (n <= 0) return 0.0f;
-            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
-                if (d->paramSchema().find ("input_db") != nullptr)
-                    return (float) d->getParamValue ("input_db");
-            return chainHost.getSlotPreTrimDb (n - 1);
+            const int i = useSlot >= 0 ? useSlot : n - 1;
+            return (i >= 0 && i < n) ? chainHost.getSlotPreTrimDb (i) : 0.0f;
         };
-        st.writeDb = [this] (float db)
+        st.writeDb = [this, useSlot] (float db)
         {
             const int n = chainHost.getNumSlots(); if (n <= 0) return;
+            const int i = useSlot >= 0 ? useSlot : n - 1;
+            if (i < 0 || i >= n) return;
+            // THE RANGE COVERS THE PUSH (his ruling asks it checked): setSlotPreTrimDb clamps to
+            // [-24, +12] (21t-d) and +12 is the push's own ceiling, so the trim carries everything
+            // the loop may ask for.
             const float v = juce::jlimit (-12.0f, 12.0f, db);
-            // SYMMETRIC WITH readDb ABOVE, and it was not: I fixed the read to fall back to the slot's pre-trim
-            // for a limiter with no input_db and left the WRITE writing input_db unconditionally. A third-party
-            // limiter skips that param, so the landing read back as 0.00 and leg D stayed red through a fix that
-            // only touched half the pair. The capability test belongs on both sides or neither.
-            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
-                if (d->paramSchema().find ("input_db") != nullptr)
-                {
-                    // Through the HOST so the slot's stored params carry it and a reopen restores it.
-                    auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) v);
-                    auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-                    chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
-                    // The saved state cache, not only the stored params - see the V2's copy of this write for
-                    // the fault leg Z3 caught: the live param held the landing and the saved blob did not.
-                    // Every Link runs its OWN loop on its OWN rack, so every Link needs its own capture.
-                    chainHost.captureSlotStateNow (n - 1);
-                    return;
-                }
-            chainHost.setSlotPreTrimDb (n - 1, v);   // any brand: the slot's own IN trim
-            chainHost.captureSlotStateNow (n - 1);
+            chainHost.setSlotPreTrimDb (i, v);
+            chainHost.captureSlotStateNow (i);   // the landing has to be in what gets saved
+            EchoJay_NSLog (("EJLoudness: the level target writes the SLOT CARD's IN trim on slot "
+                            + juce::String (i + 1) + " (\"" + chainHost.getSlotInfo (i).name
+                            + "\") to " + juce::String (v, 2) + " dB - EchoJay's own trim ahead of the "
+                              "plugin, every brand, one road (his 17:22 ruling). The plugin's own input "
+                              "control is never written and its ceiling is left where the build set "
+                              "it.").toRawUTF8());
         };
         return st;
     };
@@ -569,6 +650,23 @@ void LinkProcessor::publishRackSidecar()
         double digest = 0.0;
         for (int i = 0; i < chainHost.getNumSlots(); ++i)
         {
+            // ---- AND THE TRIM THIS LINK WRITES ITSELF (19 Oct 2026, his 17:04 item 2) ----------
+            //
+            // *"The OUT value showed on the Link's own slot card but the main V2 rack view of that
+            // Link didn't update. Refresh the V2's view of a Link's slot when the Link writes its
+            // OUT trim."*
+            //
+            // The sidecar schema has carried outGainDb all along (LinkShm RackSlot), and the V2
+            // re-reads every Link's sidecar at ~1 Hz - so the only thing missing was a REPUBLISH.
+            // The trigger is this digest, and the trims were not in it, which is the item-13 lesson
+            // written twenty lines above verbatim: "a digest that does not include what it publishes
+            // is a digest that never moves, and the republish it guards never happens."
+            //
+            // So the level match's own write now moves the digest, and the V2 sees the figure on its
+            // next read. The IN trim rides along for the same reason - it is published by the same
+            // schema and changed by the same kind of command.
+            digest += (double) chainHost.getSlotOutGainDb (i)  * 41.0
+                    + (double) chainHost.getSlotPreTrimDb (i)  * 43.0;
             const auto pic = chainHost.slotPicture (i);
             if (pic.grKnown)   digest += pic.grHeldDb * 7.0 + pic.grLoudestDb * 13.0 + (double) pic.grWindowFrames;
             if (pic.hasPeaks()) digest += pic.outTpDb * 3.0 + pic.inTpDb;
@@ -629,7 +727,41 @@ void LinkProcessor::publishRackSidecar()
                               "gain reduction; a third-party plugin's is not measured by this "
                               "build, so check(gr) on one answers not_certified)").toRawUTF8());
     }
-    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved && !metersMoved)
+    // ---- AND THE SOURCE TYPE MOVING IS A REASON TO PUBLISH (B's capture, 20 Oct 2026) ---------
+    //
+    // *"channelRole as {kind, name} only, without the lead-vocal source type Sean set on Nafe
+    // Main_01."*  His log has the set, at 21:08:54:
+    //     EJSourceType: HE set this Link to lead_vocal - provenance "user" ... Republished at once
+    // and the republish did nothing, because this gate did not know about the field. setSourceType-
+    // FromUser called publishRackSidecar and publishRackSidecar returned here.
+    //
+    // THE SAME LESSON, THE THIRD TIME IN THIS FILE: *"a digest that does not include what it
+    // publishes is a digest that never moves, and the republish it guards never happens"* - written
+    // for the meters (item 13) and again for the slot trims (his 17:04), and I added a new published
+    // field without adding its trigger. So the trigger is here, beside the others, rather than in the
+    // setter: every road that changes the field gets the publish, not just the one I remembered.
+    // ---- AND THE STAMP IS TAKEN AT THE WRITE, NOT AT THE TEST (B's 21 Oct capture) -----------
+    //
+    // *"Nafe Main_01 still arrives with no sourceType, although Sean set it to lead vocal yesterday.
+    // Check whether a user setting restored from the Link's saved state is published on load (your
+    // publish trigger compares against lastPublished; a restored value may never count as a
+    // change)."*
+    //
+    // B is right about the symptom and the cause is one layer deeper than the comparison. The
+    // comparison DOES see a restored value as a change - both sides start empty. What loses it is
+    // that I recorded "published" HERE, at the test, and a pure source-type change moves none of
+    // revMoved / preGainMoved / metersMoved, so it falls through to the SETTLE path below and
+    // returns without writing anything. By then the stamp says it went out, so srcMoved is false for
+    // ever and the field never travels again. The first publish is lost permanently.
+    //
+    // So the stamp moves to the one place that knows a write happened - after the sidecar is
+    // actually written, at the end of this function. A flag that claims an outcome before the
+    // outcome is the same fault as a caption that credits an abandoned match, and it is the second
+    // one this week.
+    const bool srcMoved = (sourceType_     != lastPublishedSourceType_)
+                       || (sourceTypeFrom_ != lastPublishedSourceTypeFrom_);
+    if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved && !metersMoved
+        && !srcMoved)
         return;
     // A meter-driven publish is not a gesture to coalesce: its whole point is to be RECENT, and the
     // settle below would hold it back by exactly the interval that made the reading stale.
@@ -680,6 +812,16 @@ void LinkProcessor::publishRackSidecar()
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
     rc.masterWet = chainHost.getMasterWet();
+    // ---- WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026) ------------------------------
+    // Guessed from this Link's own display name unless he has set it, and published with its
+    // PROVENANCE so a guess can never be mistaken for a decision. Refreshed here rather than once
+    // at startup because the name is the host's and arrives late - and because a RENAME should
+    // re-guess, which is exactly what mayReplace(Name, Name) allows and what it forbids over a
+    // value he set himself.
+    refreshSourceTypeGuess();
+    rc.sourceType     = sourceType_;
+    rc.sourceTypeFrom = sourceTypeFrom_;
+    rc.sourceTypeName = sourceTypeName_;
     // Pre-chain gain mirror (18 Aug 2026): the main plugin's mixer shows and
     // drives it in Pre mode. inputKnown so a strip with no level heard shows
     // "unset" rather than a confident 0.
@@ -736,6 +878,11 @@ void LinkProcessor::publishRackSidecar()
         if (existing.valid && ! existing.levels.isVoid()) rc.levels = existing.levels;
     }
     LinkShm::writeRackSidecar(resolvedDir, rc);
+    // THE STAMP, now that the write has happened (B's 21 Oct capture). Taken from `rc`, which is
+    // what actually went to disk, rather than from the members - so a field the composer decided not
+    // to write cannot be recorded as published either.
+    lastPublishedSourceType_     = rc.sourceType;
+    lastPublishedSourceTypeFrom_ = rc.sourceTypeFrom;
 }
 
 // 21t-d (25 Sep 2026): THE LINK DRIVES THE LOOP ONCE IT OWNS THE RACK.
@@ -766,44 +913,109 @@ void LinkProcessor::calibTickOwnRack()
     {
         const auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
         calibLoop_ = rc.valid ? echojay::CalibLoop::fromVar(rc.calib) : echojay::CalibLoop{};
+        // ...AND ITS COMPANIONS, so a lease handover continues ALL of them and not just the first
+        // (his 17:5x). Absent on an older Link's sidecar, which reads as none.
+        calibExtra_.clear();
+        if (rc.valid)
+            if (auto* arr = rc.calibExtra.getArray())
+                for (const auto& v : *arr)
+                {
+                    auto c = echojay::CalibLoop::fromVar (v);
+                    if (c.active()) calibExtra_.push_back (c);
+                }
         calibLoadedFromSidecar_ = true;
-        if (calibLoop_.running())
+        const auto restamp = [this] (echojay::CalibLoop& l)
         {
-            const auto line = calibLoop_.onHandover();
-            EchoJay_NSLog(line.toRawUTF8());
+            if (! l.running()) return;
+            EchoJay_NSLog (l.onHandover().toRawUTF8());
             calibLastWindowMs_ = juce::Time::getMillisecondCounterHiRes();
             // 21t-m item 6c: THE HOST THAT TAKES OVER STAMPS ITS OWN REVISION. chainRevision is per-ChainHost,
             // so the number V2 stamped means nothing here; comparing against it would cancel every loop the
             // moment the lease came back, which is the opposite of what case (4) requires.
-            calibLoop_.slotIdent = chainHost.slotIdentityKey (calibLoop_.slot);   // (n): re-stamped on handover
-        }
+            l.slotIdent = chainHost.slotIdentityKey (l.slot);   // (n): re-stamped on handover
+        };
+        restamp (calibLoop_);
+        for (auto& c : calibExtra_) restamp (c);
     }
-    if (! calibLoop_.active())
+    bool wrote = false;
+    tickOneCalib (calibLoop_, wrote);
+    // ---- AND EVERY COMPANION, EACH ON ITS OWN SLOT (his 17:5x ruling) ----------------------
+    // One hold per compressor, which is the V2's rule since 30 Sep. A companion that has ended is
+    // dropped here rather than ticked for ever.
+    for (auto& extra : calibExtra_)
+        tickOneCalib (extra, wrote);
+    calibExtra_.erase (std::remove_if (calibExtra_.begin(), calibExtra_.end(),
+                                       [] (const echojay::CalibLoop& c) { return ! c.active(); }),
+                       calibExtra_.end());
+    // ONE SIDECAR WRITE PER TICK, with the primary and the companions in it. Writing per loop would
+    // publish three times for one window and leave readers seeing a half-updated rack.
+    if (wrote) publishCalibState();
+}
+
+// ---- ONE PUBLISHER FOR THE LOOP STATE (his 17:5x ruling, 21 Oct 2026) ------------------------
+//
+// Called by the tick after a judged window AND by startCalibMany, which is the half leg CO5 caught:
+// a batch that had just started was not on the sidecar until its first window closed, so a lease
+// handover in that gap would have found the primary and none of the companions. A start is a state
+// change like any other, and the state V2 renders from has to carry it.
+void LinkProcessor::publishCalibState()
+{
+    // THE DIRECTORY IS RESOLVED HERE IF IT HAS NOT BEEN YET, the same way setShadowSlot does: a
+    // START can be the first thing that ever needs to publish, and leg CO4 caught exactly that -
+    // an early return on an unresolved dir looks identical to "nothing to say".
+    if (resolvedDir.isEmpty()) { int e = 0; resolvedDir = LinkShm::resolveDir (e); }
+    if (resolvedDir.isEmpty() || instanceUid_.isEmpty()) return;
+    auto rc = LinkShm::readRackSidecar (resolvedDir, instanceUid_);
+    if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
+    rc.calib = calibLoop_.toVar();
+    // THE COMPANIONS RIDE BESIDE IT, absent when there are none - so an older V2 reads `calib`
+    // exactly as it does today and a new one can show all three (additive, like every other
+    // sidecar field).
+    if (! calibExtra_.empty())
+    {
+        juce::Array<juce::var> arr;
+        for (const auto& c : calibExtra_) arr.add (c.toVar());
+        rc.calibExtra = juce::var (arr);
+    }
+    else rc.calibExtra = juce::var();
+    LinkShm::writeRackSidecar (resolvedDir, rc);
+}
+
+// ---- ONE LOOP'S TICK, SO A LINK CAN RUN SEVERAL (his 17:5x ruling, 21 Oct 2026) --------------
+//
+// *"Please build the companion loops so several compressors dialled on one Link each get their own
+// loop, as the V2's own rack does. Sean's vocal chains on Links have two or three."*
+//
+// THE BODY IS UNCHANGED, and that is deliberate: this is the Link's measurement path, so the edit
+// is a RENAME AND A PARAMETER and nothing else. Every `loop` became `loop`, every sidecar
+// write became the caller's job (one write per tick, not one per loop), and the loading half -
+// which is about the Link's own state and not about any one loop - stayed with the caller.
+//
+// calib_link_guard was run on the same fixture before and after this change, as he asked.
+void LinkProcessor::tickOneCalib (echojay::CalibLoop& loop, bool& wroteSidecar)
+{
+    if (instanceUid_.isEmpty() || resolvedDir.isEmpty()) return;
+    if (! loop.active())
     {
         // 5 Oct 2026: ...and a LANDED slot is still measured. This is the path a finished loop falls down every
         // tick on this side, and it did nothing at all - the V2 twin has ticked the watch here since 4 Oct.
         chainHost.tickLowGainWatch();
         return;
     }
-    if (calibLoop_.slot < 0 || calibLoop_.slot >= chainHost.getNumSlots()) return;
+    if (loop.slot < 0 || loop.slot >= chainHost.getNumSlots()) return;
 
     // 21t-m item 6c (29 Sep 2026 ruling): A LOOP THE RACK MOVED UNDER IS CANCELLED HERE TOO. Sean's log is the
     // V2's, but a loop handed to the Link runs on the Link's own chain, and a rebuild there leaves exactly the
     // same stale loop re-posting a line for a plugin that has gone. Same test, same counter, same cancellation.
     // (n) 30 Sep 2026: SLOT IDENTITY, not the rack revision - see PluginProcessor::calibTick for why.
-    const auto nowIdent = chainHost.slotIdentityKey (calibLoop_.slot);
-    if (! ChainHost::slotIdentityStillMatches (calibLoop_.slotIdent, nowIdent))
+    const auto nowIdent = chainHost.slotIdentityKey (loop.slot);
+    if (! ChainHost::slotIdentityStillMatches (loop.slotIdent, nowIdent))
     {
-        EchoJay_NSLog (("EJThreshold: CANCELLED - slot " + juce::String (calibLoop_.slot + 1)
-                        + " no longer holds \"" + calibLoop_.plugin + "\" (" + calibLoop_.slotIdent
+        EchoJay_NSLog (("EJThreshold: CANCELLED - slot " + juce::String (loop.slot + 1)
+                        + " no longer holds \"" + loop.plugin + "\" (" + loop.slotIdent
                         + " -> " + nowIdent + "); its pending line is dropped with it").toRawUTF8());
-        calibLoop_ = {};
-        {   // the same direct write the judged-window path below uses: V2 renders the card from this
-            auto rc = LinkShm::readRackSidecar (resolvedDir, instanceUid_);
-            if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
-            rc.calib = calibLoop_.toVar();
-            LinkShm::writeRackSidecar (resolvedDir, rc);
-        }
+        loop = {};
+        wroteSidecar = true;   // the caller publishes the cleared state with the rest
         return;
     }
 
@@ -813,7 +1025,7 @@ void LinkProcessor::calibTickOwnRack()
     if (sinceMs < 3000.0) return;           // one decision per 3 s window, never per tick
     calibLastWindowMs_ = nowMs;
 
-    const auto lv = chainHost.getSlotLevels(calibLoop_.slot);
+    const auto lv = chainHost.getSlotLevels(loop.slot);
     echojay::CalibLoop::Window w;
     w.measured = lv.measured && lv.in.known && lv.out.known;
     w.silent   = lv.measured && ! lv.in.known;
@@ -869,7 +1081,7 @@ void LinkProcessor::calibTickOwnRack()
         w.inShortTermDb = I.shortTermDb;
     w.inShortTermP90Db = I.shortTermP90Db;   // item 4, log only
         w.grLevelKnown = have90;
-        w.grLevelDb = have90 ? (-(O.shortTermP90Db - I.shortTermP90Db) + calibLoop_.staticGainDb()) : 0.0f;
+        w.grLevelDb = have90 ? (-(O.shortTermP90Db - I.shortTermP90Db) + loop.staticGainDb()) : 0.0f;
         // ---- 3 Oct 2026 (Kathy, refined): THE UNIT'S LOW-LEVEL GAIN, SAMPLED LIVE. LOG ONLY --------------
         // A window where the compressor is genuinely BELOW THRESHOLD measures its low-level gain as out minus in,
         // which is what static_gain_db claims to be. Two gates, in order of how much they prove:
@@ -895,14 +1107,14 @@ void LinkProcessor::calibTickOwnRack()
             && std::isfinite (I.shortTermDb) && std::isfinite (O.shortTermDb)
             && I.shortTermDb > -60.0f)
         {
-            const float gr1 = calibLoop_.inAtGr1Dbfs;
+            const float gr1 = loop.inAtGr1Dbfs;
             const auto  tl  = chainHost.trackLevelReading();
             const bool  haveGr1 = std::isfinite (gr1);
             const float ceilingDb = haveGr1 ? gr1 - 6.0f
                                             : (tl.valid ? tl.loudRmsDbfs - 10.0f
                                                         : std::numeric_limits<float>::quiet_NaN());
             if (std::isfinite (ceilingDb) && I.shortTermDb <= ceilingDb)
-                chainHost.noteLowLevelGainSample (calibLoop_.slot, I.shortTermDb,
+                chainHost.noteLowLevelGainSample (loop.slot, I.shortTermDb,
                                             O.shortTermDb - I.shortTermDb, haveGr1);
         }
 
@@ -910,16 +1122,16 @@ void LinkProcessor::calibTickOwnRack()
         // Kathy wants compared: a measured 0.0 against a profile -0.7 is the finding, either way it falls.
         {
             ChainHost::LowGainReading lg;
-            const bool have = chainHost.lowLevelGain (calibLoop_.slot, lg);
-            calibLoop_.lowGainText = echojay::CalibLoop::lowGainLine (have, lg.medianDb, lg.loBandDb, lg.hiBandDb,
+            const bool have = chainHost.lowLevelGain (loop.slot, lg);
+            loop.lowGainText = echojay::CalibLoop::lowGainLine (have, lg.medianDb, lg.loBandDb, lg.hiBandDb,
                                                              lg.rangeLoDbfs, lg.rangeHiDbfs, lg.samples,
                                                              lg.twoBandAgreed, lg.confirmedGate,
-                                                             calibLoop_.staticGainKnown()
-                                                                 ? calibLoop_.staticGainDb()
+                                                             loop.staticGainKnown()
+                                                                 ? loop.staticGainDb()
                                                                  : std::numeric_limits<float>::quiet_NaN());
         }
 
-        const bool haveStatic = calibLoop_.staticGainKnown();
+        const bool haveStatic = loop.staticGainKnown();
         // 6 Oct 2026 (Sean's ruling): ON AN INPUT-DRIVE AMOUNT CONTROL, OUT-MINUS-IN IS NOT GAIN REDUCTION.
         // His UAD 1176LN Rev E at Input -21: the level method read -4.5 and called it "4.5 dB louder out than in",
         // while the VU was pinned and he could hear heavy compression. On a unit whose amount control is INPUT
@@ -928,11 +1140,11 @@ void LinkProcessor::calibTickOwnRack()
         // control being moved is not itself an input gain.
         // Order, as ruled: the plugin's own GR meter if it exposes one, then crest, otherwise say plainly that GR
         // cannot be measured - never a level figure dressed up as GR.
-        const bool inputDrive  = calibLoop_.amountIsInputDrive();
-        const bool haveMeter   = calibLoop_.grReadable && std::isfinite (calibLoop_.sensedGrDb);
+        const bool inputDrive  = loop.amountIsInputDrive();
+        const bool haveMeter   = loop.grReadable && std::isfinite (loop.sensedGrDb);
         if (inputDrive && haveMeter)
         {
-            w.grDb = std::abs (calibLoop_.sensedGrDb);
+            w.grDb = std::abs (loop.sensedGrDb);
             w.grSensor = "meter";
         }
         else if (inputDrive && ! haveStatic)
@@ -973,38 +1185,38 @@ void LinkProcessor::calibTickOwnRack()
     // 21t-m item 1: EchoJay's own per-slot output gain, read from the CONTROL. levelChangeDb above is taken
     // before it (21t-k item 3), so the hold's residual is the two added - and a hold that has already corrected
     // the slot can see its own correction instead of re-reading the same untouched excess four times.
-    w.slotOutGainDb = chainHost.getSlotOutGainDb (calibLoop_.slot);
-    w.slotPreTrimDb = chainHost.getSlotPreTrimDb (calibLoop_.slot);   // 21t-m item 1: the drive in front of the plugin
+    w.slotOutGainDb = chainHost.getSlotOutGainDb (loop.slot);
+    w.slotPreTrimDb = chainHost.getSlotPreTrimDb (loop.slot);   // 21t-m item 1: the drive in front of the plugin
     // 6 Oct 2026 (Sean's item 1), LOG ONLY: this slot's OUT loud-phrase level and the CHAIN's pair, so a session log
     // shows where level is lost rather than only that it was. O is the slot's own output tally; the chain pair is the
     // host's own in/out, which exist whether or not a hold is running.
-    w.outShortTermP90Db = chainHost.getSlotLevels (calibLoop_.slot).out.shortTermP90Db;
+    w.outShortTermP90Db = chainHost.getSlotLevels (loop.slot).out.shortTermP90Db;
     { const auto ci = chainHost.getChainInLevels();  w.chainInP90Db  = ci.shortTermP90Db;
       const auto co = chainHost.getChainOutLevels(); w.chainOutP90Db = co.shortTermP90Db; }
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
     w.heardSeconds = lv.in.heardSeconds;   // 21t-i: the question quotes what was actually heard
     // 21t-j (B's note 1): THE PLUGIN'S OWN GR METER, when the block named one. Read as the plugin prints it; a
     // control whose text is not a number publishes no figure, and then the reply carries none.
-    if (! calibLoop_.senseParams.isEmpty() && calibLoop_.grReadable)
+    if (! loop.senseParams.isEmpty() && loop.grReadable)
     {
         float grFromPlugin = 0.0f;
-        if (chainHost.readControlDb (calibLoop_.slot, calibLoop_.senseParams[0], grFromPlugin))
+        if (chainHost.readControlDb (loop.slot, loop.senseParams[0], grFromPlugin))
             w.sensedGrDb = std::abs (grFromPlugin);
     }
     // 21t-j (owed): THE CROSS-CHECK, the same five windows and the same line as V2's side - one header, one
     // behaviour, whichever host owns the rack.
-    if (! calibLoop_.senseParams.isEmpty())
+    if (! loop.senseParams.isEmpty())
     {
         int windowNo = 0;
-        if (calibLoop_.takeSenseLog (windowNo))
+        if (loop.takeSenseLog (windowNo))
         {
             float raw = 0.0f, parsed = 0.0f; juce::String text; bool okParse = false;
-            if (chainHost.readControlRaw (calibLoop_.slot, calibLoop_.senseParams[0], raw, text, okParse, parsed))
-                EchoJay_NSLog (echojay::CalibLoop::senseCrossCheckLine (calibLoop_.plugin, calibLoop_.senseParams[0],
+            if (chainHost.readControlRaw (loop.slot, loop.senseParams[0], raw, text, okParse, parsed))
+                EchoJay_NSLog (echojay::CalibLoop::senseCrossCheckLine (loop.plugin, loop.senseParams[0],
                                                                        raw, text, okParse, parsed, windowNo)
                                    .toRawUTF8());
             else
-                EchoJay_NSLog (("EJGrMeter: " + calibLoop_.plugin + " \"" + calibLoop_.senseParams[0]
+                EchoJay_NSLog (("EJGrMeter: " + loop.plugin + " \"" + loop.senseParams[0]
                                 + "\" is NOT a control on this plugin - the block named a meter that is not "
                                   "there").toRawUTF8());
         }
@@ -1012,7 +1224,7 @@ void LinkProcessor::calibTickOwnRack()
 
     // 21t-i: the measure-and-ask line is left in the STATE (askOwed) rather than posted here - this process has no
     // chat. V2 hands it to the chat out of the sidecar, from whichever host measured the window.
-    const auto step = calibLoop_.onWindow(w, sinceMs);
+    const auto step = loop.onWindow(w, sinceMs);
     if (step.logLine.isNotEmpty()) EchoJay_NSLog(step.logLine.toRawUTF8());
     if (step.writeDrive)
     {
@@ -1020,9 +1232,9 @@ void LinkProcessor::calibTickOwnRack()
         // newPost used to go to setSlotTrimDb - the COMPARE trim, which is only in circuit during an A/B - so
         // every rung of every loop raised the chain by a dB and nothing took it back. Sean's 21:53-21:54
         // compressor ran pre=+1/+2/+3 with post=-1/-2/-3 and came out 3 dB louder.
-chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
-        chainHost.setSlotOutGainDb(calibLoop_.slot, step.newPost);   // 21t-m: the LIVE out, not the compare trim
-        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the drive");   // 21t-j: both legs start again
+chainHost.setSlotPreTrimDb(loop.slot, step.newPre);
+        chainHost.setSlotOutGainDb(loop.slot, step.newPost);   // 21t-m: the LIVE out, not the compare trim
+        chainHost.resetSlotShortTermStats(loop.slot, "the loop moved the drive");   // 21t-j: both legs start again
     }
     // 21t-g item 2: the threshold actuator, the same write on this side - the loop is one header and a handover
     // must not change which knob is being dialled.
@@ -1030,46 +1242,41 @@ chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
     // Link-hosted slot reset both legs on every window and could never close one - the sample would never form.
     if (step.writeParams)
     {
-        chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
-        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the actuator");   // both legs start again
+        chainHost.setSlotControlsToValue(loop.slot, step.paramNames, step.paramValue);
+        chainHost.resetSlotShortTermStats(loop.slot, "the loop moved the actuator");   // both legs start again
     }
     // 5 Oct 2026 (Sean's item 4): THE LANDED SLOT KEEPS BEING MEASURED ON THIS SIDE TOO. The loop is one header
     // and a handover must not change whether the low-level-gain watch runs. "landed" rather than "finished"
     // because a build hold lands and stays OPEN for section 7's check - see the V2 twin for the full note.
-    if (calibLoop_.dynamicsSlot && (step.finished || calibLoop_.landed))
-        chainHost.armLowGainWatch (calibLoop_.slot, calibLoop_.inAtGr1Dbfs);
+    if (loop.dynamicsSlot && (step.finished || loop.landed))
+        chainHost.armLowGainWatch (loop.slot, loop.inAtGr1Dbfs);
     // 21t-m (29 Sep 2026 ruling): the hold's write to a PLUGIN'S output control is gone - it writes EchoJay's
     // own per-slot OUT and nothing else, so there is no step.writeOutput to handle here any more.
     // THE HOLD, through EchoJay's own per-slot output gain - the only control it ever writes.
     if (step.writeSlotGain)
     {
-        chainHost.setSlotOutGainDb(calibLoop_.slot, step.slotGainValue);
-        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the hold moved EchoJay's slot output gain");   // 21t-j: both legs start again
+        chainHost.setSlotOutGainDb(loop.slot, step.slotGainValue);
+        chainHost.resetSlotShortTermStats(loop.slot, "the hold moved EchoJay's slot output gain");   // 21t-j: both legs start again
         // 21t-m item 1: BOTH figures, and the written total. The old line printed the PLUGIN's change alone, so
         // four passes each reported "6.0 dB louder out than in" while the gain went -6, -12, -18, -24 - the line
         // was true every time and the state it described was wrong.
         EchoJay_NSLog(("EJThreshold: level hold - EchoJay's slot output gain = " + juce::String(step.slotGainValue, 2)
-                       + " dB on slot " + juce::String(calibLoop_.slot + 1) + " (the plugin is "
-                       + juce::String(std::abs(calibLoop_.levelChangeDb), 1) + " dB "
-                       + (calibLoop_.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in; residual before this "
-                       "write " + juce::String(calibLoop_.levelResidualDb, 2) + " dB; written total "
-                       + juce::String(calibLoop_.levelTrimmedDb, 2) + " dB)"
+                       + " dB on slot " + juce::String(loop.slot + 1) + " (the plugin is "
+                       + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
+                       + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in; residual before this "
+                       "write " + juce::String(loop.levelResidualDb, 2) + " dB; written total "
+                       + juce::String(loop.levelTrimmedDb, 2) + " dB)"
                        // 5 Oct 2026, Sean's budget: the make-up must land inside about 6 s of PLAYING. Audio
                        // seconds since the write, so a stopped transport is not counted against it.
-                       + ((calibLoop_).secondsSinceWrite() == (calibLoop_).secondsSinceWrite()
-                              ? " [" + juce::String ((calibLoop_).secondsSinceWrite(), 1) + " s of audio since the write]"
+                       + ((loop).secondsSinceWrite() == (loop).secondsSinceWrite()
+                              ? " [" + juce::String ((loop).secondsSinceWrite(), 1) + " s of audio since the write]"
                               : juce::String (" [seconds since the write unknown]"))).toRawUTF8());
     }
     // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
     // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing
     // else. Written directly rather than through publishRackSidecar, which is rate-limited on the rack picture
     // and would leave the loop state a window or two behind what this process has already decided.
-    {
-        auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
-        if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
-        rc.calib = calibLoop_.toVar();
-        LinkShm::writeRackSidecar(resolvedDir, rc);
-    }
+    wroteSidecar = true;   // the CALLER writes once per tick, with the primary and the companions
 }
 
 void LinkProcessor::publishMeterFrame()
@@ -1624,6 +1831,39 @@ void LinkProcessor::pollControlCommand()
     // field ignores it and answers `fronted` exactly as before, and this one answers both. The main
     // plugin reads `shown` first and falls back to `fronted`, so neither side has to know the other's
     // age - the downgrade rule, in the one place the two processes meet.
+    // ---- THE SHADOW'S REQUEST ROAD (stage B of the muted shadow, his 14:19 go) ----------------
+    //
+    // *"B: the V2 hosts a copy of the slot in view, fed from your tap ring, output discarded, so its
+    // own meters and GR move like the real one."*  The plan's own words for this road: *"Which slot
+    // rides the existing onEditorRequest-shaped road: a V2 -> Link request naming the slot (or -1
+    // for "stop"). The Link writes nothing while that is -1, so the cost of the feature when it is
+    // not on screen is zero - not "small", zero."*
+    //
+    // ONE FIELD, and it is a SLOT, not a toggle: a toggle would need the two sides to agree on which
+    // slot it referred to, which is a second fact to keep in step. `shadowSlot` is 1-based like every
+    // other slot on this wire, and 0 or less means stop. The ack says what is streaming, so the V2
+    // never has to assume its request landed - the same rule showSlotEditor follows below.
+    if (obj->hasProperty ("shadowSlot"))
+    {
+        const int slot1 = (int) obj->getProperty ("shadowSlot");
+        setShadowSlot (slot1 >= 1 ? slot1 - 1 : -1);
+        auto* tap = chainHost.shadowTap().get();
+        const int now = tap != nullptr ? tap->slot() : -1;
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("v", 1);
+        r->setProperty ("seq", seq);
+        r->setProperty ("shadowSlot", now + 1);                      // 0 = nothing is streaming
+        r->setProperty ("streaming", now >= 0 && tap != nullptr && tap->active());
+        r->setProperty ("sampleRate", (double) getSampleRate());
+        if (now >= 0) r->setProperty ("name", chainHost.getSlotInfo (now).name);
+        juce::File (resolvedDir + "ctrl-ack-" + id + ".json")
+            .replaceWithText (juce::JSON::toString (juce::var (r), true));
+        EchoJay_NSLog (("EJCtrl: shadowSlot " + juce::String (slot1) + " seq=" + juce::String (seq)
+                        + " -> " + (now >= 0 ? "streaming slot " + juce::String (now + 1)
+                                             : juce::String ("nothing is streaming"))).toRawUTF8());
+        return;                      // one answer per command; the ack is written
+    }
+
     if (obj->hasProperty ("showSlotEditor"))
     {
         const int slot1 = (int) obj->getProperty ("showSlotEditor");
@@ -3899,12 +4139,59 @@ void LinkProcessor::pollChainCommand()
         // ITEM 4 (14 Oct 2026): a push that IS a build says so (additive `intent`; absent on an older sender,
         // and then this behaves exactly as it did - no arming, which is today's behaviour).
         const bool pushIsBuild = obj->getProperty("intent").toString().trim().equalsIgnoreCase("build");
-        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId, pushIsBuild]() mutable
+        // ---- ITEM 2 (19 Oct 2026): AN EXPLICIT OUT TRIM ENDS AN ARMED MATCH ---------------------
+        // *"If B also sets the OUT trim from a check, B's explicit value wins; don't fight it."*  The
+        // same-batch case is caught by the sender (EJAgentHome::intentForOps withdraws the intent);
+        // this is the LATER command, arriving while a match armed by an earlier add is still waiting
+        // for audio. Checked here, on the parsed ops, before they are moved into the applier.
+        const bool namesAnOutTrim = std::any_of (ops.begin(), ops.end(),
+                                                 [] (const auto& o) { return o.op == "slot_out"; });
+        // ---- level_match:false ON AN ADD (B's contract of 20 Oct 2026) -----------------------
+        //
+        // *"When an add carries level_match: false, skip the silent slot-OUT match for that slot."*
+        // Read from the raw op for the same reason dial_on_playback is: ChainEditOp has no field for
+        // it and does not need one - the only thing the arm has to know is whether any add in this
+        // batch said no.
+        bool levelMatchOff = false;
+        if (auto* ea = obj->getProperty ("editOps").getArray())
+            for (const auto& ov : *ea)
+                if (auto* oo = ov.getDynamicObject())
+                    if (const auto lm = oo->getProperty ("level_match"); lm.isBool() && ! (bool) lm)
+                    { levelMatchOff = true; break; }
+        // ---- dial_on_playback (20 Oct 2026, B's CONTRACT_dial_on_playback_2026-10-20.md) --------
+        //
+        // *"when an add carries dial_on_playback (target dB + which control) and nothing had been
+        // heard, set that slot on the next playback with no chat round, like the slot-OUT match."*
+        //
+        // CARRIED PAST THE PARSE, because ChainEditOp has no field for it and does not need one: the
+        // raw op object is right here, and the only thing the apply has to tell us afterwards is
+        // WHICH slot the add landed on - which nameTheMatchTarget already resolves by identity for
+        // the level match (his 17:09 item 2).
+        // ---- EVERY DIAL IN THE BATCH, NOT THE FIRST (his 17:3x item 3, 21 Oct 2026) ----------
+        //
+        // *"B will send dial_on_playback on every compressor after the first in a build ... Confirm
+        // that works for several slots in one build (not just the last), each dialled
+        // independently."*
+        //
+        // The `break` on this line is what it did not: one dial per batch, so a build with three
+        // compressors dialled one and dropped two without a word. The reader is shared now
+        // (LoudnessLoop::dialsOnPlaybackFromOps) and keeps each op's NAME, so every dial resolves to
+        // its own slot by identity.
+        const auto dialsInBatch = LoudnessLoop::dialsOnPlaybackFromOps (obj->getProperty ("editOps"));
+        juce::var dialOnPlayback;          // the LIMITER target, if one of them is one
+        for (const auto& d : dialsInBatch)
+            if (LoudnessLoop::dialIsLimiterTarget (d.dial)) { dialOnPlayback = d.dial; break; }
+        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId, pushIsBuild, namesAnOutTrim,
+                                         dialOnPlayback, dialsInBatch, levelMatchOff]() mutable
         {
             const int countBefore = self->chainHost.getNumSlots();
+            // A COPY BEFORE THE MOVE: applyChainEdits takes the ops by value, and the completion
+            // needs to know which plugin this change added (his 17:09 item 2).
+            const auto opsForTarget = ops;
             const juce::String opNames = [&ops] { juce::StringArray o; for (const auto& op : ops) o.add(op.op + (op.slot >= 0 ? "@" + juce::String(op.slot + 1) : juce::String())); return o.joinIntoString(","); }();
             self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
-                [self, seq, countBefore, opNames, cmdId, pushIsBuild](const juce::StringArray& results, int applied, bool aborted)
+                [self, seq, countBefore, opNames, cmdId, pushIsBuild, namesAnOutTrim, opsForTarget,
+                 dialOnPlayback, dialsInBatch, levelMatchOff](const juce::StringArray& results, int applied, bool aborted)
             {
                 if (! aborted && cmdId.isNotEmpty()) { self->appliedChainIds_.add(cmdId); while (self->appliedChainIds_.size() > 64) self->appliedChainIds_.remove(0); }
                 // O2 (21t-b): an ABORTED edit releases its seq stamp. It was never applied, so a retry must be
@@ -3942,7 +4229,175 @@ void LinkProcessor::pollChainCommand()
                 // ITEM 4: AFTER the ack, and only for a clean BUILD push - the rack the loop is about to
                 // measure has to be the built one, and a partial or aborted batch is not it.
                 if (pushIsBuild && status == "ok")
-                    self->armLoudnessAfterBuild ("a borrowed-rack build push (v2 editOps, intent=build)");
+                {
+                    self->nameTheMatchTarget (opsForTarget);   // AFTER the apply: the rack holds it now
+                    // B SAID NO, SO NO. The field is explicit and outranks the rack-shape test inside
+                    // armLoudnessAfterBuild: B knows this is a loudness build, we can only infer it.
+                    if (levelMatchOff)
+                        EchoJay_NSLog ("EJLoudness: NOT arming a post-add match - this add carried "
+                                       "level_match:false, so the slot's OUT stays at 0 dB and the "
+                                       "limiter keeps the level it set (B's contract of 20 Oct)");
+                    else
+                        self->armLoudnessAfterBuild ("a borrowed-rack build push (v2 editOps, intent=build)");
+                }
+                // ...and an explicit OUT trim withdraws one that an earlier add armed (Sean's item 2).
+                else if (namesAnOutTrim && status != "not_applied")
+                    self->loudnessLoop_.standDownQuietly ("the command named a slot OUT trim itself");
+                // ---- AND THE AMOUNT CONTROL, ON THE NEXT PLAYBACK (B's contract, 20 Oct) -----------
+                //
+                // *"when an add carries dial_on_playback (target dB + which control) and nothing had
+                // been heard, set that slot on the next playback with no chat round, like the slot-OUT
+                // match."*
+                //
+                // TRANSLATED INTO A CALIBRATION BLOCK rather than given a mechanism of its own, and the
+                // contract's own last line is why: *"Agent off already sends a target block
+                // (gr_target_db with calibration), which the plugin dials during playback. No change is
+                // needed there."*  That machinery waits for audio, seeks the band, says nothing on the
+                // way in (Purpose::buildHold leaves askOwed empty, which is what startCalibFromBlock
+                // forces) and closes when it lands - which is what "like the slot-OUT match" asks for.
+                // A second road to the same place is how two of this week's defects happened.
+                //
+                // The translation itself is CalibLoop::blockFromDialOnPlayback, beside the parser that
+                // reads the shape back: the three fields that are not one-to-one, and why the control's
+                // direction is never guessed from its name, are written out there.
+                //
+                // AND ONE WRITER PER CONTROL: the calibration hold writes this slot's OUT (the 29 Sep
+                // ruling - EchoJay's own OUT, never the plugin's output), and so does the slot-OUT match
+                // this same build armed four statements up. Two loops writing one control, each
+                // measuring the other's write, is the 21t-m failure. The match stands down for the same
+                // reason an explicit slot_out command stands it down: something else owns this slot's
+                // level now. The cost is that a dialled slot does not get the 09:24 measured peak
+                // ceiling, which the hold has no notion of - stated here, and owed.
+                if (status == "ok")
+                {
+                    // ---- B'S LIMITER TARGET TAKES THE OTHER ROAD (his evening contract) -----
+                    //
+                    // The same field carries two different jobs now: a COMPRESSOR's gain-reduction
+                    // target (target_gr_db -> a calibration block) and a LIMITER's loudness target
+                    // (target_lufs -> the loudness loop at the limiter's INPUT). They are told apart
+                    // by which key is present, because that is what B sends, and nothing else about
+                    // the two is alike: one dials a control to a GR figure on the loud phrases, the
+                    // other drives level into a ceiling.
+                    if (auto* dpo = dialOnPlayback.getDynamicObject())
+                        if (const auto tl = dpo->getProperty ("target_lufs");
+                            tl.isDouble() || tl.isInt() || tl.isInt64())
+                        {
+                            // ---- A DIAL RESOLVES ITS OWN SLOT (his 11:5x item 1, 21 Oct 2026) --
+                            //
+                            // *"Arm your limiter target loop whenever B's add carries
+                            // dial_on_playback target_lufs, even after a heard build."*
+                            //
+                            // What stood here was `pushIsBuild ? matchTargetSlot_ : -1`, and -1 means
+                            // armTargetFromDial REFUSES ("named no slot this rack has"). So a limiter
+                            // added by an ordinary add - not a whole build - carried a target that
+                            // could never arm. The guard against a stale member was right; the answer
+                            // was not to withhold the slot but to RESOLVE IT FROM THIS BATCH, which
+                            // nameTheMatchTarget does from the ops in hand.
+                            if (! pushIsBuild) self->nameTheMatchTarget (opsForTarget);
+                            const int added = self->matchTargetSlot_;
+                            const auto ctl  = dpo->getProperty ("control").toString().trim();
+                            const auto ceilV = dpo->getProperty ("ceiling");
+                            const float ceil = (ceilV.isDouble() || ceilV.isInt() || ceilV.isInt64())
+                                                 ? (float) (double) ceilV : -0.1f;
+                            // ---- B'S LIMITING BUDGET (Sean's ruling, 21 Oct 2026) -------------
+                            // *"B will send a limiting budget with the target (e.g. "avg_limit_db":
+                            // 3, "peak_limit_db": 6)."*  Absent means that half is not bounded, so
+                            // the fields are read as NaN rather than defaulted to a number nobody
+                            // sent - the same rule every optional figure on this wire follows.
+                            const auto numOr = [dpo] (const char* key)
+                            {
+                                const auto v = dpo->getProperty (key);
+                                return (v.isDouble() || v.isInt() || v.isInt64())
+                                         ? (float) (double) v : std::numeric_limits<float>::quiet_NaN();
+                            };
+                            const float avgLim  = numOr ("avg_limit_db");
+                            const float peakLim = numOr ("peak_limit_db");
+                            if (self->loudnessLoop_.armTargetFromDial ((float) (double) tl, added, ctl, ceil,
+                                                                       avgLim, peakLim))
+                                EchoJay_NSLog (("EJLoudness: dial_on_playback carried a LIMITER target - "
+                                                + juce::String ((double) tl, 1) + " LUFS on slot "
+                                                + juce::String (added + 1) + " (\"" + self->matchTargetName_
+                                                + "\"), driving its INPUT and nothing after it (his "
+                                                  "correction of 20 Oct), silently, on the next "
+                                                  "playback").toRawUTF8());
+                            else
+                                EchoJay_NSLog ("EJLoudness: dial_on_playback carried a limiter target but it "
+                                               "could not be armed - see the line above for why. The slot "
+                                               "keeps its input at 0, which is what the contract says a build "
+                                               "that does not know the field does.");
+                            return;   // a limiter target is not a compressor dial: one road each
+                        }
+                    juce::String dialWhy;
+                    // ...AND ONLY WHEN THIS BATCH RESOLVED THE SLOT. matchTargetSlot_ is a member, so
+                    // without the pushIsBuild test a dial arriving on a push that is not a build would
+                    // dial WHATEVER THE LAST BUILD ADDED. A stale pointer is worse than no pointer, and
+                    // nameTheMatchTarget only runs for a clean build push.
+                    // ---- EVERY DIAL IN THE BATCH, ONE HOLD EACH (his 17:5x ruling, 21 Oct) ----
+                    //
+                    // *"several compressors dialled on one Link each get their own loop"*
+                    //
+                    // The collector (dialsOnPlaybackFromOps, shipped earlier today) already returns
+                    // every dial with the NAME its op added. Each resolves to its own slot by
+                    // identity, becomes its own Config, and the whole list goes to startCalibMany at
+                    // once - because one `calibLoop_` means starting them one at a time would have
+                    // each replace the last, which is exactly what his two-compressor vocal chains
+                    // were hitting.
+                    std::vector<echojay::CalibLoop::Config> cfgs;
+                    for (const auto& d : dialsInBatch)
+                    {
+                        if (LoudnessLoop::dialIsLimiterTarget (d.dial)) continue;   // the other road
+                        const int at = LoudnessLoop::slotTheBatchAdded (self->chainHost,
+                                                                       juce::StringArray { d.name });
+                        if (at < 0)
+                        {
+                            EchoJay_NSLog (("EJThreshold(Link): a dial names \"" + d.name + "\" but no "
+                                            "slot on this rack answers to it - NOT dialled (a slot is "
+                                            "an identity, not a position)").toRawUTF8());
+                            continue;
+                        }
+                        juce::String why;
+                        const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (d.dial, at, why);
+                        if (blk.getDynamicObject() == nullptr)
+                        {
+                            EchoJay_NSLog (("EJThreshold(Link): slot " + juce::String (at + 1)
+                                            + " carried dial_on_playback but it could not be read as a "
+                                              "calibration block - " + why).toRawUTF8());
+                            continue;
+                        }
+                        echojay::CalibLoop::Config cfg;
+                        juce::String whyCfg;
+                        if (! echojay::CalibLoop::configFromBlock (blk, self->chainHost.getNumSlots(),
+                                                                   /*bus*/ false,
+                                                                   self->chainHost.getSlotInfo (at).name,
+                                                                   cfg, whyCfg))
+                        {
+                            EchoJay_NSLog (("EJThreshold(Link): slot " + juce::String (at + 1)
+                                            + "'s block is not usable - " + whyCfg.trim()).toRawUTF8());
+                            continue;
+                        }
+                        if (whyCfg.isNotEmpty())
+                            EchoJay_NSLog (("EJThreshold(Link): BLOCK NOT AS CONTRACTED (slot "
+                                            + juce::String (at + 1) + ") - " + whyCfg.trim()).toRawUTF8());
+                        cfg.slot   = at;
+                        cfg.plugin = self->chainHost.getSlotInfo (at).name;
+                        cfgs.push_back (cfg);
+                    }
+                    if (! cfgs.empty())
+                    {
+                        self->loudnessLoop_.standDownQuietly ("a calibration hold owns this slot's "
+                                                              "OUT after dial_on_playback");
+                        const int started = self->startCalibMany (cfgs);
+                        EchoJay_NSLog (("EJThreshold(Link): " + juce::String (started) + " of "
+                                        + juce::String ((int) cfgs.size()) + " dial(s) from this build "
+                                          "started, each on its own slot (his 17:5x ruling)").toRawUTF8());
+                    }
+                    else if (! dialOnPlayback.isVoid() || ! dialsInBatch.empty())
+                        EchoJay_NSLog (("EJThreshold(Link): dial_on_playback arrived but nothing was "
+                                        "started - " + dialWhy + ". The slot keeps the gentle start the "
+                                        "add carried, which is what the contract says a build that does "
+                                        "not know the field does - said out loud rather than skipped in "
+                                        "silence.").toRawUTF8());
+                }
             });
         });
         return;
@@ -4085,9 +4540,65 @@ int LinkProcessor::outermostSlot() const
     return n > 0 ? n - 1 : -1;
 }
 
+// ITEM 2 (19 Oct 2026, his 17:09): the added slot names itself, AFTER the apply, by identity.
+// Called from the apply's completion, where the rack already holds the new plugin - an index worked
+// out from the op's `after` would be arithmetic on the wire's numbering, and the whole defect is an
+// index that did not mean what it was read to mean.
+void LinkProcessor::nameTheMatchTarget (const std::vector<ChainHost::ChainEditOp>& ops)
+{
+    matchTargetSlot_ = -1; matchTargetName_.clear();
+    juce::StringArray wanted;
+    for (const auto& o : ops)
+        if ((o.op == "add" || o.op == "replace") && o.name.trim().isNotEmpty())
+            wanted.add (o.name.trim());
+    if (wanted.isEmpty()) return;
+    // THE LAST one named, when a build added several: the match is one trim, and the outermost of
+    // the plugins this build put in is the one whose card the whole chain's correction belongs on.
+    // THE RULE ITSELF LIVES IN LoudnessLoop::slotTheBatchAdded (21 Oct 2026), because the V2's own
+    // rack now has to answer the same question for B's dial and two copies of this walk would agree
+    // today and drift by Friday.
+    if (const int at = LoudnessLoop::slotTheBatchAdded (chainHost, wanted); at >= 0)
+    {
+        matchTargetSlot_ = at; matchTargetName_ = chainHost.getSlotInfo (at).name.trim();
+        EchoJay_NSLog (("EJLoudness: the level match is for slot " + juce::String (at + 1)
+                        + " (\"" + matchTargetName_ + "\"), the plugin this change ADDED - not whatever "
+                        "sits last in the chain (his 17:09 item 2)").toRawUTF8());
+        return;
+    }
+    EchoJay_NSLog (("EJLoudness: this change named " + wanted.joinIntoString (", ")
+                    + " but no slot on the rack matches, so the match falls back to the outermost "
+                      "slot and says so rather than guessing").toRawUTF8());
+}
+
 void LinkProcessor::armLoudnessAfterBuild (const juce::String& via)
 {
-    if (loudnessLoop_.armFromChain())
+    // ---- UNLESS SOMETHING ELSE OWNS THE LEVEL (Sean's ruling, 20 Oct 2026) ------------------
+    //
+    // *"No post-add level match on a mix bus or master channel, and none on any build that carries
+    // a loudness target. The limiter sets the level on purpose."*
+    //
+    // The same one function the V2's own-rack arm uses, so both roads refuse for the same reason in
+    // the same words. A LINK has no ChannelType of its own, so the channel half is answered by the
+    // source type it now publishes (round (b)) - and absent means "not stated", which does not
+    // refuse: a Link that cannot say what it is still gets the match it has always had.
+    {
+        bool hasLimiter = false;
+        for (int i = 0; i < chainHost.getNumSlots() && ! hasLimiter; ++i)
+            if (ChainHost::isLimiterLikeName (chainHost.getSlotInfo (i).name)) hasLimiter = true;
+        juce::String kind;
+        if (sourceType_ == "mix_bus" || sourceType_ == "master") kind = sourceType_;
+        if (const auto why = LoudnessLoop::postAddMatchRefusal (kind, hasLimiter); why.isNotEmpty())
+        {
+            EchoJay_NSLog (("EJLoudness: Link NOT armed after a build via " + via + " - " + why
+                            + " (his ruling of 20 Oct)").toRawUTF8());
+            return;
+        }
+    }
+    // NO INSERT ON THIS ROAD (his 15:30 ruling): every caller of armLoudnessAfterBuild is a build
+    // PUSHED to this Link - the agent's editOps push and the V2's own chain build - and his ruling is
+    // that a build must not stack a limiter after whatever the build put last. If the rack has no
+    // limiter this build recognises, the loop says what sits last instead of adding one.
+    if (loudnessLoop_.armFromChain (/*mayInsertLimiter*/ false))
         EchoJay_NSLog(("EJLoudness: Link armed after a build via " + via + " - " + loudnessLoop_.aimWords()
                        + ", stage " + loudnessLoop_.stageName() + " at "
                        + juce::String(loudnessLoop_.currentGainDb(), 1) + " dB").toRawUTF8());
@@ -4100,6 +4611,60 @@ void LinkProcessor::armLoudnessAfterBuild (const juce::String& via)
 // (passive unless it says listen), actuator, param as a name OR an array, sense, start_db (absent when the server
 // heard under 30 s and set nothing), min_db/max_db, gr_target_db. A chain with no compressor carries no block and
 // starts nothing.
+// ---- A PRIMARY AND ITS COMPANIONS, FROM ONE BATCH (his 17:5x ruling, 21 Oct 2026) -----------
+//
+// The V2 has had this since 30 Sep ("ONE HOLD PER COMPRESSOR"); a Link had one loop, so the second
+// dial of a build replaced the first and his two- and three-compressor vocal chains dialled one.
+// The list is taken AT ONCE for that exact reason: starting them one at a time would have each
+// replace the last.
+int LinkProcessor::startCalibMany (const std::vector<echojay::CalibLoop::Config>& cfgs)
+{
+    calibExtra_.clear();
+    if (cfgs.empty()) return 0;
+    int started = 0;
+    for (size_t i = 0; i < cfgs.size(); ++i)
+    {
+        auto cfg = cfgs[i];
+        if (cfg.slot < 0 || cfg.slot >= chainHost.getNumSlots())
+        {
+            EchoJay_NSLog (("EJThreshold(Link): a block names slot " + juce::String (cfg.slot + 1)
+                            + ", which is not in this rack - not started").toRawUTF8());
+            continue;
+        }
+        // THE SAME TERMS THE PRIMARY GETS, because a companion is not a lesser loop: a build's hold
+        // (one window, one write, then it ends), the slot's own dynamics flag, and the opening value
+        // read off the plugin when the block carried none.
+        cfg.purpose      = echojay::CalibLoop::Purpose::buildHold;
+        cfg.dynamicsSlot = chainHost.slotIsDynamics (cfg.slot);
+        if (! (cfg.startDb == cfg.startDb) && ! cfg.params.isEmpty())
+        {
+            float nowDb = 0.0f;
+            if (chainHost.readControlDb (cfg.slot, cfg.params[0], nowDb)) cfg.startDb = nowDb;
+            else                                                          cfg.holdOnly = true;
+            EchoJay_NSLog (("EJThreshold(Link): \"" + cfg.plugin + "\" carried no start_db for \""
+                            + cfg.params[0] + "\" - "
+                            + (cfg.holdOnly ? juce::String ("could not read it, HOLDING")
+                                            : "read " + juce::String (nowDb, 2) + " dB off the plugin")).toRawUTF8());
+        }
+        echojay::CalibLoop c;
+        { auto cfgH = cfg; cfgH.heardAtBeginS = chainHost.getSlotLevels (cfg.slot).in.heardSeconds; c.begin (cfgH); }
+        c.slotIdent = chainHost.slotIdentityKey (cfg.slot);
+        if (i == 0) calibLoop_ = c;              // the PRIMARY, where the single block always went
+        else        calibExtra_.push_back (c);   // a companion, on its own slot
+        ++started;
+        EchoJay_NSLog (("EJThreshold(Link): " + juce::String (i == 0 ? "primary" : "companion")
+                        + " hold \"" + cfg.plugin + "\" slot " + juce::String (cfg.slot + 1)
+                        + ", band " + juce::String (cfg.lo, 1) + "-" + juce::String (cfg.hi, 1)
+                        + " dB - each on its own slot's real input (his 17:5x ruling)").toRawUTF8());
+    }
+    if (started > 0)
+    {
+        calibLastWindowMs_ = 0.0;   // the first window starts from now, for all of them
+        publishCalibState();        // ...and the state is on the sidecar from the start (CO5)
+    }
+    return started;
+}
+
 void LinkProcessor::startCalibFromBlock(const juce::var& block)
 {
     auto* co = block.getDynamicObject();
@@ -4188,6 +4753,180 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     }
 }
 
+// =============================================================================================
+//  WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026)
+// =============================================================================================
+//  *"A source type for each Link: the same type setting the V2 has, guessed automatically from the
+//  track name ... with Sean able to change it on the Link. Sent as channelRole on both roads."*
+//
+//  THE RULE, in one place: user > classifier > name, and absent when unsure. The guess is made from
+//  this Link's own display name and NEVER overwrites something of higher provenance - which is why
+//  the provenance is stored beside the value rather than inferred from it.
+void LinkProcessor::refreshSourceTypeGuess()
+{
+    const auto name = effectiveDisplayName();
+    // A value HE set survives a rename. That asymmetry is the whole point of carrying the
+    // provenance, and the comparison is the only statement of it.
+    const auto held = echojay::sourcetype::fromWireName (sourceTypeFrom_);
+    if (! echojay::sourcetype::mayReplace (held, echojay::sourcetype::From::Name))
+        return;
+    // Nothing to do while the name has not moved: this runs on every sidecar publish, and the
+    // guesser tokenises a string - cheap, but not free, and a publish is not the place for work that
+    // cannot change its answer.
+    if (name == guessedFromName_) return;
+    guessedFromName_ = name;
+    const auto g = echojay::sourcetype::guessFromName (name);
+    if (g.have)
+    {
+        const auto wire = echojay::sourcetype::wireNameFor (g.type);
+        if (wire != sourceType_ || sourceTypeFrom_ != "name")
+            EchoJay_NSLog (("EJSourceType: \"" + name + "\" reads as " + wire + " - " + g.why
+                            + ". Published with provenance \"name\", so it is a GUESS: his own "
+                              "setting on this Link outranks it and survives a rename (round (b), "
+                              "20 Oct)").toRawUTF8());
+        sourceType_ = wire;
+        sourceTypeFrom_ = "name";
+        sourceTypeName_.clear();
+    }
+    else
+    {
+        // ABSENT IS A REAL ANSWER AND THE IMPORTANT ONE. A wrong type is worse than none - the
+        // server picking a vocal chain for a drum bus is a worse failure than the server asking -
+        // so all three fields go out empty and channelRole carries kind and name as it always has.
+        if (sourceType_.isNotEmpty() || sourceTypeFrom_.isNotEmpty())
+            EchoJay_NSLog (("EJSourceType: \"" + name + "\" does NOT say what this channel is - "
+                            + g.why + ". Nothing is published rather than guessed, so the server "
+                              "asks instead of assuming (round (b))").toRawUTF8());
+        else
+            EchoJay_NSLog (("EJSourceType: \"" + name + "\" does not say what this channel is - "
+                            + g.why).toRawUTF8());
+        sourceType_.clear(); sourceTypeFrom_.clear(); sourceTypeName_.clear();
+    }
+}
+
+void LinkProcessor::setSourceTypeFromUser (const juce::String& wire, const juce::String& customName)
+{
+    const auto w = wire.trim();
+    if (w.isEmpty())
+    {
+        // CLEARED BACK TO THE GUESS, which is how a wrong setting is undone. guessedFromName_ is
+        // reset too, or the guesser would see an unchanged name and decline to run.
+        sourceType_.clear(); sourceTypeFrom_.clear(); sourceTypeName_.clear();
+        guessedFromName_.clear();
+        EchoJay_NSLog ("EJSourceType: his setting was CLEARED on this Link - back to the guess from "
+                       "the track name, or to nothing if the name does not say (round (b))");
+        refreshSourceTypeGuess();
+        publishRackSidecar();
+        return;
+    }
+    ChannelType parsed = ChannelType::Other;
+    if (! echojay::sourcetype::channelTypeForWireName (w, parsed))
+    {
+        // A name that is not one of ours is NOT STATED, never a default: the one thing this must not
+        // do is quietly store something the V2's own selector could not show back to him.
+        EchoJay_NSLog (("EJSourceType: refusing \"" + w + "\" - it is not one of this build's "
+                        "channel types, so nothing is stored (a value the selector cannot show back "
+                        "is worse than none)").toRawUTF8());
+        return;
+    }
+    sourceType_     = w;
+    sourceTypeFrom_ = "user";          // OUTRANKS the classifier and any rename, for good
+    sourceTypeName_ = (parsed == ChannelType::Other) ? customName.trim() : juce::String();
+    EchoJay_NSLog (("EJSourceType: HE set this Link to " + w
+                    + (sourceTypeName_.isNotEmpty() ? " (\"" + sourceTypeName_ + "\")" : juce::String())
+                    + " - provenance \"user\", which a rename and the classifier both lose to. "
+                      "Republished at once: a gesture is not a meter and must not wait for the "
+                      "digest (round (b))").toRawUTF8());
+    publishRackSidecar();
+}
+
+// =============================================================================================
+//  THE MUTED SHADOW, THE LINK'S HALF (stage A of docs/PLAN_LIVE_SHADOW_2026-10-20.md, 21 Oct 2026)
+// =============================================================================================
+//  Sean's design: *"The Link streams that slot's input audio to the V2 (shared memory, as the
+//  sidecar does for data) ... Only the slot in view is shadowed; stop when he leaves it."*
+//
+//  WHAT THIS DOES NOT DO: touch the audio path. The tap is a second sink on the pre-trim node that
+//  already measures this signal (ChainHost's SlotPreTrim, and its own 28 Sep comment is the
+//  argument for the tap point). Nothing is inserted, nothing is reordered, and what is heard cannot
+//  change - which is the first line of his design and the only one that is not negotiable.
+void LinkProcessor::setShadowSlot (int slot0)
+{
+    auto tap = chainHost.shadowTap();
+    if (tap == nullptr) return;
+    const int want = (slot0 >= 0 && slot0 < chainHost.getNumSlots()) ? slot0 : -1;
+
+    if (want < 0)
+    {
+        if (shadowMap_ == nullptr && tap->slot() < 0) return;      // already off: say nothing
+        // ---- THE ORDER IS THE SAFETY (see ShadowTap::stop) ------------------------------------
+        // The slot goes first, so no further block can enter push(); then the pointer; then the
+        // unmap is DEFERRED by a block, because a block that had already passed the slot test may
+        // still be inside. This is the same discipline the drain ring's munmap uses, and for the
+        // same reason - PluginProcessor's note on it reads "deferred munmap - audio thread may be
+        // inside ringConsume with old pointer".
+        const auto frames = tap->framesProduced();
+        tap->stop();
+        auto* dying = shadowMap_; const int dyingFd = shadowFd_; const auto dyingPath = shadowPath_;
+        shadowMap_ = nullptr; shadowFd_ = -1; shadowPath_.clear();
+        if (dying != nullptr)
+            juce::Timer::callAfterDelay (200, [dying, dyingFd, dyingPath]
+            {
+                LinkShm::closeMapped (dying, kLinkShmSize, dyingFd, dyingPath, /*unlink*/ true);
+            });
+        EchoJay_NSLog (("EJShadow: STOPPED on this Link - " + juce::String (frames)
+                        + " frame(s) were streamed while it ran, and the ring is unlinked. The slot's "
+                          "pre-trim now does one atomic load per block and nothing else (stage A; his "
+                          "\"stop when he leaves it\")").toRawUTF8());
+        return;
+    }
+
+    if (tap->slot() == want && shadowMap_ != nullptr) return;      // already shadowing that slot
+
+    // A DIFFERENT SLOT REUSES THE RING. The consumer reads frames, not slots, so the only thing
+    // that must not happen is the two slots' audio interleaving - and the slot is switched under the
+    // same ordered store the stop path uses, so the next block is the new slot's and nothing mixes.
+    if (shadowMap_ == nullptr)
+    {
+        if (resolvedDir.isEmpty()) { int e = 0; resolvedDir = LinkShm::resolveDir (e); }
+        if (resolvedDir.isEmpty() || instanceUid_.isEmpty())
+        {
+            EchoJay_NSLog ("EJShadow: cannot start - no shared directory or no instance uid yet");
+            return;
+        }
+        const auto path = resolvedDir + echojay::shadowRingFileNameFor (instanceUid_);
+        int fd = -1, err = 0;
+        auto* map = LinkShm::openFileMapped (path, kLinkShmSize, /*readOnly*/ false, fd, err);
+        if (map == nullptr)
+        {
+            EchoJay_NSLog (("EJShadow: cannot start - the ring at " + path + " would not map (errno "
+                            + juce::String (err) + ")").toRawUTF8());
+            return;
+        }
+        // The header, as the drain ring's producer writes it: the consumer checks the magic and the
+        // rate, and a rate it does not expect is a REFUSAL on its side rather than a resample here
+        // (the plan's rule: compare and refuse, never paper over).
+        auto* hdr = LinkShm::ringHeader (map);
+        hdr->magic          = kLinkMagic;
+        hdr->version        = kLinkVersion;
+        hdr->sampleRate     = (float) getSampleRate();
+        hdr->numChannels    = 2;
+        hdr->capacityFrames = kLinkRingFrames;
+        LinkShm::storeRelease (&hdr->writeIdx, 0u);
+        LinkShm::storeRelease (&hdr->readIdx,  0u);
+        shadowMap_ = map; shadowFd_ = fd; shadowPath_ = path;
+        tap->resetFrames();
+        tap->setRing (map);
+    }
+    tap->setSlot (want);
+    EchoJay_NSLog (("EJShadow: streaming slot " + juce::String (want + 1) + " (\""
+                    + chainHost.getSlotInfo (want).name + "\") on this Link to the main plugin at "
+                    + juce::String ((int) getSampleRate()) + " Hz - its INPUT, taken after the slot's "
+                      "pre-trim, which is the signal the plugin itself hears (ChainHost's own 28 Sep "
+                      "rule). Nothing in the audio path changed: what is heard is unaffected (stage "
+                      "A of his muted-shadow design).").toRawUTF8());
+}
+
 void LinkProcessor::writeChainAck(int seq, const juce::String& status,
                                   const juce::StringArray& results,
                                   const juce::var& detail,
@@ -4228,6 +4967,16 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     juce::DynamicObject* obj = new juce::DynamicObject();
     obj->setProperty("linkName", linkName);
     obj->setProperty("alias",    displayAlias);   // 21n item 2
+    // ---- ONLY HIS OWN CHOICE PERSISTS (round (b), 20 Oct 2026) -----------------------------
+    // A guess is re-made from the name every session and must not be saved: a project reopened
+    // after a rename would otherwise carry the OLD guess for ever, looking exactly like a decision.
+    // So the saved state holds the "user" value alone, which is also the only one that outranks a
+    // rename. Written only when there is one, so an older build's project is unchanged.
+    if (sourceTypeFrom_ == "user" && sourceType_.isNotEmpty())
+    {
+        obj->setProperty ("srcType", sourceType_);
+        if (sourceTypeName_.isNotEmpty()) obj->setProperty ("srcTypeName", sourceTypeName_);
+    }
     obj->setProperty("linkOn",   (bool)linkOn.load());
     obj->setProperty("gainDb",   (double)gainDb_.load(std::memory_order_relaxed));
     // COMP_PROFILE_SPEC_v1 section 5, PERSISTED (2 Oct 2026 ruling). This blob is per-instance, so it is already
@@ -4361,6 +5110,25 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             }
         }
         if (obj->hasProperty("alias"))    displayAlias = obj->getProperty("alias").toString().trim();   // 21n item 2
+        // round (b): a saved source type is HIS, by construction - nothing else is written - so it
+        // comes back with provenance "user" and keeps outranking the guesser.
+        if (obj->hasProperty ("srcType"))
+        {
+            const auto w = obj->getProperty ("srcType").toString().trim();
+            ChannelType parsed = ChannelType::Other;
+            if (echojay::sourcetype::channelTypeForWireName (w, parsed))
+            {
+                sourceType_     = w;
+                sourceTypeFrom_ = "user";
+                sourceTypeName_ = obj->getProperty ("srcTypeName").toString().trim();
+                EchoJay_NSLog (("EJSourceType: restored his setting for this Link - " + w
+                                + ", provenance \"user\" (round (b))").toRawUTF8());
+            }
+            else
+                EchoJay_NSLog (("EJSourceType: a saved source type \"" + w + "\" is not one of this "
+                                "build's channel types - ignored, and the guesser decides instead "
+                                "(a value the selector cannot show back is worse than none)").toRawUTF8());
+        }
         if (obj->hasProperty("gainDb"))
             gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
                                        (float)(double)obj->getProperty("gainDb")),

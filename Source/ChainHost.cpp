@@ -887,12 +887,20 @@ public:
     // the plugin had done it: Sean's Zip build read "15.0 dB quieter out than in" with pre -15 and a plugin
     // doing nothing at all. The sensor must measure the PLUGIN, so the in tally is taken from the signal the
     // plugin actually hears.
+    // ---- AND THE SHADOW TAP RIDES THE SAME SIGNAL (stage A, 21 Oct 2026) ------------------
+    // Sean's muted shadow needs "that slot's input audio", and the comment above is already the
+    // argument for where that is: the signal the plugin actually hears. So the shadow is a SECOND
+    // SINK here rather than a new node in the graph - no topology change and no ordering to get
+    // wrong. `mySlot` is this node's own index, so the tap's test is one comparison.
     explicit SlotPreTrim (std::shared_ptr<std::atomic<float>> trimDb,
-                          std::shared_ptr<echojay::LevelTally> inTally = nullptr)
+                          std::shared_ptr<echojay::LevelTally> inTally = nullptr,
+                          std::shared_ptr<echojay::ShadowTap> shadow = nullptr,
+                          int mySlot = -1)
         : juce::AudioProcessor (BusesProperties()
               .withInput ("In", juce::AudioChannelSet::stereo(), true)
               .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
-          trimDb_ (std::move (trimDb)), inTally_ (std::move (inTally)) {}
+          trimDb_ (std::move (trimDb)), inTally_ (std::move (inTally)),
+          shadow_ (std::move (shadow)), mySlot_ (mySlot) {}
     void prepareToPlay (double sampleRate, int) override
     { smooth_.reset (sampleRate, 0.05); smooth_.setCurrentAndTargetValue (gainNow());
       if (inTally_) inTally_->prepare (sampleRate); }
@@ -910,6 +918,12 @@ public:
         if (inTally_ && b.getNumChannels() >= 1)
             inTally_->push (b.getReadPointer (0), b.getNumChannels() >= 2 ? b.getReadPointer (1) : nullptr,
                             b.getNumSamples());
+        // ...and the SHADOW, from the same signal and after the same trim. Costs one relaxed atomic
+        // load per block on every slot that is not being shadowed, and nothing else.
+        if (shadow_ && b.getNumChannels() >= 1)
+            shadow_->push (mySlot_, b.getReadPointer (0),
+                           b.getNumChannels() >= 2 ? b.getReadPointer (1) : nullptr,
+                           b.getNumSamples());
     }
     const juce::String getName() const override { return "EchoJay Slot Pre-Trim"; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -928,6 +942,8 @@ private:
     float gainNow() const { return trimDb_ ? juce::Decibels::decibelsToGain (trimDb_->load (std::memory_order_relaxed)) : 1.0f; }
     std::shared_ptr<std::atomic<float>> trimDb_;
     std::shared_ptr<echojay::LevelTally> inTally_;
+    std::shared_ptr<echojay::ShadowTap>  shadow_;
+    int mySlot_ = -1;
     juce::LinearSmoothedValue<float> smooth_ { 1.0f };
 };
 
@@ -3044,8 +3060,34 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             for (const auto& sl : slots_) rackNames.add(sl.desc.name);
             // -1 = "insert first", -2 = the index did not resolve (the slot it
             // named was removed earlier in this batch, or is past the end).
-            const int anchorCur = op.after <= -1
+            //
+            // ---- AND ABSENT IS NOT "FIRST" (Sean's 20:5x item 1, 20 Oct 2026) ----------------
+            //
+            // *"Order reversed: the plan was EchoJay EQ, elysia alpha mix, FG-X 2, but the rack
+            // reads FG-X 2, elysia, EchoJay EQ (limiter first). Adds in one round must land in plan
+            // order."*
+            //
+            // His log, three adds in one round, every one of them with NO `after`:
+            //   add read-back targets slot 1 for "EchoJay EQ"        ... after=-  rack has 1
+            //   add read-back targets slot 1 for "elysia alpha mix"  ... after=-  rack has 2
+            //   add read-back targets slot 1 for "FG-X 2"            ... after=-  rack has 3
+            // Each one landed at slot 1 and pushed the last down, so the rack came out in exactly
+            // the reverse of the plan.
+            //
+            // THE DISTINCTION EXISTED AND THIS LINE THREW IT AWAY. parseChainEditOps is careful
+            // about it - `after` present becomes max(-1, after-1), ABSENT becomes -2 - and the
+            // comment right above says what each means. Then `op.after <= -1` folded BOTH onto -1,
+            // "insert first". So a sender that says `after: 0` (meaning first, deliberately) and one
+            // that says nothing at all were treated identically.
+            //
+            // Absent now stays -2, which resolveAddAnchor already handles correctly: its case 2 has
+            // read `indexOk ? anchorCur + 1 : rackNames.size()` all along, so an unstated anchor
+            // APPENDS AT THE END - and three adds in plan order land in plan order. Nothing else
+            // changes: an explicit `after: 0` is still -1 and still inserts first.
+            const int anchorCur = op.after == -1
                 ? -1
+                : op.after <= -2
+                ? -2
                 : (op.after < (int)st->map.size() && st->map[(size_t)op.after] >= 0
                        ? st->map[(size_t)op.after] : -2);
             const auto anchor = resolveAddAnchor(op.afterName, anchorCur, rackNames);
@@ -3079,6 +3121,40 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
             juce::String refusal; desc = variantForRack(desc, &refusal);
             if (refusal.isNotEmpty())
                 return failButContinue(op.op + " refused: \"" + op.name + "\" - " + refusal);
+        }
+        // ---- A NAME THAT RESOLVES TO DIFFERENT WORDS IS REFUSED (Sean's ruling, 21 Oct 2026) ----
+        //
+        // *"an add whose resolved name differs from the asked name in words (not case or separators)
+        // is refused and reported, never loaded."*
+        //
+        // His 10:03: he asked for "the bx opto Pedal", the op said "add bx opto", and bx_opto - a
+        // different product - was loaded into slot 4. A name that silently becomes another plugin is
+        // indistinguishable from the add working, and he only caught it by reading the rack.
+        //
+        // WORDS, not characters: separators and case are exactly what loose matching is FOR, and
+        // "bx_opto" / "bx opto" are the same product written two ways. A missing or extra WORD is a
+        // different product ("bx opto Pedal" is not "bx opto"), and that is the whole test.
+        {
+            const auto words = [] (const juce::String& n)
+            {
+                juce::String c;
+                for (auto ch : n.toLowerCase())
+                    c << (juce::CharacterFunctions::isLetterOrDigit (ch) ? juce::String::charToString (ch)
+                                                                         : juce::String (" "));
+                juce::StringArray w; w.addTokens (c, " ", {}); w.removeEmptyStrings();
+                return w;
+            };
+            const auto asked = words (op.name), got = words (desc.name);
+            if (! asked.isEmpty() && ! got.isEmpty() && asked.joinIntoString (" ") != got.joinIntoString (" "))
+            {
+                EchoJay_NSLog (("EJEdit: REFUSING " + op.op + " - \"" + op.name + "\" resolved to \""
+                                + desc.name + "\", which is a different name in WORDS, not just in "
+                                  "case or separators. Nothing is loaded (his ruling of 21 Oct, after "
+                                  "\"the bx opto Pedal\" became bx_opto in slot 4).").toRawUTF8());
+                return failButContinue (op.op + " refused: \"" + op.name + "\" is not the same plugin as \""
+                                        + desc.name + "\" - nothing was added. Ask for \"" + desc.name
+                                        + "\" by name if that is the one you meant.");
+            }
         }
         auto self = st;
         const auto theOp = op;
@@ -3671,6 +3747,12 @@ void ChainHost::endUndoBatch() { if (undoBatchDepth_ > 0) --undoBatchDepth_; }
 void ChainHost::applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled)
 {
     {
+        // ---- WHATEVER WAS STILL RESTORING IS NOW STALE (his 11:54, 21 Oct 2026) --------------
+        // Bumped BEFORE the clear, so an in-flight walk stops at its next callback instead of
+        // appending its remaining plugins onto the rack this snapshot is about to build. "Undo all"
+        // walks seven steps inside one millisecond; without this, four restores were filling one
+        // rack at once and his mix bus came back with five Lindell SBCs.
+        beginRestoreGeneration();
         const bool sup = undoSuppressed_; undoSuppressed_ = true;
         for (int i = (int) slots_.size() - 1; i >= 0; --i) removeSlot(i);
         undoSuppressed_ = sup;
@@ -5692,6 +5774,45 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
     // READS THE VALUES BACK (fix 1(b)); leniency without a read-back is how this fault got here. The wrap is
     // LOGGED with the keys, so the emitter can be corrected rather than looking right for ever (the same
     // rule the limiter-ceiling clamp below follows).
+    // ---- BANDS AT THE TOP LEVEL (Sean's 20:5x item 3, and his 21 Oct instruction) ------------
+    //
+    // *"The EchoJay EQ's high-pass at 30 Hz did not read back."*  His log:
+    //     EJParamApply: slot 0 ("EchoJay EQ") EXACT built-in apply, 0 band(s), 1 skipped
+    //     EJParamApply: slot 0 readback -> no band is enabled
+    // Never written, and the band type was never in doubt - EqMove's vocabulary takes "highpass",
+    // "hipass", "hp" and "hpf", case and separators included. It was the WRAPPER.
+    //
+    // *"bands B sends at the top level of settings_structured must be written and read back."*  The
+    // flat-form wrap below is the part that was supposed to catch this and cannot: it requires EVERY
+    // entry to be a plain scalar, and a band list is an ARRAY, so `anyArray` breaks the loop and the
+    // payload goes on untouched - the device then resolves neither its array form nor a `params` map
+    // and counts the whole thing as one skipped item. Which is exactly 1 skipped, 0 applied.
+    //
+    // So a band list is HOISTED to the key the device resolves, whatever plausible name it arrived
+    // under, and the hoist is LOGGED with the name - the same rule the flat wrap and the ceiling
+    // clamp follow, so an emitter sending an odd spelling can be corrected rather than quietly
+    // carried for ever. `eq_bands` already works and is left exactly as it is.
+    if (auto* top = toApply.getDynamicObject())
+    {
+        if (! top->hasProperty ("eq_bands"))
+        {
+            for (const char* alias : { "bands", "eqBands", "eq_band", "band" })
+                if (const auto v = top->getProperty (alias); v.isArray() && ! v.getArray()->isEmpty())
+                {
+                    auto* w = new juce::DynamicObject();
+                    for (auto& kv : top->getProperties())
+                        if (kv.name.toString() != alias) w->setProperty (kv.name, kv.value);
+                    w->setProperty ("eq_bands", v);
+                    toApply = juce::var (w);
+                    EchoJay_NSLog ((juce::String ("EJParamApply: slot ") + juce::String (slotIndex + 1)
+                                    + " carried its band list under \"" + alias + "\" at the top level - "
+                                      "HOISTED to \"eq_bands\", which is the key the device resolves. "
+                                      "His 20:5x high-pass was skipped for exactly this (0 band(s), 1 "
+                                      "skipped); B should send eq_bands.").toRawUTF8());
+                    break;
+                }
+        }
+    }
     if (auto* flat = toApply.getDynamicObject())
     {
         if (! flat->hasProperty ("params"))
@@ -5844,6 +5965,17 @@ static bool ejSlotNotDialable(const ChainHost& h, bool builtin, const juce::Stri
     if (h.mapFetchInFlight(fp)) return false;
     reasonOut = "no map for fp, " + (nearNote.isEmpty() || nearNote.startsWith("no near map") ? juce::String("no near map") : nearNote);
     return true;
+}
+
+juce::String ChainHost::slotLiveBandText (int slotIndex) const
+{
+    // Not const-correct through getSlotProcessor, which is a non-const accessor on a const method's
+    // host - so the cast is here, named, rather than widening the accessor for one reader.
+    auto* self = const_cast<ChainHost*> (this);
+    auto* eq = dynamic_cast<SurgicalEqProcessor*> (self->getSlotProcessor (slotIndex));
+    if (eq == nullptr) return {};                       // not the built-in EQ: nothing to say
+    const auto lines = eq->describeBands();             // composed under the model lock, from bands_
+    return lines.isEmpty() ? juce::String() : lines.joinIntoString ("; ");
 }
 
 juce::String ChainHost::dialSummaryRow(int i) const
@@ -6448,6 +6580,7 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
     juce::StringArray appliedSummary;
     s.dialManual.clear();
     s.dialApplied.clear();   // 18g
+    s.dialVerified.clear();  // 21 Oct: the display-confirmed subset, per apply pass
     s.dialReadbackMiss.clear();
     s.dialUnconfirmed.clear();
     s.dialApproximate.clear();
@@ -6576,7 +6709,13 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
                                                            .trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
                 }
             }
-            s.dialApplied.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));   // 18g: the readback list the bubble and the loop trust
+            s.dialApplied.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));   // 18g: the readback list the bubble trusts
+            // ...AND THE NARROWER LIST (his 11:5x item 2, 21 Oct 2026): only when the PLUGIN said
+            // what the knob now reads and it agreed. The limiter's ceiling check reads this one,
+            // because "the write was accepted" and "the knob shows what we asked" are two different
+            // facts and his MLimiterX had the first without the second.
+            if (r.displayVerified && r.landedText.trim().isNotEmpty())
+                s.dialVerified.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
             // The bridged report-only case is NOT the silent class: the
             // display DISAGREED and the write was kept anyway, on a measured
             // fact about the instance. The 9 Aug silence rule reasoned "the
@@ -6829,7 +6968,23 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex)
                        + " (\"" + s.desc.name + "\") EXACT built-in apply, "
                        + juce::String(applied) + " band(s), "
-                       + juce::String(skipped) + " skipped").toRawUTF8());
+                       + juce::String(skipped) + " skipped"
+                       // ---- AND NAME WHAT WAS SKIPPED (Sean's 20:5x item 3, 21 Oct 2026) -----
+                       // "0 band(s), 1 skipped" told him a band had not landed and nothing about
+                       // WHICH shape arrived, so settling it needed B's capture. The keys the
+                       // payload actually carried are the one fact that identifies the wrapper, and
+                       // they are free to print.
+                       + (skipped > 0 ? [&]
+                          {
+                              juce::StringArray keys;
+                              if (auto* o = s.structuredSettings.getDynamicObject())
+                                  for (auto& kv : o->getProperties()) keys.add (kv.name.toString());
+                              else if (s.structuredSettings.isArray()) keys.add ("(a bare array)");
+                              return " - the payload's top-level keys were ["
+                                   + (keys.isEmpty() ? juce::String ("none") : keys.joinIntoString (", "))
+                                   + "], which is what identifies the wrapper when something does not"
+                                     " land";
+                          }() : juce::String())).toRawUTF8());
 
         // 21t-j (28 Sep 2026 ruling): THE SLOT'S TEXT IS THE LANDED STATE, read back from the device. This path -
         // the one a dial EDIT takes - never rewrote it, so after "harder" and "even harder" the [CURRENT CHAIN]
@@ -8853,7 +9008,14 @@ void ChainHost::rebuildGraph()
             // change relied on it and every slot read "no level known": loudness_loop_guard went from 0 failures
             // to 14, all of them "nan" and "-200 dBTP". The host knows the sample rate; it prepares the tally.
             if (prepared_ && sampleRate_ > 0.0) s.inTallyShared->prepare(sampleRate_);
-            if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared, s.inTallyShared));
+            // The slot's index is passed so the shadow tap can test it without a lookup; `i` is this
+            // loop's slot number and is stable for the life of the node (a move rebuilds the graph).
+            // THE SLOT'S REAL INDEX, taken from its address in the vector (stage A). A counter would
+            // be wrong: this loop walks `slots_` by reference and SKIPS bypassed slots, so the nth
+            // active slot is not slot n - and a tap keyed to a counted index would stream the wrong
+            // slot's audio the moment anything was bypassed.
+            const int myIdx = (int) (&s - slots_.data());
+            if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared, s.inTallyShared, shadowTap_, myIdx));
             if (!s.blendNode)
                 s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.inTallyShared));
             active.push_back({ s.node->nodeID, s.blendNode->nodeID, s.preTrimNode->nodeID });
@@ -11288,6 +11450,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.status       = s.dialStatus;
         di.manual       = s.dialManual;
         di.applied      = s.dialApplied;   // 18g
+        di.verified     = s.dialVerified;  // 21 Oct: the display-confirmed subset (the ceiling check)
         di.readbackMiss = s.dialReadbackMiss;
         di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;
@@ -11737,9 +11900,24 @@ juce::String ChainHost::getSlotsStateXml() const
 }
 
 void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
-                                std::function<void()> onSlotSettled)
+                                std::function<void()> onSlotSettled,
+                                juce::uint32 gen)
 {
     if (idx >= (int)items.size()) return;
+    // ---- A STALE WALK STOPS (his 11:54, 21 Oct 2026) -----------------------------------------
+    // See beginRestoreGeneration in the header. gen 0 is a caller from before this existed; it is
+    // treated as the current generation so nothing silently stops restoring.
+    if (gen == 0) gen = restoreGeneration_;
+    if (gen != restoreGeneration_)
+    {
+        EchoJay_NSLog (("ChainHost: a chain restore STOPPED at slot " + juce::String (idx + 1)
+                        + " of " + juce::String ((int) items.size()) + " - a newer restore (or an "
+                          "undo snapshot) has taken this rack since this walk started, so the "
+                          "plugins it had left would have been appended to somebody else's chain "
+                          "(his 11:54: \"Undo all refilled it with 5+ Lindell SBC\")").toRawUTF8());
+        if (onSlotSettled) onSlotSettled();
+        return;
+    }
     bool  wasBypassed = items[idx].bypassed;
     float savedWet    = items[idx].wet;
     // Carried into the callback with the item, never looked up by index
@@ -11764,8 +11942,63 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
         [this, items = std::move(items), idx, wasBypassed, savedWet,
          stateB64, expectState, slotName, identifier, withholdState,
          savedFormat, savedVersion, savedUid, slotParams,
-         onSlotSettled](const juce::String& err) mutable
+         onSlotSettled, gen](const juce::String& err) mutable
         {
+            // THE SAME TEST, ON THE OTHER SIDE OF THE WAIT, and this is the one that matters: the
+            // load above took time, and the rack may have been cleared and refilled while it ran.
+            // Without this the plugin that just loaded is adopted into whatever rack exists now -
+            // which is precisely how his mix bus ended up holding five of one compressor.
+            if (gen != restoreGeneration_)
+            {
+                // ---- AND IT IS TAKEN OUT AGAIN (his 14:12, 21 Oct 2026) ----------------------
+                //
+                // *"Undo all ... removed the EchoJay EQ, both EchoJay Compressors and the FG-X 2,
+                // but left the elysia karacter master in place."*
+                //
+                // MY OWN 11:54 FIX PUT IT THERE, and this log line is what named it:
+                //   14:13:12  EJPanel: rebuild slots=0 sel=-1          <- the walk ended correct
+                //   14:13:13  ChainHost: "elysia karacter master" finished loading into a rack that
+                //             has moved on (restore generation 2 vs 9) - it is NOT adopted
+                //   14:13:13  EJPanel: rebuild slots=1 sel=-1          <- and yet there it was
+                //
+                // "NOT adopted" was a half-truth. loadPluginAsync APPENDS THE SLOT and then calls
+                // this callback, so by the time the generation is tested the plugin is already in
+                // the graph; declining to configure it leaves it sitting there. Builtins never
+                // showed this because they load synchronously inside their own generation - the
+                // elysia was the only third-party plugin in those snapshots, and its load landed a
+                // second after the walk had finished.
+                //
+                // So the slot comes out. Identified by NAME and by being the one just appended,
+                // which is the same assumption the success path above makes (`lastSlot`) and is safe
+                // for the same reason: loads are serialised on the message thread, so at the moment
+                // this callback runs the slot it appended is the last one.
+                if (err.isEmpty())
+                {
+                    const int last = (int) slots_.size() - 1;
+                    const bool itIsOurs = last >= 0 && slots_[(size_t) last].desc.name == slotName;
+                    if (itIsOurs)
+                    {
+                        const bool sup = undoSuppressed_; undoSuppressed_ = true;
+                        removeSlot (last);               // not an edit the user can undo
+                        undoSuppressed_ = sup;
+                    }
+                    EchoJay_NSLog (("ChainHost: \"" + slotName + "\" finished loading into a rack that "
+                                    "has moved on (restore generation " + juce::String ((int) gen) + " vs "
+                                    + juce::String ((int) restoreGeneration_) + ") - "
+                                    + (itIsOurs ? juce::String ("it has been REMOVED again")
+                                                : juce::String ("the last slot is \"")
+                                                    + (last >= 0 ? slots_[(size_t) last].desc.name : juce::String ("(none)"))
+                                                    + "\", not this plugin, so nothing was removed - SAY SO rather "
+                                                      "than guess which slot to take out")
+                                    + ", and this walk ends here (his 14:12: declining to configure it "
+                                      "left it on his mix bus after Undo all)").toRawUTF8());
+                }
+                else
+                    EchoJay_NSLog (("ChainHost: \"" + slotName + "\" failed to load into a rack that has "
+                                    "moved on - nothing to remove; this walk ends here").toRawUTF8());
+                if (onSlotSettled) onSlotSettled();
+                return;
+            }
             if (err.isEmpty())
             {
                 int lastSlot = (int)slots_.size() - 1;
@@ -11816,7 +12049,7 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                                         " so this slot was left out of the chain");
             }
             if (onSlotSettled) onSlotSettled();
-            restoreNextSlot(std::move(items), idx + 1, onSlotSettled);
+            restoreNextSlot(std::move(items), idx + 1, onSlotSettled, gen);
         });
 }
 
@@ -12163,7 +12396,7 @@ void ChainHost::tryRestoreSlotsFromXml(const juce::String& xml,
     }
 
     if (!items.empty())
-        restoreNextSlot(std::move(items), 0);
+        restoreNextSlot(std::move(items), 0, {}, beginRestoreGeneration());
 }
 
 // ---------------------------------------------------------------------------
@@ -12635,6 +12868,20 @@ juce::var ChainHost::buildChainSlotsVar() const
         // keys and drops this one until it learns it.
         o->setProperty("wet",          (double) s.wet);
         o->setProperty("keepLevel",    s.keepLevel);
+        // ---- THE SLOT'S OWN TWO GAINS (his 17:22 ruling, 21 Oct 2026) -------------------------
+        //
+        // *"Check ... that Undo all puts it back to 0."*
+        //
+        // AND IT COULD NOT HAVE. restoreSavedChain has READ "preTrimDb" and "outGainDb" off each
+        // slot since 5 Oct - and nothing ever WROTE them into a var, so every snapshot restore
+        // (undo, redo, a borrowed rack's rebuild at engage) defaulted both to 0. Undo all would
+        // have given the right answer for his case by accident, because the trim happened to start
+        // at 0; a trim he had set by hand before the run would have been zeroed and called an undo.
+        //
+        // Now that the loudness target writes the IN trim, this is the field the undo of a push
+        // depends on, so it travels with the slot like the wet and the bypass.
+        o->setProperty("preTrimDb",    (double) s.preTrimDb);
+        o->setProperty("outGainDb",    (double) getSlotOutGainDb (i));   // lives on the blend node
         // The AI's prose dial-in guidance is the closest thing this rack has
         // to a role, and it is display text rather than a short label, so it
         // is NOT sent as one. An absent role is honest; an invented one would
@@ -12811,7 +13058,7 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
     }
 
     if (!items.empty())
-        restoreNextSlot(std::move(items), 0, std::move(onSlotSettled));
+        restoreNextSlot(std::move(items), 0, std::move(onSlotSettled), beginRestoreGeneration());
     else if (onSlotSettled)
         onSlotSettled();   // nothing resolved: the caller still has to react
 }

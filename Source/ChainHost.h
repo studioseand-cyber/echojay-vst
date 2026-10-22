@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EJRemoteControl.h"   // remote control: the lease is control only; embed is proven, not inferred
+#include "EJShadowTap.h"   // stage A of the muted shadow: the slot-input tap, on the pre-trim node
 #include <array>
 #include "EJChainRole.h"   // 21t-m item 5: the chain role and its three sources
 #include <JuceHeader.h>
@@ -712,7 +713,24 @@ public:
         juce::String      fp;          // fingerprint (for event logging)
         DialStatus        status = DialStatus::none;
         juce::StringArray manual;      // human labels of unwritten controls
-        juce::StringArray applied;     // 18g: labels of the controls that WROTE and read back (the bubble and the loop's ceiling check read only this)
+        juce::StringArray applied;     // 18g: labels of the controls that WROTE and read back (the bubble reads this)
+        /** ---- THE SUBSET THE PLUGIN'S OWN DISPLAY CONFIRMED (his 11:5x item 2, 21 Oct 2026) ----
+            *"Read-back said "ceiling -0.1" but the plugin shows Ceiling -0.50 dB ... Check which
+            control the read-back used."*
+
+            `applied` holds every control whose write was ACCEPTED, which includes the class whose
+            note reads "applied (display unverifiable on this plugin)" - a norm round-trip, with no
+            agreement from the plugin about what the knob now says. His MLimiterX ceiling was exactly
+            that: written at norm 0.996, reported from a display text of "-0.10 dB", and the plugin's
+            own Ceiling knob reading -0.50.
+
+            This list is the narrower fact: displayVerified AND a landed text, i.e. the plugin said
+            what it now holds and it agreed with what was asked. The LIMITER'S CEILING check reads
+            THIS one, because a ceiling is a safety boundary that a loudness target drives level into
+            - "it was written" is not good enough there, and his ruling of 21 Oct already says what
+            happens when it cannot be confirmed: no input gain, and say so. Everything else still
+            reads `applied`, deliberately: the 9 Aug silence rule stands for ordinary controls. */
+        juce::StringArray verified;
         juce::StringArray readbackMiss; // subset of manual: wrote wrong, reverted
         juce::StringArray unconfirmed; // written and KEPT on norm proof; display
                                        // read was stale (bridged AU, report-only)
@@ -1217,6 +1235,52 @@ public:
         return juce::var (arr);
     }
 
+    // ---- A BUILD AS THE OPS THE AGENT'S OWN ADDS TAKE (22 Oct 2026, Sean's B3 ruling) ----
+    //
+    // *"If the user has already pressed Go, a run with no window open finishes its build and
+    //  applies it."*
+    //
+    // With no window there is no loadChainFromJson and no sendChainToLinkOverTheWire - both of
+    // them are the EDITOR'S. The road that is not the editor's is the one every agent `add`
+    // already takes (applyChainEdits for the open rack, writeChainEditCommand for a Link), and a
+    // build is a replace: the two conversions above already turn a chain array into exactly that
+    // batch. This is the same move Sean's 19 Oct ruling made for the Build button on a Link.
+    //
+    // ONE FIELD THE TWO ABOVE DROP, AND IT IS THE ONE THAT MEASURES: dial_on_playback. It rides a
+    // chain entry from B (target_lufs, ceiling, the limits) and it is what closes the loop on a
+    // limiter - his 21 Oct mix bus hit about -5.7 LUFS against a target of -8 because nothing read
+    // it. LoudnessLoop::dialsOnPlaybackFromOps reads it off the OPS, so a build that lost it on
+    // the way here would be a build nothing measures. Carried per add, zipped BY POSITION because
+    // that is the rule chainArrayToReplaceOps itself used to make the adds, and the name is
+    // checked on each pair rather than trusted - a dial written onto the wrong slot would dial a
+    // plugin the server never aimed at.
+    static juce::var chainArrayToBuildWireOps (const juce::Array<juce::var>& chainArr, int currentSlots)
+    {
+        auto wire = editOpsToWireVar (chainArrayToReplaceOps (chainArr, currentSlots));
+        auto* warr = wire.getArray();
+        if (warr == nullptr) return wire;
+        // The entries that became adds: the same test chainArrayToReplaceOps applied (a name that
+        // is not empty), in the same order, so position means the same thing on both sides.
+        juce::Array<juce::var> named;
+        for (const auto& ev : chainArr)
+            if (auto* eo = ev.getDynamicObject())
+                if (eo->getProperty ("name").toString().isNotEmpty())
+                    named.add (ev);
+        int i = 0;
+        for (auto& wv : *warr)
+        {
+            auto* wo = wv.getDynamicObject();
+            if (wo == nullptr || wo->getProperty ("op").toString() != "add") continue;
+            if (i >= named.size()) break;
+            auto* eo = named[i++].getDynamicObject();
+            if (eo == nullptr) continue;
+            if (eo->getProperty ("name").toString() != wo->getProperty ("name").toString()) continue;
+            const auto dial = eo->getProperty ("dial_on_playback");
+            if (! dial.isVoid()) wo->setProperty ("dial_on_playback", dial);
+        }
+        return wire;
+    }
+
     // ---- OP TARGETS v1: the two target resolvers -------------------------
     // Static and header-inline so the gate exercises the SHIPPED decision
     // rather than a copy of it. Both are pure over a list of the current
@@ -1313,6 +1377,54 @@ public:
         for (const auto& o : ops)
             if (o.op != "set" && o.op != "set_wet") return false;
         return true;
+    }
+
+    // ---- WHICH OPS NEED THE V2'S HOSTED COPY (19 Oct 2026, his 15:45 agent-off test) ----------
+    //
+    // *"'+ add UAD Empirical Labs Distressor after Tube-Tech CL 1B (slot 1)' came back 'the rack did
+    // not become ready within 20 s'. This is the failure the one-road fix closed this morning; it's
+    // back for agent-off Build when the Link already has a slot. Find why this path isn't on the one
+    // road and fix it."*
+    //
+    // Because the chat's edit card chose its road by what a BORROW SESSION was doing, not by what the
+    // ops needed - and aiming the chat at a Link engages a session, so the session road was always
+    // taken and the gate in front of it was always waited on. A chain-cmd v2 editOps goes straight to
+    // the Link, which accepts it with no session, no lock and no engage.
+    //
+    // So the road is chosen HERE, by the ops. A `set` writes a plugin parameter and needs a loaded
+    // instance with a parameter map; the editor ops act on that instance's window. Everything else is
+    // STRUCTURE (add / remove / replace / move) or a gain the Link owns itself (bypass, set_wet, the
+    // slot trims, master_wet, pre_gain, headroom), and the Link does all of it from the command.
+    //
+    // Pure and header-inline for the same reason opsAreValuesOnly is: the gate drives the shipped
+    // predicate, not a copy of it.
+    static bool opsNeedTheHostedCopy (const std::vector<ChainEditOp>& ops) noexcept
+    {
+        for (const auto& o : ops)
+            if (o.op == "set" || o.op == "open_editor" || o.op == "close_editor") return true;
+        return false;
+    }
+
+    // ---- ONE VERB FOR THE THING HE ASKED FOR (19 Oct 2026, his 15:45 rule) ---------------------
+    // *"no machinery ('Connecting to rack...') or em-dashes in user-facing lines; say 'Couldn't add
+    // it, the rack didn't respond. Nothing changed.'"*
+    //
+    // The lines on that path were built from the GATE's state, which is machinery: "Connecting to
+    // rack...", a 20 s bound, and an em-dash joining them. Those belong in the log. What he reads
+    // names what he asked for, so the verb comes from the ops - one phrase, used by both the waiting
+    // line ("then I'll add it") and the failure ("Couldn't add it, ...").
+    static juce::String verbForOps (const std::vector<ChainEditOp>& ops)
+    {
+        bool add = false, remove = false, other = false;
+        for (const auto& o : ops)
+        {
+            if      (o.op == "add" || o.op == "replace") add = true;
+            else if (o.op == "remove")                   remove = true;
+            else                                         other = true;
+        }
+        if (add && ! remove && ! other)  return ops.size() > 1 ? "add those" : "add it";
+        if (remove && ! add && ! other)  return ops.size() > 1 ? "remove those" : "remove it";
+        return "apply that change";
     }
 
     static std::vector<ChainEditOp> parseChainEditOps(const juce::String& editJson,
@@ -1923,6 +2035,31 @@ public:
     void  resetSlotShortTermStats (int slotIndex, const juce::String& why);
     void  setSlotOutGainDb (int slotIndex, float db);
     float getSlotOutGainDb (int slotIndex) const;
+    /** ---- THE SLOT'S LIVE BANDS (19 Oct 2026, his 17:09 run) ----------------------------------
+        *"EQ set 'bell 300 Hz -3 dB Q 1.4, bell 3500 Hz -2.5 dB Q 1, highshelf 9000 Hz -2.5 dB Q
+        0.7' read back only 'band 1: bell 300.0 Hz, -3.0 dB, Q 1.40'. If they landed, the read-back
+        text is stale, so read the live bands."*
+
+        They landed - his log says `EXACT built-in apply, 3 band(s), 0 skipped` and the readback at
+        that instant listed all of them. The text that reached him came from the slot's `settings`,
+        which is RECOMPOSED when a dial runs and not when a band moves.
+
+        This asks the EQ instead: SurgicalEqProcessor::describeBands() composes the lines under the
+        model lock from `bands_`, and is the one place those words exist - so the EQ's own Suggested
+        Settings listing and the agent's read-back cannot describe the same band differently.
+
+        EMPTY when this slot is not the built-in EQ, or cannot be read. Never invented. */
+    juce::String slotLiveBandText (int slotIndex) const;
+
+    /** ---- THE MUTED SHADOW'S TAP (stage A, 21 Oct 2026) ----------------------------------
+        One per rack, handed to every slot's pre-trim node at graph build so the audio thread never
+        has to look anything up. The LINK owns the ring behind it and chooses the slot; this rack
+        only owns the object's lifetime, so a graph rebuild cannot strand a sink mid-block.
+
+        Created EAGERLY and always, because it costs one shared_ptr and the alternative is a node
+        built without one that can never be given one later without rebuilding the graph - and a
+        graph rebuild to start watching a meter would be absurd. */
+    std::shared_ptr<echojay::ShadowTap> shadowTap() const { return shadowTap_; }
 
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
@@ -2581,6 +2718,9 @@ public:
     void addToBlacklist(const juce::String& path, const juce::String& reason = {});
 
     double engageStampMs_ = 0.0;   // 4 Oct: see setEngageStampMs
+    /** The shadow tap, shared with every slot's pre-trim node (stage A). Never null: it is the
+        OFF state that is cheap, not the absence of the object. */
+    std::shared_ptr<echojay::ShadowTap> shadowTap_ = std::make_shared<echojay::ShadowTap>();
     double sampleRate_ = 44100.0;  // public so pollVST3Validation can read
     int    blockSize_  = 512;
 
@@ -2696,6 +2836,7 @@ private:
         juce::StringArray                    dialManual;                // unwritten control labels
         juce::StringArray                    dialReadbackMiss;          // wrote wrong, reverted
         juce::StringArray                    dialUnconfirmed;           // written, display stale (bridged)
+        juce::StringArray                    dialVerified;              // 21 Oct: display agreed (the ceiling check's list)
         // Controls dialled through a PRODUCT FALLBACK, and the identity its
         // anchors came from. The write happened and the control resolved by
         // name; only the value's exactness is unasserted (~19% anchor drift,
@@ -3237,7 +3378,28 @@ private:
     // onSlotSettled: see restoreSavedChain. Empty for a session restore,
     // which builds its rack before any editor exists to watch it.
     void restoreNextSlot(std::vector<RestoreItem> items, int idx,
-                         std::function<void()> onSlotSettled = {});
+                         std::function<void()> onSlotSettled = {},
+                         juce::uint32 gen = 0);
+    /** ---- ONE RESTORE AT A TIME, AND THE NEWEST WINS (his 11:54, 21 Oct 2026) ----------------
+        *"Undo all on the mix bus refilled it with 5+ Lindell SBC and 2+ Shadow Hills."*
+
+        A chain restore is a CHAIN OF ASYNCHRONOUS LOADS: restoreNextSlot loads one plugin through
+        loadPluginAsync and recurses from the callback, appending each plugin at the end of the rack.
+        It carries its own `items` by value, so once it is walking, nothing it reads can tell it that
+        the rack it is filling is no longer the rack it was asked to fill.
+
+        "Undo all" walks the history synchronously - seven steps inside one millisecond in his log -
+        and each `chain` step clears the rack and starts another of those walks. The clear removes
+        the slots present at that instant; it cannot stop three restores already in flight, and they
+        carry on appending into whatever rack exists when their next callback fires. Four overlapping
+        restores of a four-plugin mix bus is five Lindell SBCs.
+
+        So every restore takes a GENERATION, stamped when it starts. Starting a restore, or clearing
+        a rack to apply an undo snapshot, bumps it; a walk whose generation is stale stops where it
+        is and says so. The newest restore is the only one still appending, which is the invariant
+        that makes an undo of an undo safe. */
+    juce::uint32 restoreGeneration_ = 0;
+    juce::uint32 beginRestoreGeneration() noexcept { return ++restoreGeneration_; }
     // identifier: the plugin's fileOrIdentifier, written into the deadman
     // marker around the setStateInformation call so a crash there is
     // blacklisted by name on the next launch (see the marker in the .cpp).

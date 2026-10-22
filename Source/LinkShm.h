@@ -1461,6 +1461,11 @@ struct RackSidecar {
     // host owns the per-slot tallies, read by the other host and by V2's editor, so a lease handover continues
     // the loop instead of ending it. Void = no loop on this rack.
     juce::var calib;
+    /** ---- THE COMPANIONS (his 17:5x ruling, 21 Oct 2026) ---------------------------------
+        One hold per compressor: `calib` is the PRIMARY and this is an array of the rest, each the
+        same CalibLoop::toVar shape. Void when there are none, so an older V2 reads `calib` exactly
+        as it does today and a new one can show all three - additive, like every field here. */
+    juce::var calibExtra;
     // 21t-i (27 Sep 2026 ruling): THE LINK'S STORED LEVEL RECORD (EJLevelRecord::toVar). Written by the Link that
     // owns the channel, read by V2 when that Link is quiet or parked, so a chat block can be composed from what
     // was heard rather than from what is playing. Void = this Link publishes no record (an older binary).
@@ -1530,6 +1535,34 @@ struct RackSidecar {
                                        // monitoring is OFFERED only when
                                        // announced, never detected
     std::vector<RackSidecarSlot> slots;
+    /** ---- WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026) ----------------------------
+        *"A source type for each Link: the same type setting the V2 has, guessed automatically from
+        the track name ... with Sean able to change it on the Link. Sent as channelRole on both
+        roads."*
+
+        B picked a delay for "Nafe Main_01" with no idea it was a vocal, and the honest finding was
+        that the fact did not exist: a Link's registry row carries a PLACEMENT (insert / bus / send),
+        which is where it sits, not what it is, and agent-off's channelRole was a kind and a name.
+
+        HERE RATHER THAN IN THE REGISTRY, deliberately. RegistrySlot has exactly ONE free byte left
+        (`_pad[1]` at offset 127, with byte 125's note about spending it) and a one-byte enum would
+        fit - but the main plugin already reads every Link's sidecar at ~1 Hz and caches it, so the
+        registry buys nothing here and that last byte stays for something that genuinely needs the
+        heartbeat path.
+
+          sourceType      the wire spelling of a ChannelType ("lead_vocal"), empty = NOT STATED
+          sourceTypeFrom  "user" | "classifier" | "name" - the PROVENANCE, and the whole design:
+                          user > classifier > name, and a lower one never overwrites a higher one
+          sourceTypeName  the custom name, when sourceType is "other"
+
+        EMPTY IS A REAL ANSWER. A wrong type is worse than none, so a Link that cannot say leaves
+        all three absent and channelRole carries kind and name exactly as it does today. An older
+        writer's silence reads as "this Link does not state its source", which is a different
+        sentence from "this Link has no source type".
+
+        Additive at v:1, written only when stated. LAST in the struct - the positional-brace-init
+        rule the five notes on RackSidecarSlot record, and the same rule applies here. */
+    juce::String sourceType, sourceTypeFrom, sourceTypeName;
 };
 
 // =============================================================================
@@ -2193,6 +2226,11 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.restoredChainRev >= 0) obj->setProperty("restoredChainRev", rc.restoredChainRev);
     if (rc.restoredLeaseBaseRev >= 0) obj->setProperty("restoredLeaseBaseRev", rc.restoredLeaseBaseRev);
     obj->setProperty("masterWet", rc.masterWet);
+    // Round (b): written ONLY when stated, so an older reader never asks and absence stays
+    // distinguishable from a default.
+    if (rc.sourceType.isNotEmpty())     obj->setProperty("srcType",     rc.sourceType);
+    if (rc.sourceTypeFrom.isNotEmpty()) obj->setProperty("srcTypeFrom", rc.sourceTypeFrom);
+    if (rc.sourceTypeName.isNotEmpty()) obj->setProperty("srcTypeName", rc.sourceTypeName);
     obj->setProperty("preGainDb",        rc.preGainDb);
     obj->setProperty("preGainUserSet",   rc.preGainUserSet);
     obj->setProperty("preGainInputKnown", rc.preGainInputKnown);
@@ -2201,6 +2239,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
     if (rc.ackPerSeq) obj->setProperty("ackPerSeq", true);
     if (! rc.calib.isVoid()) obj->setProperty("calib", rc.calib);   // 21t-d
+    if (! rc.calibExtra.isVoid()) obj->setProperty("calibExtra", rc.calibExtra);   // his 17:5x
     if (! rc.levels.isVoid()) obj->setProperty("levels", rc.levels); // 21t-i: the stored level record
     if (rc.publisherPid > 0)
     {
@@ -2325,6 +2364,9 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.uid       = obj->getProperty("uid").toString();
     rc.name      = obj->getProperty("name").toString();
     rc.revision  = (int)obj->getProperty("revision");
+    rc.sourceType     = obj->getProperty("srcType").toString();
+    rc.sourceTypeFrom = obj->getProperty("srcTypeFrom").toString();
+    rc.sourceTypeName = obj->getProperty("srcTypeName").toString();
     rc.restoredChainRev = obj->hasProperty("restoredChainRev") ? (int)obj->getProperty("restoredChainRev") : -1;
     rc.restoredLeaseBaseRev = obj->hasProperty("restoredLeaseBaseRev") ? (int)obj->getProperty("restoredLeaseBaseRev") : -1;
     rc.masterWet = obj->hasProperty("masterWet")
@@ -2333,6 +2375,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
     if (obj->hasProperty("calib")) rc.calib = obj->getProperty("calib");   // 21t-d
+    if (obj->hasProperty("calibExtra")) rc.calibExtra = obj->getProperty("calibExtra");   // his 17:5x
     if (obj->hasProperty("levels")) rc.levels = obj->getProperty("levels"); // 21t-i
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");

@@ -1,4 +1,5 @@
 #include "LinkEditor.h"
+#include "EJSourceType.h"   // round (b): the channel-type list and its wire spelling
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the main plugin)
 #include "EchoJayLogo.h"
 #include "EchoJayFieldStyle.h"   // EchoJayChrome::kFieldCorner (shared field radius)
@@ -717,11 +718,90 @@ void LinkEditor::showPlacementChooser()
     m.addItem(1, "Bus",     true, cur == LinkProcessor::PlacementBus);
     m.addItem(2, "Channel", true, cur == LinkProcessor::PlacementInsert);
     m.addItem(3, "Send",    true, cur == LinkProcessor::PlacementSend);
+
+    // ---- AND WHAT IT IS (Sean's round (b), 20 Oct 2026) --------------------------------------
+    //
+    // *"A source type for each Link: the same type setting the V2 has ... with Sean able to change
+    // it on the Link."*
+    //
+    // IN THIS CHOOSER RATHER THAN A NEW BUTTON, and the reason is honest rather than aesthetic: the
+    // header's layout is tight (the placement selector is 78 px inside a reserved run) and ui_guard
+    // - the only guard that could check a layout - SIGSEGVs at startup with no window server, which
+    // is verified at HEAD. So a new header control is a change I could not gate, on the one surface
+    // where a mistake is visible to him immediately. This control already answers "where is this
+    // Link?"; "what is it?" belongs beside that question, costs no layout, and the section header
+    // shows the current answer and WHERE IT CAME FROM, which is the thing he asked to be able to see
+    // and correct.
+    //
+    // The 38 types are grouped exactly as ChannelType groups them, because that is the same list the
+    // V2's own selector shows and the two must not diverge into different orders.
+    {
+        const auto heldWire = proc.sourceTypeWire();
+        const auto heldFrom = proc.sourceTypeFromWire();
+        ChannelType held = ChannelType::Other;
+        const bool haveHeld = echojay::sourcetype::channelTypeForWireName (heldWire, held);
+        juce::String header = "What is this channel?";
+        if (haveHeld)
+        {
+            const int hi = (int) held;
+            header << "  -  " << (hi >= 0 && hi < channelTypeNames.size() ? channelTypeNames[hi]
+                                                                          : juce::String())
+                   << (heldFrom == "user"       ? " (you set this)"
+                     : heldFrom == "classifier" ? " (guessed from the session)"
+                                                : " (guessed from the track name)");
+        }
+        else
+            header << "  -  not set (the track name does not say)";
+        m.addSeparator();
+        m.addSectionHeader (header);
+
+        // ONE ITEM PER TYPE, id = 1000 + the enum value, so a new type needs no new plumbing.
+        auto addGroup = [&m, haveHeld, held] (const char* title, int firstType, int lastType)
+        {
+            juce::PopupMenu sub;
+            for (int i = firstType; i <= lastType; ++i)
+                if (i >= 0 && i < channelTypeNames.size())
+                    sub.addItem (1000 + i, channelTypeNames[i], true,
+                                 haveHeld && (int) held == i);
+            m.addSubMenu (title, sub);
+        };
+        addGroup ("Vocals",          (int) ChannelType::LeadVocal,  (int) ChannelType::VocalBus);
+        addGroup ("Drums",           (int) ChannelType::Kick,       (int) ChannelType::Percussion);
+        addGroup ("Bass",            (int) ChannelType::Bass808,    (int) ChannelType::SynthBass);
+        addGroup ("Keys & Guitar",   (int) ChannelType::Piano,      (int) ChannelType::GuitarBus);
+        addGroup ("Synths",          (int) ChannelType::SynthLead,  (int) ChannelType::SynthBus);
+        addGroup ("Strings & Brass", (int) ChannelType::Strings,    (int) ChannelType::Orchestral);
+        addGroup ("FX & Other",      (int) ChannelType::FX,         (int) ChannelType::Ambient);
+        // The buses are not contiguous in the enum - FullMix is value 0 and the rest sit at the end -
+        // so they are gathered by hand rather than by a range, with Mix Bus LAST because that is
+        // where the V2's own list shows it.
+        {
+            juce::PopupMenu sub;
+            for (int i = (int) ChannelType::MasterBus; i <= (int) ChannelType::MusicBus; ++i)
+                sub.addItem (1000 + i, channelTypeNames[i], true, haveHeld && (int) held == i);
+            sub.addItem (1000 + (int) ChannelType::FullMix, channelTypeNames[(int) ChannelType::FullMix],
+                         true, haveHeld && held == ChannelType::FullMix);
+            m.addSubMenu ("Buses", sub);
+        }
+        // CLEARING IS HOW A WRONG SETTING IS UNDONE, and it goes back to the GUESS rather than to
+        // nothing - which is why it says so.
+        m.addItem (999, "Clear - use the track name", true, heldFrom != "user");
+    }
+
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn).withParentComponent(this),
         [safeThis](int r)
         {
             if (safeThis == nullptr || r == 0) return;
+            if (r == 999) { safeThis->proc.setSourceTypeFromUser ({}, {}); return; }
+            if (r >= 1000)
+            {
+                const int i = r - 1000;
+                if (i >= 0 && i < channelTypeNames.size())
+                    safeThis->proc.setSourceTypeFromUser (
+                        echojay::sourcetype::wireNameFor ((ChannelType) i), {});
+                return;
+            }
             safeThis->applyPlacement(r == 1 ? LinkProcessor::PlacementBus
                                   : r == 3 ? LinkProcessor::PlacementSend
                                            : LinkProcessor::PlacementInsert);

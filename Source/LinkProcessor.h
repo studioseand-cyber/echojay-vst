@@ -82,6 +82,46 @@ public:
     void updateTrackProperties(const TrackProperties& props) override;
     juce::String getHostTrackName() const;      // any thread
     juce::String effectiveDisplayName() const;  // the precedence chain
+    // ---- WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026) -------------------------------
+    // PUBLIC because the Link's own editor reads and writes them: the chooser shows the current
+    // answer with its provenance, and his pick comes back through the setter.
+    /** His own choice, from the Link's window. Writes provenance "user", persists, and republishes
+        at once - a gesture is not a meter and must not wait for the digest. An EMPTY `wire` CLEARS
+        the choice back to the guess, which is how he undoes a wrong setting. */
+    void setSourceTypeFromUser (const juce::String& wire, const juce::String& customName);
+    /** ---- THE MUTED SHADOW (stage A, 21 Oct 2026) ------------------------------------------
+        Start streaming one slot's INPUT to the main plugin, or stop. `slot0` < 0 stops.
+
+        Sean's design: *"The Link stays the only real processor; what's heard never changes ... Only
+        the slot in view is shadowed; stop when he leaves it."*  So this writes a ring and changes
+        nothing in the audio path - the tap is a second sink on the pre-trim node that already
+        measures this exact signal.
+
+        MESSAGE THREAD ONLY: it maps and unmaps a file. The audio thread sees the result through one
+        atomic pointer inside ShadowTap, and the stop path clears the slot before the pointer and
+        defers the unmap by a block, so a block already inside push() cannot meet a dead mapping. */
+    void setShadowSlot (int slot0);
+    /** ---- ONE HOLD PER COMPRESSOR, ON A LINK TOO (his 17:5x ruling, 21 Oct 2026) ------------
+        *"several compressors dialled on one Link each get their own loop, as the V2's own rack
+        does. Sean's vocal chains on Links have two or three."*
+
+        `calibLoop_` is the primary - where the single block has always gone, and what the sidecar's
+        `calib` carries - and these are the companions, one per further dialled slot. The tick is one
+        worker called for each (tickOneCalib), and the sidecar is written ONCE per tick with all of
+        them, because three writes for one window would leave a reader seeing a half-updated rack. */
+    std::vector<echojay::CalibLoop> calibExtra_;
+    void tickOneCalib (echojay::CalibLoop& loop, bool& wroteSidecar);
+    /** Start a primary and its companions from one batch's Configs. Returns how many started. The
+        list is taken at once, for the V2's own reason: starting them one at a time would have each
+        replace the last, since there is one `calibLoop_`. */
+    int startCalibMany (const std::vector<echojay::CalibLoop::Config>& cfgs);
+    /** The loop state V2 renders from: the primary in `calib`, the companions in `calibExtra`.
+        Called after a judged window and at a START, because a batch that is not on the sidecar yet
+        would be lost by a lease handover in that gap (leg CO5). */
+    void publishCalibState();
+    int  shadowSlot() const { return chainHost.shadowTap() ? chainHost.shadowTap()->slot() : -1; }
+    juce::String sourceTypeWire() const { return sourceType_; }
+    juce::String sourceTypeFromWire() const { return sourceTypeFrom_; }
     juce::String getInstanceUidForTest() const { return instanceUid_; }   // harness read-back only (6 Sep 2026)
 
     // ---- Built-in gain stage (v0.5.7) ------------------------------------
@@ -371,6 +411,38 @@ private:
     // ITEM 4 (14 Oct 2026): arm that loop after a build, from EITHER road a build can arrive by - this
     // Link's own v1 chain build, or a borrowed-rack build pushed as v2 editOps with intent=build. One
     // implementation on purpose: 13a fixed one road and Sean's build came down the other.
+    /** ---- WHICH SLOT THE MATCH IS FOR (19 Oct 2026, his 17:09 item 2) ------------------------
+        *"The silent level match after the MCompressor add wrote OUT +3.3 on the EchoJay EQ's slot
+        card, not the MCompressor's (MCompressor shows OUT +0.0). The compressor was inserted at
+        slot 1, shifting the EQ to slot 2; looks like the match targeted a slot index computed
+        before the insert. Target the slot that was actually added, by identity after the insert."*
+
+        Not quite an index computed before the insert - worse, an index that was never about the add
+        at all. The stage resolved to outermostSlot(), the LAST slot in the chain, which happened to
+        be the added plugin while every add went on the end. Insert at slot 1 and the last slot is
+        whatever was already there: the EQ.
+
+        Acoustically either trim would have matched the chain (both sit in the same signal path), so
+        nothing measured would catch it - but the figure lands on the wrong plugin's card, and his
+        rule for the SIZE of the trim is the added slot's own in-vs-out drop. So the add names its
+        slot, by NAME resolved after the apply, and the stage prefers it.
+
+        -1 = nothing named it, and the stage falls back to outermostSlot() as before. */
+    int matchTargetSlot_ = -1;
+    juce::String matchTargetName_;
+    // ---- round (b): what this channel IS, and where the answer came from --------------------
+    // sourceTypeFrom_ is the PRECEDENCE, not decoration: "user" survives a rename, "name" does not.
+    // guessedFromName_ is the name the current guess was made from, so a rename is detectable
+    // without re-running the guesser on every publish.
+    juce::String sourceType_, sourceTypeFrom_, sourceTypeName_, guessedFromName_;
+    // What the LAST publish carried, so a change of source type is a publish trigger like every
+    // other published field (B's 20 Oct capture: the set republished and the gate dropped it).
+    juce::String lastPublishedSourceType_, lastPublishedSourceTypeFrom_;
+    // ---- the shadow ring (stage A): the Link's half of the muted shadow -----------------------
+    void* shadowMap_ = nullptr;
+    int   shadowFd_  = -1;
+    juce::String shadowPath_;
+    void nameTheMatchTarget (const std::vector<ChainHost::ChainEditOp>& ops);
     void armLoudnessAfterBuild (const juce::String& via);
     /** The slot whose OUT trim the level match writes, or -1 when the rack has no slots (19 Oct
         2026, his 14:0x correction - never the plugin's own make-up). */
@@ -666,6 +738,18 @@ private:
     bool  lastPublishedPreGainInputKnown_ = false;
     double lastCurveChangeMs_ = 0.0;
     void publishRackSidecar();
+    /** ---- WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026) ----------------------------
+        Guess this Link's source type from its display name, UNLESS something of higher provenance
+        already holds it: user > classifier > name. Cheap and idempotent - it re-guesses only when
+        the name it last guessed from has changed - so the sidecar publish can call it every time.
+
+        A RENAME RE-GUESSES, and a value he set himself survives one: that asymmetry is the whole
+        reason the provenance travels, and it lives in one place
+        (echojay::sourcetype::mayReplace).
+
+        PRIVATE: its one caller is publishRackSidecar. The three the EDITOR needs are public, beside
+        effectiveDisplayName. */
+    void refreshSourceTypeGuess();
     // ---- Edit lease (stage 1 remote editing) ------------------------------
     // The pure gate decides; this class acts. leaseActive_ is the ONE field
     // the audio thread reads (it forces ring production); everything else is
