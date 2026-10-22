@@ -1866,6 +1866,10 @@ private:
     struct PendingLinkApply
     {
         juce::String key, chatId, uid, lastWhy;
+        /** WHAT THE USER ASKED FOR, in one verb ("add it", "remove it", "apply that change"), so the
+            line that reports a failure can name the thing rather than the machinery. His 15:45 rule:
+            no machinery and no em-dashes in a user-facing line. */
+        juce::String whatItWas { "apply that change" };
         int    msgIdx  = -1;
         double queuedMs = 0.0;
     };
@@ -1910,6 +1914,14 @@ private:
     // Chat
     struct ChatMsg {
         juce::String role, content;
+        /** ---- STAGE C OF THE CHAT LOG (his ruling of 21 Oct 2026) ---------------------------
+            The entry's own place and identity, carried from the stored log so the view can render in
+            order and address a row by what it IS. `seq` is the sort key; `entryId` is how a live run
+            finds its own row (the run's key) instead of a per-window integer a replay reissues.
+            0 / empty = a row from a path that has not been stamped yet, which the reader places at
+            the end and says so. */
+        juce::int64  seq = 0;
+        juce::String entryId;
         juce::String reviewId;    // non-empty for capture messages; key into workspace.reviews
         bool hasWaveform = false;
         std::vector<WaveformRecorder::ThumbnailPoint> waveform;
@@ -2176,7 +2188,10 @@ private:
     static juce::String stereoFlagLine(float widthPct, float correlation, bool isFullMix);
     static std::map<juce::String, juce::String> roleByNameFor(const juce::String& chainJson);
     void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
-    void armLoudnessLoopIfTargeted();      // ruling G: arm after an own-rack build whose limiter names a LUFS target
+    /** `mayInsertLimiter` false on every AGENT road (his 15:30 ruling: an agent build inserts
+        nothing, after one stacked an EchoJay Limiter behind his FG-X 2 and drove it to +12). The
+        user's own build road keeps the 10 Oct behaviour and passes the default. */
+    void armLoudnessLoopIfTargeted (bool mayInsertLimiter = true);      // ruling G: arm after an own-rack build whose limiter names a LUFS target
     void reattachLoopPills();              // 21r item 1: a workspace reload drops the pills; the live loop puts them back
     // ---- F1 (21s-a, 24 Sep 2026): THE REPLY LAYER ------------------------------------------------------------
     // Every control that belongs to the assistant transcript - the reply pills, the Build buttons, Apply/alternative
@@ -2214,6 +2229,12 @@ private:
     static constexpr int kMaxVerbWords = 5;
     bool handleProposalAffirmation(const juce::String& typed);
     void applyStagedProposal(int msgIdx, const juce::String& why);   // Apply button and the yes both land here
+    /** ---- HIS "DON'T USE THIS ONE" MARK (11:5x item 3, 21 Oct 2026) -------------------------
+        "don't use it again" / "never use the MLimiterX" marks a plugin, "use MLimiterX again" lifts
+        it. LOCAL and before the loudness verbs, because it is a setting and because it has to work
+        when the loop never armed - which is the state an unconfirmed ceiling leaves it in. Returns
+        true when it took the turn (including when it asked WHICH plugin rather than guessing). */
+    bool handleDontUsePluginVerb (const juce::String& msgIn);
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"
     int  loopBubbleSeq_ = 0;
     void rerouteChatTurn(const juce::String& sysPrompt, const juce::String& activeChatId,
@@ -2238,6 +2259,33 @@ private:
     // every terminal path (engaged, refused, abandoned). borrowSelectionTick will not start a
     // second loop while it is set; the log names the loop it refused to start.
     juce::String borrowReadInFlightUid_;
+    /** When that read started, so it can be given a deadline (his 21:05/21:09/21:11). A stranded
+        in-flight flag blocked every later read, the engage and the lock release, and only closing
+        the window cleared it - the flag lives here, so it died with the editor. */
+    juce::int64 borrowReadStartedMs_ = 0;
+    /** How long a rack read may be in flight before the tick clears it and says so. Eight seconds:
+        a sidecar read is a file read and a slot walk, and the per-slot waits inside it are bounded
+        already - anything past this is a path that is not coming back. */
+    static constexpr juce::int64 kBorrowReadStallMs = 8000;
+    /** ---- THE READ NOTICE, AND WHO OWNS IT (his 11:32, 21 Oct 2026) ---------------------------
+        *"the rack view stuck on "Reading 0 plugin(s) from 88_7even Kick_2_01..." for minutes, while
+        the kHs Compressor sat on the rack and worked. Your 8-second read deadline didn't clear it.
+        ... The line must be replaced as soon as the view has drawn the rack from the sidecar,
+        whatever path set it."*
+
+        THE DEADLINE WAS NEVER GOING TO CLEAR IT, and the log says why: the read for that uid START-ed
+        at 11:31:52 with a fresh sidecar that was VALID WITH 0 SLOTS, and it finished in the same
+        second (0 slots is nothing to pull, so `*finish` ran at once and engaged). Nothing was
+        stranded - `borrowReadInFlightUid_` was set and cleared normally, so the stall bound had
+        nothing to fire on. The sentence was simply the last thing written to the status line, said
+        ONCE at the start of a read with the count the sidecar held at that instant, and when the
+        Link published its kHs Compressor a moment later the VIEW drew it from the sidecar (the
+        11:33:54 mirror-vs-sidecar lines prove the draw) while the line above it still said 0.
+
+        So the line is OWNED: whoever writes it records the words and the rack they were written
+        about, and the panel refresh retires them as soon as that rack has been drawn. Exact text, so
+        a refusal or a flow message written afterwards is never cleared by this - it is not ours. */
+    juce::String readNoticeText_, readNoticeUid_;
     // 10 Sep 2026: one wiring path for the map-fetch callbacks (main + borrowed host).
     void wireChainHostFetch(ChainHost& host, bool isBorrow);
     // Lock on transitions (9 Sep ruling): the lock belongs to a session. Requested at the row
@@ -2413,6 +2461,10 @@ private:
         three-second acknowledgement shown only when the mode CHANGES. The chat column reserves
         nothing for it, because it is no longer a fixed line. */
     static constexpr int kAgentModeLineH = 16;
+    /** How many lines the mode sentence needs at the width it will get: 1, or 2 when it would
+        otherwise be cut off (his 18:2x). Measured in resized(), consumed by syncAgentModeLine, so
+        the reservation and the rect cannot disagree about the height. */
+    int agentModeLineLines_ = 1;
     static constexpr int kAgentModeLineMs = 3000;
     juce::int64 agentModeLineUntilMs_ = 0;
     void showAgentModeLineBriefly();
@@ -2663,9 +2715,12 @@ private:
     // round, then delete") - a renderer swap is exactly the change that wants a fallback. It is
     // suppressed while the row renders, and EJ_AGENT_PANEL=1 brings it back without a rebuild.
     bool agentRowRendererOn() const;
-    /** ITEM 0b, SEPARATELY (16 Oct 2026): does a live run survive its window closing? Default NO -
-        item 0's renderer ships this round and 0b's behaviour does not, and one switch for both would
-        have shipped the unproven half with the proven one. EJ_AGENT_0B=1 for the rig's B1-B4. */
+    /** ITEM 0b, SEPARATELY (16 Oct 2026): does a live run survive its window closing? DEFAULT YES
+        since 20 Oct 2026, when Sean proved it in Logic - closed the window on a run waiting on
+        "How's it sounding?", reopened it, and found the card still waiting with its chips live. The
+        env var is a kill switch and nothing else now: EJ_AGENT_0B=0 turns it off without a rebuild.
+        Published on the rig state as `agent0bOn` so no harness has to keep a second copy of this
+        answer - the one that did had the default inverted for two days (gate 2026-10-22). */
     bool agentRunSurvivesCloseOn() const;
 
     /** The client talks to the editor through this, so the editor does not need to become a
@@ -2803,7 +2858,12 @@ private:
         switch (m)
         {
             case AgentApproval::Auto: return "Auto: does everything without waiting, and only stops to ask you a question. Undo all is on the message.";
-            case AgentApproval::Ask:  return "Ask: small moves just happen; adding, removing or touching another track waits for your Apply.";
+            // 19 Oct 2026, his 17:20 note: *"Under Sean's rule Go approves every step of a plan and
+            // there's no second Apply, so reword to match."*  The old line described the approval
+            // model this build had before the plan card: a per-op gate, with an Apply after it. Go
+            // is the approval now, it covers every step of the plan, and nothing waits behind it -
+            // so a line promising a second Apply was telling him to look for a button that is gone.
+            case AgentApproval::Ask:  return "Ask: EchoJay measures, offers a plan, and Go does all of it.";
             // 19 Oct 2026, his words: *"Agent off still builds; it's just not agentic."*  The old
             // line ("you make the changes") described a product where Off meant chat only, and it
             // told him the Build button would not work.
@@ -3444,7 +3504,9 @@ private:
             a Link - beside the sentence that says where it is. Asks that Link to raise its own
             window, and then says which of the two things happened, because nothing in this process
             can make Logic OPEN a window that is closed. */
-        juce::TextButton bringFwdBtn { "Bring it forward" };
+        // bringFwdBtn DELETED (his 14:19 ruling, 21 Oct 2026): no button and no window opening on a
+        // Link slot until the shadow lands. onBringLinkForward keeps its own note where it is
+        // assigned; nothing in this panel presses it any more.
         // The SLOT travels with the press (18 Oct 2026): the window being asked for is that
         // plugin's, and the Link needs to know which of its slots to open.
         std::function<void (const juce::String& /*note*/, int /*slotIdx*/)> onBringLinkForward;
@@ -3548,12 +3610,21 @@ private:
         juce::String remoteEditorNote (const juce::String& pluginName) const
         {
             if (remoteName.trim().isEmpty()) return {};
-            // ---- AND NOW THERE IS SOMETHING TO PRESS (18 Oct 2026, Sean's item 3) --------------
-            // The note used to end "open it in that track's EchoJay window", which asked HIM to do
-            // the one thing the button can now do itself: the Link hosts the plugin, so the Link can
-            // open its window. The sentence says what the button does rather than what he must do.
-            return pluginName.trim() + " is running on " + remoteName.trim()
-                 + " - Bring it forward opens its window there";
+            // ---- NO BUTTON, AND NO WINDOW OPENING (his 14:19 ruling, 21 Oct 2026) --------------
+            //
+            // *"Remove the "Bring it forward" button and its "... is running on <Link> (editing) -
+            // Bring it forward opens its window there" text. Until the shadow lands, a Link slot's
+            // view shows just the plugin's name and a plain line ("The live view of this plugin is
+            // coming soon"), plus the Suggested Settings panel as now. No button and no window
+            // opening."*
+            //
+            // The button did work - it raised the plugin's window on the Link's own track - and that
+            // is exactly what he does not want: a window somewhere else is not a view of this slot.
+            // The shadow (docs/PLAN_LIVE_SHADOW_2026-10-20.md) is the real answer, and until it
+            // lands the honest thing is one line that promises nothing and offers nothing. The
+            // plugin's NAME is drawn by the card as it always was; this is the line under it.
+            juce::ignoreUnused (pluginName);
+            return "The live view of this plugin is coming soon";
         }
         // Rack lock: TRUE while viewing a remote rack this main does not
         // hold — remote edit affordances disable, tooltip says why. Set only
@@ -3664,18 +3735,6 @@ private:
             popBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             popBtn.setTooltip("Open in floating window at native size");
             popBtn.onClick = [this] { openPopoutForSelected(); };
-            // The forward button lives with the note it belongs to: hidden unless the mirror has
-            // just said "this plugin is running on <track>".
-            bringFwdBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xcc0E1020));
-            bringFwdBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff22d3ee));
-            bringFwdBtn.setTooltip ("Open that plugin's window on its own track");
-            bringFwdBtn.setVisible (false);
-            addChildComponent (bringFwdBtn);
-            bringFwdBtn.onClick = [this]
-            {
-                if (onBringLinkForward == nullptr) return;
-                onBringLinkForward (remoteName, selectedIdx);
-            };
             addChildComponent(popBtn);
 
             // Card header B / X — same actions as the strip blocks
@@ -3847,17 +3906,16 @@ private:
                     const auto note = remoteEditorNote (slotInfos[(size_t) i].name);
                     statusText = note.isNotEmpty() ? note
                                                    : juce::String ("Failed: could not open editor");
-                    bringFwdBtn.setVisible (note.isNotEmpty());
-                    // ---- "THE EDITOR SHOULD JUST APPEAR" (18 Oct 2026, Sean's item 3) ----------
-                    // Selecting the slot asks for it, once per selection: he selected a slot and read
-                    // a sentence telling him to go and do it himself. The press is still there for
-                    // raising it again, and the once-per-selection guard is why clicking along the
-                    // strip does not fire a window per block.
-                    if (note.isNotEmpty() && autoShownSlot_ != i && onBringLinkForward != nullptr)
-                    {
-                        autoShownSlot_ = i;
-                        onBringLinkForward (remoteName, i);
-                    }
+                    // ---- AND NOTHING OPENS A WINDOW (his 14:19 ruling, 21 Oct 2026) -----------
+                    //
+                    // *"No button and no window opening."*  What stood here raised the plugin's
+                    // window on the Link's own track, once per selection - the 18 Oct answer to
+                    // "the editor should just appear". A window on another track is not a view of
+                    // this slot, and the shadow is the real answer; until it lands, selecting a
+                    // Link slot shows the name, the plain line and the Suggested Settings panel,
+                    // and reaches into nothing. onBringLinkForward is left wired for the Link tab's
+                    // own one-shot command road, which is not this.
+                    autoShownSlot_ = i;       // still one-shot, so nothing retries per repaint
                     resized();
                     repaint(); return;
                 }
@@ -3919,7 +3977,6 @@ private:
                 // a plugin that had not failed. It is running, on another track, in another process.
                 const auto note = remoteEditorNote (slotInfos[(size_t) i].name);
                 statusText = note.isNotEmpty() ? note : juce::String ("Failed: could not open editor");
-                bringFwdBtn.setVisible (note.isNotEmpty());
                 resized();
                 repaint(); return;
             }
@@ -4254,7 +4311,6 @@ private:
                 statusText = note.isNotEmpty() ? note
                            : ("Failed: " + slotInfos[(size_t)i].name
                               + "'s editor could not be created");
-                bringFwdBtn.setVisible (note.isNotEmpty());
                 resized();
                 EchoJay_NSLog(("EJPane(main): popout create FAILED: "
                     + slotInfos[(size_t)i].name).toRawUTF8());
@@ -4455,9 +4511,19 @@ private:
             // readable until the flow itself moves on.
             if (remote && !editingSession)
             {
-                const juce::String hint =
-                    "Select a plugin, then EDIT THIS PLUGIN to adjust it here. "
-                    "You will hear " + remoteName + " solo, live, while you edit.";
+                // ---- THE RESTING HINT NAMES NOTHING THAT IS GONE (his 17:3x note, 21 Oct) ----
+                //
+                // *"A Link's rack view with no slot selected still says "Select a plugin, then EDIT
+                // THIS PLUGIN to adjust it here. You will hear Aitch_4_01 solo, live, while you
+                // edit." There's no such button and no solo any more. Replace it with a plain line
+                // ("Select a plugin to see its settings") until the shadow lands."*
+                //
+                // Left over from the same removal as "Bring it forward": the sentence described an
+                // affordance and an audition that this build no longer has, which is worse than
+                // saying less - he would have gone looking for the button. One plain line, and it
+                // promises only what is actually there (the name and the Suggested Settings panel);
+                // the shadow is what will earn a longer sentence.
+                const juce::String hint = "Select a plugin to see its settings";
                 if (statusText.isEmpty() || statusText == restingHint_)
                     statusText = hint;
                 restingHint_ = hint;
@@ -4590,9 +4656,9 @@ private:
                 //
                 // drawFittedText wraps it, up to four lines, and leaves room under it for the
                 // button that belongs to it.
-                auto textArea = area.reduced (16);
-                if (bringFwdBtn.isVisible()) textArea = textArea.withTrimmedBottom (34);
-                g.drawFittedText (statusText, textArea, juce::Justification::centred, 4, 1.0f);
+                // ...and nothing is reserved under it any more (his 14:19 ruling): the button that
+                // used to sit there is gone, so the line has the whole area.
+                g.drawFittedText (statusText, area.reduced (16), juce::Justification::centred, 4, 1.0f);
             }
             else if (slotInfos.empty())
             {
@@ -4645,18 +4711,25 @@ private:
             applyBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
             applyBtn.setVisible(editingSession);
             editBtn.setBounds(getWidth() - kCardMargin - 156, 6, 156, 22);
-            editBtn.setVisible(remote && !editingSession && selectedIdx >= 0);
+            // ---- AND THE BUTTON THE HINT NAMED IS GONE TOO (his 17:3x note, 21 Oct 2026) ------
+            //
+            // *"There's no such button and no solo any more."*  He is describing what he expects,
+            // and on a Link's rack it was still there whenever a slot was selected. What it does is
+            // what his 14:19 ruling removed: it starts a remote edit session in order to show the
+            // plugin's editor, and the audition it used to come with was retired on 11 Oct. A button
+            // that leads to a window this build no longer opens is the thing that ruling forbids.
+            //
+            // So it is hidden on a REMOTE rack. The local rack is untouched - there the editor opens
+            // here, in this process, which is the case the button was built for - and the Suggested
+            // Settings panel is still the Link slot's view until the shadow lands. Flagged to him
+            // rather than assumed: if he wants the Link's edit session back, this one line restores
+            // it.
+            editBtn.setVisible(false);
             // ---- "Bring it forward" GOES WITH ITS NOTE (17 Oct 2026, Sean's item 8) -------------
             // It was at (kCardMargin, getHeight() - 30): the bottom-left of the whole panel, which
             // is where the rack strip's M and S buttons are - so it was drawn over them, far from
             // the sentence it answers, and looked like part of the strip. It belongs directly under
             // the note, inside the display area, centred, which is where the eye already is.
-            {
-                const auto da = displayArea();
-                const int bw = 170, bh = 24;
-                bringFwdBtn.setBounds (da.getCentreX() - bw / 2,
-                                       juce::jmax (da.getY() + 8, da.getBottom() - 16 - bh), bw, bh);
-            }
 
             // Settings text sits inside its card, below the tiny caps label
             auto sb = settingsBoxRect();
@@ -4781,6 +4854,27 @@ private:
     // ChainHost::applyChainEdits (staleness-guarded, stop-at-failure).
     std::array<juce::TextButton, kMaxChainBuildBtns> editApplyBtns;
     std::array<int, kMaxChainBuildBtns> editApplyMsgIdx { };
+    /** ---- A PRESS APPLIES THE CARD IT WAS SHOWN ON (20 Oct 2026, his 09:52) -------------------
+        *"B's outcome edit block showed 'Applied to ... 2 of 2 changes' straight away, with no
+        Build/Apply press. In agent off nothing should change the rack until the user presses Build
+        (or Apply on an edit card)."*
+
+        His log says the APPLY BUTTON's handler ran (`EJProposal: applying the staged ops (the Apply
+        button)`), so there is no auto-apply path to remove - applyStagedProposal has exactly two
+        callers and it named the button. What there IS, is a way for that handler to apply a card it
+        was never shown on:
+
+        the buttons are POOLED. `onClick` is bound once per slot at construction and captures the
+        SLOT index; the layout pass re-aims each slot at whatever message it is drawing
+        (editApplyMsgIdx[bi] = msgLoopIndex). So a press dispatched after a relayout - a new reply
+        arriving is enough - lands on whichever message that slot now points at. The handler cannot
+        tell, because an index is not an identity.
+
+        So the slot also records the editData of the message it was DRAWN for, and the handler
+        refuses a press whose message no longer matches. Whether or not this caused his 09:52, a
+        press that can land on the wrong card is indistinguishable from no press at all from where
+        he is sitting - which is exactly what he reported. */
+    std::array<juce::String, kMaxChainBuildBtns> editApplyKey { };
     int activeEditApplyBtns = 0;
     // "Suggest an alternative" pills on retired cards whose failure was a
     // plugin LOAD failure (never staleness/invalid aborts — re-asking is
@@ -6669,6 +6763,23 @@ private:
                                              // an old Link reads not-Waves)
         si.landedValues = rs.landedValues;   // 16 Oct: the numbers the plugin SHOWS, not the request
         si.dialPending  = rs.dialPending;    // 16 Oct: and whether its dial has finished
+        // ---- THE SLOT'S OWN TRIMS (19 Oct 2026, his 18:17 run) --------------------------------
+        //
+        // *"the Link's own slot card shows OUT +3.1 (the silent match worked) but the main V2 rack
+        // view of that Link still shows OUT +0.0 on the same slot."*
+        //
+        // THIS is why, and it is not about the road that wrote it and not about the slot being
+        // selected: this converter is the V2's ONLY view of a Link's slot, and it never copied the
+        // trims. The sidecar has carried outGainDb and preTrimDb since 5 Oct; SlotInfo has fields
+        // for both; the two were simply never joined, so every Link slot in the V2 read 0.0 by
+        // default no matter what the Link said.
+        //
+        // Which also explains why this afternoon's republish + panel rebuild did not reach it. Both
+        // halves were working: the Link republished, the V2 noticed and rebuilt the rows - and the
+        // rebuild re-read through here and painted the same 0.0 again. A refresh is only as good as
+        // the conversion it refreshes through.
+        si.outGainDb = rs.outGainDb;
+        si.preTrimDb = rs.preTrimDb;
         return si;
     }
     ChainRackView chainRackView() const;
@@ -6771,6 +6882,10 @@ private:
     // 21n ruling 1b (22 Sep 2026): channelWidth per TARGET - on a turn targeting a Link it is THAT Link's channel width
     // (its registry row), never V2's own; 0 (unknown) leaves the field off the body. Local rack: V2's bus width.
     int  chatTargetChannelWidth() const;
+    /** slot_levels for the rack THIS TURN is about - the open rack, or a Link's own published
+        sidecar - resolved through the same effectiveChannelUid() channelRole and channelWidth use.
+        One decision for all three send sites (Sean's 16:04, 20 Oct 2026). */
+    juce::var slotLevelsForTarget() const;
     /** 21t-m item 3: the TARGET's role and name - on a Link-targeted turn every per-channel field is the
         target's, resolved through the same effectiveChannelUid() the width already uses. */
     echojay::ChainRole chatTargetChainRole() const;
@@ -6888,7 +7003,9 @@ private:
     int dashUnreadSeen_ = 0;
 
     EchoJayAPI& api;
-    EchoJayWorkspace workspace { api };
+    // THE STORE IS THE PROCESSOR'S NOW (22 Oct 2026, his 09:24 fault): a run that finishes with no
+    // window still has somewhere to write its card. Bound from the constructor parameter, like api.
+    EchoJayWorkspace& workspace;
 
     // =========================================================================
     //  Link tab — live auto-discovery panel

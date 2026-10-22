@@ -15,6 +15,7 @@
 #include "EJStateRoot.h"   // echojay::userAppData() - every state path goes through the root so a runner can isolate it
 #include "EJLevelRecord.h"  // 21t-i: the stored level record (shared with the Link)
 #include "EchoJayAPI.h"
+#include "EchoJayWorkspace.h"   // 22 Oct 2026: the chat store is the PROCESSOR'S, so a windowless run can append
 #include "DashPoll.h"
 #include "LinkShm.h"
 #include "EchoJayUndoHistory.h"   // 21n item 3
@@ -472,6 +473,27 @@ public:
      */
     EchoJayAPI& getApi() { return api; }
 
+    /** ---- THE CHAT STORE, ON THE PROCESSOR (Sean's fault of 22 Oct 09:24) -------------------
+        *"a run with no window open does NOT come back in the chat ... the build WAS on the rack,
+         but the chat showed only my message: no agent card, no steps, no closing, no chips, no
+         Undo all."*
+
+        THE CAUSE, and it is structural rather than a missed call: this store was a member of the
+        EDITOR. A run's card was appended to it by the window, at the END of the run - so a run that
+        finished with no window had nowhere to write, its card lived only in `chatHistory` (the
+        window-crossing replay list), and the first chat switch dropped that list on the floor:
+            EJStores: dropped 1 unsynced row(s) that belong to chat 1792657430720
+        His instruction is to fix it at the cause "through the single stamp (the store appends first,
+        with no window involved)", and a stamp cannot append to a store that does not exist.
+
+        So the store lives here, and the editor holds a REFERENCE to it - the same move EchoJayAPI
+        made above, with the same lifetime guarantee (JUCE destroys the editor before the processor,
+        and this is a plain value member so it outlives every window). Its constructor does no work
+        and starts no timer, so owning it costs nothing until something loads or appends.
+
+        Every one of the editor's 200-odd `workspace.` call sites is unchanged. */
+    EchoJayWorkspace workspace { api };
+
     // ---- ITEM 0b (Sean, 14 Oct 2026): THE RUN SURVIVES THE WINDOW -------------------------------
     //
     // The agent's client, executor and the run's record live HERE, not on the editor, because an
@@ -780,6 +802,15 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // After a pushed edit is acked: the session's base becomes the live rack (created slots gain a record so their state edits
     // still commit at deselect). Public for the guard.
     void borrowRebaseAfterPush();
+    /** ---- THE COPY IS STALE AND ONLY A FRESH READ CAN FIX IT (Sean's 09:59, 21 Oct 2026) ----
+        Raised when an editor open is refused because the hosted copy's slot identity does not match
+        the Link's published one. The EDITOR owns the repair (startBorrow re-reads the Link's rack,
+        which is what his close-and-reopen was doing by hand), so the processor states the fact and
+        the editor acts on it.
+
+        NOT borrowRebaseAfterPush: that re-stamps the mirror's own contents as the baseline, which on
+        a drifted copy blesses the drift. */
+    std::function<void (const juce::String& uid)> onBorrowCopyStale;
     // 20 Sep 2026 (rebase-on-ack, the owed fix): a pushed structural edit is PENDING until the Link acks it "ok"; the session
     // rebases in the ack callback, never on write success. The chain-cmd transport has ONE file per Link, so pushes are QUEUED
     // and written one at a time (the next is written when the previous is acked); a missing or "failed" ack keeps the op at the
@@ -985,6 +1016,21 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
 
     juce::String lastWorkingUid_;      // item 5: the rack the editor was working on when it last closed
     juce::String borrowStickyBanner_;
+    /** ---- THE RACK THE BANNER IS ABOUT (his 11:54, 21 Oct 2026) -----------------------------
+        *"Undo all on the mix bus refilled it ... and the centre said "Applied to 88_7even
+        Kick_2_01"."*
+
+        The banner carried no rack, and the panel painted it over whatever rack was in view - so a
+        sentence about the Kick's borrow session sat in the middle of the mix bus, directly under an
+        undo he had just run there. It reads as "the undo was applied to the Kick", which is the one
+        thing a user must never have to wonder about.
+
+        Fix 4(c) of 14 Oct met this same class ("Sean was on the Mix Bus and read 'Released -
+        Aitch_4_01 owns its rack again'") and answered it with a GRACE WINDOW - which hides a
+        mismatched banner for a second and a half and then shows it anyway. The fact it needed is
+        this one: which rack the sentence is about. Empty = about no particular rack (the solo
+        banner), and those still show anywhere. */
+    juce::String borrowStickyBannerUid_;
     // FIX 4(c), 14 Oct: when this banner became visible, and how long it must survive before it is SHOWN.
     // Only the release path sets a grace (see borrowApplyAndRelease); every other banner is immediate, so
     // the default of 0 keeps them all exactly as they were.
@@ -993,6 +1039,9 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
 public:
     /** The banner as the UI should SHOW it: empty while a graced one is still inside its grace, so a
         release that is immediately superseded by a re-engage is never seen. */
+    /** The rack this banner belongs to, or empty for "any rack". The panel paints the banner only
+        when this is empty or is the rack in view (his 11:54). */
+    juce::String borrowStickyBannerUid() const { return borrowStickyBannerUid_; }
     juce::String borrowStickyBannerVisible() const
     {
         if (borrowStickyBanner_.isEmpty() || borrowStickyBannerGraceMs_ <= 0) return borrowStickyBanner_;
@@ -1419,8 +1468,68 @@ public:
         // deliberately NOT in getStateInformation: it is about a closed window inside one session,
         // and the run's prose is already in `content`, which is what a saved project carries.
         juce::String agentJson;
+        // ---- WHICH CHAT THIS ROW BELONGS TO (Sean's 16:00, 20 Oct 2026) ----------------------
+        //
+        // *"The previous run's card ("Stopped. 1 change", from his earlier test) appeared in this
+        // chat when he pressed Enter. This happened before too."*
+        //
+        // chatHistory is PER PROCESSOR, not per chat, and the reload merge in the editor puts every
+        // held row the open chat's store does not have back into THAT chat. For a user turn or a
+        // reply that is harmless - the store already has them, so they match and nothing is
+        // inserted. For an AGENT ROW it is the bug: the row is born here with an empty `content`
+        // (the prose arrives later), so it matches nothing in any store, and every chat he opens
+        // looks like the chat that is missing it.
+        //
+        // The 11:59 fix closed the row's BIRTH into another chat ("survival is not capture"). This
+        // is the other door: a row born correctly in chat A, put back into chat B by the merge.
+        //
+        // EMPTY MEANS "NOT STATED", and then the merge behaves exactly as it does today - which is
+        // right for every row that is not an agent card, and keeps a saved project readable.
+        juce::String chatId;
+        /** ---- STAGE B OF THE CHAT LOG (his ruling of 21 Oct 2026) ---------------------------
+            The same two facts the store's rows now carry: the entry's PLACE in its chat and its own
+            IDENTITY, both set when the entry is created. `chatId` above was the first of the three
+            and arrived on its own for the 16:00 fault; these two complete the set.
+
+            Why they are here as well as in the store: this list is what a run writes into while no
+            window exists, and it is what the reload used to reconcile against the store by matching
+            role and content. With a place and an identity on both sides there is nothing to
+            reconcile - stage C selects by chatId, sorts by seq, and updates a run's entry by id.
+
+            In memory only, like `agentJson` above and for the same reason: this is about a closed
+            window inside one session. 0 / empty = not stamped, which is every row an older build or
+            an un-migrated path produced. */
+        juce::int64  seq = 0;
+        juce::String entryId;
     };
     std::vector<ChatEntry> chatHistory;
+    bool saidUnstampedRow_ = false;   // stage B: the no-chat-id line is said once per session
+    /** ---- STAGE B: ONE STAMPER FOR BOTH ROADS (his chat-log ruling) -------------------------
+        The store has its own (EchoJayWorkspace::stampLogEntry) and this is the processor's, for the
+        rows that reach the processor's list first - a run that outlives a window, an orphaned turn,
+        a notice. It takes the chat's id and the run's key when there is one, and it asks the STORE
+        for the next seq so the two roads cannot allocate the same place. `workspaceSeqFor` is the
+        seam: the editor owns the workspace, so the processor is handed a reader rather than reaching
+        for one (which is also what makes it testable without a store on disk). */
+    std::function<juce::int64 (const juce::String& chatId)> nextChatSeq;
+    /** The run's card into the stored log, by its entry id (the run's key) - an update if that run
+        already has a row there, an append if it does not. Called from the stamp and from the run's
+        own snapshot, so both writers take one road (22 Oct 2026, his 09:24 fault). */
+    void storeAgentCard (const juce::String& chatId, const juce::String& entryId,
+                         const juce::String& agentJson, const juce::String& content);
+    void stampChatEntry (ChatEntry& e, const juce::String& chatId, const juce::String& runKey = {});
+    /** ---- STAGE B: ONE DOOR INTO THE PROCESSOR'S LIST (his chat-log ruling) ----------------
+        Every write to chatHistory goes through one of these two, so an entry cannot reach the list
+        without its chat, its place and its id. Twenty call sites each doing it by hand is twenty
+        chances to miss one, and a missed one is exactly the row stage C would have to guess about.
+
+        A row appended with NO chat id is left unstamped and SAID ONCE in the log - that is the state
+        his 19:51 fault lived in (a window whose current chat did not exist yet), and it must be
+        visible before stage C relies on the field. */
+    void appendChatEntry (const juce::String& role, const juce::String& content,
+                          const juce::String& chatId, const juce::String& agentJson = {},
+                          const juce::String& runKey = {});
+    void appendChatEntry (ChatEntry e, const juce::String& chatId, const juce::String& runKey = {});
     // ITEM 3 (12 Oct 2026): turns that finished while NO editor was attached. Written by the api hook set in the
     // constructor, drained by the next editor, which renders them into the transcript and persists them to the
     // workspace. In memory only and deliberately NOT in getStateInformation: this is about a closed window
@@ -1520,8 +1629,13 @@ public:
         destructor, the rule the hook above it records. No window attached = nothing to refresh, which
         is correct rather than a missed update: a window that opens later rebuilds its rows anyway.
 
-        `uid` is the rack that changed ("" = this instance's own rack). */
-    std::function<void (const juce::String& uid)> onAgentChangedRack;
+        `uid` is the rack that changed ("" = this instance's own rack).
+
+        `putAPluginIn` is TRUE when the batch ADDED or REPLACED a plugin, which is the one kind of
+        agent change that alters the rack's loudness without a human at the controls - so it is also
+        the one kind that re-levels (Sean's item 2, 19 Oct 2026). A Link arms its own loop from the
+        command's intent; the open rack has no command to carry an intent, so it arrives here. */
+    std::function<void (const juce::String& uid, bool putAPluginIn)> onAgentChangedRack;
 
 
     // Visual mode state — persisted with DAW session

@@ -1,7 +1,9 @@
 #include "EJDialWrites.h"
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
-#include "EJBorrowReadWait.h"   // item 22: what to do when a borrowed read's window expires
+#include "EJSlotLevelsBlock.h"   // B 92(2): the one slot_levels composer
+#include "EJBorrowReadWait.h"
+#include "EJDontUse.h"        // his 11:5x item 3: "don't use that one", parsed in one place   // item 22: what to do when a borrowed read's window expires
 #include "EJAffirmation.h"   // 06d test 5: the narrow client-side yes to a staged proposal
 #include "EJNetCensus.h"   // 7 Oct 2026 (06d item 1): the editor's fetches are in the census too
 #include "EJCaptureChannels.h"
@@ -18,6 +20,7 @@
 #include "ChatBubbleStyle.h"    // hurdle 1 item 3: the one text-colour rule (coral for a NOT DIALABLE report)
 #include "NotDialableText.h"
 #include "EJRackSidecarFill.h"   // 21t-e: the borrowed host IS the chain while the lease is held
+#include "EJSourceType.h"   // round (b): what a channel IS, and where that answer came from
 #include "ChainJsonView.h"    // hurdle 1 item 3: the words + the built-in alternative by role
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
@@ -439,7 +442,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // constructor parameter rather than from processorRef, so it does not
     // depend on member declaration order. See getApi() in
     // PluginProcessor.h for the lifetime argument.
-    : AudioProcessorEditor(&p), processorRef(p), api(p.getApi())
+    : AudioProcessorEditor(&p), processorRef(p), api(p.getApi()), workspace(p.workspace)
 {
     // IDENTITY FIRST (15 Oct 2026), before anything can send a turn: the keep-rule for a chat reply asks
     // which WINDOW asked, and it asks by this id rather than by this address, because an address gets
@@ -470,12 +473,50 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // own ChainHost has finished instantiating, so a single read here can honestly see the old count. It
     // stops at the first change, and it only rebuilds the ROWS when the changed rack is the one in view -
     // rebuilding someone else's would be a second bug wearing this one's clothes.
-    processorRef.onAgentChangedRack = [this] (const juce::String& uid)
+    // ---- STAGE B: THE PROCESSOR ASKS THE STORE FOR A PLACE (his chat-log ruling) -------------
+    // The store is the only allocator. The processor outlives this window, so it is handed a reader
+    // rather than reaching for one - and when no window exists the reader is simply absent, which
+    // leaves a row unstamped (said once) instead of inventing a place for it.
+    processorRef.nextChatSeq = [this] (const juce::String& chatId)
+    { return workspace.takeNextSeq (chatId); };
+    processorRef.onAgentChangedRack = [this] (const juce::String& uid, bool putAPluginIn)
     {
         if (uid.isEmpty())                        // our own rack: the revision moved, so rebuild now
         {
             refreshChainPanelForView (true);
             EchoJay_NSLog ("EJBorrow: the agent changed THIS rack - the panel's rows were rebuilt (Sean's #3)");
+            // ---- ITEM 2 (19 Oct 2026): THE OPEN RACK RE-LEVELS TOO -----------------------------
+            // A Link arms its loop from the command's intent (EJAgentHome::intentForOps). The open
+            // rack takes the in-process applier, which has no command and no intent, so the flag
+            // comes with the hook. Only an add or a replace raises it: ruling G's arm is the same
+            // one an own-rack BUILD takes, and an ordinary edit must never re-level a rack.
+            if (putAPluginIn)
+            {
+                // ---- UNLESS SOMETHING ELSE OWNS THE LEVEL (his ruling, 20 Oct 2026) ----------
+                // His 20:5x build: the match wrote -2.3 dB on the EchoJay EQ's OUT - the LAST slot,
+                // so after the FG-X 2 - and undid the limiter's loudness. The rule is one function
+                // so both roads refuse for the same reason in the same words.
+                bool hasLimiter = false;
+                {
+                    auto& h = processorRef.getChainHost();
+                    for (int i = 0; i < h.getNumSlots() && ! hasLimiter; ++i)
+                        if (ChainHost::isLimiterLikeName (h.getSlotInfo (i).name)) hasLimiter = true;
+                }
+                const auto why = LoudnessLoop::postAddMatchRefusal (
+                                     echojay::sourcetype::kindTextForChannelType (processorRef.getChannelType()),
+                                     hasLimiter);
+                if (why.isNotEmpty())
+                    EchoJay_NSLog (("EJLoudness: NO post-add level match on this rack - " + why
+                                    + " (his ruling of 20 Oct, after the build that wrote -2.3 dB on "
+                                      "the last slot's OUT and undid the limiter)").toRawUTF8());
+                else
+                {
+                    EchoJay_NSLog ("EJLoudness: the agent put a plugin in on THIS rack - arming the same "
+                                   "silent slot-OUT level match the Build button gets (Sean's item 2), "
+                                   "and inserting NOTHING (his 15:30 ruling)");
+                    armLoudnessLoopIfTargeted (/*mayInsertLimiter*/ false);
+                }
+            }
             return;
         }
         auto safeRefresh = juce::Component::SafePointer<EchoJayEditor> (this);
@@ -1964,6 +2005,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                                                      : AgentApproval::Off;
         const bool turningOff = (next == AgentApproval::Off);
         setAgentApprovalMode (next);
+        // ---- A MODE SWITCH CLEARS A PENDING ASK (20 Oct 2026, his 09:35) ----------------------
+        // *"An ask's chips clear when the user sends anything else, switches mode, or starts a
+        // run."*  His pick's chips survived the switch to agent on: nothing on this path touched
+        // them, and chips belonging to the conversation being left are a question nobody will
+        // answer. (The clear is HERE and not in setAgentApprovalMode, which is static and owns no
+        // instance state.)
+        if (askShelfVisible_)
+        {
+            EchoJay_NSLog ("EJAskChip: the approval mode changed with an ask pending - the chips are "
+                           "cleared, because they belong to the conversation being left (his 09:35)");
+            supersedePendingAsks();
+            askShelfVisible_ = false;
+            askShelfIsCard_  = false;
+            briefCard_.setVisible (false);
+            resized();
+        }
         // SWITCHING IT OFF STOPS WHAT IS RUNNING, as Sean asked. ExecutorDo already re-checks agentModeOn() on
         // every op, so nothing FURTHER would be applied either way - but leaving the turn spinning after the
         // user has withdrawn permission is not a clean stop, so the run ends the same way Stop ends it.
@@ -1981,7 +2038,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     agentModeLine_.setJustificationType (juce::Justification::centredLeft);
     agentModeLine_.setColour (juce::Label::textColourId, C::text3);
     agentModeLine_.setInterceptsMouseClicks (false, false);
-    agentModeLine_.setMinimumHorizontalScale (1.0f);
+    // ---- IT MUST NOT BE CUT OFF (Sean's 18:2x, 20 Oct 2026) --------------------------------
+    // *"It's also cut off ("Off: EchoJay suggests a chain. Press Build and it add...") so make it
+    // fit or wrap."*  minimumHorizontalScale 1.0 forbids any squeeze, so a sentence wider than the
+    // strip was simply truncated with an ellipsis - the one outcome worse than a smaller font,
+    // because a half-sentence about what a MODE does is a sentence that misinforms.
+    //
+    // Two allowances, in the order a reader would want them: wrap to a second line (the strip
+    // reserves for however many lines it needs, see resized), and if even that will not fit, let
+    // the glyphs squeeze to 0.85 before anything is dropped.
+    agentModeLine_.setMinimumHorizontalScale (0.85f);
+    agentModeLine_.setJustificationType (juce::Justification::topLeft);
     addChildComponent (agentModeLine_);
     syncAgentChip (true);
     // No restore from processor state: the router selection is transient
@@ -2175,6 +2242,29 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // construct the real states and call it).
         return processorRef.createSlotEditorForView(chainViewUid(), i);
     };
+    // ---- A STALE COPY IS REBUILT, NOT REOPENED BY HAND (Sean's 09:59 + his update) ------------
+    //
+    // *"closing and reopening the V2 window made every editor open the right plugin again, so the
+    // mirror is only rebuilt on reopen. It needs to follow every X, picker add and agent add (or the
+    // editor path must take the sidecar's identity) without a reopen."*
+    //
+    // Both halves are now done and they back each other up: the editor path REFUSES on an identity
+    // mismatch (createSlotEditorForView, so it can never open the wrong plugin), and that refusal
+    // lands here and starts the same read his reopen was running by hand - startBorrow, which
+    // re-reads the Link's rack and rebuilds the copy from it.
+    //
+    // ONE READ AT A TIME is already enforced inside startBorrow (borrowReadInFlightUid_, which now
+    // has a deadline), so a user clicking three editors in a row asks once and waits.
+    processorRef.onBorrowCopyStale = [this] (const juce::String& uid)
+    {
+        if (uid.isEmpty()) return;
+        EchoJay_NSLog (("EJBorrow: the hosted copy of " + uid + " is out of step with the Link, so an "
+                        "editor was refused - re-reading that rack now and rebuilding the copy from "
+                        "it, which is what his close-and-reopen was doing by hand (his 09:59)").toRawUTF8());
+        chainListPanel.statusText = "That rack changed - reloading it. Try the editor again in a moment.";
+        chainListPanel.repaint();
+        startBorrow (uid);
+    };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
     // ITEM 7 (17 Oct 2026): a slot editor only ever draws on the rack's own tab. The panel asks;
     // switchToTab is the single writer of the visible tab, so nothing else has to be re-asserted.
@@ -2207,10 +2297,25 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // A Link's remove does not need a session any more than its build does: it takes the same
         // edit-cmd road, and the Link closes its own editors before applying a chain change
         // (onChainAboutToChange). So the gate refusing is no longer a reason to do nothing.
-        if (chainEditGateRefuses())
+        // ---- THE OPS CHOOSE THE ROAD, NOT THE GATE (20 Oct 2026, his 09:28) -------------------
+        //
+        // *"X must work over the wire in that state too (ops choose the road)."*
+        //
+        // Yesterday's fix put this wire road INSIDE `if (chainEditGateRefuses())`, so it ran only
+        // when no session was engaged. With one up the gate does not refuse, this fell through to
+        // the session road, and the session sent the MIRROR's baseSlots - which named the plugin the
+        // agent's insert had moved. His log: `preflight REFUSED guard=touched-slot-name slot=0
+        // base="Tube-Tech CL 1B" live="bx_opto"`. The Link's guard was right; the sender lied.
+        //
+        // I fixed the edit card by the ops yesterday and left this keyed on the gate - the same bug,
+        // the same day, a second call site. A REMOVE IS STRUCTURAL, so for a Link it always takes
+        // the wire, whatever the session is doing. The wire road sends no baseSlots at all, so the
+        // Link judges on the ops' own identities against its live rack and there is nothing to lie
+        // about.
+        if (! chainViewUid().isEmpty())
         {
             const juce::String uidR = chainViewUid();
-            if (uidR.isNotEmpty() && i >= 0)
+            if (i >= 0)
             {
                 std::vector<ChainHost::ChainEditOp> ops;
                 { ChainHost::ChainEditOp rm; rm.op = "remove"; rm.slot = i; ops.push_back (rm); }
@@ -2238,14 +2343,20 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                     // THE VIEW FOLLOWS THE LINK, so the next click acts on live slots - his
                     // follow-up was exactly this going stale after an agent add.
                     if (ok && safeRm->processorRef.onAgentChangedRack)
-                        safeRm->processorRef.onAgentChangedRack (uidR);
+                        safeRm->processorRef.onAgentChangedRack (uidR, false);   // a remove never re-levels
                     safeRm->chainListPanel.repaint();
                 }, 12000);
                 return;
             }
-            // The OWN rack, or no slot: there is no wire road, so say why rather than nothing.
-            chainListPanel.statusText = chainLockStateText (processorRef.rackLockState(),
-                                            processorRef.borrowHostIfActiveFor (chainViewUid()) != nullptr);
+            // No slot named: nothing to do, and saying so beats a silent return.
+            chainListPanel.statusText = "There is no slot there to remove.";
+            chainListPanel.repaint();
+            return;
+        }
+        // THE OWN RACK from here: no wire road exists for it, and the gate still governs.
+        if (chainEditGateRefuses())
+        {
+            chainListPanel.statusText = chainLockStateText (processorRef.rackLockState(), false);
             if (chainListPanel.statusText.isEmpty())
                 chainListPanel.statusText = "That rack cannot be edited just now.";
             chainListPanel.repaint();
@@ -2411,9 +2522,35 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // the hold are writing on that rack, never another's.
     chainListPanel.onSlotGainGet = [this](int i, bool isIn) -> float {
         const auto uid = chainViewUid();
-        auto* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
-        if (h == nullptr || i < 0 || i >= h->getNumSlots()) return 0.0f;
-        return isIn ? h->getSlotPreTrimDb(i) : h->getSlotOutGainDb(i);
+        // ---- ONE SOURCE PER RACK (Sean's 21 Oct: the trim flickered, then went blank) ----------
+        //
+        // *"The card's trim display flickering, then blank until a reload, is still yours to fix."*
+        //
+        // THE SAME TWO-SOURCES FAULT, in its most visible form. This getter is polled on every tick
+        // and read the MIRROR for a Link, while slotInfos[i].outGainDb - the figure seeded into the
+        // same readout one line away - comes from the SIDECAR. Two sources at two rates in a control
+        // that redraws continuously is a flicker by construction.
+        //
+        // And the BLANK was `return 0.0f` when borrowHostIfActiveFor(uid) handed back null, which
+        // happens whenever no session is engaged - and since his 20 Oct ruling that viewing must not
+        // engage, that is the NORMAL state of a viewed Link. So the getter answered 0.0 for every
+        // slot and the readout had nothing true to show; a reload fixed it only because the reload
+        // re-seeds from the sidecar. That it went blank exactly when viewing stopped engaging is the
+        // tell: this getter had been depending on a session that no longer exists.
+        //
+        // So: the OWN rack answers from its ChainHost, and a LINK answers from its own published
+        // sidecar - the Link is the one publisher of its rack, which is the rule the view, the edit
+        // base, the editor and the agent feed all now follow. The mirror is not consulted at all.
+        if (uid.isEmpty())
+        {
+            auto& h = processorRef.getChainHost();
+            if (i < 0 || i >= h.getNumSlots()) return 0.0f;
+            return isIn ? h.getSlotPreTrimDb(i) : h.getSlotOutGainDb(i);
+        }
+        const auto rack = readLinkRackSidecar (uid);
+        if (! rack.valid || i < 0 || i >= (int) rack.slots.size())
+            return std::numeric_limits<float>::quiet_NaN();   // NOT 0.0: see GainReadout
+        return isIn ? rack.slots[(size_t) i].preTrimDb : rack.slots[(size_t) i].outGainDb;
     };
     chainListPanel.onSlotGainSet = [this](int i, bool isIn, float db) {
         const auto uid = chainViewUid();
@@ -3123,7 +3260,25 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         editApplyBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
         editApplyBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
         editApplyBtns[(size_t)i].setVisible(false);
-        editApplyBtns[(size_t)i].onClick = [this, i]() { applyChainEditFromMsg(editApplyMsgIdx[(size_t)i]); };
+        editApplyBtns[(size_t)i].onClick = [this, i]()
+        {
+            // ONE PRESS, ONE CARD (20 Oct 2026, his 09:52). The pool slot is re-aimed by every
+            // layout; the identity it was DRAWN for is what the press belongs to. An index that has
+            // moved underneath a press is the one way this handler can change a rack the user was
+            // not looking at, which in agent off is the thing his rule forbids.
+            const int idx = editApplyMsgIdx[(size_t) i];
+            const auto wasShownFor = editApplyKey[(size_t) i];
+            const bool sameCard = idx >= 0 && idx < (int) chatMessages.size()
+                               && ! wasShownFor.isEmpty()
+                               && chatMessages[(size_t) idx].editData == wasShownFor;
+            EchoJay_NSLog (("EJProposal: Apply PRESSED on pool slot " + juce::String (i)
+                            + " -> message " + juce::String (idx)
+                            + (sameCard ? " (the card it was drawn for)"
+                                        : " - REFUSED: that slot has been re-aimed since it was drawn, so this "
+                                          "press does not belong to the card on screen (his 09:52)")).toRawUTF8());
+            if (! sameCard) return;
+            applyChainEditFromMsg (idx);
+        };
         replyLayer.addAndMakeVisible(editApplyBtns[(size_t)i]);   // F1: owned by the reply layer, not by the editor
 
         editAltBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
@@ -3528,7 +3683,8 @@ EchoJayEditor::~EchoJayEditor() {
         }
         else if (home->client().isActive())
             EchoJay_NSLog (("EJAgent: window #" + juce::String (editorId_) + " closed with a run LIVE - it "
-                            "carries on without a window (item 0b); a BUILD would park until one opens").toRawUTF8());
+                            "carries on without a window (item 0b), and since his 22 Oct ruling a "
+                              "BUILD applies too - by the road the agent's own adds take").toRawUTF8());
     }
 
     // Codec preview must never outlive its UI (25 Jul 2026): if the editor
@@ -11436,7 +11592,7 @@ void EchoJayEditor::runAICompare()
     if (!api.canSendTurn("version_compare")) {
         auto msg = api.getLimitReachedMessage("version_compare");
         chatMessages.push_back({"assistant", msg});
-        processorRef.chatHistory.push_back({"assistant", msg});
+        processorRef.appendChatEntry ("assistant", msg, currentChatId);
         repaint(); return;
     }
     // STEP 1: the compare context reads the VISIBLE slots (compareTop_/
@@ -11458,7 +11614,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     {
         // Never fail silently — an empty slot looked like a dead button.
         chatMessages.push_back({"assistant", "Load two slots to compare first."});
-        processorRef.chatHistory.push_back({"assistant", "Load two slots to compare first."});
+        processorRef.appendChatEntry ("assistant", "Load two slots to compare first.", currentChatId);
         repaint();
         return;
     }
@@ -11529,7 +11685,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
 
     if (compareCtx.isEmpty()) {
         chatMessages.push_back({"assistant", "Select two different items to compare."});
-        processorRef.chatHistory.push_back({"assistant", "Select two different items to compare."});
+        processorRef.appendChatEntry ("assistant", "Select two different items to compare.", currentChatId);
         repaint(); return;
     }
     // numbersOnly rides into the callback so the build gate never fires on a
@@ -11544,7 +11700,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
                                  : scope == CompareScope::Anyway      ? juce::String("Compare anyway")
                                  : juce::String("Compare these mixes");
     chatMessages.push_back({"user", turnLabel});
-    processorRef.chatHistory.push_back({"user", turnLabel});
+    processorRef.appendChatEntry ("user", turnLabel, currentChatId);
     // Persist the compare exchange so the figure card round-trips: previously
     // compare turns were never written to the workspace (they survived only an
     // editor recreate via chatHistory), so a reloaded chat lost them entirely.
@@ -11714,7 +11870,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
                     cm.editBaseRevision = safeThis->processorRef.getChainHost().getChainRevision();
             }
             safeThis->chatMessages.push_back(cm);
-            safeThis->processorRef.chatHistory.push_back({"assistant", visibleReply});
+            safeThis->processorRef.appendChatEntry ("assistant", visibleReply, safeThis->currentChatId);
             if (success) { safeThis->processorRef.chatRoles.add("assistant"); safeThis->processorRef.chatContents.add(visibleReply); }
             // Persist the assistant turn WITH the figure card so a reloaded chat
             // redraws it (item 2). Only on success - a failed send leaves the
@@ -11770,7 +11926,7 @@ void EchoJayEditor::presentCompareScopeAsk(const CompareSlotState& slotA,
     cm.content = bubble;
     cm.askData = askJson;
     chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", bubble });
+    processorRef.appendChatEntry ("assistant", bubble, currentChatId);
     // Persist so the pending ASK survives an editor recreate — the choice lives
     // in the persisted message's askData, NOT in editor-only state.
     if (currentChatId.isNotEmpty())
@@ -12729,6 +12885,36 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     // §5a-R: the ~1Hz tick that retries a deferred auto-engage (a release
     // in flight, the capability cache unfilled, or the rack lock pending).
     borrowSelectionTick();
+    // ---- ITEM 2 (19 Oct 2026, his 17:04): A TRIM THE LINK WROTE ITSELF SHOWS HERE TOO ---------
+    //
+    // *"The OUT value showed on the Link's own slot card but the main V2 rack view of that Link
+    // didn't update. Refresh the V2's view of a Link's slot when the Link writes its OUT trim."*
+    //
+    // The cache below has always taken whatever the sidecar says, trims included - but nothing asked
+    // the PANEL to redraw, because a trim change bumps no chain revision (correctly: the rack's shape
+    // and contents have not changed, and the staleness guards key on that revision). So the rows kept
+    // the figures they were built with until something else rebuilt them, which for Sean was
+    // switching racks and back - the same stale-view shape as this afternoon's dead X.
+    //
+    // A trim signature of the rack IN VIEW, compared across ticks. Cheap, and it asks the DATA rather
+    // than hoping a notification arrives.
+    const auto trimSignature = [] (const LinkShm::RackSidecar& r)
+    {
+        double sig = 0.0;
+        for (size_t i = 0; i < r.slots.size(); ++i)
+            sig += (double) r.slots[i].outGainDb * 41.0
+                 + (double) r.slots[i].preTrimDb * 43.0
+                 + (double) (i + 1);          // position IS the slot index here (no n field)
+        return sig;
+    };
+    const auto viewUid = chainViewUid();
+    double trimSigBefore = 0.0;
+    bool   haveSigBefore = false;
+    if (viewUid.isNotEmpty())
+        if (auto itV = processorRef.linkRackCache.find (viewUid);
+            itV != processorRef.linkRackCache.end() && itV->second.valid)
+        { trimSigBefore = trimSignature (itV->second.rack); haveSigBefore = true; }
+
     for (const auto& e : processorRef.getLinkDisplayList())
     {
         if (e.info.uid.isEmpty()) continue;   // legacy Link: no sidecar address
@@ -12738,6 +12924,19 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
         ce.rack   = std::move(rack);
         ce.readMs = nowMs;
     }
+
+    if (haveSigBefore && viewUid.isNotEmpty())
+        if (auto itA = processorRef.linkRackCache.find (viewUid);
+            itA != processorRef.linkRackCache.end() && itA->second.valid)
+        {
+            const double after = trimSignature (itA->second.rack);
+            if (std::abs (after - trimSigBefore) > 1.0e-6)
+            {
+                EchoJay_NSLog (("EJPanel: a trim on " + viewUid + " moved on the Link itself (the level "
+                                "match writes it), so the rows in view are rebuilt - his 17:04 item 2").toRawUTF8());
+                refreshChainPanelForView (true);
+            }
+        }
 
     // NO RE-MEASURE HERE ANY MORE. An EQ appearing in or leaving a rack used
     // to change the strip's GEOMETRY, because only a strip with a curve got
@@ -12962,6 +13161,24 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
         {
             auto it = processorRef.linkRackCache.find (uid);
             const bool haveSidecar = it != processorRef.linkRackCache.end() && it->second.valid;
+            // ---- AND THE TRIMS, AT ANY COUNT (20 Oct 2026, his 09:28 fault 2) -----------------
+            //
+            // *"the session view shows the Link's trims."*  The test below is a COUNT test, and his
+            // rack had 2 slots either side - counts agreed, TRIMS disagreed, so it could not see it
+            // and the view drew the mirror's +0.0 over a Link holding +6.6 and +0.61.
+            //
+            // THE LINK IS THE SOLE AUTHOR OF THE TRIMS: the level match writes them on the Link, and
+            // the V2's own IN/OUT controls go over the wire (remote_ops_guard's four value ops). So
+            // they are taken from the sidecar whenever there is one, at any count. Deliberately JUST
+            // the trims and not the whole description - the mirror legitimately holds local bypass
+            // and wet edits that are not committed until the rack is left ("plugin settings are
+            // written when you leave this rack"), and overriding those would throw away his work.
+            if (haveSidecar && it->second.rack.slots.size() == v.slots.size())
+                for (size_t k = 0; k < v.slots.size(); ++k)
+                {
+                    v.slots[k].outGainDb = it->second.rack.slots[k].outGainDb;
+                    v.slots[k].preTrimDb = it->second.rack.slots[k].preTrimDb;
+                }
             if (haveSidecar && it->second.rack.slots.size() != v.slots.size())
             {
                 const auto mirrorCount = (int) v.slots.size();
@@ -13128,7 +13345,29 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // pill orange below (v.borrowed) - one fact, one source.
     const bool         isLinkRack    = chainViewUid().isNotEmpty();
     const bool         chainEditable = chainEditableFor(isLinkRack, processorRef.rackLockState(), v.borrowed);
-    const juce::String chainGateText = isLinkRack ? chainLockStateText(processorRef.rackLockState(), v.borrowed)
+    // WHICH RACK IS CONNECTED, when it is not this one (19 Oct 2026, his 17:11 run). The gate sees
+    // one rack at a time and cannot know, so the caller tells it: a borrow session is
+    // single-occupancy, and while it sits on another rack THIS one is not connecting to anything.
+    // Named rather than numbered, because the name is what he can act on.
+    juce::String connectedElsewhere;
+    if (isLinkRack)
+        if (const auto other = processorRef.borrowUid();
+            other.isNotEmpty() && other != chainViewUid() && processorRef.borrowActive())
+        {
+            connectedElsewhere = other;                      // uid as the fallback...
+            for (const auto& e : processorRef.getLinkDisplayList())
+                if (e.info.uid == other) { connectedElsewhere = e.displayName; break; }   // ...name when we have one
+        }
+    // IS ANYTHING ACTUALLY IN FLIGHT? (his 21:05/21:09) The overlay is the one caller that can
+    // answer it: a read running, an engage pending, or an apply on the wire. When none of those is
+    // true, a HELD lock is just a held lock - the resting state of a viewed Link under the 20 Oct
+    // ruling - and chainLockStateText says "Not connected to this rack." instead of promising a
+    // connection nothing is making.
+    const bool engageInFlight = borrowReadInFlightUid_.isNotEmpty()
+                             || processorRef.pendingAutoEngage_.isNotEmpty()
+                             || processorRef.borrowApplyInFlight_;
+    const juce::String chainGateText = isLinkRack ? chainLockStateText(processorRef.rackLockState(), v.borrowed,
+                                                                       connectedElsewhere, engageInFlight)
                                                   : juce::String();
 
     // NO DATA is a state of the view, decided once and used by the signature,
@@ -13180,6 +13419,52 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
             chainListPanel.masterKnob.setValue(mw, false);
         }
     }
+
+    // ---- THE READ NOTICE IS RETIRED BY THE DRAW (his 11:32, 21 Oct 2026) ---------------------
+    //
+    // *"The line must be replaced as soon as the view has drawn the rack from the sidecar, whatever
+    // path set it."*
+    //
+    // ABOVE THE SIGNATURE GATE, with the M/S lamps and the pre-gain knob, and for their reason: the
+    // line it retires OUTLIVES the signature. His 11:32 is one second of read (a valid sidecar with
+    // 0 slots is nothing to pull, so it finished at once and engaged), then 23 seconds of nothing,
+    // then the agent's add - and had that rack simply stayed empty, no signature would ever have
+    // moved again and a sentence about a finished read would have sat there until he switched racks.
+    // A line with no end condition is not fixed by a longer timeout; the 8-second stall bound had
+    // nothing to fire on, because nothing was stranded.
+    //
+    // DRAWN means drawn: the view is valid for the rack in view AND the panel is showing exactly the
+    // slots the view holds, which is this function's own output and not a prediction of it. An empty
+    // rack with a read still in flight is NOT drawn - that is the one case where the sentence is
+    // still true - so the notice survives until either a slot appears or the read ends.
+    //
+    // It retires ONLY the words it wrote, matched exactly, so a refusal, a lock line or an edit
+    // flow's message written since is never swept by this. The prose test beside it is the "whatever
+    // path set it" half of his ruling: a second writer of the same sentence would be retired too.
+    {
+        echojay::borrowread::ReadNotice n;
+        n.line         = chainListPanel.statusText;
+        n.ownedLine    = readNoticeText_;
+        n.ownedUid     = readNoticeUid_;
+        n.viewUid      = chainViewUid();
+        n.viewValid    = v.valid;
+        n.drawnSlots   = (int) chainListPanel.slotInfos.size();
+        n.viewSlots    = (int) v.slots.size();
+        n.readInFlight = borrowReadInFlightUid_ == chainViewUid();
+        if (echojay::borrowread::shouldRetireReadNotice (n))
+        {
+            const auto line = n.line;
+            EchoJay_NSLog (("EJBorrow: the rack read notice (\"" + line + "\") is RETIRED - the view "
+                            "has drawn " + juce::String ((int) v.slots.size()) + " slot(s) of "
+                            + chainViewUid() + " from the sidecar, so the sentence has done its job "
+                            "(his 11:32: it sat over a working rack for minutes because the read had "
+                            "already finished and nothing else ever wrote to the line)").toRawUTF8());
+            chainListPanel.statusText = chainListPanel.restingHint_;
+            if (line == readNoticeText_) { readNoticeText_.clear(); readNoticeUid_.clear(); }
+            chainListPanel.repaint();
+        }
+    }
+
 
     // The signature covers every render input: view identity, STRUCTURE,
     // honesty states, slot count, selection, and the derived status note.
@@ -13317,8 +13602,17 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         // the VIEWED rack (ruling 4: the next window on that rack states
         // plainly that the last edit was not written). Both are cleared
         // only by a NEW session superseding them, never by navigation.
+        // ---- AND ONLY ON THE RACK IT IS ABOUT (his 11:54, 21 Oct 2026) ---------------------
+        //
+        // *"Undo all on the mix bus refilled it ... and the centre said "Applied to 88_7even
+        // Kick_2_01"."*  The banner had no rack on it and this line painted it over whatever rack
+        // was in view, so a sentence about the Kick's session sat under an undo he had just run on
+        // the mix bus - which reads as that undo having been applied to the Kick. An empty uid is
+        // "about no particular rack" (the solo banner) and still shows anywhere.
+        const auto bannerUid = processorRef.borrowStickyBannerUid();
         if (processorRef.borrowStickyBannerVisible().isNotEmpty()
-            && pendingNote.isEmpty())
+            && pendingNote.isEmpty()
+            && (bannerUid.isEmpty() || bannerUid == chainViewUid()))
             chainListPanel.statusText = processorRef.borrowStickyBannerVisible();
         if (auto nit = processorRef.unwrittenEditNote_.find(chainViewUid());
             nit != processorRef.unwrittenEditNote_.end()
@@ -13538,6 +13832,60 @@ void EchoJayEditor::withRackLock(const juce::String& uid, std::function<void()> 
 void EchoJayEditor::borrowSelectionTick()
 {
     auto& p = processorRef;
+    // ---- A READ IN FLIGHT HAS A DEADLINE (Sean's 21:05 / 21:09 / 21:11, 20 Oct 2026) ----------
+    //
+    // *"Clicking another rack hangs on 'connecting to rack'. Something is stuck in the Link command
+    // queue or the edit session and everything behind it waits ... A rack switch must never hang: it
+    // must time out, clear what's stuck, say so in one line, and connect."*  And his own narrowing:
+    // *"closing and reopening the V2 window cleared it. So the stuck state lives in the editor."*
+    //
+    // THIS IS THE STUCK STATE, and it is one variable: borrowReadInFlightUid_. It is set when a rack
+    // read starts and cleared only by that read's own callback chain - `*finish`, or the abandon arm
+    // inside `*step`. Every path that returns without reaching either one strands it, and the first
+    // line of each is `if (safeThis == nullptr) return;` - so an editor that goes away mid-read
+    // leaves the flag set on an object that is already dead, which is exactly why closing and
+    // reopening the window cleared it and nothing else did.
+    //
+    // Stranded, it blocks everything: the guard three lines down returns early for ever, so no new
+    // read can start, the selection never engages, the rack lock is never released - and
+    // chainLockStateText maps Held-not-engaged to "Connecting to rack...". A sentence about
+    // connecting, on a state where nothing is connecting and nothing ever will.
+    //
+    // So the flag gets a CLOCK and a bound. A read that has not finished in kBorrowReadStallMs is
+    // not going to: it is cleared, said once, and the tick carries on. This is deliberately a
+    // SELF-HEALING bound rather than a hunt for the one callback path that stranded it - the family
+    // has three faces in three hours and a timeout answers all of them, including the ones I have
+    // not found. The log line names the rack and the age so the next one can still be chased.
+    if (borrowReadInFlightUid_.isNotEmpty() && borrowReadStartedMs_ > 0)
+    {
+        const auto ageMs = juce::Time::currentTimeMillis() - borrowReadStartedMs_;
+        if (ageMs > kBorrowReadStallMs)
+        {
+            const auto stuck = borrowReadInFlightUid_;
+            borrowReadInFlightUid_.clear();
+            borrowReadStartedMs_ = 0;
+            EchoJay_NSLog (("EJBorrow: the rack read for " + stuck + " has been in flight for "
+                            + juce::String ((int) (ageMs / 1000)) + " s and is CLEARED - a read that "
+                              "has not finished by now is not going to, and a stranded flag blocks "
+                              "every later read, the engage and the lock release (his 21:05/21:09/"
+                              "21:11: \"connecting to rack\" for ever). The next selection starts "
+                              "a fresh read.").toRawUTF8());
+            // AND THE LOCK GOES WITH IT. Holding a lock for a read that is gone is the state his
+            // ruling forbids: nothing is connecting, so nothing may say it is.
+            if (! p.borrowActive() && p.pendingAutoEngage_.isEmpty())
+                p.setRackLockWant ({});
+            // ---- AND THE LINE HE IS READING IS REPLACED --------------------------------------
+            // *"the rack view stuck on 'Reading 0 plugin(s) from Nafe Main_01...' while three
+            // bx_opto sat on the rack."*  That sentence is said ONCE, when a read starts, with the
+            // count the cache held at that moment - so a stranded read leaves it on screen for ever,
+            // and it was describing a rack the view itself was drawing correctly from the sidecar.
+            // Clearing the flag without replacing the words would fix the mechanism and leave the
+            // lie.
+            chainListPanel.statusText = "Could not finish reading that rack. Select it again.";
+            readNoticeText_.clear(); readNoticeUid_.clear();   // this line is the read's now, not ours
+            chainListPanel.repaint();
+        }
+    }
     if (p.borrowActive())
     {
         if (p.borrowUid() == p.pendingAutoEngage_) p.pendingAutoEngage_.clear();
@@ -13552,15 +13900,28 @@ void EchoJayEditor::borrowSelectionTick()
     // (tools/overlay_liveness_guard, leg b2). The selection IS the request:
     // re-arm the pending engage and the want here, on the tick.
     {
+        // ---- VIEWING A RACK DOES NOT ENGAGE IT (20 Oct 2026, his ruling) ----------------------
+        //
+        // *"Viewing a rack must not engage the borrow/edit session. Structural edits, X, Build and
+        // the agent's adds all go over the wire now, so engage only when something actually needs
+        // the hosted copy (a plugin-parameter dial from the V2, opening its editor)."*
+        //
+        // What stood here armed the engage from chainViewUid() on the tick - "the selection IS the
+        // request" - and it was right when the session was the only road to a rack. It is now the
+        // cause of a family of staleness rather than a cure: on 20 Oct alone it produced a dead X
+        // (the mirror's baseSlots named a plugin the insert had moved), two slot trims reading +0.0
+        // (the mirror carries none), a "didn't confirm" about a change that had landed, and a stale
+        // chain in an agent-off request (B's 09:26 note). Sean had the rack in VIEW and was using
+        // the chat; he never asked for a session.
+        //
+        // ENGAGE IS NOW DEMAND-DRIVEN. The two things that genuinely need the hosted copy ask for it
+        // themselves: a plugin-parameter dial (ops that carry `set`) and opening a hosted editor.
+        // Everything else takes the wire, where the Link is the authority on its own rack.
+        //
+        // The b2 case this replaced is still answered, by the other end: a viewed, unengaged rack
+        // now SAYS so ("Not connected to this rack.") instead of sitting on "Connecting to rack..."
+        // for ever, which is the honest version of what leg b2 was protecting.
         const juce::String view = chainViewUid();
-        if (view.isNotEmpty() && ! p.borrowApplyInFlight_ && borrowReadInFlightUid_.isEmpty()
-            && p.rackLockState() == EchoJayProcessor::RackLockState::Idle && p.rackLockWantUid().isEmpty())
-        {
-            EchoJay_NSLog(("EJRackLock: re-armed for the selected rack " + view
-                           + " (lock was Idle with no want; the selection still holds it)").toRawUTF8());
-            p.pendingAutoEngage_ = view;
-            p.setRackLockWant(view);
-        }
         // ---- AND THE HELD-BUT-NEVER-ENGAGED RACK (19 Oct 2026, Sean, 08:52) -------------------
         //
         // *"Why is the Kick's Link rack 'Connecting' at all when the Link has been live the whole
@@ -13576,15 +13937,26 @@ void EchoJayEditor::borrowSelectionTick()
         // path that would start the read needs pendingAutoEngage_ to be set and nothing sets it
         // again. One line of log per re-arm, not per tick, so this cannot become a spinning loop
         // that looks like progress.
-        else if (view.isNotEmpty() && ! p.borrowApplyInFlight_ && borrowReadInFlightUid_.isEmpty()
-                 && ! p.borrowActive() && p.pendingAutoEngage_.isEmpty()
-                 && p.rackLockHeldFor (view))
+        // ---- AND A LOCK HELD FOR NOTHING IS RELEASED, NOT ENGAGED (20 Oct 2026) ---------------
+        //
+        // This was the twin of the re-arm above: the lock is HELD for the rack on screen, no session
+        // was ever engaged and nothing is pending, so it armed an engage to get out of the state.
+        // Under his ruling the engage is the wrong exit - nothing has asked for the hosted copy - but
+        // the state still cannot sit there, because the gate maps Held-not-engaged to "Connecting to
+        // rack..." and that would be the forever-connecting bug again one state along (his 08:52).
+        //
+        // So the exit is the other way: drop the want and let the lock go. The rack then reads Idle,
+        // which now says "Not connected to this rack." honestly, and the next thing that genuinely
+        // needs the hosted copy acquires it for itself.
+        if (view.isNotEmpty() && ! p.borrowApplyInFlight_ && borrowReadInFlightUid_.isEmpty()
+            && ! p.borrowActive() && p.pendingAutoEngage_.isEmpty()
+            && p.rackLockHeldFor (view) && p.rackLockWantUid().isNotEmpty())
         {
-            EchoJay_NSLog(("EJRackLock: re-armed for " + view + " - the lock is HELD here but no "
-                           "session was ever engaged and nothing was pending, which is a state that "
-                           "cannot recover by itself (his 08:52 \"Connecting to rack\" that never "
-                           "ended)").toRawUTF8());
-            p.pendingAutoEngage_ = view;
+            EchoJay_NSLog(("EJRackLock: the lock is HELD for " + view + " with no session and nothing "
+                           "pending, and nothing has asked for the hosted copy - RELEASING it rather "
+                           "than engaging a session he did not ask for (his 20 Oct ruling; the 08:52 "
+                           "state still cannot be left sitting on \"Connecting\")").toRawUTF8());
+            p.setRackLockWant ({});
         }
     }
     if (p.borrowApplyInFlight_) return;
@@ -13671,6 +14043,65 @@ void EchoJayEditor::runBorrowApply()
 
     const auto plan = LinkShm::BorrowCommit::plan(processorRef.borrowSlotVerdicts());
     auto* bh = proc.borrowHost();
+    // ---- A MIRROR THAT DISAGREES WITH THE LINK NEVER WRITES BACK (Sean's 09:59, 21 Oct 2026) ---
+    //
+    // *"Before anything else: confirm nothing from that mirror can be written back to the Link
+    // ("plugin settings are written when you leave this rack"). A mirror whose slots don't match the
+    // sidecar's identities must never write back. If it can, block that first, because it would put
+    // bx_opto's state on his EchoJay Gain."*
+    //
+    // IT COULD. The loop below reads the MIRROR's slot i and sends it as payload (i, b64) - keyed by
+    // INDEX, with no identity test anywhere in the path. His 09:59 rack is the worst case: the
+    // mirror held [bx opto Pedal, EchoJay Compressor, bx_opto] while the Link held [EchoJay
+    // Compressor, Shadow Hills, EchoJay Gain], so leaving the rack would have written bx opto
+    // Pedal's state onto his EchoJay Compressor, the Compressor's onto the Shadow Hills, and
+    // bx_opto's onto his EchoJay Gain. Three plugins' settings destroyed, with no undo on the far
+    // side and nothing in the log to say what had happened.
+    //
+    // REFUSED WHOLE, not per slot. A partial write to a rack whose shape has moved is the one
+    // outcome that cannot be reasoned about afterwards: some slots his, some not, and no record of
+    // which. The commit is abandoned with one line naming the disagreement, and the Link keeps what
+    // it has - which is, by construction, the thing the view has been showing him all along.
+    //
+    // THE IDENTITY IS THE LINK'S OWN, read fresh here: the Link is the one publisher of its rack,
+    // and the cache may be a second behind an edit that just landed.
+    {
+        const auto live = readLinkRackSidecar (uid);
+        if (! live.valid)
+        {
+            EchoJay_NSLog (("EJApply: REFUSING the write-back for " + uid + " - its sidecar cannot be "
+                            "read, so there is nothing to check the mirror's slots against. Settings "
+                            "are NOT written; the Link keeps what it has (his 09:59)").toRawUTF8());
+            chainListPanel.statusText = "Could not save settings to that rack - it did not answer.";
+            chainListPanel.repaint();
+            return;
+        }
+        juce::StringArray mismatches;
+        const int n = bh != nullptr ? bh->getNumSlots() : 0;
+        if ((int) live.slots.size() != n)
+            mismatches.add ("the rack holds " + juce::String ((int) live.slots.size())
+                            + " slot(s) and this copy holds " + juce::String (n));
+        else
+            for (int i = 0; i < n; ++i)
+            {
+                const auto mine = bh->getSlotInfo (i).name.trim();
+                const auto theirs = live.slots[(size_t) i].name.trim();
+                if (! ChainHost::namesMatchLoose (mine, theirs))
+                    mismatches.add ("slot " + juce::String (i + 1) + " is \"" + theirs
+                                    + "\" on the rack and \"" + mine + "\" in this copy");
+            }
+        if (! mismatches.isEmpty())
+        {
+            EchoJay_NSLog (("EJApply: REFUSING the write-back for " + uid + " - this copy does not "
+                            "match the rack: " + mismatches.joinIntoString ("; ")
+                            + ". Writing by index would put one plugin's settings onto another (his "
+                              "09:59: bx_opto's state onto his EchoJay Gain). NOTHING is written; the "
+                              "Link keeps what it has.").toRawUTF8());
+            chainListPanel.statusText = "Did not save settings: this view is out of step with the rack.";
+            chainListPanel.repaint();
+            return;
+        }
+    }
     for (int i = 0; i < (int) plan.actions.size(); ++i)
     {
         if (plan.actions[(size_t) i] != LinkShm::BorrowCommit::Action::Commit)
@@ -13896,17 +14327,23 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
     st->ctxCapable    = it->second.rack.inContextCapable;
     st->perSeq        = it->second.rack.ackPerSeq;
     borrowReadInFlightUid_ = uid;
+    borrowReadStartedMs_   = juce::Time::currentTimeMillis();   // the deadline below needs a clock
     EchoJay_NSLog(("EJBorrow: read START uid=" + uid + " slots=" + juce::String((int) st->slots.size())
                    + (st->perSeq ? " channel=per-seq" : " channel=legacy")).toRawUTF8());
     // SEAN'S #3: AN UNREAD RACK IS NOT AN EMPTY RACK. Reporting a stale cached 0 as "Reading 0
     // plugin(s)" is the same class of untruth as the -200 caption: an absence of information rendered
     // as a measurement. When the sidecar could not be read, the line says so instead of counting.
-    if (! freshRead && st->slots.empty())
-        say ("I cannot read that rack yet - its Link has not published what it is holding. Give it a"
-             " moment and select it again.");
-    else
-    say("Reading " + juce::String((int) st->slots.size()) + " plugin(s) from "
-        + processorRef.resolveLinkDisplayName(uid) + "...");
+    // ---- AND THE LINE IS OWNED, SO IT CAN BE RETIRED (his 11:32, 21 Oct 2026) ------------------
+    // Both of these are said ONCE, here, with what the sidecar held at this instant. The panel
+    // refresh retires them as soon as the view has drawn that rack - see readNoticeText_.
+    const auto readNotice = (! freshRead && st->slots.empty())
+        ? juce::String ("I cannot read that rack yet - its Link has not published what it is holding."
+                        " Give it a moment and select it again.")
+        : ("Reading " + juce::String ((int) st->slots.size()) + " plugin(s) from "
+           + processorRef.resolveLinkDisplayName (uid) + "...");
+    readNoticeText_ = readNotice;
+    readNoticeUid_  = uid;
+    say (readNotice);
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     auto finish = std::make_shared<std::function<void()>>();
@@ -14412,12 +14849,37 @@ void EchoJayEditor::promptGroupName(const juce::StringArray& members)
 echojay::ChainRole EchoJayEditor::chatTargetChainRole() const
 {
     const juce::String uid = effectiveChannelUid();
-    if (uid.isEmpty()) return processorRef.chainRole();           // the turn is about THIS chain
+    if (uid.isEmpty())
+    {
+        // THE TURN IS ABOUT THIS CHAIN, and this chain's source type is the one thing in the product
+        // that has always existed: his own ChannelType selector. Provenance "user", because that
+        // selector IS his decision (round (b), 20 Oct 2026).
+        auto r = processorRef.chainRole();
+        const auto t = processorRef.getChannelType();
+        r.sourceType = echojay::sourcetype::wireNameFor (t);
+        if (r.sourceType.isNotEmpty()) r.sourceTypeFrom = "user";
+        if (t == ChannelType::Other) r.sourceTypeName = processorRef.getCustomChannelName();
+        return r;
+    }
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.uid == uid)
         {
             auto r = echojay::decideChainRole (false, e.info.placement, e.displayName);
             r.trackName = e.displayName;   // the NAME on the wire is the target's, whatever decided the kind
+            // ---- round (b): WHERE IT SITS, AND WHAT IT IS -----------------------------------
+            // The placement is a registry fact we already hold. The source type is the LINK's to
+            // state - it owns the guess, the provenance and his setting - so it is read from its
+            // published sidecar and never re-derived here: two guessers would be two answers.
+            r.placement = e.info.placement == 1 ? "bus"
+                        : e.info.placement == 2 ? "insert"
+                        : e.info.placement == 3 ? "send" : juce::String();
+            const auto rack = readLinkRackSidecar (uid);
+            if (rack.valid)
+            {
+                r.sourceType     = rack.sourceType;
+                r.sourceTypeFrom = rack.sourceTypeFrom;
+                r.sourceTypeName = rack.sourceTypeName;
+            }
             return r;
         }
     // The Link is not in the registry right now. It is still not this V2's bus: a target we cannot read is a
@@ -14446,6 +14908,34 @@ int EchoJayEditor::chatTargetChannelWidth() const
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.uid == uid) return juce::jlimit(0, 2, e.info.channels);
     return 0;   // the Link is not in the registry right now: unknown, the field stays off
+}
+
+// ---- slot_levels FOR THE RACK THE TURN IS ABOUT (Sean's 16:04, 20 Oct 2026) ------------------
+//
+// *"Did the 4-Band's GR figure appear in what was sent: the live chain feed for the agent-off turn,
+// and the measurement for the agent-on turn? If it's missing from either, fix it so every EchoJay
+// device's GR is sent in both modes."*
+//
+// It was missing from both, and his 16:03 body has no slot_levels key at all. The reason is one
+// line, repeated at three call sites: they all composed from processorRef.getChainHost() - the V2's
+// OWN rack. On a turn aimed at a Link the V2 hosts nothing, every row is dropped, and the field is
+// omitted. The figures were never the problem: the Link has published its slots' levels AND their
+// gain reduction since 18 Oct, and republishes while it measures.
+//
+// ONE DECISION, HERE, through the SAME resolver channelRole and channelWidth use. Three call sites
+// each making this choice is three chances to describe a different rack from the one `channel` and
+// `channelRole` name, which is the fault class this whole week has been about.
+juce::var EchoJayEditor::slotLevelsForTarget() const
+{
+    const juce::String uid = effectiveChannelUid();
+    // The sample rate only turns the GR window into seconds; the window GATE is in frames, so an
+    // unknown rate costs that one field and nothing else.
+    const double sr = processorRef.getSampleRate();
+    if (uid.isEmpty())
+        return echojay::slotLevelsBlock (processorRef.getChainHost(), sr);
+    // A LINK: its own published sidecar, read at send - the same road the current-chain injection
+    // takes, so the two describe one rack at one moment.
+    return echojay::slotLevelsBlock (readLinkRackSidecar (uid), sr);
 }
 
 // 21m ruling (unityChain): the rack the turn is about - the local ChainHost, or the borrowed copy of a Link's rack
@@ -19471,21 +19961,45 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         const auto rowsBelongTo = currentChatIdBefore.isNotEmpty() ? currentChatIdBefore
                                                                    : processorRef.activeChatId;
         const bool rowsAreThisChats = (rowsBelongTo == chatId);
-        struct HeldRow { juce::String role, content, agentJson; };
+        // chatId (Sean's 16:00, 20 Oct 2026): the row's OWN chat, carried so the merge below can
+        // refuse a row that names a different one. The list-level rule above asks "do these rows
+        // belong to this chat" of the WHOLE list, which is right when one window owns the history -
+        // and his 16:03 log says "window #2 owns the turn in flight", so two editors were sharing
+        // one processor list. A per-row key is the only thing that can be right in that case.
+        struct HeldRow { juce::String role, content, agentJson, chatId, entryId; juce::int64 seq = 0; };
         std::vector<HeldRow> held;
         if (rowsAreThisChats)
         {
             for (const auto& m : processorRef.chatHistory)
                 if (m.content.isNotEmpty() || m.agentJson.isNotEmpty())
-                    held.push_back ({ m.role, m.content, m.agentJson });
+                    held.push_back ({ m.role, m.content, m.agentJson, m.chatId, m.entryId, m.seq });
         }
         else if (! processorRef.chatHistory.empty())
         {
+            // ---- A CARD IS PUT HOME BEFORE ANYTHING IS DROPPED (his 09:24 fault, 22 Oct) ----
+            //
+            // Rule 2 is right and stays: another chat's rows are never carried into this one. But
+            // DROPPING them was how his run vanished - "dropped 1 unsynced row(s) that belong to
+            // chat 1792657430720" was the card of the run he had just watched build his mix bus.
+            // A row that names its own chat has a home; it goes there, and only then is the list
+            // cleared. The store ignores a card it already holds (matched by the run's id), so this
+            // cannot double anything.
+            int homed = 0;
+            for (const auto& m : processorRef.chatHistory)
+                if (m.agentJson.isNotEmpty() && m.chatId.isNotEmpty() && m.chatId != chatId)
+                {
+                    processorRef.storeAgentCard (m.chatId, m.entryId, m.agentJson, m.content);
+                    ++homed;
+                }
             EchoJay_NSLog (("EJStores: dropped " + juce::String ((int) processorRef.chatHistory.size())
                             + " unsynced row(s) that belong to chat "
                             + (rowsBelongTo.isNotEmpty() ? rowsBelongTo : juce::String ("(none)"))
                             + ", NOT to " + chatId + " - a switch never carries one chat's messages "
-                            "into another (Sean's rule 2, 18 Oct)").toRawUTF8());
+                            "into another (Sean's rule 2, 18 Oct)"
+                            + (homed > 0 ? juce::String ("; ") + juce::String (homed)
+                                             + " run card(s) were written to their OWN chat's stored "
+                                               "log first, so nothing is lost (his 09:24 fault)"
+                                         : juce::String())).toRawUTF8());
         }
 
         chatMessages.clear();
@@ -19631,6 +20145,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                         { populateFromReview(rv); break; }
             }
 
+            cm.seq     = msg.seq;        // stage C: the stored place...
+            cm.entryId = msg.entryId;    // ...and the stored identity
             chatMessages.push_back(cm);
 
             // Populate API context window
@@ -19641,6 +20157,22 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             EchoJayProcessor::ChatEntry ce;
             ce.role    = msg.role;
             ce.content = msg.content;
+            // ---- A CARD KEEPS ITS SNAPSHOT COMING BACK FROM THE STORE (22 Oct 2026) ----------
+            //
+            // THIS DROPPED THE RUN. The processor's list is the window-crossing copy of the chat,
+            // and this loop rebuilds it from the store on every chat load - with role and content
+            // only. So a card that came from the store arrived as a PLAIN assistant row: no steps,
+            // no closing, no id, no place. The published record then read `steps [] closing ""`,
+            // which is the rig's B2 row going red the moment this morning's fix put the card in the
+            // store early enough for this path to see it.
+            //
+            // It was latent before: nothing put a live run's card in the store until the run ended,
+            // so this loop never had one to flatten. The fix for his 09:24 fault did not cause it,
+            // it exposed it - and a reopened window that cannot republish or adopt the card it just
+            // read is the same fault his report was about, one step further on.
+            ce.agentJson = msg.agentJson;   // the run's steps, chips and closing...
+            ce.entryId   = msg.entryId;     // ...the identity the recorder and the reader match on...
+            ce.seq       = msg.seq;         // ...and the place the store gave it (stage A)
             if (cm.hasWaveform)
             {
                 ce.hasWaveform     = true;
@@ -19651,94 +20183,82 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                 for (auto& pt : cm.waveform)
                     ce.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
             }
-            processorRef.chatHistory.push_back(ce);
+            processorRef.appendChatEntry (ce, ce.chatId.isNotEmpty() ? ce.chatId : currentChatId);
         }
 
-        // ---- 14 OCT 2026: PUT BACK WHAT THE STORE DID NOT HAVE (see `held` above) ----------------------
+        // ---- STAGE C OF THE CHAT LOG: THE READER (his ruling of 21 Oct 2026) ------------------
         //
-        // ---- SEAN'S TEST 9, 16 OCT 2026: AND PUT IT BACK WHERE IT BELONGS -----------------------------
+        // *"The view only renders that log in order; a live run updates its own entry by id (steps,
+        // chips, closing) and never inserts by position; no merge on reopen."*
         //
-        // *"my question was inserted ABOVE the previous exchange instead of at the bottom, so the chat
-        // order is wrong after a close and reopen."*
+        // WHAT WAS HERE: a cursor walking the store's rows against the processor's, matching plain
+        // rows by (role, content) and agent rows by runKey, inserting the unmatched ones where the
+        // cursor stood. It is the direct cause of four of his reports - the card one row early with
+        // two identical messages (14:15), the message drawn after the card (17:3x), and both halves
+        // of a card appearing in the wrong chat - because an agent row has no content to match on
+        // and NO ROW KNEW ITS OWN PLACE. ~130 lines, deleted here, with the whole fault family.
         //
-        // The first cut APPENDED the held rows after every store row, which is only right when the
-        // store is behind at the END. His case is the other one: the agent run's rows live on the
-        // processor and the workspace store has never seen them, while the question he typed next IS
-        // in the store - so appending put the older exchange under the newer question.
+        // WHAT REPLACES IT, and it is the smaller half:
+        //   1. the store's rows are already in this chat and already carry their place (stage A);
+        //   2. a held row (the processor's, which the store has not caught up with) is added only
+        //      when it BELONGS to this chat and is not here already - matched by ENTRY ID, which an
+        //      agent card has and content-matching never gave it;
+        //   3. the list is sorted by `seq`. Nothing is inserted anywhere.
         //
-        // A MERGE, NOT AN APPEND. `held` is the processor's own order, which is chronological, and the
-        // store's rows are (normally) a subsequence of it. Walking the store and emitting the held
-        // rows that come BEFORE each match puts every row back in the order it happened. A held row
-        // that the store carries LATER is left for its own turn rather than emitted early, so nothing
-        // is duplicated; anything still unmatched at the end is newer than every store row and goes
-        // last, which is where the first cut put it and where it does belong.
+        // AN UNSTAMPED HELD ROW IS STAMPED NOW, at the end, and said. It could not be placed when it
+        // was created (its chat did not exist yet - the 19:51 state), and the end is where it
+        // genuinely belongs: it is the newest thing that happened. That is a decision, not a guess,
+        // and it is the only place in this reader where a row's place is chosen rather than read.
         {
-            const auto storeRows = chatMessages;          // only the store's rows, in store order
-            std::vector<ChatMsg> merged;
-            merged.reserve (storeRows.size() + held.size());
-            size_t h = 0;
-            int inserted = 0;
-            for (size_t si = 0; si < storeRows.size(); ++si)
+            std::vector<ChatMsg> rows = chatMessages;        // the store's, with their places
+            int added = 0, stampedLate = 0;
+            for (const auto& h : held)
             {
-                const auto& sr = storeRows[si];
-                size_t found = held.size();
-                // ON ROLE AND CONTENT ONLY. An earlier cut also required the agent snapshot to match,
-                // and that is a duplicate waiting to happen: the workspace store can hold the run's
-                // PROSE with no snapshot on it, which would then match nothing and leave the same run
-                // on screen twice - once as a plain bubble and once as its row. The snapshot is not
-                // part of the identity; it is something the processor's copy KNOWS and the store's does
-                // not, so it is carried over onto the matched row below.
-                for (size_t k = h; k < held.size(); ++k)
-                    if (held[k].role == sr.role && held[k].content == sr.content) { found = k; break; }
-                if (found < held.size())
+                // (a) ITS OWN CHAT, OR NOWHERE. A row that states a different chat is not shown
+                // here, whatever the order says - his 16:00 and 19:51, now the primary selector
+                // rather than a special case bolted onto a cursor.
+                if (h.chatId.isNotEmpty() && currentChatId.isNotEmpty() && h.chatId != currentChatId)
+                    continue;
+                // (b) ALREADY HERE? By ID first - the only test an agent card can pass - and by
+                // (role, content) only for a row that has no id yet, which is what an older build
+                // or an unstamped path produced.
+                bool here = false;
+                for (const auto& r : rows)
                 {
-                    for (size_t k = h; k < found; ++k)
-                    {
-                        // Only if no LATER store row is this same row: a held row the store does carry
-                        // further down is that row's own business, not this one's.
-                        bool laterInStore = false;
-                        for (size_t sj = si + 1; sj < storeRows.size() && ! laterInStore; ++sj)
-                            if (storeRows[sj].role == held[k].role && storeRows[sj].content == held[k].content)
-                                laterInStore = true;
-                        if (laterInStore) continue;
-                        ChatMsg cm; cm.role = held[k].role; cm.content = held[k].content;
-                        cm.agentData = held[k].agentJson;
-                        if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
-                        merged.push_back (cm); ++inserted;
-                    }
+                    if (h.entryId.isNotEmpty() && r.entryId == h.entryId) { here = true; break; }
+                    // THE FALLBACK ASKS ABOUT THE HELD ROW, NOT THE STORE'S. My first cut required
+                    // BOTH ids to be empty - and the store mints one for every row it persists, so
+                    // the test never fired and "Add a compressor" showed twice (DUP2/DUP3 caught it).
+                    // If the HELD row has no identity, its content is the only thing that can
+                    // recognise it; what the store's copy happens to carry is beside the point.
+                    if (h.entryId.isEmpty() && h.agentJson.isEmpty()
+                        && r.role == h.role && r.content == h.content)
+                    { here = true; break; }
                 }
-                auto keep = sr;
-                if (found < held.size())
-                {
-                    // the run's own snapshot, restored onto the row the store knew only as prose
-                    if (keep.agentData.isEmpty() && held[found].agentJson.isNotEmpty())
-                    {
-                        keep.agentData = held[found].agentJson;
-                        if (keep.agentRunId == 0) keep.agentRunId = ++agentRunIdSeq_;
-                        ++inserted;          // the transcript changed, so the rebuild below must run
-                    }
-                    h = found + 1;
-                }
-                merged.push_back (keep);
-            }
-            for (size_t k = h; k < held.size(); ++k)
-            {
-                bool anywhereInStore = false;
-                for (const auto& sr : storeRows)
-                    if (sr.role == held[k].role && sr.content == held[k].content) { anywhereInStore = true; break; }
-                if (anywhereInStore) continue;
-                ChatMsg cm; cm.role = held[k].role; cm.content = held[k].content;
-                cm.agentData = held[k].agentJson;
+                if (here) continue;
+                ChatMsg cm; cm.role = h.role; cm.content = h.content;
+                cm.agentData = h.agentJson;
+                cm.entryId   = h.entryId;
+                cm.seq       = h.seq;
                 if (cm.agentData.isNotEmpty()) cm.agentRunId = ++agentRunIdSeq_;
-                merged.push_back (cm); ++inserted;
+                if (cm.seq <= 0 && currentChatId.isNotEmpty())
+                {
+                    cm.seq = workspace.takeNextSeq (currentChatId);
+                    if (cm.seq > 0) ++stampedLate;
+                }
+                rows.push_back (cm); ++added;
             }
-            if (inserted > 0)
+            // THE ORDER IS THE FIELD. stable_sort so two rows that share a place (which should not
+            // happen, and would mean the allocator was bypassed) keep the order they arrived in
+            // rather than swapping about between reopens.
+            // THE ONE COMPARATOR (EchoJayWorkspace.h): seq ascending, and an UNPLACED row (seq 0)
+            // LAST - his 21:22, where 0 sorted first and put his own message under the card it had
+            // started. stable_sort so two rows that share a place keep their arrival order.
+            std::stable_sort (rows.begin(), rows.end(),
+                              [] (const ChatMsg& a, const ChatMsg& b) { return chatLogBefore (a.seq, b.seq); });
+            if (added > 0 || stampedLate > 0)
             {
-                chatMessages = merged;
-                // The three model containers are rebuilt in the SAME order, because the model's view of
-                // the conversation and the user's must not differ - a reply composed from a history in
-                // one order and read in another is the fault this merge exists to remove.
-                processorRef.chatHistory.clear();
+                chatMessages = rows;
                 processorRef.chatRoles.clear();
                 processorRef.chatContents.clear();
                 for (const auto& m : chatMessages)
@@ -19746,24 +20266,17 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                     if (m.content.isEmpty() && m.agentData.isEmpty()) continue;
                     processorRef.chatRoles.add (m.role);
                     processorRef.chatContents.add (m.content);
-                    EchoJayProcessor::ChatEntry ce;
-                    ce.role = m.role; ce.content = m.content; ce.agentJson = m.agentData;
-                    if (m.hasWaveform)
-                    {
-                        ce.hasWaveform     = true;
-                        ce.durationSeconds = m.durationSeconds;
-                        ce.lufs            = m.lufs;
-                        ce.wavFilename     = m.wavFilename;
-                        ce.wavFilePath     = m.wavFilePath;
-                        for (auto& pt : m.waveform)
-                            ce.waveform.push_back (std::max (std::abs (pt.maxVal), std::abs (pt.minVal)));
-                    }
-                    processorRef.chatHistory.push_back (ce);
                 }
-                EchoJay_NSLog (("EJStores: merged " + juce::String (inserted) + " row(s) the workspace store has "
-                                "not caught up with back into their own place in the transcript - a reload must "
-                                "neither throw away what the processor is holding nor reorder it (14 Oct 2026; "
-                                "the ORDER is Sean's test 9, 16 Oct)").toRawUTF8());
+                EchoJay_NSLog (("EJChatLog: rendered chat " + currentChatId + " from the stored log - "
+                                + juce::String ((int) chatMessages.size()) + " entr(ies) in seq order, "
+                                + juce::String (added) + " of them held by the processor and not yet in "
+                                  "the store"
+                                + (stampedLate > 0 ? ", " + juce::String (stampedLate)
+                                                     + " stamped NOW at the end because they were created "
+                                                       "before this chat existed (his 19:51 state)"
+                                                   : juce::String())
+                                + ". No merge, no cursor, no insert by position (stage C of his "
+                                  "chat-log ruling).").toRawUTF8());
             }
         }
 
@@ -25060,6 +25573,8 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     {
                         int bi = activeEditApplyBtns++;
                         editApplyMsgIdx[(size_t)bi] = msgLoopIndex;
+                        editApplyKey[(size_t)bi]    = msg.editData;   // the card this slot IS, by identity
+
                         editApplyBtns[(size_t)bi].setButtonText("Apply changes");
                         juce::Rectangle<int> ar(ex, ey + 2,
                                                 juce::jmin(160, bubbleW - 20), kChainBtnH);
@@ -26065,8 +26580,28 @@ void EchoJayEditor::resized()
                         askChipVars[(size_t)ci] = ci < choiceVars.size() ? choiceVars[ci] : juce::var();
                         auto& btn = *askChipBtns[(size_t)ci];
                         btn.setButtonText(labels[ci]);
-                        btn.setBounds(rects[(size_t)ci] + origin);
-                        btn.setVisible(true);
+                        // ---- AND IT IS PLACED WHERE IT CAN BE SEEN (20 Oct 2026, B's capture) ----
+                        //
+                        // This loop placed every pill and made it visible unconditionally. The result
+                        // chips a few hundred lines up have always tested `inV` first - the rect has to
+                        // be inside the chat viewport before the button is shown - and the pills never
+                        // did. So a pill whose rect fell outside the shelf's visible area was still
+                        // made visible, at coordinates nobody can reach.
+                        //
+                        // With the shelf's top now clamped to the chat column this should not arise;
+                        // the test is here anyway, because "every chip is pressable or none is shown"
+                        // is the invariant B's report was about, and a layout that silently places a
+                        // control off-screen is how it broke in the first place.
+                        const auto placed = rects[(size_t)ci] + origin;
+                        const bool reachable = askShelfRect_.contains (placed)
+                                            || askShelfRect_.intersects (placed);
+                        btn.setBounds (placed);
+                        btn.setVisible (reachable);
+                        if (! reachable)
+                            EchoJay_NSLog (("EJAskChip: pill " + juce::String (ci) + " (\"" + labels[ci]
+                                            + "\") would be placed outside the shelf " + askShelfRect_.toString()
+                                            + " at " + placed.toString() + " - NOT shown rather than shown "
+                                              "where it cannot be pressed (B's six-chip capture)").toRawUTF8());
                         btn.toFront(false);
                     }
                 }
@@ -26201,10 +26736,45 @@ void EchoJayEditor::resized()
     // SEAN'S RULING, 15 OCT 2026: the Agent mode line is no longer a fixed line, so the chat column
     // reserves nothing for it. It is a TRANSIENT strip shown for about three seconds when the mode
     // CHANGES, and the mode's description lives on the chip's tooltip. See syncAgentModeLine.
+    //
+    // ---- ...AND THAT IS WHY IT LANDED ON HIS CARDS (his 18:15 item 1, 20 Oct 2026) ------------
+    //
+    // *"The mode hint is drawn on top of the chat cards (it overlaps a "wait for playback" step). It
+    // must sit outside the chat area."*  Then, an hour later: *"It must sit in one fixed place
+    // outside the message area (just above the input box), never over content and never mid-chat."*
+    //
+    // The strip is placed at chatBoxRect_.getY() - kAgentModeLineH (16 px) and the message area ran
+    // down to chatBoxRect_.getY() - 8, so the top 8 px of the strip sat INSIDE the transcript - over
+    // whatever card happened to end there. Reserving nothing was the 15 Oct ruling's own words, and
+    // it is what his report retires: a transient strip may be transient, but while it is up it is
+    // not allowed to be on top of a step he is reading.
+    //
+    // RESERVED ONLY WHILE ITS WINDOW IS OPEN, and keyed on the TIME rather than on the strip's
+    // visibility, because the visibility is decided in syncAgentModeLine from the rects this
+    // function produces - reading it here would be a layout that depends on its own output. The
+    // window is state (agentModeLineUntilMs_), so it is safe to ask.
+    const bool modeLineWindowOpen = agentModeLineUntilMs_ > 0
+                                 && juce::Time::currentTimeMillis() < agentModeLineUntilMs_;
+    // HOW MANY LINES THE SENTENCE NEEDS, measured against the width it will actually get. Reserved
+    // for BEFORE it is laid out, which is why the width is taken from the composer's rect rather
+    // than from the label.
+    agentModeLineLines_ = 1;
+    if (modeLineWindowOpen && ! chatCentredEmpty_ && chatBoxRect_.getWidth() > 120)
+    {
+        const juce::Font f (juce::FontOptions (11.0f));
+        const int textW = juce::GlyphArrangement::getStringWidthInt (f, agentApprovalLine (agentApprovalMode()));
+        const int availW = juce::jmax (1, chatBoxRect_.getWidth() - 4);
+        // 0.85 is the squeeze the label is allowed before it would drop glyphs, so the line count is
+        // measured against the width that squeeze buys - otherwise a sentence that fits at 0.85
+        // would still claim a second line.
+        if ((float) textW * 0.85f > (float) availW) agentModeLineLines_ = 2;
+    }
+    const int modeLineReserve = (modeLineWindowOpen && ! chatCentredEmpty_)
+                                  ? kAgentModeLineH * agentModeLineLines_ + 2 : 0;
     int chatScrollBottom = chatCentredEmpty_ ? chatEmptyHeading_.getY() - 8
                          : (chatBannerVisible_ ? chatBannerRect_.getY() - 6
                           : askShelfVisible_   ? askShelfRect_.getY() - 6
-                                               : chatBoxRect_.getY() - 8);
+                                               : chatBoxRect_.getY() - 8 - modeLineReserve);
     int chatScrollH = juce::jmax(50, chatScrollBottom - chatScrollTop);
     chatScroll.setBounds(chatStartX + chatAvatarReserve, chatScrollTop,
                          chatW - chatAvatarReserve - 2, chatScrollH);
@@ -27884,7 +28454,7 @@ void EchoJayEditor::timerCallback()
                 if (displayCm.hasWaveform)
                     for (auto& pt : displayCm.waveform)
                         ce.waveform.push_back(std::max(std::abs(pt.maxVal), std::abs(pt.minVal)));
-                processorRef.chatHistory.push_back(std::move(ce));
+                processorRef.appendChatEntry (std::move (ce), currentChatId);
             }
 
             // ── 4. Fire AI feedback ────────────────────────────────────────
@@ -28907,10 +29477,27 @@ void EchoJayEditor::onBriefClose()
     // every axis that HAS a value; the unanswered axes are OMITTED, never
     // written as Skip, so a dismissal cannot be mistaken for a deliberate
     // per-question Skip (the server logs missing axes as dismissed).
+    // ---- DISMISSING SENDS NOTHING (20 Oct 2026, his 09:35) ---------------------------------
+    // *"pressing X on B's canned pre-build brief sent a user message 'Brief answers', which B
+    // treated as a reply and answered with a compressor pick. Dismissing the brief (X or Skip) must
+    // send nothing."*
+    //
+    // The comment above was the old design - "X = build with what I have" - and it is now his
+    // reversal: an X is a dismissal, and a dismissal that sends a turn is indistinguishable from an
+    // answer. B read "Brief answers" with no lines as a reply and answered it, which is the whole
+    // fault. So the card goes and nothing is sent.
     int unanswered = 0;
     for (auto k : briefCard_.kinds) if (k == BriefCard::Kind::None) ++unanswered;
-    EchoJay_NSLog(("EJBrief: closed via X, unanswered=" + juce::String(unanswered) + " omitted").toRawUTF8());
-    sendBriefAnswers("closed");
+    EchoJay_NSLog(("EJBrief: dismissed via X with " + juce::String(unanswered) + " unanswered - "
+                   "NOTHING is sent (his 09:35 ruling; it used to send \"Brief answers\" and B "
+                   "answered it)").toRawUTF8());
+    supersedePendingAsks();          // the card is answered-and-gone, so it cannot re-present
+    askShelfVisible_ = false;
+    askShelfIsCard_  = false;
+    briefCard_.setVisible (false);
+    briefCardAskData_.clear();
+    resized();
+    repaint();
 }
 
 void EchoJayEditor::sendBriefAnswers(const juce::String& why)
@@ -29018,11 +29605,18 @@ void EchoJayEditor::onAskChipTapped(int i)
     }();
     auto logTap = [&](const juce::String& branch)
     {
+        // ---- THE QUESTION IT IS ANSWERING (19 Oct 2026, his 17:15 run) ---------------------
+        // He reported a chip tap sending "the bare label", and this line could not settle it: the
+        // generic_send branch has always appended ` (answering: "<question>")`, and it cannot be
+        // reached with an empty question (the gate above returns on that). What the line did NOT
+        // say is WHICH question - and a STALE one would look to B exactly like no answer at all,
+        // which is the symptom he saw. So the question travels with the tap from here on.
         EchoJay_NSLog(("EJAskChip: tap label=\"" + askChipLabels[(size_t) i]
                        + "\" intent=" + (askChipIntents[(size_t) i].isEmpty()
                                             ? juce::String("(none)")
                                             : askChipIntents[(size_t) i])
                        + " keys=" + tapKeys
+                       + " answering=\"" + askChipQuestion_ + "\""
                        + " branch=" + branch).toRawUTF8());
     };
     if (!askShelfVisible_ || askChipQuestion_.isEmpty()) { logTap("shelf_inactive"); return; }
@@ -29268,34 +29862,49 @@ int EchoJayEditor::measureAskShelf(const ChatMsg& msg, int shelfW,
     auto* choices = o->getProperty("choices").getArray();
     if (choices == nullptr || choices->size() < 2) return 0;
 
-    // Parity values: see the header comment block (mirrors app.html CSS)
-    juce::Font chipFont(juce::FontOptions(12.5f));
-    const int padX = 10, padY = 8, gap = 6;
-    const int availR = juce::jmax(90, shelfW - padX);
-    int x = padX, y = padY, count = 0;
+    // ---- THE FLOW IS layOutAskChips NOW (20 Oct 2026, B's six-chip capture) --------------------
+    // The arithmetic moved to AskShelfLayout.h as a pure function so a guard can drive it without
+    // instantiating the editor - ui_guard is the only one that could reach it here, and it SIGSEGVs
+    // at startup with no window server (verified at HEAD). Sean's ruling: extract and leg it.
+    //
+    // THE LABELS AND THEIR PARALLEL ARRAYS ARE STILL GATHERED HERE, because they are about the
+    // PAYLOAD rather than the geometry: a choice with no label is skipped, and intents and choice
+    // vars stay index-parallel with the labels by construction.
+    juce::StringArray labels;
+    juce::StringArray intents;
+    juce::Array<juce::var> vars;
     for (auto& cv : *choices)
     {
         auto* co = cv.getDynamicObject();
         if (co == nullptr) continue;
-        juce::String label = co->getProperty("label").toString().trim();
+        const auto label = co->getProperty("label").toString().trim();
         if (label.isEmpty()) continue;
-        int w = juce::jlimit(56, availR - padX,
-            juce::GlyphArrangement::getStringWidthInt(chipFont, label) + 28);
-        // Flow-wrap on narrow columns (sidebars)
-        if (x > padX && x + w > availR) { x = padX; y += kAskChipH + gap; }
-        if (chipRectsOut) chipRectsOut->push_back({ x, y, w, kAskChipH });
-        if (labelsOut) labelsOut->add(label);
-        if (intentsOut) intentsOut->add(co->getProperty("intent").toString().trim().toLowerCase());
-        // The whole choice var per accepted pill, index-parallel with the
-        // labels/intents by construction (recall pills carry recall_id /
-        // recall_name beyond label+intent).
-        if (choiceVarsOut) choiceVarsOut->add(cv);
-        x += w + gap;
-        ++count;
+        labels.add (label);
+        intents.add (co->getProperty("intent").toString().trim().toLowerCase());
+        vars.add (cv);
     }
-    if (count == 0) return 0;
+    if (labels.isEmpty()) return 0;
+
+    // Parity values: see the header comment block (mirrors app.html CSS)
+    const juce::Font chipFont (juce::FontOptions (12.5f));
+    const auto flow = layOutAskChips (labels, shelfW, kAskChipH,
+                                      [&chipFont] (const juce::String& t)
+                                      { return juce::GlyphArrangement::getStringWidthInt (chipFont, t); });
+    if (flow.rects.size() != (size_t) labels.size())
+    {
+        // CANNOT HAPPEN, and said rather than silently dropped if it ever does: a chip without a
+        // rect is a chip the user cannot press, which is B's report exactly.
+        EchoJay_NSLog (("EJAskChip: the flow returned " + juce::String ((int) flow.rects.size())
+                        + " rect(s) for " + juce::String (labels.size()) + " label(s) at width "
+                        + juce::String (shelfW) + " - refusing to draw a partial row").toRawUTF8());
+        return 0;
+    }
+    if (chipRectsOut) *chipRectsOut = flow.rects;
+    if (labelsOut)    *labelsOut    = labels;
+    if (intentsOut)   *intentsOut   = intents;
+    if (choiceVarsOut) *choiceVarsOut = vars;
     if (questionOut) *questionOut = o->getProperty("question").toString().trim();
-    return y + kAskChipH + padY;
+    return flow.height;
 }
 
 // ---- Staged replies (Phase 1d): stage row + result bubble ----
@@ -29416,11 +30025,15 @@ void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
     {   // 18f: a loop pill - the SAME local handler as the typed words; the pill's label is the verb
         const int ci = (int) std::distance(resultChipKind.begin(), std::find(resultChipKind.begin(), resultChipKind.end(), 2));
         juce::ignoreUnused(ci);
+        // A LOOP PILL TAKES THE SAME TWO ROUTES A TYPED SENTENCE DOES, in the same order (item 3):
+        // "Don't use it again" is a setting and is handled locally even when the loop never armed.
+        const auto tapped = [this] (const juce::String& label)
+        { if (handleDontUsePluginVerb (label)) return; handleLoudnessVerb (label); };
         for (size_t i = 0; i < resultChipBtns.size(); ++i)
             if (resultChipMsgIdx[i] == msgIdx && resultChipKind[i] == 2 && resultChipBtns[i].isVisible() && resultChipBtns[i].isMouseOver())
-            { handleLoudnessVerb(resultChipBtns[i].getButtonText()); return; }
+            { tapped (resultChipBtns[i].getButtonText()); return; }
         // no hovered button (a synthetic tap): the first pill of the bubble
-        if (! m.loopPills.isEmpty()) handleLoudnessVerb(m.loopPills[0]);
+        if (! m.loopPills.isEmpty()) tapped (m.loopPills[0]);
         return;
     }
     if (kind == 3)
@@ -29489,7 +30102,7 @@ void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
     cm.editAltLabel  = altLabel;
     cm.excludeNames  = excludeNames;   // "stop suggesting" chip (in-memory)
     chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", text });
+    processorRef.appendChatEntry ("assistant", text, currentChatId);
     processorRef.chatRoles.add("assistant");
     processorRef.chatContents.add(text);
     workspace.appendMessageToChat(currentChatId, "assistant", text,
@@ -29506,17 +30119,38 @@ void EchoJayEditor::appendLocalUserBubble(const juce::String& text)
     // a "user" line and the bridge lands here. Writing before the chat exists is what minted a record
     // under an empty id and lost the Kick chat's answer.
     ensureChatForSend();
-    ChatMsg cm; cm.role = "user"; cm.content = text;
+    // ---- THE SINGLE STAMP (his 21:2x ruling, 21 Oct 2026) ------------------------------------
+    //
+    // *"Make sure the single stamp gives every user row its place at the moment it's typed, before
+    // the run's entry is created, so this can't happen."*
+    //
+    // THE STORE GOES FIRST, and that is the whole of it. appendMessageToChat creates the chat when
+    // it is new - which is what his 21:22 chat was - so the allocator has something to allocate
+    // from, and the row it writes carries the place and the id. Both are then handed to the view's
+    // row and to the processor's entry, so ONE row has ONE place and ONE identity on all three
+    // sides. Before this, the processor's copy was stamped first (from a chat the store did not know
+    // yet, so: nothing), and a run's entry created moments later took a real place above it.
+    workspace.appendMessageToChat(currentChatId, "user", text, {}, {}, {}, {}, {}, {}, {});
+    juce::int64 seq = 0; juce::String id;
+    const bool stamped = workspace.lastStampOf (currentChatId, seq, id);
+    ChatMsg cm; cm.role = "user"; cm.content = text; cm.seq = seq; cm.entryId = id;
     chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "user", text });
+    {
+        EchoJayProcessor::ChatEntry ce; ce.role = "user"; ce.content = text;
+        ce.chatId = currentChatId; ce.seq = seq; ce.entryId = id;   // the SAME pair, not a second one
+        processorRef.appendChatEntry (std::move (ce), currentChatId);
+    }
+    if (! stamped)
+        EchoJay_NSLog (("EJChatLog: the store gave no stamp for a user row in chat " + currentChatId
+                        + " - it is left unplaced and renders LAST, never first (his 21:22). This "
+                          "means the store does not hold that chat, which is worth knowing.").toRawUTF8());
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(text);
-    workspace.appendMessageToChat(currentChatId, "user", text, {}, {}, {}, {}, {}, {}, {});
     workspace.requestMutationSync();
     repaint();
 }
 
-void EchoJayEditor::armLoudnessLoopIfTargeted()
+void EchoJayEditor::armLoudnessLoopIfTargeted (bool mayInsertLimiter)
 {
     auto& loop = processorRef.loudnessLoop();
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -29578,8 +30212,9 @@ void EchoJayEditor::armLoudnessLoopIfTargeted()
     };
     loop.logLine = [](const juce::String& line) { EchoJay_NSLog(line.toRawUTF8()); };   // 18e (item 5): every measurement, trim, branch and bubble
     // 18e: the loop itself inserts an EchoJay Level slot when a loudness-target chain has none (LoudnessLoop::ensureLevelSlot).
-    if (loop.armFromChain())
-        EchoJay_NSLog(("EJLoudness: armed, target " + juce::String(loop.target(), 1) + " LUFS, source " + loop.armSource()).toRawUTF8());
+    if (loop.armFromChain (mayInsertLimiter))
+        EchoJay_NSLog(("EJLoudness: armed, target " + juce::String(loop.target(), 1) + " LUFS, source "
+                       + loop.armSource() + (mayInsertLimiter ? "" : " (an agent build: nothing is inserted)")).toRawUTF8());
 }
 
 bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
@@ -29991,7 +30626,13 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
             }
         }
     }
-    armLoudnessLoopIfTargeted();   // ruling G
+    // ---- AND AN AGENT BUILD INSERTS NOTHING (his 15:30 ruling) --------------------------------
+    // The marker rides the build (EJAgentHome::buildChain sets "from":"agent"), so this road - which
+    // the Build button and the agent share deliberately - can tell them apart without a flag that
+    // could be left set from last time.
+    const bool fromAgent = juce::JSON::parse (chainJson)
+                               .getProperty ("from", juce::var()).toString() == "agent";
+    armLoudnessLoopIfTargeted (/*mayInsertLimiter*/ ! fromAgent);   // ruling G, and his 15:30
 }
 
 // Stale-map ladder, unmapped rung: the ONE user-pressed follow-up. Same
@@ -31843,7 +32484,7 @@ bool EchoJayEditor::handleProposalAffirmation(const juce::String& typed)
     // The user's own words go into the record first, exactly as a sent turn would, so the next
     // turn's history reads as the conversation it was: question, offer, yes.
     chatMessages.push_back ({ "user", typed });
-    processorRef.chatHistory.push_back ({ "user", typed });
+    processorRef.appendChatEntry ("user", typed, currentChatId);
     processorRef.chatRoles.add ("user");
     processorRef.chatContents.add (typed);
     if (currentChatId.isNotEmpty())
@@ -32685,6 +33326,102 @@ echojay::agent::ExecutorRead* EchoJayEditor::agentReadExecutor() const
     return processorRef.agentHome().readExecutor();
 }
 
+// ---- "DON'T USE THAT ONE" (his 11:5x item 3, 21 Oct 2026) --------------------------------------
+//
+// *"The MLimiterX is an expired demo. Can the plugin tell (it passes audio, so silent-slot detection
+// won't)? If not, give Sean a way to mark a plugin "don't use", stored like the silent mark, and
+// send it so B leaves it out."*
+//
+// IT CANNOT TELL. A host sees parameters and audio; an expired demo that passes audio is identical
+// to a licensed one in both, which is exactly why the silent-slot detector cannot see this case -
+// silence is the only licence symptom a host can measure. So the mark is HIS, and this is the way to
+// make it: one sentence in the chat, or one tap on the pill that appears when a limiter misbehaves.
+//
+// LOCAL AND FIRST, like the loudness verbs, for the same reason: it is a setting, not a question,
+// and sending it to the server would turn a decision into a round trip that can fail. The mark is
+// persisted by the API (markPluginDontUse), withheld from the inventory, and named to the model with
+// the reason - so B leaves it out and can still answer when he asks for it by name.
+//
+// WHAT "IT" MEANS, in order, and it never guesses past these:
+//   1. a name in the sentence that matches a slot on the rack in view or a plugin in the scan;
+//   2. the limiter the loudness loop has just complained about (an unconfirmed ceiling, or a ceiling
+//      the output measured over) - which is the case that produced this ask;
+//   3. nothing: it asks which one, because marking the wrong plugin is worse than asking.
+bool EchoJayEditor::handleDontUsePluginVerb (const juce::String& msgIn)
+{
+    // THE PARSE IS EJDontUse.h's, where a guard holds both directions (the sentences that must mark
+    // and the ones that must not) - this verb changes a stored setting, so a false positive takes a
+    // plugin out of every future build.
+    const auto v = echojay::dontuse::parse (msgIn);
+    if (! v.took()) return false;
+
+    // (1) A NAME IN THE SENTENCE, matched against the rack in view and then the scan - loosely,
+    // because he types "the MLimiterX" and "mlimiterx".
+    juce::String name;
+    if (v.name.isNotEmpty())
+    {
+        const auto view = chainRackView();
+        for (const auto& si : view.slots)
+            if (ChainHost::namesMatchLoose (si.name, v.name)) { name = si.name; break; }
+        if (name.isEmpty())
+            for (const auto& d : processorRef.getChainHost().getFilteredPlugins ({}))
+                if (ChainHost::namesMatchLoose (d.name, v.name)) { name = d.name; break; }
+        if (name.isEmpty() && v.lifts)
+            name = v.name;   // lifting a mark needs no live plugin: the mark is held by NAME
+    }
+    // (2) THE PLUGIN THE LOOP JUST COMPLAINED ABOUT, for "don't use it again" - the case that
+    // produced this ask. Only for a mark: a lift has nothing for "it" to refer to.
+    if (name.isEmpty() && v.marks)
+    {
+        auto& loop = processorRef.loudnessLoop();
+        if (const auto unconfirmed = loop.ceilingUnconfirmedLimiter(); unconfirmed.isNotEmpty())
+            name = unconfirmed;
+        else if (loop.everArmed())
+            if (const auto lim = loop.limiterInUseName(); lim.isNotEmpty())
+                name = lim;
+    }
+    // (3) NOTHING: ask. Marking the wrong plugin is worse than one more question.
+    if (name.isEmpty())
+    {
+        chatInput.clear();
+        appendLocalUserBubble (msgIn);
+        appendLocalResultBubble (v.marks
+            ? "Which plugin should I leave out? Name it and I'll mark it \"don't use\"."
+            : "Which plugin should I allow again? Name it and I'll lift the mark.");
+        EchoJay_NSLog (("EJDontUse: \"" + msgIn + "\" names no plugin I can resolve and the loop has "
+                        "no limiter to blame - ASKED which one rather than marking a guess "
+                        "(his 11:5x item 3)").toRawUTF8());
+        return true;
+    }
+
+    chatInput.clear();
+    appendLocalUserBubble (msgIn);
+    auto& api = processorRef.getApi();
+    if (v.lifts)
+    {
+        const bool was = api.allowPluginAgain (name);
+        appendLocalResultBubble (was ? name + " is back in. I'll offer it again."
+                                        : name + " wasn't marked, so there's nothing to lift.");
+        EchoJay_NSLog (("EJDontUse: " + name + (was ? " ALLOWED again - the mark is lifted and it is "
+                                                      "back in the inventory"
+                                                    : " was not marked; nothing changed")).toRawUTF8());
+        return true;
+    }
+    // THE REASON IS HIS WORDS, verbatim, because the model shows it back to him and a reason I
+    // invented would be put in his mouth. An empty one is honest too: "he said not to".
+    const auto why = msgIn.trim();
+    const bool fresh = api.markPluginDontUse (name, why);
+    appendLocalResultBubble (fresh
+        ? name + " is marked \"don't use\". I'll leave it out of builds and picks, and tell the model "
+                 "to as well. Say \"use " + name + " again\" to lift it."
+        : name + " is already marked \"don't use\".");
+    EchoJay_NSLog (("EJDontUse: " + name + (fresh ? " MARKED" : " was already marked")
+                    + " \"don't use\" - reason \"" + why + "\". It is withheld from the inventory and "
+                      "named to the model with the reason; only he can lift it (his 11:5x item 3: an "
+                      "expired demo passes audio, so nothing here can detect it)").toRawUTF8());
+    return true;
+}
+
 void EchoJayEditor::adoptAgentRunRow()
 {
     using namespace echojay::agentui;
@@ -32704,8 +33441,39 @@ void EchoJayEditor::adoptAgentRunRow()
                 if (m.agentRunId == 0) m.agentRunId = ++agentRunIdSeq_;
                 agentRunMsgId_ = m.agentRunId;
                 agentRunKey_   = key;
-                EchoJay_NSLog (("EJAgentRow: this window ADOPTED the run's row (key " + key
-                                + ") - the run carried on while there was no window").toRawUTF8());
+                // ---- THE CHIPS COME FROM THE CLIENT, NOT THE SNAPSHOT (his 11:22 item 2) ------
+                //
+                // *"Chips lost on reopen again: the waiting card came back without Sounds good / Run
+                // a check / Use a different one."*
+                //
+                // AND MY DIAGNOSTIC WAS IN THE WRONG PLACE. I put it in the row's BIRTH path
+                // yesterday; a reopen takes THIS path, so the line he was told to look for never
+                // fired. It is here now, where the case actually lands.
+                //
+                // The card is drawn from the stored snapshot, and a snapshot is a COPY taken at some
+                // earlier tick - it can predate the ask, or have been written before the chips were
+                // attached. The CLIENT is the authority on a pending ask: it still holds the question
+                // and its labels, which is the whole reason the run survived the window. So after
+                // adopting, the row is refreshed from the live client rather than left on the copy.
+                {
+                    const auto snap = fromJson (juce::JSON::parse (m.agentData));
+                    int chipsInSnap = 0;
+                    for (const auto& st : snap.steps) chipsInSnap += st.chips.size();
+                    const auto* c = agentClient();
+                    const int clientLabels = c != nullptr ? c->pendingAsk().labels.size() : 0;
+                    EchoJay_NSLog (("EJAgentRow: this window ADOPTED the run's row (key " + key
+                                    + ") - the run carried on while there was no window. chips="
+                                    + juce::String (chipsInSnap) + " in the snapshot, clientPendingAsk="
+                                    + juce::String (clientLabels) + " label(s)"
+                                    + (clientLabels > chipsInSnap
+                                           ? juce::String (" - the CLIENT has more, so the row is "
+                                                           "refreshed from it (his 11:22)")
+                                           : juce::String())).toRawUTF8());
+                    // The refresh is the ordinary sync, which rebuilds the row from runViewFrom(client)
+                    // and so takes the pending ask's labels with it. Called once, here, rather than
+                    // waiting for the next tick to notice.
+                    if (c != nullptr && c->hasSession()) syncAgentRunMessage();
+                }
                 break;
             }
 }
@@ -32767,10 +33535,37 @@ bool EchoJayEditor::agentRunSurvivesCloseOn() const
     // on by default would have carried 0b's behaviour with it - a run continuing with no window, whose
     // own rig row (B3) has never shown the change actually landing. So the gate is split: the RENDERER
     // ships, the SURVIVAL does not, and a close still stops a live run exactly as ship_2026-10-15b did.
-    // EJ_AGENT_0B=1 runs it for the rig's B1-B4 rows; the default is off and stays off until they are
-    // green on this road.
+    // ---- ON BY DEFAULT, PROVED IN THE HOST (20 Oct 2026) ---------------------------------------
+    //
+    // RULE 2 (16 Oct) was "include 0b only if it's rig-proven; otherwise leave 0b off and say so",
+    // and for four days the honest answer was off. The rig could never give that proof, and said so
+    // itself rather than failing quietly:
+    //
+    //     ok    the host released its editor wrapper while the reply was still streaming
+    //     SKIP  ...with the plugin's editor actually destroyed  [the plugin still reports an editor
+    //           (id 1.0, 1.0 built in this run): this host released its WRAPPER view and the
+    //           plugin's editor outlived it, so nothing here can prove what a closed window does]
+    //
+    // B1, B3 and B4 passed with EJ_AGENT_0B=1 - B3 being the row the old comment named as the
+    // blocker - but those rows are about ASKS, and a pass on them is not a pass on survival.
+    //
+    // SEAN PROVED IT IN LOGIC INSTEAD (20 Oct): agent on, the Kick, added a compressor, closed the
+    // main EchoJay window while the run waited on "How's it sounding?", reopened it - *"card still
+    // waiting, chips live, plugin on the rack, card in the right place."*  That is the evidence the
+    // rig could not produce, and it is the evidence RULE 2 asked for; the rule was about PROOF, not
+    // about which harness supplied it.
+    //
+    // THE ENV VAR IS NOW A KILL SWITCH AND NOTHING ELSE (his words). EJ_AGENT_0B=0 forces the
+    // behaviour off without a rebuild, for the day something turns up that the in-host test did not
+    // cover. There is no "trial" left to end.
     const char* e = ::getenv ("EJ_AGENT_0B");
-    return e != nullptr && juce::String (e).trim() == "1";
+    if (e != nullptr)
+    {
+        const auto v = juce::String (e).trim();
+        if (v == "0") return false;      // his escape hatch: off, now, no rebuild
+        if (v == "1") return true;
+    }
+    return true;                          // proved in the host, 20 Oct
 }
 
 bool EchoJayEditor::agentRowRendererOn() const
@@ -32791,25 +33586,38 @@ bool EchoJayEditor::agentRowRendererOn() const
 
 EchoJayEditor::ChatMsg* EchoJayEditor::agentRunMessage()
 {
-    // 1. the run this window is writing, by its never-reissued id.
-    if (agentRunMsgId_ != 0)
-        for (auto& m : chatMessages)
-            if (m.agentRunId == agentRunMsgId_) return &m;
-    // 2. ADOPTION. A session id we have a snapshot for, but no live id - which is what a reopened
-    //    window has once the client outlives the editor (item 0b). Matching on the sessionId is
-    //    what lets the new window pick the SAME row up rather than start a second one.
-    if (agentClient() != nullptr)
+    // ---- STAGE D: THE RUN'S ROW IS FOUND BY THE RUN'S KEY (his chat-log ruling, 21 Oct 2026) ---
+    //
+    // *"a live run updates its own entry by id (steps, chips, closing) and never inserts by
+    // position"*
+    //
+    // WHAT WAS HERE: a per-window integer (agentRunMsgId_) first, then a sessionId walk as the
+    // adoption path. Both were proxies, and both failed in his reports: the integer is REISSUED by
+    // the chat replay (14:15, which cost a waiting card its chips, its Stop and its Undo), and the
+    // sessionId does not exist until the server answers - which is exactly the window in which a row
+    // is born.
+    //
+    // THE RUN'S KEY IS THE IDENTITY. It is minted once by EJAgentHome, it is in the snapshot, it is
+    // the entry's id in the stored log, and it survives a replay, a reopen and a window with no
+    // editor. One lookup, no fallbacks, nothing to re-identify.
+    const auto key = [this]
     {
-        const auto sid = agentClient()->sessionId();
-        if (sid.isNotEmpty())
-            for (auto it = chatMessages.rbegin(); it != chatMessages.rend(); ++it)
-                if (it->agentData.isNotEmpty()
-                    && echojay::agentui::fromJson (juce::JSON::parse (it->agentData)).sessionId == sid)
-                {
-                    if (it->agentRunId == 0) it->agentRunId = ++agentRunIdSeq_;
-                    agentRunMsgId_ = it->agentRunId;
-                    return &(*it);
-                }
+        if (auto* home = processorRef.agentHomeIfBuilt())
+            if (const auto k = home->runKey(); k.isNotEmpty()) return k;
+        return agentRunKey_;
+    }();
+    if (key.isEmpty()) return nullptr;
+    for (auto& m : chatMessages)
+    {
+        if (m.entryId == key) return &m;                     // the stored log's own id
+        if (m.agentData.isNotEmpty()
+            && echojay::agentui::fromJson (juce::JSON::parse (m.agentData)).runKey == key)
+        {
+            // A row from before the log carried ids: adopt it by the key in its snapshot and give
+            // the row that id, so the next lookup is one compare.
+            if (m.entryId.isEmpty()) m.entryId = key;
+            return &m;
+        }
     }
     return nullptr;
 }
@@ -32858,8 +33666,35 @@ echojay::agentui::RunView EchoJayEditor::agentRunViewFor (const ChatMsg& msg) co
     // the row above the one in flight. That is what this asks now. Retry is a Failed-state control
     // and Stop a live-state one; both come from the client's own state through runViewFrom, so
     // nothing here has to decide which of them to offer.
-    const bool live = agentClient() != nullptr && agentClient()->hasSession()
-                   && msg.agentRunId == agentRunMsgId_;
+    // ---- AND "LIVE" IS THE RUN'S KEY, NOT A PER-WINDOW COUNTER (his 14:15, 21 Oct 2026) -------
+    //
+    // *"Chips: the waiting card came back with no Sounds good / Run a check / Use a different
+    // one."*  His log settles it, by its ORDER rather than its contents:
+    //
+    //   14:15:18  EJAgentRow: this window ADOPTED the run's row ... chips=3 in the snapshot,
+    //             clientPendingAsk=3 label(s)       <- BOTH copies had the chips
+    //   14:15:19  EJStores: merged 2 row(s) ...     <- and then the replay rebuilt the rows
+    //
+    // The adopt sets agentRunMsgId_ to the row it matched. The replay that runs AFTER it reissues
+    // every restored row's id (`cm.agentRunId = ++agentRunIdSeq_`), so the integer the editor is
+    // holding names no row any more. `live` then reads false, makeRecord() runs, and a record lays
+    // out NO CHIPS AT ALL ("a record's chips are history, not buttons") - along with no Stop, no
+    // Undo and no Undo all. Nothing was ever lost: the row was declared history by an identity test
+    // that a reload invalidates.
+    //
+    // THE RUN'S KEY IS THE IDENTITY. It is minted once, it is in the snapshot, it survives a replay,
+    // a reopen and a window with no editor - which is the whole reason it exists (Sean's #11). The
+    // integer stays as the fast path for the row this window just wrote; the key is what makes the
+    // answer survive a rebuild. docs/PLAN_CHAT_LOG_2026-10-21.md replaces both with a stored id.
+    const juce::String liveKey = [this]
+    {
+        if (auto* home = processorRef.agentHomeIfBuilt())
+            if (const auto k = home->runKey(); k.isNotEmpty()) return k;
+        return agentRunKey_;
+    }();
+    const bool live = agentClient() != nullptr
+                   && rowIsLiveRun (v.runKey, liveKey, msg.agentRunId, agentRunMsgId_,
+                                    agentClient()->hasSession());
     // 19 Oct 2026: the transformation itself now lives on the view (RunView::makeRecord), so his
     // leg can compare a live layout with a restored one through the product's own code.
     if (! live) v.makeRecord();
@@ -32932,6 +33767,24 @@ void EchoJayEditor::syncAgentRunMessage()
                             + " belongs to session \"" + prev.sessionId + "\"; this is \"" + sidNow
                             + "\" - opening a new row").toRawUTF8());
             agentRunMsgId_ = 0; agentRunKey_.clear(); agentRunSession_.clear();
+            // ---- AND ITS CHAT (Sean's 16:04, 20 Oct 2026) -------------------------------------
+            //
+            // *"The agent-on reply came back as a plain message with no agent card. Did that turn go
+            // as an agent run?"*  It did: his log has "EJAgentHome: opened the run's record,
+            // key=d1997f2d..." at 16:03:38 and again at 16:03:47. What it did NOT get was a row -
+            // "EJAgentRow: not opening a row for the live run in chat 1792508577563, it belongs to
+            // chat 1792508364909" - repeated for every tick of two whole runs.
+            //
+            // MINE, from this morning's 11:59 fix. agentRunChatId_ is set at a row's BIRTH and was
+            // never cleared, so it kept naming the chat of the LAST run for ever. A new run started
+            // in a new chat then failed the gate meant to stop an OLD run following him about, no
+            // row was born, and with no row the reply renders as a plain bubble.
+            //
+            // Cleared HERE, in the one branch that has already established this is a different run
+            // (the session id moved, or the row we hold is finished while the client is live again).
+            // The 11:59 rule is untouched by that: a run still WAITING in another chat is the SAME
+            // run, so differentRun is false, the id stands, and its card stays where it belongs.
+            agentRunChatId_.clear();
             msg = nullptr;
         }
     }
@@ -32953,6 +33806,80 @@ void EchoJayEditor::syncAgentRunMessage()
         // The key now comes from the home, and an entry that already exists under it is ADOPTED
         // rather than duplicated. A row with no home (a build with the agent not constructed) still
         // mints its own, which is what the fallback is for.
+        // ---- AND NOT IN SOMEONE ELSE'S CHAT (20 Oct 2026, his 11:59) ------------------------
+        //
+        // A SURVIVING run still has a session while he works in another chat, so this function would
+        // mint it a row in whatever chat is open - which is how the old card came to be drawn in a
+        // new chat on a different Link. A run already has a chat (agentRunChatId_, set below at the
+        // row's birth); if we are looking at a different one, the run has no row HERE and this is not
+        // the place to open one.
+        //
+        // agentRunChatId_ EMPTY means no row has been born for any run yet, which is the ordinary
+        // first-run case and must still work.
+        // ---- THE RUN'S OWN CHAT, FROM THE RUN (Sean's 18:18, 20 Oct 2026) --------------------
+        //
+        // *"Agent on, switched to Link "Aitch_4_01" from the mix bus's own chat (where he'd had a run
+        // waiting on "How's it sounding?" and two he stopped), typed "add a delay": blank again. No
+        // card, no spinner, no Stop. Same symptom as 16:06, so the agentRunChatId_ clear didn't cover
+        // this path."*
+        //
+        // HIS GUESS WAS RIGHT AND THE LOG SAYS WHY, which is a different thing from the fix I made
+        // an hour ago. That one cleared agentRunChatId_ in the `differentRun` branch - and that
+        // branch is inside `if (msg != nullptr)`. Switching chats REPLACES chatMessages, so
+        // agentRunMessage() finds nothing in the new chat, msg is null, `differentRun` is never
+        // evaluated, and the stale id stands. The clear was correct and unreachable on this path.
+        //
+        // SO THE PROXY GOES. agentRunChatId_ is a member of the EDITOR, set when a row is born, and a
+        // row does not survive a chat switch - so after one it describes the last run, not this one.
+        // The authority is the RUN: EJAgentClient::start() is handed the chat id and has kept it all
+        // along. A live run's own chatId is the only thing that can answer "does this run belong
+        // here?" through a chat switch, a window close and a reopen alike.
+        //
+        // BOTH RULES STILL HOLD, and now for one reason instead of two:
+        //   - a NEW run typed in this chat was started WITH this chat's id, so its row opens here;
+        //   - an OLDER run still waiting in another chat carries that chat's id, so it is refused
+        //     here and its card stays where it belongs (his 11:59: survival is not capture).
+        //
+        // agentRunChatId_ is kept for the RECORD write below, which is a different question (where
+        // does this run's answer get filed) and is answered at the row's birth by construction.
+        // The decision is echojay::agentui::rowBelongsInChat - a named function with legs on both
+        // directions, because this is the THIRD run today that went invisible and a condition buried
+        // in this method is a condition no guard can reach.
+        // ---- STAGE D: THE BIRTH GATE GOES (his chat-log ruling, 21 Oct 2026) -----------------
+        //
+        // rowBelongsInChat's rule was "an unknown either side means DRAW IT", written because an
+        // invisible live run he cannot stop is the worse failure. It was right for a window with no
+        // chat open and wrong for a window ABOUT TO BECOME a different chat - and it could not tell
+        // them apart, because a new chat has no id yet. That is his 19:51 card, at the top of a
+        // chat it had nothing to do with.
+        //
+        // THE TEST IS NOW THE RUN'S CHAT, PLAINLY: a row is opened here only when this IS the run's
+        // chat. An unknown on either side is no longer a reason to draw - the run's entry exists in
+        // its own chat either way (stage A/B), so nothing is hidden by not drawing it here, which is
+        // what made the old default necessary.
+        // THE RUN'S OWN STATEMENT IS BINDING; THE WINDOW'S SILENCE IS NOT AN EXCUSE.
+        //
+        // My first cut refused whenever either side was unstated, and chat_store_guard's INT1/INT2
+        // went red for the right reason: a run that states NO chat would never get a row, which is
+        // the invisible-live-run failure the old default existed to prevent. The asymmetry is the
+        // whole rule:
+        //
+        //   run states a chat, window states none  -> REFUSE   (his 19:51: a new chat captured it)
+        //   run states none, window states one     -> ALLOW    (nothing is contradicted; INT's case)
+        //   both stated and different              -> REFUSE
+        //   both stated and the same               -> ALLOW
+        //
+        // So: refuse exactly when the RUN names a chat and it is not this one.
+        const auto runChat = agentClient()->runChatId().trim();
+        if (runChat.isNotEmpty() && runChat != currentChatId)
+        {
+            EchoJay_NSLog (("EJAgentRow: not opening a row for the live run in chat " + currentChatId
+                            + " - the RUN ITSELF says it belongs to chat " + runChat
+                            + ", so its card stays there (his 11:59: survival is not capture; keyed on "
+                              "the run rather than on a row that a chat switch destroys - his "
+                              "18:18)").toRawUTF8());
+            return;
+        }
         auto* home = processorRef.agentHomeIfBuilt();
         agentRunKey_ = home != nullptr ? home->ensureRunKey() : juce::String();
         if (agentRunKey_.isEmpty()) agentRunKey_ = juce::Uuid().toDashedString();
@@ -32966,6 +33893,12 @@ void EchoJayEditor::syncAgentRunMessage()
         // THE CHAT THIS RUN BELONGS TO, remembered at birth. The record write is gated on it: he
         // can open another chat while a run finishes, and an answer appended to whatever chat
         // happens to be open then is the "chats are merging" fault of 15:0x.
+        //
+        // 20 Oct 2026 (his 11:59): and a row is never born into a chat the run does not belong to.
+        // With 0b on, a surviving run still has a session when he opens a DIFFERENT chat, and this
+        // function would mint it a row THERE - which is how the old card ("Which compressor should I
+        // add to the Mix Bus?") came to be drawn in a new chat on another Link and carried on from
+        // there. The run's own chat is the only place its card belongs.
         agentRunChatId_ = currentChatId;
         bool haveRecord = false;
         for (auto& e : processorRef.chatHistory)
@@ -32976,8 +33909,14 @@ void EchoJayEditor::syncAgentRunMessage()
         if (! haveRecord)
         {
             // the processor's copy is born WITH the key, so the two can be matched from the first tick
+            // ...AND WITH ITS CHAT (Sean's 16:00, 20 Oct 2026). This row has no content yet, so it
+            // matches nothing in any store and the reload merge would put it into whatever chat is
+            // open - his "Stopped. 1 change" card arriving in a new chat on Enter. The row already
+            // knows where it belongs (agentRunChatId_, set just above); the processor's copy now
+            // carries it too, because the merge is the thing that has to know.
             EchoJayProcessor::ChatEntry ce; ce.role = "assistant"; ce.agentJson = cm.agentData;
-            processorRef.chatHistory.push_back (std::move (ce));
+            ce.chatId = currentChatId;
+            processorRef.appendChatEntry (std::move (ce), currentChatId);
         }
         else
             EchoJay_NSLog (("EJAgentRow: adopted the run's existing record (key " + agentRunKey_
@@ -32985,8 +33924,36 @@ void EchoJayEditor::syncAgentRunMessage()
         msg = agentRunMessage();
         if (msg == nullptr) return;                 // cannot happen; never dereference on hope
         agentRowLastH_ = -1;
-        EchoJay_NSLog (("EJAgentRow: opened run row #" + juce::String (msg->agentRunId)
-                        + " key=" + agentRunKey_).toRawUTF8());
+        // ---- WHERE THE CARD CAME FROM, AND HOW MANY CHIPS IT HAS (Sean's 15:56 item 2) ----------
+        //
+        // *"Buttons lost on reopen (0b): the card came back still waiting ("Play it and I'll set
+        // it. ... Tap one, or type your own answer.") but its chips were gone."*
+        //
+        // I could not settle that one by reading: RunStep::chips IS serialised and restored (see
+        // EJAgentRunView.h, "chips" in both toJson and fromJson), AND the live path rebuilds them
+        // from the client's own pending ask - so either source should have them, and guessing which
+        // failed is how three of this week's rounds were spent. This line makes the next occurrence
+        // a one-read diagnosis: which source the row was built from, whether the client still holds
+        // a pending ask, and the chip count on the restored snapshot.
+        {
+            const auto v = fromJson (juce::JSON::parse (msg->agentData));
+            int chipsOnSteps = 0, askRows = 0;
+            for (const auto& st : v.steps)
+                if (! st.chips.isEmpty()) { ++askRows; chipsOnSteps += st.chips.size(); }
+            const auto* c = agentClient();
+            const bool clientAsk = c != nullptr && ! c->pendingAsk().labels.isEmpty();
+            EchoJay_NSLog (("EJAgentRow: opened run row #" + juce::String (msg->agentRunId)
+                            + " key=" + agentRunKey_
+                            + " from=" + juce::String (haveRecord ? "the stored record" : "a fresh seed")
+                            + " chips=" + juce::String (chipsOnSteps) + " on " + juce::String (askRows)
+                            + " ask row(s), clientPendingAsk="
+                            + juce::String (clientAsk ? juce::String ((int) c->pendingAsk().labels.size())
+                                                            + " label(s)"
+                                                      : juce::String ("none"))
+                            + ". A waiting card with chips=0 and a client that still holds labels is "
+                              "the snapshot's fault; chips=0 with no client ask is the run having "
+                              "been answered already (his 15:56).").toRawUTF8());
+        }
     }
 
     const auto before = fromJson (juce::JSON::parse (msg->agentData));
@@ -33079,11 +34046,32 @@ void EchoJayEditor::writeStoppedCardForRun (ChatMsg& m, const juce::String& why)
 
 void EchoJayEditor::saveInterruptedAgentRun()
 {
+    // ---- THE RUN SURVIVES THE WINDOW (19 Oct 2026, his 18:07 run - item 0b, restored) ---------
+    //
+    // *"Opening the Link's window to check the meter ended the run with 'Stopped: the plugin was
+    // closed mid-run' while it was only waiting on 'How's it sounding?'; the run should survive the
+    // window (item 0b)."*
+    //
+    // Mine, from this morning. The client, the executor and the run's record all live on the
+    // PROCESSOR precisely so a window going away cannot end a run - that is the whole of item 0b -
+    // and this line reached past it and stopped the client anyway. In Logic, opening another
+    // plugin's window takes this one down, so an ordinary glance at the Link's meter killed a run
+    // that was sitting on a question.
+    //
+    // What the window closing legitimately needs is the RECORD: a card that is not written down
+    // before the view goes is a card the next editor cannot adopt, and chat_store's INT1 is about
+    // exactly that save. So the save stays and the stop goes. The run goes on; the next editor
+    // adopts it through EJAgentHome, and if the user wants it stopped there is a Stop on the card.
     if (agentClient() == nullptr || ! agentClient()->isActive()) return;
     auto* msg = agentRunMessage();
     if (msg == nullptr) return;
-    writeStoppedCardForRun (*msg, "Stopped: the plugin was closed mid-run.");
-    agentClient()->stop();     // the run ends with the window: his ruling, 19 Oct
+    // NOT "Stopped": it is not stopped, and a card that says so about a live run is the window
+    // disagreeing with the processor. The snapshot is saved as it stands.
+    recordAgentRunInChat (*msg, /*windowClosing*/ true);
+    workspace.requestMutationSync();
+    EchoJay_NSLog ("EJAgentRow: the window is going while a run is live - the card is written down and "
+                   "the RUN CONTINUES on the processor (item 0b). It is not stopped and is not marked "
+                   "stopped (his 18:07 report).");
 }
 
 void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m, bool windowClosing)
@@ -33098,12 +34086,52 @@ void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m, bool windowClosing)
     //
     // (1) THE ROW MUST BE THE RUN THIS EDITOR RAN. A chat loaded from the store brings its own
     //     agent row with it, and that row's answer is already in that chat's record.
-    if (m.agentRunId == 0 || m.agentRunId != agentRunMsgId_) return;
-    // (2) AND THE CHAT MUST BE THE ONE THE RUN STARTED IN, remembered when the row was born.
-    if (currentChatId.isEmpty() || currentChatId != agentRunChatId_) return;
+    // STAGE D: BY THE RUN'S KEY, not a per-window integer the chat replay reissues (his 14:15).
+    // A row of this chat's own record carries the key of the run that made it; the one this editor
+    // is running is the one whose key matches the live run's.
+    {
+        const auto liveKey = [this]
+        {
+            if (auto* home = processorRef.agentHomeIfBuilt())
+                if (const auto k = home->runKey(); k.isNotEmpty()) return k;
+            return agentRunKey_;
+        }();
+        const auto rowKey = m.entryId.isNotEmpty()
+                              ? m.entryId
+                              : echojay::agentui::fromJson (juce::JSON::parse (m.agentData)).runKey;
+        if (liveKey.isEmpty() || rowKey.isEmpty() || rowKey != liveKey) return;
+    }
+    // (2) AND THE CHAT IS THE RUN'S OWN, FROM THE RUN (Sean's 11:25, 21 Oct 2026) --------------
+    //
+    // *"The old run was stopped (right), but its "Stopped." line landed at the top of the NEW Nafe
+    // chat instead of the Aitch chat it belongs to ... A stopped run's line must go to the run's own
+    // chat id (client.runChatId()), never the current one. Same rule as the card itself."*
+    //
+    // WHY THE OLD GATE PASSED, which is the part worth keeping in sight: it compared currentChatId
+    // against agentRunChatId_, an EDITOR member that moves to whichever chat a row is last born in.
+    // He opened the Nafe chat and typed, the new run's row was born there and moved the member, and
+    // the OLD run's stop line was then recorded against it - the gate agreed with itself and wrote
+    // to the wrong chat. The same proxy-for-an-identity fault as the 18:18 blank card, in reverse.
+    //
+    // So the destination is the RUN's own chat: the client was handed it at start() and keeps it.
+    // Everything below writes to `target`, not to currentChatId - the record may legitimately belong
+    // to a chat that is not on screen, which is exactly his case.
+    //
+    // The member stays as the FALLBACK for a run whose client no longer has one (an older session),
+    // and currentChatId is not consulted at all.
+    const auto target = [this]
+    {
+        if (auto* c = agentClient()) if (c->runChatId().isNotEmpty()) return c->runChatId();
+        return agentRunChatId_;
+    }();
+    if (target.isEmpty()) return;
     // (3) NEVER CREATE A CHAT. appendMessageToChat makes one on the fly for an id it does not know,
     //     which would be a chat with no channel, no title and no target - a fifth way to go wrong.
-    if (workspace.findChatById (currentChatId) == nullptr) return;
+    if (workspace.findChatById (target) == nullptr) return;
+    if (target != currentChatId)
+        EchoJay_NSLog (("EJAgentRow: recording this run's line in ITS OWN chat " + target
+                        + ", which is not the one on screen (" + currentChatId
+                        + ") - a stopped run's line belongs where the run does (his 11:25)").toRawUTF8());
     // (4) AND ONLY FOR A RUN THAT IS OVER. A live run's prose is the row's to show; the record gets
     //     it once, at the end.
     //
@@ -33119,37 +34147,92 @@ void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m, bool windowClosing)
     auto v = echojay::agentui::fromJson (juce::JSON::parse (m.agentData));
     v.opening = displayedText (m);
     v.foldProseIntoTheCard();                 // what the CARD says, by the one rule that decides it
-    const auto whole = v.closing.trim();
+    auto whole = v.closing.trim();
+    // ---- A STOPPED RUN KEEPS ITS CARD (Sean's 10:03, 21 Oct 2026) ----------------------------
+    //
+    // *"when he typed "add the bx opto Pedal", the previous run's reply (the Shadow Hills add,
+    // waiting on "How's it sounding?") vanished from the chat. Only his message bubble stayed. A run
+    // stopped because he moved on must keep its card, marked "Stopped"."*
+    //
+    // A run stopped MID-WAIT has no closing of its own - it was sitting on a question, not
+    // finishing - so `whole` is empty and this function returned without writing anything. The row
+    // then held a snapshot and no prose, and the next thing to rebuild the transcript had nothing to
+    // show for it. That is the vanish: not a deletion, an absence that was never recorded.
+    //
+    // So a stopped run is given the one sentence it has: the stop's own line. "Stopped." when he
+    // simply moved on, and the reason when there is one ("Stopped: you moved on to Aitch_4_01"),
+    // which is the same text the card's transcript already shows live.
+    if (whole.isEmpty())
+    {
+        const auto* c = agentClient();
+        const bool stopped = c != nullptr && (c->state() == EJAgentClient::State::Stopped
+                                           || c->state() == EJAgentClient::State::Failed);
+        if (stopped)
+        {
+            whole = v.steps.empty() ? juce::String ("Stopped.")
+                                    : juce::String ("Stopped. ") + juce::String (v.steps.size())
+                                        + (v.steps.size() == 1 ? " step" : " steps") + " before that.";
+            EchoJay_NSLog (("EJAgentRow: the run was stopped with no closing of its own - its card is "
+                            "kept and marked \"" + whole + "\" rather than left unrecorded, which is "
+                              "what made it vanish when he moved on (his 10:03)").toRawUTF8());
+        }
+    }
     if (whole.isEmpty()) return;
+
+    // ---- THE RUN'S OWN ROW, BY ITS ID, BEFORE ANY PROSE MATCH (22 Oct 2026) ----------------
+    //
+    // Since this morning the PROCESSOR appends the card when the run's record is opened (his 09:24
+    // fault: a run that finished with no window had nowhere to write it). So by the time this path
+    // runs, the row is usually already in the store - carrying the RUN'S KEY as its id.
+    //
+    // AND IT MUST BE FOUND BY THAT KEY, not by its prose. This path composes `whole` through
+    // foldProseIntoTheCard, which can differ by a word from the closing the snapshot stored; the
+    // normalised-prose match below would then miss its own row and APPEND A SECOND ONE. That is
+    // DUP2's exact shape ("my 'Add a compressor' shows twice, sent once") arriving through the door
+    // this morning's fix opened, so it is closed in the same round rather than found next week.
+    {
+        const auto runKeyHere = echojay::agentui::fromJson (juce::JSON::parse (m.agentData)).runKey;
+        if (runKeyHere.isNotEmpty()
+            && workspace.updateAgentCardById (target, runKeyHere, m.agentData, whole))
+        {
+            workspace.requestMutationSync();
+            agentRecordedInChat_ = m.agentRunId;
+            agentRecordedChat_   = target;
+            agentRecordedText_   = whole;
+            EchoJay_NSLog (("EJAgentRow: this run's stored row was updated BY ITS KEY (" + runKeyHere
+                            + ") - one run is one row, whatever the prose settled to").toRawUTF8());
+            return;
+        }
+    }
 
     // ---- ONCE PER RUN, ON NORMALISED TEXT --------------------------------------------------
     // The dedupe is asked of the RECORD, not of a member variable: a member is empty again after a
     // reload, which is exactly when the second copy appeared. Dashes and whitespace are normalised
     // because that is the only way the two copies of one sentence differed (em dash / hyphen).
     const auto key = echojay::agentui::normalisedProse (whole);
-    auto* chat = workspace.findChatById (currentChatId);
+    auto* chat = workspace.findChatById (target);
     for (const auto& stored : chat->messages)
         if (stored.role == "assistant" && echojay::agentui::normalisedProse (stored.content) == key)
         {
             agentRecordedInChat_ = m.agentRunId;      // it is already there, in some spelling
-            agentRecordedChat_   = currentChatId;
+            agentRecordedChat_   = target;
             agentRecordedText_   = stored.content;
             // ...BUT THE CARD MAY HAVE GROWN SINCE (18 Oct 2026). The prose settles before the run
             // does - a later round adds steps and read-back lines without changing a word of it - so
             // the snapshot is rewritten even when the text is the one already there.
             if (stored.agentJson != m.agentData)
             {
-                workspace.updateAssistantAgentJson (currentChatId, stored.content, m.agentData);
+                workspace.updateAssistantAgentJson (target, stored.content, m.agentData);
                 workspace.requestMutationSync();
             }
             return;
         }
     // The run's own earlier copy, grown by a later round: rewrite it rather than add beside it.
-    if (agentRecordedInChat_ == m.agentRunId && agentRecordedChat_ == currentChatId
+    if (agentRecordedInChat_ == m.agentRunId && agentRecordedChat_ == target
         && agentRecordedText_.isNotEmpty())
     {
-        workspace.updateAssistantText (currentChatId, agentRecordedText_, whole);
-        workspace.updateAssistantAgentJson (currentChatId, whole, m.agentData);
+        workspace.updateAssistantText (target, agentRecordedText_, whole);
+        workspace.updateAssistantAgentJson (target, whole, m.agentData);
     }
     else
     {
@@ -33158,14 +34241,14 @@ void EchoJayEditor::recordAgentRunInChat (const ChatMsg& m, bool windowClosing)
         // bubble. It should come back exactly as it looked live."*  The snapshot the row has kept
         // all along (every step, the You-said lines, the read-backs, the failures, the closing) is
         // written beside the prose, so a reopened chat redraws the card instead of quoting it.
-        workspace.appendMessageToChat (currentChatId, "assistant", whole, {}, {}, {}, {}, {}, {}, {},
+        workspace.appendMessageToChat (target, "assistant", whole, {}, {}, {}, {}, {}, {}, {},
                                        {}, {}, {}, {}, m.agentData);
     }
     agentRecordedInChat_ = m.agentRunId;
-    agentRecordedChat_   = currentChatId;
+    agentRecordedChat_   = target;
     agentRecordedText_   = whole;
     workspace.requestMutationSync();
-    EchoJay_NSLog (("EJAgentRow: the run's answer is in chat " + currentChatId
+    EchoJay_NSLog (("EJAgentRow: the run's answer is in chat " + target
                     + " now (" + juce::String (whole.length())
                     + " chars) - a reopened chat shows it under the question").toRawUTF8());
 }
@@ -33235,6 +34318,33 @@ void EchoJayEditor::AgentRunBridge::agentTranscript (const juce::String& role, c
         return;
     }
 
+    // ---- AND NOTHING POSTS TO THE CHAT ON SCREEN (his 21:24 ruling, 21 Oct 2026) -------------
+    //
+    // *"the top of the new chat shows "Stopped: you moved on to 88_- transition 1 _01", the OLD
+    // run's stop notice, in the wrong chat. That's the moved-on notice writer, still posting to the
+    // open chat. Every writer, including notices, the moved-on line and the Stopped line, writes to
+    // the run's own chat id through the same single stamp. Nothing posts to "the chat on screen"."*
+    //
+    // THIS IS THE WRITER. The fallback below is appendLocalResultBubble, which writes to whatever
+    // chat is open - and the stop line of the run he has just left arrives here, in the NEW window,
+    // with no row for it in the new chat. So the line went into the chat he had moved TO.
+    //
+    // THE RUN'S CHAT DECIDES. When the run belongs elsewhere this branch writes NOTHING: the record
+    // is EJAgentHome's, it is a listener on the same client, and it has already written this line
+    // into the run's own record (keyed by the run's key, in the run's own chat). There is nothing
+    // for the editor to add and nowhere correct for it to put it.
+    {
+        const auto runChat = ed.agentClient()->runChatId().trim();
+        if (runChat.isNotEmpty() && ed.currentChatId.isNotEmpty() && runChat != ed.currentChatId)
+        {
+            EchoJay_NSLog (("EJChatLog: a run's line belongs to chat " + runChat
+                            + " and the chat on screen is " + ed.currentChatId
+                            + " - the editor writes NOTHING here; the record is written into the run's "
+                              "own chat by its home (his 21:24: nothing posts to the chat on screen)")
+                               .toRawUTF8());
+            return;
+        }
+    }
     ed.syncAgentRunMessage();                      // make sure the row exists before writing to it
     auto* m = ed.agentRunMessage();
     if (m == nullptr) { ed.appendLocalResultBubble (text); return; }
@@ -33688,7 +34798,25 @@ juce::String EchoJayEditor::rackOutGainCaption() const
     auto& loop = processorRef.loudnessLoop();
     const juce::String viewUid = chainViewUid();
 
-    if (loop.everArmed())
+    // ---- AND IT IS THIS WINDOW'S OWN RACK, OR NOTHING (Sean's 18:20/18:22 screenshots) --------
+    //
+    // *"Sean saw "OUT -3.9 dB . level match" while viewing RACK: AITCH_4_01, not the mix bus."*
+    //
+    // THE CAPTION WAS THE LIE, NOT THE MATCH. This function computes `viewUid` and then never looks
+    // at it in the branch below: processorRef.loudnessLoop() is THIS PROCESSOR'S loop, describing
+    // THIS V2's own chain, and once it had ever been armed its figure and its provenance were drawn
+    // over whatever rack happened to be in view - including a Link's. The comment above this
+    // function has claimed since 12 Oct that "the gain is read from the loop's own stage for the
+    // rack in view", which is what it meant to do and never did.
+    //
+    // The 18:14 pass that produced -3.9 ran on the mix bus (its own log line says "EchoJay's bus
+    // trim is -3.9 dB"), and the 18:18 add on Aitch_4_01 correctly targeted slot_out at +0.0. So
+    // nothing wrote the wrong rack; one window drew another rack's number.
+    //
+    // A LINK IN VIEW FALLS THROUGH to the arm below, which reads that Link's OWN published gain and
+    // says nothing about who set it - which is the honest answer, because the V2 cannot see the
+    // Link's own loop. The provenance clause belongs only to the loop that is in front of us.
+    if (loop.everArmed() && viewUid.isEmpty())
     {
         const float db = loop.currentGainDb();
         // The stage names itself ("the rack's OUT gain" / the final limiter's input), which is also the one
@@ -33696,11 +34824,22 @@ juce::String EchoJayEditor::rackOutGainCaption() const
         // with no Level slot in the rack at all.
         const auto stage = loop.stageName();
         const bool onLimiter = stage.containsIgnoreCase ("limiter");
-        const auto word = loop.loudnessOption();
-        juce::String how = word == "keep" || word == "match" ? "level match"
-                         : word == "dynamic"                 ? "dynamic"
-                         : word.isNotEmpty()                 ? "level target"
-                                                             : juce::String();
+        // ---- AN ABANDONED MATCH DOES NOT CREDIT ITSELF (his ruling, 20 Oct 2026) -------------
+        //
+        // *"An abandoned match must not caption itself "level match"."*
+        //
+        // The 30 s bound and the dead-slot ending both say so in the log - "The trim stays at -3.9
+        // dB", "The trim is LEFT AT ... rather than matched against silence" - and then this clause
+        // credited the match with the figure it had just declined to touch.
+        //
+        // THE DECISION IS LoudnessLoop::provenanceWord, a pure static, because this clause was wrong
+        // TWICE in one screenshot - crediting an abandoned pass, on a rack the loop was not
+        // describing - and a decision that has been wrong twice belongs somewhere a guard can reach.
+        // The FIGURE still shows either way: it is real and he needs to see it. What goes is the
+        // claim about where it came from.
+        const auto how = LoudnessLoop::provenanceWord (loop.loudnessOption(),
+                                                       loop.matchEverLanded(),
+                                                       loop.matchAbandoned());
         juce::String out = (onLimiter ? juce::String ("LIMITER IN ") : juce::String ("OUT "))
                          + juce::String (db >= 0.0f ? "+" : "") + juce::String (db, 1) + " dB";
         if (how.isNotEmpty()) out << juce::String::fromUTF8 (" \xc2\xb7 ") << how;
@@ -33842,9 +34981,11 @@ void EchoJayEditor::pumpPendingLinkApplies()
         {
             EchoJay_NSLog(("EJChat: queued apply EXPIRED for " + q.uid + " after "
                            + juce::String((int)(now - q.queuedMs)) + " ms - " + q.lastWhy).toRawUTF8());
+            // HIS WORDS, 19 Oct 15:45: *"say 'Couldn't add it, the rack didn't respond. Nothing
+            // changed.'"*  The gate's own state and the 20 s bound are in the log line above, which
+            // is where a timing belongs; the sentence says what he asked for and what happened to it.
             retireLinkEditCard(q.key, q.chatId,
-                "Not applied: " + q.lastWhy + juce::String::fromUTF8(" \xe2\x80\x94 the rack did not become ready within ")
-                    + juce::String((int)(kPendingApplyMs / 1000.0)) + " s, so nothing was changed.", {}, {}, {});
+                "Couldn't " + q.whatItWas + ", the rack didn't respond. Nothing changed.", {}, {}, {});
             continue;
         }
         keep.push_back(q);
@@ -33878,9 +35019,8 @@ void EchoJayEditor::pumpPendingChainBuilds()
         {
             EchoJay_NSLog (("EJChain: queued build EXPIRED for " + q.uid + " after "
                             + juce::String ((int) (now - q.queuedMs)) + " ms - " + q.lastWhy).toRawUTF8());
-            appendLocalResultBubble ("Nothing was built: " + q.lastWhy
-                + juce::String::fromUTF8 (" \xe2\x80\x94 the rack did not become ready within ")
-                + juce::String ((int) (kPendingApplyMs / 1000.0)) + " s. Press Build again when it is.");
+            appendLocalResultBubble ("Couldn't build it, the rack didn't respond. Nothing changed. "
+                                     "Press Build to try again.");
             continue;
         }
         keep.push_back (q);
@@ -33904,6 +35044,60 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.uid == uid) { label = e.displayName; connected = e.info.connected; break; }
 
+    // ---- THE ONE ROAD, FOR THIS PATH TOO (19 Oct 2026, his 15:45 agent-off test) ---------------
+    //
+    // *"'+ add UAD Empirical Labs Distressor after Tube-Tech CL 1B (slot 1)' came back 'Not applied:
+    // Connecting to rack... the rack did not become ready within 20 s, so nothing was changed.' This
+    // is the failure the one-road fix closed this morning; it's back for agent-off Build when the
+    // Link already has a slot. Find why this path isn't on the one road and fix it."*
+    //
+    // Because this morning's fix moved the BUILD press and the agent's build and X onto the wire and
+    // left the chat's EDIT CARD exactly where it was: gated on chainEditGateRefusesFor (the borrow
+    // session's readiness) and then routed INTO the session whenever one is active. Aiming the chat
+    // at a Link engages a session, so for Sean both of those are always true - the gate he was
+    // waiting 20 s on, and the destination he never wanted.
+    //
+    // A chain-cmd v2 editOps goes straight to the Link, which accepts it with no session, no rack
+    // lock and no engage (EJAgentHome's single adds have always proved this). So the ROAD IS CHOSEN
+    // BY THE OPS, not by what a session happens to be doing:
+    //
+    //   every op structural          the wire, at once, no gate and no queue
+    //   any op needs the hosted copy the session road below, with the gate, for the reason it gives
+    //
+    // Parsed FIRST, because the road cannot be chosen before the ops are known - which is the whole
+    // reason the gate used to stand in front of every edit alike.
+    juce::StringArray baseSlots;
+    auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
+    if (ops.empty())
+    {
+        // NEVER SILENT (his rule, twice today). This was a bare `return`.
+        EchoJay_NSLog (("EJEdit: the card on \"" + label + "\" carried no operation this build "
+                        "understands - saying so rather than doing nothing: " + cm.editData.substring (0, 160)).toRawUTF8());
+        retireLinkEditCard(key, chatIdAtApply,
+            "Couldn't apply that change, it didn't name anything this build can do. Nothing changed.", {}, {}, {});
+        return;
+    }
+    // WHICH OPS NEED THE V2'S HOSTED COPY. A dial op writes a parameter, and that needs a loaded
+    // instance with a parameter map - the reason the session road exists, kept verbatim below. The
+    // editor ops act on the mirror's own window. Everything else is STRUCTURE or a gain the Link
+    // owns itself, and the Link does all of it from the command.
+    if (! ChainHost::opsNeedTheHostedCopy (ops))
+    {
+        const int seqWire = sendChainEditToLink (uid, cm.editData);
+        EchoJay_NSLog (("EJEdit: apply target uid=" + uid + "  path=THE WIRE (chain-cmd v2 editOps) ops="
+                        + juce::String ((int) ops.size()) + " - every op is structural, so it needs no "
+                          "session, no lock and no engage (his 15:45 report)").toRawUTF8());
+        if (seqWire < 0)
+        {
+            retireLinkEditCard(key, chatIdAtApply,
+                "Couldn't reach that rack, so nothing changed.", {}, {}, {});
+            return;
+        }
+        setStageStatus ("Applying to \"" + label + juce::String::fromUTF8 ("\"\xe2\x80\xa6"));
+        pollLinkEditAck (uid, seqWire, 20, key, chatIdAtApply, label, (int) ops.size(), ops, baseSlots);
+        return;
+    }
+
     // ---- ITEM 4, 12 Oct 2026: A DIAL SENT WHILE RECONNECTING IS QUEUED, NOT DROPPED ------------------------
     //
     // Both of these used to RETIRE the card: the user asked for a change, saw "Not applied: Connecting to
@@ -33914,6 +35108,8 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     // THE QUEUE IS BOUNDED, because a wait with no end is how "nothing happened" becomes unexplainable: after
     // kPendingApplyMs the card retires with the state that was still blocking it, named. Queueing is announced
     // in the card, so a user who sees nothing move knows it is waiting rather than lost.
+    //
+    // 19 Oct: reached only by an edit that needs the hosted copy. A structural edit took the wire above.
     if (chainEditGateRefusesFor(uid) || ! connected)
     {
         const auto why = chainEditGateRefusesFor(uid)
@@ -33927,12 +35123,15 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
             q.key = key; q.chatId = chatIdAtApply; q.uid = uid; q.msgIdx = msgIdx;
             q.queuedMs = juce::Time::getMillisecondCounterHiRes();
             q.lastWhy = why;
+            q.whatItWas = ChainHost::verbForOps (ops);
             pendingLinkApplies_.push_back(q);
             EchoJay_NSLog(("EJChat: apply QUEUED for " + uid + " - " + why
                            + " (will apply when the rack is ready; bound "
                            + juce::String((int)(kPendingApplyMs / 1000.0)) + " s)").toRawUTF8());
         }
-        setChainSaveStatus(why + juce::String::fromUTF8(" \xe2\x80\x94 queued; this will apply as soon as the rack is ready."));
+        // HIS 15:45 RULE: no machinery and no em-dashes in a line he reads. `why` is the gate's own
+        // words ("Connecting to rack...") and they stay in the LOG above, where they are evidence.
+        setChainSaveStatus("Waiting for the rack, then I'll " + ChainHost::verbForOps (ops) + ".");
         return;
     }
 
@@ -33951,9 +35150,7 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
         return;
     }
 
-    juce::StringArray baseSlots;
-    auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
-    if (ops.empty()) return;
+    // (ops and baseSlots were parsed above, where the road is chosen.)
 
     // R3 / O1 (21t-b, 25 Sep 2026): WHILE THIS RACK IS THE LIVE SESSION, THE EDIT LANDS IN THE SESSION.
     // On 25 Sep a dial op was shipped to the Link and judged against an empty rack: "preflight REFUSED
@@ -34988,8 +36185,10 @@ void EchoJayEditor::syncAgentModeLine()
     juce::Rectangle<int> r;
     if (show)
     {
-        r = { chatBoxRect_.getX() + 2, chatBoxRect_.getY() - kAgentModeLineH,
-              chatBoxRect_.getWidth() - 4, kAgentModeLineH - 1 };
+        const int lines = juce::jlimit (1, 2, agentModeLineLines_);
+        const int stripH = kAgentModeLineH * lines;
+        r = { chatBoxRect_.getX() + 2, chatBoxRect_.getY() - stripH,
+              chatBoxRect_.getWidth() - 4, stripH - 1 };
         // THE BELT, kept from the first attempt because it is the thing that makes "never over other
         // panels" a property rather than a hope: if the rect we just computed is not inside the chat
         // column - a stale chatBoxRect_ from another layout, a column that is not on this tab - the
@@ -35002,6 +36201,35 @@ void EchoJayEditor::syncAgentModeLine()
             show = false;
             agentModeLineWhy_ = "its rect " + r.toString() + " is not inside the chat column "
                               + column.toString() + " - refused rather than painted over another panel";
+        }
+        // ---- AND NEVER OVER THE MESSAGE AREA (his 18:15 item 1 / 18:18 item 2) ---------------
+        //
+        // *"never over content and never mid-chat."*  The reservation in resized() makes room for
+        // this strip; this is the test that the room actually exists, so a layout pass that has not
+        // caught up - or a state where the reservation is off - refuses to draw rather than landing
+        // on a card again. Refusing is the safe answer and it says why: the strip is a hint, and a
+        // hint is never worth covering a step he is reading.
+        else if (r.getY() < chatScroll.getBottom())
+        {
+            show = false;
+            agentModeLineWhy_ = "it would start at y=" + juce::String (r.getY())
+                              + ", inside the message area which ends at y="
+                              + juce::String (chatScroll.getBottom())
+                              + " - refused rather than drawn over a card (his 18:15)";
+        }
+        // ---- AND NEVER MID-CHAT ---------------------------------------------------------------
+        //
+        // *"It now floats in the middle of the empty chat."*  The composer is not always at the
+        // bottom: in the empty state it is centred, and the strip rides just above it - which is
+        // exactly "mid-chat". chatCentredEmpty_ already gates that case, and this is the GEOMETRIC
+        // belt behind the flag, for every other way the composer can end up away from the bottom.
+        // A hint that is not in its one fixed place is not shown at all.
+        else if (chatBoxRect_.getBottom() < getHeight() - (getHeight() / 4))
+        {
+            show = false;
+            agentModeLineWhy_ = "the composer is not at the bottom of the window (its bottom is y="
+                              + juce::String (chatBoxRect_.getBottom()) + " of " + juce::String (getHeight())
+                              + "), so this strip would float mid-chat - refused (his 18:18 item 2)";
         }
     }
     agentModeLineRect_ = show ? r : juce::Rectangle<int>();
@@ -35262,7 +36490,7 @@ void EchoJayEditor::presentReplaceAsk(const juce::String& question,
     cm.content = question;
     cm.askData = askJson;
     chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", question });
+    processorRef.appendChatEntry ("assistant", question, currentChatId);
     // Persist so the pending ask survives an editor recreate, exactly like
     // the compare-scope ask.
     if (currentChatId.isNotEmpty())
@@ -36034,18 +37262,28 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // own. The mirror is still read first because it is the one that cannot lag - it holds the instances
         // the user is editing this instant, where the sidecar holds what has been published - and the two agree
         // by construction, because every edit to that rack is a command.
+        //
+        // ---- 20 OCT 2026: THAT PREMISE IS GONE, AND THE SIDECAR IS THE ONLY SOURCE ----------------
+        //
+        // "the two agree by construction, because every edit to that rack is a command" was true while
+        // every edit went THROUGH the mirror. The one-road work made the WIRE the path - the agent's
+        // adds, the Build button, the X and the chat's edit card all write chain-cmds straight to the
+        // Link - and the mirror never sees them. So the one that "cannot lag" became the one that
+        // does, in both directions:
+        //
+        //   B, 09:26: *"the agent-off request's current chain listed only the Tube-Tech CL 1B;
+        //              bx_opto (added at 09:24) was missing, so the plugin sent a stale rack."*
+        //   Sean, 12:04: he deleted every slot, and "add a compressor" came back *"There's already
+        //              EchoJay 4-Band Compressor and the CL 1B on the kick"* - the same staleness in
+        //              reverse, a rack that no longer existed.
+        //
+        // His ruling: *"It must be the Link's live published rack (sidecar) at send time, never a
+        // cached mirror or the last-known copy."*  So the mirror branch goes. Read AT SEND, not from
+        // linkRackCache's ~1 Hz copy, for the same reason: what the server is told about a rack has
+        // to be what the rack says about itself at the moment it is asked.
         {
-            LinkShm::RackSidecar rack;
-            const char* src = "sidecar";
-            if (auto* bh = processorRef.borrowHostIfActiveFor(targetLinkUid))
-            {
-                rack.valid = true; rack.uid = targetLinkUid; rack.name = label;
-                rack.revision = bh->getChainRevision();
-                rack.masterWet = bh->getMasterWet();
-                echojay::fillRackSidecarSlots(rack, *bh, 0, -1, {}, [](int) { return false; });
-                src = "the borrowed session host";
-            }
-            else rack = readLinkRackSidecar(targetLinkUid);
+            LinkShm::RackSidecar rack = readLinkRackSidecar (targetLinkUid);
+            const char* src = "the Link's own sidecar, read at send";
 
             if (rack.valid && !rack.slots.empty())
             {
@@ -36709,7 +37947,7 @@ void EchoJayEditor::presentRecallMismatchAsk(const juce::String& id,
     cm.content = headsUp;
     cm.askData = askJson;
     chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", headsUp });
+    processorRef.appendChatEntry ("assistant", headsUp, currentChatId);
     if (currentChatId.isNotEmpty())
         workspace.appendMessageToChat(currentChatId, "assistant", headsUp,
                                       {}, {}, {}, askJson, {});
@@ -37550,7 +38788,7 @@ void EchoJayEditor::handleDevEqTest(const juce::String& jsonArg)
               + ch.devApplyEqJson(slot, jsonArg);
 
     chatMessages.push_back({"assistant", reply});
-    processorRef.chatHistory.push_back({"assistant", reply});
+    processorRef.appendChatEntry ("assistant", reply, currentChatId);
     chatInput.clear();
 
     // Reflect any band change the apply made in an open editor / rack card.
@@ -37917,14 +39155,36 @@ void EchoJayEditor::publishRigState()
         o->setProperty ("transcript", juce::var (rows));
         o->setProperty ("transcriptRows", (int) processorRef.chatHistory.size());
         juce::Array<juce::var> shown;
+        int cardsOnScreen = 0;
         for (const auto& m : chatMessages)
         {
             auto* r = new juce::DynamicObject();
             r->setProperty ("role", m.role);
             r->setProperty ("text", m.content);
+            // ---- AND WHETHER THIS ROW IS A RUN'S CARD (22 Oct 2026, his 09:24 fault) --------
+            //
+            // *"the chat showed only my message: no agent card, no steps, no closing, no chips, no
+            //  Undo all"* - and every rig row about a reopened run read `agentRow`, which is the
+            // LIVE row the window adopted, not what the chat is drawing. The two came apart
+            // exactly once and it cost him a test: B3 passed while his chat was empty.
+            r->setProperty ("card", m.agentData.isNotEmpty());
+            if (m.agentData.isNotEmpty())
+            {
+                ++cardsOnScreen;
+                const auto v = echojay::agentui::fromJson (juce::JSON::parse (m.agentData));
+                r->setProperty ("cardRunKey",  v.runKey);
+                r->setProperty ("cardClosing", v.closing);
+                r->setProperty ("cardSteps",   (int) v.steps.size());
+                r->setProperty ("cardUndoAll", v.showUndoAll);
+                juce::StringArray chips;
+                for (const auto& s : v.steps)
+                    if (! s.chips.isEmpty()) chips.addArray (s.chips);
+                r->setProperty ("cardChips", chips.joinIntoString (", "));
+            }
             shown.add (juce::var (r));
         }
         o->setProperty ("onScreen", juce::var (shown));
+        o->setProperty ("onScreenCards", cardsOnScreen);
     }
 
     // ---- WHAT THE RACK STRIP IS ACTUALLY DRAWING (16 Oct 2026, the matrix's I7 and E5) ---------
@@ -38001,6 +39261,18 @@ void EchoJayEditor::publishRigState()
     // ITEM 0: the run's ROW, as the row itself computes it - one model, so the rig asserts on what
     // the user is looking at rather than on a parallel description of it.
     o->setProperty ("agentRow", rigAgentRowState());
+    // ---- ITEM 0b IS THE BUILD'S ANSWER, NOT THE HARNESS'S (22 Oct 2026, gate 2026-10-22) --------
+    //
+    // The rig kept its own copy of this switch and the two defaults went opposite ways: the plugin
+    // has survived a close by default since 20 Oct (proved in Logic), while the rig still read
+    // "off unless EJ_AGENT_0B=1". Its own comment said "the rig must set the SAME env var the plugin
+    // reads, or it would be testing a different build" - it read the same var and inverted the
+    // default, which is the same fault one layer down. Five rows failed on it in one run: F3
+    // asserted the opposite of the shipped behaviour, and the run it left live made every typed
+    // message afterwards "refused while active", so C11v(a), C11v(b), I1, F1 and F2 never got a
+    // chat turn at all. The switch is published here so there is ONE authority for it, and the
+    // harness asks the build that is running instead of holding a second answer.
+    o->setProperty ("agent0bOn", agentRunSurvivesCloseOn());
     // ---- SEAN'S BUG 2 (15 Oct): WHERE THE AGENT MODE LINE ACTUALLY IS ----------------------------
     // Published as a rect, not as a boolean, so a row can assert "it never leaves the chat column"
     // rather than "it is on" - which is what it was when it painted over the chain view.
@@ -38091,6 +39363,12 @@ void EchoJayEditor::publishRigState()
         o->setProperty ("slotCaptionOverlapsButtons", anyOverlap);
     }
     o->setProperty ("chatInput",   chatInput.getText());
+    // ---- WHICH CHAT THIS WINDOW IS SHOWING (22 Oct 2026) ---------------------------------------
+    // Four of his reports this week were a row or a message landing in the WRONG CHAT, and the whole
+    // single-stamp rewrite is about that one fact - yet no rig row could name the chat on screen,
+    // because the state did not carry it. Row N1 asserts a started run's row is drawn in the chat he
+    // typed into, and without this field that comparison is "" == "", which is not an assertion.
+    o->setProperty ("chatId",      currentChatId);
     // MAY THIS ACCOUNT SEND A PLAIN CHAT TURN? sendChatMessage refuses before any network when this is
     // false, by pushing the limit message as an ASSISTANT row - which a leg reading the transcript cannot
     // tell from a reply. Matching the prose was my next mistake; the flag is the fact.
@@ -38315,7 +39593,18 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // the two send buttons take `auto t = chatInput.getText().trim()` (a copy), the scan hold re-enters with
     // its own captured copy, and the rest pass constructed strings. None reads the box.
     chatInput.clear();
+    // ---- A NOTICE GOES AWAY ONCE IT HAS BEEN SEEN (his 19:5x item 1, 20 Oct 2026) -------------
+    //
+    // *"A notice belongs to the send that triggered it, in that chat, and goes away once it's been
+    // seen."*  clearNotice() has existed as long as the field has and was never called from
+    // anywhere, so an amber line stayed up until a new run happened to clear it. The honest reading
+    // of "he has seen it" is HIS NEXT ACTION, which is this function - the same rule the ask chips
+    // got this morning.
+    if (auto* agN = agentClient()) agN->clearNotice();
 
+    // HIS "DON'T USE" MARK, before the loudness verbs: it is a setting, and it must work when the
+    // loop never armed - which is exactly the state an unconfirmed ceiling leaves it in (item 3).
+    if (handleDontUsePluginVerb(msg)) return;
     if (handleLoudnessVerb(msg)) return;   // ruling G: local first, no network
     // 06d test 5: a yes to the last reply's STAGED PROPOSAL is applied here - the whole point of
     // B attaching the ops is that "yes" needs no second model call. Same rule as above: local
@@ -38326,7 +39615,85 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // answers to something already on screen, and an agent goal is a new request. A pending ask inside the card
     // takes the message; a RUNNING agent refuses it with a line, which is 08c item C's rule - a message that
     // vanishes is indistinguishable from a dropped send.
-    if (agentClient() != nullptr && agentClient()->interceptTyped (msg)) return;
+    // ---- SURVIVAL IS NOT CAPTURE (20 Oct 2026, his 11:59 run) ---------------------------------
+    //
+    // *"an earlier agent run was left waiting on 'How's it sounding?'. He opened a NEW chat on a
+    // DIFFERENT Link, typed 'adjust the compressors' and pressed Enter. The message was delivered to
+    // the old waiting run as its answer... Survival must not mean capture: a message sent from a
+    // different chat, or aimed at a different Link, starts its own run. Only a reply in the run's
+    // own chat, or a tap on its chips, answers it."*
+    //
+    // interceptTyped has no idea which chat a message came from - it sees a pending ask and a string.
+    // That was harmless while a window close ended every run; with 0b on, a run waits indefinitely
+    // and the FIRST thing typed anywhere became its answer. The sentence heuristic inside it
+    // (typedLooksLikeNewInstruction) is not the guard this needs: it is a guess about words, and the
+    // fact here is an IDENTITY - the chat the run was born in, which this editor has remembered at
+    // the row's birth since 18 Oct for exactly this class of fault.
+    //
+    // THE CALL SITE IS WHERE THE GATE BELONGS, because the client does not know about chats and
+    // should not have to.
+    // ---- A MESSAGE IN ANOTHER CHAT (his ruling, 20 Oct 2026) ---------------------------------
+    //
+    // *"The "agent is still working on build a mix bus. Stop it first, or wait for it to finish."
+    // notice appeared in the MIX BUS chat, not the Link chat he typed in, and his text was thrown
+    // away. That run was only waiting on its loudness ask, not working."*
+    //
+    // THREE THINGS WERE WRONG AND HIS RULING NAMES ALL THREE:
+    //   1. a run that is only WAITING does not block - it is stopped, and the new run starts here;
+    //   2. a run that is actually EXECUTING refuses, but the notice belongs in the chat he typed in
+    //      and his text stays in the box;
+    //   3. a typed message is never dropped silently.
+    //
+    // AND THE OLD GATE COULD NOT HAVE CAUGHT IT. It was keyed on askPending() - the AGENT's own ask -
+    // while his run was sitting on the LOUDNESS loop's question (Commercial / Pushed / Keep it
+    // dynamic). Different ask, same wait, and the gate did not apply. So the key is no longer what
+    // KIND of wait it is: it is the chat, which is an identity, plus whether the run is working,
+    // which is one function over the state (EJAgentClient::stateBlocksANewMessage).
+    //
+    // The run's chat comes from the RUN (runChatId()), not from agentRunChatId_ - that member is set
+    // when a row is born and a chat switch destroys the row, which is the 18:18 fault.
+    // STAGE D: the comparison is written out rather than borrowed from the birth gate, which is
+    // retired. The meaning is unchanged - a run whose chat is a DIFFERENT, stated chat - and it no
+    // longer shares a function with a decision about drawing rows.
+    const auto runsChat = agentClient() != nullptr ? agentClient()->runChatId().trim() : juce::String();
+    if (auto* ag = agentClient(); ag != nullptr && ag->isActive()
+        && runsChat.isNotEmpty() && currentChatId.isNotEmpty() && runsChat != currentChatId)
+    {
+        if (! ag->isWorking())
+        {
+            // RULING 1: only waiting, so it does not block. Stopped with a reason its OWN card
+            // shows, in its own chat - and the message goes on to start its own run below.
+            const auto where = chatTargetChannelName();
+            EchoJay_NSLog (("EJAgent: a message typed in chat " + currentChatId + " is not for the run "
+                            "waiting in chat " + ag->runChatId() + " - that run is WAITING, not working ("
+                            + juce::String (EJAgentClient::stateName (ag->state())) + "), so it is "
+                            "stopped and this message starts its own run here (his ruling of 20 Oct; "
+                            "the old gate asked askPending() and his run was on the LOUDNESS ask)").toRawUTF8());
+            ag->stopWithReason (where.isNotEmpty() ? "you moved on to " + where
+                                                   : juce::String ("you moved on to another channel"));
+        }
+        else
+        {
+            // RULING 2 and 3: it really is working, so the notice goes HERE - in the chat he typed
+            // in - and his text is NOT consumed. appendLocalResultBubble writes into the open chat,
+            // which is the whole point: the old line appeared in the run's chat, where he was not
+            // looking, and the typed text was thrown away.
+            EchoJay_NSLog (("EJAgent: refusing a message typed in chat " + currentChatId
+                            + " while the run in chat " + ag->runChatId() + " is WORKING ("
+                            + juce::String (EJAgentClient::stateName (ag->state()))
+                            + ") - the notice goes in THIS chat and his text stays in the box "
+                              "(his ruling of 20 Oct, items 2 and 3)").toRawUTF8());
+            appendLocalResultBubble ("The agent is working on \"" + ag->goal() + "\" in another chat. "
+                                     "Stop it there, or wait for it to finish.");
+            // RULING 3: HIS TEXT GOES BACK IN THE BOX. sendChatMessage clears the composer at its
+            // first line, deliberately and for a good reason (a message still in the box is
+            // indistinguishable from one that was not sent) - so a branch that REFUSES the message
+            // has to put it back. Returning without this is the silent drop his ruling forbids.
+            chatInput.setText (msg, false);
+            return;
+        }
+    }
+    else if (agentClient() != nullptr && agentClient()->interceptTyped (msg)) return;
     if (agentModeOn() && agentClient() != nullptr && ! agentClient()->isActive())
     {
         syncAgentTarget();   // ITEM 7: before the start context is built, not after
@@ -38347,6 +39714,23 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         // takes over the moment it exists (syncAgentRunMessage clears this), so there is never a
         // moment with two of them.
         setStageStatus ("Thinking...");
+        // ---- A RUN SUPERSEDES A PENDING ASK TOO (20 Oct 2026, his 09:35) -------------------
+        // *"That pick's chip row stayed on screen after Sean switched to agent on and sent a new
+        // message, and it's still there under the running agent card. An ask's chips clear when the
+        // user sends anything else, switches mode, or starts a run."*
+        //
+        // The tail of this function does exactly that - supersede the ask, hide the shelf, reflow -
+        // and this road RETURNS before reaching it (the tail is ~100 lines below). So every agent
+        // send left the previous ask's chips sitting under the run. Done here rather than by moving
+        // the tail, because the tail does other work this road must not run.
+        if (askShelfVisible_)
+        {
+            supersedePendingAsks();
+            askShelfVisible_ = false;
+            askShelfIsCard_  = false;
+            briefCard_.setVisible (false);
+            resized();
+        }
         agentClient()->start (msg, currentChatId);   // the card appears through onLayoutNeeded
         return;
     }
@@ -38413,7 +39797,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             if (! scanHeldRecorded_)
             {
                 scanHeldRecorded_ = true;
-                processorRef.chatHistory.push_back ({ "user", msg });
+                processorRef.appendChatEntry ("user", msg, currentChatId);
                 processorRef.chatRoles.add ("user");
                 processorRef.chatContents.add (msg);
                 chatMessages.push_back ({ "user", displayLabel.isNotEmpty() ? displayLabel : msg });
@@ -38447,7 +39831,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     {
         auto lim = api.getLimitReachedMessage();
         chatMessages.push_back({"assistant", lim});
-        processorRef.chatHistory.push_back({"assistant", lim});
+        processorRef.appendChatEntry ("assistant", lim, currentChatId);
         chatInput.clear();
         repaint();
         return;
@@ -38560,7 +39944,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         um.content = msg;                 // SENT/history text, unchanged
         um.displayText = displayLabel;    // rendered text for tap turns
         chatMessages.push_back(std::move(um));
-        processorRef.chatHistory.push_back({"user", msg});
+        processorRef.appendChatEntry ("user", msg, currentChatId);
     }
 
     // Push to workspace (single source of truth)
@@ -38802,7 +40186,64 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // The history AS COMPOSED. See fireChatMainCall's declaration for why
     // this is a snapshot and not the live arrays.
     const juce::StringArray rolesSnap    = processorRef.chatRoles;
-    const juce::StringArray contentsSnap = processorRef.chatContents;
+    juce::StringArray       contentsSnap = processorRef.chatContents;
+
+    // ---- AN ASK TRAVELS WITH ITS TURN (20 Oct 2026, B's item 3) --------------------------------
+    //
+    // B: *"The previous assistant turn reaches B as plain text without its ask/chips, so a typed
+    // answer can't be matched to the chips. Send the ask (question + chip labels) with that turn in
+    // the history."*
+    //
+    // chatContents holds the PROSE of each turn; an ask's question and its chip labels live on the
+    // ChatMsg (askData) and have never been on the wire. So when Sean types "the dbx" at a pick with
+    // a "dbx 160 (s)" chip, B sees his words and an assistant turn that appears to have asked
+    // nothing - and cannot match them.
+    //
+    // THE ASSISTANT DID SAY THOSE WORDS. The chips are not metadata about the turn, they are part of
+    // what the turn PRESENTED, so appending them to that turn's content is accurate rather than a
+    // smuggled field - and it needs no schema change on either side, which is why it is done here
+    // rather than by widening the body.
+    //
+    // ONLY the assistant turns that carry an UNANSWERED ask: an answered one has already been
+    // superseded and its chips are gone from the screen, so putting them back in the history would
+    // invite B to match against choices the user can no longer see.
+    {
+        int enriched = 0;
+        for (const auto& m : chatMessages)
+        {
+            if (m.role != "assistant" || m.askData.isEmpty() || m.askAnswered) continue;
+            const auto v = juce::JSON::parse (m.askData);
+            auto* o = v.getDynamicObject();
+            if (o == nullptr) continue;
+            const auto question = o->getProperty ("question").toString().trim();
+            juce::StringArray labels;
+            if (auto* cs = o->getProperty ("choices").getArray())
+                for (const auto& cv : *cs)
+                    if (const auto l = cv.getProperty ("label", juce::var()).toString().trim(); l.isNotEmpty())
+                        labels.add (l);
+            if (question.isEmpty() && labels.isEmpty()) continue;
+            // MATCHED BY ITS PROSE, which is the key chatContents is addressable by - the same
+            // normalised-text idiom the record's own dedupe uses, because an index into one array is
+            // not an identity in the other (they can disagree, as the note above says).
+            for (int i = contentsSnap.size() - 1; i >= 0; --i)
+                if (rolesSnap[i] == "assistant"
+                    && echojay::agentui::normalisedProse (contentsSnap[i])
+                       == echojay::agentui::normalisedProse (m.content))
+                {
+                    juce::String tail;
+                    if (question.isNotEmpty()) tail << "\n[ASK: " << question;
+                    else                       tail << "\n[ASK";
+                    if (! labels.isEmpty())    tail << " | choices: " << labels.joinIntoString (" | ");
+                    tail << "]";
+                    if (! contentsSnap[i].contains ("[ASK")) { contentsSnap.set (i, contentsSnap[i] + tail); ++enriched; }
+                    break;
+                }
+        }
+        if (enriched > 0)
+            EchoJay_NSLog (("EJChat: " + juce::String (enriched) + " assistant turn(s) in the history "
+                            "carry their ASK (question + chip labels) so a typed answer can be matched "
+                            "to the chips (B's item 3)").toRawUTF8());
+    }
 
     // ===================== SPLIT CALL: /api/classify =====================
     //
@@ -38863,6 +40304,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    // B's section 92 item 2 (19 Oct 2026): slot_levels rides the CHAT turn, which is the agent-off
+    // road - the agent answers this itself through check(gr) and never builds a chat body. Composed
+    // by the one composer (EJSlotLevelsBlock.h) so the chat and the card cannot disagree about a
+    // slot. Staged on the three turn roads only: compare and capture feedback are not about a rack.
+    api.setSlotLevelsVar (slotLevelsForTarget());
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
     api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
@@ -39529,7 +40975,7 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             // The REAL turn goes to all four stores; the provisional
             // went to one. These three lines are why the provisional
             // never touched them.
-            processorRef.chatHistory.push_back({"assistant", visibleReply});
+            processorRef.appendChatEntry ("assistant", visibleReply, currentChatId);
             processorRef.chatRoles.add("assistant");
             // 06d test 5: THE WIRE KEEPS THE PROPOSAL BLOCK. The user saw the prose; B's
             // server-side affirmation rule reads this message and must ship IDENTICAL ops,
@@ -39556,7 +41002,7 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         {
             dropProvisional(provisionalId);
             chatMessages.push_back({"assistant", reply});
-            processorRef.chatHistory.push_back({"assistant", reply});
+            processorRef.appendChatEntry ("assistant", reply, currentChatId);
             // WHICH WINDOW WROTE THIS. The processor's keep-rule and this branch are the two places a failed
             // turn can land, and the rig has caught them disagreeing twice. One line each, so the pair can
             // be read in order.
@@ -39650,6 +41096,11 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    // B's section 92 item 2 (19 Oct 2026): slot_levels rides the CHAT turn, which is the agent-off
+    // road - the agent answers this itself through check(gr) and never builds a chat body. Composed
+    // by the one composer (EJSlotLevelsBlock.h) so the chat and the card cannot disagree about a
+    // slot. Staged on the three turn roads only: compare and capture feedback are not about a rack.
+    api.setSlotLevelsVar (slotLevelsForTarget());
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
     api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
@@ -39713,6 +41164,11 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     applyTrackLevelForTurn();   // spec section 5: from the TARGET track's tap, never V2's own
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    // B's section 92 item 2 (19 Oct 2026): slot_levels rides the CHAT turn, which is the agent-off
+    // road - the agent answers this itself through check(gr) and never builds a chat body. Composed
+    // by the one composer (EJSlotLevelsBlock.h) so the chat and the card cannot disagree about a
+    // slot. Staged on the three turn roads only: compare and capture feedback are not about a rack.
+    api.setSlotLevelsVar (slotLevelsForTarget());
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
     api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
@@ -40063,7 +41519,7 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
                 ? "That build didn't finish. The reply was cut off before the chain completed, so there's nothing safe to build. Ask again and I'll rebuild it fresh."
                 : "That turn should have delivered a buildable chain but didn't produce one. Nothing was built. Ask again to retry.";
             ed->chatMessages.push_back ({ "assistant", msg });
-            ed->processorRef.chatHistory.push_back ({ "assistant", msg });
+            ed->processorRef.appendChatEntry ("assistant", msg, ed->currentChatId);
             ed->resized();
             ed->repaint();
             return;
@@ -40335,7 +41791,7 @@ void EchoJayEditor::renderClassifierQuestion(const juce::String& question,
     cm.askData = askJson;              // empty = prose, no shelf
     cm.clientAskKind = askKind;        // "" unless the CLIENT wrote this ask
     chatMessages.push_back(cm);
-    processorRef.chatHistory.push_back({ "assistant", question });
+    processorRef.appendChatEntry ("assistant", question, currentChatId);
     processorRef.chatRoles.add("assistant");
     processorRef.chatContents.add(question);
 
@@ -40706,8 +42162,55 @@ void EchoJayEditor::showChainPluginPicker()
                     // the plan carries what the user picked.
                     auto& p3 = safeThis->processorRef;   // 20 Sep 2026: the CREATE bookkeeping (origin -1, picked identity) happens inside borrowPushStructuralEdit
                     {   // 20 Sep 2026: the add reaches the Link NOW (appended; the Link resolves the picked name in its own list)
-                        juce::StringArray baseBefore; for (int k = 0; k < newSlot; ++k) baseBefore.add(bh2->getSlotInfo(k).name);
-                        p3.borrowPushStructuralEdit("add", -1, -1, false, picked.name, baseBefore, newSlot);
+                        // ---- THE BASE IS THE LINK'S OWN RACK, NOT THE MIRROR'S (his 21:05) ------
+                        //
+                        // *"Manual add from the picker still does nothing on a Link ... A manual add
+                        // must land on a Link whatever came before it."*
+                        //
+                        // His log, two attempts in five seconds:
+                        //   preflight REFUSED guard=touched-slot-missing slot=0 base=1 [Unfiltered
+                        //     Audio Sandman] live=0
+                        //   preflight REFUSED guard=touched-slot-missing slot=1 base=2 [Unfiltered
+                        //     Audio Sandman, EchoJay 4-Band Compressor] live=0
+                        //
+                        // `base` came from bh2 - the BORROWED MIRROR - which held a plugin the Link
+                        // does not have (the Unfiltered Audio Sandman from the 16:06 agent run), and
+                        // grew by one on the second attempt because the mirror counted the refused
+                        // add as landed. The Link's base guard then refused both, correctly, for a
+                        // slot that does not exist. It would have refused every add for ever.
+                        //
+                        // THE LINK IS THE ONE PUBLISHER OF ITS OWN RACK - the line the log prints on
+                        // every tick - so the base comes from its SIDECAR, read here at send. Same
+                        // rule as the 12:04 chain feed and this round's view: one road, one source.
+                        //
+                        // A sidecar we cannot read sends NO base at all rather than the mirror's:
+                        // "no base list stated" makes the Link judge the ops on their own identities
+                        // (its own words), which is the honest fallback. The mirror is never a source
+                        // of truth about another process's rack.
+                        juce::StringArray baseBefore;
+                        bool haveBase = false;
+                        const juce::String linkUid = safeThis->processorRef.borrowUid();
+                        if (const auto rack = safeThis->readLinkRackSidecar (linkUid); rack.valid)
+                        {
+                            for (const auto& rs : rack.slots) baseBefore.add (rs.name);
+                            haveBase = true;
+                        }
+                        else
+                            EchoJay_NSLog (("EJBorrow: the picker's add sends NO base for " + linkUid
+                                            + " - its sidecar could not be read, and the mirror is not "
+                                              "a source of truth about another process's rack (his "
+                                              "21:05). The Link judges the ops on their own "
+                                              "identities.").toRawUTF8());
+                        EchoJay_NSLog (("EJBorrow: the picker's add on " + linkUid + " carries a base of "
+                                        + juce::String (haveBase ? juce::String (baseBefore.size()) + " slot(s) "
+                                                                     "FROM THE LINK'S SIDECAR"
+                                                                 : juce::String ("none"))
+                                        + (bh2 != nullptr && haveBase && bh2->getNumSlots() != baseBefore.size()
+                                               ? " - the mirror says " + juce::String (bh2->getNumSlots())
+                                                 + ", and the mirror is not the authority"
+                                               : juce::String())).toRawUTF8());
+                        p3.borrowPushStructuralEdit("add", -1, -1, false, picked.name, baseBefore,
+                                                   haveBase ? baseBefore.size() : newSlot);
                     }
                     // A created slot has a RECORD like every other slot
                     // (defect, 23 Aug 2026: the lost add — a slot without a
@@ -41182,7 +42685,7 @@ void EchoJayEditor::sendChainToLinkOverTheWire (const juce::String& linkUid,
             // the write path. The agent's own applyChainOps sink answers this with
             // onAgentChangedRack; the build road does the same now, so one rule covers both.
             if (ok && safeAck->processorRef.onAgentChangedRack)
-                safeAck->processorRef.onAgentChangedRack (uidForAck);
+                safeAck->processorRef.onAgentChangedRack (uidForAck, false);   // the Link arms from the command's own intent=build
             // ---- WHO TELLS HIM IT LANDED (B's section 85(2), 19 Oct 2026) -------------------
             //
             // *"'Built 2/2' belongs inside the plan card as its steps, not a separate bubble."*
@@ -43913,6 +45416,13 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
     // second belt.
     switchToTab(Tab::Chain);
     processorRef.getChainHost().setDialOnlyMode(api.getAutoDialMode());   // hurdle 1 item 3: the summary/card know the mode
+    // WHOSE BUILD THIS IS (his 15:30 ruling, 21 Oct 2026). Set by EJAgentHome::buildChain, inside
+    // the build, so this shared road can tell an agent build from a Build press without a flag.
+    // READ WHERE IT IS USED, off chainJson - which every one of the nested lambdas below already
+    // captures - rather than captured down three levels of them.
+    if (juce::JSON::parse (chainJson).getProperty ("from", juce::var()).toString() == "agent")
+        EchoJay_NSLog ("EJChain: this build came from the AGENT - it inserts no limiter and does not "
+                       "stage the input trim (his 15:30 ruling)");
     // A failed build must land the user on the Chain page with an error, not
     // return silently (the click otherwise appears to do nothing).
     auto showBuildFail = [this](const juce::String& why)
@@ -43991,6 +45501,19 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                 if (disabled) droppedDisabled.add(name);
                 else          found = true;
             }
+        }
+        // ---- AND HIS "DON'T USE" MARK (11:5x item 3, 21 Oct 2026) --------------------------
+        // The inventory withholds these and the start context names them, so B should not send one
+        // at all. This is the belt: a build is where the plugin actually gets loaded, and a mark he
+        // made since the round began - or a server that did not read the field - must not put an
+        // expired demo back on his mix bus. Reported in the same status line as a disabled one,
+        // because "I left it out" is the same sentence either way.
+        if (found && api.isPluginMarkedDontUse (name))
+        {
+            found = false;
+            droppedDisabled.addIfNotAlreadyThere (name);
+            EchoJay_NSLog (("EJChain: \"" + name + "\" is marked \"don't use\" - LEFT OUT of this "
+                            "build (his 11:5x item 3). Say \"use " + name + " again\" to lift it.").toRawUTF8());
         }
         if (found) slots.push_back({ name, settings, structured, wetPct });
         else if (!droppedDisabled.contains(name))
@@ -44103,7 +45626,23 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                 // via ctrl-cmd at the build site, NEVER written to THIS ChainHost.
                 // (The old applyPendingLinkPreGain fallback here wrote the wrong
                 // object and is removed; pendingLinkPreGain_ is false on own builds.)
-                ch3.computePreGainAtBuild();
+                // ---- NO AUTO INPUT STAGING AFTER AN AGENT BUILD (his 15:30 ruling) -----------
+                //
+                // *"The rack's input trim also reads -2.7 dB, set by something."*  THIS is what set
+                // it: computePreGainAtBuild stages the chain's input to kPreGainTargetLufs (-18, the
+                // analogue reference), so an input measured at about -15.3 LUFS gives exactly his
+                // -2.7 dB. It is a real feature and it is right for a build the user pressed; it is
+                // not right for a build the agent made, where - as with the post-add match on a mix
+                // bus (his 20 Oct ruling) - the level is HIS decision and nothing should move it
+                // behind him. Left at 0 and SAID, rather than set and explained afterwards.
+                const bool fromAgentBuild = juce::JSON::parse (chainJson)
+                                                .getProperty ("from", juce::var()).toString() == "agent";
+                if (fromAgentBuild)
+                    EchoJay_NSLog ("EJPreGain: an AGENT build - the input trim is NOT staged "
+                                   "automatically (his 15:30 ruling). It stays where he left it; the "
+                                   "-18 LUFS staging is for a build he pressed himself.");
+                else
+                    ch3.computePreGainAtBuild();
                 // 1d: stage row down, result bubble up. Model "result" text
                 // only on a clean full build; otherwise compose factually.
                 safeThis->clearStageStatus();
@@ -45440,7 +46979,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
                 }
             }
             safeThis2->chatMessages.push_back(cm);
-            safeThis2->processorRef.chatHistory.push_back({"assistant", visibleReply});
+            safeThis2->processorRef.appendChatEntry ("assistant", visibleReply, safeThis2->currentChatId);
             if (success) { safeThis2->processorRef.chatRoles.add("assistant"); safeThis2->processorRef.chatContents.add(visibleReply); }
             if (askJson.isNotEmpty() || chainJson.isNotEmpty() || editJson.isNotEmpty())
                 safeThis2->resized();   // card/shelf appears + viewport reflow

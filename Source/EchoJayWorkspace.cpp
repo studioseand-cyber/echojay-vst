@@ -197,6 +197,118 @@ void EchoJayWorkspace::removeAlbum(const juce::String& albumId)
         [&](const WsAlbum& a) { return a.id == albumId; }), albums.end());
 }
 
+// ---- STAGE A OF THE CHAT LOG (his ruling of 21 Oct 2026) -------------------------------------
+//
+// *"One stored log per chat, where every entry ... gets its chat id, a monotonic order number and a
+// stable id at the moment it's created. The view only renders that log in order; a live run updates
+// its own entry by id (steps, chips, closing) and never inserts by position; no merge on reopen."*
+//
+// These two functions are the whole of stage A's writing half. Nothing reads `seq` or `id` yet - by
+// his approval of the staging, A+B write the new log beside the old one so the switch in C can be
+// tested on his real chats instead of a fixture.
+//
+// WHY THE ID OF AN AGENT CARD IS THE RUN'S KEY, and not something minted here: the key already
+// exists before the server has answered (there is no sessionId yet), it is in the snapshot, and it
+// survives a replay and a reopen. That is exactly what the per-window integer could not do - the
+// chat replay reissues those, which is how a waiting card lost its chips at 14:15.
+bool EchoJayWorkspace::lastStampOf (const juce::String& chatId, juce::int64& seqOut,
+                                    juce::String& idOut) const
+{
+    for (const auto& c : chats)
+        if (c.id == chatId && ! c.messages.empty())
+        {
+            const auto& m = c.messages.back();
+            if (m.seq <= 0) return false;
+            seqOut = m.seq; idOut = m.entryId;
+            return true;
+        }
+    return false;
+}
+
+juce::int64 EchoJayWorkspace::takeNextSeq (const juce::String& chatId)
+{
+    for (auto& c : chats)
+        if (c.id == chatId)
+        {
+            if (c.nextSeq <= 0)
+            {
+                juce::int64 highest = 0;
+                for (const auto& e : c.messages) highest = juce::jmax (highest, e.seq);
+                c.nextSeq = highest + 1;
+            }
+            return c.nextSeq++;
+        }
+    return 0;   // a chat this store does not know yet: NOT stamped, never guessed
+}
+
+void EchoJayWorkspace::stampLogEntry (WsChat& chat, WsMessage& m)
+{
+    // THE ALLOCATOR IS THE CHAT'S. A row never takes its number from the size of the list: a list
+    // can be filtered, merged or half-loaded, and all three have happened in this file's history.
+    if (chat.nextSeq <= 0)
+    {
+        // A chat whose rows predate stage A: start past whatever is already there, so a migration
+        // that has not run yet cannot collide with a live append.
+        juce::int64 highest = 0;
+        for (const auto& e : chat.messages) highest = juce::jmax (highest, e.seq);
+        chat.nextSeq = highest + 1;
+    }
+    if (m.seq <= 0) m.seq = chat.nextSeq++;
+    if (m.entryId.isEmpty())
+    {
+        // An agent card's identity is the RUN's. Read out of the snapshot rather than passed in, so
+        // no call site has to remember - and a card with no key yet still gets a minted one.
+        // ---- THE PARSED VAR IS HELD, NOT POINTED INTO (the 18 Sep rule, caught again today) ----
+        // `if (auto* o = juce::JSON::parse (x).getDynamicObject())` dangles: in C++17 the temporary
+        // in an if-statement's init is destroyed BEFORE the body runs, so `o` points at freed
+        // memory and read as an empty object - which is exactly what legs CL4 and CL9 reported
+        // ("parsed=object, keys=[]"). The same pattern caused the 18 Sep Pro Tools crash; it is a
+        // named local here, which is the whole of the fix.
+        juce::String fromRun;
+        if (m.agentJson.isNotEmpty())
+        {
+            const auto snap = juce::JSON::parse (m.agentJson);
+            if (auto* o = snap.getDynamicObject())
+                fromRun = o->getProperty ("runKey").toString().trim();
+        }
+        m.entryId = fromRun.isNotEmpty()
+                      ? fromRun
+                      : (juce::String (m.seq) + "-" + juce::Uuid().toDashedString().substring (0, 8));
+    }
+}
+
+int EchoJayWorkspace::migrateChatLog (WsChat& chat)
+{
+    // THE FILE ORDER IS THE TRUTH. Not the timestamps (rows carry none), not a re-sort by role: the
+    // order the rows are in is the order they happened in, and stage A's whole claim is that an
+    // entry's place is recorded rather than recomputed - so recording the order already on disk is
+    // the only honest migration.
+    int stamped = 0;
+    juce::int64 next = 1;
+    for (auto& m : chat.messages)
+    {
+        if (m.seq > 0) { next = juce::jmax (next, m.seq + 1); continue; }   // already stamped
+        m.seq = next++;
+        if (m.entryId.isEmpty())
+        {
+            juce::String fromRun;
+            if (m.agentJson.isNotEmpty())
+            {
+                const auto snap = juce::JSON::parse (m.agentJson);   // held, never pointed into
+                if (auto* o = snap.getDynamicObject())
+                    fromRun = o->getProperty ("runKey").toString().trim();
+            }
+            // A RUN THAT WAS LIVE ACROSS THE UPGRADE IS STILL FOUND, because its key is its id.
+            m.entryId = fromRun.isNotEmpty()
+                          ? fromRun
+                          : (juce::String (m.seq) + "-" + juce::Uuid().toDashedString().substring (0, 8));
+        }
+        ++stamped;
+    }
+    if (chat.nextSeq < next) chat.nextSeq = next;
+    return stamped;
+}
+
 bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
                                             const juce::String& role,
                                             const juce::String& content,
@@ -233,6 +345,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
             m.editTargetUid  = editTargetUid;
             m.editTargetName = editTargetName;
             m.agentJson      = agentJson;      // the run's card (18 Oct 2026)
+            stampLogEntry (c, m);              // stage A: its place and its identity, at creation
             c.messages.push_back(std::move(m));
             c.updatedAt = isoUtcNow();   // B.0: real activity on this chat
             return first;
@@ -262,6 +375,7 @@ bool EchoJayWorkspace::appendMessageToChat(const juce::String& chatId,
     m.editTargetUid  = editTargetUid;
     m.editTargetName = editTargetName;
     m.agentJson      = agentJson;
+    stampLogEntry (c, m);   // stage A
     c.messages.push_back(std::move(m));
     c.updatedAt = isoUtcNow();
     chats.insert(chats.begin(), std::move(c));
@@ -284,18 +398,65 @@ EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String&
             }
     // (b) the em-dash twins: an assistant message whose normalised text repeats an earlier one in
     //     the SAME chat. Normalised exactly as the record's own write compares them.
+    //
+    // ---- AND THE RUN CARD'S OWN WORDS (20 Oct 2026, his 17:11 and 18:07 reports) ---------------
+    //
+    // *"The closing showed twice again"* - three times in one day, and the last two after the
+    // key-minting fix of 16 Oct had closed the cause everyone knew about.
+    //
+    // THE ROAD IN is the SYNC, not the run. `requestMutationSync` POSTs the workspace and then calls
+    // `requestSync()` - "pull any concurrent web-app edits" - so a line the SERVER persisted beside
+    // the card comes straight back down as its own assistant message. The plugin never drew it
+    // twice; it was handed a second copy and drew what it was given.
+    //
+    // (b) above could not catch it. It compares a message against EARLIER MESSAGES' content, and a
+    // run card's prose does not live only in `content`: a MID-ROUND sentence lives on a step inside
+    // `agentJson`, and the card's own `content` has by then been overwritten by a later round's
+    // closing. His 15:29 case was exactly that - "Added EchoJay EQ. Settings applied." was round
+    // 8's, and the card had moved on to "I cut the low-mids...".
+    //
+    // So the seen-set is seeded with EVERY prose string a run card in this chat carries: its
+    // opening, its closing, and each step's label, detail and recorded answer. A PLAIN bubble (one
+    // with no agentJson of its own) whose prose the card already says is then dropped as the
+    // duplicate it is.
+    //
+    // TWO GUARDS AGAINST OVER-REACH, because dropping a real message is worse than showing one
+    // twice: a message that carries its OWN agentJson is never dropped (it is a card, not an echo),
+    // and a match under kMinFoldChars is ignored - "Done." or "OK" can legitimately be said by a
+    // step and by a later turn, and folding on those would lose a real answer.
+    static constexpr int kMinFoldChars = 20;
     for (auto& c : chats)
     {
         juce::StringArray seen;
+        // EVERY card's words first, so a pulled echo is folded wherever it lands in the order -
+        // the server's copy can arrive before or after the card it duplicates.
+        for (const auto& m : c.messages)
+        {
+            if (m.agentJson.isEmpty()) continue;
+            const auto v = echojay::agentui::fromJson (juce::JSON::parse (m.agentJson));
+            auto note = [&seen] (const juce::String& t)
+            {
+                if (t.trim().length() < kMinFoldChars) return;
+                seen.addIfNotAlreadyThere (echojay::agentui::normalisedProse (t));
+            };
+            note (v.opening);
+            note (v.closing);
+            for (const auto& st : v.steps) { note (st.label); note (st.detail); note (st.answered); }
+            // AND THE CARD'S OWN `content`, which is what (b) compared against before this change.
+            // Keeping it means a plain bubble duplicating a card's visible prose is still folded -
+            // that half already worked and must not be lost to the widening.
+            note (m.content);
+        }
         std::vector<WsMessage> kept;
         kept.reserve (c.messages.size());
         for (auto& m : c.messages)
         {
-            if (m.role == "assistant" && m.content.isNotEmpty())
+            if (m.role == "assistant" && m.content.isNotEmpty() && m.agentJson.isEmpty())
             {
                 const auto key = echojay::agentui::normalisedProse (m.content);
-                if (seen.contains (key)) { ++r.duplicatesDropped; continue; }
-                seen.add (key);
+                if (m.content.trim().length() >= kMinFoldChars && seen.contains (key))
+                { ++r.duplicatesDropped; continue; }
+                seen.addIfNotAlreadyThere (key);
             }
             kept.push_back (m);
         }
@@ -327,6 +488,24 @@ EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String&
                         + juce::String (r.crossChatSuspects)
                         + " cross-chat repeat(s) left for a human").toRawUTF8());
     return r;
+}
+
+bool EchoJayWorkspace::updateAgentCardById (const juce::String& chatId, const juce::String& entryId,
+                                            const juce::String& agentJson, const juce::String& content)
+{
+    if (chatId.isEmpty() || entryId.isEmpty()) return false;
+    auto* chat = findChatById (chatId);
+    if (chat == nullptr) return false;
+    for (auto& m : chat->messages)
+    {
+        if (m.entryId != entryId) continue;
+        bool changed = false;
+        if (m.agentJson != agentJson) { m.agentJson = agentJson; changed = true; }
+        if (content.isNotEmpty() && m.content != content) { m.content = content; changed = true; }
+        if (changed) requestMutationSync();
+        return true;            // found, whether or not anything needed changing
+    }
+    return false;
 }
 
 void EchoJayWorkspace::updateAssistantAgentJson (const juce::String& chatId,
@@ -885,6 +1064,13 @@ void EchoJayWorkspace::doSync()
 
 WsChat EchoJayWorkspace::parseChat(const juce::var& v)
 {
+    // ---- STAGE A: EVERY CHAT IS MIGRATED AS IT IS PARSED (his plan's fifth case) --------------
+    // One place, and it is the only road a chat takes into memory from either store - so there is
+    // no "migrated on some paths" state to reason about. The stamping is idempotent, so a chat that
+    // has been through it is untouched and costs one integer compare per row.
+    // Said once per chat that actually needed it, because a silent migration of his whole history
+    // is the kind of thing that must be in the log if it ever has to be explained.
+
     WsChat c;
     if (auto* obj = v.getDynamicObject())
     {
@@ -906,6 +1092,7 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
         // B.0: whatever the web stamped. Absent on chats neither client has
         // touched since D1.1, which is why it is only written back when set.
         c.updatedAt     = obj->getProperty("updatedAt").toString();
+        c.nextSeq       = (juce::int64) (double) obj->getProperty("_nextSeq");   // stage A
 
         if (auto* msgs = obj->getProperty("messages").getArray())
         {
@@ -932,11 +1119,20 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
                     msg.displayText   = mObj->getProperty("_display").toString();
                     msg.editTargetUid  = mObj->getProperty("_editTgtUid").toString();
                     msg.editTargetName = mObj->getProperty("_editTgtName").toString();
+                    // stage A: the entry's place and identity, 0 / empty on every row written before
+                    // today - which is what migrateChatLog stamps.
+                    msg.seq     = (juce::int64) (double) mObj->getProperty("_seq");
+                    msg.entryId = mObj->getProperty("_id").toString();
                     c.messages.push_back(std::move(msg));
                 }
             }
         }
     }
+    if (const int stamped = migrateChatLog (c); stamped > 0)
+        EchoJay_NSLog (("EJWs: chat \"" + (c.title.isNotEmpty() ? c.title : c.id) + "\" migrated to the "
+                        "stored log - " + juce::String (stamped) + " row(s) stamped with their place "
+                        "and identity, in the order the file already had (stage A of his chat-log "
+                        "ruling). Nothing reads them yet.").toRawUTF8());
     return c;
 }
 
@@ -1242,6 +1438,7 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
         obj->setProperty("groupId",   c.groupId);
     if (c.groupName.isNotEmpty())
         obj->setProperty("groupName", c.groupName);
+    if (c.nextSeq > 0) obj->setProperty("_nextSeq", (double) c.nextSeq);   // stage A: the allocator
 
     juce::Array<juce::var> msgs;
     for (auto& m : c.messages)
@@ -1249,6 +1446,11 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
         auto* mObj = new juce::DynamicObject();
         mObj->setProperty("role",    m.role);
         mObj->setProperty("content", m.content);
+        // ---- STAGE A OF THE CHAT LOG (his ruling of 21 Oct) -----------------------------------
+        // The entry's own place and its own identity, written only when stamped, so a reader that
+        // does not know them sees exactly today's chat. Nothing READS them yet: stage C does.
+        if (m.seq > 0)             mObj->setProperty("_seq", (double) m.seq);
+        if (m.entryId.isNotEmpty()) mObj->setProperty("_id",  m.entryId);
         if (m.reviewId.isNotEmpty())
             mObj->setProperty("_reviewId",  m.reviewId);
         if (m.meterCtx.isNotEmpty())

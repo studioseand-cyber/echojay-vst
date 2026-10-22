@@ -52,12 +52,63 @@ struct WsMessage {
                                  // figures + labels + cross flag); serialised as
                                  // _figures. Absent on every non-compare message
                                  // and every pre-card message (silent migration).
+
+    /** ---- STAGE A OF THE CHAT LOG (his ruling of 21 Oct; docs/PLAN_CHAT_LOG_2026-10-21.md) ----
+
+        *"One stored log per chat, where every entry (user message, agent card, notice, Stopped line)
+        gets its chat id, a monotonic order number and a stable id at the moment it's created. The
+        view only renders that log in order."*
+
+        TWO FIELDS, AND THEY ARE WRITTEN AND NOT YET READ. Stage A+B are a SECOND WRITER by his
+        approval of the staging: both logs exist, the new one is filled, and nothing renders from it
+        until C switches the reader over and deletes the merge. That is what makes the switch
+        testable on his own chats rather than on a fixture.
+
+          seq   the entry's place in its chat, allocated by the store (WsChat::nextSeq) when the row
+                is created and NEVER renumbered. The view will sort by it; "insert into its own
+                place" stops existing, which is the order fault (his 14:15 and 17:3x) at the root.
+          id    stable, created with the row. For an agent card it is the RUN'S KEY, which already
+                exists before any sessionId does and survives a reopen - so the live run updates its
+                own entry by id instead of being re-identified by a per-window integer the replay
+                reissues (his 14:15 chips).
+
+        Serialised as `_seq` and `_id`, written only when set, so a build that does not know them
+        reads the chat exactly as it does today. 0 / empty means "not stamped yet", which is what
+        every row written before today holds until the migration stamps it. */
+    juce::int64  seq = 0;
+    juce::String entryId;
 };
+
+/** ---- THE LOG'S ORDER, IN ONE PLACE (his 21:2x, 21 Oct 2026) ------------------------------
+    A log is rendered by this and nothing else. TWO RULES:
+
+      1. a placed entry sorts by its `seq`;
+      2. an UNPLACED entry (seq 0) sorts LAST.
+
+    Rule 2 is his 21:22 fault. I had written that an unplaceable row "is given its place at the end",
+    and the render line in his log proved that path never ran: the row went in with seq 0, and 0
+    sorts FIRST, so his own message ended up underneath the card it had started. An unplaced row is
+    the newest thing that happened, so last is both true and the benign failure mode - above the
+    whole conversation is the inverted one.
+
+    Shared by the editor's reader and chat_log_guard, so the rule cannot be stated twice and drift. */
+inline bool chatLogBefore (juce::int64 aSeq, juce::int64 bSeq)
+{
+    if (aSeq <= 0 && bSeq <= 0) return false;          // both unplaced: arrival order (stable sort)
+    if (aSeq <= 0) return false;                        // a is unplaced: it goes after b
+    if (bSeq <= 0) return true;                         // b is unplaced: a goes first
+    return aSeq < bSeq;
+}
 
 struct WsChat {
     juce::String id;
     juce::String title;
     std::vector<WsMessage> messages;
+    /** THE SEQ ALLOCATOR for this chat (stage A, his chat-log ruling). One per chat, held by the
+        store, so two windows appending at once cannot mint the same number - which is the "two
+        windows open" case his plan asks for. Serialised as `_nextSeq`; 0 means "not migrated yet"
+        and the loader stamps it past the last row it finds. */
+    juce::int64 nextSeq = 0;
     juce::String created;
     juce::String trackName;
     juce::String albumId;
@@ -258,6 +309,23 @@ public:
         than the mess. Those are named in the log for a human decision. */
     struct Repair { int refiled = 0, duplicatesDropped = 0, crossChatSuspects = 0; };
     Repair repairChatFiling (const juce::String& openProject, const juce::String& albumId);
+    /** ---- STAGE A: THE ONE PLACE AN ENTRY IS GIVEN ITS PLACE AND ITS NAME ------------------
+        Called by every append before the row goes into the chat. `seq` comes from the chat's own
+        allocator (so two windows cannot collide) and `id` is the RUN'S KEY for an agent card - which
+        exists before any sessionId and survives a reopen - or a minted one for anything else.
+
+        Public and static-shaped so chat_log_guard can drive it without a store on disk. */
+    static void stampLogEntry (WsChat& chat, WsMessage& m);
+
+    /** ---- STAGE A: MIGRATION (his plan's fifth case) --------------------------------------
+        Every chat written before today has rows with no seq and no id. THE FILE ORDER IS THE
+        HISTORICAL TRUTH, so `seq` is assigned in the order the file already has, an id is minted per
+        row (the run key where a card carries one), and the allocator is set past the last. Returns
+        how many rows it stamped, so the caller can log one line per chat and write it back once.
+
+        Idempotent: a chat whose rows are already stamped is left alone and returns 0. */
+    static int migrateChatLog (WsChat& chat);
+
     void addAlbum(WsAlbum album);      // append to albums list
     // Project (song) → album assignment. Removes the project from every
     // album's projectNames first, then adds it to albumId (empty = orphan).
@@ -307,6 +375,16 @@ public:
     void updateAssistantAgentJson (const juce::String& chatId,
                                    const juce::String& matchContent,
                                    const juce::String& agentJson);
+    /** ---- THE SAME CARD, FOUND BY ITS OWN ID (22 Oct 2026, his 09:24 fault) ----------------
+        A card's identity is the RUN'S KEY (stage A), and that is the only handle that works while
+        the run is still going: its prose arrives at the end, so a content match cannot find a row
+        that was appended when the run began. Returns false when this chat has no row with that id,
+        which is how the caller knows to append instead.
+
+        `content` is written only when it is not empty, so a round that has not produced the closing
+        yet cannot blank a sentence that is already stored. */
+    bool updateAgentCardById (const juce::String& chatId, const juce::String& entryId,
+                              const juce::String& agentJson, const juce::String& content);
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).
@@ -355,6 +433,20 @@ public:
     // Parsed data accessors — message thread only.
     const std::vector<WsChat>&   getChats()   const { return chats;   }
     WsChat* findChatById(const juce::String& id);   // nullptr when absent
+    /** ---- STAGE B: THE ONE ALLOCATOR, ASKED BY BOTH ROADS (his chat-log ruling) -------------
+        Hands out the next place in that chat and advances it. The processor's own stamper calls
+        this through a function it is given, so the store remains the only allocator - two of them
+        would be two sources of truth for one order, which is the fault this round removes.
+
+        A chat this store does not know yet returns 0, which the caller reads as "not stamped":
+        a guessed place is worse than none, and the row is stamped when its chat exists. */
+    juce::int64 takeNextSeq (const juce::String& chatId);
+    /** ---- THE STAMP THE STORE JUST GAVE A ROW (the single stamp, his 21:2x) ----------------
+        The editor appends to the STORE first - which creates the chat when it is new, so the
+        allocator has something to allocate from - and then hands the SAME place and id to the
+        processor's entry. This is how it reads them back. FALSE when the chat or the row is not
+        there, and then the caller leaves its copies unstamped rather than inventing a pair. */
+    bool lastStampOf (const juce::String& chatId, juce::int64& seqOut, juce::String& idOut) const;
     // Round-trip self-assert (Phase C1/C3 verification): serialise->parse->
     // serialise must be byte-stable for a pre-C1 chat (and emit NO linkUid
     // keys for it) and for a channel chat (fields intact). Runs once per

@@ -393,7 +393,7 @@ EchoJayProcessor::EchoJayProcessor()
                 EchoJay_NSLog ("EJChat: the interrupted row was already there - not writing it twice");
                 return;
             }
-            chatHistory.push_back ({ "assistant", line });
+            appendChatEntry ("assistant", line, {});   // stage B: no chat is stated on this road
             chatRoles.add ("assistant");
             chatContents.add (line);
             markStateDirty();
@@ -414,7 +414,7 @@ EchoJayProcessor::EchoJayProcessor()
         }
         // (the empty-reply case is handled above, with the failures, because a question answered with
         //  nothing is a turn that failed from where the user is sitting)
-        chatHistory.push_back ({ "assistant", reply });
+        appendChatEntry ("assistant", reply, {});   // stage B
         chatRoles.add ("assistant");
         chatContents.add (reply);
         auto* o = new juce::DynamicObject();
@@ -613,63 +613,128 @@ EchoJayProcessor::EchoJayProcessor()
     // target -> the FINAL limiter slot's own input_db. L's hand-off names it as THE in gain for this move:
     //           -12..+12, a 20 ms ramp inside the engine, settable from any thread that owns parameters, with
     //           the meters reading the gained input and no side effects on the other dials.
+    // The RACK's own gain, independent of whatever stage a match drives (20 Oct 2026): the Level-slot
+    // migration relocates a rack-level gain and must put it where it means the same thing.
+    loudnessLoop_.resolveRackGainStage = [this] () -> LoudnessLoop::Stage
+    {
+        LoudnessLoop::Stage st;
+        st.name       = "rack_out";
+        st.outsideTap = true;
+        st.ready      = [] { return true; };
+        st.readDb     = [this] { return getBusGainDb(); };
+        st.writeDb    = [this] (float db) { setBusGainDb (db); };
+        return st;
+    };
     loudnessLoop_.resolveStage = [this] (bool match) -> LoudnessLoop::Stage
     {
         LoudnessLoop::Stage st;
         if (match)
         {
-            st.name       = "rack_out";
-            st.outsideTap = true;   // applied AFTER the chain-output tally the loop measures
-            st.ready      = [] { return true; };
-            st.readDb  = [this] { return getBusGainDb(); };
-            st.writeDb = [this] (float db) { setBusGainDb (db); };
+            // ---- A MATCH WRITES THE SLOT CARD'S OUT, HERE TOO (Sean's ruling, 20 Oct 2026) -----
+            //
+            // *"A level match with no slot to write does not run. No fallback to rack_out."*
+            //
+            // AND THIS BRANCH HAD NEVER USED A SLOT AT ALL. His 14:0x rule - *"level matching uses
+            // the SLOT CARD's OUT trim, the per-slot in/out we built for exactly this"* - was
+            // implemented on the LINK's resolver and not on this one, so a match on the V2's OWN
+            // rack went straight to the bus trim every time. That is what wrote the -3.9 dB his
+            // 18:20 screenshot asked about: a rack-level correction, on the only gain this branch
+            // knew about.
+            //
+            // So this becomes what the Link's already is: the OUTERMOST slot's OUT trim, which is
+            // the slot whose card the whole chain's correction belongs on - and when there is no
+            // slot, the match DOES NOT RUN. A match corrects what the chain did to the level; an
+            // empty chain did nothing, so there is nothing to correct and any number written in that
+            // case describes something else.
+            //
+            // The TARGET branch below is a different feature by his ruling and still uses rack_out.
+            const int n = getChainHost().getNumSlots();
+            if (n > 0)
+            {
+                const int slot = n - 1;
+                st.name       = "slot_out";
+                st.outsideTap = false;   // INSIDE the chain-output tally the loop measures
+                st.label      = [this, slot] { return slot < getChainHost().getNumSlots()
+                                                   ? getChainHost().getSlotInfo (slot).name : juce::String(); };
+                st.ready      = [this, slot] { return slot < getChainHost().getNumSlots(); };
+                st.readDb     = [this, slot] { return getChainHost().getSlotOutGainDb (slot); };
+                st.writeDb    = [this, slot] (float db)
+                {
+                    const float clamped = juce::jlimit (-24.0f, 24.0f, db);
+                    EchoJay_NSLog (("EJLoudness: level match writes the SLOT CARD's OUT trim on slot "
+                                    + juce::String (slot + 1) + " (\""
+                                    + getChainHost().getSlotInfo (slot).name
+                                    + "\") to " + juce::String (clamped, 2) + " dB - his 14:0x rule, "
+                                      "now on the V2's own rack too (his ruling of 20 Oct). The "
+                                      "plugin's own make-up is left exactly as the user set it.").toRawUTF8());
+                    getChainHost().setSlotOutGainDb (slot, clamped);
+                };
+                return st;
+            }
+            EchoJay_NSLog ("EJLoudness: this rack has no slots, so there is NO level match - a match "
+                           "corrects what the chain did to the level, and an empty chain did nothing. "
+                           "The bus trim is NOT used as a fallback (his ruling of 20 Oct); a loudness "
+                           "TARGET he chose on purpose still may.");
+            st.name  = "slot_out";     // what it WOULD have been, so the refusal line names it
+            st.ready = [] { return false; };
             return st;
         }
+        // ---- THE TARGET DRIVES THE SLOT CARD'S IN TRIM (his 17:22 ruling, 21 Oct 2026) --------
+        //
+        // *"The limiter target drives the slot card's IN trim (the pre-trim before the plugin) on
+        // EVERY limiter, ours and third-party, never the plugin's own input control. One road, the
+        // same as the OUT match, and immune to mis-mapped input controls. The ceiling is still set
+        // on the plugin itself, and the "ceiling not confirmed: no level pushed" rule stands."*
+        //
+        // WHAT WAS HERE WAS TWO ROADS: input_db where the device had it, the slot's pre-trim
+        // otherwise - and the pair had already been caught out of step once (the read fell back and
+        // the write did not, so a third-party landing read 0.00). His ruling collapses it to the
+        // road that cannot be mis-mapped: EchoJay's own trim node, ahead of the plugin, which exists
+        // for every slot of every brand and needs no parameter map, no name match and no display to
+        // confirm. The MLimiterX hour is the argument for it - a control matched by name, written,
+        // and read back from its own echo.
+        //
+        // AND IT IS THE SAME ROAD AS THE OUT MATCH, which is his second sentence: both now write a
+        // trim on the slot's own card, so what the loop did is visible in the one place he looks.
         st.name  = "limiter_in";
-        st.ready = [this]
+        // WHICH SLOT: the one B named in dial_on_playback when it named one, else the last. NOT the
+        // name test on its own - "FG-X 2" is a limiter whose name says nothing (his 15:30), so a
+        // named slot is believed and the name test is only the fallback for a user's own build.
+        const auto limiterSlotNow = [this] () -> int
         {
             const int n = chainHost.getNumSlots();
-            return n > 0 && ChainHost::isLimiterLikeName (chainHost.getSlotInfo (n - 1).name);
+            const int named = loudnessLoop_.namedLimiterSlot;
+            if (named >= 0 && named < n) return named;
+            if (n > 0 && ChainHost::isLimiterLikeName (chainHost.getSlotInfo (n - 1).name)) return n - 1;
+            return -1;
         };
-        // THE IN GAIN, AND NOT EVERY LIMITER HAS ONE. An EchoJay Limiter carries input_db (L's hand-off: the in
-        // gain for this move, ramped in the engine). A THIRD-PARTY limiter does not, and writing input_db at it
-        // is a param it skips - which is why leg D read a landing of 0.00 against a third-party limiter last.
-        // So: input_db where the device has it, the slot's own PRE-TRIM otherwise, which ChainHost provides for
-        // any slot of any brand.
-        st.readDb = [this] () -> float
+        st.ready  = [limiterSlotNow] { return limiterSlotNow() >= 0; };
+        st.label  = [this, limiterSlotNow] () -> juce::String
         {
-            const int n = chainHost.getNumSlots(); if (n <= 0) return 0.0f;
-            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
-                if (d->paramSchema().find ("input_db") != nullptr)
-                    return (float) d->getParamValue ("input_db");
-            return chainHost.getSlotPreTrimDb (n - 1);
+            const int at = limiterSlotNow();
+            return at >= 0 ? chainHost.getSlotInfo (at).name : juce::String();
         };
-        st.writeDb = [this] (float db)
+        st.readDb = [this, limiterSlotNow] () -> float
         {
-            const int n = chainHost.getNumSlots(); if (n <= 0) return;
+            const int at = limiterSlotNow();
+            return at >= 0 ? chainHost.getSlotPreTrimDb (at) : 0.0f;
+        };
+        st.writeDb = [this, limiterSlotNow] (float db)
+        {
+            const int at = limiterSlotNow(); if (at < 0) return;
+            // THE RANGE COVERS THE PUSH (his ruling asks it checked): ChainHost::setSlotPreTrimDb
+            // clamps to [-24, +12] since 21t-d, and +12 is the push's own ceiling (kLevelMaxDb), so
+            // the trim can carry everything the loop is allowed to ask for. The clamp here is the
+            // same figure, stated rather than assumed.
             const float v = juce::jlimit (-12.0f, 12.0f, db);
-            // SYMMETRIC WITH readDb ABOVE, and it was not: I fixed the read to fall back to the slot's pre-trim
-            // for a limiter with no input_db and left the WRITE writing input_db unconditionally. A third-party
-            // limiter skips that param, so the landing read back as 0.00 and leg D stayed red through a fix that
-            // only touched half the pair. The capability test belongs on both sides or neither.
-            if (auto* d = dynamic_cast<EedDeviceProcessor*> (chainHost.getSlotProcessor (n - 1)))
-                if (d->paramSchema().find ("input_db") != nullptr)
-                {
-                    // Through the HOST so the slot's stored params carry it and a reopen restores it.
-                    auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) v);
-                    auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-                    chainHost.setSlotStructuredSettings (n - 1, juce::var (w));
-                    // ...AND THE STATE CACHE IS WHAT THE HOST ACTUALLY SAVES. 10 Oct 2026, caught by leg Z3:
-                    // the live param read back +6.49 dB while the saved blob for the same slot still said
-                    // input_db 0.00, so a reopen would have lost the landing - Sean's 8 Oct fault exactly, by a
-                    // new route. The Level slot's write used to take this capture; writeGainDb's comment then
-                    // claimed "the limiter's input_db in the slot's params" was enough on its own, and it is
-                    // not: the stored params and the saved state cache are two different things.
-                    chainHost.captureSlotStateNow (n - 1);
-                    return;
-                }
-            chainHost.setSlotPreTrimDb (n - 1, v);   // any brand: the slot's own IN trim
-            chainHost.captureSlotStateNow (n - 1);   // same reason: the landing has to be in what gets saved
+            chainHost.setSlotPreTrimDb (at, v);
+            chainHost.captureSlotStateNow (at);   // the landing has to be in what gets saved
+            EchoJay_NSLog (("EJLoudness: the level target writes the SLOT CARD's IN trim on slot "
+                            + juce::String (at + 1) + " (\"" + chainHost.getSlotInfo (at).name
+                            + "\") to " + juce::String (v, 2) + " dB - EchoJay's own trim ahead of the "
+                              "plugin, on every limiter of every brand (his 17:22 ruling). The "
+                              "plugin's own input control is never written, and its ceiling is left "
+                              "where the build set it.").toRawUTF8());
         };
         return st;
     };
@@ -2545,7 +2610,7 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     {
         EchoJay_NSLog(("EJBorrow: cleared the sticky banner on engage (it said \"" + borrowStickyBanner_
                        + "\", and this rack is being borrowed again)").toRawUTF8());
-        borrowStickyBanner_.clear();
+        borrowStickyBanner_.clear(); borrowStickyBannerUid_.clear();
     }
 
     // R2 (21t-b, 25 Sep 2026): edits parked when this rack last failed to answer are re-armed HERE, at the only
@@ -3392,6 +3457,59 @@ void EchoJayProcessor::borrowPollPushAck(int seq, const juce::String& id)
         if (st.isNotEmpty())
         {   // failed / stale / partial: stays pending (re-sent at deselect); said on the log once per attempt
             borrowPushInFlight_ = false;
+            // ---- A REFUSAL THAT CANNOT CHANGE IS NOT PENDING (Sean's 18:22, 20 Oct 2026) --------
+            //
+            // *"Adding a plugin by hand in the V2's rack view does nothing. He opened the picker on
+            // the empty rack, highlighted "EchoJay 4-Band Compressor" and pressed Return. The list
+            // closed and nothing was added: no slot, no error. The X on the delay in the same rack
+            // just before worked."*
+            //
+            // IT WAS NOT THE PICKER, AND THE ADD WAS ON THE RIGHT ROAD. His log shows the picker
+            // composing and queueing the command exactly as X does:
+            //     EJLink: push add slot=0 name="EchoJay 4-Band Compressor" count=4->5
+            //             id=4814a16004-1792516959 queued=4
+            // and then, on the very next line, the WRONG id going out:
+            //     EJLink: push id=4814a16004-1792516853 written (attempt 4)
+            //
+            // Command 1792516853 was composed while the rack still held bx_delay2500 at slot 1. He
+            // then removed that plugin with X, so the Link's base guard refuses it - correctly, and
+            // identically, every single time:
+            //     EJEdit: preflight REFUSED guard=touched-slot-missing slot=0 base=1
+            //             [bx_delay2500] live=0
+            // The refusal is `not_applied`, this branch keeps it pending, and the queue is FIFO - so
+            // a command that can NEVER succeed sat at the head and every later add queued behind it.
+            // That is the whole of "nothing was added, no slot, no error": four adds, none sent.
+            //
+            // SO THE DISTINCTION THIS BRANCH WAS MISSING: a refusal is either TRANSIENT (the rack was
+            // busy, the Link had not read the file yet - retry is right) or TERMINAL (the rack no
+            // longer contains what this edit was composed against - retry is a loop). The Link
+            // already names which: `touched-slot-missing` is the base no longer matching, and no
+            // number of re-sends can make a removed plugin present again.
+            //
+            // A terminal refusal is DROPPED, said out loud, and the queue moves on. Dropping is safe
+            // in a way that retrying is not: the user's edit is lost, which is visible and
+            // recoverable, where the retry loop silently swallows every edit that comes after it.
+            const bool terminal = ackWhy.containsIgnoreCase ("does not have that slot")
+                               || ackWhy.containsIgnoreCase ("touched-slot-missing")
+                               || ackWhy.containsIgnoreCase ("slot no longer present");
+            if (terminal && ! borrowPendingPushes_.empty())
+            {
+                EchoJay_NSLog(("EJLink: push id=" + id + " ack=" + st
+                               + " is TERMINAL, not pending - the rack no longer holds what this edit "
+                                 "was composed against, so re-sending it can only refuse again. "
+                                 "DROPPED so the "
+                               + juce::String((int) borrowPendingPushes_.size() - 1)
+                               + " command(s) behind it can go out (his 18:22: four adds queued behind "
+                                 "one poisoned command, and the picker looked broken)"
+                               + (ackWhy.isNotEmpty() ? " - the Link said: " + ackWhy : juce::String())).toRawUTF8());
+                borrowPendingPushes_.erase(borrowPendingPushes_.begin());
+                // REBASE BEFORE THE NEXT ONE GOES. The commands behind this were composed against a
+                // base this rack has moved past too, so sending them unrebased would refuse them for
+                // the same reason - one poisoned command at a time instead of one for ever.
+                borrowRebaseAfterPush();
+                borrowWriteHeadPush();
+                return;
+            }
             // THE REASON, ON THE SENDER'S SIDE. This line read "ack=not_applied - stays PENDING" and nothing
             // else, so the one fact that explained it - the Link refusing a name it could not resolve - sat in
             // a file nobody printed. Sean's whole report was this line, repeated.
@@ -3562,6 +3680,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
             borrowStickyBanner_ = juce::String(nPending) + " edit(s) have not reached "
                 + (pname.isNotEmpty() ? pname : juce::String("that rack")) + " (" + ops + "). It has its rack back "
                 "and you can carry on, but these changes were NOT applied - check the rack shows what you expect.";
+            borrowStickyBannerUid_ = puid;   // his 11:54: the banner belongs to this rack
             return;
         }
     }
@@ -3589,6 +3708,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
             borrowStickyBanner_ = "Your session is still live. Deselect "
                 "found a defect: your shape changes computed into an EMPTY "
                 "plan - nothing was sent or released. Please report this.";
+            borrowStickyBannerUid_ = uid;   // his 11:54: the banner belongs to this rack
             if (releaseLockOnFail) borrowApplyFinish(false, "empty plan defect", false);
             return;
         }
@@ -3597,6 +3717,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
         borrowRelease(false);
         borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
             "Nothing was changed on either side.";
+        borrowStickyBannerUid_ = uid;   // his 11:54: the banner belongs to this rack
         // FIX 4(c) (Sean, 14 Oct): A RELEASE CAUSED BY MOVING THE VIEW MUST NOT ANNOUNCE ITSELF.
         // Sean was on the Mix Bus and read "Released - Aitch_4_01 owns its rack again" in the centre. The
         // log shows why, inside one second:
@@ -3624,6 +3745,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
                        + " - shared Link folder unavailable").toRawUTF8());
         borrowStickyBanner_ = "Your session is still live. Cannot write to "
             + name + ": the shared Link folder is unavailable.";
+        borrowStickyBannerUid_ = uid;   // his 11:54: the banner belongs to this rack
         if (releaseLockOnFail) borrowApplyFinish(false, "shared folder unavailable", false);
         return;
     }
@@ -3644,6 +3766,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
         if (releaseLockOnFail) { borrowApplyFinish(false, "command write failed", false); return; }
         borrowStickyBanner_ = "Your session is still live. The write to "
             + name + " could not start (command file) - nothing was sent.";
+        borrowStickyBannerUid_ = uid;   // his 11:54
         return;
     }
     borrowApplyInFlight_ = true;
@@ -3725,6 +3848,7 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
         borrowRelease(false);
         borrowStickyBanner_ = "Applied to " + name + " - the whole plan, or "
             "none of it. " + name + " owns its rack again.";
+        borrowStickyBannerUid_ = uid;   // his 11:54: the banner belongs to this rack
         return;
     }
     if (borrowApplyReleaseOnFail_)
@@ -3743,6 +3867,7 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
             "its current state.";
         borrowRelease(true);
         borrowStickyBanner_ = unwrittenEditNote_[uid];
+        borrowStickyBannerUid_ = uid;   // his 11:54
         return;
     }
     // Deselect semantics (ruling 3): the deselect does not complete — the
@@ -3752,6 +3877,7 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
         + (restored ? name + " was restored to exactly its pre-write rack. "
                     : name + "'s rack was not touched. ")
         + "Fix the cause and leave the rack again to retry.";
+    borrowStickyBannerUid_ = uid;   // his 11:54
     borrowEditPendingHeld_ = true;   // the hold is a pending edit now
 }
 
@@ -3762,8 +3888,65 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
     // remote guard's early nullptr would make the borrowed arm dead code —
     // the 22 Aug 2026 bug, and the reason this decision now lives where
     // the gate can construct the real states and CALL it.
+    // ---- THE COPY MUST BE THE SLOT (Sean's 09:59, 21 Oct 2026) ---------------------------------
+    //
+    // *"The rack view now correctly shows EchoJay Compressor, Shadow Hills, EchoJay Gain (from the
+    // sidecar). But opening each slot's editor opens the OLD rack from earlier tests: slot 1 opens
+    // bx opto Pedal, slot 2 opens the EchoJay Compressor's UI in a window titled Shadow Hills, slot
+    // 3 opens bx_opto in a window titled EchoJay Gain. Opening a Link slot's editor must use a
+    // hosted copy that matches the sidecar slot by identity ... Never open the wrong plugin."*
+    //
+    // And his own clue for how they drifted: *"before the agent added the Shadow Hills, Sean removed
+    // some plugins from that rack with X (and added EchoJay Gain from the picker). X and picker adds
+    // update the Link's real rack, but the mirror behind the editors wasn't updated, so they drifted
+    // apart slot by slot."*
+    //
+    // This arm was a bare `bh->createEditorForSlot(slot)` - the MIRROR's slot `slot`, with the view
+    // beside it drawing the SIDECAR's. The same two-sources fault as the picker's base and the rack
+    // view, now on the editor road, and the one place where it is not merely a wrong number on
+    // screen: it opens another plugin's interface under this slot's title, and every knob in that
+    // window belongs to a plugin he is not looking at.
+    //
+    // REFUSED, NOT GUESSED. A mismatch cannot be repaired here: rebuilding the mirror from the Link
+    // is an asynchronous read and this function must return an editor or nothing, right now. So it
+    // returns nothing and says why, which the panel already renders as one line on the card, and the
+    // rebase runs on the selection tick as it does for every other drift.
     if (auto* bh = borrowHostIfActiveFor(viewUid))
+    {
+        if (viewUid.isNotEmpty())
+        {
+            int err = 0;
+            const auto dir = LinkShm::resolveDir (err);
+            const auto live = dir.isEmpty() ? LinkShm::RackSidecar{}
+                                            : LinkShm::readRackSidecar (dir, viewUid);
+            if (live.valid)
+            {
+                const bool inRange = slot >= 0 && slot < (int) live.slots.size()
+                                  && slot < bh->getNumSlots();
+                const auto theirs = inRange ? live.slots[(size_t) slot].name.trim() : juce::String();
+                const auto mine   = inRange ? bh->getSlotInfo (slot).name.trim()    : juce::String();
+                if (! inRange || ! ChainHost::namesMatchLoose (mine, theirs))
+                {
+                    EchoJay_NSLog (("EJPane: REFUSING to open slot " + juce::String (slot + 1)
+                                    + " of " + viewUid + " - the rack says \"" + theirs
+                                    + "\" and this copy holds \"" + mine
+                                    + "\". Opening by index would show another plugin's interface "
+                                      "under this slot's name (his 09:59), so nothing is opened and "
+                                      "the copy is rebuilt from the Link first.").toRawUTF8());
+                    // NOT borrowRebaseAfterPush() - I reached for it first and it is the WRONG
+                    // function: it re-stamps the MIRROR's current slots as the new baseline, so on a
+                    // drifted copy it would bless the drift and make the wrong plugins look
+                    // authoritative. The only thing that repairs a drift is a fresh read of the
+                    // Link's rack (the editor's startBorrow, which is what Sean's reopen runs), and
+                    // that is the editor's to start - so the refusal is raised and the editor acts
+                    // on it.
+                    if (onBorrowCopyStale) onBorrowCopyStale (viewUid);
+                    return nullptr;
+                }
+            }
+        }
         return bh->createEditorForSlot(slot);
+    }
     // A remote rack cannot render the LINK'S instance here (it lives in
     // that process) — but a live stage-1 edit session's slot has a LOCAL
     // editing copy, and its editor is the whole point of stage 1.
@@ -3802,9 +3985,10 @@ void EchoJayProcessor::setLinkSolo(const juce::String& uid, bool on)
         borrowBannerIsStatus_ = true;
         borrowStickyBanner_ = "Solo (pre-fader listen): hearing " + resolveLinkDisplayName(soloUid_)
             + " at its Link - fader and pan moves do not change what you hear.";
+        borrowStickyBannerUid_ = {};   // any rack: a global audio state
     }
     else if (borrowStickyBanner_.startsWith("Solo (pre-fader listen)"))
-        borrowStickyBanner_.clear();
+        borrowStickyBanner_.clear(); borrowStickyBannerUid_.clear();
     EchoJay_NSLog(("EJSolo: " + juce::String(on ? "solo ON " : "solo OFF ") + uid
                    + (prev.isNotEmpty() && on && prev != uid ? " (moved from " + prev + ")" : juce::String())
                    + " -> output is " + (soloUid_.isEmpty() ? juce::String("the mix") : soloUid_ + " ring slot " + juce::String(slot))
@@ -3959,12 +4143,14 @@ void EchoJayProcessor::borrowEditorClosed()
             "kept here - " + name + " may have changed since.";
         borrowRelease(true);
         borrowStickyBanner_ = unwrittenEditNote_[uid];
+        borrowStickyBannerUid_ = uid;   // his 11:54
     }
     else
     {
         borrowRelease(false);
         borrowStickyBanner_ = "Released - " + name + " owns its rack again. "
             "Nothing was changed on either side.";
+        borrowStickyBannerUid_ = uid;   // his 11:54
     }
 }
 
@@ -6369,7 +6555,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                             for (auto& v : *wfArr)
                                 ce.waveform.push_back((float)(double)v);
                     }
-                    chatHistory.push_back(ce);
+                    appendChatEntry (ce, ce.chatId);   // stage B
                 }
             }
         }
@@ -6734,6 +6920,35 @@ void EchoJayProcessor::publishRigProcessorState()
     o->setProperty ("parkedChats",   parkedChatIds_.joinIntoString (","));
     o->setProperty ("orphanedTurns", (double) orphanedChatTurns_.size());
     o->setProperty ("historyRows",   (double) (int) chatHistory.size());
+    // ---- WHAT THE RACK HOLDS, FROM THE OBJECT THAT HOLDS IT (22 Oct 2026, his B3 ruling) -------
+    // ownRack.count is the EDITOR'S line. With no window there is no editor and no line, so the one
+    // thing his ruling is about - did the build LAND while nothing was attached? - could only be
+    // read after a window came back, which is the very ambiguity the parked build used to create
+    // ("it built when you opened a window" and "it built while you were away" looked the same).
+    // The rack is the processor's; so is this count.
+    o->setProperty ("procSlots",     (double) getChainHost().getNumSlots());
+    // ---- HOW MANY ROWS READ AS INTERRUPTED (22 Oct 2026) --------------------------------------
+    // The rig's C11v(a) asked "is the LAST assistant row an interrupted one", which is a proxy for
+    // "did the interrupted turn get recorded at all" - and the two parted company the moment a run's
+    // card started reaching the store early (the card's closing is an assistant row too, and it can
+    // land after the notice). A proxy standing in for an identity is this tree's own named fault, so
+    // the record is asked the question directly, by the product's own predicate.
+    {
+        // THE WHOLE RECORD, because the replay list is not where the row ends up living. The 12:00
+        // run proved it: the notice went into chatHistory, the window reopened, loadChatFromWorkspace
+        // cleared that list and rebuilt it from the store - and the store got the interrupted row a
+        // moment LATER ("persisted a turn that finished while the window was shut"). So the row was
+        // on screen and in the store, and the count over chatHistory alone read 0: a true answer to
+        // the wrong question. Both halves of the record are asked, and a row anywhere in it means the
+        // turn was recorded rather than dropped.
+        int interrupted = 0;
+        for (const auto& m : chatHistory)
+            if (m.role == "assistant" && EchoJayAPI::looksInterrupted (m.content)) ++interrupted;
+        for (const auto& c : workspace.getChats())
+            for (const auto& m : c.messages)
+                if (m.role == "assistant" && EchoJayAPI::looksInterrupted (m.content)) ++interrupted;
+        o->setProperty ("interruptedRows", (double) interrupted);
+    }
     juce::String lastAssistant;
     for (const auto& m : chatHistory) if (m.role == "assistant") lastAssistant = m.content;
     o->setProperty ("lastAssistant", lastAssistant);
@@ -6751,7 +6966,10 @@ void EchoJayProcessor::publishRigProcessorState()
         o->setProperty ("agentRunKey",   home->runKey());
         o->setProperty ("agentGoal",     c.goal());
         o->setProperty ("agentBuildRoad", home->hasBuildRoad());
-        o->setProperty ("agentBuildParked", home->buildParked());
+        // WHICH ROAD THE LAST BUILD TOOK (his 22 Oct B3 ruling), replacing agentBuildParked: a
+        // build no longer parks for want of a window, so "is one parked" is not a fact any more.
+        o->setProperty ("agentLastBuildRoad",   home->lastBuildRoad());
+        o->setProperty ("agentLastBuildRunKey", home->lastBuildRunKey());
         o->setProperty ("agentParkedLines", (double) home->parkedLineCount());
         // the run's own record, as the processor holds it - which is what a reopened window adopts
         juce::String agentRowJson, statuses;
@@ -7002,6 +7220,115 @@ void EchoJayProcessor::writeLinkCtrlCommand(const juce::String& uid, const juce:
     if (field == "gainDb") { bool active = true; for (const auto& li : getLinkSlotInfos()) if (li.uid == uid) active = li.active; cmd->setProperty("active", active); }   // the gain command's contract carries active
     juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
     juce::File(dir + "ctrl-cmd-" + uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+}
+
+// ---- STAGE B OF THE CHAT LOG (his ruling of 21 Oct 2026) -------------------------------------
+//
+// *"...every entry (user message, agent card, notice, Stopped line) gets its chat id, a monotonic
+// order number and a stable id at the moment it's created."*
+//
+// THE PROCESSOR'S STAMPER. The store has its own for rows that are appended through it; this is for
+// the rows that reach the PROCESSOR's list first - a run writing while no window exists, an orphaned
+// turn, a notice - so both roads produce complete entries and stage C has nothing to reconcile.
+//
+// THE SEQ COMES FROM THE STORE, through `nextChatSeq`, for one reason: two allocators would be two
+// sources of truth for one order, which is the fault this whole round is removing. With no reader
+// wired (a processor with no editor yet, or a harness), the entry is left UNSTAMPED rather than
+// given a guessed number - 0 means "not stamped", and a guessed place would be worse than none.
+void EchoJayProcessor::stampChatEntry (ChatEntry& e, const juce::String& chatId,
+                                       const juce::String& runKey)
+{
+    if (e.chatId.isEmpty()) e.chatId = chatId;
+    if (e.entryId.isEmpty())
+    {
+        // An agent card's identity is the RUN'S KEY - the id that exists before any sessionId, and
+        // the one thing that survives a replay, a reopen and a window with no editor. Read from the
+        // snapshot when the caller did not pass it, so no call site has to remember.
+        juce::String key = runKey.trim();
+        if (key.isEmpty() && e.agentJson.isNotEmpty())
+        {
+            const auto snap = juce::JSON::parse (e.agentJson);   // HELD, never pointed into
+            if (auto* o = snap.getDynamicObject())
+                key = o->getProperty ("runKey").toString().trim();
+        }
+        if (key.isNotEmpty()) e.entryId = key;
+    }
+    if (e.seq <= 0 && nextChatSeq != nullptr && chatId.isNotEmpty())
+        e.seq = nextChatSeq (chatId);
+    // ---- AND NO MINTED ID FOR A PLAIN ROW (caught by chat_store_guard's DUP2/DUP3) -----------
+    //
+    // My first cut minted `seq-uuid` here when there was no run key - and the STORE mints its own
+    // for the same row, because the editor's append writes to both. Two minters for one row is two
+    // identities, so the reader's dedupe-by-id could not see that the store's copy and the
+    // processor's held copy were the SAME row, and "Add a compressor" showed twice: the exact fault
+    // DUP2 was written for ("my 'Add a compressor' shows twice in the chat, sent once"), and the
+    // two-sources-of-truth shape this whole round exists to remove, reintroduced by me.
+    //
+    // SO ONLY A RUN'S KEY IS AN ID HERE. A card has one and is deduped by it, which is the case
+    // content-matching never could do. A plain row is left WITHOUT an id and the reader falls back
+    // to (role, content) for it, exactly as before - honest, because for a plain row that pair plus
+    // its place IS its identity today. The follow-up that gives every row one id is a single stamp
+    // shared by both writers (the editor allocating once and handing the same pair to the store and
+    // the processor); it is written up in the plan rather than half-done here.
+}
+
+void EchoJayProcessor::appendChatEntry (const juce::String& role, const juce::String& content,
+                                        const juce::String& chatId, const juce::String& agentJson,
+                                        const juce::String& runKey)
+{
+    ChatEntry e; e.role = role; e.content = content; e.agentJson = agentJson;
+    appendChatEntry (std::move (e), chatId, runKey);
+}
+
+void EchoJayProcessor::appendChatEntry (ChatEntry e, const juce::String& chatId,
+                                        const juce::String& runKey)
+{
+    stampChatEntry (e, chatId, runKey);
+    if (e.chatId.isEmpty() && ! saidUnstampedRow_)
+    {
+        saidUnstampedRow_ = true;
+        EchoJay_NSLog (("EJChatLog: a row reached the processor's list with NO chat id (role \""
+                        + e.role + "\") - it is left UNSTAMPED rather than given a guessed place. "
+                        "This is the state his 19:51 fault lived in: a window whose current chat did "
+                        "not exist yet. Said once per session (stage B of his chat-log ruling).").toRawUTF8());
+    }
+    // ---- AND THE STORE GETS IT NOW, WITH NO WINDOW INVOLVED (his 09:24 fault, 22 Oct) ------
+    //
+    // *"fix it at the cause through the single stamp (the store appends first, with no window
+    //  involved)"*
+    //
+    // A RUN'S CARD ONLY. A plain user or assistant row reaches the store through the editor's own
+    // send path, which appends there FIRST and has done since 20 Oct ("THE STORE GOES FIRST, and
+    // that is the whole of it"); appending it again here would be the two-writers fault this round
+    // exists to remove. The card is the row with no other writer when there is no window - the
+    // editor records it at the END of a run, and a run that ends with nobody watching never reaches
+    // that code at all.
+    //
+    // IT IS AN UPDATE WHEN THE RUN ALREADY HAS A ROW THERE, keyed by the entry id the stamp just
+    // gave it, which for a card is the RUN'S KEY. That is what the id was designed for: "the live
+    // run updates its own entry by id instead of being re-identified by a per-window integer".
+    if (e.agentJson.isNotEmpty() && e.chatId.isNotEmpty())
+        storeAgentCard (e.chatId, e.entryId, e.agentJson, e.content);
+    chatHistory.push_back (std::move (e));
+}
+
+/** The card, into the store it belongs to. One door for both writers (this stamp and the run's own
+    snapshot), so there is one rule for "which row is this run's" and it is the id. */
+void EchoJayProcessor::storeAgentCard (const juce::String& chatId, const juce::String& entryId,
+                                      const juce::String& agentJson, const juce::String& content)
+{
+    if (chatId.isEmpty() || agentJson.isEmpty()) return;
+    // NEVER CREATE A CHAT HERE. appendMessageToChat invents one for an id it does not know, and an
+    // invented chat has no project and no channel - his rule 1's exact failure (Ungrouped). A run
+    // whose chat the store has not loaded yet keeps its card on the replay list, as before.
+    if (workspace.findChatById (chatId) == nullptr) return;
+    if (entryId.isNotEmpty() && workspace.updateAgentCardById (chatId, entryId, agentJson, content))
+        return;
+    workspace.appendMessageToChat (chatId, "assistant", content, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                                  {}, {}, agentJson);
+    EchoJay_NSLog (("EJChatLog: the run's card was appended to the STORED log of chat " + chatId
+                    + " at the stamp, with no window involved (his 09:24 fault, 22 Oct) - id "
+                    + (entryId.isNotEmpty() ? entryId : juce::String ("(none)"))).toRawUTF8());
 }
 
 bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
