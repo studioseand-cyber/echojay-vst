@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-REPLAY the wizard contract fixtures against any server (contract v1, FOR_SEAN_21oct/WIZARD_SERVER_CONTRACT_v1.md).
+REPLAY the wizard contract fixtures against any server (contract v1.1, FOR_SEAN_22oct/WIZARD_SERVER_CONTRACT_v1.1.md).
 
-    python3 replay.py --base https://staging.example --fixtures fixtures [--scenario 03_duplicate_upload] [--mock] [--client-id ID]
+    python3 replay.py --base https://staging.example --fixtures fixtures [--scenario 03_duplicate_upload] [--mock] [--client-id ID] [--shift-created]
+
+--shift-created (contract v1.1 ruling 9): every time the wizard sent - each result's "created" and "measured_at", and POST /runs'
+"started_at" - moves by ONE amount, so the earliest "created" is a minute ago and every gap between them is kept. A server that checks a
+result's time against its run refuses the recording day's stamps without it. B's wizard-deep-replay.py (beside this file, B's own,
+unchanged) moves "created" only and compares field by field; both are run against our mock and give 0 differences.
 
 Each fixture is one request the real EchoJay Wizard client made and the answer our mock gave (status + body). The replay sends the
 same requests, in order, and compares the status (and the "error" / "status" / "reason" fields) with what the mock answered.
@@ -20,6 +25,7 @@ Results are re-gzipped and their X-EJ-Content-SHA256 recomputed, EXCEPT where th
 fixture: "sha_header_matched": false), which is sent wrong again.
 """
 import argparse, glob, gzip, hashlib, json, os, re, sys, urllib.error, urllib.parse, urllib.request
+from datetime import datetime, timedelta, timezone
 
 PH = re.compile(r"<(ACCESS_TOKEN|REFRESH_TOKEN|DEVICE_CODE|USER_CODE|PROMO_CODE)_\d+>")
 HOOK_WORDS = {
@@ -83,6 +89,31 @@ def send(base, rq, bound):
             return e.code, body
 
 
+TIME_FIELDS = ("created", "measured_at", "started_at")
+
+
+def times_in(rq):
+    body = rq.get("gzip_json") if isinstance(rq.get("gzip_json"), dict) else rq.get("json") if isinstance(rq.get("json"), dict) else None
+    return body, [k for k in TIME_FIELDS if body is not None and isinstance(body.get(k), str)]
+
+
+def shift_of(fixtures):
+    """the one amount: the earliest result "created" goes to a minute ago"""
+    created = [datetime.fromisoformat(fx["request"]["gzip_json"]["created"]) for fx in fixtures
+               if isinstance(fx["request"].get("gzip_json"), dict) and fx["request"]["gzip_json"].get("created")]
+    return (datetime.now(timezone.utc) - timedelta(minutes=1)) - min(created) if created else timedelta(0)
+
+
+def shifted(rq, by):
+    body, keys = times_in(rq)
+    for k in keys:
+        try:
+            body[k] = (datetime.fromisoformat(body[k]) + by).isoformat(timespec="milliseconds")
+        except ValueError:
+            pass   # not a time: sent as recorded (the server's own refusal is the fixture's answer)
+    return rq
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
@@ -90,14 +121,16 @@ def main():
     ap.add_argument("--scenario", action="append")
     ap.add_argument("--mock", action="store_true", help="the base is our mock: send the test hooks")
     ap.add_argument("--client-id", help="replace the mock's client id (ejwiz-mock) with yours")
+    ap.add_argument("--shift-created", action="store_true", help="move every sent time by one amount (earliest created = a minute ago), gaps kept")
     a = ap.parse_args()
     files = sorted(glob.glob(os.path.join(a.fixtures, "*", "*.json")), key=lambda f: json.load(open(f))["seq"])
+    fixtures = [json.load(open(f)) for f in files]
+    by = shift_of(fixtures) if a.shift_created else timedelta(0)
     bound, ok, bad = {}, 0, 0
-    for f in files:
-        fx = json.load(open(f))
+    for fx in fixtures:
         if a.scenario and fx["scenario"] not in a.scenario:
             continue
-        rq = fx["request"]
+        rq = shifted(json.loads(json.dumps(fx["request"])), by) if by else fx["request"]
         if a.client_id:
             rq = json.loads(json.dumps(rq).replace("ejwiz-mock", a.client_id))
         if fx.get("test_hook"):

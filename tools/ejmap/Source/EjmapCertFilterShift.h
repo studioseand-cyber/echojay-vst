@@ -161,13 +161,13 @@ inline int runFilter (const SweepOptions& opt)
     say ("FILTER: " + juce::String (measured) + " of " + juce::String ((int) cut.size()) + " control(s) measured, " + juce::String (certified) + " certified -> " + outDir.getChildFile (stem + ".filter.json").getFullPathName());
     if (measured > 0)
     {
-        auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_filter_profile/0"); d->setProperty ("spec", drafts::specTag ("FILTER_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("FILTER_PROFILE_SPEC"));
+        auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_filter_profile/1"); d->setProperty ("category", "filter"); d->setProperty ("spec", drafts::specTag ("FILTER_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("FILTER_PROFILE_SPEC"));   // v1.1: the filter category's draft
         d->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, fx.base.getProperty ("map_fp", juce::var())));
         d->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-wizard), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, eq::gridDescription()));
         juce::Array<juce::var> fs; for (const auto& r : rows) if (r.getProperty ("verdict", "").toString() != "not_measured") fs.add (r);
         d->setProperty ("filters", fs);
         const auto f = drafts::draftFile (opt.out, stem, "filter_profile"); const auto problem = drafts::writeDraft (f, juce::var (d));
-        say (problem.isEmpty() ? "FILTER: draft ej_filter_profile/0 -> " + f.getFullPathName() : "FILTER: " + problem);
+        say (problem.isEmpty() ? "FILTER: draft ej_filter_profile/1 -> " + f.getFullPathName() : "FILTER: " + problem);
     }
     return measured > 0 ? 0 : 4;
 }
@@ -261,13 +261,13 @@ inline int runPitchShift (const SweepOptions& opt)
     say ("SHIFT: " + juce::String (measured) + " of " + juce::String ((int) shiftCtls.size()) + " control(s) measured, " + juce::String (agreed) + " agree with their labels -> " + outDir.getChildFile (stem + ".pitchshift.json").getFullPathName());
     if (measured > 0)
     {
-        auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_pitchshift_profile/0"); d->setProperty ("spec", drafts::specTag ("PITCHSHIFT_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("PITCHSHIFT_PROFILE_SPEC"));
+        auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_pitch_profile/1"); d->setProperty ("category", "pitch"); d->setProperty ("measurement", "shift"); d->setProperty ("spec", drafts::specTag ("PITCHSHIFT_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("PITCHSHIFT_PROFILE_SPEC"));   // v1.1: a measurement within pitch
         d->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, fx.base.getProperty ("map_fp", juce::var())));
         d->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-wizard), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "220 Hz sine, -18 dBFS"));
         juce::Array<juce::var> cs; for (const auto& r : rows) if (r.getProperty ("verdict", "").toString() != "not_measured") cs.add (r);
         d->setProperty ("shifts", cs);
-        const auto f = drafts::draftFile (opt.out, stem, "pitchshift_profile"); const auto problem = drafts::writeDraft (f, juce::var (d));
-        say (problem.isEmpty() ? "SHIFT: draft ej_pitchshift_profile/0 -> " + f.getFullPathName() : "SHIFT: " + problem);
+        const auto f = drafts::draftFile (opt.out, stem, "pitch_profile"); const auto problem = drafts::writeDraft (f, juce::var (d));
+        say (problem.isEmpty() ? "SHIFT: draft ej_pitch_profile/1 (measurement: shift) -> " + f.getFullPathName() : "SHIFT: " + problem);
     }
     return measured > 0 ? 0 : 4;
 }

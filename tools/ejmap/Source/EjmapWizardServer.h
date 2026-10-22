@@ -33,7 +33,7 @@ inline UploadPath uploadPathFor (juce::int64 bundleBytes, juce::int64 manifestBy
 // --- 3. the category table -------------------------------------------------------------------------------------------------------------
 inline const juce::StringArray& serverCategories()
 {
-    static const juce::StringArray k { "compressor", "limiter", "eq", "de-esser", "delay", "reverb", "saturation", "gate", "transient_shaper", "channel_strip", "amp_sim", "pitch" };
+    static const juce::StringArray k { "compressor", "limiter", "eq", "de-esser", "delay", "reverb", "saturation", "gate", "transient_shaper", "channel_strip", "amp_sim", "pitch", "filter" };   // v1.1: filter is a category
     return k;
 }
 // internal (EJ Map / the wizard) -> the server's name; "" = an internal label, never sent as a category (multiband, modulation, meter,
@@ -52,7 +52,8 @@ inline juce::String toServer (const juce::String& internal, bool cabinetRead = f
     if (c == "gate") return "gate";
     if (c == "transient" || c == "transient_shaper") return "transient_shaper";
     if (c == "strips" || c == "strip" || c == "channel_strip") return "channel_strip";
-    if (c == "tuners" || c == "tuner" || c == "pitch") return "pitch";
+    if (c == "tuners" || c == "tuner" || c == "pitch" || c == "pitchshift") return "pitch";   // v1.1: pitch shift is a measurement within pitch
+    if (c == "filter" || c == "filters") return "filter";   // v1.1: a category of its own
     return {};
 }
 inline bool isServerCategory (const juce::String& c) { return serverCategories().contains (c); }

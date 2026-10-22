@@ -12,6 +12,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <map>
 #include <juce_cryptography/juce_cryptography.h>
 #include <functional>
 #include <optional>
@@ -147,19 +148,25 @@ inline Reply replyOf (const HttpResponse& h)
 // THE WORDS A USER READS (contract §7): the server's message when it gave one, else ours
 inline juce::String plainWords (const Reply& r)
 {
-    if (r.message.isNotEmpty()) return r.message;
+    if (r.message.isNotEmpty()) return r.message;   // the server's words, as written
     if (r.network) return "You're offline - your results are kept on this Mac and sent when you're back online.";
-    if (r.error == "token_revoked" || r.error == "invalid_grant") return "Please sign in again - your results are kept.";
-    if (r.error == "rate_limited") return "EchoJay is busy - the wizard will carry on sending in a moment.";
-    if (r.error == "run_conflict") return "This run belongs to another account. Sign in with the account you started it with.";
-    if (r.error == "too_large") return "One result was too big to send and wasn't used.";
-    if (r.error == "account_blocked") return "This account can't send results. Contact support@echojay.ai.";
-    if (r.error == "client_too_old") return "Please update the EchoJay Wizard - this version can no longer send results.";
-    if (r.error == "rejected") return "A result didn't pass EchoJay's checks, so it wasn't used.";
-    if (r.status >= 500) return "EchoJay's server had a problem - the wizard will try again.";
+    // v1.1 §7: B's words for each code, when the server sent none
+    static const std::map<juce::String, juce::String> k {
+        { "token_expired", "Your sign-in needs refreshing." }, { "token_revoked", "You've been signed out. Please sign in again - your results are kept." },
+        { "invalid_grant", "Please sign in again - your results are kept." }, { "invalid_client", "This version of the EchoJay Wizard isn't recognised. Please update it." },
+        { "rate_limited", "EchoJay is busy - the wizard will carry on sending in a moment." }, { "run_not_found", "That run isn't on the server yet." },
+        { "run_conflict", "This run belongs to another account. Sign in with the account you started it with." },
+        { "result_conflict", "That result was already sent with different contents." }, { "results_missing", "Some results still need sending." },
+        { "too_large", "One result was too big to send and wasn't used." }, { "account_blocked", "This account can't send results. Contact support@echojay.ai." },
+        { "client_too_old", "Please update the EchoJay Wizard - this version can no longer send results." },
+        { "run_id_required", "Please update the EchoJay Wizard - this version can't check your plugins." },
+        { "bad_request", "Something in that request wasn't right. Please update the EchoJay Wizard and try again." }, { "not_found", "Not found." },
+        { "server_error", "Something went wrong on our side. The wizard will try again." },
+        { "rejected", "A result didn't pass EchoJay's checks, so it wasn't used." } };
+    if (const auto it = k.find (r.error); it != k.end()) return it->second;
+    if (r.status >= 500) return "Something went wrong on our side. The wizard will try again.";
     return "Something went wrong talking to EchoJay (" + (r.error.isNotEmpty() ? r.error : juce::String (r.status)) + ").";
 }
-
 inline juce::String formEncode (std::initializer_list<std::pair<const char*, juce::String>> kv)
 {
     juce::StringArray parts; for (const auto& [k, v] : kv) parts.add (juce::String (k) + "=" + juce::URL::addEscapeChars (v, true)); return parts.joinIntoString ("&");
@@ -337,7 +344,9 @@ struct Outbox
     }
 };
 
-struct RunInfo { juce::String runId, consentAcceptedAt; int queueSize = 0; juce::StringArray collection; };
+// startedAt (v1.1 §3, Kathy 22 Oct): when the wizard made the run - at the consent, before the first check. The server judges results'
+// times against it, never against when POST /runs reached it (a tester offline before that is never refused). Empty: the consent time
+struct RunInfo { juce::String runId, consentAcceptedAt; int queueSize = 0; juce::StringArray collection; juce::String startedAt; };
 // THE RUN'S COLLECTION (Kathy, 21 Oct; contract v1 §3 / §5): the catalogue check's plugin_ids, Apple's own plugins left out - the list the
 // server already saw, kept for "once per plugin collection" and for the independence of a second tester
 inline juce::StringArray collectionFromRequest (const juce::var& request)
@@ -354,27 +363,61 @@ inline Reply ensureRun (Session& s, const RunInfo& run, const juce::String& appV
     c->setProperty ("arch", juce::SystemStats::getCpuModel().containsIgnoreCase ("Apple") ? "arm64" : "x86_64"); body->setProperty ("client", juce::var (c));
     auto* k = new juce::DynamicObject(); k->setProperty ("version", kConsentVersion); k->setProperty ("accepted_at", run.consentAcceptedAt); body->setProperty ("consent", juce::var (k));
     body->setProperty ("queue_size", run.queueSize);
+    body->setProperty ("started_at", run.startedAt.isNotEmpty() ? run.startedAt : run.consentAcceptedAt);   // v1.1 §3: REQUIRED
     juce::Array<juce::var> col; for (const auto& id : run.collection) col.add (id); body->setProperty ("collection", col);
     return s.call ("POST", "runs", juce::var (body));
 }
 
-enum class Sent { accepted, duplicate, conflict, rejected, tooLarge, signIn, runMissing, retryLater, offline };
+// B'S CODES (REASON_CODES_FOR_KATHY.md, 22 Oct; contract v1.1 §7 - B's names win, ruling 8): every error code the server sends, its
+// status, and whether the wizard may try again. The wizard keeps the code, shows the server's message as written, and acts only on the
+// retryable ones; everything else is never retried
+struct CodeRule { const char* code; int status; bool retryable; };
+inline const std::vector<CodeRule>& codes()
+{
+    static const std::vector<CodeRule> k {
+        { "token_expired", 401, true }, { "token_revoked", 401, false }, { "invalid_grant", 400, false }, { "invalid_client", 401, false },
+        { "rate_limited", 429, true }, { "run_not_found", 404, true }, { "run_conflict", 409, false }, { "result_conflict", 409, false },
+        { "results_missing", 409, true }, { "too_large", 413, false }, { "account_blocked", 403, false }, { "client_too_old", 426, false },
+        { "run_id_required", 400, false }, { "bad_request", 400, false }, { "not_found", 404, false }, { "server_error", 500, true },
+        { "rejected", 422, false } };
+    return k;
+}
+// the 422 reasons (a result refused; never retried). hash_mismatch / result_id / identity also count as tampering in /complete
+inline const juce::StringArray& rejectReasons() { static const juce::StringArray k { "hash_mismatch", "shape", "result_id", "identity", "validator", "timestamp", "personal_detail" }; return k; }
+inline const CodeRule* ruleFor (const juce::String& code) { for (const auto& c : codes()) if (code == c.code) return &c; return nullptr; }
+inline bool retryable (const Reply& r)
+{
+    if (r.network || r.status >= 500) return true;   // server_error, any other 5xx, a timeout, offline: back-off
+    if (const auto* c = ruleFor (r.error)) return c->retryable;
+    return false;
+}
+
+// held (v1.1, ruling 3): a schema no validator knows yet - kept by the server, never used; marked sent, never retried
+// stop: a code that ends sending for this session without moving the result (not_found: try again on the next launch; invalid_client,
+// account_blocked, client_too_old: the user must act) - the result stays in the outbox
+enum class Sent { accepted, held, duplicate, conflict, rejected, tooLarge, signIn, runMissing, retryLater, offline, refused, stop };
 inline Sent classify (const Reply& r)
 {
     if (r.network) return Sent::offline;
-    if (r.status == 201 || (r.status == 200 && r.json.getProperty ("status", "").toString() == "accepted")) return Sent::accepted;
-    if (r.status == 200) return Sent::duplicate;
-    if (r.status == 409 && r.error == "result_conflict") return Sent::conflict;
-    if (r.status == 422) return Sent::rejected;
-    if (r.status == 413) return Sent::tooLarge;
-    if (r.status == 401 || r.status == 403) return Sent::signIn;
-    if (r.status == 404) return Sent::runMissing;
-    return Sent::retryLater;   // 429, 5xx, anything else: kept, tried again
+    const auto st = r.json.getProperty ("status", "").toString();
+    if (r.status == 201 && st == "held") return Sent::held;
+    if (r.status == 201 || (r.status == 200 && st == "accepted")) return Sent::accepted;
+    if (r.status == 200 && st == "duplicate") return Sent::duplicate;
+    if (r.error == "result_conflict") return Sent::conflict;
+    if (r.status == 422 || r.error == "rejected") return Sent::rejected;
+    if (r.error == "too_large" || r.status == 413) return Sent::tooLarge;
+    if (r.error == "token_revoked" || r.error == "invalid_grant" || r.error == "token_expired") return Sent::signIn;   // token_expired reaches here only after the refresh failed
+    if (r.error == "run_not_found") return Sent::runMissing;
+    if (r.error == "bad_request" || r.error == "run_id_required") return Sent::refused;
+    if (r.error == "not_found" || r.error == "invalid_client" || r.error == "account_blocked" || r.error == "client_too_old" || r.error == "run_conflict") return Sent::stop;
+    if (retryable (r)) return Sent::retryLater;   // rate_limited, server_error, any other 5xx
+    return Sent::stop;                            // a code the wizard does not know: never retried this session
 }
 // the back-off between tries after N failures in a row: 5 s, 10, 20 ... up to 10 min
 inline int backoffSeconds (int failures) { if (failures <= 0) return 0; return (int) juce::jmin<juce::int64> (600, (juce::int64) 5 << juce::jmin (failures - 1, 10)); }
 
-struct DrainStats { int sent = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, signIn = false; int retryAfterS = 0; juce::StringArray rejectedWords; };
+struct DrainStats { int sent = 0, held = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, signIn = false, stopped = false; int retryAfterS = 0;
+                   juce::StringArray rejectedWords, heldWords; juce::String stopCode, stopWords; };
 // one pass over the outbox, in order; stops at the first thing that needs time (offline, rate limit, sign-in) - every file stays put
 inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, const std::function<bool()>& stopNow = {})
 {
@@ -395,9 +438,12 @@ inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, cons
             const auto r = s.call ("PUT", "runs/" + run.runId + "/results/" + resultId, {}, &gz, sha);
             const auto k = classify (r);
             if (k == Sent::runMissing && attempt == 0 && ! runEnsured) { runEnsured = true; if (ensureRun (s, run).ok()) continue; }
-            if (k == Sent::accepted || k == Sent::duplicate || k == Sent::conflict)
-            { f.moveFileTo (box.sent().getChildFile (f.getFileName())); if (k == Sent::accepted) ++st.sent; else if (k == Sent::duplicate) ++st.duplicates; else ++st.conflicts; break; }
-            if (k == Sent::rejected || k == Sent::tooLarge)
+            if (k == Sent::accepted || k == Sent::duplicate || k == Sent::conflict || k == Sent::held)
+            {   if (k == Sent::held) box.sent().getChildFile (f.getFileName() + ".status.json").replaceWithText (juce::JSON::toString (r.json));   // the server's status + message, kept
+                f.moveFileTo (box.sent().getChildFile (f.getFileName()));
+                if (k == Sent::accepted) ++st.sent; else if (k == Sent::held) { ++st.held; st.heldWords.add (plainWords (r)); } else if (k == Sent::duplicate) ++st.duplicates; else ++st.conflicts; break; }
+            if (k == Sent::stop) { st.stopped = true; st.stopCode = r.error; st.stopWords = plainWords (r); return st; }   // kept in the outbox; never retried this session
+            if (k == Sent::rejected || k == Sent::tooLarge || k == Sent::refused)
             {   box.rejected().getChildFile (f.getFileName() + ".reason.json").replaceWithText (juce::JSON::toString (r.json.isObject() ? r.json : juce::var()));
                 f.moveFileTo (box.rejected().getChildFile (f.getFileName())); ++st.rejected; st.rejectedWords.add (plainWords (r)); break; }
             if (k == Sent::signIn) { st.signIn = true; return st; }
@@ -409,7 +455,8 @@ inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, cons
 }
 
 // --- THE RUN'S END (contract §5): the server decides; the wizard shows ----------------------------------------------------------------
-struct Completion { bool done = false; Reply reply; juce::StringArray missing; bool eligible = false, issuedNow = false; juce::String code, message, reason; int months = 0; };
+struct Completion { bool done = false; Reply reply; juce::StringArray missing; bool eligible = false, issuedNow = false; juce::String code, message, reason, expiresAt; int months = 0;
+                   int received = 0, accepted = 0, fresh = 0, checked = 0; };   // v1.1 §5: the server's counts (results_received / _accepted / _new, plugins_checked)
 inline Completion complete (Session& s, const juce::String& runId, const juce::String& kind, const juce::var& queue, const juce::var& outcomes, const juce::StringArray& resultIds)
 {
     Completion c; auto* body = new juce::DynamicObject(); body->setProperty ("kind", kind); body->setProperty ("queue", queue); body->setProperty ("outcomes", outcomes);
@@ -422,6 +469,9 @@ inline Completion complete (Session& s, const juce::String& runId, const juce::S
     c.done = true; c.eligible = (bool) p.getProperty ("eligible", false); c.issuedNow = (bool) p.getProperty ("issued_now", false);
     c.code = p.getProperty ("code", "").toString(); c.message = p.getProperty ("message", "").toString(); c.months = (int) p.getProperty ("months", 0);
     c.reason = p.getProperty ("reason", "").toString();   // 21 Oct: e.g. collection_already_claimed
+    c.expiresAt = p.getProperty ("expires_at", "").toString();   // v1.1: the wizard shows the server's expiry
+    c.received = (int) c.reply.json.getProperty ("results_received", 0); c.accepted = (int) c.reply.json.getProperty ("results_accepted", 0);
+    c.fresh = (int) c.reply.json.getProperty ("results_new", 0); c.checked = (int) c.reply.json.getProperty ("plugins_checked", 0);
     if (! c.eligible) c.code = {};   // a code only with the server's "eligible": never shown otherwise
     return c;
 }

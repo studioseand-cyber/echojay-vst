@@ -4790,7 +4790,7 @@ void testSweepQuietReference()
             const auto zip = controlFromGrid ({ { 0.0, true, "1" }, { 0.25, true, "1.41" }, { 0.5, true, "4.14" }, { 0.75, true, "20" }, { 1.0, true, "100" } });
             juce::String w; const auto st = settingsFor (zip, 4.14, w, true, true);
             bool allRead = true; for (const auto& x : st) allRead = allRead && (x.norm == 0.0 || x.norm == 0.25 || x.norm == 0.5 || x.norm == 0.75 || x.norm == 1.0);
-            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_ratio6.json");
+            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_ratio6_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".json");
             tmp.replaceWithText (R"({"product":"x","knee_db":6.0,"measured_ratio":4.0,"runs":[
                 {"ratio":2.0,"labelled_ratio":2.0,"position":0.5,"T_dbfs":-20.0,"levels":[{"input_dbfs":-14.0,"gr_db":3.0},{"input_dbfs":-11.0,"gr_db":4.5},{"input_dbfs":-8.0,"gr_db":6.0}]},
                 {"ratio":4.0,"position":0.5,"T_dbfs":-20.0,"levels":[{"input_dbfs":-14.0,"gr_db":1.0},{"input_dbfs":-11.0,"gr_db":1.5},{"input_dbfs":-8.0,"gr_db":2.0}]}]})");
@@ -4911,7 +4911,7 @@ void testSweepQuietReference()
             const auto blk = block (score (pts, 6.0, 2.0));
             const auto cv = blk.getProperty ("curves", {}); const auto k = cv.isArray() && cv.size() > 0 && cv[0].getProperty ("curve", {}).size() > 0 ? cv[0].getProperty ("curve", {})[0].getProperty ("in_at_gr_dbfs", {}) : juce::var();
             auto mkRun = [] (const char* schema) { return juce::String (R"({"schema":")") + schema + R"(","product":"x","knee_db":6.0,"measured_ratio":4.0,"runs":[{"ratio":4.0,"labelled_ratio":4.0,"position":0.4,"T_dbfs":-48.0,"levels":[{"input_dbfs":-39.0,"gr_db":4.5},{"input_dbfs":-36.0,"gr_db":6.75},{"input_dbfs":-33.0,"gr_db":9.0}]}]})"; };
-            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_ratio7.json");
+            const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_ratio7_" + juce::String (juce::Random::getSystemRandom().nextInt64()) + ".json");
             tmp.replaceWithText (mkRun ("ej_ratio_law_run/2")); ejmap::cert::ratioLawScoreFile (tmp); const auto old2 = juce::JSON::parse (tmp.loadFileAsString());
             tmp.replaceWithText (mkRun ("ej_ratio_law_run/3")); ejmap::cert::ratioLawScoreFile (tmp); const auto new3 = juce::JSON::parse (tmp.loadFileAsString()); tmp.deleteFile();
             const double sh2 = old2.getProperty ("ratio_law", {}).getProperty ("threshold_shift_db", {}).getProperty ("4.00", 99.0), sh3 = new3.getProperty ("ratio_law", {}).getProperty ("threshold_shift_db", {}).getProperty ("4.00", 99.0);
@@ -9808,8 +9808,9 @@ void testWizardServer()
            && toServer ("saturation") == "saturation" && toServer ("saturation", true) == "amp_sim" && toServer ("limitercomp") == "limiter" && toServer ("wizard_eq") == "eq"
            && toServer ("compressor") == "compressor" && toServer ("reverb") == "reverb" && toServer ("delay") == "delay" && toServer ("gate") == "gate"
            && toServer ("multiband").isEmpty() && toServer ("modulation").isEmpty() && toServer ("meter").isEmpty() && toServer ("utility").isEmpty() && toServer ("instrument").isEmpty()
-           && toServer ("dynamics").isEmpty() && serverCategories().size() == 12,
-           "wizard WZ-SRV-2: deesser->de-esser, strips->channel_strip, transient->transient_shaper, tuners->pitch, a cabinet read -> amp_sim; multiband/modulation/meter/utility/instrument never sent");
+           && toServer ("dynamics").isEmpty() && serverCategories().size() == 13 && serverCategories().contains ("filter")   // v1.1: filter is a category
+           && toServer ("filters") == "filter" && toServer ("pitchshift") == "pitch",
+           "wizard WZ-SRV-2: deesser->de-esser, strips->channel_strip, transient->transient_shaper, tuners->pitch, a cabinet read -> amp_sim, filters->filter, pitchshift->pitch; multiband/modulation/meter/utility/instrument never sent");
     {   // every server name maps to itself (the /lookup category is read in the same names)
         bool self = true; for (const auto& c : serverCategories()) if (toServer (c) != c) self = false;
         check (self, "wizard WZ-SRV-2b: each of the server's 12 names translates to itself");
@@ -13611,6 +13612,102 @@ int main (int, char**)
                && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString().contains ("if (! sets.isEmpty()) a.add (\"sets=\" + sets.joinIntoString (\",\"));"),
                "wizard WZ-SHIFT-2: '- 5th' expects " + juce::String (i5.outHz, 2) + " Hz; ratio 0.7937 expects " + juce::String (r.outHz, 2) + " Hz; voice 1 read with '" + iso.joinIntoString (",") + "'; " + moves.why);
     }
+    // WZ-CODES-1 B'S CODE LIST, EXACTLY (contract v1.1 §7, Kathy's ruling 8, B's REASON_CODES_FOR_KATHY.md of 22 Oct - kept read-only as
+    // tests/fixtures/b_reason_codes_22oct.md): every error code the client knows has B's status and B's "may retry"; the 422 reasons are
+    // B's seven; the words the client shows when the server sends none are B's, word for word; and the mock answers with the same words
+    {
+        using namespace ejmap::wizcontract;
+        const auto doc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/b_reason_codes_22oct.md").loadFileAsString();
+        const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
+        auto firstQuoted = [] (const juce::String& cell) { return cell.fromFirstOccurrenceOf ("\"", false, false).upToFirstOccurrenceOf ("\"", false, false); };
+        juce::StringArray bad; int codesSeen = 0, reasonsSeen = 0; juce::StringArray reasons;
+        const auto sec1 = doc.fromFirstOccurrenceOf ("## 1.", false, false).upToFirstOccurrenceOf ("## 2.", false, false);
+        for (const auto& line0 : juce::StringArray::fromLines (sec1))
+        {   const auto line = line0.replace ("\\|", "/");   // B's escaped pipes inside a cell
+            const auto c = juce::StringArray::fromTokens (line, "|", ""); if (c.size() < 4 || ! c[1].trim().startsWith ("`") || c[1].contains ("reason")) continue;
+            const auto code = c[1].trim().removeCharacters ("`"); reasons.add (code); ++reasonsSeen;
+            const auto words = firstQuoted (c[3]).replace ("<Plugin>", "{p}");
+            if (! mock.contains ("\"" + code + "\": \"" + words + "\"")) bad.add ("mock words for " + code); }
+        const auto sec2 = doc.fromFirstOccurrenceOf ("## 2.", false, false).upToFirstOccurrenceOf ("## 3.", false, false);
+        for (const auto& line0 : juce::StringArray::fromLines (sec2))
+        {   const auto line = line0.replace ("\\|", "/");
+            const auto c = juce::StringArray::fromTokens (line, "|", ""); if (c.size() < 5 || ! c[2].trim().startsWith ("`") || c[2].contains ("`error`")) continue;
+            const auto code = c[2].trim().removeCharacters ("`"); const int status = c[1].trim().getIntValue(); const bool retry = c[3].contains ("**retry**"); ++codesSeen;
+            const auto* r = ruleFor (code);
+            if (r == nullptr) { bad.add ("unknown to the client: " + code); continue; }
+            if (r->status != status) bad.add (code + " status " + juce::String (r->status) + " vs B " + juce::String (status));
+            if (r->retryable != retry) bad.add (code + " retryable " + juce::String ((int) r->retryable) + " vs B " + juce::String ((int) retry));
+            Reply rp; rp.status = status; rp.error = code; const auto words = firstQuoted (c[4]);
+            if (words.isNotEmpty() && ! words.contains ("<Plugin>") && plainWords (rp) != words) bad.add (code + " words '" + plainWords (rp) + "' vs B '" + words + "'");
+            if (words.isNotEmpty() && ! words.contains ("<Plugin>") && code != "too_large" && ! mock.contains ("\"" + code + "\": \"" + words + "\"")) bad.add ("mock words for " + code); }
+        Reply r429; r429.status = 429; r429.error = "rate_limited"; Reply r503; r503.status = 503; Reply rOff; rOff.network = true; Reply r404; r404.status = 404; r404.error = "not_found";
+        Reply rHeld; rHeld.status = 201; rHeld.json = juce::JSON::parse (R"({"status":"held","message":"m"})"); Reply rBad; rBad.status = 400; rBad.error = "bad_request";
+        Reply rRunNF; rRunNF.status = 404; rRunNF.error = "run_not_found"; Reply rUnknown; rUnknown.status = 418; rUnknown.error = "teapot";
+        check (bad.isEmpty() && codesSeen >= 16 && reasonsSeen == 7 && reasons == rejectReasons()
+               && classify (r429) == Sent::retryLater && classify (r503) == Sent::retryLater && classify (rOff) == Sent::offline && classify (r404) == Sent::stop
+               && classify (rHeld) == Sent::held && classify (rBad) == Sent::refused && classify (rRunNF) == Sent::runMissing && classify (rUnknown) == Sent::stop
+               && backoffSeconds (1) == 5 && backoffSeconds (2) == 10 && backoffSeconds (8) == 600 && backoffSeconds (30) == 600,
+               "contract WZ-CODES-1: B's list - " + juce::String (codesSeen) + " codes and " + juce::String (reasonsSeen) + " reasons matched in the client and the mock"
+                 + (bad.isEmpty() ? juce::String() : " (MISMATCH: " + bad.joinIntoString ("; ") + ")"));
+    }
+    // WZ-V11-1 THE WIZARD'S SIDE OF v1.1 (Kathy, 22 Oct): measured_at is the real time a plugin finished (a Phase B row's "at", or the moment
+    // its state became final; set once) and created the packing time; the run's last pack covers every plugin the server answered "need"
+    // (not_reached when nothing else went), a checkpoint never; filter is a category and pitch shift a measurement within pitch; the app
+    // shows the server's expiry and stops sending on a code B says not to retry
+    {
+        using namespace ejmap;
+        const auto iso = cert::isoFromStamp ("20261020T135139");
+        auto* row = new juce::DynamicObject(); const juce::var rowV (row);
+        cert::stampFinal (row, "2026-10-20T12:00:00Z"); cert::stampFinal (row, "2026-10-21T12:00:00Z"); cert::stampFinal (row);
+        const auto bundle = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_v11_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        const auto man = juce::JSON::parse (R"({"skipped": [{"product": "P1", "plugin_id": "AudioUnit|11110001|1.0", "state": "needs_licence", "why": "w"}, {"product": "P2", "plugin_id": "AudioUnit|11110002|1.0", "state": "demo", "why": "w"}]})");
+        std::map<juce::String, wizresults::Identity> ids { { "AudioUnit|11110003|1.0", { "V", "P3" } } };
+        const auto fin = wizresults::fromPack (man, bundle, "run_0000000000000abc", true, ids, {}, { { "AudioUnit|11110001|1.0", "2026-10-22T08:00:00+01:00" } },
+                                               juce::StringArray { "AudioUnit|11110001|1.0", "AudioUnit|11110003|1.0" });
+        const auto cp = wizresults::fromPack (man, bundle, "run_0000000000000abc", false, ids, {}, {}, juce::StringArray { "AudioUnit|11110003|1.0" });
+        juce::StringArray kinds; for (const auto& d : fin) kinds.add (d.kind + ":" + d.pluginId.fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false) + ":" + d.body.getProperty ("payload", {}).getProperty ("state", "").toString());
+        const auto cfs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (iso.startsWith ("2026-10-20T13:51:39") && cert::isoFromStamp ("garbage").isEmpty()
+               && rowV.getProperty ("measured_at", "").toString() == "2026-10-20T12:00:00Z"   // set once: the first final time stays
+               && kinds.joinIntoString (",") == "outcome:11110001:needs_licence,outcome:11110002:demo,outcome:11110003:not_reached"
+               && fin[0].body.getProperty ("measured_at", "") == juce::var ("2026-10-22T08:00:00+01:00") && fin[1].body.getProperty ("measured_at", "") == fin[1].body.getProperty ("created", "x")
+               && fin[2].body.getProperty ("plugin", {}).getProperty ("name", "") == juce::var ("P3") && cp.size() == 2   // a checkpoint never adds not_reached
+               && cfs.contains ("d->setProperty (\"schema\", \"ej_filter_profile/1\"); d->setProperty (\"category\", \"filter\");")
+               && cfs.contains ("d->setProperty (\"schema\", \"ej_pitch_profile/1\"); d->setProperty (\"category\", \"pitch\"); d->setProperty (\"measurement\", \"shift\");")
+               && cfs.contains ("d->setProperty (\"category\", \"filter\"); d->setProperty (\"spec\", drafts::specTag (\"FILTER_PROFILE_SPEC\")); d->setProperty (\"status\", drafts::statusLine (\"FILTER_PROFILE_SPEC\"));")
+               && cfs.contains ("d->setProperty (\"measurement\", \"shift\"); d->setProperty (\"spec\", drafts::specTag (\"PITCHSHIFT_PROFILE_SPEC\")); d->setProperty (\"status\", drafts::statusLine (\"PITCHSHIFT_PROFILE_SPEC\"));")
+               && run.contains ("files[0].toString().contains (\".filter_profile.\") ? juce::String (\"filter\")")
+               && run.contains ("if (r.isObject() && st != \"measuring\") stampFinal (row, isoFromStamp (r.getProperty (\"at\", \"\").toString()));")
+               && run.contains ("finishedAt = isoFromStamp (r.getProperty (\"at\", \"\").toString());")
+               && app.contains ("if (const auto ew = wizapp::expiryWords (rw.getProperty (\"expires_at\", \"\").toString()); ew.isNotEmpty()) text << \" \" << ew;")
+               && app.contains ("r->setProperty (\"expires_at\", c.expiresAt);") && app.contains ("if (st.stopped) { nextTryMs = now + 1.0e12;")
+               && app.contains ("st.getDynamicObject()->setProperty (\"run_started_at\", juce::Time::getCurrentTime().toISO8601 (true));"),
+               "wizard WZ-V11-1: measured_at '" + iso + "' from a Phase B row, set once; the last pack covers the server's need list (" + kinds.joinIntoString (", ") + "); filter / pitch drafts aligned; the app shows the expiry and stops on B's non-retryable codes");
+    }
+    // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
+    // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
+    // cert's writers set is in the mock's list, and the list names nothing else
+    {
+        juce::StringArray written;
+        for (const auto& f : juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source").findChildFiles (juce::File::findFiles, false, "*.h"))
+        {   const auto t = f.loadFileAsString(); int at = 0;
+            while ((at = t.indexOf (at, "setProperty (\"schema\", \"ej_")) >= 0)
+            {   const auto sch = t.substring (at + 24).upToFirstOccurrenceOf ("\"", false, false); at += 24;
+                if (sch.contains ("profile") && ! sch.contains ("prototype") && ! sch.contains ("time block") && sch != "ej_gain_profile/1" && sch != "ej_multiband_profile/0")   // the wizard never sends gain-cal, timing or multiband
+                    written.addIfNotAlreadyThere (sch); }
+            at = 0;   // a draft schema held in a constant (the tuner's kSchema)
+            while ((at = t.indexOf (at, "constexpr const char* kSchema = \"ej_")) >= 0)
+            {   const auto sch = t.substring (at + 33).upToFirstOccurrenceOf ("\"", false, false); at += 33; if (sch.contains ("profile")) written.addIfNotAlreadyThere (sch); } }
+        const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
+        const auto list = mock.fromFirstOccurrenceOf ("PROFILE_SCHEMAS = {", false, false).upToFirstOccurrenceOf ("}", false, false);
+        juce::StringArray listed; for (auto t : juce::StringArray::fromTokens (list, ",", "\"")) { t = t.trim().unquoted(); if (t.isNotEmpty()) listed.add (t); }
+        juce::StringArray missing, extra; for (const auto& w : written) if (! listed.contains (w)) missing.add (w); for (const auto& l : listed) if (! written.contains (l)) extra.add (l);
+        check (written.size() >= 10 && missing.isEmpty() && extra.isEmpty(),
+               "contract WZ-SCHEMAS-1: the mock knows the " + juce::String (written.size()) + " draft schemas the wizard writes" + (missing.isEmpty() ? juce::String() : "; MISSING " + missing.joinIntoString (" | "))
+                 + (extra.isEmpty() ? juce::String() : "; NEVER SENT " + extra.joinIntoString (" | ")));
+    }
     // WZ-FULLMAP-1 THE WIZARD SAVES FULL MAPS (Kathy, 22 Oct, decision 0): the store's format (schema 2.4, controls with range / unit /
     // anchors or labels, the taper), built from the probe's --extract by the EJ Map app's own rules (EjmapSweeper.h finishOutcome) - so a
     // tester's upload is usable by the server and judged by the same trust rules. Fixtures: IR-L (m->s)'s real extract on this Mac (22 Oct)
@@ -13654,7 +13751,7 @@ int main (int, char**)
                && ! gain.hasProperty ("taper") && ga.size() >= 21 && std::abs (ga.front().value + 50.0) < 1e-6 && std::abs (at90 - 50.0) < 0.05 && std::abs (at90lin - 50.0) < 0.05   // the extract READ 0.900
                && std::abs (sLin - 53.1) < 0.05 && std::abs (sLog - 50.06) < 0.1 && trust::detectTaper (sa) == "log" && trust::detectTaper (trust::anchorsOf (store.getProperty ("controls", {}).getProperty ("Gain", {}))).isEmpty()
                && credited.count ("Wet-Dry") && credited.at ("Wet-Dry").judged == 1 && credited.at ("Wet-Dry").failed == 0
-               && cn.joinIntoString (",") == "Cutoff:anchored,Level:anchored*,Mode:mode" && dn.joinIntoString (",") == "1,5,6,7"
+               && cn.joinIntoString (",") == "Cutoff:anchored,Level:anchored*,Mode:mode" && dn.joinIntoString (",") == "1,5,6,7" && sb.declines[0].reason.startsWith ("empty parameter name")
                && sb.controls[0].unit == "hz" && std::abs (sb.controls[0].rangeHi - 8000.0) < 1e-3 && sb.controls[0].taper == "log" && sb.controls[2].labels.size() == 2
                && pn.joinIntoString (",") == "0,1,2,3,4,5,6,7" && fullmap::isFull (smap) && fullmap::isFull (map) && ! fullmap::isFull (w0)
                && run.contains ("juce::String::toHexString (d.uniqueId), \"--extract\" }; };") && run.contains ("path, \"0\", \"--extract\" }, opt.timeoutMs); ++identityLoads; loadOut = r.out;")
@@ -13688,6 +13785,16 @@ int main (int, char**)
                && withX.full && fullmap::isFull (withX.map) && withX.words.startsWith ("full map: 2 control(s)")
                && ! listOnly.full && ! fullmap::isFull (listOnly.map) && listOnly.words.contains ("parameter list only"),
                "wizard WZ-FULLMAP-2: StandardCLIP's labels round-trip ('" + labels.joinIntoString ("|") + "', " + juce::String (b.blankLabels) + " blank left out); the map step: '" + withX.words + "' / '" + listOnly.words + "'");
+    }
+    // WZ-TAPER-2 A TAPER IS CLAIMED ONLY WHERE A STRAIGHT LINE FAILS (decision 7): a gently geometric curve (2 % a step) fits the
+    // geometric rule exactly AND a straight line to 0.02 % - the anchors cannot tell the two apart, so no taper is recorded; doubling a
+    // step (IR-L's shape) misses the line by far more than kTaperLinMiss and is "log"
+    {
+        using namespace ejmap;
+        std::vector<trust::Anchor> gentle, doubling;
+        for (int k = 0; k <= 10; ++k) { gentle.push_back ({ 100.0 * std::pow (1.02, k), k / 10.0 }); doubling.push_back ({ std::pow (2.0, k), k / 10.0 }); }
+        check (trust::detectTaper (gentle).isEmpty() && trust::detectTaper (doubling) == "log",
+               "wizard WZ-TAPER-2: 2 % a step is left linear ('" + trust::detectTaper (gentle) + "'), doubling is log ('" + trust::detectTaper (doubling) + "')");
     }
     // WZ-FILTER-3 KATHY'S 22 OCT DECISIONS 3, 4, 5, 8: a resonant filter certifies under the ONE convention its label follows at every judged
     // position (-3 dB point, natural frequency, resonant peak), recorded; a shallow filter's edge margin is two octaves (bx_cleansweep);
@@ -13835,8 +13942,24 @@ int main (int, char**)
             const RunInfo run { runId, "2026-10-21T19:00:02Z", 3, kathyCollection };
             const auto r1 = ensureRun (s, run), r1b = ensureRun (s, run);
             const auto bundle = work.getChildFile ("bundle"); bundle.getChildFile ("profiles").createDirectory();
+            // a compressor profile in the REAL shape (v1.1 ruling 10 reads it): the level convention, the ratio setting, the amount control and
+            // its curve - each position's input level per GR step - shifted by g dB (two testers g apart disagree by g)
+            auto realProfile = [] (const juce::String& id, const juce::String& schema, double g)
+            {   juce::String curve; int n = 0;
+                for (double norm : { 0.0, 0.5, 1.0 }) { curve << (n++ ? "," : "") << "{\"norm\": " << norm << ", \"display\": \"" << norm << "\", \"in_at_gr_dbfs\": {\"1\": " << (-20.0 + 10.0 * norm + g)
+                                                         << ", \"2\": " << (-18.5 + 10.0 * norm + g) << ", \"3\": " << (-17.0 + 10.0 * norm + g) << ", \"4\": null}}"; }
+                return "{\"schema\": \"" + schema + "\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}, \"measured\": {\"level_ref\": \"sine_rms_dbfs\"}, \"topology\": \"threshold\", \"engage\": [],"
+                       " \"ratio\": {\"control\": \"Ratio\", \"curve\": [{\"norm\": 0.5, \"set\": \"4:1\", \"value\": 4.0}], \"fixed\": null}, \"amount\": {\"control\": \"Thresh\", \"curve\": [" + curve + "]}}"; };
             auto profileFile = [&] (const juce::String& id, const juce::String& schema)
-            { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json"; bundle.getChildFile (rel).replaceWithText ("{\"schema\": \"" + schema + "\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}, \"amount\": {\"g_db\": 1.0, \"curve\": [0.0, 2.0, 4.0]}}"); return rel; };
+            { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json"; bundle.getChildFile (rel).replaceWithText (realProfile (id, schema, 0.0)); return rel; };
+            // v1.1 (ruling 5): the server's queue - a run's last pack gives every plugin the check answered "need" for a result; this does it
+            // the client's way (fromPack's not_reached outcomes for the server's need list) and sends them
+            auto needOf = [] (const CatalogueResult& c) { juce::StringArray ids; if (const auto* o = c.answers.getProperty ("by_plugin_id", {}).getDynamicObject())
+                                                              for (const auto& [k, v] : o->getProperties()) if (v.getProperty ("status", "").toString() == "need") ids.add (k.toString()); return ids; };
+            auto coverNeeds = [&] (Session& ss, Outbox& b, const RunInfo& ri, const juce::StringArray& needs)
+            {   std::map<juce::String, ejmap::wizresults::Identity> ids;   // the engine knows every plugin's name; so does this
+                for (const auto& n : needs) ids[n] = { "V", "Plug " + juce::StringArray::fromTokens (n, "|", "")[1] };
+                ejmap::wizresults::emit (ejmap::wizresults::fromPack (juce::JSON::parse ("{}"), bundle, ri.runId, true, ids, {}, {}, needs), b, {}); return drain (ss, b, ri); };
             auto manifestWith = [&] (const juce::String& profilesJson, const juce::String& skippedJson)
             { return juce::JSON::parse ("{\"profiles\": [" + profilesJson + "], \"skipped\": [" + skippedJson + "]}"); };
             const auto m1 = manifestWith ("{\"product\": \"Plug aaaa0002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"map_fp\": \"fp2\", \"profile\": \"" + profileFile ("aaaa0002", "ej_comp_profile/1") + "\"},"
@@ -13879,14 +14002,21 @@ int main (int, char**)
                    "contract WZ-CONTRACT-5: a duplicate upload is answered 'duplicate' and stored once (holding " + juce::String (heldBefore) + " -> " + juce::String (heldAfter) + ")");
 
             scenario ("04_rejected_upload");
-            // 6. REJECTED: the validator's refusal goes to rejected/ with the server's plain words, never retried
-            const auto m3 = manifestWith ("{\"product\": \"Plug aaaa000a\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000a|1.0\", \"profile\": \"" + profileFile ("aaaa000a", "ej_bogus/9") + "\"}", {});
+            // 6. REJECTED (v1.1, B's codes): the validator's refusal goes to rejected/ with B's reason and the server's words, never retried;
+            // a file of a schema no validator knows is HELD - accepted, kept, never used, marked sent with the server's words
+            const auto noCurve = juce::String ("profiles/AudioUnit_aaaa000a_1.0.comp_profile.json");
+            bundle.getChildFile (noCurve).replaceWithText ("{\"schema\": \"ej_comp_profile/1\", \"plugin\": {\"plugin_id\": \"AudioUnit|aaaa000a|1.0\"}}");   // no amount curve
+            const auto m3 = manifestWith ("{\"product\": \"Plug aaaa000a\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000a|1.0\", \"profile\": \"" + noCurve + "\"},"
+                                          "{\"product\": \"Plug aaaa0010\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0010|1.0\", \"profile\": \"" + profileFile ("aaaa0010", "ej_bogus/9") + "\"}", {});
             ejmap::wizresults::emit (ejmap::wizresults::fromPack (m3, bundle, runId, false, {}, {}), box, {});
             const auto stRej = drain (s, box, run), stRej2 = drain (s, box, run);
             const auto reason = juce::JSON::parse (box.rejected().findChildFiles (juce::File::findFiles, false, "*.reason.json")[0].loadFileAsString());
-            check (stRej.rejected == 1 && stRej.rejectedWords[0].contains ("didn't pass our checks") && stRej2.rejected == 0 && stRej2.sent == 0 && box.count (box.rejected()) == 1
-                   && reason.getProperty ("reason", "") == juce::var ("unknown_schema"),
-                   "contract WZ-CONTRACT-6: a rejected result is kept apart with the words '" + stRej.rejectedWords.joinIntoString ("") + "', never retried");
+            const auto heldStatus = juce::JSON::parse (box.sent().findChildFiles (juce::File::findFiles, false, "*.status.json")[0].loadFileAsString());
+            check (stRej.rejected == 1 && stRej.rejectedWords[0] == "Plug aaaa000a's measurements didn't pass our checks, so they weren't used." && stRej2.rejected == 0 && stRej2.sent == 0
+                   && box.count (box.rejected()) == 1 && reason.getProperty ("reason", "") == juce::var ("validator")
+                   && stRej.held == 1 && stRej.heldWords[0] == "EchoJay can't check Plug aaaa0010's measurements yet, so they're kept but not used for now." && heldStatus.getProperty ("status", "") == juce::var ("held"),
+                   "contract WZ-CONTRACT-6: a rejected result is kept apart with B's reason (" + reason.getProperty ("reason", "").toString() + ") and the words '" + stRej.rejectedWords.joinIntoString ("")
+                     + "', never retried; an unknown schema is held ('" + stRej.heldWords.joinIntoString ("") + "')");
 
             scenario ("04b_full_map");
             // 6b. THE FULL MAP (Kathy, 22 Oct, decision 0): a result carries its plugin's map as map.json in the store's format - accepted; a
@@ -13901,19 +14031,24 @@ int main (int, char**)
                 bundle.getChildFile ("maps/fp_aaaa000d.json").replaceWithText (juce::JSON::toString (ejmap::wizard::paramMap ("Plug aaaa000d", "V", "aaaa000d", "1.0", "fp_aaaa000d", { { 0, "Cutoff" } }, "eq")));
                 bundle.getChildFile ("maps/fp_aaaa000f.json").replaceWithText (juce::JSON::toString (fullFor ("aaaa00ff")));   // another plugin's map
                 const auto filterRel = juce::String ("profiles/AudioUnit_aaaa000e_1.0.filter_profile.draft.json");
-                bundle.getChildFile (filterRel).replaceWithText ("{\"schema\": \"ej_filter_profile/0\", \"plugin\": {\"plugin_id\": \"AudioUnit|aaaa000e|1.0\"}, \"filters\": [{\"verdict\": \"certified\"}]}");
+                bundle.getChildFile (filterRel).replaceWithText ("{\"schema\": \"ej_filter_profile/1\", \"category\": \"filter\", \"plugin\": {\"plugin_id\": \"AudioUnit|aaaa000e|1.0\"}, \"filters\": [{\"verdict\": \"certified\"}]}");
                 const auto mF = manifestWith ("{\"product\": \"Plug aaaa000c\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000c|1.0\", \"map_fp\": \"fp_aaaa000c\", \"map_file\": \"maps/fp_aaaa000c.json\", \"profile\": \"" + profileFile ("aaaa000c", "ej_comp_profile/1") + "\"},"
                                               "{\"product\": \"Plug aaaa000d\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000d|1.0\", \"map_fp\": \"fp_aaaa000d\", \"map_file\": \"maps/fp_aaaa000d.json\", \"profile\": \"" + profileFile ("aaaa000d", "ej_comp_profile/1") + "\"},"
                                               "{\"product\": \"Plug aaaa000f\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000f|1.0\", \"map_fp\": \"fp_aaaa000f\", \"map_file\": \"maps/fp_aaaa000f.json\", \"profile\": \"" + profileFile ("aaaa000f", "ej_comp_profile/1") + "\"},"
-                                              "{\"product\": \"Plug aaaa000e\", \"kind\": \"eq\", \"plugin_id\": \"AudioUnit|aaaa000e|1.0\", \"drafts\": [\"" + filterRel + "\"]}", {});
-                const auto docsF = ejmap::wizresults::fromPack (mF, bundle, runId, false, {}, {});
+                                              "{\"product\": \"Plug aaaa000e\", \"kind\": \"filter\", \"plugin_id\": \"AudioUnit|aaaa000e|1.0\", \"drafts\": [\"" + filterRel + "\"]}", {});
+                const juce::String run6b = "run_" + juce::String::toHexString (0x6b6b6b6b6b6b6b6bLL);   // its own run: an identity refusal costs a run its free month
+                const RunInfo runF { run6b, "2026-10-21T19:00:02Z", 4 };
+                const auto docsF = ejmap::wizresults::fromPack (mF, bundle, run6b, false, {}, {});
                 const int rejBefore = box.count (box.rejected());
-                ejmap::wizresults::emit (docsF, box, {});
-                const auto stF = drain (s, box, run);
-                juce::StringArray rr; for (const auto& f : box.rejected().findChildFiles (juce::File::findFiles, false, "*.reason.json")) rr.add (juce::JSON::parse (f.loadFileAsString()).getProperty ("reason", "").toString());
+                Outbox boxF { work.getChildFile ("outbox_6b") };   // its own outbox: the main run's /complete never lists these
+                ejmap::wizresults::emit (docsF, boxF, {});
+                const auto stF = drain (s, boxF, runF);
+                juce::StringArray rr; for (const auto& f : boxF.rejected().findChildFiles (juce::File::findFiles, false, "*.reason.json")) rr.add (juce::JSON::parse (f.loadFileAsString()).getProperty ("reason", "").toString());
                 const auto mapInDoc = docsF.size() >= 1 ? docsF[0].body.getProperty ("files", {}).getProperty ("map.json", {}) : juce::var();
                 check (docsF.size() == 4 && ejmap::fullmap::isFull (mapInDoc) && mapInDoc.getProperty ("identity", {}).getProperty ("uid", "") == juce::var ("aaaa000c")
-                       && stF.sent == 2 && stF.rejected == 2 && box.count (box.rejected()) == rejBefore + 2 && rr.contains ("bad_map") && stF.rejectedWords.joinIntoString (" ").contains ("map didn't pass our checks"),
+                       && stF.sent == 2 && stF.rejected == 2 && box.count (box.rejected()) == rejBefore && boxF.count (boxF.rejected()) == 2 && rr.contains ("shape") && rr.contains ("identity")
+                       && stF.rejectedWords.contains ("Plug aaaa000d's measurements didn't pass our checks, so they weren't used.")
+                       && stF.rejectedWords.contains ("Plug aaaa000f's results don't match the plugin version they say they're from, so they weren't used."),
                        "contract WZ-CONTRACT-6b: a full map rides with its result as map.json and is accepted; a parameter list or another plugin's map is refused ('" + stF.rejectedWords.joinIntoString (" | ") + "'); the filter draft is accepted");
             }
 
@@ -13943,6 +14078,11 @@ int main (int, char**)
                    && c2.done && c2.eligible && ! c2.issuedNow && c2.code == c1.code
                    && c3.done && ! c3.eligible && c3.code.isEmpty() && c3.message.contains ("already has its free month"),
                    "contract WZ-CONTRACT-8: the server's promo - '" + c1.code + "' issued once, the same code asked again (issued_now false), none for a second run ('" + c3.message + "')");
+            // WZ-CONTRACT-8b B'S COUNTS (ruling 7): this run sent 8 - 6 accepted, 1 refused (validator), 1 HELD (unknown schema). Received counts
+            // all three; accepted leaves the held one out; new = the accepted profiles of plugins answered "need"
+            check (c1.received == 8 && c1.accepted == 6 && c1.received == c1.accepted + 1 + 1 && c1.fresh == 2 && c1.checked == 5,
+                   "contract WZ-CONTRACT-8b: the counts - received " + juce::String (c1.received) + " (8), accepted " + juce::String (c1.accepted) + " (6: the held one left out), new "
+                     + juce::String (c1.fresh) + " (2), checked " + juce::String (c1.checked) + " (5)");
 
             // 8b. ONCE PER PLUGIN COLLECTION, AND THE TWO SERVING LEVELS (Kathy, 21 Oct): another account with Kathy's collection is refused
             // "already claimed for this setup"; its results still count but cannot certify (not independent); the same account with a
@@ -13958,25 +14098,26 @@ int main (int, char**)
             const auto vOther = statusOf (cc2, "AudioUnit|aaaa0002|1.0"), vKathy = statusOf (ccK, "AudioUnit|aaaa0002|1.0");
             const auto bundle2 = work.getChildFile ("bundle2"); bundle2.getChildFile ("profiles").createDirectory();
             auto profile2 = [&] (const juce::String& id, double g) { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json";
-                bundle2.getChildFile (rel).replaceWithText ("{\"schema\": \"ej_comp_profile/1\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}, \"amount\": {\"g_db\": " + juce::String (g) + ", \"curve\": [0.0, 2.0, 4.0]}}"); return rel; };
-            auto sendRun = [&] (const juce::String& rid, const juce::StringArray& collection, const juce::String& profilesJson, const juce::String& boxName)
+                bundle2.getChildFile (rel).replaceWithText (realProfile (id, "ej_comp_profile/1", g - 1.0)); return rel; };
+            auto sendRun = [&] (const juce::String& rid, const juce::StringArray& collection, const juce::String& profilesJson, const juce::String& boxName, const juce::StringArray& needs)
             {
                 ensureRun (s2, RunInfo { rid, "2026-10-21T19:00:02Z", 1, collection });
                 Outbox b2 { work.getChildFile (boxName) };
-                ejmap::wizresults::emit (ejmap::wizresults::fromPack (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "]}"), bundle2, rid, true, {}, {}), b2, {});
-                drain (s2, b2, RunInfo { rid, "t", 1, collection });
+                std::map<juce::String, ejmap::wizresults::Identity> ids; for (const auto& n : needs) ids[n] = { "V", "Plug " + juce::StringArray::fromTokens (n, "|", "")[1] };
+                ejmap::wizresults::emit (ejmap::wizresults::fromPack (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "]}"), bundle2, rid, true, ids, {}, {}, needs), b2, {});
+                drain (s2, b2, RunInfo { rid, "2026-10-21T19:00:02Z", 1, collection });
                 juce::Array<juce::var> q, o; juce::StringArray sids;
                 for (const auto& f : b2.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) sids.add (Outbox::resultIdOf (f));
                 return complete (s2, rid, "finished", juce::var (q), juce::var (o), sids);
             };
             auto prof = [&] (const char* id, double g) { return "{\"product\": \"Plug " + juce::String (id) + "\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|" + juce::String (id) + "|1.0\", \"profile\": \"" + profile2 (id, g) + "\"}"; };
-            const auto cX = sendRun (runX, kathyCollection, prof ("aaaa0002", 1.2), "box_x");                     // the SAME setup as Kathy's
+            const auto cX = sendRun (runX, kathyCollection, prof ("aaaa0002", 1.2), "box_x", needOf (cc2));                     // the SAME setup as Kathy's
             const auto levelAfterX = mockState().getProperty ("served", {}).getProperty ("AudioUnit|aaaa0002|1.0", {});
             const auto reqY = juce::JSON::parse ("{\"plugins\": [{\"plugin_id\": \"AudioUnit|bbbb0001|1.0\", \"vendor\": \"V\"}, {\"plugin_id\": \"AudioUnit|bbbb0002|1.0\", \"vendor\": \"V\"}, {\"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"vendor\": \"V\"}]}");
             scenario ("11_second_tester_certifies");
-            catalogueCheck (s2, reqY, runY);   // 21 Oct (Sean): the minimum counts plugins CHECKED under this run - this account checks run Y's
+            const auto ccY = catalogueCheck (s2, reqY, runY);   // 21 Oct (Sean): the minimum counts plugins CHECKED under this run - this account checks run Y's
             const auto cY = sendRun (runY, juce::StringArray { "AudioUnit|bbbb0001|1.0", "AudioUnit|bbbb0002|1.0", "AudioUnit|aaaa0002|1.0" },
-                                     prof ("aaaa0002", 1.3) + "," + prof ("aaaa0004", 4.0), "box_y");           // another setup: agrees on 0002 (0.3), not on 0004 (3.0)
+                                     prof ("aaaa0002", 1.3) + "," + prof ("aaaa0004", 4.0), "box_y", needOf (ccY));           // another setup: agrees on 0002 (0.3), not on 0004 (3.0)
             const auto served = mockState().getProperty ("served", {});
             const auto l2 = served.getProperty ("AudioUnit|aaaa0002|1.0", {}), l4 = served.getProperty ("AudioUnit|aaaa0004|1.0", {});
             const auto cc3 = catalogueCheck (s2, reqV, runY);
@@ -14008,31 +14149,181 @@ int main (int, char**)
             MemoryTokenStore store3, store4; std::unique_ptr<Session> s3 (&signInAs (store3, "acct_mock_c")), s4 (&signInAs (store4, "acct_mock_d"));
             auto req1 = [] (std::initializer_list<const char*> ids) { juce::String j = "{\"plugins\": ["; bool first = true; for (const char* i : ids) { j << (first ? "" : ",") << "{\"plugin_id\": \"AudioUnit|" << i << "|1.0\", \"vendor\": \"V\"}"; first = false; } return juce::JSON::parse (j + "]}"); };
             const juce::StringArray colZ { "AudioUnit|cccc0001|1.0", "AudioUnit|cccc0002|1.0", "AudioUnit|cccc0003|1.0" };
-            catalogueCheck (*s3, req1 ({ "cccc0001" }), runZ);
+            const auto ccZ1 = catalogueCheck (*s3, req1 ({ "cccc0001" }), runZ);
             catalogueCheck (*s3, req1 ({ "cccc0002" }), "run_" + juce::String::toHexString (0x00000000eeee0005LL).paddedLeft ('0', 16));   // under ANOTHER run: does not count for runZ
-            ensureRun (*s3, RunInfo { runZ, "t", 0, colZ });
+            ensureRun (*s3, RunInfo { runZ, "2026-10-21T19:00:02Z", 0, colZ });
             const juce::var noQ (juce::Array<juce::var> {});
-            const auto z1 = complete (*s3, runZ, "finished", noQ, noQ, {});
-            catalogueCheck (*s3, req1 ({ "cccc0002" }), runZ);
-            const auto z2 = complete (*s3, runZ, "finished", noQ, noQ, {});
+            Outbox boxZ { work.getChildFile ("outbox_z") }; const RunInfo riZ { runZ, "2026-10-21T19:00:02Z", 0, colZ };
+            coverNeeds (*s3, boxZ, riZ, needOf (ccZ1));   // v1.1: an outcome for every "need" - not a measurement
+            auto sentOf = [] (const Outbox& b) { juce::StringArray ids; for (const auto& f : b.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) ids.add (Outbox::resultIdOf (f)); return ids; };
+            const auto z1 = complete (*s3, runZ, "finished", noQ, noQ, sentOf (boxZ));
+            const auto ccZ2 = catalogueCheck (*s3, req1 ({ "cccc0002" }), runZ);
+            coverNeeds (*s3, boxZ, riZ, needOf (ccZ2));
+            const auto z2 = complete (*s3, runZ, "finished", noQ, noQ, sentOf (boxZ));
             scenario ("13_failed_cheat_check");
-            catalogueCheck (*s4, req1 ({ "dddd0001", "dddd0002", "dddd0003" }), runW);
+            const auto ccW = catalogueCheck (*s4, req1 ({ "dddd0001", "dddd0002", "dddd0003" }), runW);
             const juce::StringArray colW { "AudioUnit|dddd0001|1.0", "AudioUnit|dddd0002|1.0", "AudioUnit|dddd0003|1.0" };
-            ensureRun (*s4, RunInfo { runW, "t", 0, colW });
+            ensureRun (*s4, RunInfo { runW, "2026-10-21T19:00:02Z", 0, colW });
             {   // a result whose SHA-256 does not match its body: a tampered upload (the cheat checks)
                 const auto body = juce::String ("{\"schema\": \"ej_wizard_result/1\"}"); const auto gz = gzip (body);
                 s4->call ("PUT", "runs/" + runW + "/results/" + resultIdFor (runW, "outcome", "AudioUnit|dddd0001|1.0"), {}, &gz, juce::String::repeatedString ("0", 64));
             }
-            const auto w1 = complete (*s4, runW, "finished", noQ, noQ, {});
+            const auto w0 = complete (*s4, runW, "finished", noQ, noQ, {});   // v1.1 ruling 6: not finished outranks the failed check
+            Outbox boxW { work.getChildFile ("outbox_w") }; coverNeeds (*s4, boxW, RunInfo { runW, "2026-10-21T19:00:02Z", 0, colW }, needOf (ccW));   // finished: every need covered
+            const auto w1 = complete (*s4, runW, "finished", noQ, noQ, sentOf (boxW));
             const auto st4 = mockState();
             check (z1.done && ! z1.eligible && z1.reason == "below_minimum" && z1.message == "The free month needs at least 2 plugins checked in a finished run; this run checked 1."
-                   && (int) z1.reply.json.getProperty ("plugins_checked", -1) == 1 && (int) z1.reply.json.getProperty ("results_accepted", -1) == 0
-                   && z2.done && z2.eligible && z2.code.startsWith ("EJ-FREE-") && (int) z2.reply.json.getProperty ("plugins_checked", -1) == 2 && (int) z2.reply.json.getProperty ("results_received", -1) == 0
+                   && (int) z1.reply.json.getProperty ("plugins_checked", -1) == 1 && (int) z1.reply.json.getProperty ("results_accepted", -1) == 1 && z1.fresh == 0
+                   && z2.done && z2.eligible && z2.code.startsWith ("EJ-FREE-") && (int) z2.reply.json.getProperty ("plugins_checked", -1) == 2 && z2.fresh == 0 && z2.received == 2 && z2.accepted == 2
                    && w1.done && ! w1.eligible && w1.reason == "failed_checks" && w1.message.contains ("didn't pass EchoJay's checks") && (int) w1.reply.json.getProperty ("plugins_checked", -1) == 3
                    && (int) st4.getProperty ("checked_counts", {}).getProperty (juce::Identifier ("acct_mock_c|" + runZ), 0) == 2
                    && (int) st4.getProperty ("checked_counts", {}).getProperty (juce::Identifier ("acct_mock_c|run_00000000eeee0005"), 0) == 1,   // the decoy run's check stayed with its own run
-                   "contract WZ-CONTRACT-14: the minimum counts plugins CHECKED in a finished run ('" + z1.message + "'; then a code with 0 uploads), from the server's records; a failed cheat check gets none ('" + w1.message + "')");
+                   "contract WZ-CONTRACT-14: the minimum counts plugins CHECKED in a finished run ('" + z1.message + "'; then a code with 0 new profiles, 2 outcomes), from the server's records; a failed cheat check gets none ('" + w1.message + "')");
             // 9. AN EXPIRED TOKEN refreshes once (rotated); a REUSED refresh token kills the family -> sign in again, results kept
+            // 8d. CONTRACT v1.1 (Kathy's rulings, 22 Oct). THE OFFLINE TESTER (ruling 3 of the second set): the tester went offline before
+            // POST /runs reached the server and packed the results offline; on reconnect EVERY result is accepted - the server judges times
+            // against the wizard's started_at (and the first check), never against when the run record arrived.
+            // TWO PARTS, because a replay moves every recorded time to replay time and runs POST /runs live, so it collapses any offline gap:
+            //   13b (recorded, B's fixtures): the shape, with gaps inside the 5 min allowance so either replay's shift keeps every verdict;
+            //       controls that hold at any replay time - a missing measured_at, a measured_at ten years ahead
+            //   _13b_offline_timeline (NOT recorded: our suite only): the real timeline - packed 20 min before the run record (accepted), and
+            //       the controls that need it: before started_at, before the first check (after started_at), measured_at an hour ahead.
+            //       Its own run and plugin ids and no /complete, so nothing a recorded fixture reads is changed by it
+            scenario ("13b_offline_before_run");
+            const juce::String runO = "run_" + juce::String::toHexString (0x0000000000000ff1LL).paddedLeft ('0', 16);
+            const auto ccO = catalogueCheck (*s4, req1 ({ "ffff0001", "ffff0002" }), runO);
+            const auto tNow = juce::Time::getCurrentTime();
+            const auto startedAt = (tNow - juce::RelativeTime::minutes (3)).toISO8601 (true), packedAt = (tNow - juce::RelativeTime::minutes (2)).toISO8601 (true),
+                       measuredAt = (tNow - juce::RelativeTime::seconds (150)).toISO8601 (true);
+            RunInfo riO { runO, startedAt, 2, juce::StringArray { "AudioUnit|ffff0001|1.0", "AudioUnit|ffff0002|1.0" }, startedAt };
+            std::map<juce::String, ejmap::wizresults::Identity> idsO { { "AudioUnit|ffff0001|1.0", { "V", "Plug ffff0001" } }, { "AudioUnit|ffff0002|1.0", { "V", "Plug ffff0002" } } };
+            auto docsO = ejmap::wizresults::fromPack (manifestWith ("{\"product\": \"Plug ffff0001\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|ffff0001|1.0\", \"profile\": \"" + profileFile ("ffff0001", "ej_comp_profile/1") + "\"}",
+                                                                    "{\"product\": \"Plug ffff0002\", \"plugin_id\": \"AudioUnit|ffff0002|1.0\", \"state\": \"needs_licence\", \"why\": \"a licence window\"}"),
+                                                      bundle, runO, true, idsO, {}, { { "AudioUnit|ffff0001|1.0", measuredAt }, { "AudioUnit|ffff0002|1.0", measuredAt } }, needOf (ccO));
+            for (auto& d : docsO) d.body.getDynamicObject()->setProperty ("created", packedAt);   // packed while offline
+            // the controls that hold at any replay time: two more results for ffff0001, each wrong in one way
+            auto ctl = ejmap::wizresults::fromPack (juce::JSON::parse ("{\"out_of_scope\": [{\"product\": \"Plug ffff0001\", \"plugin_id\": \"AudioUnit|ffff0001|1.0\"}],"
+                                                                       " \"reference_votes\": [{\"product\": \"Plug ffff0001\", \"plugin_id\": \"AudioUnit|ffff0001|1.0\"}]}"), bundle, runO, false, idsO, {}, {}, {});
+            for (auto& d : ctl) { auto* o = d.body.getDynamicObject(); o->setProperty ("created", packedAt); o->setProperty ("measured_at", measuredAt);
+                if (d.kind == "out_of_scope") o->setProperty ("measured_at", (tNow + juce::RelativeTime::days (3653)).toISO8601 (true));       // a clock ten years ahead
+                if (d.kind == "reference_vote") o->removeProperty ("measured_at"); }                                                             // missing
+            Outbox boxO { work.getChildFile ("outbox_o") }; ejmap::wizresults::emit (docsO, boxO, {}); ejmap::wizresults::emit (ctl, boxO, {});
+            Session offlineO (Endpoints { "http://127.0.0.1:1", "ejwiz-mock" }, tx, store4, [&] (const juce::String& l) { logLines.add (l); });
+            const auto stOff2 = drain (offlineO, boxO, riO); const int keptOffline2 = boxO.pendingFiles().size();
+            const auto stOn2 = drain (*s4, boxO, riO);   // reconnect: POST /runs reaches the server only now
+            auto reasonsIn = [] (const Outbox& b) { juce::StringArray w; for (const auto& f : b.rejected().findChildFiles (juce::File::findFiles, false, "*.reason.json")) w.add (juce::JSON::parse (f.loadFileAsString()).getProperty ("reason", "").toString()); w.sort (false); return w; };
+            const auto whyO = reasonsIn (boxO);
+            const auto runOnServer = mockState().getProperty ("runs", {}).getProperty (juce::Identifier (runO), {});
+            auto sentIn = [] (const Outbox& b) { juce::StringArray ids; for (const auto& f : b.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) ids.add (Outbox::resultIdOf (f)); return ids; };
+            const auto cO = complete (*s4, runO, "finished", noQ, noQ, sentIn (boxO));
+            check (stOff2.offline && keptOffline2 == 4 && boxO.pendingFiles().isEmpty() && stOn2.sent == 2 && stOn2.rejected == 2 && whyO.joinIntoString (",") == "shape,timestamp"
+                   && runOnServer.getProperty ("started_at", juce::var()).isDouble()
+                   && cO.done && cO.received == 4 && cO.accepted == 2 && cO.fresh == 1 && cO.checked == 2 && cO.eligible && cO.expiresAt == "2027-01-31T23:59:59Z"
+                   && ejmap::wizapp::expiryWords (cO.expiresAt) == "Use it by 31 January 2027." && ejmap::wizapp::expiryWords ("").isEmpty(),
+                   "contract WZ-CONTRACT-15: offline from before POST /runs - " + juce::String (stOn2.sent) + " packed offline, all accepted; the controls refused ("
+                     + whyO.joinIntoString (", ") + "); counts received " + juce::String (cO.received) + " / accepted " + juce::String (cO.accepted) + " / new " + juce::String (cO.fresh)
+                     + "; '" + ejmap::wizapp::expiryWords (cO.expiresAt) + "' [offline " + juce::String ((int) stOff2.offline) + " pending " + juce::String (boxO.pendingFiles().size())
+                     + " started_at " + runOnServer.getProperty ("started_at", juce::var()).toString() + " checked " + juce::String (cO.checked) + " eligible " + juce::String ((int) cO.eligible) + " " + cO.reason + "]");
+            {   // the real timeline (not recorded): the checks ran 30 min ago, started_at 40 min ago (the consent), packed 20 min ago
+                scenario ("_13b_offline_timeline");
+                const juce::String runT = "run_" + juce::String::toHexString (0x0000000000000ff2LL).paddedLeft ('0', 16);
+                const auto ccT = catalogueCheck (*s4, req1 ({ "ffff0101", "ffff0102" }), runT);
+                hook ("/__mock/age_check", "{\"run_id\": \"" + runT + "\", \"minutes\": 30}");
+                const auto t0 = juce::Time::getCurrentTime();
+                auto ago = [&] (int m) { return (t0 - juce::RelativeTime::minutes (m)).toISO8601 (true); };
+                RunInfo riT { runT, ago (40), 2, juce::StringArray { "AudioUnit|ffff0101|1.0", "AudioUnit|ffff0102|1.0" }, ago (40) };
+                std::map<juce::String, ejmap::wizresults::Identity> idsT { { "AudioUnit|ffff0101|1.0", { "V", "Plug ffff0101" } }, { "AudioUnit|ffff0102|1.0", { "V", "Plug ffff0102" } } };
+                auto docsT = ejmap::wizresults::fromPack (manifestWith ("{\"product\": \"Plug ffff0101\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|ffff0101|1.0\", \"profile\": \"" + profileFile ("ffff0101", "ej_comp_profile/1") + "\"}",
+                                                                        "{\"product\": \"Plug ffff0102\", \"plugin_id\": \"AudioUnit|ffff0102|1.0\", \"state\": \"needs_licence\", \"why\": \"a licence window\"}"),
+                                                          bundle, runT, false, idsT, {}, { { "AudioUnit|ffff0101|1.0", ago (24) }, { "AudioUnit|ffff0102|1.0", ago (24) } }, needOf (ccT));
+                for (auto& d : docsT) d.body.getDynamicObject()->setProperty ("created", ago (20));   // 20 min before the run record arrives
+                auto ctlT = ejmap::wizresults::fromPack (juce::JSON::parse ("{\"confirmations\": [{\"product\": \"Plug ffff0101\", \"plugin_id\": \"AudioUnit|ffff0101|1.0\"}],"
+                                                                            " \"out_of_scope\": [{\"product\": \"Plug ffff0101\", \"plugin_id\": \"AudioUnit|ffff0101|1.0\"}],"
+                                                                            " \"reference_votes\": [{\"product\": \"Plug ffff0101\", \"plugin_id\": \"AudioUnit|ffff0101|1.0\"}]}"), bundle, runT, false, idsT, {}, {}, {});
+                for (auto& d : ctlT) { auto* o = d.body.getDynamicObject(); o->setProperty ("created", ago (20)); o->setProperty ("measured_at", ago (24));
+                    if (d.kind == "confirmation") o->setProperty ("created", ago (50));                                                  // before started_at - 5 min
+                    if (d.kind == "reference_vote") o->setProperty ("created", ago (37));                                                // after started_at, before the first check - 5 min
+                    if (d.kind == "out_of_scope") o->setProperty ("measured_at", (t0 + juce::RelativeTime::hours (1)).toISO8601 (true)); }   // an hour ahead
+                Outbox boxT { work.getChildFile ("outbox_t") }; ejmap::wizresults::emit (docsT, boxT, {}); ejmap::wizresults::emit (ctlT, boxT, {});
+                const auto stT = drain (*s4, boxT, riT);   // POST /runs now: the results are 20 min older than the run record
+                const auto whyT = reasonsIn (boxT);
+                check (stT.sent == 2 && stT.rejected == 3 && whyT.joinIntoString (",") == "timestamp,timestamp,timestamp" && boxT.pendingFiles().isEmpty(),
+                       "contract WZ-CONTRACT-15b: packed 20 min before the run record, " + juce::String (stT.sent) + " accepted; before started_at, before the first check and an hour-ahead measured_at refused ("
+                         + whyT.joinIntoString (", ") + ")");
+            }
+            // 8e. THE PROMO'S REFUSAL ORDER (ruling 6): account already claimed > setup already claimed > not finished > failed checks > below
+            // minimum - each pair where both hold, the higher one wins
+            scenario ("13c_promo_refusal_order");
+            MemoryTokenStore store5, store6; std::unique_ptr<Session> s5 (&signInAs (store5, "acct_mock_e")), s6 (&signInAs (store6, "acct_mock_f"));
+            const juce::String runK2 = "run_" + juce::String::toHexString (0x0000000000000a11LL).paddedLeft ('0', 16), runE = "run_" + juce::String::toHexString (0x0000000000000e11LL).paddedLeft ('0', 16),
+                               runF2 = "run_" + juce::String::toHexString (0x0000000000000f11LL).paddedLeft ('0', 16);
+            const auto ccK2 = catalogueCheck (s2, reqV, runK2);   // acct b (has a code) on Kathy's setup, nothing covered: account wins over setup and not-finished
+            ensureRun (s2, RunInfo { runK2, "2026-10-21T19:00:02Z", 0, kathyCollection });
+            const auto oK = complete (s2, runK2, "finished", noQ, noQ, {});
+            const auto ccE = catalogueCheck (*s5, reqV, runE);    // acct e on Kathy's setup, nothing covered: setup wins over not-finished
+            ensureRun (*s5, RunInfo { runE, "2026-10-21T19:00:02Z", 0, kathyCollection });
+            const auto oE = complete (*s5, runE, "finished", noQ, noQ, {});
+            const auto ccF = catalogueCheck (*s6, req1 ({ "f6f60001" }), runF2);   // acct f: a tampered upload and 1 checked (below 2): failed checks wins over below minimum
+            ensureRun (*s6, RunInfo { runF2, "2026-10-21T19:00:02Z", 0, juce::StringArray { "AudioUnit|f6f60001|1.0" } });
+            { const auto body = juce::String ("{\"schema\": \"ej_wizard_result/1\"}"); const auto gz = gzip (body);
+              s6->call ("PUT", "runs/" + runF2 + "/results/" + resultIdFor (runF2, "outcome", "AudioUnit|f6f60001|1.0"), {}, &gz, juce::String::repeatedString ("0", 64)); }
+            Outbox boxF2 { work.getChildFile ("outbox_f2") }; coverNeeds (*s6, boxF2, RunInfo { runF2, "2026-10-21T19:00:02Z", 0, juce::StringArray { "AudioUnit|f6f60001|1.0" } }, needOf (ccF));
+            const auto oF = complete (*s6, runF2, "finished", noQ, noQ, sentIn (boxF2));
+            check (oK.reason == "account_already_claimed" && oE.reason == "collection_already_claimed" && oF.reason == "failed_checks" && w0.reason == "not_finished"
+                   && ccK2.ok && ccE.ok,
+                   "contract WZ-CONTRACT-16: the refusal order - account (" + oK.reason + ") > setup (" + oE.reason + ") > not finished (" + w0.reason + ", over a failed check) > failed checks (" + oF.reason + ", over below minimum)");
+            // 8f. COMPRESSOR AGREEMENT (ruling 10): B's reading - same position and GR step, input level within 0.5 dB, the same amount control,
+            // at least 3 shared points - PLUS the same version and format, the same ratio setting, the same level convention; each breaks it alone
+            {
+                auto P = [&] (double g) { return juce::JSON::parse (realProfile ("aaaa7777", "ej_comp_profile/1", g)); };
+                auto agreeOf = [&] (const juce::var& a, const juce::var& b) { auto* o = new juce::DynamicObject(); o->setProperty ("a", a); o->setProperty ("b", b);
+                    HttpRequest rq; rq.method = "POST"; rq.url = ep.base + "/__mock/agree"; rq.contentType = "application/json"; const auto j = juce::JSON::toString (juce::var (o)); rq.body.append (j.toRawUTF8(), (size_t) j.getNumBytesAsUTF8());
+                    return (bool) replyOf (tx (rq)).json.getProperty ("agree", false); };
+                auto with = [&] (double g, const std::function<void (juce::var&)>& f) { auto v = P (g); f (v); return v; };
+                const auto base = P (0.0);
+                const bool near = agreeOf (base, P (0.3)), far = agreeOf (base, P (0.6));
+                const bool otherRatio = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("ratio", {}).getProperty ("curve", {})[0].getDynamicObject()->setProperty ("set", "8:1"); }));
+                const bool otherLevel = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("measured", {}).getDynamicObject()->setProperty ("level_ref", "sine_peak_dbfs"); }));
+                const bool otherAmount = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("amount", {}).getDynamicObject()->setProperty ("control", "Input"); }));
+                const bool otherVersion = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("plugin", {}).getDynamicObject()->setProperty ("plugin_id", "AudioUnit|aaaa7777|1.1"); }));
+                const bool twoPoints = agreeOf (base, with (0.1, [] (juce::var& v) { auto* c = v.getProperty ("amount", {}).getProperty ("curve", {}).getArray(); c->removeRange (1, 2);
+                                                                                     (*c)[0].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("3", juce::var()); }));
+                check (near && ! far && ! otherRatio && ! otherLevel && ! otherAmount && ! otherVersion && ! twoPoints,
+                       "contract WZ-CONTRACT-17: compressor agreement - 0.3 dB agrees, 0.6 does not; a different ratio setting, level convention, amount control or version, or only 2 shared points, never agree");
+            }
+            // 8g. REAL RESULTS (Kathy's ruling 2, 22 Oct; only with EJ_REAL_FIXTURES=<pack> from scripts/make_real_fixture_pack.py): the 20 Oct
+            // run's 12 compressor results, one of each other kind and the v1.1 drafts, sent by the real client as a new tester - every one must
+            // be accepted, so B's fixtures are real results in the real validator shape
+            if (const char* realPack = std::getenv ("EJ_REAL_FIXTURES"))
+            {
+                scenario ("18_real_results");
+                const juce::File pk (realPack);
+                MemoryTokenStore store7; std::unique_ptr<Session> s7 (&signInAs (store7, "acct_mock_g"));
+                const juce::String runR = "run_" + juce::String::toHexString (0x2026102000000020LL).paddedLeft ('0', 16);
+                const auto reqR = juce::JSON::parse (pk.getChildFile ("request.json").loadFileAsString());
+                const auto ccR = catalogueCheck (*s7, reqR, runR);
+                std::map<juce::String, ejmap::wizresults::Identity> idR; std::map<juce::String, juce::String> atR, pidR;
+                const auto idV = juce::JSON::parse (pk.getChildFile ("identities.json").loadFileAsString()), atV = juce::JSON::parse (pk.getChildFile ("measured_at.json").loadFileAsString()),
+                           pidV = juce::JSON::parse (pk.getChildFile ("pid_of_product.json").loadFileAsString());   // held: a pointer into a temporary var dangles
+                if (const auto* o = idV.getDynamicObject())
+                    for (const auto& [k, v] : o->getProperties()) idR[k.toString()] = { v.getProperty ("vendor", "").toString(), v.getProperty ("product", "").toString() };
+                juce::String earliest;
+                if (const auto* o = atV.getDynamicObject())
+                    for (const auto& [k, v] : o->getProperties()) { atR[k.toString()] = v.toString(); if (earliest.isEmpty() || v.toString() < earliest) earliest = v.toString(); }
+                if (const auto* o = pidV.getDynamicObject())
+                    for (const auto& [k, v] : o->getProperties()) pidR[k.toString()] = v.toString();
+                const RunInfo riR { runR, earliest, (int) reqR.getProperty ("plugins", {}).size(), collectionFromRequest (reqR), earliest };   // started when the run's first plugin finished
+                ensureRun (*s7, riR);
+                Outbox boxR { work.getChildFile ("outbox_real") };
+                const auto docsR = ejmap::wizresults::fromPack (juce::JSON::parse (pk.getChildFile ("manifest.json").loadFileAsString()), pk.getChildFile ("bundle"), runR, true, idR, pidR, atR, needOf (ccR));
+                const auto emR = ejmap::wizresults::emit (docsR, boxR, {});
+                const auto stR = drain (*s7, boxR, riR);
+                juce::StringArray whyR; for (const auto& f : boxR.rejected().findChildFiles (juce::File::findFiles, false, "*.reason.json")) whyR.add (f.getFileName() + ": " + f.loadFileAsString());
+                const auto cR = complete (*s7, runR, "finished", noQ, noQ, sentIn (boxR));
+                check (emR.refused == 0 && stR.rejected == 0 && stR.held == 0 && stR.sent == (int) docsR.size() && cR.done && cR.accepted == (int) docsR.size() && cR.eligible,
+                       "contract WZ-REAL-1: " + juce::String ((int) docsR.size()) + " real results sent, " + juce::String (stR.sent) + " accepted, " + juce::String (stR.rejected) + " refused, "
+                         + juce::String (stR.held) + " held" + (whyR.isEmpty() ? juce::String() : " (" + whyR.joinIntoString ("; ").substring (0, 600) + ")") + "; promo " + cR.reason);
+            }
             scenario ("14_expired_token_refreshed");
             const auto oldRefresh = store.load()->refresh;
             hook ("/__mock/expire_access", "{}");
@@ -14063,7 +14354,7 @@ int main (int, char**)
         check (mainCpp.contains ("else if (k == \"--catalogue-request\") w.catalogueRequest = cwdFile (v); else if (k == \"--catalogue-answers\") w.catalogueAnswers = cwdFile (v); else if (k == \"--results-outbox\") w.resultsOutbox = cwdFile (v);")
                && run.indexOf ("if (wo.catalogueRequest != juce::File())") > 0 && run.indexOf ("if (wo.catalogueRequest != juce::File())") < run.indexOf ("const auto ans = catAnswers.isObject()")
                && run.contains ("const auto ans = catAnswers.isObject() ? wizroute::fromCatalogue (catAnswers, wizroute::pluginId (uid, ver, fmtTag (ir.desc))) : wizroute::ask (")
-               && run.contains ("const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != \"checkpoint\", idOf, pidOfProduct);")
+               && run.contains ("const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != \"checkpoint\", idOf, pidOfProduct, measuredAtOf, needIds);")
                && run.indexOf ("if (! problems.isEmpty()) { say (\"WIZARD: the bundle is NOT made") < run.indexOf ("const auto docs = wizresults::fromPack"),
                "contract WZ-CONTRACT-11: the engine - --catalogue-request ends before anything is mapped, --catalogue-answers replaces the stub lookup, every pack emits its results after the personal check");
     }
@@ -14088,7 +14379,7 @@ int main (int, char**)
         const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_contract12_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
         Outbox box { work.getChildFile ("outbox") }; box.put ("res_aaaa", "{\"x\":1}");
         seen.clear(); script = { resp (404, "{\"error\":\"run_not_found\"}"), resp (201, "{\"run_id\":\"run_0000000000000001\",\"created\":true}"), resp (201, "{\"status\":\"accepted\"}") };
-        const auto st = drain (s, box, RunInfo { "run_0000000000000001", "t", 1 });
+        const auto st = drain (s, box, RunInfo { "run_0000000000000001", "2026-10-21T19:00:02Z", 1 });
         const bool sentAfterRun = st.sent == 1 && box.pendingFiles().isEmpty();
         work.deleteRecursively();
         check (c.done && ! c.eligible && c.code.isEmpty() && c.message == "not this time"
@@ -14124,7 +14415,7 @@ int main (int, char**)
                && app.contains ("if (c.eligible && c.code.isNotEmpty())") && ! app.contains ("EJ-FREE")   // the code is the server's
                && app.contains ("text = wizapp::knownWords (el.known, n) + \". \" + text; } }")   // the measuring screen keeps the check's words (the 21 Oct rehearsal lost them)
                && app.contains ("cachedCollection = wizcontract::collectionFromRequest (juce::JSON::parse (requestFile().loadFileAsString())); }")   // 21 Oct: once per plugin collection
-               && app.contains ("return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection };")
+               && app.contains ("return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection, cachedStartedAt };")
                && app.contains ("wizcontract::catalogueCheck (*session, req, rid);") && app.contains ("runId(); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();   // 21 Oct (Sean): the run id exists before the first check") && app.contains ("barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);")
                && cm.contains ("EJ_WIZARD_SERVER_URL=\"${EJ_WIZARD_BETA_SERVER_URL}\" EJ_WIZARD_OAUTH_CLIENT_ID=\"${EJ_WIZARD_BETA_CLIENT_ID}\"")
                && cm.contains ("target_link_libraries(ejmap-wizard-beta PRIVATE \"-framework IOKit\" \"-framework Security\")")

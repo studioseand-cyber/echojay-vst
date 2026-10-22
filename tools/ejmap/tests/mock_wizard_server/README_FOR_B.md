@@ -1,6 +1,11 @@
-# The EchoJay Wizard's mock server, fixtures and replay (contract v1)
+# The EchoJay Wizard's mock server, fixtures and replays (contract v1.1)
 
-This package goes with `WIZARD_SERVER_CONTRACT_v1.md`. Everything in it was produced on our side against our own mock; nothing came from a real server.
+This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its top lists every change since v1). Everything in it was produced on our side against our own mock; nothing came from a real server.
+
+**What is new since the 21 Oct package:**
+- **The mock is v1.1:** your reason codes (names, statuses, retryable or not, your words), the `held` status, the `/complete` counts, `started_at` on POST /runs, required `measured_at`, the server's queue of "need" answers, the promo refusal order, compressor agreement (ruling 10) and `expires_at`.
+- **The fixtures were recorded again** against it, from the real wizard client. Scenario `18_real_results` sends **30 REAL results** from the 20 Oct wizard run (one Mac): 12 compressor profiles with their tone checks, plus one real result of every other kind. Their `measured_at` are the run's own times; everything else as the engine packed it.
+- **Your `wizard-deep-replay.py` is included unchanged**, beside our `replay.py`. Both give 0 differences against this mock with `--shift-created`.
 
 ## 1. Run the mock
 
@@ -22,9 +27,11 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | `POST /__mock/config` | server config (`qualify_minimum`, `collection_threshold`, `collection_min_size`, `agree_tolerance`, `force_429_once`) |
 | `POST /__mock/catalogue` | seeding what the catalogue already has |
 | `POST /__mock/verify` `{"plugin_id": …}` | our own verification certifying a plugin |
-| `POST /__mock/scenario`, `GET /__mock/state` | labelling recordings, and reading the mock's state in tests |
+| `POST /__mock/age_check` `{"run_id": …, "minutes": n}` | v1.1: the run's first catalogue check happened n minutes ago. Used only by our suite's offline timeline, which is not in the fixtures (§3) |
+| `POST /__mock/agree` `{"a": …, "b": …}` | v1.1: would these two compressor profiles certify each other (ruling 10)? |
+| `POST /__mock/scenario`, `GET /__mock/state`, `POST /__mock/tokens_known` | labelling recordings, and reading the mock's state in tests |
 
-**Mock test accounts:** `acct_mock_a` … `acct_mock_d`. The mock's validator is a stand-in. Yours is the served intake's own (compProfile.js and its siblings).
+**Mock test accounts:** `acct_mock_a` … `acct_mock_g`. The mock's validator is a stand-in: it checks the envelope, the times, the full map and the schema list (an unknown schema is `held`). Yours is the served intake's own (compProfile.js and its siblings).
 
 ## 2. The fixtures
 
@@ -37,36 +44,40 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | scenario | what it shows |
 |---|---|
 | 00_setup | the mock's config and catalogue (test hooks) |
-| 01_happy_path | device sign-in, the catalogue check (with its run_id), the run, results |
-| 02_offline_then_retry | the result sent after the wizard was offline. **The offline attempts never reached a server, so they cannot be recorded**; the client keeps the result and retries with back-off |
+| 01_happy_path | device sign-in, the catalogue check (`run_id` required), the run (with the wizard's `started_at`), results |
+| 02_offline_then_retry | the result sent after the wizard was offline. **The offline attempts never reached a server, so they cannot be recorded**; the client keeps the result and retries with back-off (5 s, doubling to 10 min) |
 | 03_duplicate_upload | the same result sent again: `200 duplicate` |
-| 04_rejected_upload | a result the validator refuses: `422 rejected`, with plain words |
+| 04_rejected_upload | a result the validator refuses (`422`, your reason code and words), and one with an unknown schema: `200 held` (kept, never promoted or served, not counted as accepted) |
+| 04b_full_map | every result carries the plugin's full map: one accepted; a parameter list, and another plugin's map, refused (`bad_map`) |
 | 05_rate_limited | `429 rate_limited` with `retry_after_s`, then the same result accepted |
 | 06_results_missing | `/complete` naming a result the server does not have: `409 results_missing` |
-| 07_happy_path_end_with_promo | the run's end: the promo issued |
+| 07_happy_path_end_with_promo | the run's end: the counts (received / accepted / new / checked) and the promo issued, with `expires_at` |
 | 08_promo_asked_twice | the same run asking again: the same code, `issued_now: false` |
 | 09_not_eligible_account_already_claimed | a second run on the same account: no code (`account_already_claimed`) |
-| 10_same_collection_other_account | another account with a near-identical plugin collection: no code (`collection_already_claimed`, "The free month has already been claimed for this setup.") and its result cannot certify |
+| 10_same_collection_other_account | another account with a near-identical plugin collection: no code (`collection_already_claimed`) and its result cannot certify |
 | 11_second_tester_certifies | another account and collection: a code; its agreeing result certifies, a disagreeing one stays unverified; our own verification |
-| 12_below_minimum_then_met_by_checks | `below_minimum` ("this run checked 1"); a check under another run_id doesn't count; then the same run, with no uploads, earns a code once enough plugins were checked under it |
+| 12_below_minimum_then_met_by_checks | `below_minimum`; the queue is every plugin the server answered "need", and the wizard sends an outcome for each; a check under another run_id doesn't count |
 | 13_failed_cheat_check | a tampered upload (wrong SHA-256), then no code (`failed_checks`) |
+| 13b_offline_before_run | v1.1: the tester was offline from before POST /runs; on reconnect the run is created with the wizard's own `started_at` and **every result is accepted**. Two controls that hold at any replay time: a missing `measured_at` (`shape`) and one ten years ahead (`timestamp`) |
+| 13c_promo_refusal_order | v1.1: two refusals at once answer with the first in the agreed order: account > collection > not finished > failed checks > below minimum |
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |
 | 16_sign_in_denied | the user denies the sign-in: `access_denied` |
+| 18_real_results | the 30 real results (above): every one accepted, none held, none refused |
 
 ## 3. Replay against any base URL
 
 ```
-python3 replay.py --base http://127.0.0.1:8787 --mock                      # against our mock (sends the test hooks)
-python3 replay.py --base https://<your staging> --client-id <yours>         # against yours
-python3 replay.py --base … --scenario 03_duplicate_upload                    # one scenario
+python3 -I wizard-deep-replay.py --base http://127.0.0.1:8787 --fixtures fixtures --shift-created    # yours: field by field
+python3 replay.py --base http://127.0.0.1:8787 --mock --shift-created                                # ours: status + error/status/reason
+python3 replay.py --base https://<your staging> --client-id <yours> --shift-created                  # ours, against yours (stops at each test hook)
 ```
-- The replay sends each recorded request in order. It compares the status, plus the `error` / `status` / `reason` fields and the promo's `eligible` / `reason`.
-- It binds each placeholder to the real value your server returns the first time it appears, and uses it in the later requests.
-- **At each test hook against your server, it stops and says what to do on your side** (e.g. "approve the waiting sign-in in the browser as test account acct_mock_b"), then carries on when you press Return.
-- Exit 0 = every exchange matched.
+- **`--shift-created`:** your script moves each result's `created` so the earliest is a minute ago, keeping the gaps. Ours moves every time the wizard sent (`created`, `measured_at`, `started_at`) by that same amount.
+- **Placeholders:** both bind each one to the real value your server returns the first time it appears, and use it in the later requests.
+- **Test hooks against your server:** ours stops at each one and says what to do on your side, then carries on when you press Return.
+- **On our mock, both give 0 differences** (run on 22 Oct against a fresh mock).
+- **What a replay can't carry: an offline timeline.** A replay moves the recorded times to replay time and sends POST /runs live, so the gap between "packed" and "the run record arrived" collapses. The recorded 13b keeps its gaps inside the 5-minute allowance. The long timeline (packed 20 min before the run record: accepted; before `started_at`, before the first check, `measured_at` an hour ahead: refused) is pinned in our own suite and worked through in the contract, §4.
 
 ## 4. Result sizes
 
-`result_sizes.md` / `result_sizes.json` give min / median / 95th / max, raw and gzipped, per result type, from one real wizard run (20 Oct 2026). Use them to size the request limit, storage and the decompression cap.
-
+`result_sizes.md` / `result_sizes.json` give min / median / 95th / max, raw and gzipped, per result type, from one real wizard run (20 Oct 2026). They predate the full map in every result: add the map's size (the real results in `18_real_results` show it).

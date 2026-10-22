@@ -485,12 +485,12 @@ private:
     juce::File outboxDir() const { return cfg.work.getChildFile ("outbox"); }
     juce::File answersFile() const { return cfg.work.getChildFile ("catalogue_answers.json"); }
     juce::File requestFile() const { return cfg.work.getChildFile ("catalogue_request.json"); }
-    juce::CriticalSection runLock; juce::String cachedRunId, cachedConsentAt; int cachedQueue = 0;
+    juce::CriticalSection runLock; juce::String cachedRunId, cachedConsentAt, cachedStartedAt; int cachedQueue = 0;
     std::atomic<int> sentN { 0 }, pendingN { 0 }, rejectedN { 0 }, failures { 0 }; std::atomic<bool> offlineNow { false }, signInNow { false }, completing { false };
     double nextTryMs = 0.0; juce::String netWords;   // netWords: the last plain words a call left for a screen
     juce::StringArray cachedCollection;   // 21 Oct: the run's plugin collection (contract v1 §3), from the catalogue request
-    wizcontract::RunInfo runInfo() { const juce::ScopedLock l (runLock); return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection }; }
-    void cacheRun() { const auto st = appState(); const juce::ScopedLock l (runLock); cachedRunId = st.getProperty ("run_id", "").toString(); cachedConsentAt = st.getProperty ("consent_at", "").toString();
+    wizcontract::RunInfo runInfo() { const juce::ScopedLock l (runLock); return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection, cachedStartedAt }; }
+    void cacheRun() { const auto st = appState(); const juce::ScopedLock l (runLock); cachedRunId = st.getProperty ("run_id", "").toString(); cachedConsentAt = st.getProperty ("consent_at", "").toString(); cachedStartedAt = st.getProperty ("run_started_at", "").toString();
                       cachedQueue = (int) juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()).getProperty ("to_measure", 0);
                       cachedCollection = wizcontract::collectionFromRequest (juce::JSON::parse (requestFile().loadFileAsString())); }
     void uploadTick()
@@ -505,9 +505,11 @@ private:
         wizcontract::DrainStats st;
         { std::lock_guard<std::mutex> l (netMutex); st = wizcontract::drain (*session, box, run, [this] { return closing.load(); }); }
         offlineNow = st.offline; signInNow = st.signIn || session->needsSignIn;
-        if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
+        if (st.stopped) { nextTryMs = now + 1.0e12; logLine ("upload stopped (" + st.stopCode + "): " + st.stopWords + " - nothing more is sent until the wizard is opened again"); }   // v1.1: never retried this session
+        else if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
         else if (st.signIn) nextTryMs = now + 30000.0;
         else failures = 0;
+        if (st.held > 0) logLine ("upload: " + juce::String (st.held) + " kept by EchoJay but not used yet (" + st.heldWords.joinIntoString ("; ") + ")");
         if (st.sent + st.duplicates + st.rejected > 0)
             logLine ("upload: " + juce::String (st.sent) + " sent, " + juce::String (st.duplicates) + " duplicate, " + juce::String (st.rejected) + " not accepted"
                      + (st.rejectedWords.isEmpty() ? juce::String() : " (" + st.rejectedWords.joinIntoString ("; ") + ")"));
@@ -608,7 +610,7 @@ private:
                 setState ("uploaded", true);
                 logLine ("run end reported: promo " + juce::String (c.eligible ? (c.issuedNow ? "issued" : "already issued") : "not eligible") + (c.message.isNotEmpty() ? " - " + c.message : juce::String()));
                 if (c.eligible && c.code.isNotEmpty())
-                {   auto* r = new juce::DynamicObject(); r->setProperty ("code", c.code); r->setProperty ("months", c.months); r->setProperty ("message", c.message);
+                {   auto* r = new juce::DynamicObject(); r->setProperty ("code", c.code); r->setProperty ("months", c.months); r->setProperty ("message", c.message); r->setProperty ("expires_at", c.expiresAt);
                     cfg.work.getChildFile ("reward.json").replaceWithText (juce::JSON::toString (juce::var (r))); show (Screen::reward); }
                 else { auto* r = new juce::DynamicObject(); r->setProperty ("reward_message", c.message); cfg.work.getChildFile ("receipt.json").replaceWithText (juce::JSON::toString (juce::var (r))); show (Screen::noCode); }
             });
@@ -619,6 +621,7 @@ private:
     {
         auto id = appState().getProperty ("run_id", "").toString();
         if (id.isEmpty()) { id = "run_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()).paddedLeft ('0', 16); auto st = appState();   /* 21 Oct: always 16 hex (contract v1 §3) */ st.getDynamicObject()->setProperty ("run_id", id);
+                            st.getDynamicObject()->setProperty ("run_started_at", juce::Time::getCurrentTime().toISO8601 (true));   // v1.1: the run's started_at
                             cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); logLine ("run id: " + id); }
         return id;
     }
@@ -740,6 +743,7 @@ private:
                 const auto rw = juce::JSON::parse (cfg.work.getChildFile ("reward.json").loadFileAsString());
                 title = "Thank you - here's your free month"; bigCode = rw.getProperty ("code", "").toString();   // 21 Oct (beta): the SERVER's code, never one made here
                 text = kNetworked ? juce::String ("Use this code in EchoJay.") : "Use this code in EchoJay. We've emailed it to you too (" + rw.getProperty ("emailed_to", "").toString() + ").";
+                if (const auto ew = wizapp::expiryWords (rw.getProperty ("expires_at", "").toString()); ew.isNotEmpty()) text << " " << ew;   // v1.1: the server's expiry
                 {   // nothing dropped (12 Oct): say what went for review instead of being measured
                     const auto m = juce::JSON::parse (engineDir().getChildFile ("contribution/manifest.json").loadFileAsString());
                     const int nc = m.getProperty ("needs_category", {}).size();

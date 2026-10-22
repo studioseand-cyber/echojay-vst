@@ -132,6 +132,17 @@ inline juce::String scanStoppedWords (int checked, int total)
 // THE WIZARD'S MAP (Kathy, 22 Oct, decision 0): the FULL map from the probe's --extract (EjmapFullMap.h, the store's format); a probe
 // that printed no extract (an older probe) leaves the parameter list alone, said in its words - never a map that pretends to be full
 struct WizardMap { juce::var map; juce::String words; bool full = false; };
+// WHEN A PLUGIN FINISHED (contract v1.1 §4, ruling 4): measured_at - a measured plugin's Phase B row time ("at", local "%Y%m%dT%H%M%S"),
+// anything else the moment its state became final. Set once; never the packing time
+inline juce::String isoFromStamp (const juce::String& at)
+{
+    if (at.length() < 15 || at[8] != 'T') return {};
+    const juce::Time t (at.substring (0, 4).getIntValue(), at.substring (4, 6).getIntValue() - 1, at.substring (6, 8).getIntValue(),
+                        at.substring (9, 11).getIntValue(), at.substring (11, 13).getIntValue(), at.substring (13, 15).getIntValue(), 0, true);
+    return t.toISO8601 (true);
+}
+inline void stampFinal (juce::DynamicObject* r, const juce::String& at = {})
+{ if (r != nullptr && ! r->hasProperty ("measured_at")) r->setProperty ("measured_at", at.isNotEmpty() ? at : juce::Time::getCurrentTime().toISO8601 (true)); }
 inline WizardMap wizardMapOf (const juce::String& probeOut, const juce::String& fp, const juce::String& format, const juce::String& uid, const juce::PluginDescription& d,
                               const std::vector<std::pair<int, juce::String>>& ps, const juce::String& category)
 {
@@ -588,7 +599,7 @@ inline int runWizard (const WizardOptions& wo)
         if (! (wo.only.isEmpty() || wo.only.contains (r.desc.name))) continue;
         if (skipped.contains (r.desc.name))
         { auto* row = new juce::DynamicObject(); row->setProperty ("product", r.desc.name); row->setProperty ("plugin_id", wizroute::pluginId (juce::String::toHexString (r.desc.uniqueId), r.desc.version, fmtTag (r.desc))); row->setProperty ("format", fmtTag (r.desc));
-          row->setProperty ("state", "crashed"); row->setProperty ("why", "the wizard closed while checking it: skipped for good, never retried"); skippedRows.add (juce::var (row));
+          row->setProperty ("state", "crashed"); row->setProperty ("why", "the wizard closed while checking it: skipped for good, never retried"); stampFinal (row); skippedRows.add (juce::var (row));
           say ("  " + r.desc.name + ": on the never-retry list (the wizard closed while checking it) - not loaded"); continue; }
         plugins.push_back (r);
     }
@@ -610,7 +621,7 @@ inline int runWizard (const WizardOptions& wo)
         const auto bridgeDir = out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge");
         auto vrow = [&] (const juce::String& product, const juce::String& pid, const juce::String& st, const juce::String& why)
         { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); row->setProperty ("lane", "vst3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);   // 18 Oct: lane - never given its AU twin's queue
-          row->setProperty ("state", st); row->setProperty ("why", why); vst3Rows.add (juce::var (row)); return row; };
+          row->setProperty ("state", st); row->setProperty ("why", why); stampFinal (row); vst3Rows.add (juce::var (row)); return row; };
         const auto plan = vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache);
         std::map<juce::String, int> by; int identityLoads = 0, bridgeLoads = 0, bridgesKept = 0, looked = 0;
         prog.looking (0, (int) plan.size());   // 18 Oct (LOOKING FOR PLUGINS): "Looking for plugins - n of N", a heartbeat per bundle
@@ -850,7 +861,7 @@ inline int runWizard (const WizardOptions& wo)
             case wizroute::Route::categorise: st = "identifying"; toCategorise.push_back ({ i, d, row }); break;
             case wizroute::Route::needsCategory: st = "needs_category"; break;
         }
-        row->setProperty ("state", st); row->setProperty ("why", why); rows.add (juce::var (row));
+        row->setProperty ("state", st); row->setProperty ("why", why); if (st != "queued" && st != "checking" && st != "quick_check" && st != "identifying") stampFinal (row); rows.add (juce::var (row));
         if (wo.plan && (d.route == wizroute::Route::measure || d.route == wizroute::Route::quickCheck) && (st == "queued" || st == "quick_check" || st == "checking"))   // 15 Oct: only what will load - not needs_hardware / needs_licence   // a cached passing read-back measures nothing
         {   // THE PLAN's estimate (13 Oct): the same items and per-category seconds the scan-done screen uses (a quick check counted as a measure)
             bool demoAdded = false;   // 14 Oct: its demo check, in the group of its first pass
@@ -993,7 +1004,7 @@ inline int runWizard (const WizardOptions& wo)
     for (const auto& p : toMap)
     {
         const auto& d = plugins[p.i].desc; p.row->setProperty ("map_fp", fpOf (d));
-        if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); p.row->setProperty ("why", earlyWhy.count (d.name) ? earlyWhy[d.name] : "it could not be mapped (" + early[d.name] + ")"); continue; }
+        if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); stampFinal (p.row); p.row->setProperty ("why", earlyWhy.count (d.name) ? earlyWhy[d.name] : "it could not be mapped (" + early[d.name] + ")"); continue; }
         if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") enqueue (d.name, p.d.category, p.d.passes, p.d.limiterKnown);
     }
     // the signature reads (EJ Map's categorise step, one plugin at a time), cached by plugin_id
@@ -1005,14 +1016,14 @@ inline int runWizard (const WizardOptions& wo)
     {
         if (wizardStop() != 0) return stoppedInScan ("reading signatures");
         const auto& ir = plugins[p.i]; const auto pid = p.row->getProperty ("plugin_id").toString(); p.row->setProperty ("map_fp", fpOf (ir.desc));
-        if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); p.row->setProperty ("why", earlyWhy.count (ir.desc.name) ? earlyWhy[ir.desc.name] : "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
+        if (early.count (ir.desc.name)) { p.row->setProperty ("state", early[ir.desc.name]); stampFinal (p.row); p.row->setProperty ("why", earlyWhy.count (ir.desc.name) ? earlyWhy[ir.desc.name] : "it could not be mapped (" + early[ir.desc.name] + ")"); continue; }
         juce::var sig;
         // 21 Oct: a signature read under older rules is read again (Kathy's 21 Oct rules change what the same reads decide)
         if (cache.hasProperty (pid) && cache[juce::Identifier (pid)].getProperty ("rules", "").toString() == categorise::kRulesVersion) { sig = cache[juce::Identifier (pid)]; prog.finished (ir.desc.name, false); say ("  " + ir.desc.name + ": signature reads from categorised.json (not loaded again)"); }
         else
         {
             if (const auto cshell = shellOfId (ir.desc.fileOrIdentifier); shells.isBad (cshell))
-            {   p.row->setProperty ("state", "waves_skipped"); p.row->setProperty ("why", wizroute::wavesSkippedWhy (cshell, shells.why (cshell))); prog.finished (ir.desc.name, true); continue; }
+            {   p.row->setProperty ("state", "waves_skipped"); stampFinal (p.row); p.row->setProperty ("why", wizroute::wavesSkippedWhy (cshell, shells.why (cshell))); prog.finished (ir.desc.name, true); continue; }
             prog.started (ir.desc.name); prog.now (ir.desc.name, "reading its signature");   // 18 Oct
             auto cOpt = catOpt; cOpt.timeoutMs = loadTimeoutFor (ir.desc.fileOrIdentifier);
             const auto r = categoriseOne (cOpt, ir, {}, bundlesAll, catRaw);
@@ -1029,7 +1040,7 @@ inline int runWizard (const WizardOptions& wo)
         p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
         const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope"
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
-        p.row->setProperty ("state", st);
+        p.row->setProperty ("state", st); if (st != "queued") stampFinal (p.row);
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category, d.passes);
         // 21 Oct (Kathy, decision 3): the raised drive goes with the plugin into its measuring passes (the probe's instance only)
         if (d.route == wizroute::Route::measure) if (const auto nw = wizroute::neutralWritesOf (sig); ! nw.empty()) { neutralByStem[phaseBStem (ir.desc)] = nw; p.row->setProperty ("neutral_raised", sig.getProperty ("neutral_writes", {})); }
@@ -1081,6 +1092,7 @@ inline int runWizard (const WizardOptions& wo)
                 if (st == "measuring" && finishing) { st = "not_reached"; why = wizard::kNotReachedWhy; }
                 if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty ("outcome", "").toString());   // 15 Oct: never the routing reason
                 row->setProperty ("state", st); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
+                if (r.isObject() && st != "measuring") stampFinal (row, isoFromStamp (r.getProperty ("at", "").toString()));   // v1.1: when it finished measuring
                 continue;
             }
             if (! pbs.isEmpty() && pbs[0] != "wizard" && pbs[0] != "wizard_eq")
@@ -1118,16 +1130,19 @@ inline int runWizard (const WizardOptions& wo)
                     row->setProperty ("drafts", draftsL.joinIntoString (","));
                 }
                 if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty ("outcome", "").toString());   // 15 Oct: never the routing reason
-                row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (",")); if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
+                row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (","));
+                if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
+                if (r.isObject() && st != "measuring") stampFinal (row, isoFromStamp (r.getProperty ("at", "").toString()));   // v1.1: when it finished measuring
                 if (r.hasProperty ("reference_vote")) { row->setProperty ("reference_vote", r.getProperty ("reference_vote", {})); row->setProperty ("reference_stem", r.getProperty ("_stem", {})); }   // 12 Oct: this Mac's vote travels
                 continue;
             }
             const bool isEq = row->getProperty ("category").toString() == "eq"; const auto catDir = out.getChildFile (isEq ? "phaseb/wizard_eq" : "phaseb/wizard");
-            juce::String outcome, certState, rowWhy, stem;
+            juce::String outcome, certState, rowWhy, stem, finishedAt;
             for (const auto& f : catDir.findChildFiles (juce::File::findFiles, false, "*.phaseb.json"))
             { const auto r = juce::JSON::parse (f.loadFileAsString()); if (r.getProperty ("product", "").toString() != row->getProperty ("product").toString()) continue;
               if (r.hasProperty ("reference_vote")) { row->setProperty ("reference_vote", r.getProperty ("reference_vote", {})); row->setProperty ("reference_stem", f.getFileName().replace (".phaseb.json", "")); }   // 12 Oct: this Mac's vote travels
               outcome = r.getProperty ("outcome", "").toString(); rowWhy = r.getProperty ("reason", "").toString(); stem = f.getFileName().replace (".phaseb.json", "");
+              finishedAt = isoFromStamp (r.getProperty ("at", "").toString());   // v1.1: when it finished measuring
               if (! isEq) { const auto oc = juce::JSON::parse (catDir.getChildFile ("outcome").getChildFile (stem + ".outcomes.json").loadFileAsString());
                             if (const auto* a = oc.getArray()) for (const auto& o : *a) { certState = o.getProperty ("state", "").toString(); if (rowWhy.isEmpty()) rowWhy = o.getProperty ("reason", "").toString(); } } }
             juce::String st = outcome.isEmpty() ? juce::String (finishing ? "not_reached" : "measuring") : wizard::plainOutcome (outcome, isEq ? juce::String ("exported") : certState);
@@ -1138,7 +1153,7 @@ inline int runWizard (const WizardOptions& wo)
                 if (! wizard::eqAccepted (draft, why)) { st = "not_measurable"; rowWhy = "measured, but " + why; } else { rowWhy = why; row->setProperty ("eq_draft", "drafts/" + stem + ".eq_profile.draft.json"); }
             }
             if (rowWhy.isEmpty() && ! wizard::keepsRoutingWhy (st)) rowWhy = wizard::reasonFor (outcome);   // 15 Oct: a needs_licence UAD row kept "the server's category: compressor"
-            row->setProperty ("state", st); row->setProperty ("outcome", outcome); row->setProperty ("cert_state", certState); if (rowWhy.isNotEmpty()) row->setProperty ("why", rowWhy); ++counts[st];
+            row->setProperty ("state", st); row->setProperty ("outcome", outcome); row->setProperty ("cert_state", certState); if (st != "measuring" && st != "not_reached") stampFinal (row, finishedAt); if (rowWhy.isNotEmpty()) row->setProperty ("why", rowWhy); ++counts[st];
         }
     };
     // THE BUNDLE (13 Oct: a lambda - the end, Send what's done, and the quiet checkpoints all pack the same way); 3 = refused (personal / category)
@@ -1185,7 +1200,8 @@ inline int runWizard (const WizardOptions& wo)
                 juce::Array<juce::var> files;
                 for (const auto& rel : juce::StringArray::fromTokens (rv.getProperty ("drafts", "").toString(), ",", ""))
                 { const auto f = out.getChildFile ("phaseb").getChildFile (rel); f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); files.add ("profiles/" + f.getFileName()); }
-                auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", wizserver::toServer (rv.getProperty ("category", "").toString(), (bool) rv.getProperty ("cabinet_read", false)));
+                auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", files.size() > 0 && files[0].toString().contains (".filter_profile.") ? juce::String ("filter")   // v1.1: the filter category
+                                             : wizserver::toServer (rv.getProperty ("category", "").toString(), (bool) rv.getProperty ("cabinet_read", false)));
                 it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); attachMap (it, rv.getProperty ("map_fp", "").toString(), files); items.add (juce::var (it));   // measured_by (EJ Map's internal names) stays local
             }
             else if (st == "measured" && isEq)
@@ -1294,7 +1310,10 @@ inline int runWizard (const WizardOptions& wo)
             for (const auto& rv : rows) { const auto pid = rv.getProperty ("plugin_id", "").toString(); if (pid.isEmpty()) continue;
                                           idOf[pid] = { rv.getProperty ("vendor", "").toString(), rv.getProperty ("product", "").toString() }; pidOfProduct[rv.getProperty ("product", "").toString()] = pid; }
             wizcontract::Outbox box { wo.resultsOutbox };
-            const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != "checkpoint", idOf, pidOfProduct);
+            // v1.1 (rulings 4 / 5): each plugin's measured_at, and the server's queue - every plugin it answered "need" for this run gets a result
+            std::map<juce::String, juce::String> measuredAtOf; for (const auto& rv : rows) if (rv.hasProperty ("measured_at")) measuredAtOf[rv.getProperty ("plugin_id", "").toString()] = rv.getProperty ("measured_at", "").toString();
+            juce::StringArray needIds; if (const auto* ca = catAnswers.getDynamicObject()) for (const auto& [k, v] : ca->getProperties()) if (v.getProperty ("status", "").toString() == "need") needIds.add (k.toString());
+            const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != "checkpoint", idOf, pidOfProduct, measuredAtOf, needIds);
             const auto em = wizresults::emit (docs, box, [&] (const juce::String& t) { return wizard::personalProblems (t, home, user, juce::String (host).upToFirstOccurrenceOf (".", false, false)); });
             say ("WIZARD: results for the outbox (" + runKind + "): " + juce::String (em.added) + " new, " + juce::String (em.already) + " already there" + (em.refused > 0 ? ", " + juce::String (em.refused) + " REFUSED (" + em.refusedWhy.joinIntoString ("; ") + ")" : juce::String()));
         }
@@ -1397,7 +1416,7 @@ inline int runWizard (const WizardOptions& wo)
                         // 18 Oct (Kathy): the verdict lands on the row of the plugin it CHECKED - never on another row by product name (five Intel-only
                         // VST3s took their AU twin's "no sound", and its licence window was remembered under the VST3's id)
                         for (auto& rv : rows) if (v.pluginId.isNotEmpty() && rv.getProperty ("plugin_id", "").toString() == v.pluginId)
-                        {   rv.getDynamicObject()->setProperty ("state", v.window || v.silent || v.inert ? "needs_licence" : "demo"); rv.getDynamicObject()->setProperty ("why", v.window ? wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered) : v.why);
+                        {   rv.getDynamicObject()->setProperty ("state", v.window || v.silent || v.inert ? "needs_licence" : "demo"); stampFinal (rv.getDynamicObject()); rv.getDynamicObject()->setProperty ("why", v.window ? wizroute::licenceSkipWhy (wizroute::LicenceSkip::remembered) : v.why);
                             if (v.window) wizroute::rememberLicenceWindow (licenceMemF, rv.getProperty ("plugin_id", "").toString()); }
                         say ("  " + name.paddedRight (' ', 30) + " -> skipped: " + v.why);
                     }

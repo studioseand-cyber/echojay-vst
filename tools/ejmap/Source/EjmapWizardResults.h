@@ -8,6 +8,7 @@
 #pragma once
 
 #include "EjmapWizardContract.h"
+#include <set>
 
 namespace ejmap::wizresults
 {
@@ -28,8 +29,12 @@ inline juce::var pluginBlock (const juce::String& pid, const juce::String& produ
 inline juce::var fileJson (const juce::File& bundle, const juce::String& rel) { return juce::JSON::parse (bundle.getChildFile (rel).loadFileAsString()); }
 
 // manifest + bundle folder -> the documents. idOf: plugin_id -> (vendor, product); pidOfProduct: a crash entry names only its product
+// v1.1 (rulings 4 / 5): measuredAtOf - plugin_id -> when that plugin finished (the engine's record; REQUIRED on every result: a plugin the
+// engine has no time for carries the packing time, never a later one); needIds - the server's queue, every plugin it answered "need" for
+// this run: the run's last pack gives each one a result, "not_reached" when nothing else was sent for it
 inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& bundle, const juce::String& runId, bool finishing,
-                                  const std::map<juce::String, Identity>& idOf, const std::map<juce::String, juce::String>& pidOfProduct)
+                                  const std::map<juce::String, Identity>& idOf, const std::map<juce::String, juce::String>& pidOfProduct,
+                                  const std::map<juce::String, juce::String>& measuredAtOf = {}, const juce::StringArray& needIds = {})
 {
     std::vector<Doc> out; const auto created = juce::Time::getCurrentTime().toISO8601 (true);
     auto add = [&] (const juce::String& kind, const juce::String& pid, const juce::String& product, const juce::var& fp, juce::DynamicObject* payload, juce::DynamicObject* files)
@@ -40,7 +45,8 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
         d->setProperty ("schema", wizcontract::kResultSchema); d->setProperty ("run_id", runId);
         const auto rid = wizcontract::resultIdFor (runId, kind, pid); d->setProperty ("result_id", rid); d->setProperty ("kind", kind);
         d->setProperty ("plugin", pluginBlock (pid, product.isNotEmpty() ? product : (it != idOf.end() ? it->second.product : juce::String()), it != idOf.end() ? it->second.vendor : juce::String(), fp));
-        d->setProperty ("created", created);
+        d->setProperty ("created", created);   // the packing time
+        { const auto m = measuredAtOf.find (pid); d->setProperty ("measured_at", m != measuredAtOf.end() && m->second.isNotEmpty() ? m->second : created); }   // v1.1: when it finished
         d->setProperty ("payload", payload != nullptr ? juce::var (payload) : juce::var (new juce::DynamicObject()));
         d->setProperty ("files", files != nullptr ? juce::var (files) : juce::var (new juce::DynamicObject()));
         out.push_back ({ rid, kind, pid, dv });
@@ -104,6 +110,14 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
         auto* files = new juce::DynamicObject(); const auto rel = e.getProperty ("file", "").toString(); if (rel.isNotEmpty()) files->setProperty (juce::File (rel).getFileName(), fileJson (bundle, rel));
         add ("bridge_read", e.getProperty ("plugin_id", "").toString(), e.getProperty ("product", "").toString(), {}, pl, files);
     });
+    if (finishing)   // v1.1 §5 (ruling 5): the server's queue - a plugin it answered "need" for that has no result yet gets its outcome
+    {
+        std::set<juce::String> have; for (const auto& d : out) have.insert (d.pluginId);
+        for (const auto& pid : needIds)
+            if (! have.count (pid))
+            {   auto* pl = new juce::DynamicObject(); pl->setProperty ("state", "not_reached"); pl->setProperty ("why", "the run ended before this plugin was measured");
+                add ("outcome", pid, {}, {}, pl, nullptr); }
+    }
     return out;
 }
 

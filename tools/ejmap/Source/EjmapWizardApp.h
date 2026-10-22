@@ -26,6 +26,15 @@ namespace ejmap::wizapp
 // no file at all for a moment (the 21 Oct run's bar dropped to 0 fifteen times). POSIX rename() replaces in one step: a reader sees the
 // old file or the new one, never none
 inline bool replaceAtomically (const juce::File& tmp, const juce::File& dst) { return std::rename (tmp.getFullPathName().toRawUTF8(), dst.getFullPathName().toRawUTF8()) == 0; }
+// THE PROMO'S EXPIRY (contract v1.1 §5, Kathy 22 Oct): the server's expires_at, in words - "Use it by 31 January 2027."; "" when none
+inline juce::String expiryWords (const juce::String& expiresAt)
+{
+    if (expiresAt.length() < 10) return {};
+    const int y = expiresAt.substring (0, 4).getIntValue(), m = expiresAt.substring (5, 7).getIntValue(), d = expiresAt.substring (8, 10).getIntValue();
+    static const char* months[] { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+    if (y < 2000 || m < 1 || m > 12 || d < 1 || d > 31) return {};
+    return "Use it by " + juce::String (d) + " " + months[m - 1] + " " + juce::String (y) + ".";
+}
 // a progress read the app may use: a whole JSON object with a stage. An empty or partial read keeps the last good one on screen
 inline bool progressUsable (const juce::var& p) { return p.isObject() && p.getProperty ("stage", "").toString().isNotEmpty(); }
 }

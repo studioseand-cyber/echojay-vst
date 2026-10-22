@@ -134,6 +134,7 @@ inline juce::StringArray phaseBFor (const juce::String& c)
 {
     if (c == "compressor") return { "wizard" };
     if (c == "eq") return { "wizard_eq" };
+    if (c == "filter") return { "filters" };   // v1.1: the server's filter category
     if (c == "limiter") return { "limiter", "limitercomp" };
     if (c == "de-esser" || c == "deesser") return { "deesser" };
     if (c == "saturation" || c == "amp_sim") return { "saturation" };
