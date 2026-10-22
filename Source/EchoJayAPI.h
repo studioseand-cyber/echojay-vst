@@ -411,6 +411,16 @@ public:
     // ABSENT otherwise (an empty rack, no trims). The server then stops the Level slot compensating for make-up that
     // the chain already matched. The editor syncs it beside channelWidth from ChainHost::hasActiveTrims().
     void setUnityChain(bool on) { unityChain_ = on; }
+    /** ---- slot_levels, B's SECTION 92 ITEM 2 (19 Oct 2026) ------------------------------------
+        *"send slot_levels on agent-off turns (one entry per slot ...) so agent off can answer 'how
+        much gain reduction'."*  Composed by echojay::slotLevelsBlock (EJSlotLevelsBlock.h), which is
+        the ONE composer - the agent road answers the same question through slotInputLevels, and two
+        composers of one measurement is how the chat and the card come to disagree about a slot.
+
+        A VOID var omits the field entirely. Absent means "nothing has been heard on this rack",
+        which is a different statement from a slot whose figures are all zero. */
+    void setSlotLevelsVar(const juce::var& v) { slotLevelsVar_ = v; }
+    juce::var slotLevelsVar_;
     // 21n item 4: groups[] + links[] (contract §2) on every chat / chat-stream / classify body while the user has groups
     void setGroupsContext(juce::var links, juce::var groups) { groupsLinks_ = links; groupsVar_ = groups; }
     // 21r item 5 (24 Sep 2026, contract addendum): the group chosen in the Working-on selector rides EVERY body as
@@ -932,6 +942,61 @@ public:
     }
     bool getEchoJayOnly() const { return echoJayOnly; }
     void setEchoJayOnly(bool on) { echoJayOnly = on; saveSettings(); }
+
+    /** ---- "DON'T USE THIS ONE" (his 11:5x item 3, 21 Oct 2026) ------------------------------
+        *"The MLimiterX is an expired demo. Can the plugin tell (it passes audio, so silent-slot
+        detection won't)? If not, give Sean a way to mark a plugin "don't use", stored like the
+        silent mark, and send it so B leaves it out."*
+
+        IT CANNOT TELL, and that is not a gap in this build: a host sees parameters and audio, and an
+        expired demo that passes audio looks exactly like a licensed one through both. The silent
+        class is detectable because silence IS the symptom; a demo that limits badly, or injects a
+        burst every thirty seconds, has no signature a host can read. So the mark is HIS, not a
+        measurement - which is why it is stored here, with the settings, rather than in the session's
+        own load-failure list that clears itself the moment a plugin loads.
+
+        BY NAME, because a name is what the inventory, the server and a build all speak, and the mark
+        has to survive a rescan that renumbers every uid. Each entry keeps the reason he gave, so the
+        model can say WHY it is leaving one out instead of pretending it does not exist. */
+    juce::StringArray getDontUsePlugins() const
+    {
+        juce::StringArray out;
+        for (const auto& kv : dontUsePlugins_) out.add (kv.first);
+        return out;
+    }
+    juce::String dontUseReasonFor (const juce::String& name) const
+    {
+        const auto it = dontUsePlugins_.find (name.trim());
+        return it == dontUsePlugins_.end() ? juce::String() : it->second;
+    }
+    bool isPluginMarkedDontUse (const juce::String& name) const
+    {
+        const auto n = name.trim();
+        if (n.isEmpty()) return false;
+        for (const auto& kv : dontUsePlugins_)
+            if (kv.first.equalsIgnoreCase (n)) return true;
+        return false;
+    }
+    /** Marks it, persists it, and returns false when it was already marked (so a caller can tell
+        "done" from "already done" rather than saying the wrong one). */
+    bool markPluginDontUse (const juce::String& name, const juce::String& why)
+    {
+        const auto n = name.trim();
+        if (n.isEmpty()) return false;
+        if (isPluginMarkedDontUse (n)) return false;
+        dontUsePlugins_[n] = why.trim();
+        saveSettings();
+        return true;
+    }
+    /** Clears the mark. Returns false when it was not marked. */
+    bool allowPluginAgain (const juce::String& name)
+    {
+        const auto n = name.trim();
+        for (auto it = dontUsePlugins_.begin(); it != dontUsePlugins_.end(); ++it)
+            if (it->first.equalsIgnoreCase (n))
+            { dontUsePlugins_.erase (it); saveSettings(); return true; }
+        return false;
+    }
     bool getDialWritesBlocked() const { return dialWritesBlocked; }
     void setDialWritesBlocked(bool on)
     {
@@ -1526,6 +1591,8 @@ private:
     bool autoDialMode = false;   // see get/setAutoDialMode()
     bool dialWritesBlocked = false;  // see get/setDialWritesBlocked()
     bool echoJayOnly = false;    // see get/setEchoJayOnly()
+    /** name -> the reason he gave. See markPluginDontUse (his 11:5x item 3). */
+    std::map<juce::String, juce::String> dontUsePlugins_;
     
     // Shared flag: set to false in destructor so in-flight callbacks
     // know the object is gone and skip any member access.

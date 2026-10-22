@@ -1413,6 +1413,11 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // 21m item 2 / 21n: CONTRACT_GROUPS "Channel width" - the wire form is the STRING "mono" | "stereo" (a number was sent until 21n)
     if (channelWidth_ > 0) body += juce::String(",\"channelWidth\":\"") + (channelWidth_ == 1 ? "mono" : "stereo") + "\"";
     if (unityChain_) body += ",\"unityChain\":true";   // 21m ruling: present only while the rack carries active per-slot trims
+    // B's section 92 item 2 (19 Oct 2026): what each slot HEARD, so agent-off can answer "how much
+    // gain reduction". Absent when the rack has heard nothing - never an empty array, by the same
+    // rule as unityChain above: absent is "cannot say", and a present-but-empty field reads as
+    // "measured, and there is nothing".
+    if (slotLevelsVar_.isArray()) body += ",\"slot_levels\":" + juce::JSON::toString(slotLevelsVar_, true);
     // 10 Oct 2026 (Sean's ruling at the integration merge): ECHOJAY-ONLY REACHES THE SERVER AS A FIELD.
     // The integration branch wired this setting to the INJECTION only - buildBuiltinOnlyChainInjection() swaps
     // the plugin feed, so the model is never shown a third-party name. That changes what the model is TOLD and
@@ -1421,6 +1426,30 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // halves say the same thing - the feed restricts, the field lets the server enforce.
     // Present only when ON, by the same rule as unityChain above: absent means "not asked for", not "false".
     if (echoJayOnly) body += ",\"echoJayOnly\":true";
+    // ---- PLUGINS HELD AS DEMO / EXPIRED / UNLICENSED (B's CONTRACT_plugins_held_2026-10-21) ----
+    //
+    // *"On every agent start context (and on the chat body, for agent off), when it knows of any:
+    // "plugins_held": [ { "name": "MLimiterX", "why": "demo" } ]"*  And what B does with it: *"A held
+    // plugin is left out of every candidate list on the agent road ... It is still added when the
+    // user names it."*
+    //
+    // ONE KEY, BOTH ROADS (Sean's ruling, 21 Oct): this is the same list the agent start body sends
+    // under the same name. Today every entry is HIS mark - nothing in this build can detect a demo
+    // that passes audio, which is the finding behind his item 3 - and `why` carries his words. When
+    // a detector exists it adds to this list, not a second one.
+    // Absent when there are none, by the same rule as echoJayOnly above: absent is "nothing to say".
+    if (! dontUsePlugins_.empty())
+    {
+        juce::Array<juce::var> held;
+        for (const auto& kv : dontUsePlugins_)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("name", kv.first);
+            if (kv.second.isNotEmpty()) o->setProperty ("why", kv.second);
+            held.add (juce::var (o));
+        }
+        body += ",\"plugins_held\":" + juce::JSON::toString (juce::var (held), true);
+    }
     if (groupsVar_.isArray())   // 21n item 4: groups-aware body (omitted entirely when the user has no groups = today's behaviour)
     {
         body += ",\"groups\":" + juce::JSON::toString(groupsVar_, true);
@@ -4481,6 +4510,17 @@ void EchoJayAPI::loadSettings()
         // Absent -> false: a settings file written before this existed keeps
         // offering third-party plugins, which is what it was already doing.
         echoJayOnly = (bool) obj->getProperty("echoJayOnly");
+        // ---- HIS "DON'T USE THIS ONE" MARKS (11:5x item 3, 21 Oct 2026) ------------------------
+        // An object of name -> reason, so the model can say why one is left out. Absent means none,
+        // which is what every settings file written before today holds.
+        dontUsePlugins_.clear();
+        if (auto* du = obj->getProperty ("dontUsePlugins").getDynamicObject())
+            for (const auto& kv : du->getProperties())
+                dontUsePlugins_[kv.name.toString()] = kv.value.toString();
+        if (! dontUsePlugins_.empty())
+            EchoJay_NSLog (("EJSettings: " + juce::String ((int) dontUsePlugins_.size())
+                            + " plugin(s) are marked \"don't use\" - they are withheld from the "
+                              "inventory and named to the model with the reason given").toRawUTF8());
         
         // Check if the saved usage is from this period — reset if we've
         // rolled into a new month. Period is monthly across all tiers in
@@ -4516,6 +4556,12 @@ void EchoJayAPI::saveSettings() const
     obj->setProperty("autoDialMode", autoDialMode);
     obj->setProperty("dialWritesBlocked", dialWritesBlocked);
     obj->setProperty("echoJayOnly", echoJayOnly);
+    if (! dontUsePlugins_.empty())
+    {
+        auto* du = new juce::DynamicObject();
+        for (const auto& kv : dontUsePlugins_) du->setProperty (kv.first, kv.second);
+        obj->setProperty ("dontUsePlugins", juce::var (du));
+    }
     
     file.replaceWithText(juce::JSON::toString(juce::var(obj)));
 }

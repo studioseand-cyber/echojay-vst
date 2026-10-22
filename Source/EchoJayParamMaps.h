@@ -191,6 +191,30 @@ inline juce::String buildSyncRequestBody (const std::vector<SyncRef>& refs)
     }
     auto* root = new juce::DynamicObject();
     root->setProperty ("plugins", arr);
+    // ---- THE BUILD NAMES ITSELF (Sean, 21 Oct 2026) --------------------------------------------
+    //
+    // *"V2 must send appVersion in its /api/params/sync body, or production won't keep its plugin
+    // identities."*
+    //
+    // Production decides whether to STORE what this sync resolves, and it decides on the version of
+    // the build that asked - so a body without it is answered and then forgotten, which looks
+    // exactly like a sync that worked. Every other road to the server already carries it (/api/me,
+    // the chat body, the dial-miss upload); this one was the gap.
+    //
+    // THE SAME SOURCE as all of them: JucePlugin_VersionString, which CMake writes from the one
+    // VERSION in the project - so it cannot drift from the binary that is asking.
+    //
+    // GUARDED because this header is not the plugin's alone: tools/ejextract includes it for
+    // fingerprintForDescription, and a console target has no JucePlugin defines, so the plain
+    // reference broke the gate's S1 while all four plugin bundles built clean (gate 2026-10-22).
+    // The guard is on the MACRO, not on a fallback string: a build that cannot name its version
+    // must not invent one, because production decides what to store on the version that asked and
+    // a tool claiming the plugin's number would be answered as though the plugin had asked. The
+    // tool never calls this function - it only has to compile - so the body it would send is the
+    // body every build sent before 21 Oct, which production already handles.
+   #if defined (JucePlugin_VersionString)
+    root->setProperty ("appVersion", juce::String (JucePlugin_VersionString));
+   #endif
     return juce::JSON::toString (juce::var (root), true);
 }
 
