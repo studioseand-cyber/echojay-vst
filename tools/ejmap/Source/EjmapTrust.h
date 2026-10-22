@@ -65,7 +65,30 @@ inline std::vector<Anchor> anchorsOf (const juce::var& control)
     std::sort (a.begin(), a.end(), [] (const Anchor& x, const Anchor& y) { return x.norm < y.norm; });
     return a;
 }
-inline bool valueAtNorm (const std::vector<Anchor>& a, double norm, double& out)
+// THE TAPER (Kathy, 22 Oct, decision 7). IR-L (m->s)'s Wet-Dry doubles every 0.10 (25 @ 0.80, 35.4 @ 0.85, 70.8 @ 0.95): a straight
+// line across its missing 0.90 says 53.1 where the plugin shows 50.0. "log": the anchors follow a geometric curve, so BETWEEN TWO ANCHORS
+// OF THE SAME SIGN a value is worked out geometrically (a zero or a sign change stays linear). Detected from the anchors themselves: each
+// interior anchor predicted from its two neighbours both ways - log when the geometric prediction is within kTaperGeoTol (median) and
+// the straight line misses by kTaperLinMiss or more (median), on at least kTaperMinTriples triples, the geometric one closer on 80 %
+inline constexpr double kTaperGeoTol = 0.01, kTaperLinMiss = 0.03; inline constexpr int kTaperMinTriples = 3;
+inline juce::String detectTaper (const std::vector<Anchor>& a)
+{
+    std::vector<double> geo, lin; int better = 0;
+    for (size_t i = 1; i + 1 < a.size(); ++i)
+    {
+        const auto& p = a[i - 1]; const auto& q = a[i]; const auto& r = a[i + 1];
+        if (p.value == 0.0 || q.value == 0.0 || r.value == 0.0 || (p.value > 0) != (q.value > 0) || (q.value > 0) != (r.value > 0)) continue;
+        const double span = r.norm - p.norm; if (span <= 1e-12) continue;
+        const double t = (q.norm - p.norm) / span;
+        const double l = p.value + t * (r.value - p.value), g = p.value * std::pow (r.value / p.value, t);
+        const double el = std::abs (l - q.value) / std::abs (q.value), eg = std::abs (g - q.value) / std::abs (q.value);
+        lin.push_back (el); geo.push_back (eg); if (eg < el) ++better;
+    }
+    if ((int) geo.size() < kTaperMinTriples) return {};
+    auto median = [] (std::vector<double> v) { std::sort (v.begin(), v.end()); return v.size() % 2 ? v[v.size() / 2] : 0.5 * (v[v.size() / 2 - 1] + v[v.size() / 2]); };
+    return median (geo) <= kTaperGeoTol && median (lin) >= kTaperLinMiss && better * 5 >= (int) geo.size() * 4 ? juce::String ("log") : juce::String();
+}
+inline bool valueAtNorm (const std::vector<Anchor>& a, double norm, double& out, const juce::String& taper = {})
 {
     if (a.size() < 2 || norm < a.front().norm - 1e-6 || norm > a.back().norm + 1e-6) return false;
     for (size_t i = 1; i < a.size(); ++i)
@@ -73,7 +96,9 @@ inline bool valueAtNorm (const std::vector<Anchor>& a, double norm, double& out)
         {
             const double span = a[i].norm - a[i - 1].norm;
             const double t = span > 1e-12 ? (norm - a[i - 1].norm) / span : 0.0;
-            out = a[i - 1].value + t * (a[i].value - a[i - 1].value); return true;
+            const double v0 = a[i - 1].value, v1 = a[i].value;
+            if (taper == "log" && v0 != 0.0 && v1 != 0.0 && (v0 > 0) == (v1 > 0)) { out = v0 * std::pow (v1 / v0, t); return true; }   // 22 Oct: geometric
+            out = v0 + t * (v1 - v0); return true;
         }
     out = a.back().value; return true;
 }
@@ -97,13 +122,13 @@ inline double timeScale (const juce::String& mapUnit, const juce::String& displa
     if ((u == "s" || u == "sec") && displayIsMs (display)) return 0.001;
     return 1.0;
 }
-inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, const juce::String& display, const juce::String& mapUnit = {})
+inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, const juce::String& display, const juce::String& mapUnit = {}, const juce::String& taper = {})
 {
     Verdict v;
     if (a.size() < 2) { v.why = "the map has no anchor table for it"; return v; }
     double lo = a.front().value, hi = a.front().value; for (const auto& p : a) { lo = std::min (lo, p.value); hi = std::max (hi, p.value); }
     if (hi - lo <= 1e-12) { v.why = "the map's anchors do not move"; return v; }
-    if (! valueAtNorm (a, norm, v.expected)) { v.why = "norm " + juce::String (norm, 3) + " is outside the map's anchors"; return v; }
+    if (! valueAtNorm (a, norm, v.expected, taper)) { v.why = "norm " + juce::String (norm, 3) + " is outside the map's anchors"; return v; }
     if (! numberOf (display, v.read)) { v.why = "the display '" + display + "' carries no number"; return v; }
     // the map's anchors are raw parsed floats ("1.2k" was recorded as 1.2): read the display the same way when the anchors are small
     double raw = 0.0; if (std::abs (v.read) >= 1000.0 && hi < 1000.0 && numberOf (display.upToFirstOccurrenceOf ("k", false, true), raw)) v.read = raw;
@@ -112,7 +137,8 @@ inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, cons
     const double span = hi - lo, tol = std::min (std::max (dstep, 0.005 * span), std::max (0.01 * span, dstep));
     v.judged = true; v.pass = std::abs (v.read - v.expected) <= tol + 1e-9;
     v.why = "norm " + juce::String (norm, 3) + ": the map says " + juce::String (v.expected, 3) + ", the display read '" + display.trim() + "'"
-            + (v.pass ? "" : " (off by " + juce::String (std::abs (v.read - v.expected), 3) + ", tolerance " + juce::String (tol, 3) + ")");
+            + (v.pass ? "" : " (off by " + juce::String (std::abs (v.read - v.expected), 3) + ", tolerance " + juce::String (tol, 3) + ")")
+            + (taper == "log" ? " [log taper]" : "");
     return v;
 }
 // a control is read back when at least 2 readings were judged and none failed; one failure is a failed read-back (said, kept)
@@ -568,6 +594,9 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
         if (! mode && ! stepped && c.getProperty ("kind", "").toString() != "anchored") continue;
         const auto* lo = c.getProperty ("labels", {}).getDynamicObject(); if (mode && lo == nullptr) continue;
         const auto a = anchorsOf (c);
+        // 22 Oct (decision 7): the taper the map records; a map that records none (every store map before the full wizard maps) has its
+        // taper inferred from its own anchors - said in the verdict ("[log taper]")
+        const auto taper = c.hasProperty ("taper") ? c.getProperty ("taper", "").toString() : detectTaper (a);
         struct Seen { size_t si; Verdict v; double norm; bool snapped; };
         std::vector<Seen> vs;
         for (size_t si = 0; si < sources.size(); ++si)
@@ -576,7 +605,7 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
                 {
                     if (! ownFormat (si)) { if (otherFormat != nullptr) ++*otherFormat; continue; }
                     if (stepped) { vs.push_back ({ si, judgeStep (stepsOf (c), r.norm, r.display), r.norm, r.snapped }); continue; }
-                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display, c.getProperty ("unit", "").toString()), r.norm, r.snapped }); continue; }
+                    if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display, c.getProperty ("unit", "").toString(), taper), r.norm, r.snapped }); continue; }
                     // a stepped control: the reading at a norm must show the label the map has nearest that norm
                     juce::String best; double bd = 1e9;
                     for (const auto& l : lo->getProperties()) { const double d = std::abs ((double) l.value - r.norm); if (d < bd) { bd = d; best = l.name.toString(); } }

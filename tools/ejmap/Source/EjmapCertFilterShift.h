@@ -39,27 +39,61 @@ inline FilterControlRead readFilterControl (const ResponseCall& response, const 
     o->setProperty ("stepped", sweep::isSteppedControl (ctl));
     auto [r, cr] = response (tag, idx, filterNorms (base, idx), {});
     if (cr.kind == ChildResult::Kind::uiShown) { fr.window = true; fr.row = juce::var (o); return fr; }
-    juce::Array<juce::var> ps; std::vector<std::pair<filter::Shape, filter::Judged>> rows; juce::StringArray types;
+    juce::Array<juce::var> ps; juce::StringArray types;
     if (! r.ok) o->setProperty ("refused", r.refused.isNotEmpty() ? r.refused : cr.describe());
     std::vector<std::vector<std::pair<double, double>>> tr; for (const auto& p : r.positions) tr.push_back (filter::transferOf (p));
+    const auto unit = ctl.getProperty ("unit", "").toString();
+    // A SHELF IS READ AS A SHELF (Kathy, 22 Oct, decision 8: LOVEND is a +5.7 dB low shelf, not a filter): when most positions are shelves
+    // on the plain transfer, the control goes to the EQ's own shelf measurement (eq::deriveBand: the corner where the shelf is half its
+    // plateau - filter::shelfCorner, the EQ's own rule - and its gain); the corner judged against the label at the same 5 %
+    { int shelves = 0; for (const auto& t : tr) if (filter::deriveShape (t).result == "shelf") ++shelves;
+      if (shelves >= 2 && shelves * 2 >= (int) tr.size())
+      {
+          o->setProperty ("measured_as", "shelf (the EQ shelf measurement): " + juce::String (shelves) + " of " + juce::String ((int) tr.size()) + " positions are shelves");
+          std::vector<std::pair<filter::Shape, filter::Judged>> rows; juce::Array<juce::var> ps;
+          for (size_t k = 0; k < r.positions.size(); ++k)
+          {
+              const auto& p = r.positions[k]; const auto sh = filter::deriveShape (tr[k]); const auto corner = filter::shelfCorner (tr[k], sh);
+              double lo = 1e9; for (const auto& [hz, d] : tr[k]) lo = juce::jmin (lo, d);
+              filter::Shape s0; s0.tones = (int) tr[k].size(); filter::Judged j;
+              auto* pv = new juce::DynamicObject(); pv->setProperty ("norm", p.norm); pv->setProperty ("display", p.text); pv->setProperty ("result", corner ? juce::String ("shelf") : sh.result);
+              if (corner)
+              {   s0.result = "measured"; s0.cutoffHz = *corner; const auto shape = sh.type == "highpass" ? juce::String ("high_shelf") : juce::String ("low_shelf");
+                  pv->setProperty ("shape", shape); pv->setProperty ("corner_hz", std::round (*corner * 10.0) / 10.0); pv->setProperty ("gain_db", std::round ((sh.passbandDb - lo) * 100.0) / 100.0);
+                  if (const auto lab = filter::labelHz (p.text, unit, name))
+                  { j.labelHz = *lab; j.judged = true; j.offPct = 100.0 * (*corner - *lab) / *lab; j.pass = std::abs (j.offPct) <= filter::kCutoffTolPct;
+                    pv->setProperty ("label_hz", *lab); pv->setProperty ("off_pct", std::round (j.offPct * 10.0) / 10.0); pv->setProperty ("within_tolerance", j.pass); }
+                  say ("    [" + juce::String (idx) + "] " + name + " '" + p.text + "': " + shape + " corner " + juce::String (*corner, 1) + " Hz, " + juce::String (sh.passbandDb - lo, 2) + " dB"
+                       + (j.judged ? "; " + juce::String (j.offPct, 1) + " % off the label" : juce::String())); }
+              else { s0.result = sh.result; pv->setProperty ("reason", sh.reason); say ("    [" + juce::String (idx) + "] " + name + " '" + p.text + "': " + sh.result + " (" + sh.reason + ")"); }
+              rows.push_back ({ s0, j }); ps.add (juce::var (pv));
+          }
+          fr.verdict = filter::controlVerdict (rows); if (fr.verdict.verdict == "certified") fr.verdict.convention = "shelf corner";
+          o->setProperty ("type", "shelf"); o->setProperty ("positions", ps); o->setProperty ("verdict", fr.verdict.verdict); o->setProperty ("why", fr.verdict.why);
+          if (fr.verdict.convention.isNotEmpty()) o->setProperty ("convention", fr.verdict.convention);
+          o->setProperty ("tolerance_pct", filter::kCutoffTolPct);
+          say ("    [" + juce::String (idx) + "] " + name + ": " + fr.verdict.verdict + " (as a shelf) - " + fr.verdict.why);
+          fr.row = juce::var (o); return fr;
+      } }
     const int open = filter::openPosition (tr);   // 22 Oct: each position against the control's most open one
     if (open >= 0) { auto* b = new juce::DynamicObject(); b->setProperty ("norm", r.positions[(size_t) open].norm); b->setProperty ("display", r.positions[(size_t) open].text);
                      b->setProperty ("why", "the most open position: every other is read against it, so what this control does not move cancels"); o->setProperty ("open_position", juce::var (b)); }
-    const auto unit = ctl.getProperty ("unit", "").toString();
+    std::vector<filter::Positioned> pos;
     for (size_t k = 0; k < r.positions.size(); ++k)
     {
         const auto& p = r.positions[k];
-        if ((int) k == open) { filter::Shape s0; s0.result = "open"; s0.reason = "the most open position (the reference)"; s0.tones = (int) tr[k].size(); rows.push_back ({ s0, {} }); ps.add (filter::shapeVar (s0, {}, p.norm, p.text)); continue; }
+        if ((int) k == open) { filter::Shape s0; s0.result = "open"; s0.reason = "the most open position (the reference)"; s0.tones = (int) tr[k].size(); pos.push_back ({ s0, p.text }); ps.add (filter::shapeVar (s0, {}, p.norm, p.text)); continue; }
         const auto s = filter::deriveShape (open >= 0 ? filter::lessOpen (tr[k], tr[(size_t) open]) : tr[k]); const auto j = filter::judgeCutoff (s, p.text, unit, name);
-        rows.push_back ({ s, j }); ps.add (filter::shapeVar (s, j, p.norm, p.text)); if (s.type.isNotEmpty()) types.add (s.type);
+        pos.push_back ({ s, p.text }); ps.add (filter::shapeVar (s, j, p.norm, p.text)); if (s.type.isNotEmpty()) types.add (s.type);
         say ("    [" + juce::String (idx) + "] " + name + " '" + p.text + "': " + s.result + (s.result == "measured" ? " " + s.type + " -3 dB " + juce::String (s.cutoffHz, 1) + " Hz"
-             + (s.slopeBasis.isNotEmpty() ? ", " + juce::String (s.slopeDbOct, 1) + " dB/oct" : juce::String()) + (s.resonanceDb > 0.0 ? ", resonance +" + juce::String (s.resonanceDb, 1) + " dB" : juce::String()) : " (" + s.reason + ")")
+             + (s.slopeBasis.isNotEmpty() ? ", " + juce::String (s.slopeDbOct, 1) + " dB/oct" : juce::String()) + (s.resonanceDb > 0.0 ? ", resonance +" + juce::String (s.resonanceDb, 1) + " dB at " + juce::String (s.resonanceHz, 0) + " Hz, natural ~" + juce::String (s.naturalHz, 0) + " Hz" : juce::String()) : " (" + s.reason + ")")
              + (j.judged ? "; " + j.why : juce::String()));
     }
-    fr.verdict = filter::controlVerdict (rows);
+    fr.verdict = filter::conventionVerdict (pos, unit, name);   // 22 Oct (decision 3): the one convention the label follows, if one holds everywhere
     juce::String type; int best = 0; for (const auto& t : { juce::String ("highpass"), juce::String ("lowpass") }) { int c = 0; for (const auto& x : types) if (x == t) ++c; if (c > best) { best = c; type = t; } }
     if (type.isNotEmpty()) o->setProperty ("type", type);
     o->setProperty ("positions", ps); o->setProperty ("verdict", fr.verdict.verdict); o->setProperty ("why", fr.verdict.why); o->setProperty ("tolerance_pct", filter::kCutoffTolPct);
+    if (fr.verdict.convention.isNotEmpty()) o->setProperty ("convention", fr.verdict.convention);   // which point the label names, recorded in the draft
     say ("    [" + juce::String (idx) + "] " + name + ": " + fr.verdict.verdict + " - " + fr.verdict.why);
     fr.row = juce::var (o); return fr;
 }
@@ -181,8 +215,11 @@ inline int runPitchShift (const SweepOptions& opt)
         auto addSet = [&] (int i, float n, const juce::String& why) { if (i == idx) return; sets.add (juce::String (i) + ":" + juce::String (n, 6));
                                                                    auto* w = new juce::DynamicObject(); w->setProperty ("index", i); w->setProperty ("norm", n); w->setProperty ("why", why); mw.add (juce::var (w)); };
         if (wet) addSet (wet->first, wet->second, "the mix fully wet");
-        for (const auto& [i, n] : shift::isolationWrites (controls, name)) addSet (i, n, "another voice / the direct signal at its minimum: one pitch at a time");
+        const auto iso = shift::isolation (controls, name);
+        for (const auto& [i, n] : iso.writes) addSet (i, n, n > 0.5f ? "its own voice switched on for the read" : "another voice / the direct signal off or at its minimum: one pitch at a time");
         if (! mw.isEmpty()) o->setProperty ("measuring_writes", mw);
+        if (! iso.dependsOn.isEmpty())   // 22 Oct (decision 5): what the intervals depend on - the switch written on for the read
+        { auto* d = new juce::DynamicObject(); d->setProperty ("control", iso.dependsOn[0]); d->setProperty ("display", "On"); d->setProperty ("why", "the voice sounds only with its own switch on (off as instantiated)"); o->setProperty ("depends_on", juce::var (d)); }
         auto pick = shift::pickPositions (labelled, unit, name, kind);
         const bool unlabelled = pick.empty();
         if (unlabelled) for (int k = 0; k < 7; ++k) pick.push_back ({ (float) k / 6.0f, {} });   // 22 Oct: no shift in its labels - read where it goes, judge nothing

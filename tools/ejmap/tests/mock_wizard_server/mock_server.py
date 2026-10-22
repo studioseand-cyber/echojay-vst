@@ -22,7 +22,21 @@ CATEGORIES = {"compressor", "limiter", "eq", "de-esser", "delay", "reverb", "sat
 FINAL_STATES = {"measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default",
                 "timed_out", "waves_skipped", "not_reached", "ready_from_version", "needs_category", "other_category", "out_of_scope", "held"}
 PROFILE_SCHEMAS = {"ej_comp_profile/1", "ej_eq_profile/1", "ej_saturation_profile/1", "ej_tonecheck/1", "ej_limiter_profile/1",
-                   "ej_deesser_profile/1", "ej_gate_profile/1", "ej_transient_profile/1", "ej_reverb_delay_profile/1", "ej_tuner_profile/1"}
+                   "ej_deesser_profile/1", "ej_gate_profile/1", "ej_transient_profile/1", "ej_reverb_delay_profile/1", "ej_tuner_profile/1",
+                   "ej_filter_profile/0", "ej_pitchshift_profile/0"}   # 22 Oct: the filter and pitch-shift drafts
+MAP_SCHEMAS = {"2.4", "2.3"}   # 22 Oct (Kathy, decision 0): a result's map.json is a FULL map in the map store's format
+
+
+def map_problem(m, pid):
+    """a map.json the server can use: the store's schema, at least one control, and the result's own plugin (uid in its plugin_id)"""
+    if not isinstance(m, dict) or m.get("schema") not in MAP_SCHEMAS:
+        return "not a map in the store's format"
+    if not isinstance(m.get("controls"), dict) or not m["controls"]:
+        return "a map with no controls"
+    uid = str((m.get("identity") or {}).get("uid", "")).lower()
+    if not uid or ("|" + uid + "|") not in ("|" + pid.lower() + "|"):
+        return "a map for another plugin"
+    return None
 
 LOCK = threading.RLock()
 RECORD = {"dir": None, "scenario": "unlabelled", "seq": 0}   # --record DIR: every exchange written raw (scrub before sharing: tools/ejmap/scripts/make_mock_for_b.py)   # re-entrant: a handler holding it also logs the request through _send
@@ -470,6 +484,9 @@ def validate(doc, rid, result_id):
     expect = "res_" + hashlib.sha256(("%s|%s|%s" % (rid, kind, pid)).encode()).hexdigest()[:32]
     if expect != result_id:
         return ("bad_result_id", "A result arrived damaged and wasn't used.")
+    m = (doc.get("files") or {}).get("map.json")
+    if m is not None and map_problem(m, pid):
+        return ("bad_map", "%s's map didn't pass our checks, so it wasn't used." % plugin["name"])
     if kind == "profile":
         files = doc.get("files") or {}
         if not files:
@@ -477,6 +494,8 @@ def validate(doc, rid, result_id):
         for name, f in files.items():
             # a tone check travels as EJ Map writes it: no "schema" field, known by its name and its shape (seen in the first real run)
             if isinstance(f, dict) and name.endswith(".tonecheck.json") and "schema" not in f and "g_db" in f:
+                continue
+            if name == "map.json":   # checked above
                 continue
             if not isinstance(f, dict) or f.get("schema") not in PROFILE_SCHEMAS:
                 return ("unknown_schema", "%s's measurements didn't pass our checks, so they weren't used." % plugin["name"])

@@ -52,7 +52,8 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
         auto* files = new juce::DynamicObject(); juce::StringArray rels;
         if (const auto* dr = e.getProperty ("drafts", {}).getArray()) for (const auto& r : *dr) rels.add (r.toString());
         for (const char* k : { "profile", "tone_check" }) if (e.hasProperty (k)) rels.add (e.getProperty (k, "").toString());
-        for (const auto& rel : rels) if (rel.isNotEmpty()) files->setProperty (juce::File::createLegalFileName (juce::File (rel).getFileName()), fileJson (bundle, rel));
+        if (e.hasProperty ("map_file")) rels.add (e.getProperty ("map_file", "").toString());   // 22 Oct: the full map, as map.json below
+        for (const auto& rel : rels) if (rel.isNotEmpty()) files->setProperty (rel == e.getProperty ("map_file", "").toString() ? juce::String ("map.json") : juce::File::createLegalFileName (juce::File (rel).getFileName()), fileJson (bundle, rel));
         auto* pl = new juce::DynamicObject(); pl->setProperty ("category", e.getProperty ("kind", {})); pl->setProperty ("state", "measured");
         if (e.hasProperty ("acceptance")) pl->setProperty ("acceptance", e.getProperty ("acceptance", {}));
         add ("profile", e.getProperty ("plugin_id", "").toString(), e.getProperty ("product", "").toString(), e.getProperty ("map_fp", {}), pl, files);

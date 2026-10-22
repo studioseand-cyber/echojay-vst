@@ -164,23 +164,31 @@ inline std::optional<std::pair<int, float>> wetWrite (const std::vector<std::pai
     for (const auto& [i, n] : controls) if (tailroles::wordsOf (n).contains ("dry")) return std::make_pair (i, 0.0f);
     return std::nullopt;
 }
-// ONE VOICE AT A TIME (22 Oct, UltraPitch 3 / 6 Voices: three shifted voices and the direct signal at once are no one pitch): for the control
-// being read, every OTHER numbered voice's level / gain and the direct / dry level go to their minimum - the probe's instance only
-inline std::vector<std::pair<int, float>> isolationWrites (const std::vector<std::pair<int, juce::String>>& controls, const juce::String& readName)
+// ONE VOICE AT A TIME (22 Oct, UltraPitch 3 / 6 Voices: three shifted voices and the direct signal at once are no one pitch; and each voice's
+// own switch, "Voice 1 Check", is OFF as instantiated - Kathy's re-measure finding, read on this Mac 22 Oct): for the control being read,
+// its own voice's on-switch (check / on / enable / active) ON, every OTHER numbered voice's switch OFF and its level / gain at minimum, and
+// the direct / dry switch OFF and its level at minimum - the probe's instance only. The switches written ON are what the read depends on
+struct Isolation { std::vector<std::pair<int, float>> writes; juce::StringArray dependsOn; };
+inline Isolation isolation (const std::vector<std::pair<int, juce::String>>& controls, const juce::String& readName)
 {
     auto numberOf = [] (const juce::StringArray& w) { for (const auto& x : w) if (x.containsOnly ("0123456789") && x.isNotEmpty()) return x; return juce::String(); };
+    auto isSwitch = [] (const juce::StringArray& w) { return w.contains ("check") || w.contains ("on") || w.contains ("enable") || w.contains ("active"); };
     const auto rw = tailroles::wordsOf (readName); const auto voice = numberOf (rw);
-    std::vector<std::pair<int, float>> out;
+    Isolation iso;
     for (const auto& [i, n] : controls)
     {
-        const auto w = tailroles::wordsOf (n);
+        const auto w = tailroles::wordsOf (n); if (n == readName) continue;
         const bool level = w.contains ("level") || w.contains ("gain") || w.contains ("volume");
-        if (! level || w.contains ("output") || w.contains ("input")) continue;
-        if (w.contains ("direct") || w.contains ("dry")) { out.push_back ({ i, 0.0f }); continue; }
-        const auto v = numberOf (w); if (voice.isNotEmpty() && v.isNotEmpty() && v != voice && (w.contains ("voice") || w.contains ("v"))) out.push_back ({ i, 0.0f });
+        if (w.contains ("output") || w.contains ("input")) continue;
+        const bool direct = w.contains ("direct") || w.contains ("dry");
+        const auto v = numberOf (w); const bool otherVoice = voice.isNotEmpty() && v.isNotEmpty() && v != voice && (w.contains ("voice") || w.contains ("v"));
+        const bool ownVoice = voice.isNotEmpty() && v == voice && (w.contains ("voice") || w.contains ("v"));
+        if (isSwitch (w) && ! level) { if (direct || otherVoice) iso.writes.push_back ({ i, 0.0f }); else if (ownVoice) { iso.writes.push_back ({ i, 1.0f }); iso.dependsOn.add (n); } continue; }
+        if (level && (direct || otherVoice)) iso.writes.push_back ({ i, 0.0f });
     }
-    return out;
+    return iso;
 }
+inline std::vector<std::pair<int, float>> isolationWrites (const std::vector<std::pair<int, juce::String>>& controls, const juce::String& readName) { return isolation (controls, readName).writes; }
 // the positions to read: from the text pass's labels (norm -> text), those whose label gives an expectation, at most kMaxPositions spread
 // over the travel (always the lowest and highest)
 inline std::vector<std::pair<float, juce::String>> pickPositions (const std::vector<std::pair<float, juce::String>>& labelled, const juce::String& unit, const juce::String& name, const juce::String& kind = "shift")

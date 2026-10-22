@@ -37,6 +37,7 @@ target_compile_definitions(EchoJayProbe PRIVATE
 target_link_libraries(EchoJayProbe PRIVATE
     juce::juce_audio_processors
     juce::juce_gui_basics
+    juce::juce_cryptography          # 22 Oct: probe_extract.h includes the shared extractor header
     juce::juce_recommended_config_flags)
 set_target_properties(EchoJayProbe PROPERTIES
     OSX_ARCHITECTURES "arm64;x86_64"

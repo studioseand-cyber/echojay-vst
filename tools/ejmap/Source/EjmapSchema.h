@@ -374,6 +374,15 @@ struct NamedControl
     */
     juce::String tier;
 
+    /** THE TAPER (Kathy, 22 Oct, decision 7: IR-L's Wet-Dry doubles every 0.10, so a straight line between two anchors read 53.1 where the
+        plugin shows 50.0): "log" when the anchors follow a geometric curve - between two anchors of the same sign a value is worked out
+        geometrically (EjmapFullMap.h interpolate). Empty: linear, as every map before it. Written only when set. */
+    juce::String taper;
+
+    /** WHAT THE LABELS DEPEND ON (decision 5, UltraPitch's voices follow its Mode): another control and the setting the labels were read
+        under, e.g. {"control": "Mode", "display": "Chromatic"}. Written only when set. */
+    juce::var dependsOn;
+
     /** THE READ-BACK (Kathy, 16 Oct, trust levels): readings judged against this control's own anchors - a norm written for a value,
         the display read back (EjmapTrust.h judgeObservation). Written by the sweep's one-load read-back ("sweep") or credited from a
         measuring run's readings ("cert", "wizard"). checked == 0: nothing was judged, and nothing is emitted.
@@ -683,6 +692,8 @@ inline juce::var NamedControl::toVar() const
     }
     if (tier == "primary" || tier == "hidden")
         o->setProperty ("tier", tier);
+    if (taper.isNotEmpty()) o->setProperty ("taper", taper);              // 22 Oct: only when set
+    if (dependsOn.isObject()) o->setProperty ("depends_on", dependsOn);   // 22 Oct: only when set
     if (readback.checked > 0)
     {
         auto* rb = new juce::DynamicObject();

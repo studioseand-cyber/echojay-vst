@@ -886,6 +886,14 @@ namespace
                 for (const auto& d : dropped) std::cout << "DROP\t" << d << std::endl;
                 return dropped.isEmpty() ? 0 : 3;
             }
+            if (a == "--full-maps" && i + 1 < argc)   // 22 Oct (decision 1): full maps for a guarded name list, into a scratch folder
+            {
+                juce::File out, probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe"); int toMs = 120000;
+                for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") out = cwdFile (v); else if (k == "--probe") probe = cwdFile (v); else if (k == "--timeout-s") toMs = juce::jmax (1, v.getIntValue()) * 1000; }
+                if (out == juce::File()) { std::cerr << "usage: ejmap --full-maps <names> --out <dir> [--probe <path>] [--timeout-s N]" << std::endl; return 2; }
+                return ejmap::cert::runFullMaps (cwdFile (argAt (argc, argv, i + 1)), out, probe, toMs);
+            }
             if (a == "--wizard")   // the user-side wizard (feat/ejmap-wizard): scan, look up (A/B/C), quick check, measure, bundle; upload stubbed
             {
                 ejmap::cert::WizardOptions w; w.opt.hostVersion = EJMAP_VERSION; w.opt.probeServe = true; w.opt.retryTimeoutsAlone = true;   // 15 Oct: a timeout is retried alone before it is filed   // the warm probe: the wizard's default (14 Oct)

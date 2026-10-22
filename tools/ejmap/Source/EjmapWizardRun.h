@@ -18,6 +18,13 @@
 #include "EjmapApbPreflight.h"
 #include "EjmapSelfGuardRun.h"   // 16 Oct: the guard on the developer's own loads (guardedPlugins)
 #include "EjmapReadbackSweepRun.h"   // 17 Oct (rulings 3): the VST3 lane - the bridge read and the probe's VST3 identity line
+#include "EjmapFullMap.h"            // 22 Oct (Kathy, decision 0): the wizard saves FULL maps, the store's format
+#if __has_include("EjmapBuildInfo.h")
+ #include "EjmapBuildInfo.h"         // EJMAP_VERSION, stamped into the full map's provenance
+#endif
+#ifndef EJMAP_VERSION
+ #define EJMAP_VERSION "unknown"
+#endif
 #include <fstream>
 #include <atomic>
 #include <csignal>
@@ -122,6 +129,48 @@ inline juce::String scanStoppedWords (int checked, int total)
 // 15 Oct (sharing the Mac): a map that TIMED OUT is not finished on that try - after the pool, each runs again ALONE (`retryAlone`, the
 // caller's longer bound) and only that result is filed; last night's 6 "crashes" were timeouts at 4 at a time, and 9 mapped fine
 // alone the next morning. The pool's job count follows `jobsNow` (2 while the user is active)
+// THE WIZARD'S MAP (Kathy, 22 Oct, decision 0): the FULL map from the probe's --extract (EjmapFullMap.h, the store's format); a probe
+// that printed no extract (an older probe) leaves the parameter list alone, said in its words - never a map that pretends to be full
+struct WizardMap { juce::var map; juce::String words; bool full = false; };
+inline WizardMap wizardMapOf (const juce::String& probeOut, const juce::String& fp, const juce::String& format, const juce::String& uid, const juce::PluginDescription& d,
+                              const std::vector<std::pair<int, juce::String>>& ps, const juce::String& category)
+{
+    WizardMap w; const auto x = fullmap::parseExtract (probeOut);
+    if (! x.done) { w.map = wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, category, format); w.words = "parameter list only: the probe printed no extract"; return w; }
+    const auto b = fullmap::buildControls (x);
+    w.map = fullmap::buildMap (fp, format, uid, d.name, d.manufacturerName, d.version, category, x, b, EJMAP_VERSION); w.full = true;
+    w.words = "full map: " + juce::String (b.controls.size()) + " control(s) - " + juce::String (b.anchored) + " anchored (" + juce::String (b.tapered) + " log taper), "
+              + juce::String (b.modes) + " labelled; " + juce::String (b.declines.size()) + " declined with the reason";
+    return w;
+}
+// --full-maps <names file> --out <dir> [--probe <path>] (Kathy, 22 Oct, decision 1: recount with full maps): each installed plugin named in
+// the list (one per line; guard the list first) loaded ONCE with --extract, its FULL map written to <dir>/maps/<fp>.json exactly as the
+// wizard writes it (wizardMapOf). Never the map store: <dir> must not be the store's own folder
+inline int runFullMaps (const juce::File& names, const juce::File& outDir, const juce::File& probe, int timeoutMs)
+{
+    auto say = [] (const juce::String& t) { std::cout << t << std::endl; };
+    const auto store = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap");
+    if (outDir == store || outDir.isAChildOf (store)) { say ("FULLMAPS: refused - the output is inside the map store (" + outDir.getFullPathName() + ")"); return 2; }
+    const auto id = checkProbe (probe, {}, {}); if (! id.ok) { say ("FULLMAPS: " + id.why); return 3; }
+    juce::StringArray want; for (const auto& l : juce::StringArray::fromLines (names.loadFileAsString())) if (l.trim().isNotEmpty()) want.addIfNotAlreadyThere (l.trim());
+    outDir.getChildFile ("maps").createDirectory(); int full = 0, failed = 0, missing = 0;
+    const auto installed = installedPlugins();
+    for (const auto& n : want)
+    {
+        const InstalledRecord* hit = nullptr; for (const auto& r : installed) if (r.desc.name == n) { hit = &r; break; }
+        if (hit == nullptr) { ++missing; say ("  " + n + ": not installed"); continue; }
+        const auto& d = hit->desc; const auto uid = juce::String::toHexString (d.uniqueId).toLowerCase();
+        const auto r = runProbeCall ({ probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--extract" }, timeoutMs);
+        const auto ps = paramsOfList (r.out);
+        if (! r.cleanExit() || ps.empty()) { ++failed; say ("  " + n + ": not mapped (" + r.describe() + ")"); continue; }
+        const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
+        const auto fm = wizardMapOf (r.out, fp, fmtTag (d), uid, d, ps, {});
+        outDir.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (fm.map) + "\n");
+        if (fm.full) ++full; say ("  " + n.paddedRight (' ', 32) + " " + fp.substring (0, 12) + " " + fm.words);
+    }
+    say ("FULLMAPS: " + juce::String (full) + " full map(s), " + juce::String (failed) + " not mapped, " + juce::String (missing) + " not installed -> " + outDir.getChildFile ("maps").getFullPathName());
+    return 0;
+}
 inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jobs, const std::function<ChildResult (const juce::StringArray&)>& runner,
                           const std::function<jobs::Lane (const juce::PluginDescription&)>& laneOf, wizprog::Tracker& prog, const juce::File& probe,
                           const std::function<void (const juce::PluginDescription&, ChildResult&)>& finished,
@@ -132,7 +181,7 @@ inline void mapForWizard (const std::vector<juce::PluginDescription>& ds, int jo
     pool.laneOf = [&] (const size_t& i) { return laneOf ? laneOf (ds[i]) : jobs::Lane::parallel; };
     pool.stopped = [] { return wizardStop() != 0; };
     pool.prepare = [&] (const size_t& i) -> std::optional<juce::StringArray>
-    { const auto& d = ds[i]; prog.started (d.name); return juce::StringArray { probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--list-params" }; };   // after a stop the pool starts nothing more (its own stopped())
+    { const auto& d = ds[i]; prog.started (d.name); return juce::StringArray { probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId), "--extract" }; };   // 22 Oct: the list rows + every sweep   // after a stop the pool starts nothing more (its own stopped())
     pool.run = [&] (const juce::StringArray& a) { return runner (a); };
     pool.discard = [] (const size_t&, juce::StringArray&) {};   // stopped: no state, no map; the marker goes with the stopped finish
     std::vector<std::pair<size_t, juce::StringArray>> later;   // timed out on the first try
@@ -491,8 +540,7 @@ inline std::vector<std::pair<int, juce::String>> paramsFromStore (const juce::Fi
     std::vector<std::pair<int, juce::String>> ps;
     const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; const auto it = store.find (k); if (it == store.end()) return ps;
     const auto m = juce::JSON::parse (ledger.getChildFile ("maps").getChildFile (it->second.fp + ".json").loadFileAsString());   // held by name
-    if (const auto* a = m.getProperty ("params", {}).getArray()) for (const auto& p : *a) ps.push_back ({ (int) p.getProperty ("index", -1), p.getProperty ("name", "").toString() });
-    return ps;
+    return fullmap::paramsOf (m);   // 22 Oct: a full map (controls + declines) or a wizard-0 list
 }
 
 inline int runWizard (const WizardOptions& wo)
@@ -586,11 +634,11 @@ inline int runWizard (const WizardOptions& wo)
             juce::String pw; const bool pace = paceHeld (d0, {}, pw) && pw.startsWith ("PACE");
             if (pace && ! paceOk) { vrow (b.name, {}, "needs_licence", wizroute::licenceSkipWhy (wizroute::LicenceSkip::paceNoIlok)); continue; }
             if (apb::isApbProduct (d0.name, d0.manufacturerName)) { const auto& a = apb::device (apb::assumeFlag()); if (! a.present) { vrow (b.name, {}, "needs_hardware", juce::String (apb::kNotConnected) + " (" + a.how + "); not loaded"); continue; } }
-            auto ids = pr.ids; std::vector<std::pair<int, juce::String>> ps;
+            auto ids = pr.ids; std::vector<std::pair<int, juce::String>> ps; juce::String loadOut;
             if (pr.source == "load")   // neither the bundle nor an earlier run says who it is: ONE load, and its answer (or its failure) is kept
             {
                 prog.now (b.name, "identifying it (one load)");
-                const auto r = runChild ({ opt.probe.getFullPathName(), d0.name, path, "0", "--list-params" }, opt.timeoutMs); ++identityLoads;
+                const auto r = runChild ({ opt.probe.getFullPathName(), d0.name, path, "0", "--extract" }, opt.timeoutMs); ++identityLoads; loadOut = r.out;   // 22 Oct: + every sweep
                 if (r.kind == ChildResult::Kind::uiShown) { wizroute::rememberLicenceWindow (licF, bundleKey); idCache.put (pr.key, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); vrow (b.name, {}, "needs_licence", "a window appeared (licence?) - closed, not clicked"); continue; }
                 ps = paramsOfList (r.out); const auto cls = readback::vst3ClassOf (r.out), uid = readback::vst3UidOf (r.out), ver = readback::vst3VersionOf (r.out);
                 if (! r.cleanExit() || ps.empty() || uid.isEmpty())
@@ -632,7 +680,7 @@ inline int runWizard (const WizardOptions& wo)
                 {
                     const auto fp = echojay::fingerprintForDescription (d, (int) ps.size()); const auto cat = wizard::wizardCategory (d.name, catalogue);
                     opt.ledger.getChildFile ("maps").createDirectory();
-                    opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat, "VST3")) + "\n");
+                    opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizardMapOf (loadOut, fp, "VST3", uid, d, ps, cat).map) + "\n");   // 22 Oct: FULL
                     store[uid + "|" + d.version] = { fp, cat };
                 }
                 plugins.push_back ({ d, echojay::identityKeyForDescription (d), "VST3|" + uid });
@@ -931,10 +979,11 @@ inline int runWizard (const WizardOptions& wo)
             if (! r.cleanExit() || ps.empty()) { early[d.name] = r.cleanExit() ? "wont_load" : "crashed"; say ("  " + d.name + ": not mapped (" + (ps.empty() && r.cleanExit() ? juce::String ("no parameters") : r.describe()) + ")"); prog.finished (d.name, true); return; }
             const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
             const auto cat = wizard::wizardCategory (d.name, catalogue);
-            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (wizard::paramMap (d.name, d.manufacturerName, uid, d.version, fp, ps, cat, fmtTag (d))) + "\n");
+            const auto fm = wizardMapOf (r.out, fp, fmtTag (d), uid, d, ps, cat);   // 22 Oct (decision 0): the FULL map
+            opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (fm.map) + "\n");
             store[uid + "|" + d.version] = { fp, cat };
             if (! catNames.count (d.name)) prog.finished (d.name, false);   // 14 Oct: a plugin whose signature reads follow is done after them
-            say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12));
+            say ("  " + d.name.paddedRight (' ', 30) + " mapped: " + juce::String ((int) ps.size()) + " parameter(s), map " + fp.substring (0, 12) + " (" + fm.words + ")");
         },
         [&] (const juce::StringArray& a) { say ("  " + a[1] + ": timed out with other work running - mapping it again alone"); return runChild (a, 2 * loadTimeoutFor (a[2])); },   // 15 Oct: alone, twice the bound
         [&] { return jobs::jobsNowForUser (juce::jmax (1, opt.jobs)); });   // 15 Oct: 2 at a time while the user is active
@@ -1116,6 +1165,15 @@ inline int runWizard (const WizardOptions& wo)
                     c->setProperty ("crash_report", rel); c->setProperty ("report_found", e.getProperty ("report_found", false)); crashedList.add (juce::var (c));
                 }
         }
+        // 22 Oct (Kathy, decision 0): every measured result carries its plugin's FULL map (the store's format), so the server can use it
+        // and judge it by the same trust rules: copied into the bundle's maps/ and named on the item ("map_file")
+        auto attachMap = [&] (juce::DynamicObject* it, const juce::String& fp, const juce::Array<juce::var>& drafts = {})
+        {   const auto mapF = opt.ledger.getChildFile ("maps").getChildFile (fp + ".json");
+            if (fp.isEmpty() || ! mapF.existsAsFile()) return;
+            B.getChildFile ("maps").createDirectory();
+            auto m = juce::JSON::parse (mapF.loadFileAsString());
+            for (const auto& rel : drafts) m = fullmap::withDepends (m, juce::JSON::parse (B.getChildFile (rel.toString()).loadFileAsString()));   // 22 Oct (decision 5): the shift's switch
+            B.getChildFile ("maps").getChildFile (mapF.getFileName()).replaceWithText (juce::JSON::toString (m)); it->setProperty ("map_file", "maps/" + mapF.getFileName()); };
         for (const auto& rv : rows)
         {
             const auto st = rv.getProperty ("state", "").toString(); const auto product = rv.getProperty ("product", "").toString();
@@ -1128,14 +1186,14 @@ inline int runWizard (const WizardOptions& wo)
                 for (const auto& rel : juce::StringArray::fromTokens (rv.getProperty ("drafts", "").toString(), ",", ""))
                 { const auto f = out.getChildFile ("phaseb").getChildFile (rel); f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); files.add ("profiles/" + f.getFileName()); }
                 auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", wizserver::toServer (rv.getProperty ("category", "").toString(), (bool) rv.getProperty ("cabinet_read", false)));
-                it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); items.add (juce::var (it));   // measured_by (EJ Map's internal names) stays local
+                it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); attachMap (it, rv.getProperty ("map_fp", "").toString(), files); items.add (juce::var (it));   // measured_by (EJ Map's internal names) stays local
             }
             else if (st == "measured" && isEq)
             {
                 const auto f = out.getChildFile ("phaseb/wizard_eq").getChildFile (rv.getProperty ("eq_draft", "").toString());
                 f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName()));
                 auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", "eq"); it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {}));
-                it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("profile", "profiles/" + f.getFileName()); it->setProperty ("acceptance", rv.getProperty ("why", {})); items.add (juce::var (it));
+                it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("profile", "profiles/" + f.getFileName()); it->setProperty ("acceptance", rv.getProperty ("why", {})); attachMap (it, rv.getProperty ("map_fp", "").toString()); items.add (juce::var (it));
             }
             else if (st == "measured")
                 for (const auto& f : out.getChildFile ("phaseb/wizard/profiles").findChildFiles (juce::File::findFiles, false, "*.json"))
@@ -1147,7 +1205,7 @@ inline int runWizard (const WizardOptions& wo)
                     if (! (bool) tcv.getProperty ("pass_within_0_5_db", false)) { auto* s = new juce::DynamicObject(); s->setProperty ("product", product); s->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); s->setProperty ("why", "measured, but its tone check did not pass: not sent"); skipped.add (juce::var (s)); continue; }
                     f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); tc.copyFileTo (B.getChildFile ("profiles").getChildFile (tc.getFileName()));
                     auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", "compressor"); it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", p.getProperty ("plugin", {}).getProperty ("map_fp", {}));
-                    it->setProperty ("profile", "profiles/" + f.getFileName()); it->setProperty ("tone_check", "profiles/" + tc.getFileName()); it->setProperty ("tone_check_g2_pass", true); items.add (juce::var (it));
+                    it->setProperty ("profile", "profiles/" + f.getFileName()); it->setProperty ("tone_check", "profiles/" + tc.getFileName()); it->setProperty ("tone_check_g2_pass", true); attachMap (it, rv.getProperty ("map_fp", "").toString()); items.add (juce::var (it));
                 }
             else if (st == "ready_from_version")
             { auto* c = new juce::DynamicObject(); c->setProperty ("product", product); c->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); c->setProperty ("profile_from_version", rv.getProperty ("from_version", {})); c->setProperty ("readback", rv.getProperty ("readback", {}));
