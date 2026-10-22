@@ -41,7 +41,27 @@ struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::
         // all it takes). The guard owns this input; the product path is untouched.
         static_cast<juce::Timer&> (p).stopTimer(); p.linkSlotInfos = std::move (v); } };
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }
-    static void applyNow (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); } };
+    static void applyNow (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }
+    // ---- UA5 (his 14:12, 21 Oct 2026): drive a restore walk that is ALREADY STALE -------------
+    // A third-party plugin's load is asynchronous, which is how his elysia landed a second after
+    // Undo all had finished; a builtin loads synchronously and so can never be late by itself. The
+    // guard makes the state instead of waiting for it: bump the generation, then hand restoreNextSlot
+    // the OLD one. That is exactly what a late callback carries.
+    static void restoreWithStaleGen (ChainHost& h, const juce::PluginDescription& d)
+    {
+        std::vector<ChainHost::RestoreItem> items;
+        ChainHost::RestoreItem it; it.desc = d; it.bypassed = false; it.wet = 1.0f;
+        items.push_back (it);
+        // A REAL WALK'S GENERATION IS NEVER 0: both entry points pre-increment, and 0 is the
+        // sentinel for "a caller from before this existed" (which restoreNextSlot reads as "treat
+        // me as current"). My first cut captured 0 from a fresh ChainHost and the walk was
+        // therefore treated as current - the leg failed for its own reason, not the product's. So
+        // the fixture takes a generation the way the product does, then moves past it.
+        const auto stale = h.beginRestoreGeneration();   // this walk's generation...
+        h.beginRestoreGeneration();                      // ...and the rack moves on under it
+        h.restoreNextSlot (std::move (items), 0, {}, stale);
+    }
+    static juce::uint32 generation (ChainHost& h) { return h.restoreGeneration_; } };
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 void pumpMs (double ms) { const double t0 = juce::Time::getMillisecondCounterHiRes(); while (juce::Time::getMillisecondCounterHiRes() - t0 < ms) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); } }
@@ -208,6 +228,110 @@ int main()
 
     // ---- depth 50 ----
     { for (int k = 0; k < 60; ++k) h.setSlotKeepLevel (1, (k % 2) == 0); check (U.undoDepth() == 50, "10. the history is bounded at 50 (60 keep toggles)", juce::String (U.undoDepth())); }
+    // ---- UA: UNDO ALL DOES NOT REFILL THE RACK (his 11:54, 21 Oct 2026) -----------------------
+    //
+    // *"Undo all on the mix bus refilled it with 5+ Lindell SBC and 2+ Shadow Hills."*
+    //
+    // THE CAUSE, from his log: "undo all" walks the history synchronously - seven steps inside one
+    // millisecond - and every `chain` step clears the rack and starts restoreNextSlot, which loads
+    // one plugin through loadPluginAsync and recurses FROM THE CALLBACK, appending each one at the
+    // end of the rack. It carries its `items` by value, so nothing it reads can tell it the rack has
+    // moved on. The clear at the start of the next step removes the slots present at that instant;
+    // it cannot stop three walks already in flight, and they carry on appending. Four overlapping
+    // restores of a four-plugin mix bus is five Lindell SBCs.
+    //
+    // THE LEG IS HIS PRESS: three undos with NO pump between them, which is exactly the agent's
+    // while-loop, and then one pump long enough for every async load to land. A fresh processor, so
+    // the legs above keep their own history.
+    {
+        std::printf ("  -- UA: undo all, three chain steps with no wait between them --\n");
+        auto pU = std::make_unique<EchoJayProcessor>(); auto& p2 = *pU;
+        p2.prepareToPlay (48000.0, 512);
+        auto& h2 = p2.getChainHost(); auto& U2 = p2.undoHistory();
+        const auto dGn = BuiltinDeviceRegistry::descriptionFor (*BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain"));
+        h2.loadPluginAsync (dLv, ChainHost::LoadOrigin::User, {}); pumpMs (120);
+        h2.loadPluginAsync (dLm, ChainHost::LoadOrigin::User, {}); pumpMs (120);
+        h2.loadPluginAsync (dGn, ChainHost::LoadOrigin::User, {}); pumpMs (120);
+        check (h2.getNumSlots() == 3 && U2.undoDepth() == 3,
+               "UA1 three adds, three chain entries",
+               juce::String (h2.getNumSlots()) + " slot(s), depth " + juce::String (U2.undoDepth()));
+
+        // THE WALK, with no pump between the steps - the agent's `while (h.undoDepth() > ...) h.undo();`
+        U2.undo(); U2.undo(); U2.undo();
+        pumpMs (1200);
+
+        check (h2.getNumSlots() == 0,
+               "UA2 RED-FIRST: the rack ends EMPTY, where the three adds started. Before the restore "
+               "generation, the in-flight walks kept appending after each clear and the rack came "
+               "back fuller than it began - his five Lindell SBCs",
+               juce::String (h2.getNumSlots()) + " slot(s): " + [&h2]
+               { juce::StringArray n; for (int i = 0; i < h2.getNumSlots(); ++i) n.add (h2.getSlotInfo (i).name); return n.joinIntoString (", "); }());
+
+        // AND THE PROPERTY THAT NAMES THE FAULT, not just the count: no plugin twice.
+        {
+            juce::StringArray seen, dupes;
+            for (int i = 0; i < h2.getNumSlots(); ++i)
+            {
+                const auto nm = h2.getSlotInfo (i).name;
+                if (seen.contains (nm)) dupes.addIfNotAlreadyThere (nm); else seen.add (nm);
+            }
+            check (dupes.isEmpty(),
+                   "UA3 ...and nothing is duplicated - which is the shape he reported, and it can "
+                   "happen at any count", dupes.joinIntoString (", "));
+        }
+
+        // AND THE OTHER DIRECTION: a redo walk puts them back, once each. A generation that stopped
+        // too much would show up here as a rack that never refills.
+        U2.redo(); pumpMs (400); U2.redo(); pumpMs (400); U2.redo(); pumpMs (400);
+        check (h2.getNumSlots() == 3,
+               "UA4 ...and three redos, each given its own moment, restore exactly three slots - the "
+               "guard against a fix that simply stops restoring",
+               juce::String (h2.getNumSlots()));
+    }
+
+    // ---- UA5: A LATE LOAD DOES NOT LEAVE A PLUGIN BEHIND (his 14:12, 21 Oct 2026) -----------
+    //
+    // *"Undo all after the 14:07 build removed the EchoJay EQ, both EchoJay Compressors and the
+    // FG-X 2, but left the elysia karacter master in place."*
+    //
+    // MY OWN 11:54 FIX PUT IT THERE. His log, in order:
+    //   14:13:12  EJPanel: rebuild slots=0 sel=-1        <- the walk ended correct, rack empty
+    //   14:13:13  "elysia karacter master" finished loading into a rack that has moved on
+    //             (restore generation 2 vs 9) - it is NOT adopted
+    //   14:13:13  EJPanel: rebuild slots=1 sel=-1        <- and yet there it was
+    //
+    // "NOT adopted" was a half-truth: loadPluginAsync APPENDS the slot and then calls the callback,
+    // so declining to configure it left it in the graph. Builtins never showed this because they
+    // load synchronously inside their own generation - the elysia was the only third-party plugin in
+    // those snapshots. The stale branch now takes the slot back out.
+    {
+        std::printf ("  -- UA5: a restore that finishes into a rack that has moved on --\n");
+        auto pS = std::make_unique<EchoJayProcessor>(); auto& p3 = *pS;
+        p3.prepareToPlay (48000.0, 512);
+        auto& h3 = p3.getChainHost();
+        check (h3.getNumSlots() == 0, "UA5a the rack starts empty", juce::String (h3.getNumSlots()));
+        const auto before = EchoJayBorrowHostTestAccess::generation (h3);
+        EchoJayBorrowHostTestAccess::restoreWithStaleGen (h3, dLv);
+        pumpMs (300);
+        check (EchoJayBorrowHostTestAccess::generation (h3) != before,
+               "UA5b the fixture really did move the rack on under the walk",
+               juce::String ((int) before) + " -> "
+                 + juce::String ((int) EchoJayBorrowHostTestAccess::generation (h3)));
+        check (h3.getNumSlots() == 0,
+               "UA5c RED-FIRST: the plugin that finished loading into a rack that had moved on is "
+               "NOT left behind - this is his elysia, and before this it stayed on the mix bus after "
+               "Undo all said everything was undone",
+               juce::String (h3.getNumSlots()) + " slot(s): "
+                 + (h3.getNumSlots() > 0 ? h3.getSlotInfo (0).name : juce::String ("-")));
+        // AND THE OTHER DIRECTION: a walk whose generation is CURRENT still restores. A stale check
+        // that stopped everything would show up as an empty rack here, and the guard would pass for
+        // the wrong reason.
+        h3.loadPluginAsync (dLv, ChainHost::LoadOrigin::Restore, {}); pumpMs (300);
+        check (h3.getNumSlots() == 1,
+               "UA5d ...and an ordinary restore into the current generation still lands",
+               juce::String (h3.getNumSlots()));
+    }
+
     std::printf ("\n==== global_undo_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

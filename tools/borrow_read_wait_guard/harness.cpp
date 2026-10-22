@@ -161,6 +161,95 @@ int main()
         check (quiet.next == Next::WaitOnBusy, "(7) ...and it is still waiting, line or no line");
     }
 
+    // ---- (9) THE READ'S OWN SENTENCE IS RETIRED BY THE DRAW (his 11:32, 21 Oct 2026) ------------
+    //
+    // *"the rack view stuck on "Reading 0 plugin(s) from 88_7even Kick_2_01..." for minutes, while
+    // the kHs Compressor sat on the rack and worked. Your 8-second read deadline didn't clear it.
+    // ... The line must be replaced as soon as the view has drawn the rack from the sidecar,
+    // whatever path set it."*
+    //
+    // His 11:32, as the log tells it: read START at 11:31:52 on a valid sidecar holding 0 slots,
+    // finished in the same second, nothing stranded - so the stall bound was never going to fire.
+    // The sentence simply had no end condition. These legs are the end condition, in both
+    // directions: what it must retire, and the lines it must never touch.
+    {
+        std::printf ("== (9) the read notice ==\n");
+        using echojay::borrowread::ReadNotice;
+        using echojay::borrowread::shouldRetireReadNotice;
+
+        // HIS CASE. The notice was written about a rack that then published one slot; the view has
+        // drawn that slot; the read is over.
+        ReadNotice his;
+        his.line = his.ownedLine = "Reading 0 plugin(s) from 88_7even Kick_2_01...";
+        his.ownedUid = his.viewUid = "bb411b8240";
+        his.viewValid = true; his.viewSlots = 1; his.drawnSlots = 1; his.readInFlight = false;
+        check (shouldRetireReadNotice (his),
+               "(9a) RED-FIRST: his own line, over a rack the view has drawn, is RETIRED - this is the "
+               "state it sat in for minutes");
+
+        // THE SAME LINE FROM SOME OTHER WRITER: no ownership, retired on the prose - the "whatever
+        // path set it" half of his ruling.
+        ReadNotice other = his;
+        other.ownedLine.clear(); other.ownedUid.clear();
+        check (shouldRetireReadNotice (other),
+               "(9b) ...and the same sentence with no owner recorded is retired too");
+
+        // NOT DRAWN YET: the view holds three slots, the panel is still showing none. The sentence
+        // is TRUE here, and a notice removed now would leave an empty rack with nothing said about
+        // it - the opposite failure.
+        ReadNotice midPull = his;
+        midPull.line = midPull.ownedLine = "Reading 3 plugin(s) from 88_7even Kick_2_01...";
+        midPull.viewSlots = 3; midPull.drawnSlots = 0; midPull.readInFlight = true;
+        check (! shouldRetireReadNotice (midPull),
+               "(9c) a rack the panel has NOT drawn yet keeps its notice - the sentence is still true");
+
+        // AN EMPTY RACK WITH THE READ STILL RUNNING: nothing drawn because there is nothing to
+        // draw, and the read has not finished. The one case where 0 == 0 is not a draw.
+        ReadNotice emptyBusy = his;
+        emptyBusy.viewSlots = 0; emptyBusy.drawnSlots = 0; emptyBusy.readInFlight = true;
+        check (! shouldRetireReadNotice (emptyBusy),
+               "(9d) an empty rack whose read is still in flight keeps it");
+        ReadNotice emptyDone = emptyBusy;
+        emptyDone.readInFlight = false;
+        check (shouldRetireReadNotice (emptyDone),
+               "(9e) ...and loses it the moment that read is over: an empty rack drawn as empty is "
+               "drawn, and nothing is reading any more");
+
+        // SOMEONE ELSE'S WORDS ARE NEVER SWEPT. This is the guard that keeps the fix from eating the
+        // honesty surfaces that share this line - a refusal, a lock line, an edit flow's message.
+        for (auto notOurs : { "Could not finish reading that rack. Select it again.",
+                              "Cannot edit this rack: its lock is held elsewhere.",
+                              "Reading settings...",
+                              "Released - 88_7even Kick_2_01 owns its rack again." })
+        {
+            ReadNotice n = his;
+            n.line = notOurs;            // the read's ownedLine is still the old sentence
+            check (! shouldRetireReadNotice (n),
+                   juce::String ("(9f) \"") + notOurs + "\" is not the read's line and is left alone");
+        }
+
+        // AND NOT ACROSS RACKS: the notice was written about one rack, the view is on another. The
+        // proxy fault in person - a line is about a rack, not about "the view".
+        ReadNotice elsewhere = his;
+        elsewhere.viewUid = "14377e493b";
+        elsewhere.line = elsewhere.ownedLine = "Reading 0 plugin(s) from 88_7even Kick_2_01...";
+        check (shouldRetireReadNotice (elsewhere),
+               "(9g) a stale notice naming ANOTHER rack still goes once this view has drawn - it "
+               "cannot be true of the rack on screen either");
+        ReadNotice ownedElsewhere = his;
+        ownedElsewhere.ownedUid = "14377e493b";
+        ownedElsewhere.line = ownedElsewhere.ownedLine = "Please wait...";
+        check (! shouldRetireReadNotice (ownedElsewhere),
+               "(9h) ...but a line that is neither a read notice nor THIS view's owned words is not "
+               "touched, whoever wrote it");
+
+        // AN INVALID VIEW CLAIMS NOTHING. No description, no draw, no retirement.
+        ReadNotice invalid = his;
+        invalid.viewValid = false;
+        check (! shouldRetireReadNotice (invalid),
+               "(9i) an invalid view has drawn nothing, so it retires nothing");
+    }
+
     std::printf ("\n==== borrow_read_wait_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

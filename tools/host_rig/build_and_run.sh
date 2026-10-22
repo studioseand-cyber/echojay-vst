@@ -233,6 +233,24 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-nowindowbuild-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_nw", "name": "do", "approval": "ask_first",
+            "_holdMs": 4000,
+            "summary": "build a compressor on this rack",
+            "args": { "op": "build",
+                      "chain": [ { "name": "EchoJay Compressor",
+                                   "settings_structured": { "params": { "threshold_db": -20, "ratio": 3 } },
+                                   "dial_on_playback": { "target_lufs": -8, "control": "slot_in",
+                                                         "ceiling": -0.1, "avg_limit_db": 3,
+                                                         "peak_limit_db": 6 } } ] } },
+          { "event": "await", "ids": ["tc_nw"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Built a compressor on the rack." } ]
+      ]
+    },
+    {
       "goalContains": "rig-badop-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
@@ -295,6 +313,21 @@ cat > "$SCRATCH/script.json" <<'JSON'
           { "event": "await", "ids": ["tc_ri"] } ],
         [ { "event": "done", "reason": "complete", "rounds": 1,
             "summary": "Set the attack and release." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-pregain-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_pg1", "name": "do", "approval": "ask_first",
+            "summary": "add a compressor and dial it to a loudness target",
+            "args": { "op": "add", "name": "EchoJay Compressor",
+                      "settings_structured": { "params": { "threshold_db": -16, "ratio": 2.5 } },
+                      "dial_on_playback": { "target_lufs": -8, "control": "slot_in",
+                                            "ceiling": -0.1, "avg_limit_db": 3, "peak_limit_db": 6 } } },
+          { "event": "await", "ids": ["tc_pg1"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added a compressor and dialled it to -8 LUFS." } ]
       ]
     },
     {

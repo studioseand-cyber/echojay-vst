@@ -30,6 +30,7 @@
 #include <JuceHeader.h>
 #include "EJAgentExecutorRead.h"
 #include "EJAgentExecutorDo.h"
+#include "EJDontUse.h"   // his 11:5x item 3: the mark's words, parsed in one place
 // EJCalibLoop.h logs through EchoJay_NSLog without declaring it (NativeClip.mm defines it and every plugin
 // TU has it in scope by other means). A guard that includes the header directly has to declare it, exactly as
 // Source/NativeClip.h and Source/PluginScanner.h do - the archive carries the definition.
@@ -491,6 +492,199 @@ int main()
         check (! o.ok, "an op this build does not have is refused");
         check (o.errorMessage.contains ("undo"),
                "...and the refusal's list of what it DOES know names undo", o.errorMessage);
+    }
+
+    // ---- SL: THE SLOT THE ADD LANDED ON, AS A READ FACT (his 11:27 item 2, 21 Oct 2026) -------
+    //
+    // *"Include the slot position the add actually landed on in the read-back, so B can state the
+    // order as fact instead of "the order hasn't read back yet"."*
+    //
+    // The read-back ALREADY resolves which slot it is reading (by name against the rack, then the
+    // placement), and then threw that number away - so the one place in the build that knows where
+    // the add landed, from a RACK READ rather than from the order the ops were sent in, was keeping
+    // it to itself. Both directions are held here, because this field is a CLAIM ABOUT ORDER and a
+    // wrong one is worse than none: B states it as fact.
+    std::printf ("== SL: the read-back states where the add landed, and withholds it when unsure ==\n");
+    {
+        // A rack that answers with real names, so the name match resolves exactly as it does live.
+        // The leg sets its own ground: FakeHost's nSlots() calls every slot "slot", which cannot
+        // tell a name match from a miss.
+        auto namedRack = [] (const juce::StringArray& names)
+        {
+            RackRead r; r.valid = true; r.remote = true; r.uid = "bb411b8240";
+            r.name = "88_7even Kick_2_01"; r.kind = "channel";
+            for (int i = 0; i < names.size(); ++i)
+            { SlotRead sl; sl.n = i + 1; sl.name = names[i]; r.slots.push_back (sl); }
+            return r;
+        };
+
+        // ---- ONE match by name: the position is known, so it is stated ----------------------
+        {
+            FakeHost h; SinkLog lg;
+            auto src = h.sources();
+            src.linkRack = [namedRack] (const juce::String&)
+            { return namedRack (juce::StringArray { "UAD 1176", "FabFilter Pro-C 2" }); };
+            ExecutorDo ex (src, sinks (lg));
+            ToolOutcome got; bool fired = false;
+            ex.doOp (call ("do", R"({"op":"add","name":"FabFilter Pro-C 2","channel":"bb411b8240",
+                                     "confirm":true,"settings_structured":{"threshold_db":-18}})"),
+                     [&] (ToolOutcome o) { got = std::move (o); fired = true; });
+            runClock (lg);
+            check (fired && got.ok, "SL1 the add lands", got.errorMessage);
+            check ((int) got.result.getProperty ("slot_landed", juce::var (0)) == 2,
+                   "SL2 RED-FIRST: the result carries slot_landed 2 - read off the rack, which is what "
+                   "lets B state the order as fact (it carried nothing before)",
+                   got.result.getProperty ("slot_landed", juce::var()).toString());
+            check (got.result.getProperty ("slot_landed_name", juce::var()).toString() == "FabFilter Pro-C 2",
+                   "SL3 ...with the name that was READ at that position, so the number is not a bare "
+                   "claim", got.result.getProperty ("slot_landed_name", juce::var()).toString());
+            check (got.landedForTheUser().contains ("in slot 2"),
+                   "SL4 ...and the row he reads says where it went", got.landedForTheUser());
+        }
+
+        // ---- AND AN ADD WITH NO SETTINGS, which is most of B's adds ------------------------
+        // The door my own wrong fixture found: with nothing to read back there is no settings check
+        // to carry the position, and this is exactly the case where B was saying "the order hasn't
+        // read back yet".
+        {
+            FakeHost h; SinkLog lg;
+            auto src = h.sources();
+            src.linkRack = [namedRack] (const juce::String&)
+            { return namedRack (juce::StringArray { "UAD 1176", "FabFilter Pro-C 2" }); };
+            ExecutorDo ex (src, sinks (lg));
+            ToolOutcome got; bool fired = false;
+            ex.doOp (call ("do", R"({"op":"add","name":"FabFilter Pro-C 2","channel":"bb411b8240",
+                                     "confirm":true})"),
+                     [&] (ToolOutcome o) { got = std::move (o); fired = true; });
+            runClock (lg);
+            check (fired && got.ok, "SL8 an add with no settings lands", got.errorMessage);
+            check ((int) got.result.getProperty ("slot_landed", juce::var (0)) == 2,
+                   "SL9 RED-FIRST: ...and still reports WHERE - the branch with nothing to read back "
+                   "is the one B had no order from",
+                   got.result.getProperty ("slot_landed", juce::var()).toString());
+            check (got.landedForTheUser().contains ("in slot 2"),
+                   "SL10 ...and the row says it", got.landedForTheUser());
+        }
+
+        // ---- TWO of that name and no placement: the read-back CANNOT say which -------------
+        // This is the ambiguity the function already refuses to guess at for figures (it converts
+        // every miss to "not confirmed"). A position is the same kind of claim, so it is withheld by
+        // the same test - and a leg holds it, because a number here would be B stating a WRONG order
+        // as fact, which is worse than B saying the order has not read back.
+        {
+            FakeHost h; SinkLog lg;
+            auto src = h.sources();
+            src.linkRack = [namedRack] (const juce::String&)
+            { return namedRack (juce::StringArray { "UAD 1176", "FabFilter Pro-C 2", "FabFilter Pro-C 2" }); };
+            ExecutorDo ex (src, sinks (lg));
+            ToolOutcome got; bool fired = false;
+            ex.doOp (call ("do", R"({"op":"add","name":"FabFilter Pro-C 2","channel":"bb411b8240",
+                                     "confirm":true,"settings_structured":{"threshold_db":-18}})"),
+                     [&] (ToolOutcome o) { got = std::move (o); fired = true; });
+            runClock (lg);
+            check (fired && got.ok, "SL5 the add lands", got.errorMessage);
+            check (! got.result.getDynamicObject()->hasProperty ("slot_landed"),
+                   "SL6 two slots of that name and no placement: NO position is claimed",
+                   got.result.getProperty ("slot_landed", juce::var()).toString());
+            check (! got.landedForTheUser().contains ("in slot"),
+                   "SL7 ...and the row does not name one either", got.landedForTheUser());
+        }
+    }
+
+    // ---- DU: "DON'T USE THAT ONE" (his 11:5x item 3, 21 Oct 2026) -----------------------------
+    //
+    // *"The MLimiterX is an expired demo. Can the plugin tell (it passes audio, so silent-slot
+    // detection won't)? If not, give Sean a way to mark a plugin "don't use", stored like the silent
+    // mark, and send it so B leaves it out."*
+    //
+    // IT CANNOT TELL: a host sees parameters and audio, and an expired demo that passes audio is
+    // identical to a licensed one in both - which is why the silent-slot detector cannot reach this
+    // case at all. So the mark is his, and these legs hold the two halves that can go wrong without
+    // anybody noticing: WHICH SENTENCES TAKE IT (a false positive silently removes a plugin from
+    // every future build), and WHETHER IT REACHES B.
+    std::printf ("== DU: the mark's words, and the mark reaching the model ==\n");
+    {
+        using echojay::dontuse::parse;
+
+        // THE SENTENCES THAT MARK
+        check (parse ("don't use it again").marks, "DU1 his own words mark");
+        check (parse ("Don't use the MLimiterX").marks
+                 && parse ("Don't use the MLimiterX").name == "mlimiterx",
+               "DU2 ...and the name comes out, filler words dropped",
+               parse ("Don't use the MLimiterX").name);
+        check (parse ("never use MLimiterX again").marks, "DU3 \"never use ... again\" marks");
+        check (parse ("stop using the MLimiterX").marks, "DU4 \"stop using\" marks");
+        check (parse ("dont use that plugin").marks, "DU5 ...and the apostrophe is optional");
+        check (parse ("don't use it again").name.isEmpty(),
+               "DU6 \"it\" is NOT a name - the caller resolves it from the limiter the loop just "
+               "complained about, or asks", parse ("don't use it again").name);
+
+        // THE SENTENCES THAT LIFT
+        check (parse ("use MLimiterX again").lifts
+                 && parse ("use MLimiterX again").name == "mlimiterx",
+               "DU7 a lift names its plugin", parse ("use MLimiterX again").name);
+        check (! parse ("use it again").took(),
+               "DU8 ...and a lift with no name takes NOTHING: there is nothing for \"it\" to refer "
+               "to once the plugin is out of the rack, and guessing would re-admit the wrong one");
+        check (! parse ("use the CL 1B").took(),
+               "DU9 ...and a bare \"use X\" is a REQUEST, not a settings change - it belongs to the "
+               "server");
+
+        // AND THE OTHER DIRECTION, which is the whole risk of this verb: a stored setting must not
+        // change because a sentence mentioned not using something.
+        check (! parse ("I don't use that one much").took(),
+               "DU10 RED-FIRST: a remark about his habits is not an instruction - the verb has to "
+               "OPEN the sentence");
+        check (! parse ("why don't use the MLimiterX?").took(),
+               "DU11 ...and a question is never an instruction");
+        check (! parse ("don't use it again?").took(),
+               "DU12 ...including his own words with a question mark on them");
+        check (! parse ("can you not use the limiter").took(), "DU13 ...and a polite ask is not the verb");
+        check (! parse ("").took() && ! parse ("   ").took(), "DU14 nothing takes nothing");
+    }
+    {
+        // AND IT REACHES THE MODEL, with the reason - the half that makes B leave it out. The
+        // inventory withholds them too (EJAgentExecutorRead's inventory source); what a START BODY
+        // carries is what lets the model answer when he asks for one by name.
+        FakeHost h; SinkLog lg;
+        auto sk = sinks (lg);
+        sk.dontUsePlugins = [] () -> juce::var
+        {
+            juce::Array<juce::var> a;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("name", "MLimiterX");
+            o->setProperty ("why", "don't use it again - expired demo");
+            a.add (juce::var (o));
+            return juce::var (a);
+        };
+        ExecutorDo ex (h.sources(), std::move (sk));
+        const auto ctx = ex.startContext();
+        auto* arr = ctx.getProperty ("plugins_held", juce::var()).getArray();
+        check (arr != nullptr && arr->size() == 1,
+               "DU15 the start context carries B's own key, plugins_held (his ruling of 21 Oct: one key both sides agree)",
+               juce::JSON::toString (ctx.getProperty ("plugins_held", juce::var())));
+        check (arr != nullptr && ! arr->isEmpty()
+                 && arr->getFirst().getProperty ("name", juce::var()).toString() == "MLimiterX"
+                 && arr->getFirst().getProperty ("why", juce::var()).toString().isNotEmpty(),
+               "DU16 ...with the reason HE gave, so the model can say why rather than pretend the "
+               "plugin does not exist");
+        const auto note = ctx.getProperty ("plugins_held_note", juce::var()).toString();
+        check (note.containsIgnoreCase ("do not offer") && note.containsIgnoreCase ("clears itself")
+                 && note.containsIgnoreCase ("names one"),
+               "DU17 ...and the note tells it not to offer them AND that the mark does not expire - "
+               "a model that assumes it does will offer the plugin again next week", note);
+    }
+    {
+        // NO MARKS, NO KEY. An empty list must not travel as an empty array that reads like "he has
+        // opinions about nothing" - absent means there is nothing to say.
+        FakeHost h; SinkLog lg;
+        auto sk = sinks (lg);
+        sk.dontUsePlugins = [] { return juce::var(); };
+        ExecutorDo ex (h.sources(), std::move (sk));
+        const auto ctx = ex.startContext();
+        check (ctx.getDynamicObject() != nullptr
+                 && ! ctx.getDynamicObject()->hasProperty ("plugins_held"),
+               "DU18 with no marks the key is ABSENT, not an empty list");
     }
 
     std::printf ("==== agent_round14_guard: %s (%d assertion(s) failed, %d passed) ====\n",

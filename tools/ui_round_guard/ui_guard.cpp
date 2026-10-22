@@ -138,6 +138,11 @@ struct EchoJayTabStripTestAccess
     static bool verb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t); }
     static auto& panel (EchoJayEditor& e) { return e.chainListPanel; }        // 22 Sep 2026 (item 7)
     static void picker (EchoJayEditor& e) { e.showChainPluginPicker(); }     // 22 Sep 2026 (item 7)
+    /** 20 Oct 2026 (B's capture): the ask shelf's layout, as a pure function, so a leg can ask it
+        how it lays out SIX chips without a host. */
+    static int shelf (EchoJayEditor& e, const EchoJayEditor::ChatMsg& m, int w,
+                      std::vector<juce::Rectangle<int>>* rects, juce::StringArray* labels)
+    { return e.measureAskShelf (m, w, rects, labels, nullptr, nullptr, nullptr); }
     static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
     static std::vector<juce::String> rosterRows (EchoJayEditor& e) { return e.rosterAddresses(); }   // 21t-k item 5
     // 21t-l: the header undo pair - the path that cannot be swallowed by a host.
@@ -298,8 +303,14 @@ struct EchoJayTabStripTestAccess
         m.role = "assistant"; m.agentRunId = runId; m.content = content; m.agentData = snapshot;
         return m;
     }
-    static void ownRun (EchoJayEditor& e, int runId, const juce::String& chatId)
-    { e.agentRunMsgId_ = runId; e.agentRunChatId_ = chatId; }
+    // ---- RE-AIMED BY STAGE D (his chat-log ruling, 21 Oct 2026) ----------------------------
+    // "This editor's own run" is now the RUN'S KEY, not a per-window integer the chat replay
+    // reissues (his 14:15). The fixture sets both: the integer is still the drawing handle the hit
+    // zones use, and the key is what the recorder gates on. `key` empty means "no run of our own",
+    // which is what ownRun(0, {}) has always meant.
+    static void ownRun (EchoJayEditor& e, int runId, const juce::String& chatId,
+                        const juce::String& key = {})
+    { e.agentRunMsgId_ = runId; e.agentRunChatId_ = chatId; e.agentRunKey_ = key; }
     static void forgetRecorded (EchoJayEditor& e)
     { e.agentRecordedInChat_ = 0; e.agentRecordedChat_ = {}; e.agentRecordedText_ = {}; }
     static int storedMsgs (EchoJayEditor& e, const juce::String& id)
@@ -1200,12 +1211,26 @@ int main()
             // A finished run's row, as a restored chat brings one: content and a snapshot, and NOT this
             // editor's own run (its id is one no run here minted).
             const juce::String answer = "Added the bx_townhouse Buss Compressor on the kick - threshold -10 dB.";
-            auto snapshotFor = [] (const juce::String& closing, const juce::String& session)
+            // THE SNAPSHOT CARRIES THE RUN'S KEY (stage D): the recorder finds a run's row by its
+            // key now, so a fixture row without one is a row that belongs to no run - which is what
+            // CR2/CR3 started reporting. One key for all these rows, because they are all the same
+            // run's answers.
+            // THE KEY IS A PARAMETER NOW (22 Oct 2026). Every row this fixture made carried
+            // v.runKey = "key_cr", which made "a different answer" and "the same run's answer,
+            // changed" the same input - and they are not the same thing any more: a card is found
+            // in the store by the RUN'S KEY (his 09:24 fault's fix), so the two cases have to be
+            // spelled differently here to be tested at all. Default kept, so every other call site
+            // in this block means exactly what it meant.
+            auto snapshotForRun = [] (const juce::String& closing, const juce::String& session,
+                                      const juce::String& runKey)
             {
                 echojay::agentui::RunView v;
                 v.sessionId = session; v.finished = true; v.statusWord = "Done"; v.closing = closing;
+                v.runKey = runKey;
                 return juce::JSON::toString (echojay::agentui::toJson (v), true);
             };
+            auto snapshotFor = [&snapshotForRun] (const juce::String& closing, const juce::String& session)
+            { return snapshotForRun (closing, session, "key_cr"); };
             auto row = A::makeAgentRow (9999, answer, snapshotFor (answer, "ag_r"));
 
             // (a) HIS CLICK-THROUGH. Open each chat in turn with a foreign row in hand.
@@ -1236,7 +1261,7 @@ int main()
             // (b) THE RUN'S OWN CHAT, ONCE. The row is this editor's run and the chat is the one it
             //     started in: the answer is written, and a second call does not write it again.
             A::openChat (*ed, "chat_kick"); pumpMs (20);
-            A::ownRun (*ed, row.agentRunId, "chat_kick");
+            A::ownRun (*ed, row.agentRunId, "chat_kick", "key_cr");
             A::forgetRecorded (*ed);
             A::recordRun (*ed, row);
             check (A::storedMsgs (*ed, "chat_kick") == 2,
@@ -1263,19 +1288,67 @@ int main()
                      == echojay::agentui::normalisedProse (row.content)
                    && echojay::agentui::normalisedProse ("a  b\n\nc") == "a b c",
                    "CR3b ...because the key normalises dashes and whitespace, and nothing else");
-            // and a genuinely different answer is NOT swallowed by that comparison
+            // and a genuinely different answer, from a DIFFERENT RUN, is NOT swallowed by that
+            // comparison. RE-AIMED 22 Oct 2026, and this is why: the fixture used to give this row
+            // the SAME run id and the SAME run key as the one above, so what it actually asserted
+            // was "one run writes a second row when its prose changes". That was the only thing a
+            // prose dedupe could mean, and it is now wrong - a card is found by the run's key, so
+            // one run is one row (the mockup's first rule, and the hole DUP2 came through). The
+            // CLAIM is unchanged and still asserted: two different answers are two rows. What
+            // changed is that the two answers now come from two runs, which is what "different
+            // answer" means outside a fixture.
             A::forgetRecorded (*ed);
             const juce::String otherAnswer = "Added the bx_townhouse Buss Compressor on the kick - threshold -14 dB.";
-            auto other = A::makeAgentRow (row.agentRunId, otherAnswer, snapshotFor (otherAnswer, "ag_r2"));
+            // AND THE FIXTURE HAS TO OWN THAT RUN. The recorder writes only for THIS window's own
+            // run, matched by key since stage D - so a second run has to be declared as one, exactly
+            // as the first was. My first cut of this re-aim changed the row's key and not the
+            // window's, and all three legs went red for the one reason that has nothing to do with
+            // the claim: the recorder returned before it did anything at all.
+            A::ownRun (*ed, row.agentRunId + 1, "chat_kick", "key_cr2");
+            auto other = A::makeAgentRow (row.agentRunId + 1, otherAnswer,
+                                          snapshotForRun (otherAnswer, "ag_r2", "key_cr2"));
             A::recordRun (*ed, other);
             check (A::storedMsgs (*ed, "chat_kick") == 3,
-                   "CR3c ...so a different answer is still written - the dedupe is not a filter on answers",
+                   "CR3c ...so a DIFFERENT RUN's different answer is still written - the dedupe is not "
+                   "a filter on answers",
                    juce::String (A::storedMsgs (*ed, "chat_kick")));
+
+            // ...AND THE OTHER DIRECTION, which is the new rule: the SAME run, whose prose settled
+            // to something else, REWRITES the row it already has. Without this the fix for his 09:24
+            // fault (the store gets a card when the run begins, before any prose exists) would show
+            // a second copy of every run whose closing changed after it was first written - DUP2
+            // again, through the door that fix opened.
+            A::forgetRecorded (*ed);
+            const juce::String settled = "Added the bx_townhouse Buss Compressor on the kick - threshold -14 dB, "
+                                         "and matched the slot's OUT trim.";
+            auto again = A::makeAgentRow (row.agentRunId + 1, settled,
+                                          snapshotForRun (settled, "ag_r2", "key_cr2"));
+            A::recordRun (*ed, again);
+            check (A::storedMsgs (*ed, "chat_kick") == 3,
+                   "CR3d ...while the SAME run's settled prose REWRITES its own row rather than adding "
+                   "one - one run is one row, found by its key  (RED without that lookup: the prose had "
+                   "changed, so a content match would have missed it and appended)",
+                   juce::String (A::storedMsgs (*ed, "chat_kick")));
+            {
+                const auto* ck = A::chat (*ed, "chat_kick");
+                bool holdsSettled = false, holdsOld = false;
+                if (ck != nullptr)
+                    for (const auto& m : ck->messages)
+                    {
+                        if (m.content == settled)     holdsSettled = true;
+                        if (m.content == otherAnswer) holdsOld     = true;
+                    }
+                check (holdsSettled && ! holdsOld,
+                       "CR3e ...and the row it rewrote now reads the SETTLED sentence, with the earlier "
+                       "spelling gone rather than kept beside it",
+                       juce::String ("settled=") + (holdsSettled ? "y" : "n")
+                       + " old=" + (holdsOld ? "y" : "n"));
+            }
 
             // (d) AND A CHAT THE STORE DOES NOT KNOW IS NEVER CREATED HERE.
             A::forgetRecorded (*ed);
             A::setChatId (*ed, "chat_that_does_not_exist");
-            A::ownRun (*ed, row.agentRunId, "chat_that_does_not_exist");
+            A::ownRun (*ed, row.agentRunId, "chat_that_does_not_exist", "key_cr");
             A::recordRun (*ed, row);
             check (A::chat (*ed, "chat_that_does_not_exist") == nullptr,
                    "CR4 a chat id the store does not know is NOT created on the fly - that would be a chat with "
@@ -4244,7 +4317,7 @@ int main()
     // `chatScrollBottom` and the painter bounded them with `chatScroll.getBottom()`, the live component. This leg
     // asserts the thing the log could not: that the rows have somewhere to go, and that the edge the painter
     // uses is the edge the layout wrote.
-    std::printf ("== 08c item D: the chains list renders rows ==\n");
+        std::printf ("== 08c item D: the chains list renders rows ==\n");
     {
         EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
         std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
@@ -4309,6 +4382,64 @@ int main()
         check (A::listBottom (*ed) == bottom,
                "(D) reopening CHAINS re-authors the same edge rather than leaving it at the cleared 0",
                juce::String (A::listBottom (*ed)) + " vs " + juce::String (bottom));
+    }
+
+    // ---- SIX CHIPS MUST DRAW (20 Oct 2026, B's capture) --------------------------------------
+    //
+    // B: *"The agent-off pick card with SIX chips was drawn with none at all (five drew fine at
+    // 09:32). The chip row must lay out any number, wrapping to a second row, never drop the lot."*
+    //
+    // measureAskShelf is a PURE function, so this asks it directly instead of inferring from a
+    // capture: six rects back means the measure is sound and the loss is downstream (the placement
+    // or the visibility pass), and this leg says which by passing. Fewer means the measure is where
+    // they go. Either way the next move is evidence rather than a reading of the code.
+    //
+    // Self-contained, with its own processor and editor, like every other leg in this file - my
+    // first cut borrowed an `ed` from a neighbouring block and landed outside its scope.
+    std::printf ("== SIX CHIPS: the ask shelf lays out any number, wrapping ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (1200, 800); pumpMs (60);
+
+        A::Msg m;
+        m.role    = "assistant";
+        m.content = "Which compressor?";
+        // A CUSTOM DELIMITER, because B's real labels contain "(s)" - and `(s)"` includes the
+        // sequence `)"` that CLOSES a default raw string. The first cut of this leg ended its
+        // literal inside "DPR-402 (s)" and the compiler read the rest as code.
+        m.askData = R"JSON({"question":"Which compressor?","choices":[
+                      {"label":"DPR-402 (s)"},{"label":"SSLComp (s)"},{"label":"VBC FG-Red"},
+                      {"label":"Lindell 254E"},{"label":"Bettermaker"},{"label":"EchoJay Compressor"}]})JSON";
+
+        for (int w : { 760, 520, 360 })
+        {
+            std::vector<juce::Rectangle<int>> rects;
+            juce::StringArray labels;
+            const int h = A::shelf (*ed, m, w, &rects, &labels);
+            check (h > 0 && (int) rects.size() == 6 && labels.size() == 6,
+                   juce::String ("SIX1 at ") + juce::String (w) + "px: all SIX chips get a rect  (B's "
+                   "capture: six drew as NONE while five drew fine)",
+                   "h=" + juce::String (h) + " rects=" + juce::String ((int) rects.size())
+                     + " labels=" + juce::String (labels.size()));
+            bool allInside = true; juce::String worst;
+            for (const auto& r : rects)
+                if (r.getY() < 0 || r.getBottom() > h || r.getX() < 0 || r.getRight() > w)
+                { allInside = false; worst = r.toString(); break; }
+            check (allInside,
+                   juce::String ("SIX2 at ") + juce::String (w) + "px: every chip sits inside the "
+                   "shelf's own measured height and width",
+                   allInside ? juce::String ("all inside") : ("out: " + worst));
+            if (w <= 520)
+            {
+                juce::Array<int> ys;
+                for (const auto& r : rects) ys.addIfNotAlreadyThere (r.getY());
+                check (ys.size() >= 2,
+                       juce::String ("SIX3 at ") + juce::String (w) + "px: the row WRAPPED instead of "
+                       "overflowing", juce::String (ys.size()) + " distinct row(s)");
+            }
+        }
     }
 
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

@@ -121,6 +121,55 @@ int main()
     check (! api.getAutoDialMode() && ! api.getDialWritesBlocked(),
            "both OFF is a legal state: turning one off does not switch the other on");
 
+    // ---- (3) "DON'T USE THIS ONE", STORED (his 11:5x item 3, 21 Oct 2026) -------------------
+    //
+    // *"The MLimiterX is an expired demo. Can the plugin tell (it passes audio, so silent-slot
+    // detection won't)? If not, give Sean a way to mark a plugin "don't use", stored like the silent
+    // mark, and send it so B leaves it out."*
+    //
+    // A host CANNOT tell - parameters and audio look the same licensed or expired, which is why the
+    // silent-slot detector cannot reach this case. So the mark is his, and it has to SURVIVE: a mark
+    // that forgets itself when he quits Logic is worse than no mark, because he will not make it
+    // twice. These legs hold the store, its reason, and the reload.
+    {
+        std::printf ("  -- the \"don't use\" mark --\n");
+        check (! api.isPluginMarkedDontUse ("MLimiterX"),
+               "DU-A nothing is marked to begin with");
+        check (api.markPluginDontUse ("MLimiterX", "don't use it again - expired demo"),
+               "DU-B marking it returns true (it was not marked before)");
+        check (api.isPluginMarkedDontUse ("MLimiterX") && api.isPluginMarkedDontUse ("mlimiterx"),
+               "DU-C ...and it reads back, case-insensitively - he types it either way");
+        check (! api.markPluginDontUse ("MLimiterX", "again"),
+               "DU-D marking it twice returns FALSE, so the caller can say \"already marked\" "
+               "instead of the wrong sentence");
+        check (api.dontUseReasonFor ("MLimiterX").containsIgnoreCase ("expired demo"),
+               "DU-E the reason is HIS words, kept verbatim for the model to show back",
+               api.dontUseReasonFor ("MLimiterX"));
+        check (api.getDontUsePlugins().contains ("MLimiterX"),
+               "DU-F ...and it is in the list the inventory and the start body read");
+
+        // THE RELOAD. saveSettings() has already run (markPluginDontUse persists), so a second API
+        // reading the same private state root must see it. This is the leg that answers "stored".
+        {
+            EchoJayAPI fresh;
+            check (fresh.isPluginMarkedDontUse ("MLimiterX"),
+                   "DU-G RED-FIRST: a NEW API object reading the same settings file sees the mark - "
+                   "it survives a restart, which is the whole of \"stored like the silent mark\"");
+            check (fresh.dontUseReasonFor ("MLimiterX").containsIgnoreCase ("expired demo"),
+                   "DU-H ...with the reason", fresh.dontUseReasonFor ("MLimiterX"));
+        }
+
+        check (api.allowPluginAgain ("mlimiterx"),
+               "DU-I lifting it returns true, and takes the name as typed");
+        check (! api.isPluginMarkedDontUse ("MLimiterX"),
+               "DU-J ...and it is back in");
+        check (! api.allowPluginAgain ("MLimiterX"),
+               "DU-K lifting what is not marked returns FALSE - nothing to say it did");
+        check (! api.markPluginDontUse ("   ", "nothing"),
+               "DU-L a blank name marks nothing: a mark with no plugin would withhold nothing and "
+               "read like a setting that failed");
+    }
+
     std::printf ("\n==== settings_toggles_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

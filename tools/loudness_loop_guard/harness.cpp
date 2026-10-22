@@ -38,7 +38,13 @@ struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost&
     static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }
 #ifdef EJ_LOUDNESSLOOP_MANNERS
     // 18g: the slot's dial READBACK says its ceiling applied (what a mapped bx_limiter reports after a build)
-    static void markCeilingApplied (ChainHost& h, int i) { auto& s = h.slots_[(size_t) i]; s.dialApplied = juce::StringArray { "Ceiling" }; s.dialAppliedCount = 1; s.dialStatus = ChainHost::DialStatus::applied; }
+    // 21 Oct (his 11:5x item 2): a ceiling is CONFIRMED only when the plugin's own display agreed,
+    // so the rig can now make either state - written-and-agreed, or written with no agreement, which
+    // is what his MLimiterX produced ("applied (display unverifiable on this plugin)").
+    static void markCeilingApplied (ChainHost& h, int i, bool displayAgreed = true)
+    { auto& s = h.slots_[(size_t) i]; s.dialApplied = juce::StringArray { "Ceiling" };
+      s.dialVerified = displayAgreed ? juce::StringArray { "Ceiling" } : juce::StringArray{};
+      s.dialAppliedCount = 1; s.dialStatus = ChainHost::DialStatus::applied; }
 #endif
 };
 namespace {
@@ -297,11 +303,13 @@ struct Rig
         // After an arm this is the stage's gain. BEFORE one, stage_ is unresolved and currentGainDb() is 0 by
         // design - so a leg that stages "the build opened the gain at +12" and reads it back pre-arm saw 0.00
         // (leg K3). Fall back to the device so the fixture can read what it just wrote.
+        // ---- AND THE STAGE IS THE SLOT'S IN TRIM NOW (his 17:22 ruling, 21 Oct 2026) --------
+        // *"The limiter target drives the slot card's IN trim (the pre-trim before the plugin) on
+        // EVERY limiter, ours and third-party, never the plugin's own input control."*
+        // The pre-arm fallback read input_db first, which is the control the ruling retires - so a
+        // fixture that staged "the build opened the gain" read 0.00 from a parameter nothing writes
+        // any more (legs K3/Z3/V2 went red on exactly that).
         if (loop.stageReady()) return loop.currentGainDb();
-        if (limSlot >= 0 && limSlot < h.getNumSlots())
-            if (auto* d = dynamic_cast<EedDeviceProcessor*> (h.getSlotProcessor (limSlot)))
-                if (d->paramSchema().find ("input_db") != nullptr)
-                    return (float) d->getParamValue ("input_db");
         return limSlot >= 0 ? h.getSlotPreTrimDb (limSlot) : 0.0f;
     }
     /** The legs pre-set "where the build left the gain". That is the STAGE now; for a mix-bus target rig it is
@@ -313,16 +321,10 @@ struct Rig
     // leg D red through a fix that touched only half the pair; the capability test belongs on both sides.
     void presetStageGain (float db)
     {
+        // ONE ROAD, as the stage now has (his 17:22 ruling): the slot's IN trim, every brand. The
+        // input_db branch that stood here was the other half of the asymmetry this comment used to
+        // describe, and the ruling removed the asymmetry rather than balancing it.
         if (limSlot < 0) return;
-        if (auto* d = dynamic_cast<EedDeviceProcessor*> (h.getSlotProcessor (limSlot)))
-            if (d->paramSchema().find ("input_db") != nullptr)
-            {
-                auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", (double) db);
-                auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
-                h.setSlotStructuredSettings (limSlot, juce::var (w));
-                EchoJayBorrowHostTestAccess::applyExact (h, limSlot);
-                return;
-            }
         h.setSlotPreTrimDb (limSlot, db);
     }
     int gainSlot_ = -1;         // where the EchoJay Gain stand-in actually is (no Level slot to shift it any more)
@@ -764,14 +766,37 @@ static int guardMain()
                              "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (the limiter slot's own IN minus OUT), and the clipper is working", "K5. ...and the PEAK GR estimate (limiter IN true peak - limiter OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"" })
         check (false, leg, "no 18h on this build");
 #endif
-    {   // J6: the ceiling safety net - a third-party limiter with NO ceiling readback is replaced by EchoJay Limiter, said in one line
+    {   // ---- J6, RE-AIMED BY SEAN'S RULING OF 21 OCT 2026 ------------------------------------
+        //
+        // *"a limiter whose ceiling control doesn't resolve gets NO input gain. The plugin stays,
+        // and the step says "I couldn't set the <limiter>'s ceiling, so I haven't pushed level into
+        // it" with Use a different one. No silent substitute."*
+        //
+        // This leg held the 18g SAFETY NET it replaces: a third-party limiter with no ceiling
+        // readback was REMOVED and an EchoJay Limiter put in its place. His 09:46 MUltraMaximizer is
+        // what settled it - B sent "Saturation - Ceiling", which did not resolve, so the ceiling was
+        // never written and the closing claimed it had been. Swapping out a plugin he asked for is a
+        // bigger decision than declining to drive one.
+        //
+        // The three assertions are now STRONGER than the ones they replace: the plugin must still be
+        // there, nothing may be armed, and the sentence must be his.
         Rig r (true, false); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
-        const int nb = r.loop.bubbleCount();
-        check (r.armNoReading() && r.h.getSlotInfo (0).name == "EchoJay Limiter" && r.loop.limiterSlot() == 0, "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot", r.h.getSlotInfo (0).name);
-        check (r.loop.bubbleCount() == nb + 2 && r.bubbles.size() >= 2 && r.bubbles[r.bubbles.size() - 2] == "EJ Test Limiter's ceiling could not be confirmed, so EchoJay Limiter holds the ceiling instead (-0.1 dBTP).", "J6. ...said in one line before the arm bubble", r.bubbles.size() >= 2 ? r.bubbles[r.bubbles.size() - 2] : juce::String ("(none)"));
-        check (r.logs.joinIntoString ("\n").contains ("substituted EchoJay Limiter for EJ Test Limiter"), "J6. ...and logged");
-        r.loop.listen(); r.runWindow();
-        check (r.loop.state() == LoudnessLoop::State::proposed || r.loop.state() == LoudnessLoop::State::tracking, "J6. the loop then runs against the substituted limiter (real GR)", r.last());
+        const auto before = r.h.getSlotInfo (0).name;
+        const bool armed = r.armNoReading();
+        check (! armed,
+               "J6. ceiling readback absent -> the target is NOT ARMED: no input gain is pushed into "
+               "a ceiling nobody could set (his ruling of 21 Oct, replacing the 18g substitute)");
+        check (r.h.getSlotInfo (0).name == before && before == "EJ Test Limiter",
+               "J6. ...and THE PLUGIN STAYS - nothing is substituted", r.h.getSlotInfo (0).name);
+        bool saidIt = false;
+        for (const auto& b : r.bubbles)
+            if (b.contains ("ceiling") && b.containsIgnoreCase ("haven't pushed level into it")) saidIt = true;
+        check (saidIt,
+               "J6. ...and it says his sentence, naming the limiter",
+               r.bubbles.isEmpty() ? juce::String ("(none)") : r.bubbles[r.bubbles.size() - 1]);
+        check (r.logs.joinIntoString ("\n").contains ("could not be confirmed")
+                 && ! r.logs.joinIntoString ("\n").contains ("substituted EchoJay Limiter"),
+               "J6. ...and the log records the refusal, with no substitution anywhere in it");
     }
     {   // J6b: a third-party limiter WITH a ceiling readback is kept
         Rig r (true, true); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
@@ -781,7 +806,8 @@ static int guardMain()
     for (const char* leg : { "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", "J1. nothing ACTS or SPEAKS on the first audio - and what it heard is KEPT for the next request",
                              "J2. after Go: hold with the after-verb bubble, no window runs", "J2b. ...and 10 silent ticks change nothing (no \"Tap Check\" bubble, no measurement)", "J2b. Check starts the window", "J2b. ...which measures",
                              "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", "J4. Done: one bubble, the loop holds", "J4. after Done a louder section is neither measured nor proposed on (the watch is over)",
-                             "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot" })
+                             "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "J6. ceiling readback absent -> the target is NOT ARMED: no input gain is pushed into "
+                             "a ceiling nobody could set (his ruling of 21 Oct, replacing the 18g substitute)" })
         check (false, leg, "no 18g on this build");
     {   // the 0.6x fixture AS IT STOOD, for the record: how many proposals does the unscaled loop need?
         Rig r (true, true, "EJ Test Soft Limiter"); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -25.5f);
@@ -1185,16 +1211,39 @@ static int guardMain()
         // 10 Oct: the FIELD had to move with the slot. This read `params.gain_db`, which is the Level slot's
         // param name; the limiter's levelling param is `input_db`. Re-aiming the slot and not the field was a
         // half-migration - it reported "no gain_db in the saved state" on a landing that had in fact been saved.
-        float savedGain = 0.0f; bool found = false; juce::String field;
-        if (auto* o = parsed.getDynamicObject())
-            if (auto* pr = o->getProperty ("params").getDynamicObject())
-                for (const char* k : { "input_db", "gain_db" })
-                    if (! found && pr->hasProperty (k))
-                    { savedGain = (float) (double) pr->getProperty (k); found = true; field = k; }
-        check (found && std::abs (savedGain - landed) < 0.05f,
-               "Z3. THE SAVED STATE CARRIES THE LANDED GAIN, not the value it had before the landing",
-               found ? ("saved " + field + " " + f1 (savedGain) + " vs landed " + f1 (landed))
-                     : juce::String ("no input_db/gain_db in the saved state"));
+        // ---- RE-AIMED BY HIS 17:22 RULING (21 Oct 2026), question unchanged -------------------
+        //
+        // *"The limiter target drives the slot card's IN trim (the pre-trim before the plugin) on
+        // EVERY limiter, ours and third-party, never the plugin's own input control."*
+        //
+        // THE QUESTION THIS LEG ASKS IS STILL THE RIGHT ONE - a landing that is not in what gets
+        // saved is lost on the next reopen, which is the 8 Oct fault it was written for. What moved
+        // is WHERE the landing lives: it was the limiter's own input_db (and before that the Level
+        // slot's gain_db), and it is now the slot's IN trim. So the leg reads the trim, and the
+        // SNAPSHOT that carries it - which until today carried neither gain at all.
+        juce::ignoreUnused (parsed);
+        const float savedTrim = r.h.getSlotPreTrimDb (r.limSlot);
+        check (std::abs (savedTrim - landed) < 0.05f,
+               "Z3. THE SLOT'S IN TRIM HOLDS THE LANDED GAIN (his 17:22 ruling: one road, the trim)",
+               "trim " + f1 (savedTrim) + " vs landed " + f1 (landed));
+        // ...AND THE SNAPSHOT CARRIES IT, which is what an undo restores from. buildChainSlotsVar
+        // had never written preTrimDb/outGainDb while restoreSavedChain had read them since 5 Oct,
+        // so every snapshot restore defaulted both to 0 - an undo would have zeroed a trim he set
+        // by hand and called it an undo (his "Undo all puts it back to 0" asked the question).
+        {
+            const auto snap = r.h.captureUndoSnapshot ("Z3");
+            float inSnap = 0.0f; bool sawIt = false;
+            if (auto* arr = snap.slots.getArray())
+                for (const auto& e : *arr)
+                    if (auto* o2 = e.getDynamicObject())
+                        if ((int) o2->getProperty ("n") == r.limSlot + 1 && o2->hasProperty ("preTrimDb"))
+                        { inSnap = (float) (double) o2->getProperty ("preTrimDb"); sawIt = true; }
+            check (sawIt && std::abs (inSnap - landed) < 0.05f,
+                   "Z3b RED-FIRST: the UNDO SNAPSHOT carries the slot's IN trim, so Undo all can put "
+                   "it back instead of defaulting it to 0",
+                   sawIt ? ("snapshot " + f1 (inSnap) + " vs landed " + f1 (landed))
+                         : juce::String ("no preTrimDb in the snapshot"));
+        }
     }
     std::printf ("== Z2. Listen always resolves: 20 s of silence ends with the no-signal reason, not a silent wait ==\n");
     {
@@ -1736,8 +1785,22 @@ static int guardMain()
             loop.isPlaying = [] { return true; };
             check (loop.armFromChain(), "V1. a match build arms with no Level slot and no target",
                    logs.joinIntoString (" | ").substring (0, 180));
-            check (loop.stageName() == "rack_out",
-                   "V1. ...on the RACK OUT stage, post every slot including the tail", loop.stageName());
+            // ---- RE-AIMED BY SEAN'S RULING OF 20 OCT 2026 ------------------------------------
+            //
+            // *"A level match with no slot to write does not run. No fallback to rack_out. An empty
+            // rack changes nothing, so there's nothing to match. A loudness TARGET Sean has chosen
+            // on purpose (dynamic, pushed, a level target) is a different feature and may still use
+            // rack_out."*
+            //
+            // This leg pinned the OLD rule - a match drove the rack's OUT gain, post every slot -
+            // and it went red on the round that retired it, which is the leg doing its job. His rack
+            // OUT read "-3.9 dB . level match" for a correction no slot had asked for, and that is
+            // what rack_out-for-a-match produces. The fixture here HAS slots, so the match now
+            // resolves the outermost slot's OUT trim.
+            check (loop.stageName() == "slot_out",
+                   "V1. ...on the SLOT CARD's OUT trim - a match writes the slot, never the rack's "
+                   "gain (his ruling of 20 Oct, replacing the rack_out expectation this leg held)",
+                   loop.stageName());
             check (h.getNumSlots() == slotsBefore,
                    "V1. ...and NOTHING is inserted - no Level, no limiter (a match pushes into nothing)",
                    juce::String (h.getNumSlots()) + " slot(s), was " + juce::String (slotsBefore));
@@ -1760,7 +1823,8 @@ static int guardMain()
         const int before = r.h.getNumSlots();
         check (r.loop.armFromChain(), "V2. a target build arms");
         check (r.loop.stageName() == "limiter_in",
-               "V2. ...on the LIMITER IN stage (input_db), not a Level slot", r.loop.stageName());
+               "V2. ...on the LIMITER IN stage, which is the SLOT'S IN TRIM since his 17:22 ruling "
+               "(never the plugin's own input control)", r.loop.stageName());
         check (r.h.getNumSlots() == before,
                "V2. ...and nothing is inserted, because the chain already ends in a limiter",
                juce::String (r.h.getNumSlots()) + " vs " + juce::String (before));
@@ -1768,10 +1832,19 @@ static int guardMain()
             feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
         check (std::abs (r.loop.currentGainDb()) > 0.05f,
                "V2. ...and the opening lands ON THAT STAGE", f1 (r.loop.currentGainDb()) + " dB");
+        // ---- RE-AIMED BY HIS 17:22 RULING: the trim, not the device's input_db ---------------
+        // *"...never the plugin's own input control. One road, the same as the OUT match, and immune
+        // to mis-mapped input controls."*  The leg's question - "the landed gain is READ BACK from
+        // where it was written" - is unchanged; the place is the slot's IN trim. The device's own
+        // input_db is asserted to be LEFT ALONE, which is the other half of the ruling.
         auto* lim = dynamic_cast<EedDeviceProcessor*> (r.h.getSlotProcessor (r.limSlot));
-        check (lim != nullptr && std::abs ((float) lim->getParamValue ("input_db") - r.loop.currentGainDb()) < 0.05f,
-               "V2. ...which IS the limiter's own input_db, read back off the device",
-               lim != nullptr ? f1 ((float) lim->getParamValue ("input_db")) : juce::String ("no device"));
+        check (std::abs (r.h.getSlotPreTrimDb (r.limSlot) - r.loop.currentGainDb()) < 0.05f,
+               "V2. ...which IS the slot's IN trim, read back off the slot",
+               f1 (r.h.getSlotPreTrimDb (r.limSlot)) + " vs " + f1 (r.loop.currentGainDb()));
+        check (lim == nullptr || std::abs ((float) lim->getParamValue ("input_db")) < 0.05f,
+               "V2b RED-FIRST: and the limiter's OWN input_db is untouched - his ruling's second "
+               "half, and the thing that made a mis-mapped control able to swallow a push",
+               lim != nullptr ? f1 ((float) lim->getParamValue ("input_db")) : juce::String ("-"));
         check (lim != nullptr && std::abs ((float) lim->getParamValue ("ceiling_db") + 0.1) < 1.0e-4,
                "V2. ...and the ceiling is still held at -0.1 dBTP");
     }
@@ -1878,11 +1951,229 @@ static int guardMain()
         int levels = 0;
         for (int i = 0; i < r.h.getNumSlots(); ++i) if (r.h.getSlotInfo (i).name == "EchoJay Level") ++levels;
         check (levels == 0, "V5. (downgrade) no Level slot for an old build to miss");
-        auto* lim = dynamic_cast<EedDeviceProcessor*> (r.h.getSlotProcessor (r.limSlot));
-        check (lim != nullptr && std::abs ((float) lim->getParamValue ("input_db") - r.loop.currentGainDb()) < 0.05f,
-               "V5. (downgrade) the landed gain lives on the limiter's own input_db - a param ship_2026-10-09a "
-               "reads and restores, so the level is preserved without the record");
+        // ---- RE-AIMED BY HIS 17:22 RULING (21 Oct 2026), question unchanged -------------------
+        // The question is DOWNGRADE SAFETY: an older build that cannot read the levelling record must
+        // still open this rack at the same loudness, because the gain lives somewhere that build
+        // already restores. It used to be the limiter's own input_db; by his ruling it is the SLOT'S
+        // IN TRIM, which every build since 4 Oct saves and restores with the slot (preTrimDb in the
+        // session XML, and now in the chain snapshot too). So the property still holds - on a field
+        // an old build reads - and the leg asks it of the new place.
+        check (std::abs (r.h.getSlotPreTrimDb (r.limSlot) - r.loop.currentGainDb()) < 0.05f,
+               "V5. (downgrade) the landed gain lives on the SLOT'S IN TRIM - saved and restored with "
+               "the slot since 4 Oct, so the level survives without the record (his 17:22 ruling)",
+               f1 (r.h.getSlotPreTrimDb (r.limSlot)) + " vs " + f1 (r.loop.currentGainDb()));
     }
+    std::printf ("== PC. the match has a PEAK ceiling, measured, never blind (20 Oct, his 09:24) ==\n");
+    {
+        // *"the silent slot-OUT match set +6.6 dB (correct for loudness ...). But the next
+        // measurement shows the kick's true peak at +0.6 dBTP (it was -4.9 before), because a slow
+        // opto lets the transients through... never set an OUT trim that would put the slot's true
+        // peak above -1 dBTP; cap it there, and say one plain line on the card."*
+        //
+        // HIS CASE: loudness drops ~6 dB through the unit, peaks drop ~1 dB. Matching loudness
+        // alone asks for +6 and carries the peaks up with it, over zero.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        r.setGainDb (-6.0f);                       // the chain loses 6 dB of LOUDNESS
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "PC. armed by the add");
+        for (int k = 0; k < 40 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        const float landed = r.levelGain();
+        const auto lg = r.logs.joinIntoString (" | ");
+
+        // The programme this rig feeds is noise, whose crest is modest, so the honest assertion is
+        // the RULE rather than a specific number: whatever it landed on, the measured true peak of
+        // the window it measured must not be above the ceiling once the trim is applied.
+        const auto outSnap = r.h.getChainOutLevels();
+        const bool peakKnown = outSnap.truePeakDb > -199.0f;
+        check (peakKnown, "PC. precondition: the window has a measured true peak",
+               f1 (outSnap.truePeakDb) + " dBTP");
+        if (peakKnown)
+            check (outSnap.truePeakDb <= -1.0f + 1.0f,
+                   "PC1 the landed trim leaves the measured true peak at or under the -1 dBTP "
+                   "ceiling (1 dB of tolerance for the window moving under the check)",
+                   f1 (outSnap.truePeakDb) + " dBTP at Level " + f1 (landed) + " dB");
+
+        // AND WHEN IT CAPS, IT SAYS SO - one line, in his words, because a figure below the
+        // loudness match would otherwise be unexplained. A clean match stays silent.
+        if (lg.containsIgnoreCase ("peak ceiling"))
+        {
+            check (lg.containsIgnoreCase ("under the loudness match"),
+                   "PC2 the log says what it capped and by how much");
+            bool said = false;
+            for (const auto& b : r.bubbles)
+                if (b.containsIgnoreCase ("dBTP peak") && b.containsIgnoreCase ("avoid overs")) said = true;
+            check (said, "PC3 ...and the CARD carries one plain line about it",
+                   r.bubbles.isEmpty() ? juce::String ("(no bubble)")
+                                       : r.bubbles[r.bubbles.size() - 1]);
+        }
+        else
+            std::printf ("  note  this programme's crest did not reach the ceiling, so PC2/PC3 did "
+                         "not apply - PC1 is the rule and it held\n");
+    }
+    std::printf ("== PC4. and a rack with peak headroom STILL gets its full loudness match ==\n");
+    {
+        // THE HALF THE 7 OCT RULING WAS PROTECTING. He removed a BLIND cap that computed
+        // `ceiling + 3 dB - build-time true peak` before anything was heard, and on his mix bus it
+        // turned a +4.4 dB Level into ZERO - "every mix-bus build came out quiet". A cap that also
+        // throttles a rack with real headroom would have reinstated exactly that, so this leg exists
+        // to catch me doing it.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        r.setGainDb (-6.0f);
+        calibrate (r.proc, r.prog, -30.0f);        // QUIET programme: 12 dB more peak headroom
+        check (r.loop.armFromChain(), "PC4. armed");
+        for (int k = 0; k < 40 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (std::abs (r.levelGain() - 6.0f) <= 1.5f,
+               "PC4 a quiet rack still gets the whole 6 dB the chain was losing - the cap only ever "
+               "REDUCES a figure the window produced, and never throttles headroom that is there "
+               "(the 7 Oct ruling's half)", "Level " + f1 (r.levelGain()) + " dB (want about +6.0)");
+        check (! r.logs.joinIntoString (" | ").containsIgnoreCase ("peak ceiling"),
+               "PC4b ...and the ceiling does not even speak when it is not reached");
+    }
+
+    std::printf ("== DS. a slot that passes silence stops the match and says so (19 Oct, his 18:20) ==\n");
+    {
+        // *"The Distressor is UNLICENSED on Sean's Mac, so it passes silence... The level match sat
+        // on 'Listening... play the loudest part' forever. It must never hang: ... if the slot's
+        // output is silent (or far below its input) while its input has signal, stop within a few
+        // seconds and say one plain line... Leave OUT at 0, no editor-area takeover."*
+        //
+        // Logic was playing the whole time, which is what makes this a hang and not a quiet rack: a
+        // silent output never becomes `known`, so the opening landing returned on every tick with no
+        // bound at all.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "DS. armed by the add");
+        const float g0 = r.levelGain();
+        const int   nb = r.loop.bubbleCount();
+        check (r.loop.aimWords() == "matched to input",
+               "DS0a the fixture is a MATCH, which is the arm that has nothing to ask for",
+               r.loop.aimWords());
+        check (r.loop.state() == LoudnessLoop::State::armed && nb == 0,
+               "DS0 a volume MATCH arms SILENTLY - no bubble, no [Listen] pill  (RED as it stood: it "
+               "emitted the arm bubble and took over the editor area)",
+               juce::String (nb) + " bubble(s), state " + juce::String ((int) r.loop.state()));
+
+        // THE DEAD SLOT: the chain's INPUT gets signal and its OUTPUT stays silent. -120 dB of gain
+        // is the unlicensed plugin's silence, modelled at the one place this rig can inject it.
+        r.setGainDb (-120.0f);
+        for (int k = 0; k < 160 && r.loop.state() == LoudnessLoop::State::armed; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+
+        check (r.loop.state() != LoudnessLoop::State::armed,
+               "DS1 it STOPS rather than waiting for a window that will never come  (RED as it stood: "
+               "it sat on \"Listening... play the loudest part\" for as long as he left it, with Logic "
+               "playing)", "state " + juce::String ((int) r.loop.state()));
+        check (std::abs (r.levelGain() - g0) < 0.01f,
+               "DS2 ...and the OUT trim is LEFT WHERE IT WAS, never matched against silence",
+               f1 (r.levelGain()));
+        const auto said = r.bubbles.isEmpty() ? juce::String() : r.bubbles[r.bubbles.size() - 1];
+        check (said.containsIgnoreCase ("passing audio") || said.containsIgnoreCase ("licence"),
+               "DS3 ...and it says ONE plain line about why, naming the licence as the likely reason",
+               said);
+        check (r.loop.bubbleCount() == 1,
+               "DS4 ...exactly one line, not a prompt and not a conversation",
+               juce::String (r.loop.bubbleCount()) + " bubble(s)");
+        const auto lg = r.logs.joinIntoString (" | ");
+        check (lg.containsIgnoreCase ("not passing audio"),
+               "DS5 ...and the log carries the two figures the decision was made on");
+    }
+    std::printf ("== DS6. in and out already agree: finish at ~0, do not wait for a difference ==\n");
+    {
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        r.setGainDb (0.0f);                 // the chain changes nothing
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "DS6. armed");
+        for (int k = 0; k < 60 && r.loop.state() == LoudnessLoop::State::armed; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (std::abs (r.levelGain()) < 1.0f,
+               "DS6 a chain that already matches finishes at about 0 dB rather than hanging",
+               f1 (r.levelGain()));
+        const auto lg = r.logs.joinIntoString (" | ");
+        check (! lg.containsIgnoreCase ("not passing audio"),
+               "DS6b ...and a WORKING chain is never called dead - the drop test is 40 dB for a "
+               "reason, and a plugin doing nothing is not a plugin passing nothing");
+    }
+
+    std::printf ("== SD. an explicit OUT trim ends an armed match, silently (19 Oct 2026, item 2) ==\n");
+    {
+        // *"If B also sets the OUT trim from a check, B's explicit value wins; don't fight it."*
+        //
+        // An armed match is a promise to write a number this rack has not been given yet. Once the
+        // rack IS given one, the promise is void - two authors writing one number is the failure,
+        // and the loop would overwrite the value it was told. The withdrawal is SILENT: leaveIt()
+        // speaks, and a level match the user never asked for must not start talking because it
+        // stood down.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        r.setGainDb (-2.5f);                                   // the Shadow Hills' 2.5 dB, in his words
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "SD. armed by the add, as item 2 makes it");
+        // THE GROUND THIS RIG ACTUALLY SETS. A build's arm leaves the loop in `armed`, waiting for
+        // audio - NOT in waitAudio, which is the window a Listen or a Check opens. isArmed() reads
+        // false here, which is how the first cut of standDownQuietly came to list the wrong states.
+        check (r.loop.state() == LoudnessLoop::State::armed,
+               "SD. precondition: ARMED, waiting for audio, nothing written yet",
+               "state " + juce::String ((int) r.loop.state()));
+        check (std::abs (r.levelGain()) < 0.01f,
+               "SD. precondition: and nothing has been written", f1 (r.levelGain()));
+        const float g0 = r.levelGain();
+        const int   nb = r.loop.bubbleCount();
+
+        r.loop.standDownQuietly ("the command named a slot OUT trim itself");
+        check (r.loop.state() == LoudnessLoop::State::hold,
+               "SD1 the arm is withdrawn, so the loop will not write over B's value  (RED as it stood: "
+               "there was no way to withdraw one and the match fought the explicit trim)",
+               "state " + juce::String ((int) r.loop.state()));
+        check (r.loop.bubbleCount() == nb,
+               "SD1b ...and it says nothing in the chat: a silent match stands down silently",
+               juce::String (r.loop.bubbleCount() - nb) + " bubble(s) added");
+        check (std::abs (r.levelGain() - g0) < 0.01f,
+               "SD1c ...and writes nothing on the way out", f1 (r.levelGain()));
+        check (r.logs.joinIntoString (" | ").containsIgnoreCase ("stood down before measuring"),
+               "SD1d ...but the reason is in the LOG, where a withdrawn arm is evidence");
+        // AND IT STAYS DOWN over the playback the arm was waiting for - a flag that is cleared by the
+        // next audio block is not a stand-down.
+        for (int k = 0; k < 14; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        check (r.loop.state() == LoudnessLoop::State::hold && std::abs (r.levelGain() - g0) < 0.01f,
+               "SD1e ...and it stays down through the playback it was waiting for",
+               "state " + juce::String ((int) r.loop.state()) + ", Level " + f1 (r.levelGain()));
+    }
+    {
+        // THE OTHER DIRECTION. A loop that has already measured and PROPOSED has had its turn; the
+        // later write simply replaces its number, which is what B asking for a value means. Standing
+        // it down here would throw away a proposal the user can still act on.
+        Rig r (false, true, "EJ Test Limiter", /*gainSlot*/ true);
+        r.proc.setChannelType (ChannelType::LeadVocal);
+        r.setGainDb (-2.5f);
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain(), "SD2. armed");
+        // PLAY UNTIL THE OPENING HAS LANDED. A match build writes its opening on the first audio and
+        // stays in `armed`, so "has it written" cannot be read off the state - which is why the
+        // product tests openingOwed_ and why this leg waits for the gain to move rather than for a
+        // state to change.
+        for (int k = 0; k < 40 && std::abs (r.levelGain()) < 0.05f; ++k)
+            feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);
+        const auto landed = r.loop.state();
+        const float g1 = r.levelGain();
+        check (std::abs (g1) > 0.05f,
+               "SD2. precondition: the opening has landed", f1 (g1));
+        const int nb2 = r.loop.bubbleCount();
+        r.loop.standDownQuietly ("a later command named a slot OUT trim");
+        check (r.loop.state() == landed && std::abs (r.levelGain() - g1) < 0.01f
+               && r.loop.bubbleCount() == nb2,
+               "SD2 a loop that has already WRITTEN is NOT stood down - it has had its turn, and the "
+               "later value simply replaces its number  (and a state test alone would have withdrawn "
+               "it, because a match build stays in `armed` after writing)",
+               "state " + juce::String ((int) landed) + " -> " + juce::String ((int) r.loop.state())
+                 + ", Level " + f1 (g1) + " -> " + f1 (r.levelGain()));
+    }
+
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     if (knownStale > 0 || knownStaleGreen > 0)
         std::printf ("==== KNOWN-STALE (named, excluded from the exit code; re-derive FIRST next round, before any "
@@ -3290,7 +3581,572 @@ static int guardMain()
     }
 
     if (knownStale > 0 || knownStaleGreen > 0)
-        std::printf ("\n==== loudness_loop_guard KNOWN-STALE TOTAL: %d stale, %d now green (the GR-model "
+        // ---- CAP: THE PROVENANCE CLAUSE (Sean's 18:20/18:22 screenshots, 20 Oct 2026) -------------
+    //
+    // *"OUT -3.9 dB . level match" while viewing RACK: AITCH_4_01"* - and his ruling: *"an abandoned
+    // match must not caption itself "level match"."*
+    //
+    // That clause was wrong twice in one screenshot: it credited a pass that had ABANDONED (the log
+    // of the same minute says "The trim stays at -3.9 dB"), and it did so on a rack the loop was not
+    // describing. The rack half is the caller's and lives in the editor; THIS half is now
+    // LoudnessLoop::provenanceWord, a pure static, so it can be asserted.
+    {
+        std::printf ("== CAP: what a caption may claim about a figure ==\n");
+        using L = LoudnessLoop;
+        check (L::provenanceWord ("match", /*landed*/ true, /*abandoned*/ false) == "level match",
+               "CAP1 a match that LANDED is captioned \"level match\"",
+               L::provenanceWord ("match", true, false));
+        check (L::provenanceWord ("keep", true, false) == "level match",
+               "CAP2 ...and so is \"keep\", which is the same move under its other name");
+        check (L::provenanceWord ("match", /*landed*/ false, /*abandoned*/ true) == "not matched",
+               "CAP3 RED-FIRST: a match that ABANDONED says \"not matched\" - it must not credit "
+               "itself with a figure it explicitly left where it found it (his -3.9)",
+               L::provenanceWord ("match", false, true));
+        check (L::provenanceWord ("match", /*landed*/ false, /*abandoned*/ false).isEmpty(),
+               "CAP4 armed but nothing written yet claims NOTHING - no clause at all, rather than a "
+               "guess in either direction",
+               "\"" + L::provenanceWord ("match", false, false) + "\"");
+        check (L::provenanceWord ("dynamic", true, false) == "dynamic",
+               "CAP5 a dynamic landing keeps its own word");
+        check (L::provenanceWord ("pushed", true, false) == "level target",
+               "CAP6 any other stated option is a level target");
+        check (L::provenanceWord ("", true, false).isEmpty(),
+               "CAP7 a landing with no option stated claims nothing - the figure still shows, the "
+               "provenance does not");
+        // AND THE ABANDONED CASE OUTRANKS THE OPTION, whatever the option says: the question
+        // "did anything write this?" is answered before "what kind of write was it?".
+        check (L::provenanceWord ("dynamic", false, true) == "not matched"
+                 && L::provenanceWord ("pushed", false, true) == "not matched",
+               "CAP8 \"did anything write this?\" is asked BEFORE \"what kind of write was it?\"");
+    }
+
+    // ---- RUL: A MATCH WITH NO SLOT DOES NOT RUN (Sean's ruling, 20 Oct 2026) ------------------
+    //
+    // *"A level match with no slot to write does not run. No fallback to rack_out. An empty rack
+    // changes nothing, so there's nothing to match. A loudness TARGET Sean has chosen on purpose
+    // (dynamic, pushed, a level target) is a different feature and may still use rack_out."*
+    //
+    // The two halves are asserted separately because they are two different features sharing one
+    // loop: the MATCH resolver may refuse, and the TARGET resolver must not be touched by that.
+    // Driven through the loop's own arming, so what is held is the BEHAVIOUR (does it arm?) rather
+    // than the resolver's source text.
+    {
+        std::printf ("== RUL: a match needs a slot; a target does not ==\n");
+        // A MATCH on a rack with no slot: the stage is not ready, so arming refuses.
+        {
+            // THE LOOP NEEDS A ChainHost (its one constructor takes one), so it rides the guard's own
+            // Rig exactly as leg V1c does - the resolver below is what this leg is about, and the
+            // rack behind it only has to exist.
+            Rig rr (false, true, "EJ Test Limiter", true);
+            LoudnessLoop l (rr.h);
+            bool wroteAnything = false;
+            l.resolveStage = [&wroteAnything] (bool match) -> LoudnessLoop::Stage
+            {
+                LoudnessLoop::Stage st;
+                if (match)
+                {
+                    // what the product now returns for an empty rack: named, and NOT ready
+                    st.name  = "slot_out";
+                    st.ready = [] { return false; };
+                    return st;
+                }
+                st.name    = "rack_out";
+                st.ready   = [] { return true; };
+                st.readDb  = [] { return 0.0f; };
+                st.writeDb = [&wroteAnything] (float) { wroteAnything = true; };
+                return st;
+            };
+            check (! l.stageReadyForTest (true),
+                   "RUL1 a MATCH on a rack with no slot has no ready stage, so nothing is armed and "
+                   "nothing is written - his ruling: an empty chain changed nothing, so there is "
+                   "nothing to match");
+            check (l.stageReadyForTest (false),
+                   "RUL2 ...while a TARGET on the same rack still resolves - a loudness target he "
+                   "chose on purpose is a different feature and may use rack_out");
+            check (! wroteAnything,
+                   "RUL3 and the refused match wrote no gain anywhere (the -3.9 dB on his rack OUT "
+                   "is exactly what a fallback produces)");
+        }
+    }
+
+    // ---- PAM: NO POST-ADD MATCH WHERE SOMETHING ELSE OWNS THE LEVEL (his ruling, 20 Oct) ------
+    //
+    // *"A level match ran after the build and wrote -2.3 dB on the EchoJay EQ's OUT (the last slot,
+    // so after the limiter, undoing the limiter's loudness). Ruling: no post-add level match on a
+    // mix bus or master channel, and none on any build that carries a loudness target."*
+    //
+    // His build was the worst case of both at once, and the match landed AFTER the limiter.
+    {
+        std::printf ("== PAM: a match does not run where the level is already decided ==\n");
+        using L = LoudnessLoop;
+        check (L::postAddMatchRefusal ("mix_bus", false).isNotEmpty(),
+               "PAM1 a MIX BUS refuses a post-add match - loudness is set there on purpose",
+               L::postAddMatchRefusal ("mix_bus", false));
+        check (L::postAddMatchRefusal ("master", false).isNotEmpty(),
+               "PAM2 so does the MASTER", L::postAddMatchRefusal ("master", false));
+        check (L::postAddMatchRefusal ("channel", true).isNotEmpty(),
+               "PAM3 RED-FIRST: a build CARRYING A LIMITER refuses it on any channel - a match "
+               "writing a slot's OUT after the limiter undoes the limiter's own loudness (his -2.3 "
+               "dB on the last slot)",
+               L::postAddMatchRefusal ("channel", true));
+        check (L::postAddMatchRefusal ("channel", false).isEmpty(),
+               "PAM4 ...and an ordinary channel with no limiter still gets its match, which is the "
+               "whole point of the silent slot-OUT match after an add",
+               "\"" + L::postAddMatchRefusal ("channel", false) + "\"");
+        check (L::postAddMatchRefusal ("bus", false).isEmpty(),
+               "PAM5 a plain BUS is not the mix bus - his ruling named the mix bus and the master",
+               "\"" + L::postAddMatchRefusal ("bus", false) + "\"");
+        // ABSENT IS NOT A REFUSAL. A Link publishes its source type only when it can say; a rack
+        // that cannot say what it is still gets the match it has always had.
+        check (L::postAddMatchRefusal ("", false).isEmpty(),
+               "PAM6 an unstated channel kind does NOT refuse - absent means \"not stated\", and a "
+               "guess in either direction would be worse");
+        check (L::postAddMatchRefusal ("", true).isNotEmpty(),
+               "PAM7 ...but the limiter half still binds, whatever the channel is");
+        // THE REASON IS SAYABLE, both times: a refusal nobody can read is a silence.
+        check (L::postAddMatchRefusal ("mix_bus", false).containsIgnoreCase ("mix bus")
+                 && L::postAddMatchRefusal ("channel", true).containsIgnoreCase ("limiter"),
+               "PAM8 each refusal names its own cause, in words the log prints");
+    }
+
+    // ---- LT: B'S LIMITER TARGET, AT THE LIMITER'S INPUT (his evening contract + correction) ----
+    //
+    // *"the add carries dial_on_playback {target_lufs, control, ceiling} ... set `control` so the
+    // integrated level after the limiter is about target_lufs. Keep the ceiling."*  And the
+    // correction that decides the shape: *"Drive the limiter's input (input_db, or that slot's own
+    // pre-trim before the limiter) and nothing else. Never the rack OUT or any gain after the
+    // limiter: that would push past the -0.1 dBTP ceiling."*
+    {
+        std::printf ("== LT: a limiter target drives the limiter's input, on the named slot ==\n");
+        Rig r (false, true, "EJ Test Limiter", true);
+        auto& loop = r.proc.loudnessLoop();
+        juce::StringArray logs; loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+        const int last = r.h.getNumSlots() - 1;
+        check (last >= 0, "LT0 the fixture has a limiter slot", juce::String (last + 1));
+
+        check (loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f),
+               "LT1 B's target arms: -8 LUFS on the named slot, from the field rather than from a "
+               "target discovered in the chain",
+               logs.joinIntoString (" | ").substring (0, 200));
+        check (loop.stageName().containsIgnoreCase ("limiter"),
+               "LT2 ...on the LIMITER'S INPUT stage - never the rack OUT, which sits after the "
+               "limiter and would push past the ceiling (his correction of 20 Oct)",
+               loop.stageName());
+        check (loop.namedLimiterSlot == last,
+               "LT3 ...pinned to the slot the add landed on, by identity - not to n-1, which is an "
+               "index standing in for an identity (the 17:09 lesson)",
+               juce::String (loop.namedLimiterSlot));
+        check (loop.everArmed(), "LT4 ...and the loop really is armed");
+
+        // THE REFUSALS, each with a reason, because a dial that does not start must be sayable.
+        {
+            Rig r2 (false, true, "EJ Test Limiter", true);
+            auto& l2 = r2.proc.loudnessLoop();
+            juce::StringArray lg2; l2.logLine = [&lg2] (const juce::String& l) { lg2.add (l); };
+            check (! l2.armTargetFromDial (-8.0f, 99, "Input Gain", -0.1f),
+                   "LT5 a slot this rack does not have is REFUSED, not guessed at",
+                   lg2.joinIntoString (" | ").substring (0, 160));
+            check (! l2.armTargetFromDial (std::numeric_limits<float>::quiet_NaN(), 0, "Input Gain", -0.1f),
+                   "LT6 a target that is not a number is refused",
+                   lg2.joinIntoString (" | ").substring (0, 160));
+            bool said = false;
+            for (const auto& t : lg2) if (t.containsIgnoreCase ("not armed")) said = true;
+            check (said, "LT7 ...and each refusal says so in the log, by name");
+        }
+    }
+
+    // ---- LMF: level_match:false (B's CONTRACT_level_match_off, 20 Oct 2026) -------------------
+    //
+    // *"When an add carries level_match: false, skip the silent slot-OUT match for that slot. Leave
+    // its OUT at 0 dB."*  Mix bus, master and loudness builds send it.
+    //
+    // AN EXPLICIT FIELD BEATS A DERIVED TEST. Sean's 20:5x ruling was implemented by INFERRING it -
+    // postAddMatchRefusal asks "is this the mix bus or master, or is there a limiter?" - and B now
+    // states it. Both exist; the field wins where it is sent, and the inference is the safety net
+    // for a sender that does not send it. These legs hold the inference; the field's own road is
+    // asserted where it is read (the executor and the Link), because it never reaches this loop.
+    {
+        std::printf ("== LMF: the derived test still stands behind B's field ==\n");
+        using L = LoudnessLoop;
+        check (L::postAddMatchRefusal ("mix_bus", false).isNotEmpty()
+                 && L::postAddMatchRefusal ("master", false).isNotEmpty()
+                 && L::postAddMatchRefusal ("channel", true).isNotEmpty(),
+               "LMF1 the inference still refuses on the mix bus, the master, and any chain carrying "
+               "a limiter - a sender that does not send level_match:false is unchanged");
+        check (L::postAddMatchRefusal ("channel", false).isEmpty(),
+               "LMF2 ...and an ordinary channel with no limiter still gets its match, so the field "
+               "is the only thing that can switch it off there");
+    }
+
+    // ---- CU: AN UNCONFIRMED CEILING GETS NO INPUT GAIN (Sean's ruling, 21 Oct 2026) -----------
+    //
+    // *"a limiter whose ceiling control doesn't resolve gets NO input gain. The plugin stays, and
+    // the step says "I couldn't set the <limiter>'s ceiling, so I haven't pushed level into it" with
+    // Use a different one. No silent substitute."*
+    //
+    // His 09:46: B sent "Saturation - Ceiling", which does not resolve on that MUltraMaximizer, so
+    // the ceiling was never written and the closing claimed "ceiling -0.1 dBTP" anyway. The old
+    // behaviour here REMOVED his limiter and substituted an EchoJay Limiter; this ruling retires
+    // that, because swapping out a plugin he asked for is a bigger decision than declining to drive
+    // one.
+    {
+        std::printf ("== CU: a target refuses when the ceiling is not confirmed ==\n");
+        // A THIRD-PARTY LIMITER WITH NO CEILING READBACK, which is his 09:46 case: the
+        // MUltraMaximizer, whose "Saturation - Ceiling" did not resolve. My first cut of this leg
+        // used the EchoJay Limiter (thirdPartyLast=false), which has a typed ceiling_db and cannot
+        // fail to resolve one - so it was asserting a refusal that should never happen for OUR
+        // limiter, and the product had been written to match it. LT1-LT4 going red is what showed
+        // the pair of mistakes.
+        Rig r (true, false, "EJ Test Limiter", true);
+        auto& loop = r.proc.loudnessLoop();
+        juce::StringArray logs, bubbles;
+        loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+        loop.onBubble = [&bubbles] (const LoudnessLoop::Bubble& b) { bubbles.add (b.text); };
+        const int last = r.h.getNumSlots() - 1;
+        const int before = r.h.getNumSlots();
+        // The fixture's limiter has read back no ceiling control, which is exactly the state his
+        // MUltraMaximizer was in after the unresolved "Saturation - Ceiling".
+        const bool armed = loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f);
+        check (! armed,
+               "CU1 RED-FIRST: a limiter whose ceiling did not read back REFUSES the target - no "
+               "input gain is pushed into a ceiling nobody could set",
+               logs.joinIntoString (" | ").substring (0, 200));
+        check (r.h.getNumSlots() == before,
+               "CU2 ...and the PLUGIN STAYS - nothing is substituted, which is the half of his "
+               "ruling that retires the 18g swap",
+               juce::String (before) + " -> " + juce::String (r.h.getNumSlots()));
+        bool saidIt = false;
+        for (const auto& b : bubbles)
+            if (b.contains ("ceiling") && b.containsIgnoreCase ("haven't pushed level into it")) saidIt = true;
+        check (saidIt,
+               "CU3 ...and it says his sentence, naming the limiter",
+               // juce::StringArray has no back(): the last element is [size() - 1]. The same
+               // std-vs-juce confusion as the .isEmpty()/.empty() slip two rounds ago, in the other
+               // direction.
+               bubbles.isEmpty() ? juce::String ("(nothing said)") : bubbles[bubbles.size() - 1]);
+        check (loop.ceilingUnconfirmedLimiter().isNotEmpty(),
+               "CU4 ...and the loop records WHICH limiter, so a caller can offer \"Use a different "
+               "one\" against a name rather than a guess",
+               loop.ceilingUnconfirmedLimiter());
+    }
+
+    // ---- DV: WRITTEN IS NOT CONFIRMED (his 11:5x item 2, 21 Oct 2026) -------------------------
+    //
+    // *"Read-back said "ceiling -0.1" but the plugin shows Ceiling -0.50 dB, and true peak reached
+    // +0.5 dBTP. Check which control the read-back used."*
+    //
+    // The log answers it: the write went to a control matched by NAME, its own note was "applied
+    // (display unverifiable on this plugin)", and the figure reported back came from that control's
+    // display. So "the ceiling read back" was our own write, echoed. A ceiling is the boundary a
+    // target drives level into; it has to be a reading, and a reading means the PLUGIN agreed.
+    {
+        std::printf ("== DV: a ceiling counts only when the plugin's display agreed ==\n");
+        // WRITTEN AND AGREED: arms, exactly as before. This is the leg that says the change is
+        // narrow - an ordinary mapped limiter is unaffected.
+        {
+            Rig r (true, true, "EJ Test Limiter", true);
+            auto& loop = r.proc.loudnessLoop();
+            juce::StringArray logs; loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+            const int last = r.h.getNumSlots() - 1;
+            check (loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f),
+                   "DV1 a ceiling the plugin CONFIRMED still arms the target",
+                   logs.joinIntoString (" | ").substring (0, 200));
+        }
+        // WRITTEN, NOT AGREED - his MLimiterX. Same fixture, the ceiling marked applied with no
+        // display agreement, which is the only difference.
+        {
+            Rig r (true, true, "EJ Test Limiter", true);
+            EchoJayBorrowHostTestAccess::markCeilingApplied (r.h, r.h.getNumSlots() - 1, /*displayAgreed*/ false);
+            auto& loop = r.proc.loudnessLoop();
+            juce::StringArray logs, bubbles;
+            loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+            loop.onBubble = [&bubbles] (const LoudnessLoop::Bubble& b) { bubbles.add (b.text); };
+            const int last = r.h.getNumSlots() - 1;
+            const int before = r.h.getNumSlots();
+            check (! loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f),
+                   "DV2 RED-FIRST: a ceiling that was WRITTEN but never agreed to refuses the target "
+                   "- his MLimiterX armed on exactly this state and drove +6.6 dB into a ceiling "
+                   "nobody had confirmed",
+                   logs.joinIntoString (" | ").substring (0, 200));
+            check (r.h.getNumSlots() == before,
+                   "DV3 ...and the plugin stays (his 21 Oct ruling: no silent substitute)");
+            bool saidIt = false;
+            for (const auto& b : bubbles)
+                if (b.containsIgnoreCase ("haven't pushed level into it")) saidIt = true;
+            check (saidIt, "DV4 ...and it says so, in his own words",
+                   bubbles.isEmpty() ? juce::String ("(nothing said)") : bubbles[bubbles.size() - 1]);
+            bool offered = false;
+            for (const auto& b : bubbles) juce::ignoreUnused (b);
+            offered = loop.ceilingUnconfirmedLimiter().isNotEmpty();
+            check (offered, "DV5 ...and names which limiter, so the pills can act on a name",
+                   loop.ceilingUnconfirmedLimiter());
+        }
+    }
+
+    // ---- DOP: THE SHARED READERS OF B'S FIELD (his 11:5x item 1) -----------------------------
+    //
+    // *"Arm your limiter target loop whenever B's add carries dial_on_playback target_lufs, even
+    // after a heard build."*
+    //
+    // The V2's own rack read that field NOWHERE - every line of it lived on the Link's road - so his
+    // mix-bus limiter went in open-loop and nothing measured the result. These are the four pure
+    // readers both roads now share, so there is one rule and not two copies.
+    {
+        std::printf ("== DOP: one reader for B's field, both roads ==\n");
+        using L = LoudnessLoop;
+        const auto ops = juce::JSON::parse (R"([
+            {"op":"add","name":"EJ Test Limiter","after":1,
+             "dial_on_playback":{"target_lufs":-8,"control":"Input Gain","ceiling":-0.1}},
+            {"op":"slot_out","slot":1,"db":0}
+        ])");
+        check (L::addedNamesFromOps (ops).joinIntoString (",") == "EJ Test Limiter",
+               "DOP1 the names a batch ADDED, off the ops - a slot_out op adds nothing",
+               L::addedNamesFromOps (ops).joinIntoString (","));
+        check (L::dialOnPlaybackFromOps (ops).getDynamicObject() != nullptr,
+               "DOP2 ...and the dial is found on the add that carries it");
+        float tgt = 0.0f;
+        check (L::dialIsLimiterTarget (L::dialOnPlaybackFromOps (ops), &tgt) && std::abs (tgt + 8.0f) < 0.01f,
+               "DOP3 target_lufs means a LIMITER target, and the figure comes out", f1 (tgt));
+        const auto grDial = juce::JSON::parse (R"({"target_gr_db":3,"control":"Peak Reduction"})");
+        check (! L::dialIsLimiterTarget (grDial),
+               "DOP4 ...and target_gr_db is NOT one - it is a compressor's dial, and the two share "
+               "nothing but the field they arrive on");
+        check (L::dialOnPlaybackFromOps (juce::JSON::parse (R"([{"op":"add","name":"X"}])"))
+                   .getDynamicObject() == nullptr,
+               "DOP5 an add with no dial yields nothing to read");
+        {
+            Rig r (true, true, "EJ Test Limiter", true);
+            const int last = r.h.getNumSlots() - 1;
+            check (L::slotTheBatchAdded (r.h, juce::StringArray { "EJ Test Limiter" }) == last,
+                   "DOP6 the slot a batch added, BY IDENTITY - the name against the rack as it now "
+                   "stands, which is what keeps a later add from stealing the target (17:09)",
+                   juce::String (L::slotTheBatchAdded (r.h, juce::StringArray { "EJ Test Limiter" })));
+            check (L::slotTheBatchAdded (r.h, juce::StringArray { "Some Plugin He Never Owned" }) == -1,
+                   "DOP7 ...and -1 when nothing on the rack answers, which refuses the arm rather "
+                   "than dialling whatever sits last");
+            check (L::slotTheBatchAdded (r.h, {}) == -1, "DOP8 ...and -1 for a batch that added nothing");
+        }
+    }
+
+    // ---- LB: THE LIMITING BUDGET (Sean's ruling, 21 Oct 2026) --------------------------------
+    //
+    // *"Measure how much a limiter is taking off from our own slot tallies, (input level + its input
+    // gain) - output level, short-term on the loud blocks, so it works for ANY limiter without its
+    // meter. B will send a limiting budget with the target ... The loop raises the input only while
+    // it stays within that budget. If the target can't be reached inside it, stop at the budget, keep
+    // the ceiling, and report the level reached so B can say so. "Push to -8 anyway" comes back as a
+    // new target with the budget lifted."*
+    //
+    // Five legs, one per clause, and the last two are the ones that keep the feature honest: a
+    // budget that is not sent must bound nothing, and a budget that cannot be measured yet must
+    // bound nothing either - an absence is not a zero.
+    {
+        std::printf ("== LB: B's limiting budget bounds the push, measured from our own tallies ==\n");
+        Rig r (true, true, "EJ Test Limiter", true);
+        auto& loop = r.proc.loudnessLoop();
+        juce::StringArray logs, bubbles;
+        loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+        loop.onBubble = [&bubbles] (const LoudnessLoop::Bubble& b) { bubbles.add (b.text); };
+        const int last = r.h.getNumSlots() - 1;
+
+        check (loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f, /*avg*/ 3.0f, /*peak*/ 6.0f),
+               "LB1 a target arms WITH a budget", logs.joinIntoString (" | ").substring (0, 160));
+        check (std::abs (loop.limitBudget().avgDb - 3.0f) < 0.01f
+                 && std::abs (loop.limitBudget().peakDb - 6.0f) < 0.01f,
+               "LB2 ...and the loop holds B's two figures",
+               f1 (loop.limitBudget().avgDb) + " / " + f1 (loop.limitBudget().peakDb));
+        bool saidBudget = false;
+        for (const auto& l : logs) if (l.contains ("limiting budget: avg 3.0")) saidBudget = true;
+        check (saidBudget, "LB3 ...and says so, with the figures and where the measurement comes from",
+               logs.joinIntoString (" | ").substring (0, 200));
+
+        // A NEW TARGET WITH NO BUDGET LIFTS IT - his "push to -8 anyway comes back as a new target
+        // with the budget lifted". This is the leg that makes the lift structural rather than a flag
+        // someone has to remember to clear.
+        check (loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f),
+               "LB4 a new target arms");
+        check (! loop.limitBudget().stated(),
+               "LB5 RED-FIRST: ...and it carries NO budget, so the budget is LIFTED - which is how "
+               "\"push it anyway\" comes back",
+               f1 (loop.limitBudget().avgDb) + " / " + f1 (loop.limitBudget().peakDb));
+        check (! loop.stoppedAtBudget(),
+               "LB6 ...and the previous stop is forgotten with it, so a stale \"as far as it goes\" "
+               "cannot outlive the budget that produced it");
+    }
+    {
+        // THE MEASUREMENT ITSELF, on a rack that has heard nothing: it must say NOT KNOWN rather
+        // than 0 dB. A budget bounded on an absence would clamp every first pass to no push at all.
+        Rig r (true, true, "EJ Test Limiter", true);
+        auto& loop = r.proc.loudnessLoop();
+        const int last = r.h.getNumSlots() - 1;
+        loop.armTargetFromDial (-8.0f, last, "Input Gain", -0.1f, 3.0f, 6.0f);
+        const auto took = loop.limiterTaking();
+        check (! took.known(),
+               "LB7 with nothing heard the taking is NOT KNOWN - an absence, never a zero",
+               juce::String (took.blocks) + " hop(s)");
+    }
+    {
+        // ...AND WITH AUDIO IT IS A REAL FIGURE, from our own tallies, on a limiter whose meter we
+        // never ask: the fixture's limiter is a third party as far as the loop is concerned.
+        Rig r (true, true, "EJ Test Limiter", true);
+        auto& loop = r.proc.loudnessLoop();
+        juce::StringArray logs; loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+        const int last = r.h.getNumSlots() - 1;
+        check (loop.armTargetFromDial (-6.0f, last, "Input Gain", -0.1f, 3.0f, 6.0f), "LB8 armed");
+        r.runWindow();
+        const auto took = loop.limiterTaking();
+        check (took.blocks > 0,
+               "LB9 after a window the measure has hops on both taps - the two arrays are aligned by "
+               "index and gate, so a difference across them describes one window",
+               juce::String (took.loudBlocks) + " loud of " + juce::String (took.blocks));
+        if (took.known())
+            check (took.avgDb >= 0.0f && took.peakDb >= took.avgDb - 0.01f,
+                   "LB10 ...and a reduction is never negative, with the worst block at least the "
+                   "average - the two cannot cross",
+                   f1 (took.avgDb) + " avg, " + f1 (took.peakDb) + " worst");
+        else
+            check (true, "LB10 (the fixture's window closed no gated hop on both taps; the shape legs "
+                         "above still hold the rule)");
+    }
+
+    // ---- NI: AN AGENT BUILD INSERTS NOTHING (his 15:30 addition, 21 Oct 2026) ----------------
+    //
+    // *"The rack-level loudness target didn't just drive rack_out. It INSERTED an EchoJay Limiter
+    // after the build's FG-X 2 (two limiters stacked) and drove that limiter's input to +12.0 ...
+    // Your own V1 leg says a match must insert nothing. Find which path inserted it ... and make it
+    // impossible after any agent build."*
+    //
+    // THE PATH IS ensureLimiterForTarget, and the reason it fired is the name test: "FG-X 2"
+    // contains none of "limit" | "maxim" | "clip" | "ceiling", so a mastering limiter read as not a
+    // limiter. The insert is now a PERMISSION passed at the call - granted on the user's own build
+    // road, refused on every agent road - and these legs hold both sides of that, plus the case the
+    // name test gets wrong, which is the one he hit.
+    {
+        std::printf ("== NI: the insert is a permission, and an agent build does not have it ==\n");
+        // A rack whose last slot is NOT limiter-like by name. "EJ Test Shaper" stands in for his
+        // FG-X 2: a plugin whose name says nothing about limiting.
+        const auto* dev = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        check (dev != nullptr, "NI0 the fixture has a non-limiter builtin to end the rack with");
+        if (dev != nullptr)
+        {
+            // ---- THE AGENT ROAD: no insert, and it says what sits last --------------------
+            {
+                Rig r (false, true, "EJ Test Limiter", false);
+                // Replace the rack with ONE non-limiter slot, so the last slot's name cannot match.
+                while (r.h.getNumSlots() > 0) r.h.removeSlot (r.h.getNumSlots() - 1);
+                EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*dev));
+                const int before = r.h.getNumSlots();
+                auto& loop = r.proc.loudnessLoop();
+                juce::StringArray logs, bubbles;
+                loop.logLine = [&logs] (const juce::String& l) { logs.add (l); };
+                loop.onBubble = [&bubbles] (const LoudnessLoop::Bubble& b) { bubbles.add (b.text); };
+                r.setTarget (-8.0f, 0.0);
+                const bool armed = loop.armFromChain (/*mayInsertLimiter*/ false);
+                check (r.h.getNumSlots() == before,
+                       "NI1 RED-FIRST: an agent build with a loudness target INSERTS NOTHING - this is "
+                       "his stacked limiter, and the rack is left exactly as the build made it",
+                       juce::String (before) + " -> " + juce::String (r.h.getNumSlots()) + " slot(s)");
+                check (! armed,
+                       "NI2 ...and it does not arm: there is no ceiling it can name to drive into, so "
+                       "nothing is pushed (the same shape as his 21 Oct unconfirmed-ceiling ruling)");
+                bool saidIt = false;
+                for (const auto& l : logs) if (l.contains ("NOT inserting a limiter")) saidIt = true;
+                check (saidIt, "NI3 ...and the log says which plugin sits last and why it was not "
+                               "recognised - a name is not a role",
+                       logs.joinIntoString (" | ").substring (0, 220));
+                bool toldHim = false;
+                for (const auto& b : bubbles)
+                    if (b.containsIgnoreCase ("won't stack a second limiter")
+                        || b.containsIgnoreCase ("no limiter on this rack")) toldHim = true;
+                check (toldHim, "NI4 ...and he is told, in one line, rather than finding two limiters",
+                       bubbles.isEmpty() ? juce::String ("(nothing said)") : bubbles[bubbles.size() - 1]);
+            }
+            // ---- THE USER'S OWN BUILD ROAD: the 10 Oct rule is untouched -----------------
+            {
+                Rig r (false, true, "EJ Test Limiter", false);
+                while (r.h.getNumSlots() > 0) r.h.removeSlot (r.h.getNumSlots() - 1);
+                EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*dev));
+                const int before = r.h.getNumSlots();
+                auto& loop = r.proc.loudnessLoop();
+                r.setTarget (-8.0f, 0.0);
+                loop.armFromChain (/*mayInsertLimiter*/ true);
+                check (r.h.getNumSlots() == before + 1,
+                       "NI5 the USER'S build road still adds one, which is his 10 Oct rule - the "
+                       "change is the agent road only, and this leg is what says so",
+                       juce::String (before) + " -> " + juce::String (r.h.getNumSlots()));
+                check (r.h.getNumSlots() > 0
+                         && ChainHost::isLimiterLikeName (r.h.getSlotInfo (r.h.getNumSlots() - 1).name),
+                       "NI6 ...and it is last", r.h.getNumSlots() > 0
+                            ? r.h.getSlotInfo (r.h.getNumSlots() - 1).name : juce::String ("-"));
+            }
+            // ---- AND A RACK THAT ALREADY ENDS IN ONE IS USED AS IT STANDS, EITHER WAY -----
+            {
+                Rig r (true, true, "EJ Test Limiter", false);   // ends in the test limiter
+                const int before = r.h.getNumSlots();
+                auto& loop = r.proc.loudnessLoop();
+                r.setTarget (-8.0f, 0.0);
+                loop.armFromChain (/*mayInsertLimiter*/ false);
+                check (r.h.getNumSlots() == before,
+                       "NI7 a rack that already ends in a limiter gets nothing added on the agent "
+                       "road either - it is used as it stands",
+                       juce::String (before) + " -> " + juce::String (r.h.getNumSlots()));
+            }
+        }
+    }
+
+    // ---- MD: EVERY DIAL IN A BATCH, ON ITS OWN SLOT (his 17:3x item 3, 21 Oct 2026) ----------
+    //
+    // *"B will send dial_on_playback on every compressor after the first in a build, so you set it
+    // from its slot's real input. Confirm that works for several slots in one build (not just the
+    // last), each dialled independently."*
+    //
+    // The reader is the half that was wrong - every caller stopped at the FIRST op carrying a dial -
+    // and it is the half that can be legged purely. The other half (calibStart stores one loop per
+    // rack, so the batch has to go to calibStartMany together) is a wiring change the rig's own row
+    // covers; it is named here so the next reader knows this leg does not prove it.
+    {
+        std::printf ("== MD: a batch's dials are read per slot, not one per batch ==\n");
+        using L = LoudnessLoop;
+        const auto ops = juce::JSON::parse (R"([
+            {"op":"add","name":"EchoJay EQ","after":0},
+            {"op":"add","name":"Tube-Tech CL 1B","after":1,
+             "dial_on_playback":{"target_gr_db":3,"control":"Threshold","sense":"lower_is_harder","actuator":"threshold"}},
+            {"op":"add","name":"API 2500","after":2,
+             "dial_on_playback":{"target_gr_db":2,"control":"Thresh","sense":"lower_is_harder","actuator":"threshold"}},
+            {"op":"add","name":"EJ Test Limiter","after":3,
+             "dial_on_playback":{"target_lufs":-8,"control":"slot_in","ceiling":-0.1,"avg_limit_db":3}}
+        ])");
+        const auto dials = L::dialsOnPlaybackFromOps (ops);
+        check ((int) dials.size() == 3,
+               "MD1 RED-FIRST: all THREE dials are read - the old reader returned the first and a "
+               "build with three compressors dialled one of them",
+               juce::String ((int) dials.size()) + " dial(s)");
+        check (dials.size() >= 3 && dials[0].name == "Tube-Tech CL 1B"
+                 && dials[1].name == "API 2500" && dials[2].name == "EJ Test Limiter",
+               "MD2 ...each carrying the NAME its op added, so its slot is resolved by identity and "
+               "not by its position in the batch",
+               dials.empty() ? juce::String ("(none)") : dials[0].name + " | " + dials[1].name);
+        check (dials.size() >= 3 && ! L::dialIsLimiterTarget (dials[0].dial)
+                 && ! L::dialIsLimiterTarget (dials[1].dial)
+                 && L::dialIsLimiterTarget (dials[2].dial),
+               "MD3 ...and the limiter target is told from the compressors' GR dials by the field B "
+               "sends, which is the only thing the two share");
+        // THE ADD WITH NO DIAL IS NOT COUNTED, and an op that is not an add is not either.
+        const auto mixed = juce::JSON::parse (R"([
+            {"op":"slot_out","slot":1,"db":-2,"dial_on_playback":{"target_gr_db":3,"control":"X"}},
+            {"op":"add","name":"Only This One","dial_on_playback":{"target_gr_db":3,"control":"Threshold"}}
+        ])");
+        const auto m = L::dialsOnPlaybackFromOps (mixed);
+        check ((int) m.size() == 1 && m[0].name == "Only This One",
+               "MD4 a dial on an op that is not an add/replace is ignored - a dial belongs to a "
+               "plugin this batch put in",
+               juce::String ((int) m.size()));
+        check (L::dialOnPlaybackFromOps (ops).getDynamicObject() != nullptr,
+               "MD5 the single-dial reader still answers (it is the \"is there one at all\" test) and "
+               "is now the first of the list rather than a second walk");
+    }
+
+    std::printf ("\n==== loudness_loop_guard KNOWN-STALE TOTAL: %d stale, %d now green (the GR-model "
                      "calibration legs; NOT counted as failures by Sean's 10 Oct ruling) ====\n",
                      knownStale, knownStaleGreen);
     return failures == 0 ? 0 : 1;

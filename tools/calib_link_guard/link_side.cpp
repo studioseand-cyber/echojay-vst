@@ -35,6 +35,12 @@ struct EJCalibLinkTestAccess
     static echojay::CalibLoop loop (LinkProcessor& p) { return p.calibLoop_; }
     // 21t-e: the tally is where PEAK must come from - the same window as INT, SHORTMAX and HEARD.
     static echojay::LevelTally::Snapshot tally (LinkProcessor& p) { return p.levelTally_.snapshot(); }
+    // ---- THE COMPANIONS (his 17:5x ruling, 21 Oct 2026) ------------------------------------
+    static int startMany (LinkProcessor& p, const std::vector<echojay::CalibLoop::Config>& c)
+    { return p.startCalibMany (c); }
+    static int extraCount (LinkProcessor& p) { return (int) p.calibExtra_.size(); }
+    static echojay::CalibLoop extra (LinkProcessor& p, int i) { return p.calibExtra_[(size_t) i]; }
+    static void tick (LinkProcessor& p) { p.calibTickOwnRack(); }
 };
 using TA = EJCalibLinkTestAccess;
 
@@ -270,6 +276,75 @@ int main (int argc, char** argv)
         check (afterSettle.window - onDisk.window <= 1 && onDisk.window >= left.window,
                "link side: ...within one window of the loop as it stands, so no write is being dropped",
                juce::String (onDisk.window) + " on disk vs " + juce::String (afterSettle.window) + " in memory");
+    }
+    // ---- CO: ONE HOLD PER COMPRESSOR ON A LINK (his 17:5x ruling, 21 Oct 2026) --------------
+    //
+    // *"Please build the companion loops so several compressors dialled on one Link each get their
+    // own loop, as the V2's own rack does. Sean's vocal chains on Links have two or three."*
+    //
+    // A Link had ONE calibLoop_, so the second dial of a build replaced the first and the rest were
+    // dropped without a word. The primary now keeps its place (and the sidecar's `calib`, which is
+    // what an older V2 reads) and the companions ride beside it.
+    {
+        std::printf ("== CO: a Link runs a hold per dialled compressor ==\n");
+        // ITS OWN PROCESSOR: `l` above lives in an earlier scope, and a leg that reached into
+        // another block's fixture would be reading a rack somebody else had already dialled.
+        auto lc = std::make_unique<LinkProcessor>();
+        lc->prepareToPlay (48000.0, 512);
+        for (int i = 0; i < 200 && TA::uid (*lc).isEmpty(); ++i) pumpMs (5);
+        const auto* compCo = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (compCo != nullptr)
+        {
+            TA::host (*lc).insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*compCo), 0);
+            TA::host (*lc).insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*compCo), 1);
+            TA::host (*lc).insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*compCo), 2);
+        }
+        auto& host = TA::host (*lc);
+        const int slots = host.getNumSlots();
+        check (slots >= 2, "CO0 the fixture has at least two slots to dial",
+               juce::String (slots));
+        if (slots >= 2)
+        {
+            std::vector<echojay::CalibLoop::Config> cfgs;
+            for (int i = 0; i < juce::jmin (3, slots); ++i)
+            {
+                echojay::CalibLoop::Config c;
+                c.slot = i; c.plugin = host.getSlotInfo (i).name;
+                c.lo = 2.0f; c.hi = 3.0f; c.startDb = 0.0f;
+                c.actuator = echojay::CalibLoop::Actuator::Threshold;
+                c.params = juce::StringArray { "Threshold" };
+                cfgs.push_back (c);
+            }
+            const int started = TA::startMany (*lc, cfgs);
+            check (started == (int) cfgs.size(),
+                   "CO1 RED-FIRST: every dialled slot starts a hold - before this, the second "
+                   "replaced the first and a three-compressor chain dialled one",
+                   juce::String (started) + " of " + juce::String ((int) cfgs.size()));
+            check (TA::extraCount (*lc) == (int) cfgs.size() - 1,
+                   "CO2 ...the first is the PRIMARY (where the single block always went, and what the "
+                   "sidecar's `calib` carries) and the rest are companions",
+                   juce::String (TA::extraCount (*lc)));
+            check (TA::loop (*lc).slot == cfgs[0].slot
+                     && (cfgs.size() < 2 || TA::extra (*lc, 0).slot == cfgs[1].slot),
+                   "CO3 ...each on ITS OWN slot, so one cannot measure or write another's",
+                   "primary " + juce::String (TA::loop (*lc).slot) + ", companion "
+                     + juce::String (TA::extraCount (*lc) > 0 ? TA::extra (*lc, 0).slot : -1));
+            // ...AND THE SIDECAR CARRIES THEM, so a handover continues all of them and the V2 can
+            // show all three. Additive: `calib` is unchanged for an older reader.
+            TA::tick (*lc); pumpMs (20);
+            {
+                int e = 0;
+                int errCo = 0;
+                const auto rc = LinkShm::readRackSidecar (LinkShm::resolveDir (errCo), TA::uid (*lc));
+                if (auto* arr = rc.calibExtra.getArray()) e = arr->size();
+                check (! rc.calib.isVoid(),
+                       "CO4 the sidecar's `calib` still carries the primary - an older V2 reads it "
+                       "exactly as it does today");
+                check (e == (int) cfgs.size() - 1,
+                       "CO5 ...and `calibExtra` carries the companions, so a lease handover continues "
+                       "all of them", juce::String (e));
+            }
+        }
     }
     std::printf ("==== calib_link_guard (link side): %s ====\n", failures == 0 ? "GREEN" : "RED");
     rc = failures == 0 ? 0 : 1;

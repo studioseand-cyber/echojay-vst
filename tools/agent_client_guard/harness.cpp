@@ -97,6 +97,12 @@ struct FakeExecutor : ToolExecutor
     // ITEM 2 (13 Oct 2026): the client asks the executor to name a cross-channel target so the plan card can
     // say "on 88_7even Kick_2_01". The fake answers for one uid, which is all the label legs need.
     juce::String otherChannelName = "88_7even Kick_2_01";
+    // His 09:49: the auto-dial-only toggle, asked of the executor on every request.
+    bool autoDialOnlyAnswer = false;
+    bool autoDialOnly() override { return autoDialOnlyAnswer; }
+    // B, 21 Oct: the header's genre, which arrived empty on agent starts.
+    juce::String genreAnswer;
+    juce::String genreName() override { return genreAnswer; }
     juce::String describeOtherChannel (const ToolCall& c) override
     { return argString (c, "channel") == "bb411b8240" ? otherChannelName : juce::String(); }
 
@@ -1009,6 +1015,128 @@ int main()
                "SL4 no code and no text still produces a sentence, not a blank or \"an error\"");
     }
 
+    // ---- ONCE, NOT TWICE (19 Oct 2026, his 17:20 run) -----------------------------------------
+    //
+    // *"a failed step's error shows twice ('slot 0 is not on the rack (1..1).' on two lines); show
+    // it once."*
+    //
+    // When the step's failure IS the run's failure, the step's own `detail` and the run's `closing`
+    // (from errorMessage()) are the same sentence, so the card printed it on the step line and again
+    // underneath. The step line is the one that belongs - it names WHICH step failed.
+    std::printf ("== ONE FAILURE, ONE LINE: the closing never repeats a failed step's own words ==\n");
+    {
+        Rig rf;
+        rf.ex.onDo = [] (const ToolCall&)
+        {
+            return ToolOutcome::failureFor ("unknown_slot",
+                                            "slot 0 is not on the rack (1..1)",
+                                            "slot 0 is not on the rack (1..1).");
+        };
+        rf.client.start ("set slot 0", "chat_once");
+        rf.round (1);
+        rf.tool (R"({"id":"tc_f1","name":"do","args":{"op":"set","slot":0},"approval":"free"})");
+        rf.await ({ "tc_f1" });
+        pumpMs (20);
+        const auto* fs = rf.step ("tc_f1");
+        check (fs != nullptr && fs->status == EJAgentClient::Step::Status::Failed,
+               "ON0 the fixture: the step failed",
+               fs == nullptr ? juce::String ("no step") : fs->detail);
+
+        // THE RUN then fails with the SAME sentence, which is what his 17:20 card did.
+        EJAgentClientTestAccess::feed (rf.client, "error",
+            R"({"code":"unknown_slot","message":"slot 0 is not on the rack (1..1).","retryable":false})");
+        pumpMs (10);
+        const auto v = echojay::agentui::runViewFrom (rf.client, {}, true);
+        bool onAStep = false;
+        for (const auto& st : v.steps)
+            if (st.right.containsIgnoreCase ("not on the rack")
+                || st.detail.containsIgnoreCase ("not on the rack")) onAStep = true;
+        check (onAStep,
+               "ON1 the failure is still ON the step line, which is the line that names which step it was");
+        check (! v.closing.containsIgnoreCase ("not on the rack"),
+               "ON2 ...and the closing does NOT repeat it  (RED as it stood: the same sentence on two "
+               "lines, the step's and the run's)", v.closing.substring (0, 90));
+
+        // THE OTHER DIRECTION. A closing that says something the steps do NOT say is still shown -
+        // a dedupe that swallowed every closing would lose the run's own account of itself.
+        Rig rg;
+        rg.ex.onDo = [] (const ToolCall&)
+        { return ToolOutcome::failureFor ("unknown_slot", "slot 0 is not on the rack (1..1)",
+                                          "slot 0 is not on the rack (1..1)."); };
+        rg.client.start ("set slot 0", "chat_once2");
+        rg.round (1);
+        rg.tool (R"({"id":"tc_g1","name":"do","args":{"op":"set","slot":0},"approval":"free"})");
+        rg.await ({ "tc_g1" });
+        pumpMs (20);
+        EJAgentClientTestAccess::feed (rg.client, "error",
+            R"({"code":"round_failed","message":"The model returned no content for round 2.","retryable":true})");
+        pumpMs (10);
+        const auto vg = echojay::agentui::runViewFrom (rg.client, {}, true);
+        check (vg.closing.isNotEmpty(),
+               "ON3 a closing that says something no step said is STILL shown", vg.closing.substring (0, 90));
+    }
+
+    // ---- VIS: A RUN THAT IS STARTED GETS A VISIBLE CARD (Sean's 18:18 item 3, 20 Oct 2026) ------
+    //
+    // *"Add a guard that fails if a run is started and no row is drawn within a second, since this
+    // is the third time today a run has gone invisible."*
+    //
+    // THE WALL-CLOCK VERSION OF THAT IS A RIG ROW - only a real editor in a real host draws a row,
+    // and this guard has no editor. What CAN be held here is the decision the editor makes, which is
+    // where all three failures actually were, and it is now a named function instead of a condition
+    // inside a 200-line sync method: echojay::agentui::rowBelongsInChat.
+    //
+    // His three blanks, as assertions:
+    //   16:06  a new run in a new chat, refused because a member described the LAST run
+    //   18:18  the same after a chat switch, which destroys the row the member was keyed to
+    //   11:59  the case that must KEEP working: an older run waiting elsewhere stays there
+    {
+        std::printf ("== VIS: a started run is drawn where it was started, and only there ==\n");
+        using echojay::agentui::rowBelongsInChat;
+
+        check (rowBelongsInChat ("chatA", "chatA"),
+               "VIS1 a run started in this chat gets its row HERE - his 16:06 and 18:18 blanks "
+               "(\"No card, no spinner, no Stop\") were this returning false");
+        check (! rowBelongsInChat ("chatA", "chatB"),
+               "VIS2 a run that belongs to another chat is NOT drawn here - his 11:59, survival is "
+               "not capture");
+        // AN UNKNOWN EITHER SIDE DRAWS IT. An invisible live run is the worse failure by a long way:
+        // he cannot even stop it. So absence of information is never a reason to hide one.
+        check (rowBelongsInChat ("", "chatB"),
+               "VIS3 a run with no chat id is still DRAWN - an invisible run he cannot stop is worse "
+               "than a card in the wrong place");
+        check (rowBelongsInChat ("chatA", ""),
+               "VIS4 ...and so is a run in a window with no chat open yet");
+        check (rowBelongsInChat ("", ""),
+               "VIS5 ...and both unknown");
+        check (rowBelongsInChat ("  chatA  ", "chatA"),
+               "VIS6 whitespace is not an identity - a padded id is the same chat");
+
+        // ---- AND THE RUN IS THE AUTHORITY, which is the whole 18:18 fix -----------------------
+        // The client is handed the chat id at start() and keeps it. Before this round nothing could
+        // read it, so the editor keyed on a member of its own that a chat switch invalidates.
+        {
+            Rig r;
+            r.client.start ("add a delay", "chatLink");
+            check (r.client.runChatId() == "chatLink",
+                   "VIS7 the RUN knows which chat it was started in - the fact the editor was "
+                   "guessing at", r.client.runChatId());
+            check (rowBelongsInChat (r.client.runChatId(), "chatLink"),
+                   "VIS8 ...so a row opens in that chat");
+            check (! rowBelongsInChat (r.client.runChatId(), "chatMixBus"),
+                   "VIS9 ...and not in the one he came from");
+            // A SECOND RUN IN A DIFFERENT CHAT TAKES ITS OWN ID. This is his 18:18 sequence exactly:
+            // a run was waiting in the mix bus's chat, he switched to the Link's chat and typed.
+            r.client.start ("add a delay", "chatLink2");
+            check (r.client.runChatId() == "chatLink2",
+                   "VIS10 a NEW run re-stamps the chat - so the next one cannot inherit the last "
+                   "run's chat, which is what left three runs invisible today", r.client.runChatId());
+            check (rowBelongsInChat (r.client.runChatId(), "chatLink2"),
+                   "VIS11 ...and IS drawn in the chat he typed it in");
+        }
+    }
+
+
     // ---- S86: ONLY "RUN A CHECK" LISTENS AGAIN (19 Oct 2026, B's section 86(1)) --------------
     //
     // *"The closing is a talk ask whose text is the closing... Its id starts with tc_check... Only
@@ -1023,18 +1151,55 @@ int main()
     {
         Rig r86;
         r86.client.start ("mix it", "chat_86");     // a session, as every other leg's rig has
+
+        // ---- BEFORE ANY MOVE, A PLAYBACK WAIT RUNS (19 Oct 2026, B's section 92) --------------
+        // *"at 17:20 your check(playback) refusal fired in round 1 with nothing changed, and B no
+        // longer draws a step for it. Refuse a playback check only after a move has landed in this
+        // run. It's on nearly every agent-on run and costs a slow round each time."*
+        //
+        // FIRST, because this is the case the old key got wrong: the refusal was armed by the
+        // CLOSING having been seen, which is not "something has changed" - and which start() never
+        // cleared, so every run after the first in a session refused its own round 1.
         r86.round (1);
+        r86.tool (R"({"id":"tc_w0","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r86.await ({ "tc_w0" });
+        pumpMs (60);
+        check (r86.client.state() == EJAgentClient::State::Listening && r86.client.playback().active,
+               "S92a round 1 with NOTHING changed: the playback wait RUNS  (RED as it stood: refused "
+               "with \"a listen after a change needs the user's own Run a check\" before any change "
+               "existed, on nearly every agent-on run)", r86.client.statusLine());
+
+        r86.round (2);
         r86.tool (R"({"id":"tc_check_1","name":"talk","args":{"text":"Done.","ask":{"question":"How's it sounding?","choices":[{"label":"Sounds good"},{"label":"Run a check"}]}},"approval":"free"})");
         r86.await ({ "tc_check_1" });
         pumpMs (20);
         check (r86.client.askPending(), "S86a the closing ask is up (its id starts with tc_check)");
 
-        r86.round (2);
+        // A CLOSING ALONE STILL ARMS NOTHING: it is shown by runs that changed nothing at all (a
+        // question, a read, a refusal), which is the other half of what the old key got wrong.
+        r86.round (3);
+        r86.tool (R"({"id":"tc_w0b","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r86.await ({ "tc_w0b" });
+        pumpMs (60);
+        check (r86.client.state() == EJAgentClient::State::Listening,
+               "S92b a closing with no change behind it does NOT arm the refusal",
+               r86.client.statusLine());
+
+        // NOW A MOVE LANDS, and only now is a second listen the agent's to decline.
+        r86.round (4);
+        r86.tool (R"({"id":"tc_do1","name":"do","args":{"op":"add","name":"EchoJay EQ"},"approval":"free"})");
+        r86.await ({ "tc_do1" });
+        pumpMs (20);
+        check (r86.step ("tc_do1") != nullptr
+               && r86.step ("tc_do1")->status == EJAgentClient::Step::Status::Done,
+               "S92c the fixture: a change has landed in this run");
+
+        r86.round (5);
         r86.tool (R"({"id":"tc_w1","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
         r86.await ({ "tc_w1" });
         pumpMs (60);
         check (r86.client.state() != EJAgentClient::State::Listening,
-               "S86b a playback wait AFTER the closing is refused - no second listen he did not ask "
+               "S86b a playback wait AFTER a landed change is refused - no second listen he did not ask "
                "for  (RED as it stood: the run opened a window and waited)", r86.client.statusLine());
         check (r86.step ("tc_w1") != nullptr
                && r86.step ("tc_w1")->detail.containsIgnoreCase ("Run a check"),
@@ -1043,12 +1208,27 @@ int main()
                                              : juce::String ("no step"));
 
         r86.client.answerAsk ("Run a check");
-        r86.round (3);
+        r86.round (6);
         r86.tool (R"({"id":"tc_w2","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
         r86.await ({ "tc_w2" });
         pumpMs (60);
         check (r86.client.state() == EJAgentClient::State::Listening && r86.client.playback().active,
                "S86d after \"Run a check\" the wait runs - one tap, one listen", r86.client.statusLine());
+
+        // ---- AND A NEW RUN STARTS CLEAN (19 Oct 2026, the leak behind his 17:20) --------------
+        // This is the mechanism, not just the symptom: start() cleared neither closingAskSeen_ nor
+        // userAskedForCheck_ nor the landed-move flag, so run 2 of a session inherited run 1's
+        // state. A run that inherits "the closing is up" refuses its own first listen - which is
+        // precisely what he saw on nearly every agent-on run, and why it looked like round 1.
+        r86.client.start ("now the vocal", "chat_86b");
+        r86.round (1);
+        r86.tool (R"({"id":"tc_w3","name":"check","args":{"what":"playback","min_seconds":4},"approval":"free"})");
+        r86.await ({ "tc_w3" });
+        pumpMs (60);
+        check (r86.client.state() == EJAgentClient::State::Listening && r86.client.playback().active,
+               "S92d a SECOND run in the same session starts clean: its round 1 wait runs  (RED as it "
+               "stood: run 1's closing was still believed, so run 2 refused before doing anything)",
+               r86.client.statusLine());
     }
 
     // ---- X: THE CARD AND THE CHAT, FROM HIS 12:05 SESSION (18 Oct 2026) -----------------------
@@ -1363,6 +1543,46 @@ int main()
             check (v.closing == "Looking at the kick.\n\nAdded the CL 1B.",
                    "Z2 a closing that is NOT the prose is kept, under it - never lose a sentence we "
                    "were given", v.closing);
+        }
+        {
+            // ---- Z2u: AN UNDONE RUN'S CARD DOES NOT FOLD THE VOIDED PROSE BACK IN -------------
+            //
+            // Sean's #14: *"after 'Everything the agent changed has been undone' the run still shows
+            // 'Pre gain on the Mix Bus is set to 0 dB', a stale sentence."*  build() replaces the
+            // CLOSING when every change is undone - and the card's closing is folded from the
+            // opening plus the closing, so the fold wrote the model's stale prose straight back into
+            // the field the replacement had just cleaned. Rig row C5 failed on this for three days
+            // and its only coverage was a 28-minute host run; this is the same fault in a second.
+            RunView v;
+            v.sessionId = "ag_z2u"; v.changeCount = 0;
+            v.opening = "The pre gain on the Mix Bus is set to 3 dB.";
+            v.closing = "Everything this run changed has been undone, so what it said above no longer "
+                        "describes the rack.";
+            v.closingBeforeUndo = "The pre gain on the Mix Bus is set to 3 dB.";
+            v.foldProseIntoTheCard();
+            check (! v.closing.containsIgnoreCase ("is set to"),
+                   "Z2u RED-FIRST: after Undo all the card no longer claims the change (RED as it "
+                   "stood: the fold put the opening's claim back on, so the card read \"The pre gain "
+                   "... is set to 3 dB\" above the sentence saying it had been undone)",
+                   v.closing);
+            check (v.closing.startsWithIgnoreCase ("Everything this run changed"),
+                   "Z2u ...and what it says instead is the undone sentence, by itself", v.closing);
+        }
+        {
+            // ---- AND THE OTHER DIRECTION, WHICH IS WHAT KEEPS THE GUARD HONEST ----------------
+            // The same view with a change that LANDED after the undo folds normally again. Without
+            // this leg the fix above could have been "never fold", which would pass Z2u and lose
+            // every model answer on every card.
+            RunView v;
+            v.sessionId = "ag_z2v"; v.changeCount = 1;
+            v.opening = "The pre gain on the Mix Bus is set to 3 dB.";
+            v.closing = "Added the CL 1B.";
+            v.closingBeforeUndo = "an earlier undo left its mark in the record";
+            v.foldProseIntoTheCard();
+            check (v.closing == "The pre gain on the Mix Bus is set to 3 dB.\n\nAdded the CL 1B.",
+                   "Z2v a run that landed something AFTER an undo folds normally - the mark in the "
+                   "record does not latch the rule on for ever",
+                   v.closing);
         }
         {
             // THE FOLD CANNOT DOUBLE. The card folds from the snapshot on every paint; a rule that
@@ -1877,6 +2097,430 @@ int main()
         check (! recUndoAll && ! recStepUndo,
                "RO9c and the SAME card as a record draws neither - a reopened chat's run is over, "
                "which is the distinction his 08:00 ruling actually draws");
+    }
+
+    // ---- MOV: A MESSAGE TYPED IN ANOTHER CHAT (Sean's ruling, 20 Oct 2026) --------------------
+    //
+    // *"The "agent is still working on build a mix bus. Stop it first, or wait for it to finish."
+    // notice appeared in the MIX BUS chat, not the Link chat he typed in, and his text was thrown
+    // away. That run was only waiting on its loudness ask, not working."*
+    //
+    //   1. a run only WAITING does not block: it is stopped ("Stopped: you moved on to <channel>")
+    //      and the new run starts in the chat he typed in;
+    //   2. a run actually EXECUTING refuses, with the notice in the chat he typed in;
+    //   3. a typed message is never dropped silently.
+    //
+    // The state half is EJAgentClient::stateBlocksANewMessage, walked exhaustively below: the old
+    // gate asked askPending(), and his run was sitting on the LOUDNESS loop's question - a different
+    // ask, the same wait - so it did not apply. "What kind of wait is it?" was the wrong question.
+    {
+        std::printf ("== MOV: waiting does not block; working does ==\n");
+        using S = EJAgentClient::State;
+        // THE FOUR THAT BLOCK: genuinely mid-flight, where two conversations would race the rack.
+        for (auto st : { S::Connecting, S::Streaming, S::Executing, S::Posting })
+            check (EJAgentClient::stateBlocksANewMessage (st),
+                   juce::String ("MOV1 ") + EJAgentClient::stateName (st)
+                     + " BLOCKS a new message - the agent is mid-flight");
+        // THE THREE THAT WAIT ON HIM: a plan awaiting Go, an ask, a wait for playback. His run was
+        // in one of these and was told it was "still working".
+        for (auto st : { S::AwaitingApproval, S::AwaitingAsk, S::Listening })
+            check (! EJAgentClient::stateBlocksANewMessage (st),
+                   juce::String ("MOV2 ") + EJAgentClient::stateName (st)
+                     + " does NOT block - it is waiting on him, which is a question in another "
+                       "shape (his ruling 1)");
+        // AND THE ENDED ONES, which must never block either.
+        for (auto st : { S::Idle, S::Done, S::Stopped, S::Failed })
+            check (! EJAgentClient::stateBlocksANewMessage (st),
+                   juce::String ("MOV3 ") + EJAgentClient::stateName (st) + " does not block");
+
+        // RULING 1, end to end: a run waiting in chat A, a message typed in chat B. The run's own
+        // chat says it is not for this chat, the run is not working, so it is stopped WITH A REASON
+        // its card shows - and the reason is consumed, so the next stop says the plain thing.
+        {
+            Rig r;
+            r.client.start ("build a mix bus", "chatMixBus");
+            check (r.client.runChatId() == "chatMixBus",
+                   "MOV4 the run knows its chat", r.client.runChatId());
+            check (! echojay::agentui::rowBelongsInChat (r.client.runChatId(), "chatLink"),
+                   "MOV5 ...so a message typed in the Link's chat is not for it");
+            r.transcript.clear();
+            r.client.stopWithReason ("you moved on to Aitch_4_01");
+            bool said = false;
+            for (const auto& t : r.transcript)
+                if (t.second.contains ("Stopped: you moved on to Aitch_4_01")) said = true;
+            check (said, "MOV6 the waiting run's OWN card says why it stopped - \"Stopped: you moved "
+                         "on to <channel>\", his ruling 1",
+                   r.transcript.empty() ? juce::String ("(nothing said)") : r.transcript.back().second);
+            check (r.client.state() == EJAgentClient::State::Stopped,
+                   "MOV7 ...and it really is stopped, so the next message starts its own run");
+        }
+        // AND THE REASON DOES NOT LEAK ONTO THE NEXT STOP: a plain Stop press says "Stopped."
+        {
+            Rig r2;
+            r2.client.start ("add a compressor", "chatLink");
+            r2.transcript.clear();
+            r2.client.stop();
+            bool plain = false, leaked = false;
+            for (const auto& t : r2.transcript)
+            {
+                if (t.second.trim() == "Stopped.") plain = true;
+                if (t.second.contains ("moved on to")) leaked = true;
+            }
+            check (plain && ! leaked,
+                   "MOV8 a plain Stop still says \"Stopped.\" - a reason cannot outlive the stop it "
+                   "describes and turn up on the next one",
+                   r2.transcript.empty() ? juce::String ("(nothing said)") : r2.transcript.back().second);
+        }
+    }
+
+    // ---- AD: THE AUTO-DIAL-ONLY TOGGLE RIDES BOTH AGENT REQUESTS (Sean's 09:49, 21 Oct 2026) --
+    //
+    // *"the agent added an unmapped plugin (bx opto Pedal) while his setting "Only suggest plugins
+    // EchoJay can auto-dial" was on. Confirm whether that setting is sent on agent start and step
+    // requests (as it is on agent off). If not, send it, under the same key agent off uses."*
+    //
+    // It was sent on NEITHER: `autoDial` existed in exactly one request path, EchoJayAPI's chat
+    // body, and in no agent file at all - so the server picked plugins for an agent build without
+    // knowing the toggle was on. A STEP matters as much as a START: a round that picks at round 3
+    // can pick an unmapped plugin just as well as one that picks at round 1.
+    {
+        std::printf ("== AD: autoDial on start AND step, same key as agent off ==\n");
+        {
+            Rig r;
+            r.ex.autoDialOnlyAnswer = true;
+            r.ex.genreAnswer = "Hip-Hop";
+            r.client.start ("add a compressor", "chatA");
+            check (! r.posts.empty() && r.posts.front().first == "/api/agent/start",
+                   "AD0 the fixture posted a start");
+            const auto startBody = juce::JSON::parse (r.posts.front().second);
+            check ((bool) startBody.getProperty ("autoDial", false),
+                   "AD1 the START body carries autoDial:true under the chat road's own key",
+                   r.posts.front().second.substring (0, 160));
+            check (startBody.getProperty ("genre", juce::var()).toString() == "Hip-Hop",
+                   "AD1b ...and the GENRE, under the chat road's own key (B, 21 Oct: B's mix-bus "
+                   "loudness default depends on it and it arrived empty)",
+                   startBody.getProperty ("genre", juce::var()).toString());
+        }
+        // ...and OFF sends nothing at all, so an older server and a body with the toggle off are
+        // byte-for-byte what they were.
+        {
+            Rig r2;
+            r2.ex.autoDialOnlyAnswer = false;
+            r2.client.start ("add a compressor", "chatA");
+            const auto b = juce::JSON::parse (r2.posts.front().second);
+            check (! b.hasProperty ("autoDial"),
+                   "AD2 with the toggle OFF the key is ABSENT, not false - an older body unchanged",
+                   r2.posts.front().second.substring (0, 160));
+            check (! b.hasProperty ("genre"),
+                   "AD2b ...and an UNSET genre leaves the key absent, not \"\" - a default keyed on "
+                   "an empty string is a default keyed on a guess",
+                   r2.posts.front().second.substring (0, 160));
+        }
+    }
+
+    // ---- SC: A STOPPED RUN'S LINE GOES TO ITS OWN CHAT (Sean's 11:25, 21 Oct 2026) ------------
+    //
+    // *"The old run was stopped (right), but its "Stopped." line landed at the top of the NEW Nafe
+    // chat instead of the Aitch chat it belongs to ... A stopped run's line must go to the run's own
+    // chat id (client.runChatId()), never the current one."*
+    //
+    // The record's gate compared the open chat against an EDITOR member that moves to whichever chat
+    // a row was last born in - so when he opened the Nafe chat and typed, the new run's row moved
+    // the member and the OLD run's stop line was recorded against it. The destination is now
+    // client.runChatId(), and THAT is what this leg holds: the run keeps its own chat across the
+    // stop, so the id the record will use is still the chat the run belongs to.
+    {
+        std::printf ("== SC: the run's own chat survives its stop ==\n");
+        Rig r;
+        r.client.start ("add a delay", "chatAitch");
+        check (r.client.runChatId() == "chatAitch",
+               "SC1 the run knows its chat while it runs", r.client.runChatId());
+        r.client.stopWithReason ("you moved on to Nafe Main_01");
+        check (r.client.runChatId() == "chatAitch",
+               "SC2 RED-FIRST: and STILL knows it after being stopped - the stop line is recorded "
+               "after stop(), so a run that forgot its chat here would write into whatever is on "
+               "screen (his 11:25)", r.client.runChatId());
+        check (r.client.state() == EJAgentClient::State::Stopped,
+               "SC3 ...and it really is stopped");
+        // ...and the NEXT run re-stamps it, so the old chat is not inherited by the new run either.
+        r.client.start ("add the bx opto Pedal", "chatNafe");
+        check (r.client.runChatId() == "chatNafe",
+               "SC4 a new run takes the chat it was typed in - the old one is not inherited",
+               r.client.runChatId());
+        check (! echojay::agentui::rowBelongsInChat ("chatAitch", "chatNafe"),
+               "SC5 ...and the two chats are still told apart, which is what keeps the old card "
+               "where it belongs");
+    }
+
+    // ---- TH: "THINKING..." SITS UNDER THE LATEST STEP (his 14:08 ruling, 21 Oct 2026) ---------
+    //
+    // *"While an agent run is working, a "Thinking..." line always sits under the latest step, from
+    // the moment that step ticks until the next step appears, every time, not only at the start.
+    // Today "Thinking..." shows before the first step, then disappears once a step completes, so the
+    // card looks idle while it waits on the server ... The line goes when the run is waiting on Sean
+    // (an ask with buttons) or has finished."*
+    //
+    // The decision is echojay::agentui::lastRowHasSettled plus the two clauses around it, and the
+    // legs hold every clause he wrote - including the two where the line must NOT appear, which is
+    // where a careless version of this would put two moving things on one card.
+    {
+        std::printf ("== TH: the Thinking line, under the latest step, every time ==\n");
+        using echojay::agentui::lastRowHasSettled;
+        using echojay::agentui::runViewFrom;
+        const juce::String kThinking = juce::String::fromUTF8 ("Thinking\xe2\x80\xa6");
+        const auto thinkingRows = [&kThinking] (const echojay::agentui::RunView& v)
+        {
+            int n = 0;
+            for (const auto& s : v.steps) if (s.id == "thinking") ++n;
+            juce::ignoreUnused (kThinking);
+            return n;
+        };
+
+        Rig r;
+        r.client.start ("set the kick's compressor", "chatTH");
+        {   // BEFORE THE FIRST STEP: today's behaviour, and it stays
+            const auto v = runViewFrom (r.client, {}, true);
+            check (thinkingRows (v) == 1 && v.steps.size() == 1
+                     && v.steps.back().label == kThinking,
+                   "TH1 before the first step the card has the Thinking line (this part already "
+                   "worked)", juce::String ((int) v.steps.size()) + " row(s)");
+            check (v.stepCount == 0,
+                   "TH2 ...and it is NOT counted as a step - the control must not say \"1 step\" for "
+                   "work that has not reported", juce::String (v.stepCount));
+        }
+        r.round (1);
+        r.tool (R"({"id":"tc_th1","name":"look","args":{"what":"rack"},"approval":"free"})");
+        r.await ({ "tc_th1" });
+        pumpMs (20);
+        {   // THE CASE HE REPORTED: a step has ticked and the run is waiting on the server
+            const auto v = runViewFrom (r.client, {}, true);
+            check (v.steps.size() >= 2,
+                   "TH3 RED-FIRST: with one step DONE and the run still working there are TWO rows - "
+                   "the step and the Thinking line under it. This is his card: \"read the rack\" "
+                   "ticked, then nothing but \"Working\" top right",
+                   juce::String ((int) v.steps.size()) + " row(s)");
+            check (! v.steps.empty() && v.steps.back().id == "thinking"
+                     && v.steps.back().label == kThinking,
+                   "TH4 ...and it is the LAST row, under the step, not above it",
+                   v.steps.empty() ? juce::String ("(none)") : v.steps.back().id);
+            check (v.steps.back().status == (int) EJAgentClient::Step::Status::Running,
+                   "TH5 ...carrying the Running glyph, so it pulses like work in progress",
+                   juce::String (v.steps.back().status));
+            check (v.stepCount == 1,
+                   "TH6 ...and the real step count is still 1, not 2 (the phantom is counted out)",
+                   juce::String (v.stepCount));
+            check (v.running, "TH7 ...and \"Working\" top right stays - both, as he asked");
+        }
+        {   // AND IT GOES WHEN THE RUN IS OVER
+            EJAgentClientTestAccess::feed (r.client, "done", R"({"summary":"Done."})");
+            pumpMs (20);
+            const auto v = runViewFrom (r.client, {}, true);
+            check (thinkingRows (v) == 0,
+                   "TH8 a finished run has NO Thinking line - his \"or has finished\"",
+                   juce::String ((int) v.steps.size()) + " row(s)");
+            check (! v.running, "TH9 ...and nothing claims to be working");
+        }
+    }
+    {
+        // AND IT GOES WHILE THE RUN WAITS ON HIM. An ask with buttons is his turn, not the server's,
+        // and a pulsing line under the question would say the opposite.
+        // THE REAL SHAPE OF AN ASK, which my first cut got wrong: it is a `talk` tool carrying an
+        // `ask` object - the frame his own log shows ("step tc_check2 RUN talk \"How's it
+        // sounding?\"") - not a tool called "ask". With the wrong frame there was no pending ask at
+        // all, the run was simply working, and the leg was asserting the opposite of its own name.
+        Rig r2;
+        r2.client.start ("pick a compressor", "chatTH2");
+        r2.round (1);
+        r2.tool (R"({"id":"tc_th2","name":"talk","args":{"text":"Added it.","ask":{"question":"How's it sounding?","choices":[{"label":"Sounds good"},{"label":"Run a check"},{"label":"Use a different one"}],"allowFreeText":true}},"approval":"free"})");
+        r2.await ({ "tc_th2" });     // the await is what RUNS the talk tool and raises the ask
+        pumpMs (20);
+        check (r2.client.askPending(),
+               "TH10a the fixture really is waiting on him (an ask with buttons)",
+               juce::String ((int) r2.client.pendingAsk().labels.size()) + " label(s)");
+        const auto v = echojay::agentui::runViewFrom (r2.client, {}, true);
+        int think = 0; for (const auto& s : v.steps) if (s.id == "thinking") ++think;
+        check (think == 0,
+               "TH10 a run waiting on HIM has no Thinking line - the ask's own buttons are the thing "
+               "he is looking at (his \"the line goes when the run is waiting on Sean\")",
+               juce::String ((int) v.steps.size()) + " row(s), chips on last: "
+                 + (v.steps.empty() ? juce::String ("-") : juce::String (v.steps.back().chips.size())));
+    }
+    {
+        // AND THE PURE DECISION, both directions, on the rows themselves - the test that keeps a
+        // second moving line off a card where something is already moving.
+        using echojay::agentui::lastRowHasSettled;
+        using St = EJAgentClient::Step::Status;
+        std::vector<echojay::agentui::RunStep> rows;
+        check (lastRowHasSettled (rows), "TH11 no rows yet: the line stands in for the first step");
+        rows.push_back ({}); rows.back().status = (int) St::Running;
+        check (! lastRowHasSettled (rows),
+               "TH12 a step still RUNNING is its own indicator - no second pulsing line under it");
+        rows.back().status = (int) St::AwaitingApproval;
+        check (! lastRowHasSettled (rows),
+               "TH13 ...nor under a step waiting for an answer");
+        rows.back().status = (int) St::Pending;
+        check (! lastRowHasSettled (rows), "TH14 ...nor under one that has not started");
+        for (auto st : { St::Done, St::Failed, St::Declined, St::NotRun, St::Undone, St::Stopped })
+        {
+            rows.back().status = (int) st;
+            check (lastRowHasSettled (rows),
+                   juce::String ("TH15 a settled last row takes the line: status ")
+                     + juce::String ((int) st));
+        }
+    }
+
+    // ---- LV: A REOPENED WAITING CARD KEEPS ITS CHIPS (his 14:15 item 2, 21 Oct 2026) ----------
+    //
+    // *"He left the CL 1B add waiting on "How's it sounding?", closed and reopened the V2 window ...
+    // the waiting card came back with no Sounds good / Run a check / Use a different one."*
+    //
+    // HIS LOG, BY ITS ORDER:
+    //   14:15:18  EJAgentRow: this window ADOPTED the run's row ... chips=3 in the snapshot,
+    //             clientPendingAsk=3 label(s)
+    //   14:15:19  EJStores: merged 2 row(s) ...
+    // Both copies had the chips; the replay that ran AFTER the adopt reissued every restored row's
+    // integer id, the editor's `live` test compared integers, and a card declared history lays out
+    // no chips, no Stop and no Undo. The run's KEY survives all of that, which is why it decides.
+    //
+    // The sequence itself (run waiting, close, reopen) is a rig row - only a real window replays a
+    // chat. What belongs here is the decision those three steps turn on, both directions.
+    {
+        std::printf ("== LV: which row is the live run ==\n");
+        using echojay::agentui::rowIsLiveRun;
+
+        check (rowIsLiveRun ("key-A", "key-A", 7, 7, true),
+               "LV1 the row this window wrote: key and id both agree");
+        check (rowIsLiveRun ("key-A", "key-A", 9, 7, true),
+               "LV2 RED-FIRST: after a replay REISSUED the id, the KEY still says live - this is his "
+               "14:15 card, and the integer test is what took its chips away");
+        check (! rowIsLiveRun ("key-B", "key-A", 9, 7, true),
+               "LV3 another run's row is NOT live, however the integers fall - his 11:59, survival "
+               "is not capture");
+        check (rowIsLiveRun ("", "key-A", 7, 7, true),
+               "LV4 a row with no key yet (just created, nothing written a snapshot) is live on its "
+               "id - the fast path has to keep working or a brand-new card loses its own chips");
+        check (! rowIsLiveRun ("", "key-A", 0, 0, true),
+               "LV5 ...but id 0 is \"no id\", not a match: two unidentified rows are not each other");
+        check (! rowIsLiveRun ("key-A", "key-A", 7, 7, false),
+               "LV6 no session, no live row - a finished card is history whatever it carries");
+        check (rowIsLiveRun ("  key-A  ", "key-A", 0, 0, true),
+               "LV7 whitespace is not an identity (the same rule rowBelongsInChat keeps)");
+        check (! rowIsLiveRun ("", "", 0, 0, true),
+               "LV8 nothing known either side: not live, so a card with no identity is never handed "
+               "another run's controls");
+    }
+
+    // ---- SF: B'S STATUS FRAMES (his 15:28 request, 21 Oct 2026) ------------------------------
+    //
+    // *"under the "Thinking..." line, show the latest status text B sends during the wait ...
+    // replacing the previous one as each arrives ... It disappears when the next step appears or an
+    // ask is raised. With no status yet, just "Thinking...". "*
+    //
+    // Agreed with B as docs/CONTRACT_status_frames_2026-10-21.md on both sides: SSE event `status`,
+    // {type, text, round?}, sent only when the phase changes. Every clause of his sentence is a leg,
+    // and the three that clear it matter most - a status that outlives its wait is a claim about the
+    // present made from the past.
+    {
+        std::printf ("== SF: the status line under Thinking ==\n");
+        const juce::String kThinking = juce::String::fromUTF8 ("Thinking\xe2\x80\xa6");
+        Rig r;
+        r.client.start ("build a mix bus", "chatSF");
+        {
+            const auto v = echojay::agentui::runViewFrom (r.client, {}, true);
+            check (! v.steps.empty() && v.steps.back().label == kThinking
+                     && v.steps.back().detail.isEmpty(),
+                   "SF1 with no status yet the row is just \"Thinking...\" - nothing is invented",
+                   v.steps.empty() ? juce::String ("(no rows)") : v.steps.back().detail);
+        }
+        EJAgentClientTestAccess::feed (r.client, "status", R"({"type":"status","text":"Reading the rack","round":1})");
+        pumpMs (10);
+        check (r.client.serverStatusLine() == "Reading the rack",
+               "SF2 B's words are held as sent - not rewritten, not capitalised, not punctuated",
+               r.client.serverStatusLine());
+        {
+            const auto v = echojay::agentui::runViewFrom (r.client, {}, true);
+            check (! v.steps.empty() && v.steps.back().label == kThinking
+                     && v.steps.back().detail == "Reading the rack",
+                   "SF3 RED-FIRST: it is drawn UNDER the Thinking line, on the same row",
+                   v.steps.empty() ? juce::String ("(no rows)") : v.steps.back().detail);
+            check (v.statusText == "Reading the rack",
+                   "SF4 ...and it rides the ENTRY's payload, which is where he asked it be drawn from",
+                   v.statusText);
+        }
+        // THE LATEST REPLACES THE PREVIOUS: no list, no history.
+        EJAgentClientTestAccess::feed (r.client, "status", R"({"type":"status","text":"Choosing the compressor","round":1})");
+        pumpMs (10);
+        check (r.client.serverStatusLine() == "Choosing the compressor",
+               "SF5 each frame REPLACES the last - one line, never a growing list",
+               r.client.serverStatusLine());
+        // AN EMPTY FRAME IS IGNORED, and a stale round is dropped: both are B's own rules.
+        EJAgentClientTestAccess::feed (r.client, "status", R"({"type":"status","text":"   "})");
+        pumpMs (10);
+        check (r.client.serverStatusLine() == "Choosing the compressor",
+               "SF6 a frame with no text clears nothing and shows nothing", r.client.serverStatusLine());
+        r.round (4);
+        EJAgentClientTestAccess::feed (r.client, "status", R"({"type":"status","text":"a late frame","round":2})");
+        pumpMs (10);
+        check (r.client.serverStatusLine() != "a late frame",
+               "SF7 a frame stamped with an older round is DROPPED - that is what B sends `round` for",
+               r.client.serverStatusLine());
+        // AND IT GOES WHEN THE WAIT ENDS: a step, an ask, the end of the run.
+        EJAgentClientTestAccess::feed (r.client, "status", R"({"type":"status","text":"Adding the plugins","round":4})");
+        pumpMs (10);
+        r.tool (R"({"id":"tc_sf","name":"look","args":{"what":"rack"},"approval":"free"})");
+        pumpMs (10);
+        check (r.client.serverStatusLine().isEmpty(),
+               "SF8 a step beginning clears it - the wait it described is over",
+               r.client.serverStatusLine());
+    }
+    {
+        // AN ASK CLEARS IT TOO: his turn, not the server's, and the chips are what he is looking at.
+        Rig r2;
+        r2.client.start ("pick a compressor", "chatSF2");
+        r2.round (1);
+        EJAgentClientTestAccess::feed (r2.client, "status", R"({"type":"status","text":"Choosing the compressor","round":1})");
+        pumpMs (10);
+        r2.tool (R"({"id":"tc_sf2","name":"talk","args":{"text":"Added it.","ask":{"question":"How's it sounding?","choices":[{"label":"Sounds good"}],"allowFreeText":true}},"approval":"free"})");
+        r2.await ({ "tc_sf2" });
+        pumpMs (20);
+        check (r2.client.askPending() && r2.client.serverStatusLine().isEmpty(),
+               "SF9 an ask clears it - the run is waiting on HIM, and a pulsing server status under "
+               "his buttons would say the opposite", r2.client.serverStatusLine());
+        int think = 0;
+        const auto v = echojay::agentui::runViewFrom (r2.client, {}, true);
+        for (const auto& st : v.steps) if (st.id == "thinking") ++think;
+        check (think == 0, "SF10 ...and there is no Thinking row to put it under either");
+    }
+    {
+        // THE NARROW WINDOW (his 17:3x item 1): the right-hand word gives up its column and becomes
+        // the row's own second line, so the step text always has the card's width.
+        std::printf ("== SF/NW: the \"your answer?\" label in a narrow window ==\n");
+        using namespace echojay::agentui;
+        RunView v;
+        v.running = true;
+        RunStep s; s.id = "ask"; s.label = "Which compressor should I use on this?";
+        s.right = "your answer?"; s.status = (int) EJAgentClient::Step::Status::Running;
+        v.steps.push_back (s);
+        const auto wide = layoutRun (v, 0, 0, 520);
+        const auto narrow = layoutRun (v, 0, 0, 200);
+        check (! wide.rows.empty() && wide.rows[0].button.getWidth() > 0,
+               "NW1 at a comfortable width the word keeps its own column, as the mockup has it",
+               juce::String (wide.rows.empty() ? 0 : wide.rows[0].button.getWidth()));
+        check (! narrow.rows.empty() && narrow.rows[0].button.getWidth() == 0,
+               "NW2 RED-FIRST: in a narrow window NO column is reserved - his step text was squeezed "
+               "into a thin strip beside it",
+               juce::String (narrow.rows.empty() ? -1 : narrow.rows[0].button.getWidth()));
+        // MY FIRST ASSERTION WAS MEANINGLESS: it compared label widths across two different card
+        // widths (176 against 412) and could only ever fail. What he photographed is the text
+        // STOPPING SHORT of the card's edge, so that is what is measured: in the narrow card the
+        // label runs to the edge, and in the wide one it stops to leave the column.
+        check (! narrow.rows.empty() && narrow.rows[0].label.getRight() >= 200 - 2,
+               "NW3 ...so in a narrow card the step text runs to the card's edge - no column is "
+               "taken out of it",
+               juce::String (narrow.rows.empty() ? 0 : narrow.rows[0].label.getRight()) + " of 200");
+        check (! wide.rows.empty() && wide.rows[0].label.getRight() <= 520 - 76,
+               "NW4 ...while a comfortable card still keeps the column clear for the word",
+               juce::String (wide.rows.empty() ? 0 : wide.rows[0].label.getRight()) + " of 520");
     }
 
     std::printf ("\n==== agent_client_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);

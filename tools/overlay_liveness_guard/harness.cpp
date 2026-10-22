@@ -21,6 +21,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "LinkShm.h"
+#include "ChainEditGate.h"   // 20 Oct: b2b reads the line the user sees
 #include <cstdio>
 #include <cstdlib>
 
@@ -159,7 +160,39 @@ int main()
         if (proc.borrowActive()) { reengagedAt = k; show (("RE-engaged at tick " + juce::String (k)).toRawUTF8(), proc, *ed); break; }
     }
     if (reengagedAt < 0) show ("after 12 re-ticks", proc, *ed);
-    check (reengagedAt > 0 && proc.rackLockHeldFor (kUid), "(b2) after the auto-release the want survives / re-arms and the borrow RE-ENGAGES (Held + borrowed)", "tick " + juce::String (reengagedAt));
+    // ---- (b2) RE-AIMED TO HIS 20 OCT RULING ------------------------------------------------
+    //
+    // This asserted that the want SURVIVES and the borrow RE-ENGAGES on the tick, with the rack
+    // still selected. That was right while the session was the only road to a rack: without the
+    // re-arm the overlay sat on "Connecting to rack..." for ever, which is the failure it was
+    // written for.
+    //
+    // His ruling of 20 Oct reverses the premise:
+    //
+    //   *"Viewing a rack must not engage the borrow/edit session. Structural edits, X, Build and the
+    //    agent's adds all go over the wire now, so engage only when something actually needs the
+    //    hosted copy... a viewed, unengaged rack shows 'Not connected to this rack' honestly, never
+    //    'Connecting' for ever."*
+    //
+    // The failure b2 guarded against is still forbidden - that is the SECOND assertion below, and it
+    // is the one that matters. What changed is the remedy: the honest TEXT rather than an engage the
+    // user never asked for. On 20 Oct alone the old remedy produced a dead X, two trims reading
+    // +0.0, a "didn't confirm" about a change that had landed, and a stale chain in an agent-off
+    // request - four shapes of one staleness, all of them downstream of a session nobody wanted.
+    check (reengagedAt < 0,
+           "(b2) a VIEWED rack does NOT re-engage a session on the tick - viewing is not asking "
+           "(RED as it stood: it re-engaged, and the mirror it brought was the root of his 09:28)",
+           reengagedAt > 0 ? ("re-engaged at tick " + juce::String (reengagedAt))
+                           : juce::String ("never re-engaged"));
+    // AND THE FAILURE b2 EXISTED FOR IS STILL FORBIDDEN: whatever the lock does, the line the user
+    // reads must not be an endless "Connecting".
+    {
+        const auto line = chainLockStateText (proc.rackLockState(),
+                                              proc.borrowHostIfActiveFor (kUid) != nullptr);
+        check (! line.containsIgnoreCase ("connecting"),
+               "(b2b) ...and the line he reads is never \"Connecting to rack...\" while nothing is "
+               "connecting - which is the failure b2 was written to prevent, kept", line);
+    }
 
     // ---- (b3) NOT WRITTEN, AND WHY (19 Oct 2026) ---------------------------------------------
     //
@@ -300,6 +333,59 @@ int main()
         check (EchoJayTabStripTestAccess::panelStatus (*ed).isNotEmpty(),
                "(b6b) ...and the card SAYS something either way - never a silent click",
                "card says: \"" + EchoJayTabStripTestAccess::panelStatus (*ed) + "\"");
+    }
+
+    // ---- MM: A MIRROR THAT DISAGREES WITH THE LINK (Sean's 09:59, 21 Oct 2026) ----------------
+    //
+    // His rack: the view drew the sidecar's [EchoJay Compressor, Shadow Hills, EchoJay Gain] while
+    // the mirror behind the editors still held [bx opto Pedal, EchoJay Compressor, bx_opto] - they
+    // drifted because X and picker adds update the Link's real rack and the mirror was not rebased.
+    //
+    // TWO THINGS MUST NEVER HAPPEN, and they are different in kind:
+    //   1. the write-back ("plugin settings are written when you leave this rack") sends the
+    //      MIRROR's slot i by INDEX, so a drifted copy would put one plugin's state onto another -
+    //      three plugins destroyed with no undo on the far side;
+    //   2. opening slot i's editor would show another plugin's interface under this slot's name.
+    //
+    // The decision in both cases is one comparison, and it is the comparison that is legged here:
+    // names matched loosely, index by index, against the Link's own published list.
+    {
+        std::printf ("== MM: identity, index by index, before anything is written or opened ==\n");
+        const juce::StringArray onTheRack { "EchoJay Compressor", "Shadow Hills", "EchoJay Gain" };
+        const juce::StringArray inTheCopy { "bx opto Pedal", "EchoJay Compressor", "bx_opto" };
+        // THE AGREEING CASE FIRST, so the test is known to pass on known-good as well as fail on
+        // known-bad - a check proven in one direction only is the "verifier both directions" rule.
+        int agree = 0;
+        for (int k = 0; k < onTheRack.size(); ++k)
+            if (ChainHost::namesMatchLoose (onTheRack[k], onTheRack[k])) ++agree;
+        check (agree == onTheRack.size(),
+               "MM1 a copy that matches the rack agrees at every index - the write-back and the "
+               "editor are allowed in exactly this case", juce::String (agree) + "/3");
+        // ...and HIS case, which must be caught at EVERY index, not just the first.
+        juce::StringArray bad;
+        for (int k = 0; k < onTheRack.size(); ++k)
+            if (! ChainHost::namesMatchLoose (inTheCopy[k], onTheRack[k]))
+                bad.add ("slot " + juce::String (k + 1));
+        check (bad.size() == 3,
+               "MM2 RED-FIRST: his 09:59 drift is caught at ALL THREE slots - a test that only "
+               "looked at slot 1 would have let the Shadow Hills and the EchoJay Gain be written",
+               bad.joinIntoString (", "));
+        // A COUNT MISMATCH IS A MISMATCH TOO. His earlier racks drifted by count as well (mirror 1,
+        // sidecar 0, and mirror 0, sidecar 3), and a loop over the shorter list would see no
+        // disagreement at all.
+        const juce::StringArray shortCopy { "EchoJay Compressor" };
+        check (shortCopy.size() != onTheRack.size(),
+               "MM3 a copy with a different NUMBER of slots is a mismatch before any name is "
+               "compared - a loop over the shorter list would have found nothing wrong");
+        // AND LOOSE MATCHING MUST NOT BE SO LOOSE THAT HIS CASE PASSES: "bx opto Pedal" and
+        // "bx_opto" are different plugins, and the separator-insensitive comparison must still
+        // separate them.
+        check (! ChainHost::namesMatchLoose ("bx opto Pedal", "bx_opto"),
+               "MM4 \"bx opto Pedal\" and \"bx_opto\" are NOT the same plugin - loose matching "
+               "ignores separators and case, never a different name");
+        check (ChainHost::namesMatchLoose ("bx_opto", "bx opto"),
+               "MM5 ...while the same name under different separators still matches, which is what "
+               "loose matching is for");
     }
 
     std::printf ("\n==== overlay_liveness_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

@@ -49,11 +49,61 @@ int main()
     check (chainEditableFor (true, S::Idle, false) == false, "SESSION-OPEN case: Link rack selected on load, not engaged -> BLOCKED");
 
     std::printf ("== the one line of state text (overlay AND Build/Apply refusal share it) ==\n");
-    check (chainLockStateText (S::Idle, false)        == juce::String::fromUTF8 ("Connecting to rack\xE2\x80\xA6"), "Idle        -> \"Connecting to rack…\"");
+    // ---- 19 Oct 2026 (his 17:11 run): IDLE IS NOT "CONNECTING" ----------------------------------
+    // The vocal Link's session had been released and the V2's single borrow session was engaged on
+    // the KICK, so the vocal's state was Idle - no lock, nothing in flight - and this line said
+    // "Connecting to rack..." for as long as he watched it. A progress message for a process that is
+    // not running cannot come true, and he gave up and opened the Link's own window.
+    check (chainLockStateText (S::Idle, false)        == juce::String ("Not connected to this rack."),
+           "Idle        -> \"Not connected to this rack.\"  (RED as it stood: \"Connecting to rack…\", "
+           "a progress message for a process that was not running)");
+    check (! chainLockStateText (S::Idle, false).containsIgnoreCase ("connecting"),
+           "Idle        -> and it never says \"connecting\" in any wording");
+    // AND WHEN THE SESSION IS ON ANOTHER RACK, it is named, because the name is the thing he can act
+    // on. This is the case his 17:11 run actually hit.
+    {
+        const auto t = chainLockStateText (S::Idle, false, "88_7even Kick_2_01");
+        check (t.contains ("88_7even Kick_2_01") && t.containsIgnoreCase ("select this one"),
+               "Idle + another rack connected -> names it and says what to do", t);
+        check (! t.containsIgnoreCase ("connecting"),
+               "Idle + another rack connected -> still never says \"connecting\"", t);
+    }
+    // THE OTHER DIRECTION: Held IS in flight, and still says so.
     check (chainLockStateText (S::Held, false)        == juce::String::fromUTF8 ("Connecting to rack\xE2\x80\xA6"), "Held, not engaged -> \"Connecting to rack…\"");
     check (chainLockStateText (S::HeldByOther, false) == "Rack held by another EchoJay",                             "HeldByOther -> \"Rack held by another EchoJay\"");
     check (chainLockStateText (S::WaitRecency, false) == juce::String::fromUTF8 ("Waiting for audio\xE2\x80\xA6"),  "WaitRecency -> \"Waiting for audio…\"");
     check (chainLockStateText (S::Held, true).isEmpty(),                                                             "Held + engaged -> (no text: overlay cleared)");
+
+    std::printf ("== HELD is not always CONNECTING (Sean's 21:05/21:09, 20 Oct 2026) ==\n");
+    // *"Clicking another rack hangs on 'connecting to rack'."*  Three times in one evening, and
+    // twice nothing was connecting at all: the lock was held for the rack on screen, the 20 Oct
+    // ruling means viewing does not engage a session, and a stranded read had stopped any engage
+    // from starting. "Connecting to rack..." on a state that will never finish describes a process
+    // that is not running - the same class of untruth as a floor printed as a measurement.
+    {
+        const auto inFlight = chainLockStateText (S::Held, false, {}, true);
+        const auto resting  = chainLockStateText (S::Held, false, {}, false);
+        check (inFlight.containsIgnoreCase ("connecting"),
+               "HC1 HELD with something genuinely in flight still says Connecting", inFlight);
+        check (! resting.containsIgnoreCase ("connecting"),
+               "HC2 RED-FIRST: HELD with NOTHING in flight does NOT say Connecting - it is the "
+               "resting state of a viewed Link since the ruling, not a process", resting);
+        check (resting == "Not connected to this rack.",
+               "HC3 ...it says the same honest thing Idle says, because it is the same fact to him",
+               resting);
+        // THE DEFAULT KEEPS TODAY'S WORDS, so every caller and leg not yet taught the question is
+        // unchanged - only the overlay, which can actually answer it, passes false.
+        check (chainLockStateText (S::Held, false) == inFlight,
+               "HC4 the default is in-flight, so an untaught caller behaves exactly as before");
+        // AND THE OTHER STATES ARE UNTOUCHED BY THE NEW ARGUMENT.
+        check (chainLockStateText (S::Idle, false, {}, false) == chainLockStateText (S::Idle, false, {}, true)
+                 && chainLockStateText (S::HeldByOther, false, {}, false) == chainLockStateText (S::HeldByOther, false, {}, true)
+                 && chainLockStateText (S::WaitRecency, false, {}, false) == chainLockStateText (S::WaitRecency, false, {}, true),
+               "HC5 Idle, HeldByOther and WaitRecency read the same either way - the question only "
+               "governs HELD");
+        check (chainLockStateText (S::Held, true, {}, false).isEmpty(),
+               "HC6 an ENGAGED rack still shows no overlay at all, whatever the question says");
+    }
 
     std::printf ("\n==== overlay_gate_harness: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

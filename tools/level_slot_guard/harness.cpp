@@ -5,6 +5,8 @@
 // key=value (item 6). RED on the pre-round lib/headers: no EedLevelProcessor (every leg FAIL).
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "EJGainReadout.h"   // his 21 Oct: an unreadable trim keeps its figure
+#include "EJSlotLevelsBlock.h"   // B 92(2): the shipped slot_levels composer
 #include "PluginProcessor.h"
 #include "EJRackSidecarFill.h"   // ruling 1 (21s-b): the shared sidecar slot fill
 #include "EedLimiterProcessor.h"
@@ -13,6 +15,7 @@
 // came back null in this guard while the Limiter and Level (whose types it names) were found. The
 // include plus the symbol reference below is what pulls the TU in and runs its registrar.
 #include "EedCompressorProcessor.h"
+#include "EedMultibandProcessor.h"   // 20 Oct: MB legs - and the TU must be referenced to link
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
 #include "EedLevelEditor.h"   // 22 Sep 2026 (item 8): the card's readout tags
@@ -696,6 +699,447 @@ int main()
             }
         }
         else check (false, "4 Oct. fixture: the two built-ins are registered");
+    }
+
+    // ---- OUT3: THE CHAIN-OUTPUT TALLY ALREADY CONTAINS THE SLOT'S OUT TRIM (19 Oct 2026, 17:00) ----
+    //
+    // *"The agent added Tube-Tech CL 1B, Sean played afterwards, and the slot card's OUT trim never
+    // moved."*  It moved to +6.64 dB and the verify pass then cancelled it, because the stage was
+    // marked outsideTap: effectiveOutDb added the trim to a reading that already had it, the output
+    // looked 6.8 dB too loud, and the "correction" put the trim back to -0.14.
+    //
+    // THE PREMISE IS MEASURABLE, so this leg measures it rather than asserting a flag: push a steady
+    // tone through a one-slot chain, read the CHAIN's output tally at trim 0 and at trim +6, and see
+    // whether the reading moves. If it moves, the trim is inside the tally and a stage that writes it
+    // is not an outside tap - which is the whole of the fix. (21t-k is still true of the SLOT's own
+    // out tally, which is a different tap and not the one the loop reads.)
+    {
+        const auto* cmpT = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (cmpT != nullptr)
+        {
+            EchoJayProcessor pT; pT.prepareToPlay (48000.0, 512);
+            auto& hT = pT.getChainHost();
+            EchoJayBorrowHostTestAccess::loadBuiltin (hT, BuiltinDeviceRegistry::descriptionFor (*cmpT));
+            {   // threshold well above the tone: the plugin passes it and does nothing
+                auto* pp = new juce::DynamicObject();
+                pp->setProperty ("threshold_db", -6.0);
+                pp->setProperty ("ratio",         4.0);
+                pp->setProperty ("makeup_db",     0.0);
+                auto* w = new juce::DynamicObject();
+                w->setProperty ("params", juce::var (pp));
+                hT.setSlotStructuredSettings (0, juce::var (w));
+            }
+            juce::Random rngT (7);
+            auto readChainOut = [&] (float trimDb) -> float
+            {
+                hT.setSlotOutGainDb (0, trimDb);
+                hT.resetChainOutLevels();
+                noise (pT, 0.02f, 2, rngT);          // make the deferred reset real on the audio thread
+                hT.resetChainOutLevels();
+                noise (pT, 0.02f, 400, rngT);
+                const auto snap = hT.getChainOutLevels();
+                return (snap.known && std::isfinite (snap.levelDb)) ? snap.levelDb
+                                                                    : std::numeric_limits<float>::quiet_NaN();
+            };
+            const float at0 = readChainOut (0.0f);
+            const float at6 = readChainOut (6.0f);
+            check (std::isfinite (at0) && std::isfinite (at6),
+                   "OUT3 the fixture: the chain-output tally reads at both trims",
+                   f1 (at0) + " / " + f1 (at6));
+            if (std::isfinite (at0) && std::isfinite (at6))
+                check (std::abs ((at6 - at0) - 6.0f) < 1.0f,
+                       "OUT3 the slot's OUT trim IS inside the chain-output tally the loop measures, so "
+                       "a stage that writes it must NOT be an outside tap  (RED as it stood: slot_out "
+                       "was marked outsideTap, effectiveOutDb added the trim twice, and his 17:00 "
+                       "verify cancelled a correct +6.64 dB match back to -0.14)",
+                       "chain out " + f1 (at0) + " -> " + f1 (at6) + " dB for a +6 dB trim (want +6)");
+        }
+    }
+
+    // ---- slot_levels: THE BEHAVIOUR (B's section 92 item 2, 19 Oct 2026) ---------------------
+    // *"send slot_levels on agent-off turns ... so agent off can answer 'how much gain reduction'."*
+    // The field NAMES are pinned in agent_executor_read_guard (SL92b-d). What is held here is the
+    // rule every measurement in this build keeps: a figure is measured or ABSENT, never 0 - a zero
+    // in this block reads as "this slot is at 0 dBFS", the loudest claim the format can make.
+    {
+        std::printf ("== slot_levels: measured or absent, never a fabricated zero ==\n");
+        EchoJayProcessor pSL; pSL.prepareToPlay (48000.0, 512);
+        const auto none = echojay::slotLevelsBlock (pSL.getChainHost());
+        check (! none.isArray(),
+               "SL92e an EMPTY rack composes NO block (void), so the body omits the field rather "
+               "than sending [] - \"measured, and there is nothing\" is a different claim from "
+               "\"cannot say\"", none.isArray() ? juce::String ("array") : juce::String ("void"));
+
+        // A LOADED slot that has heard NOTHING is also absent: `measured` is false, so there is no
+        // row for it at all rather than a row of zeros.
+        const auto* cmpS = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (cmpS != nullptr)
+        {
+            EchoJayBorrowHostTestAccess::loadBuiltin (pSL.getChainHost(),
+                                                      BuiltinDeviceRegistry::descriptionFor (*cmpS));
+            const auto silent = echojay::slotLevelsBlock (pSL.getChainHost());
+            check (! silent.isArray(),
+                   "SL92f a loaded slot that has heard nothing gets NO row - not a row of zeros",
+                   silent.isArray() ? juce::String ("array of ")
+                                        + juce::String (silent.getArray()->size())
+                                    : juce::String ("void"));
+
+            // AND ONCE IT HAS HEARD SOMETHING, the row appears and carries the slot's 1-based number
+            // and its name - the two fields B keys every other figure to.
+            juce::Random rngS (11);
+            noise (pSL, 0.05f, 600, rngS);
+            const auto heard = echojay::slotLevelsBlock (pSL.getChainHost());
+            if (heard.isArray() && heard.getArray()->size() > 0)
+            {
+                const auto row = (*heard.getArray())[0];
+                check ((int) row.getProperty ("slot", -1) == 1,
+                       "SL92g the row that appears is slot 1, 1-based",
+                       juce::String ((int) row.getProperty ("slot", -1)));
+                check (row.getProperty ("name", juce::var()).toString().isNotEmpty(),
+                       "SL92h ...and names the plugin, which is what B labels the figures with",
+                       row.getProperty ("name", juce::var()).toString());
+            }
+            else
+                check (false, "SL92g precondition: a slot that HAS heard audio composes a row",
+                       heard.isArray() ? juce::String ("empty array") : juce::String ("void"));
+        }
+    }
+
+    // ---- slot_levels CARRIES GAIN REDUCTION, AND FROM EITHER RACK (Sean's 16:04, 20 Oct 2026) ----
+    //
+    // *"EchoJay 4-Band Compressor in slot 1, track playing, asked 'how much gain reduction is it
+    // doing?' ... Did the 4-Band's GR figure appear in what was sent? If it's missing from either,
+    // fix it so every EchoJay device's GR is sent in both modes."*
+    //
+    // It was missing from both, for two reasons his 16:03 body shows: the block had NO GR field of
+    // any kind (so the question could not be answered even on the open rack), and it was composed
+    // from the V2's own ChainHost (so a Link turn dropped every row and omitted the key).
+    {
+        std::printf ("== slot_levels: gain reduction, measured or absent, from either rack ==\n");
+        const auto* cmpG = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+        if (cmpG == nullptr)
+            check (false, "GRB precondition: the EchoJay Compressor fixture is registered");
+        else
+        {
+            EchoJayProcessor pG; pG.prepareToPlay (48000.0, 512);
+            EchoJayBorrowHostTestAccess::loadBuiltin (pG.getChainHost(),
+                                                      BuiltinDeviceRegistry::descriptionFor (*cmpG));
+
+            // ---- GRB2 FIRST, AND IT IS THE RED-FIRST ONE -----------------------------------
+            // NOTHING HEARD = NO WINDOW = NOT ONE GR FIELD. grWindowFrames == 0 means "nothing was
+            // measured", never "no reduction", so the whole group goes out together or not at all.
+            // A floor (-200, or a 0.0 default) printed as a figure is the failure this convention
+            // exists to stop - and it is the failure a reader cannot detect, because -0.0 dB of
+            // gain reduction is a perfectly plausible answer.
+            {
+                const auto rows = echojay::rowsFromChainHost (pG.getChainHost(), 48000.0);
+                bool anyGr = false, anyWindow = false;
+                for (const auto& r : rows) { if (r.haveGr) anyGr = true; if (r.grWindowFrames > 0.0) anyWindow = true; }
+                check (! anyGr && ! anyWindow,
+                       "GRB2 RED-FIRST: a slot that has heard nothing carries NO gain-reduction "
+                       "figure and no window - grWindowFrames == 0 is \"nothing measured\", never "
+                       "\"no reduction\"",
+                       juce::String (anyGr ? "a GR figure was composed" : "none")
+                           + (anyWindow ? juce::String (" WITH a window") : juce::String()));
+            }
+
+            // ...and once it HAS heard audio, the figures appear, on a certified device.
+            juce::Random rngG (23);
+            noise (pG, 0.25f, 1200, rngG);
+            const auto rowsHeard = echojay::rowsFromChainHost (pG.getChainHost(), 48000.0);
+            const auto blockHeard = echojay::slotLevelsBlock (rowsHeard);
+            if (! blockHeard.isArray() || blockHeard.getArray()->isEmpty())
+                check (false, "GRB1 precondition: a slot that has heard audio composes a row",
+                       blockHeard.isArray() ? juce::String ("empty array") : juce::String ("void"));
+            else
+            {
+                const auto row = (*blockHeard.getArray())[0];
+                check ((bool) row.getProperty ("grReadable", false),
+                       "GRB1 an EchoJay device says its gain reduction IS readable - grCertified is "
+                       "a property of the PLUGIN, which is what \"no estimates, ever\" turns on",
+                       row.getProperty ("grReadable", juce::var()).toString());
+                const bool haveFigures = row.hasProperty ("grLoudestDb") && row.hasProperty ("grHeldDb")
+                                      && row.hasProperty ("grTypicalDb") && row.hasProperty ("grPeakDb")
+                                      && row.hasProperty ("grNowDb");
+                check (haveFigures,
+                       "GRB1 ...and once it has heard audio the whole GR group is sent: loudest, "
+                       "typical, held, peak and now - the five B labels",
+                       haveFigures ? juce::String ("all five")
+                                   : juce::String ("loudest=") + (row.hasProperty ("grLoudestDb") ? "y" : "n")
+                                         + " held=" + (row.hasProperty ("grHeldDb") ? "y" : "n")
+                                         + " typical=" + (row.hasProperty ("grTypicalDb") ? "y" : "n")
+                                         + " peak=" + (row.hasProperty ("grPeakDb") ? "y" : "n")
+                                         + " now=" + (row.hasProperty ("grNowDb") ? "y" : "n"));
+                check (row.hasProperty ("grWindowFrames")
+                           && (double) row.getProperty ("grWindowFrames", 0.0) > 0.0,
+                       "GRB1 ...with the window the figures describe, so a reader can tell four "
+                       "seconds of audio from four minutes",
+                       row.getProperty ("grWindowFrames", juce::var()).toString());
+                check (row.hasProperty ("grWindowSeconds"),
+                       "GRB1 ...in seconds too, when the sample rate is known");
+            }
+
+            // ---- GRB4: THE TWO SOURCES CANNOT DRIFT ---------------------------------------
+            // The one assertion that can hold "two composers of one measurement" at bay: take the
+            // rows the OPEN RACK produced, put the same figures on a sidecar slot by hand, and
+            // require the composed JSON to be identical. If a field is ever added to one adapter and
+            // not the other, this is what says so.
+            if (! rowsHeard.empty())
+            {
+                const auto& src = rowsHeard.front();
+                LinkShm::RackSidecar rack;
+                rack.valid = true; rack.uid = "testuid"; rack.revision = 1;
+                LinkShm::RackSidecarSlot s;
+                s.name = src.name;
+                s.landedValues = src.readBack;
+                s.inRmsKnown = src.haveInRms;
+                s.inTypicalRmsDb = src.inTypicalRmsDb; s.inLoudestRmsDb = src.inLoudestRmsDb;
+                s.outRmsKnown = src.haveOutRms;
+                s.outTypicalRmsDb = src.outTypicalRmsDb; s.outLoudestRmsDb = src.outLoudestRmsDb;
+                s.inCrestKnown = src.haveInCrest;  s.inCrestDb  = src.inCrestDb;
+                s.outCrestKnown = src.haveOutCrest; s.outCrestDb = src.outCrestDb;
+                if (src.havePeak) s.inLoudestPeakDbtp = src.inLoudestPeakDbtp;
+                s.inRmsSeconds = src.windowSeconds;
+                s.pictureValid = src.grReadableStated;
+                s.grCertified  = src.grReadable;
+                s.grKnown = src.haveGr;
+                s.grDb = src.grNowDb; s.grHeldDb = src.grHeldDb; s.grLoudestDb = src.grLoudestDb;
+                s.grTypicalDb = src.grTypicalDb; s.grPeakDb = src.grPeakDb;
+                s.grWindowFrames = src.grWindowFrames;
+                rack.slots.push_back (s);
+
+                const auto fromHost = echojay::slotLevelsBlock (rowsHeard);
+                const auto fromCar  = echojay::slotLevelsBlock (rack, 48000.0);
+                const juce::String a = fromHost.isArray() && ! fromHost.getArray()->isEmpty()
+                                         ? juce::JSON::toString ((*fromHost.getArray())[0], true) : juce::String();
+                const juce::String b = fromCar.isArray() && ! fromCar.getArray()->isEmpty()
+                                         ? juce::JSON::toString ((*fromCar.getArray())[0], true) : juce::String();
+                check (a.isNotEmpty() && a == b,
+                       "GRB4 a row built from a LINK'S SIDECAR is identical, field for field, to the "
+                       "same figures built from the open rack - the only check that can stop the two "
+                       "sources drifting",
+                       a == b ? juce::String ("identical") : juce::String ("host=") + a + "  sidecar=" + b);
+            }
+
+            // ---- GRB3: AN UNCERTIFIED PLUGIN SAYS SO, AND SENDS NO FIGURE ----------------
+            // "NO estimates, ever": EchoJay does not read a third party's gain-reduction meter, so
+            // the honest wire is grReadable:false with no figures beside it - never a 0, which a
+            // reader would quote as "it is doing nothing".
+            {
+                LinkShm::RackSidecar rack;
+                rack.valid = true; rack.uid = "thirdparty"; rack.revision = 1;
+                LinkShm::RackSidecarSlot s;
+                s.name = "Some Third Party Compressor";
+                s.inRmsKnown = true; s.inTypicalRmsDb = -22.0f; s.inLoudestRmsDb = -14.0f;
+                s.inRmsSeconds = 12.0f;
+                s.pictureValid = true;          // measured, and the answer is "not certified"
+                s.grCertified = false; s.grKnown = false; s.grWindowFrames = 0.0;
+                rack.slots.push_back (s);
+                const auto blk = echojay::slotLevelsBlock (rack, 48000.0);
+                if (! blk.isArray() || blk.getArray()->isEmpty())
+                    check (false, "GRB3 precondition: a slot with levels composes a row");
+                else
+                {
+                    const auto row = (*blk.getArray())[0];
+                    check (row.hasProperty ("grReadable")
+                               && ! (bool) row.getProperty ("grReadable", true),
+                           "GRB3 an uncertified plugin's row says grReadable:false - which is an "
+                           "answer to \"how much gain reduction\", and silence is not",
+                           row.getProperty ("grReadable", juce::var()).toString());
+                    const bool anyFigure = row.hasProperty ("grLoudestDb") || row.hasProperty ("grHeldDb")
+                                        || row.hasProperty ("grTypicalDb") || row.hasProperty ("grPeakDb")
+                                        || row.hasProperty ("grNowDb") || row.hasProperty ("grWindowFrames");
+                    check (! anyFigure,
+                           "GRB3 ...and not one GR figure beside it - a 0 here would be quoted as "
+                           "\"it is doing nothing\" (NO estimates, ever)",
+                           anyFigure ? juce::String ("a figure was sent") : juce::String ("none"));
+                    check (row.hasProperty ("inputLoudestRmsDb"),
+                           "GRB3 ...while the levels it DID measure still travel - every slot "
+                           "measures its own input, third party or not");
+                }
+            }
+
+            // ---- GRB5: THE 4-BAND, WHICH IS THE PLUGIN HE ASKED ABOUT --------------------
+            // His 12:02 slot 1 was the multiband, and its override reports the DEEPEST non-bypassed
+            // band. MB0-MB3 above hold the device's own figure; this holds that the figure reaches
+            // the block B reads.
+            const auto* mbG = BuiltinDeviceRegistry::instance().findByName ("EchoJay 4-Band Compressor");
+            if (mbG == nullptr)
+                check (false, "GRB5 precondition: the 4-Band fixture is registered");
+            else
+            {
+                EchoJayProcessor pM; pM.prepareToPlay (48000.0, 512);
+                EchoJayBorrowHostTestAccess::loadBuiltin (pM.getChainHost(),
+                                                          BuiltinDeviceRegistry::descriptionFor (*mbG));
+                juce::Random rngM (29);
+                noise (pM, 0.3f, 1600, rngM);
+                const auto blk = echojay::slotLevelsBlock (pM.getChainHost(), 48000.0);
+                if (! blk.isArray() || blk.getArray()->isEmpty())
+                    check (false, "GRB5 the 4-Band composes a row once it has heard audio",
+                           blk.isArray() ? juce::String ("empty array") : juce::String ("void"));
+                else
+                {
+                    const auto row = (*blk.getArray())[0];
+                    check ((bool) row.getProperty ("grReadable", false),
+                           "GRB5 the 4-Band's gain reduction is readable - the 12:02 override, seen "
+                           "from the block B actually reads");
+                    check (row.hasProperty ("grLoudestDb"),
+                           "GRB5 ...and its figure is in slot_levels, which is what his 16:04 turn "
+                           "was missing entirely");
+                }
+            }
+        }
+    }
+
+
+// ---- A MULTIBAND REPORTS ITS GAIN REDUCTION (20 Oct 2026, his 12:02 run) -----------------
+    //
+    // *"check gr on slot 1 failed twice with 'No audio has been heard for gain reduction on slot 1
+    // yet - the transport is running, so the channel may be silent or muted'"* - and then the detail
+    // that settled it: *"slot 1 at 12:02 was the EchoJay 4-BAND Compressor (multiband)."*
+    //
+    // EedMultibandProcessor never overrode reportsGainReduction, so it inherited the base's `false`
+    // while four siblings said true. slotPicture skipped it, grKnown and pictureValid stayed false,
+    // and check(gr) fell through to the playback branch - inventing a silent channel for a device
+    // that was compressing. The Link was publishing correctly the whole time; it had nothing to
+    // publish, and said so.
+    //
+    // THE LEG IS ON THE PICTURE, not on the sidecar: slotPicture is where the refusal is decided, so
+    // that is where the regression would return. (The sidecar carries pic.valid/grKnown verbatim -
+    // EJRackSidecarFill - and link_build_level_guard's G7 already holds that trip.)
+    {
+        std::printf ("== MB: a 4-band compressor has a GR reading of its own ==\n");
+        // THE STATIC ARCHIVE LINKS A REGISTRAR OBJECT ONLY WHEN THE TU IS REFERENCED - the trap this
+        // file already documents for the limiter, the gain and the compressor. Without this the
+        // multiband's registrar never runs and findByName returns nullptr, which is what MB0 reported
+        // as "NOT registered" about a device that is registered perfectly well in the product.
+        juce::ignoreUnused (EedMultibandProcessor::schema());
+        const auto* mb = BuiltinDeviceRegistry::instance().findByName ("EchoJay 4-Band Compressor");
+        check (mb != nullptr, "MB0 the fixture: the multiband device is registered",
+               mb != nullptr ? juce::String ("found") : juce::String ("NOT registered"));
+        if (mb != nullptr)
+        {
+            EchoJayProcessor pM; pM.prepareToPlay (48000.0, 512);
+            auto& hM = pM.getChainHost();
+            EchoJayBorrowHostTestAccess::loadBuiltin (hM, BuiltinDeviceRegistry::descriptionFor (*mb));
+            // THE REFUSAL'S OWN CONDITION, before any audio: it must already SAY it reports GR, which
+            // is the half that was missing. grWindowFrames is still 0 here, and that is correct - the
+            // base class's rule is that 0 frames means "not measured", never "0 dB".
+            {
+                const auto pic0 = hM.slotPicture (0);
+                check (pic0.grKnown && pic0.valid,
+                       "MB1 the slot's picture is VALID and grKnown for a multiband  (RED as it stood: "
+                       "reportsGainReduction was inherited false, so check(gr) answered \"no audio has "
+                       "been heard ... the channel may be silent or muted\")",
+                       juce::String ("valid=") + (pic0.valid ? "y" : "n")
+                         + " grKnown=" + (pic0.grKnown ? "y" : "n"));
+                check (pic0.grCertified,
+                       "MB1b ...and certified by construction, as every EchoJay device is");
+            }
+            // AND WITH AUDIO THROUGH IT, the window fills - which is what check(gr) needs before it
+            // will quote a figure at all.
+            juce::Random rngM (23);
+            noise (pM, 0.35f, 400, rngM);
+            const auto pic = hM.slotPicture (0);
+            check (pic.grWindowFrames > 0,
+                   "MB2 ...and after audio the GR window has frames, so a figure may be quoted",
+                   juce::String ((double) pic.grWindowFrames, 0) + " frame(s)");
+            // THE OVERALL FIGURE IS THE DEEPEST BAND, never a sum: four bands doing 2 dB each is a
+            // 2 dB multiband, not an 8 dB one, and a sum would be true of nothing.
+            check (std::abs (pic.grHeldDb) <= 24.0f,
+                   "MB3 the held figure is a plausible single-band depth, not a sum across bands",
+                   f1 (pic.grHeldDb) + " dB");
+        }
+    }
+
+        // ---- EQB: BANDS AT THE TOP LEVEL ARE WRITTEN AND READ BACK (Sean's 20:5x item 3) ----------
+    //
+    // *"The EchoJay EQ's high-pass at 30 Hz did not read back."*  His log: `0 band(s), 1 skipped`
+    // and `readback -> no band is enabled`. Never written, and not the band TYPE - EqMove takes
+    // highpass/hipass/hp/hpf. It was the wrapper: the flat-form wrap requires every entry to be a
+    // scalar, and a band list is an array, so the payload went on untouched and the device resolved
+    // neither shape.
+    {
+        std::printf ("== EQB: a band list lands whatever plausible key it arrives under ==\n");
+        const auto* eqd = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+        if (eqd == nullptr)
+            check (false, "EQB precondition: the EchoJay EQ is registered");
+        else
+        {
+            auto bandList = []
+            {
+                auto* b = new juce::DynamicObject();
+                b->setProperty ("type", "highpass");
+                b->setProperty ("freq_hz", 30.0);
+                juce::Array<juce::var> arr; arr.add (juce::var (b));
+                return juce::var (arr);
+            };
+            auto applyUnder = [&] (const char* key) -> juce::String
+            {
+                EchoJayProcessor pq; pq.prepareToPlay (48000.0, 512);
+                EchoJayBorrowHostTestAccess::loadBuiltin (pq.getChainHost(),
+                                                          BuiltinDeviceRegistry::descriptionFor (*eqd));
+                auto* o = new juce::DynamicObject();
+                o->setProperty (key, bandList());
+                // setSlotStructuredSettings APPLIES on its own - its last act is
+                // applyStructuredIfReady(i, DialTrigger::settingsAttached) - so there is no separate
+                // trigger to call, and inventing one in the harness would be testing a path the
+                // product does not take.
+                pq.getChainHost().setSlotStructuredSettings (0, juce::var (o));
+                return pq.getChainHost().slotLiveBandText (0);
+            };
+            // eq_bands has always worked and must keep working - the control case.
+            const auto viaEqBands = applyUnder ("eq_bands");
+            check (viaEqBands.containsIgnoreCase ("30") || viaEqBands.containsIgnoreCase ("high"),
+                   "EQB1 the control case: a band under \"eq_bands\" is written and reads back",
+                   viaEqBands.isEmpty() ? juce::String ("(nothing read back)") : viaEqBands);
+            // ...and the alias B sent, which is the one that was skipped.
+            const auto viaBands = applyUnder ("bands");
+            check (viaBands.containsIgnoreCase ("30") || viaBands.containsIgnoreCase ("high"),
+                   "EQB2 RED-FIRST: a band list at the TOP LEVEL under \"bands\" is hoisted, written "
+                   "and reads back - his 30 Hz high-pass, which came back \"no band is enabled\"",
+                   viaBands.isEmpty() ? juce::String ("(nothing read back)") : viaBands);
+            check (viaBands == viaEqBands,
+                   "EQB3 ...and reads back IDENTICALLY to the accepted shape - a hoist that produced "
+                   "a different result would be a second road, not one",
+                   viaBands + " vs " + viaEqBands);
+        }
+    }
+
+    // ---- TR: AN UNREADABLE TRIM KEEPS ITS FIGURE (Sean's 21 Oct: flicker, then blank) ---------
+    //
+    // *"The card's trim display flickering, then blank until a reload, is still yours to fix."*
+    //
+    // Two faults, one cause: the readout's live getter read the MIRROR for a Link while the same
+    // readout was seeded from the SIDECAR (two sources at two rates = flicker), and it returned 0.0
+    // when no session was engaged - which, since the 20 Oct ruling that viewing must not engage, is
+    // the NORMAL state of a viewed Link. A confident +0.0 on a slot holding +12 is the blank.
+    //
+    // The getter now reads the sidecar and says NaN for "cannot read this right now". These legs
+    // hold the readout's half: NaN is not a value and must never be printed or taken as zero.
+    {
+        std::printf ("== TR: NaN means unreadable, not zero ==\n");
+        echojay::GainReadout r;
+        float answer = 6.5f;
+        r.get = [&answer] { return answer; };
+        r.refreshNow();
+        check (std::abs (r.shown - 6.5f) < 0.01f,
+               "TR1 a readable trim shows its figure", juce::String (r.shown, 2));
+        // ...and then it cannot be read. The figure must STAY, not drop to zero and not print nan.
+        answer = std::numeric_limits<float>::quiet_NaN();
+        r.refreshNow();
+        check (std::abs (r.shown - 6.5f) < 0.01f,
+               "TR2 RED-FIRST: an UNREADABLE trim keeps the last known figure - it does not become "
+               "+0.0, which is what he saw as blank on a slot holding +12",
+               juce::String (r.shown, 2));
+        check (! r.readoutText().containsIgnoreCase ("nan"),
+               "TR3 ...and never prints \"nan\"", r.readoutText());
+        // ...and when it reads again, it moves.
+        answer = -3.25f;
+        r.refreshNow();
+        check (std::abs (r.shown + 3.25f) < 0.01f,
+               "TR4 a trim that can be read again moves to the new figure",
+               juce::String (r.shown, 2));
     }
 
     std::printf ("\n==== level_slot_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

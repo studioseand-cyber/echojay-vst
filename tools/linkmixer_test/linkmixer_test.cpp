@@ -1102,8 +1102,23 @@ static void testSidecarToSlotInfo()
     rs.settings = "SETTINGS_FIELD";
     rs.bypassed = true;
     rs.wet      = 0.25f;
+    // ---- THE SLOT'S OWN TRIMS (19 Oct 2026, his 18:17 run) ------------------------------------
+    // *"the Link's own slot card shows OUT +3.1 (the silent match worked) but the main V2 rack view
+    // of that Link still shows OUT +0.0 on the same slot."*  This converter is the V2's only view of
+    // a Link's slot and it never copied the trims - so every Link slot read 0.0 in the V2 whatever
+    // the Link said, and the republish + rebuild shipped at 17:42 dutifully re-painted that 0.0.
+    // Distinct, non-default, differently-signed values so neither can stand in for the other.
+    rs.outGainDb = 3.1f;
+    rs.preTrimDb = -1.5f;
 
     const auto si = T::fromSidecar (rs);
+    check (std::abs (si.outGainDb - 3.1f) < 1.0e-6f,
+           "the OUT trim survives the sidecar -> SlotInfo conversion (RED as it stood: dropped, so "
+           "the V2 drew OUT +0.0 over a Link showing OUT +3.1)");
+    check (std::abs (si.preTrimDb + 1.5f) < 1.0e-6f,
+           "the IN trim survives it too");
+    check (std::abs (si.outGainDb - si.preTrimDb) > 1.0e-6f,
+           "and the two trims did not land in each other");
     check (si.name     == juce::String ("NAME_FIELD"),     "name survives");
     check (si.format   == juce::String ("FORMAT_FIELD"),   "format survives");
     check (si.settings == juce::String ("SETTINGS_FIELD"), "settings survives");
@@ -1122,6 +1137,8 @@ static void testSidecarToSlotInfo()
     check (empty.name.isEmpty(),   "an empty slot converts to an empty name");
     check (! empty.bypassed,       "an empty slot is not bypassed");
     check (std::abs (empty.wet - 1.0f) < 1.0e-6f, "an empty slot is fully wet");
+    check (std::abs (empty.outGainDb) < 1.0e-6f && std::abs (empty.preTrimDb) < 1.0e-6f,
+           "and an empty slot's trims are 0, not invented - absent in the sidecar means no gain");
 }
 
 static void testContentMigration()

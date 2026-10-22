@@ -285,6 +285,14 @@ ej_add_guard(pitch_mode_test           SOURCE tools/pitch_mode_test/main.cpp    
 ej_add_guard(readback_search_guard     SOURCE tools/readback_search_guard/harness.cpp          LABEL fast)
 ej_add_guard(slotwet_nomutation       SOURCE tools/slotwet_nomutation/slotwet_nomutation.cpp  LABEL fast)
 ej_add_guard(overlay_gate_harness     SOURCE tools/overlay_gate_harness/overlay_gate_harness.cpp LABEL fast)
+
+# ---- source_type_guard (Sean's round (b), 20 Oct 2026) ------------------------------------------
+# What a channel IS, and where that answer came from. The guesser is PURE and its most important
+# behaviour is DECLINING - "Nafe Main_01" could be a lead vocal or a bus - so it is legged against
+# his own session's track names rather than against invented ones. Also holds the precedence
+# (user > classifier > name) and the wire spelling's round trip, which is the leg that catches a
+# type being renamed out from under the wire.
+ej_add_guard(source_type_guard         SOURCE tools/source_type_guard/harness.cpp              LABEL fast)
 ej_add_guard(key_gate_harness         SOURCE tools/key_gate_harness/key_gate_harness.cpp      LABEL fast)
 ej_add_guard(detected_key_text        SOURCE tools/detected_key_text/harness.cpp              LABEL fast)
 ej_add_guard(attach_order             SOURCE tools/attach_order/attach_order.cpp              LABEL fast)
@@ -303,6 +311,10 @@ ej_add_guard(ui_guard                 SOURCE tools/ui_round_guard/ui_guard.cpp  
 # 18 Oct 2026: the chat store's whole rule set, in its own binary so it can run BEFORE an install
 # (ui_guard holds the editor legs and its run is ~200 s of real UI waits; this one finishes in seconds).
 ej_add_guard(chat_store_guard         SOURCE tools/chat_store_guard/harness.cpp              LABEL fast)
+# 21 Oct 2026: the STORED CHAT LOG's own rules (his ruling; docs/PLAN_CHAT_LOG_2026-10-21.md). Its legs are his
+# real sequences - the 19:51 stopped card in another chat, the 14:15 order with two identical messages - asserted
+# over a seq-ordered log, where neither can pass by accident. Seconds to run: no editor, no store on disk.
+ej_add_guard(chat_log_guard           SOURCE tools/chat_log_guard/harness.cpp                LABEL fast)
 # Session A2's agent client + panel legs (docs/AGENT_UI_HOOKS.md section 5): a recorder transport and a fake
 # executor, so it meets no server. First compiled in the 9 Oct merge round.
 ej_add_guard(agent_client_guard       SOURCE tools/agent_client_guard/harness.cpp             LABEL fast)

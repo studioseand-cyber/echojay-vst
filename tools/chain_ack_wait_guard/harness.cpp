@@ -335,6 +335,96 @@ int main()
     }
 
     link.vanish();
+    // ---- THE ONE ROAD, CHOSEN BY THE OPS (19 Oct 2026, his 15:45 agent-off test) ---------------
+    //
+    // *"'+ add UAD Empirical Labs Distressor after Tube-Tech CL 1B (slot 1)' came back 'Not applied:
+    // Connecting to rack... the rack did not become ready within 20 s, so nothing was changed.' This
+    // is the failure the one-road fix closed this morning; it's back for agent-off Build when the
+    // Link already has a slot. Find why this path isn't on the one road and fix it."*
+    //
+    // The chat's edit card chose its road by what a BORROW SESSION was doing: gated on the session's
+    // readiness, then routed into the session whenever one was active. Aiming the chat at a Link
+    // engages a session, so for him both were always true - the 20 s wait, and a destination he
+    // never asked for. The road is now chosen by the OPS, and this is that predicate.
+    std::printf ("== THE ROAD IS CHOSEN BY THE OPS, not by what a session is doing ==\n");
+    {
+        using Op = ChainHost::ChainEditOp;
+        Op add;   add.op   = "add";     add.name = "UAD Empirical Labs Distressor"; add.after = 0;
+        Op rem;   rem.op   = "remove";  rem.slot = 1;
+        Op rep;   rep.op   = "replace"; rep.slot = 0;
+        Op mov;   mov.op   = "move";
+        Op byp;   byp.op   = "bypass";
+        Op wet;   wet.op   = "set_wet";
+        Op out;   out.op   = "slot_out";
+        Op setP;  setP.op  = "set";
+        Op openE; openE.op = "open_editor";
+
+        // HIS CASE, exactly: one add, after the CL 1B already in slot 1.
+        check (! ChainHost::opsNeedTheHostedCopy ({ add }),
+               "RD1 his 15:45 add takes THE WIRE - no session, no lock, no 20 s wait  (RED as it "
+               "stood: every edit alike was gated on the borrow session and then routed into it)");
+        check (! ChainHost::opsNeedTheHostedCopy ({ rem })
+               && ! ChainHost::opsNeedTheHostedCopy ({ rep })
+               && ! ChainHost::opsNeedTheHostedCopy ({ mov }),
+               "RD1b ...and so does every other STRUCTURAL op, which the Link does from the command");
+        check (! ChainHost::opsNeedTheHostedCopy ({ byp, wet, out }),
+               "RD1c ...and the gains the Link owns itself");
+
+        // THE OTHER DIRECTION, which is the whole reason the session road exists: a dial op writes a
+        // plugin parameter and needs a loaded instance with a parameter map.
+        check (ChainHost::opsNeedTheHostedCopy ({ setP }),
+               "RD2 a `set` still needs the V2's hosted copy, so it keeps the session road");
+        check (ChainHost::opsNeedTheHostedCopy ({ openE }),
+               "RD2b ...and so does an editor op, which acts on that instance's own window");
+        check (ChainHost::opsNeedTheHostedCopy ({ add, setP }),
+               "RD2c and a MIXED batch takes the session road - one op that needs the copy decides "
+               "for the batch, because splitting it would apply half of what he asked for");
+        check (! ChainHost::opsNeedTheHostedCopy ({}),
+               "RD2d an empty batch needs nothing (it is refused upstream, and never silently)");
+    }
+
+    // ---- NO MACHINERY AND NO EM-DASHES IN A LINE HE READS (19 Oct 2026, his 15:45 rule) ---------
+    //
+    // *"no machinery ('Connecting to rack...') or em-dashes in user-facing lines; say 'Couldn't add
+    // it, the rack didn't respond. Nothing changed.'"*
+    std::printf ("== THE VERB COMES FROM THE OPS, so the sentence names what he asked for ==\n");
+    {
+        using Op = ChainHost::ChainEditOp;
+        Op add;  add.op  = "add";
+        Op add2; add2.op = "add";
+        Op rem;  rem.op  = "remove";
+        Op setP; setP.op = "set";
+
+        check (ChainHost::verbForOps ({ add }) == "add it",
+               "VB1 one add reads \"Couldn't add it, the rack didn't respond. Nothing changed.\"  "
+               "(RED as it stood: \"Not applied: Connecting to rack... <em dash> the rack did not "
+               "become ready within 20 s, so nothing was changed.\")",
+               ChainHost::verbForOps ({ add }));
+        check (ChainHost::verbForOps ({ add, add2 }) == "add those",
+               "VB1b ...and two adds are plural, because one line must not lie about the count",
+               ChainHost::verbForOps ({ add, add2 }));
+        check (ChainHost::verbForOps ({ rem }) == "remove it",
+               "VB2 a remove says remove", ChainHost::verbForOps ({ rem }));
+        check (ChainHost::verbForOps ({ add, rem }) == "apply that change",
+               "VB3 a mixed batch does NOT claim to be an add - it says what is true of all of it",
+               ChainHost::verbForOps ({ add, rem }));
+        check (ChainHost::verbForOps ({ setP }) == "apply that change",
+               "VB3b ...and so does a dial", ChainHost::verbForOps ({ setP }));
+
+        // AND THE SENTENCES THEMSELVES, composed the way the product composes them: the test is not
+        // "does a verb come back" but "does the line he reads carry machinery or an em-dash".
+        for (const auto& v : { ChainHost::verbForOps ({ add }), ChainHost::verbForOps ({ rem }),
+                               ChainHost::verbForOps ({ add, rem }) })
+        {
+            const auto line = "Couldn't " + v + ", the rack didn't respond. Nothing changed.";
+            check (! line.containsIgnoreCase ("connecting to rack")
+                   && ! line.contains (juce::String::fromUTF8 ("\xe2\x80\x94"))
+                   && ! line.contains ("20 s") && ! line.containsIgnoreCase ("not applied"),
+                   "VB4 the composed line carries no machinery, no em-dash, no bound and no "
+                   "\"Not applied:\" prefix", line);
+        }
+    }
+
     std::printf ("\n==== chain_ack_wait_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

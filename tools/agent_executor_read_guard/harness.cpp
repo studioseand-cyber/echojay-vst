@@ -771,19 +771,40 @@ int main()
             check (sawIn && sawOut && slotKept,
                    "G17 ...as slot_in and slot_out, with the 1-based slot passed through unchanged");
         }
-        // set_level IS THE RACK RECORD, not a Level slot - the 10 Oct ruling dropped that slot, and an
-        // executor still writing it would be addressing a plugin that is not in the rack.
+        // ---- set_level HAS NO ROAD, AND IS REFUSED HERE (Sean's ruling, 20 Oct 2026) -----------
+        //
+        // *"Ruling on set_level: no road for it. Loudness for a build goes through the limiter (B
+        // sets the limiter's input gain and ceiling), so B will stop sending set_level. Keep your
+        // honest refusal as the safety net."*
+        //
+        // This leg pinned the OPPOSITE - that the executor composes a wire op named `set_level` -
+        // and that is exactly what his 19:54 round showed costs him a step:
+        //     step ... FAILED code=not_applied "the rack's ack: status=not_applied,
+        //     reason=op 1 invalid: unknown operation "set_level", slots now 1
+        // The chain channel has never had that operation, so a correct request became an unknown
+        // one at the rack. The ruling keeps the refusal AT THE EXECUTOR, where the limit is, with a
+        // line that names it - which is a stronger contract than the one this leg used to hold, not
+        // a weaker one.
         {
             sends = 0;
             auto d = run (xd, "do", call ("do", R"({"op":"set_level","option":"commercial","target_lufs":-9})"));
-            auto* arr = sentOps.getArray();
-            const auto* first = (arr != nullptr && arr->size() == 1) ? (*arr)[0].getDynamicObject() : nullptr;
-            const auto* lv = first != nullptr ? first->getProperty ("level").getDynamicObject() : nullptr;
-            check (d.ok && first != nullptr && first->getProperty ("op").toString() == "set_level"
-                   && lv != nullptr && lv->getProperty ("option").toString() == "commercial"
-                   && std::abs ((double) lv->getProperty ("target_lufs") + 9.0) < 0.001,
-                   "G17 set_level carries {option, target_lufs} for the RACK RECORD, not a Level slot",
+            check (! d.ok,
+                   "G17 set_level is REFUSED, not composed into a wire op - it has no road, and the "
+                   "rack would answer \"unknown operation\" (his ruling of 20 Oct)",
                    juce::JSON::toString (sentOps, true));
+            // `sends` IS THE PER-LEG COUNTER AND sentOps IS NOT RESET between legs - the ops in it
+            // here are the set_io leg's, from four lines up. Asserting on sentOps compared this leg
+            // against the previous one's residue, which is the same unfalsifiable-fixture mistake as
+            // SH1 in plain_names_guard, found twice in one round. The neighbouring legs use `sends`
+            // for exactly this ("...and NOTHING is sent", G17 above), so this one does too.
+            check (sends == 0,
+                   "G17b ...and NOTHING is sent to the rack for it",
+                   juce::String (sends) + " send(s)");
+            check (d.errorMessage.containsIgnoreCase ("loudness target")
+                     && d.errorMessage.containsIgnoreCase ("limiter"),
+                   "G17c ...and the refusal names the limit and what to do instead (ask for a "
+                   "limiter), rather than \"unknown operation\" one layer lower",
+                   d.errorMessage);
         }
         // A MISSING VALUE IS REFUSED WITH THE SENTENCE THE MODEL IS SHOWN, unparaphrased (contract 4.3).
         {
@@ -1618,6 +1639,64 @@ int main()
     // pink-referenced bands (analysisFromFrame sets haveBands), which is why look(analysis) read
     // this very data on that Link in the same session. The gate was a leftover of the kind item 13
     // removed from check(gr) yesterday.
+// ---- slot_levels: B'S SECTION 92 ITEM 2, FIELD FOR FIELD (19 Oct 2026) -------------------
+    //
+    // *"send slot_levels on agent-off turns (one entry per slot: slot, name, inputLoudestRmsDb,
+    // inputTypicalRmsDb, outputLoudestRmsDb, outputTypicalRmsDb, inputCrestDb, outputCrestDb,
+    // inputLoudestPeakDbtp, windowSeconds, readBack) so agent off can answer 'how much gain
+    // reduction'."*
+    //
+    // THE NAMES ARE THE CONTRACT. B labels these figures by name, so a rename here is a silent
+    // mislabelling on his side rather than a build error - which is the whole reason this leg pins
+    // the spelling of all ten rather than just checking that a block came back.
+    {
+        std::printf ("== slot_levels: the field names B labels, pinned ==\n");
+        // THE BEHAVIOUR (an empty rack composes a VOID block, so the field is omitted rather than
+        // sent as []) is legged in level_slot_guard, which already drives a real EchoJayProcessor.
+        // This guard runs on fakes and does not include the processor at all, which is why the first
+        // cut of this leg would not compile here.
+        //
+        // THE SPELLING, from the header's own source. Reading the shipped file is how the other
+        // PIN legs in this guard hold a contract that no compiler can check.
+        const auto src = juce::File (__FILE__).getParentDirectory()
+                            .getParentDirectory().getParentDirectory()
+                            .getChildFile ("Source/EJSlotLevelsBlock.h").loadFileAsString();
+        check (src.length() > 500 && src.contains ("slotLevelsBlock"),
+               "SL92b the composer's source was read and is the real file",
+               "len=" + juce::String (src.length()));
+        for (const auto* f : { "\"slot\"", "\"name\"",
+                               "\"inputLoudestRmsDb\"", "\"inputTypicalRmsDb\"",
+                               "\"outputLoudestRmsDb\"", "\"outputTypicalRmsDb\"",
+                               "\"inputCrestDb\"", "\"outputCrestDb\"",
+                               "\"inputLoudestPeakDbtp\"", "\"windowSeconds\"", "\"readBack\"" })
+            check (src.contains (f),
+                   juce::String ("SL92c the block spells ") + f + " exactly as B labels it");
+        // AND IT IS 1-BASED, like every other slot number on the wire.
+        //
+        // ---- RE-AIMED 20 OCT 2026, AND IT WAS THE LEG THAT AGED, NOT THE PRODUCT -------------
+        //
+        // This pinned the literal text `setProperty ("slot", i + 1)`. Sean's 16:04 round split the
+        // composer into one builder with two sources (the open rack and a Link's sidecar), so the
+        // 1-based conversion moved OUT of the composer and into each adapter, where the index lives -
+        // and the composer now writes the number the row already carries. The block is still 1-based;
+        // the spelling it was pinned to is gone. Caught by this leg going red on a round that had not
+        // touched the numbering, which is the fourth time this month a red was the suite's own.
+        //
+        // PINNED IN ALL THREE PLACES, because a pin on one of them would pass while another source
+        // shipped a 0-based slot - which is the whole failure this leg exists to stop. A text pin is
+        // what this guard has: it runs on fakes and cannot include the header (that pulls in
+        // ChainHost), so the BEHAVIOURAL assertion lives in level_slot_guard's SL92g, which drives a
+        // real processor and reads the composed row back. If this pin ages again, the fact is still
+        // guarded over there.
+        check (src.contains ("setProperty (\"slot\", r.slot1)"),
+               "SL92d the composed row takes its slot number from the row, not from a loop index");
+        check (src.contains ("r.slot1 = i + 1"),
+               "SL92d ...the OPEN RACK's adapter makes it 1-based, as every slot number on the wire is");
+        check (src.contains ("r.slot1 = (int) i + 1"),
+               "SL92d ...and so does the LINK SIDECAR's adapter - a pin on one source would pass "
+               "while the other shipped a 0-based slot");
+    }
+
     std::printf ("\n== AN: a Link's spectrum and true peak answer from what it publishes ==\n");
     {
         FakeHost h;
@@ -1653,6 +1732,73 @@ int main()
                && o.userMessage.containsIgnoreCase ("play"),
                "AN3b ...and never \"cannot be read from a Link\" - it says what to do instead",
                o.userMessage.substring (0, 90));
+    }
+
+    // ---- BN: B'S NAMES, NOT NEARLY B'S NAMES (the 16:2x reconciliation, 21 Oct 2026) --------
+    //
+    // B's CONTRACT_limit_budget_2026-10-21.md reads `avgLimitDb` AS THE MEASURED LIMITING - its own
+    // example is "avgLimitDb": 3.1 against a budget of 3. A's first cut sent the measurement as
+    // `limitAvgDb` and echoed the budget back as `avgLimitDb`: two names one word-order apart,
+    // meaning different things, which is a wrong number that would have read as a plausible one.
+    //
+    // THE LEG IS THE NAME. A serialiser's field names are a contract with another system and
+    // nothing in a compiler checks them, so they are asserted here, as strings, against B's doc.
+    {
+        std::printf ("== BN: the levelling read's budget field names are B's ==\n");
+        LevellingRead lv;
+        lv.present = true;
+        lv.option = "pushed";
+        lv.targetLufs = -8.0f;
+        lv.avgLimitDb = 3.1f;          // the MEASURED limiting on the loud parts
+        lv.peakLimitDb = 6.4f;
+        lv.stoppedAtBudget = true;
+        lv.reachedLufs = -9.2f;
+        lv.inputDb = 8.5f;
+        lv.limiterSlot = 5;
+        lv.drives = "limiter_in";      // B's inputDb is the limiter-input road's gain
+        const auto v = ExecutorRead::levellingVar (lv);
+        auto* o = v.getDynamicObject();
+        std::printf ("    levelling: %s\n", juce::JSON::toString (v, true).toRawUTF8());
+        check (o != nullptr, "BN0 the levelling read serialises");
+        if (o != nullptr)
+        {
+            check (std::abs ((double) o->getProperty ("avgLimitDb") - 3.1) < 0.051,
+                   "BN1 RED-FIRST: `avgLimitDb` carries the MEASUREMENT - B reads this one, and A used "
+                   "to put the budget here", juce::JSON::toString (o->getProperty ("avgLimitDb")));
+            check (std::abs ((double) o->getProperty ("peakLimitDb") - 6.4) < 0.051,
+                   "BN2 `peakLimitDb` is the measured worst case, by the same rule");
+            check (! o->hasProperty ("limitAvgDb") && ! o->hasProperty ("limitPeakDb"),
+                   "BN3 ...and the near-miss names are GONE - one fact, one name, so a reader cannot "
+                   "pick the wrong one");
+            check ((bool) o->getProperty ("stoppedAtBudget")
+                     && std::abs ((double) o->getProperty ("reachedLufs") + 9.2) < 0.051,
+                   "BN4 stoppedAtBudget and reachedLufs are B's two words for the shortfall");
+            check (std::abs ((double) o->getProperty ("inputDb") - 8.5) < 0.051
+                     && (int) o->getProperty ("slot") == 5,
+                   "BN5 ...with inputDb and slot, which B's \"push anyway\" adds to");
+        }
+        // AND THE THREE B READS ARE THERE WITHOUT A BUDGET STOP (its 16:3x note): B reads them on
+        // ANY step result, so gating them on the stop would leave them absent in every ordinary
+        // round - which is how B would end up guessing the input it just set.
+        {
+            LevellingRead ok2; ok2.present = true; ok2.option = "pushed"; ok2.drives = "limiter_in";
+            ok2.targetLufs = -8.0f; ok2.inputDb = 6.6f; ok2.limiterSlot = 5;
+            const auto v2 = ExecutorRead::levellingVar (ok2);
+            auto* o2 = v2.getDynamicObject();
+            std::printf ("    ordinary: %s\n", juce::JSON::toString (v2, true).toRawUTF8());
+            check (o2 != nullptr && std::abs ((double) o2->getProperty ("inputDb") - 6.6) < 0.051
+                     && (int) o2->getProperty ("slot") == 5
+                     && std::abs ((double) o2->getProperty ("targetLufs") + 8.0) < 0.051,
+                   "BN7 targetLufs, slot and inputDb are sent on an ordinary read, with no budget stop");
+            check (o2 != nullptr && ! o2->hasProperty ("stoppedAtBudget"),
+                   "BN8 ...and nothing claims a stop that did not happen");
+        }
+        // AND NOTHING IS CLAIMED WHEN NOTHING WAS MEASURED: no fields rather than zeros.
+        LevellingRead q; q.present = true; q.option = "pushed";
+        auto* qo = ExecutorRead::levellingVar (q).getDynamicObject();
+        check (qo != nullptr && ! qo->hasProperty ("avgLimitDb") && ! qo->hasProperty ("stoppedAtBudget"),
+               "BN6 an unmeasured budget sends NO budget fields - absent is \"not measured\", and a "
+               "zero would read as \"the limiter is doing nothing\"");
     }
 
     std::printf ("\n==== agent_executor_read_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);

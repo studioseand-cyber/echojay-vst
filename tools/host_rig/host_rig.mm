@@ -1007,15 +1007,27 @@ static bool agentRowOn()
     return true;
 }
 
-/** ITEM 0b - a run SURVIVING its window - is its own switch in the plugin from 16 Oct
-    (EchoJayEditor::agentRunSurvivesCloseOn) and it is OFF by default, because row B3 has never shown
-    a windowless run actually applying its change. B1-B4 read this, not agentRowOn(), so they name
-    themselves as skips in the shipped configuration instead of asserting the opposite of it. The rig
-    must set the SAME env var the plugin reads, or it would be testing a different build. */
-static bool agentSurvivesCloseOn()
+/** ITEM 0b - a run SURVIVING its window - is the PLUGIN'S switch
+    (EchoJayEditor::agentRunSurvivesCloseOn), and the plugin is its only authority.
+
+    This helper used to carry its own copy of the default: "off unless EJ_AGENT_0B=1". The plugin
+    shipped 0b ON by default on 20 Oct, after Sean proved it in Logic, and nothing updated this - so
+    for two days the rig asserted the behaviour of a build that does not exist. The old comment was
+    already the rule ("the rig must set the SAME env var the plugin reads, or it would be testing a
+    different build"); reading the same var and inverting its default is that same fault one layer
+    down, and gate 2026-10-22 charged five rows to it (F3 directly, then C11v(a), C11v(b), I1, F1 and
+    F2, because the run F3 left live made every typed message afterwards "refused while active").
+
+    The answer is now read from the running build, which publishes it on the editor state as
+    `agent0bOn`. There is deliberately NO DEFAULT here: a build that does not publish the field
+    cannot be asked, and `published == false` makes the rows name that instead of guessing, because
+    a guess in this spot is the whole of what went wrong. */
+struct Agent0bSwitch { bool published = false; bool on = false; };
+static Agent0bSwitch agent0bFromBuild (const juce::var& editorState)
 {
-    const char* e = ::getenv ("EJ_AGENT_0B");
-    return e != nullptr && juce::String (e).trim() == "1";
+    const auto v = editorState.getProperty ("agent0bOn", juce::var());
+    if (v.isVoid()) return {};
+    return { true, (bool) v };
 }
 
 /** `answerAsks = false` leaves the card's question UNANSWERED (14 Oct 2026).
@@ -1241,6 +1253,33 @@ static juce::StringArray ownSlotNames (const juce::var& st)
     if (auto* arr = st.getProperty ("ownRack", juce::var()).getProperty ("slots", juce::var()).getArray())
         for (const auto& sl : *arr) names.add (sl.getProperty ("name", juce::var()).toString());
     return names;
+}
+/** ---- WHAT THE CHAT IS DRAWING FOR THIS RUN (22 Oct 2026, his 09:24 fault) -----------------
+    His fault: *"The build WAS on the rack, but the chat showed only my message: no agent card, no
+    steps, no closing, no chips, no Undo all."*  Every 0b row read `agentRow`, which is the live row
+    the window ADOPTED - a different object from the chat's own rows, and the two came apart exactly
+    once: B3 was green while his chat was empty. `onScreen` is the window's chatMessages, each row
+    now carrying whether it is a card and what that card says. Returns a void var when the chat is
+    drawing no card for that run, which is the state his fault was. */
+static juce::var cardOnScreenFor (const juce::var& st, const juce::String& runKey)
+{
+    if (auto* rows = st.getProperty ("onScreen", juce::var()).getArray())
+        for (const auto& r : *rows)
+        {
+            if (! (bool) r.getProperty ("card", false)) continue;
+            if (runKey.isNotEmpty() && r.getProperty ("cardRunKey", juce::var()).toString() != runKey)
+                continue;
+            return r;
+        }
+    return {};
+}
+static int userRowsOnScreen (const juce::var& st)
+{
+    int n = 0;
+    if (auto* rows = st.getProperty ("onScreen", juce::var()).getArray())
+        for (const auto& r : *rows)
+            if (r.getProperty ("role", juce::var()).toString() == "user") ++n;
+    return n;
 }
 static double busGainOf (const juce::var& st)
 {
@@ -2249,16 +2288,32 @@ int main (int argc, char* argv[])
         rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
         Rig::pump (700);
 
-        // ---- B1-B4 ONLY RUN WHEN 0b'S BEHAVIOUR IS ON ------------------------------------------
-        // With it off - which is how this ship is configured - a close STOPS the run, exactly as
-        // 15b did, so every assertion below would be testing the opposite of the shipped behaviour.
-        // ---- F3: THE SHIPPED BEHAVIOUR, WHICH IS THE OPPOSITE OF 0b AND IS NOT TESTED ANYWHERE ----
+        // ---- WHICH CLOSE BEHAVIOUR THIS BUILD SHIPS, ASKED OF THE BUILD (22 Oct 2026) ----------
         //
-        // The matrix's F3: *"M1 run, close window mid-run - stops as 15b (0b off) and says so; no
-        // duplicate lines on reopen."* B1-B4 are skipped BECAUSE 0b is off, and nothing was asserting
-        // what happens instead. This is that: start a run, close the window while it is live, reopen,
-        // and read what the user is left with.
-        if (! agentSurvivesCloseOn())
+        // F3 and B1-B4 are two shapes of one question - what is the user left with when a window
+        // closes mid-run - and which shape is correct depends on a switch only the plugin knows. The
+        // rig used to answer it from its own inverted default; it asks now, and if the build cannot
+        // be asked, every row here says so rather than picking a side.
+        const auto zeroB = agent0bFromBuild (rig.freshState());
+
+        // ---- F3: WHAT THE USER IS LEFT WITH AFTER A CLOSE MID-RUN -------------------------------
+        //
+        // The matrix's F3 was written while 0b was off: *"M1 run, close window mid-run - stops as 15b
+        // (0b off) and says so; no duplicate lines on reopen."*  B1-B4 were skipped because 0b was
+        // off, and nothing asserted what happened instead, so this row was that.
+        //
+        // RE-AIMED, 22 Oct, WITH THE RULING QUOTED. Sean turned 0b on by default on 20 Oct on his own
+        // in-host evidence: *"card still waiting, chips live, plugin on the rack, card in the right
+        // place."*  A row asserting that the run STOPPED now asserts the opposite of what he proved
+        // and shipped, so it keeps its question and changes its instrument: the run must SURVIVE, and
+        // the reopened window must show it ONCE. The duplicate half - the half that was always about
+        // the reopen rather than about stopping - is identical in both shapes.
+        if (! zeroB.published)
+            scenSkip ("F3", "what a close mid-run leaves the user with",
+                      "this build does not publish agent0bOn on its editor state, so the rig cannot "
+                      "know which close behaviour it ships - and the one thing this row must never do "
+                      "is assume. Rebuild the bundles from this tree and it runs.", "A");
+        else
         {
             rig.send (echojay::rig::cmd::sendChat,
                       args1 ("text", "rig-row-marker: set the pre gain, twice (then I close the window)"), 15000);
@@ -2268,8 +2323,13 @@ int main (int argc, char* argv[])
             v2v.closeEditor();
             const bool reallyGone = v2v.lastCloseDestroyedEditor;
             Rig::pump (2500);
+            // The run's fate is read with a WAIT either way, so a slow stop is not read as survival
+            // and a slow survival is not read as a stop. Same state field in both branches; only the
+            // sense of it moves, and the build says which sense is right.
             const bool stopped = untilProc ([] (const juce::var& p)
-                                 { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+                                 { return ! (bool) p.getProperty ("agentActive", false); },
+                                 zeroB.on ? 4000 : 20000);
+            const bool stillLive = ! stopped;
             v2v.openEditor();
             for (int i = 0; i < 40; ++i) { v2v.processOneBlock (sr); if ((i % 10) == 0) Rig::pump (20); }
             Rig::pump (1500);
@@ -2281,29 +2341,55 @@ int main (int argc, char* argv[])
                 for (const auto& m : *arr)
                     if (m.getProperty ("text", juce::var()).toString().contains ("then I close the window"))
                         ++markerCopies;
+            const bool fate = zeroB.on ? stillLive : stopped;
             if (! started || ! reallyGone)
-                scenSkip ("F3", "a run stops when its window closes (0b off), and the reopen shows it once",
+                scenSkip ("F3", "what a close mid-run leaves the user with",
                           juce::String ("this leg needs a live run and a REAL close: started=")
                           + (started ? "y" : "n") + " editorDestroyed=" + (reallyGone ? "y" : "n"), "A");
             else
-                scen ("F3", "a run stops when its window closes (0b off), and the reopen shows it once",
-                      stopped && rows <= 1 && markerCopies == 1,
-                      "the run " + juce::String (stopped ? "stopped with the window" : "was STILL LIVE")
+                scen ("F3", zeroB.on
+                            ? "a run SURVIVES its window closing (0b on, his 20 Oct proof), and the reopen shows it once"
+                            : "a run stops when its window closes (0b off), and the reopen shows it once",
+                      fate && rows <= 1 && markerCopies == 1,
+                      "the run " + juce::String (stillLive ? "was still live" : "stopped with the window")
+                      + ", which is " + juce::String (fate ? "what this build ships" : "NOT what this build ships")
                       + "; the reopened window draws " + juce::String (rows) + " run row(s) and "
-                      + juce::String (markerCopies) + " copy(ies) of the goal  (item 0b is OFF by "
-                      "design, so stopping IS the shipped behaviour - what must not happen is a "
-                      "duplicate or a run left spinning)",
+                      + juce::String (markerCopies) + " copy(ies) of the goal  (0b is "
+                      + juce::String (zeroB.on ? "ON - a close must not kill the run, and must not leave "
+                                                 "a second row either"
+                                               : "OFF - stopping IS the shipped behaviour; what must not "
+                                                 "happen is a duplicate or a run left spinning")
+                      + ")",
                       "A", v2v.editor.get(), st);
         }
-        if (! agentSurvivesCloseOn())
+        // ---- AND THIS ROW PUTS THE BENCH BACK (22 Oct 2026) ------------------------------------
+        //
+        // With 0b on, the run this row starts is STILL RUNNING when the row ends, and a live run
+        // refuses every typed message after it ("The agent is still working on ..."). That is the
+        // product behaving as designed, and in gate 2026-10-22 it cost four later rows their
+        // subject: C11v(a), C11v(b), I1, F1 and F2 all type into the chat, all were refused, and all
+        // reported the absence as a product fault. Stopped through the USER'S OWN road - the Stop
+        // button - because that is the one a person would press.
+        if (zeroB.published && zeroB.on && (bool) pst().getProperty ("agentActive", false))
+        {
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            const bool quiet = untilProc ([] (const juce::var& p)
+                               { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+            check (quiet, "F3 left the bench clear: the run it started is stopped before the chat rows "
+                          "type into the same chat (a live run refuses typed messages)",
+                   "agentActive=" + pstr ("agentActive") + " state=" + pstr ("agentState"));
+        }
+        if (! zeroB.on)
             skip ("ITEM 0b: B1-B4 (the run survives the window, the reopened window adopts it, a whole "
                   "run with no window, the build road withdrawn)",
-                  "0b is its own switch from 16 Oct and it is OFF in this ship: item 0's RENDERER is on "
-                  "by default (Sean's RULE 2) but a run surviving its window is not rig-proven - row B3 "
-                  "has never shown the windowless run apply its change - so a close still stops the run "
-                  "as 15b did, and these rows would assert the opposite of what ships. EJ_AGENT_0B=1 "
-                  "runs them.");
-        if (agentSurvivesCloseOn())
+                  zeroB.published
+                    ? juce::String ("this build ships 0b OFF (EJ_AGENT_0B=0, his kill switch): a close "
+                                    "stops the run as 15b did, so these rows would assert the opposite "
+                                    "of what it does. Unset the var and they run.")
+                    : juce::String ("this build does not publish agent0bOn, so which behaviour it ships "
+                                    "is unknown here - and an unknown is not a reason to run rows that "
+                                    "only make sense one way round. Rebuild the bundles from this tree."));
+        if (zeroB.on)
         {
         // ---- B1: THE RUN IS NOT KILLED BY THE CLOSE --------------------------------------------
         // Before item 0b, ~EchoJayEditor called agentClient_->stop(): close the window mid-run and
@@ -2311,6 +2397,7 @@ int main (int argc, char* argv[])
         // left to report one. The whole assertion is that the client is still ALIVE afterwards.
         {
             // a run that waits for an approval, so there is certainly something in flight to kill
+            const int slotsBeforeRun = (int) pst().getProperty ("procSlots", -1);
             rig.send (echojay::rig::cmd::sendChat,
                       args1 ("text", "rig-row-marker: set the pre gain, twice (survive the close)"), 15000);
             const bool started = untilProc ([] (const juce::var& p)
@@ -2320,7 +2407,7 @@ int main (int argc, char* argv[])
             v2v.closeEditor();
             Rig::pump (1800);        // the processor's own 1 Hz line is the only reader left
             const bool stillAlive = (bool) pst().getProperty ("agentActive", false)
-                                 || pstr ("agentState") == "AwaitingApproval";
+                                 || pstr ("agentState") == "awaiting_approval";   // the product's spelling (22 Oct)
             const bool gone = v2v.lastCloseDestroyedEditor;
             check (started, "a run was in flight before the window closed",
                    "state " + pstr ("agentState") + ", session " + sessionBefore);
@@ -2335,9 +2422,36 @@ int main (int argc, char* argv[])
                        "editor gone=" + juce::String ((int) gone) + ", state " + pstr ("agentState")
                        + ", session " + pstr ("agentSession") + " (was " + sessionBefore + ")");
             check (pstr ("agentBuildRoad") == "0" || pstr ("agentBuildRoad").isEmpty(),
-                   "...and the BUILD ROAD is the one thing withdrawn with the window, which is the limit "
-                   "item 0b states rather than hides",
+                   "...and the WINDOW'S build road went with the window - which since his 22 Oct ruling is "
+                   "a change of road and no longer a limit: a build now takes the processor's own road "
+                   "(B3 asserts it applies there)",
                    "agentBuildRoad=" + pstr ("agentBuildRoad"));
+
+            // ---- B3b: A RUN WAITING ON A CHIP APPLIES NOTHING (his 22 Oct ruling, second leg) --
+            //
+            // *"If the run is waiting on a chip or a question, it keeps waiting."*
+            //
+            // The other half of B3, and the half that makes B3 mean something: now that a windowless
+            // run APPLIES, the thing that must stay true is that an UNAPPROVED one does not. This run
+            // is holding two ask_first steps with no window open, and its plan's own figures are 4
+            // then 6 dB - so the pre-gain must still read what it read before the goal was sent,
+            // after a bound rather than at one arbitrary moment. B2 above then presses Apply and the
+            // same number moves, which is this leg's other direction, already asserted.
+            bool movedWhileWaiting = false;
+            for (int i = 0; i < 20 && ! movedWhileWaiting; ++i)
+            {
+                Rig::pump (100);
+                const int sl = (int) pst().getProperty ("procSlots", -1);
+                if (sl >= 0 && sl != slotsBeforeRun) movedWhileWaiting = true;
+            }
+            check (! movedWhileWaiting
+                   && (pstr ("agentState") == "awaiting_approval" || (bool) pst().getProperty ("agentActive", false)),
+                   "B3b: a run WAITING on a chip with no window open applies nothing - it keeps waiting, "
+                   "and the rack it was asked to change is untouched over a 2 s bound  (the other half of "
+                   "his 22 Oct ruling; B2's Apply above is this leg's opposite direction)",
+                   "slots " + juce::String (slotsBeforeRun) + " -> "
+                   + juce::String ((int) pst().getProperty ("procSlots", -1))
+                   + ", state " + pstr ("agentState"));
 
             // ---- B2: THE APPROVAL SURVIVED IT TOO, AND THE REOPENED WINDOW CAN PRESS IT --------
             v2v.openEditor();
@@ -2353,16 +2467,51 @@ int main (int argc, char* argv[])
                    + ", rows=" + juce::String ((int) rowAfter.getProperty ("rows", 0))
                    + ", key " + keyBefore + " -> " + pstr ("agentRunKey")
                    + ", ack " + adopted.getProperty ("note", juce::var()).toString());
+            // ---- B2c: THE CHAT SHOWS THE WAITING CARD, AND WHAT IT OFFERS (his 09:24 fault) --
+            // RE-AIMED 22 Oct, mid-afternoon: this plan's waiting step is an ask_first APPROVAL, so
+            // the card offers Apply and Skip and has no chips at all - and the row read `chips []`
+            // and called the product wrong for it. Chips belong to a step that asked a QUESTION,
+            // which is B2d below, on the plan that has one. What is true here is that the chat draws
+            // this run's card with the steps it is holding.
+            {
+                const auto waitingCard = cardOnScreenFor (Rig::state(), pstr ("agentRunKey"));
+                check (waitingCard.isObject()
+                       && (int) waitingCard.getProperty ("cardSteps", 0) >= 1,
+                       "B2c: the reopened window's CHAT draws this waiting run's card, with the steps it "
+                       "is holding - not only the row the window adopted",
+                       waitingCard.isObject()
+                         ? "steps " + waitingCard.getProperty ("cardSteps", juce::var()).toString()
+                           + ", chips [" + waitingCard.getProperty ("cardChips", juce::var()).toString() + "]"
+                         : "the chat drew NO card for run " + pstr ("agentRunKey")
+                           + " (onScreen cards=" + Rig::state().getProperty ("onScreenCards", juce::var()).toString() + ")");
+            }
+            // What the rack said BEFORE the apply, because on the live road the number is the
+            // model's to choose and only the MOVEMENT is ours to assert (22 Oct 2026).
+            const double pgBefore = (double) Rig::state().getProperty ("preGainDb", 99.0);
             const auto ack = rig.send (echojay::rig::cmd::press, args1 ("button", "apply"), 10000);
             untilProc ([] (const juce::var& p) { return ! (bool) p.getProperty ("agentActive", false); }, 60000);
             Rig::pump (800);
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             const double pg = (double) Rig::state().getProperty ("preGainDb", 99.0);
-            check (std::abs (pg - 6.0) < 0.3,
+            // ---- THE PLAN'S NUMBER IS THE MOCK'S; THE LIVE ROAD PICKS ITS OWN (22 Oct 2026) ----
+            //
+            // This asserted 6.0 dB on both roads - the scripted plan's second line. It failed live
+            // with "pre-gain now 2.00 dB", and the model's own closing says why: *"Set the Mix Bus
+            // pre-gain to 2 dB, applied twice as asked."*  It chose 2, correctly, and the row called
+            // the product wrong for it. The QUESTION - does the reopened window's Apply land on the
+            // rack? - is the same on both roads; only the figure that proves it differs, so the
+            // exact number stays where it is scripted and the live road asserts the movement.
+            const bool landedOnTheRack = liveServerConfigured()
+                                           ? std::abs (pg - pgBefore) > 0.05
+                                           : std::abs (pg - 6.0) < 0.3;
+            check (landedOnTheRack,
                    "ITEM 0b: the plan that was waiting when the window closed is applied by the window that "
                    "reopened, and the change reads back off the rack",
-                   "pre-gain now " + juce::String (pg, 2) + " dB (6 = both lines), press ok="
-                   + ack.getProperty ("ok", juce::var()).toString()
+                   "pre-gain " + juce::String (pgBefore, 2) + " -> " + juce::String (pg, 2) + " dB ("
+                   + (liveServerConfigured() ? juce::String ("live: the model picks the figure, so what "
+                                                             "must be true is that it MOVED")
+                                             : juce::String ("6 = both scripted lines"))
+                   + "), press ok=" + ack.getProperty ("ok", juce::var()).toString()
                    + ", state " + pstr ("agentState"));
             check (pstr ("agentRowFinished") == "1" && pstr ("agentRowClosing").isNotEmpty(),
                    "...and the run's RECORD - kept by the processor, not the window - carries its final "
@@ -2371,9 +2520,68 @@ int main (int argc, char* argv[])
                    + pstr ("agentRowClosing").substring (0, 70) + "\"");
         }
 
-        // ---- B3: A WHOLE RUN WITH NO WINDOW AT ALL ---------------------------------------------
+        // ---- B2d: A QUESTION'S CHIPS SURVIVE THE CLOSE, IN THE CHAT (his 09:24 fault) ----------
+        //
+        // *"no agent card, no steps, no closing, no chips, no Undo all"* - the chips are the one of
+        // those five that needs a plan which ASKS something, so they are asserted here on
+        // rig-rowask-marker, whose round 1 is a question with two choices. B2c above is an approval
+        // card and has none by design; asserting them there was my error, found by this run.
+        {
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
+            Rig::pump (400);
+            v2v.openEditor();
+            for (int i = 0; i < 30; ++i) { v2v.processOneBlock (sr); if ((i % 10) == 0) Rig::pump (20); }
+            Rig::pump (800);
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "rig-rowask-marker: how firm should it be? (chips through a close)"), 15000);
+            const bool asked = untilProc ([] (const juce::var& p)
+                               // THE SPELLING IS THE PRODUCT'S (EJAgentClient::stateName): lower case
+                               // with underscores. My first cut compared against "AwaitingAsk", a
+                               // string this build never publishes, so the wait could not succeed and
+                               // the leg SKIPPED with "the scripted ask never arrived" - a comparison
+                               // that can never be true, which is the same defect as a grep whose
+                               // success string never occurs. Two spellings of one fact, again.
+                               { const auto s = p.getProperty ("agentState", juce::var()).toString();
+                                 return s == "awaiting_ask" || s == "awaiting_approval"; },
+                               40000);
+            v2v.closeEditor();
+            const bool wentAway = v2v.lastCloseDestroyedEditor;
+            Rig::pump (1200);
+            v2v.openEditor();
+            for (int i = 0; i < 40; ++i) { v2v.processOneBlock (sr); if ((i % 10) == 0) Rig::pump (20); }
+            Rig::pump (1200);
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            const auto askCard = cardOnScreenFor (Rig::state(), pstr ("agentRunKey"));
+            const auto chips   = askCard.getProperty ("cardChips", juce::var()).toString();
+            if (! asked || ! wentAway)
+                skip ("B2d: a question's CHIPS come back in the chat after the window closed",
+                      ! asked ? juce::String ("the scripted ask never arrived, so there were no chips to lose")
+                              : "the close did not destroy the editor: " + v2v.lastCloseNote);
+            else
+                check (askCard.isObject() && chips.containsIgnoreCase ("Gentle")
+                       && chips.containsIgnoreCase ("upfront"),
+                       "B2d: a QUESTION's chips come back in the chat after the window closed - both "
+                       "choices, tappable, on the card the reopened chat draws  (his 09:24 fault listed "
+                       "\"no chips\" among the five things missing)",
+                       "chips [" + chips + "], steps "
+                       + askCard.getProperty ("cardSteps", juce::var()).toString()
+                       + ", onScreen cards=" + Rig::state().getProperty ("onScreenCards", juce::var()).toString());
+            // leave nothing waiting for the rows below: answer the question.
+            rig.send (echojay::rig::cmd::press, args1 ("button", "chip0"), 12000);
+            untilProc ([] (const juce::var& p) { return ! (bool) p.getProperty ("agentActive", false); }, 60000);
+            Rig::pump (600);
+        }
+
+        // ---- B3a: A WHOLE RUN WITH NO WINDOW AT ALL --------------------------------------------
         // The design doc's leg 6, and the one that could not even be written before: start it, close
         // the window, let it finish with nothing attached, reopen and assert the same as leg 1.
+        //
+        // WHY `started` IS NOT A SAMPLE OF agentActive ANY MORE (22 Oct 2026). Run 4 of this rig read
+        // started=0 finished=1 and FAILED a row whose subject had worked perfectly: the run completed
+        // with no window, and the conjunct that broke was a poll of a flag that was true for less time
+        // than the poll's own period. That is this tree's "decisions on uncontrolled timing" wearing a
+        // harness costume - the row measured the observer. The run is observed started from facts that
+        // do not evaporate: the goal this run carries and the key the processor minted for it.
         {
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
             rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 0.0), 8000);
@@ -2381,7 +2589,10 @@ int main (int argc, char* argv[])
             rig.send (echojay::rig::cmd::sendChat,
                       args1 ("text", "rig-auto-marker: set the pre gain, twice (no window at all)"), 15000);
             const bool started = untilProc ([] (const juce::var& p)
-                                 { return (bool) p.getProperty ("agentActive", false); }, 40000);
+                                 { return p.getProperty ("agentGoal", juce::var()).toString()
+                                            .contains ("rig-auto-marker")
+                                       && p.getProperty ("agentRunKey", juce::var()).toString().isNotEmpty(); },
+                                 40000);
             v2v.closeEditor();
             const bool gone = v2v.lastCloseDestroyedEditor;
             // let it finish with NOTHING attached. Audio keeps running, as it would in a host.
@@ -2393,7 +2604,7 @@ int main (int argc, char* argv[])
             const auto closedClosing  = pstr ("agentRowClosing");
             const int  parkedLines    = (int) pst().getProperty ("agentParkedLines", 0);
             if (! gone)
-                skip ("B3: a whole run completes with no window attached",
+                skip ("B3a: a whole run completes with no window attached",
                       "the close did not destroy the plugin's editor, so there WAS a window: "
                       + v2v.lastCloseNote);
             else
@@ -2411,19 +2622,378 @@ int main (int argc, char* argv[])
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             const double pg = (double) Rig::state().getProperty ("preGainDb", 99.0);
             const auto row = Rig::state().getProperty ("agentRow", juce::var());
-            check (std::abs (pg - 6.0) < 0.3,
+            // The scripted plan's second line is 6 dB; live, the model picks its own figure and what
+            // must be true is that the trim MOVED off the 0.0 this leg set (the same split B2 makes).
+            check (liveServerConfigured() ? std::abs (pg) > 0.05 : std::abs (pg - 6.0) < 0.3,
                    "...the change it made with no window open reads back off the rack",
-                   "pre-gain " + juce::String (pg, 2) + " dB");
+                   "pre-gain " + juce::String (pg, 2) + " dB"
+                   + (liveServerConfigured() ? juce::String (" (live: it had to move off 0)")
+                                             : juce::String (" (6 = both scripted lines)")));
             check ((int) row.getProperty ("rows", 0) >= 1
                    && row.getProperty ("closing", juce::var()).toString().isNotEmpty(),
                    "...and the window that opened afterwards shows ONE row for that run, with its closing "
                    "sentence - the run is on screen rather than only in a log",
                    "rows=" + juce::String ((int) row.getProperty ("rows", 0))
                    + ", closing \"" + row.getProperty ("closing", juce::var()).toString().substring (0, 60) + "\"");
+        }
+
+        // ---- B3: A WINDOWLESS RUN FINISHES ITS BUILD AND APPLIES IT (his 22 Oct ruling) ---------
+        //
+        // *"If the user has already pressed Go, a run with no window open finishes its build and
+        //  applies it. The card, its chips and Undo all are there when a window reopens. If the run
+        //  is waiting on a chip or a question, it keeps waiting."*
+        //
+        // THIS ROW WAS RED TWICE FOR TWO DIFFERENT REASONS, which is why it was left red and put to
+        // him rather than re-aimed on my own judgement:
+        //   run 3 (live)  started=1 finished=0, steps [running]. The build PARKED - by design, and
+        //                 the product's own log said so: "a BUILD would park until one opens". That
+        //                 design is what his ruling has now changed.
+        //   run 4 (mock)  started=0 finished=1. The product was right and the row was wrong (see
+        //                 B3a above).
+        // The build road is no longer withdrawn with the window: with none open a build goes down the
+        // road every agent `add` takes (applyChainOps on the processor), and the published
+        // agentLastBuildRoad says which road the last build actually took - read from the BUILD
+        // rather than kept as a copy here, which is the fault that cost five rows on 20 Oct.
+        //
+        // ONE PLUGIN, AND IT IS OURS: EchoJay Compressor, built in. No PACE, no iLok, nothing to
+        // prompt on his Mac (his standing rule, and the pre-gain check's own condition).
+        {
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
+            Rig::pump (500);
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            const int slotsBefore = (int) pst().getProperty ("procSlots", -1);
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "rig-nowindowbuild-marker: build a compressor on this rack "
+                                     "(nothing open while it runs)"), 15000);
+            // ---- THE WINDOW GOES BEFORE THE BUILD CAN LAND (22 Oct 2026) --------------------
+            //
+            // The 11:24 run read `last build road "window"` with the rack grown 0 -> 1: the build
+            // had ALREADY GONE while the window was still open, because the scripted plan fires it
+            // within a second of Go and this leg spent that second waiting to observe the start.
+            // The row then tested the window road and called it the processor's - a leg that proved
+            // nothing while reading green-adjacent. Two changes, both at that cause:
+            //   the plan holds its build frame 4 s (_holdMs in build_and_run.sh), and
+            //   the window closes IMMEDIATELY, with "did it start" read from the RECORD afterwards
+            //   rather than caught in flight (the same lesson as B3a's `started`).
+            v2v.closeEditor();
+            const bool started = untilProc ([] (const juce::var& p)
+                                 { return p.getProperty ("agentGoal", juce::var()).toString()
+                                            .contains ("rig-nowindowbuild-marker")
+                                       && p.getProperty ("agentRunKey", juce::var()).toString().isNotEmpty(); },
+                                 40000);
+            const bool gone = v2v.lastCloseDestroyedEditor;
+            const bool finished = untilProc ([] (const juce::var& p)
+                                  { return ! (bool) p.getProperty ("agentActive", false)
+                                           && p.getProperty ("agentRowFinished", juce::var()).toString() == "1"; },
+                                  90000);
+            // Read with NOTHING attached: the slot count is the processor's own line, so this is the
+            // build landing while no window exists rather than a window finding it afterwards.
+            const int  slotsNoWindow  = (int) pst().getProperty ("procSlots", -1);
+            const auto roadTaken      = pstr ("agentLastBuildRoad");
+            const auto closedSteps    = pstr ("agentRowSteps");
+            const auto closedClosing  = pstr ("agentRowClosing");
+            if (! gone)
+                skip ("B3: a windowless run finishes its build and applies it (his 22 Oct ruling)",
+                      "the close did not destroy the plugin's editor, so there WAS a window: "
+                      + v2v.lastCloseNote);
+            else if (slotsBefore < 0 || slotsNoWindow < 0)
+                skip ("B3: a windowless run finishes its build and applies it (his 22 Oct ruling)",
+                      "this build does not publish procSlots, so whether the build landed WHILE no "
+                      "window existed cannot be read here - and reading it after a reopen would not "
+                      "tell the two apart. Rebuild the bundles from this tree.");
+            else
+            {
+                check (started && finished && closedSteps.contains ("done") && closedClosing.isNotEmpty(),
+                       "HIS 22 OCT RULING: a run the user had already approved FINISHED with no window "
+                       "open at all - steps done, closing written  (RED as it shipped: the build parked "
+                       "and the run sat at [running] until a window came back)",
+                       "started=" + juce::String ((int) started) + " finished=" + juce::String ((int) finished)
+                       + ", steps [" + closedSteps + "], closing \"" + closedClosing.substring (0, 60) + "\"");
+                // ...AND IT APPLIED. Scripted: exactly the one compressor the plan names. Live: the
+                // model chooses what to build, so what must be true is that the rack GREW and that the
+                // road taken was not a window's - there was none.
+                const bool applied = liveServerConfigured() ? slotsNoWindow > slotsBefore
+                                                            : slotsNoWindow == slotsBefore + 1;
+                check (applied && roadTaken != "window",
+                       "...and it APPLIED while nothing was attached: the rack grew on the processor's "
+                       "own line, by the road the agent's own adds take",
+                       "slots " + juce::String (slotsBefore) + " -> " + juce::String (slotsNoWindow)
+                       + ", last build road \"" + roadTaken + "\""
+                       + (liveServerConfigured() ? juce::String (" (live: the model picks what to build, "
+                                                                 "so what must be true is that it grew)")
+                                                 : juce::String (" (scripted: one EchoJay Compressor)")));
+                if (! liveServerConfigured())
+                    check (roadTaken == "processor"
+                           && pstr ("agentLastBuildRunKey") == pstr ("agentRunKey"),
+                           "...by the PROCESSOR'S road, named by the build itself rather than inferred "
+                           "here - the window's two roads were not available and were not used",
+                           "agentLastBuildRoad=\"" + roadTaken + "\" for run "
+                           + pstr ("agentLastBuildRunKey").substring (0, 8) + " (this run "
+                           + pstr ("agentRunKey").substring (0, 8) + ")");
+            }
+            // ---- AND THE CARD, ITS CHIPS AND UNDO ARE THERE WHEN A WINDOW REOPENS ---------------
+            // His ruling's second sentence, asserted as three facts rather than one: the row exists
+            // with its closing, the steps it ran are on it, and Undo all is offered - a run that
+            // applied something the user cannot take back would honour half the ruling.
+            v2v.openEditor();
+            for (int i = 0; i < 40; ++i) { v2v.processOneBlock (sr); if ((i % 10) == 0) Rig::pump (20); }
+            Rig::pump (1200);
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            const auto row = Rig::state().getProperty ("agentRow", juce::var());
+            const int  rows = (int) row.getProperty ("rows", 0);
+            juce::String stepWords, chipWords;
+            int undoableSteps = 0;
+            if (auto* sa = row.getProperty ("steps", juce::var()).getArray())
+                for (const auto& s : *sa)
+                {
+                    stepWords << s.getProperty ("status", juce::var()).toString() << " ";
+                    chipWords << s.getProperty ("chips",  juce::var()).toString();
+                    if ((bool) s.getProperty ("canUndo", false)) ++undoableSteps;
+                }
+            check (rows >= 1 && row.getProperty ("closing", juce::var()).toString().isNotEmpty()
+                   && stepWords.trim().isNotEmpty(),
+                   "...and the window that reopened shows ONE card for that run, with its closing and "
+                   "the steps it ran  (his ruling: \"the card, its chips and Undo all are there when a "
+                   "window reopens\")",
+                   "rows=" + juce::String (rows) + ", steps [" + stepWords.trim() + "], closing \""
+                   + row.getProperty ("closing", juce::var()).toString().substring (0, 60) + "\"");
+            check ((bool) row.getProperty ("undoAll", false) || undoableSteps > 0,
+                   "...and UNDO is on it: a run that applied a build with nobody watching must be "
+                   "takeable back by the window that finds it",
+                   "undoAll=" + row.getProperty ("undoAll", juce::var()).toString()
+                   + ", steps that can be undone " + juce::String (undoableSteps));
+
+            // ---- B3c: THE CHAT ITSELF SHOWS THAT CARD (his 09:24 fault, 22 Oct 2026) ----------
+            //
+            // *"Fresh chat on Main, 'build a mix bus', pressed Go, closed the plugin window while it
+            //  built, reopened about 20 s later. The build WAS on the rack, but the chat showed only
+            //  my message: no agent card, no steps, no closing, no chips, no Undo all."*
+            //
+            // THE ROW ABOVE WOULD HAVE PASSED THAT. It reads `agentRow`, the live row this window
+            // adopted from the processor's replay list; his chat renders from the STORED log, and the
+            // card had never been written there - the editor records a card at the END of a run, and
+            // a run that ends with no window never reaches that code. So the fix is at the stamp (the
+            // store appends with no window involved) and the assertion is here, on what the window
+            // DRAWS: chat rows, not internal state.
+            const auto onScreenCard = cardOnScreenFor (Rig::state(), pstr ("agentRunKey"));
+            check (onScreenCard.isObject(),
+                   "HIS 09:24 FAULT: the reopened window's CHAT draws a card for that run - not only "
+                   "the live row it adopted, the chat itself  (RED as it shipped: the card lived on the "
+                   "processor's replay list, never reached the stored log, and the first chat switch "
+                   "dropped it - \"no agent card, no steps, no closing, no chips, no Undo all\")",
+                   "onScreen cards=" + Rig::state().getProperty ("onScreenCards", juce::var()).toString()
+                   + ", user rows=" + juce::String (userRowsOnScreen (Rig::state()))
+                   + ", run key " + pstr ("agentRunKey"));
+            check (onScreenCard.getProperty ("cardClosing", juce::var()).toString().isNotEmpty()
+                   && (int) onScreenCard.getProperty ("cardSteps", 0) >= 1
+                   && (bool) onScreenCard.getProperty ("cardUndoAll", false),
+                   "...and that card carries its closing, its steps and Undo all - three of the five "
+                   "things his screenshot was missing (the chips are B2d's, on the plan that asks a "
+                   "question; this plan's step is an approval and has none)",
+                   "closing \"" + onScreenCard.getProperty ("cardClosing", juce::var()).toString().substring (0, 50)
+                   + "\", steps " + onScreenCard.getProperty ("cardSteps", juce::var()).toString()
+                   + ", undoAll " + onScreenCard.getProperty ("cardUndoAll", juce::var()).toString());
+
+            // ---- B3d: AND UNDO ALL FROM THAT CARD PUTS THE RACK BACK (his own ask) -------------
+            // *"Also check that Undo all from that card restores the rack."*  The rack is read from
+            // the PROCESSOR's own count, waited for with a bound rather than sampled once.
+            const int slotsBeforeUndo = (int) pst().getProperty ("procSlots", -1);
+            rig.send (echojay::rig::cmd::press, args1 ("button", "undo_all"), 10000);
+            const bool rackRestored = untilProc ([slotsBefore] (const juce::var& p)
+                                      { return (int) p.getProperty ("procSlots", -1) == slotsBefore; },
+                                      12000);
+            check (rackRestored,
+                   "...and Undo all on that card RESTORES the rack it built with no window open",
+                   "slots " + juce::String (slotsBefore) + " -> " + juce::String (slotsBeforeUndo)
+                   + " -> " + juce::String ((int) pst().getProperty ("procSlots", -1))
+                   + " (wanted " + juce::String (slotsBefore) + ")");
+            Rig::pump (600);
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
         }
 
         }   // end of the B1-B4 block (item 0b's behaviour)
+
+        // ---- N1 (SEAN, 21 Oct, THE OVERNIGHT LIST): A RUN STARTED AND NO ROW WAS DRAWN ---------
+        //
+        // His own words for the row he wants: *"a run started, no row drawn."*  Everything else about
+        // the row - its order, its chips, its closing - is asserted in a dozen places, and all of it
+        // presumes the row EXISTS. He has seen a run start with nothing drawn, and nothing in the rig
+        // would have caught it: the rows that read `agentRow` all read it after an askAgent() helper
+        // has already waited for a finished run, so a row that appeared LATE, or only at the end,
+        // would pass every one of them.
+        //
+        // SO THIS ROW IS A TIME BOUND, not a state read ("time bound in acceptance"): from the moment
+        // the run is active, a row must be drawn in the chat he typed into within 2 seconds. A state
+        // read of the same fact is not a test of it - the row he is missing is the one that is not
+        // there WHILE HE WAITS.
+        {
+            if ((bool) pst().getProperty ("agentActive", false))
+            {
+                rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                untilProc ([] (const juce::var& p)
+                           { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+            }
+            const auto stBefore  = rig.freshState();
+            const auto chatBefore = stBefore.getProperty ("chatId", juce::var()).toString();
+            // ---- HOW MANY ROWS WERE ALREADY THERE (22 Oct 2026) --------------------------------
+            // My first cut asserted `rows == 1`, which is not this row's question: `agentRow.rows`
+            // counts the run rows in the WHOLE transcript, and by the time N1 runs this pass has
+            // started several runs in the same chat - so it read rows=3 and called it a fault while
+            // the card it was actually asking about had been drawn in 51 ms. What must be true is
+            // that THIS run added exactly ONE row: one per run is the mockup's first rule, and a
+            // transcript holding three runs holds three rows correctly.
+            const int rowsBefore = (int) stBefore.getProperty ("agentRow", juce::var())
+                                                 .getProperty ("rows", juce::var());
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "rig-row-marker: set the pre gain (N1: a row must be drawn)"), 15000);
+            const bool live = untilProc ([] (const juce::var& p)
+                              { return (bool) p.getProperty ("agentActive", false); }, 40000);
+            const auto t0 = juce::Time::getMillisecondCounter();
+            bool drawn = false;
+            int  rows  = 0;
+            juce::String rowChat;
+            while (juce::Time::getMillisecondCounter() - t0 < 2000u)
+            {
+                const auto st = rig.freshState();
+                const auto ar = st.getProperty ("agentRow", juce::var());
+                rows   = (int) ar.getProperty ("rows", juce::var());
+                rowChat = st.getProperty ("chatId", juce::var()).toString();
+                if ((bool) ar.getProperty ("present", false) && rows > rowsBefore) { drawn = true; break; }
+                Rig::pump (100);
+            }
+            const auto tookMs = (int) (juce::Time::getMillisecondCounter() - t0);
+            const auto st = rig.freshState();
+            if (! live)
+                scenSkip ("N1", "a started run has a row drawn, in the chat it was typed into",
+                          "no run went active on this road, so there is no 'started' for the row to "
+                          "be missing from", "A");
+            else
+                scen ("N1", "a started run has a row drawn, in the chat it was typed into",
+                      drawn && rows == rowsBefore + 1 && rowChat == chatBefore,
+                      juce::String (drawn ? "the row was drawn in " + juce::String (tookMs) + " ms"
+                                          : "NO ROW after 2000 ms with the run active")
+                      + ", rows=" + juce::String (rowsBefore) + " -> " + juce::String (rows)
+                      + " (this run must add exactly one)"
+                      + ", chat " + (rowChat == chatBefore ? "unchanged" : "MOVED (" + chatBefore
+                                                                           + " -> " + rowChat + ")")
+                      + "  (his overnight ask: \"a run started, no row drawn\". The bound is the row: a "
+                      "card that arrives when the run ENDS is the same fault as no card)",
+                      "A", v2v.editor.get(), st);
+            if ((bool) pst().getProperty ("agentActive", false))
+            {
+                rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                untilProc ([] (const juce::var& p)
+                           { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+            }
+        }
+
+        // ---- N2 (SEAN, 21 Oct): THE PRE-GAIN CHECK, ON PLUGINS THAT NEED NO LICENCE -------------
+        //
+        // The other row on his overnight list: *"the pre-gain check (no PACE/iLok plugins on the
+        // rig)"*, and the fault it is for is his 15:30 report - a rack-level target INSERTED an
+        // EchoJay Limiter after FG-X 2, drove it to +12 and set the input trim to -2.7. His ruling
+        // was "find the paths and make it impossible after any agent build", which the plugin now
+        // does through fromAgentBuild; this is that ruling read back from a real host.
+        //
+        // THE PLUGIN LIST IS PART OF THE ROW, not an accident of it. The build adds EchoJay's own
+        // compressor and nothing else: a row that reached for FG-X or any PACE/iLok plugin would
+        // prompt for a licence on his Mac and take the whole rig down with it (the standing rule -
+        // never scan or host a licence-bound plugin here), and it would prove nothing extra. The
+        // target carries a dial_on_playback with a budget, which is the exact shape that moved the
+        // trim.
+        if (liveServerConfigured())
+            scenSkip ("N2", "an agent build with a loudness target leaves the user's pre-gain alone and "
+                            "inserts no limiter",
+                      "this row needs a build it CHOSE the shape of - one add, a loudness target, no "
+                      "limiter offered - and on the live road the model picks. It did exactly what it "
+                      "should on this run (read the rack, then asked for playback, because a target "
+                      "needs something to measure), and left an empty rack, which would have let the "
+                      "row pass while proving nothing. It runs on the mock, where the build is "
+                      "scripted.", "A");
+        else
+        {
+            if ((bool) pst().getProperty ("agentActive", false))
+            {
+                rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+                untilProc ([] (const juce::var& p)
+                           { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+            }
+            // The user's own pre-gain, set by hand, is the thing that must survive.
+            rig.send (echojay::rig::cmd::setPreGain, args1 ("db", 3.0), 8000);
+            Rig::pump (500);
+            const auto before      = rig.freshState();
+            const double preBefore = (double) before.getProperty ("preGainDb", 0.0);
+            const bool   handSet   = (bool)   before.getProperty ("preGainUserSet", false);
+            const int    slotsBefore = ownSlotCount (before);
+
+            const auto out = askAgent (rig, "rig-pregain-marker: make this louder, target -8");
+            // ---- THE ADD HAS TO HAVE LANDED, OR THIS ROW PROVES NOTHING ------------------------
+            // "the pre-gain is untouched" is true of a build that never happened, and on the first
+            // run of this row that is exactly what it reported: pre-gain 3.00 -> 3.00, rack 0 -> 0,
+            // PASS. The claim is only worth reading once a slot is actually on the rack, so the
+            // landing is waited for with a bound and asserted before the claim is made. The run
+            // itself does NOT settle here - a dial_on_playback target goes to Listening and waits
+            // for playback, which is correct - so settling is the wrong thing to wait for.
+            bool landed = false;
+            {
+                const auto t0 = juce::Time::getMillisecondCounter();
+                while (juce::Time::getMillisecondCounter() - t0 < 15000u)
+                {
+                    if (ownSlotCount (rig.freshState()) > slotsBefore) { landed = true; break; }
+                    Rig::pump (250);
+                }
+            }
+
+            const auto after      = rig.freshState();
+            const double preAfter = (double) after.getProperty ("preGainDb", 0.0);
+            const auto names      = ownSlotNames (after);
+            int limiters = 0;
+            for (const auto& n : names) if (n.containsIgnoreCase ("limiter")) ++limiters;
+            const bool preKept   = std::abs (preAfter - preBefore) < 0.05;
+            const bool noLimiter = limiters == 0;
+            scen ("N2", "an agent build with a loudness target leaves the user's pre-gain alone and "
+                        "inserts no limiter",
+                  preKept && noLimiter && handSet,
+                  "the pre-gain was " + juce::String (preBefore, 2) + " dB by hand and reads "
+                  + juce::String (preAfter, 2) + " dB after the build; the rack went from "
+                  + juce::String (slotsBefore) + " slot(s) to " + juce::String (names.size())
+                  + " [" + names.joinIntoString (", ") + "] with " + juce::String (limiters)
+                  + " limiter(s) inserted  (his 15:30: a rack target inserted a limiter, drove it to "
+                  "+12 and set the input trim to -2.7 - after any agent build both of those must be "
+                  "impossible. Built from EchoJay's own compressor only: no PACE/iLok plugin is "
+                  "hosted or scanned by this row)",
+                  "A", v2v.editor.get(), after);
+            check (landed && names.size() == slotsBefore + 1
+                          && names[names.size() - 1].containsIgnoreCase ("compressor"),
+                   "N2's build actually LANDED - one slot more than before, and it is the compressor "
+                   "the build asked for. Without this the row's claim is true of a build that never "
+                   "happened (its first run: pre-gain 3.00 -> 3.00, rack 0 -> 0, PASS)",
+                   "landed=" + juce::String (landed ? "y" : "n") + " rack ["
+                   + names.joinIntoString (", ") + "] state " + out.state
+                   + " applied=" + juce::String (out.applied ? "y" : "n"));
+        }
+
+        // ---- THE CHAT ROWS BELOW NEED A CHAT THAT WILL TAKE A MESSAGE (22 Oct 2026) ------------
+        //
+        // C11v(a), C11v(b), I1, F1 and F2 all TYPE, and a run in flight refuses a typed message by
+        // design ("The agent is still working on ..."). The rows above this line start runs and close
+        // windows on purpose, and with 0b on they leave them running - so in gate 2026-10-22 all five
+        // rows sent their marker, had it refused, and reported the missing reply as a product fault.
+        // Five red rows, one absent precondition.
+        //
+        // The ground is SET and then ASSERTED. Setting it silently would let the same thing happen
+        // again the day Stop stops working: the check is what makes the row say "I could not get a
+        // clear chat" instead of "the product lost my message".
+        if ((bool) pst().getProperty ("agentActive", false))
+        {
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            untilProc ([] (const juce::var& p)
+                       { return ! (bool) p.getProperty ("agentActive", false); }, 20000);
+        }
+        check (! (bool) pst().getProperty ("agentActive", false),
+               "the chat rows start with NO run in flight - a live run refuses every typed message, "
+               "so this is the precondition for all five of them",
+               "agentActive=" + pstr ("agentActive") + " state=" + pstr ("agentState"));
 
         // ---- C11v: CLOSING MID-REPLY, ON THE ROAD WHERE THE CLOSE IS REAL (Sean's check 1) -------
         //   RUNS EITHER WAY. This is Sean's item 2 and it is about the CHAT path, which has nothing to
@@ -2457,8 +3027,17 @@ int main (int argc, char* argv[])
                 // assertion had to move with it or this row would have gone red on the fix. It keys on the
                 // PLUGIN'S OWN predicate (looksInterrupted), which is the one place the sentences live, so
                 // the leg and the product cannot drift again the next time the wording changes.
+                // ---- THE RECORD, NOT ITS LAST LINE (22 Oct 2026) ---------------------------
+                // This waited for `lastAssistant` to read as interrupted, which is a PROXY for the
+                // claim ("the turn was recorded") and stopped agreeing with it the moment a run's
+                // card began reaching the store early: a card's closing is an assistant row too,
+                // and it can land after the notice. The 11:24 run read "Added a compressor and
+                // dialled it to -8 LUFS." - a true sentence about a different row. The processor
+                // now publishes how many of its rows read as interrupted, by the product's own
+                // predicate, so the leg asks the question it means.
                 const bool kept = untilProc ([] (const juce::var& p)
-                                  { return EchoJayAPI::looksInterrupted (
+                                  { return (int) p.getProperty ("interruptedRows", 0) >= 1
+                                        || EchoJayAPI::looksInterrupted (
                                              p.getProperty ("lastAssistant", juce::var()).toString()); },
                                   20000);
                 const auto rec = pstr ("lastAssistant");
@@ -2476,7 +3055,8 @@ int main (int argc, char* argv[])
                            "is recorded as INTERRUPTED rather than dropped  (RED before this fix: the "
                            "editor-guarded callback returned, /api/chat was never called, and Sean saw his "
                            "own message and nothing else - twice)",
-                           "processor lastAssistant: \"" + rec.substring (0, 110) + "\"");
+                           "interrupted rows " + pst().getProperty ("interruptedRows", juce::var()).toString()
+                           + ", processor lastAssistant: \"" + rec.substring (0, 110) + "\"");
 
                 // ---- I1: THE WORDING, THE RETRY PILL, AND THE PRESS (Sean's #7) -----------------
                 //
@@ -2616,21 +3196,51 @@ int main (int argc, char* argv[])
             }
         }
 
-        // ---- B4: A BUILD WITH NO WINDOW PARKS, AND SAYS SO -------------------------------------
-        // The one part of a run that still needs a window. It is asserted rather than left as a
-        // comment, because an undocumented half-truth is what this round has been removing.
+        // ---- B4: WHICH ROAD A BUILD TOOK, BOTH DIRECTIONS (his 22 Oct ruling) ------------------
+        //
+        // This row used to assert that a windowless build PARKS. His ruling replaced that behaviour,
+        // so the row asserts what replaced it - and asserts it in both directions, because a
+        // published fact that only ever reads "processor" would pass whether or not the window's own
+        // road still existed. B3 above is the windowless half; this is the half with a window open.
         {
             check (pstr ("agentBuildRoad") == "1",
                    "with a window open the agent's build road is the window's own - the same two roads a "
                    "user's Build press takes",
                    "agentBuildRoad=" + pstr ("agentBuildRoad"));
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
+            Rig::pump (400);
+            rig.send (echojay::rig::cmd::sendChat,
+                      args1 ("text", "rig-nowindowbuild-marker: build a compressor on this rack "
+                                     "(window open this time)"), 15000);
+            // ITS OWN RUN'S ROAD (22 Oct 2026). This waited for "a road is named" and B3's
+            // "processor" was still sitting there from the run before, so the wait returned at once
+            // and the row called the product wrong for a fact about a different run. The road now
+            // carries the run it belongs to, and this waits for THIS run's key beside it.
+            const bool ranWithWindow = untilProc ([] (const juce::var& p)
+                                       { return ! (bool) p.getProperty ("agentActive", false)
+                                                && p.getProperty ("agentRowFinished", juce::var()).toString() == "1"
+                                                && p.getProperty ("agentLastBuildRunKey", juce::var()).toString()
+                                                     == p.getProperty ("agentRunKey", juce::var()).toString()
+                                                && p.getProperty ("agentLastBuildRunKey", juce::var()).toString().isNotEmpty(); },
+                                       90000);
+            check (ranWithWindow && pstr ("agentLastBuildRoad") == "window",
+                   "...and a build made WHILE it is open takes that road and says so - the other "
+                   "direction of the fact B3 reads, so \"processor\" there means something",
+                   "finished=" + juce::String ((int) ranWithWindow)
+                   + ", agentLastBuildRoad=\"" + pstr ("agentLastBuildRoad") + "\" for run "
+                   + pstr ("agentLastBuildRunKey").substring (0, 8) + " (this run "
+                   + pstr ("agentRunKey").substring (0, 8) + ")");
+            rig.send (echojay::rig::cmd::press, args1 ("button", "undo_all"), 10000);
+            Rig::pump (1000);
+            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
             v2v.closeEditor();
             Rig::pump (1600);
             check (pstr ("agentBuildRoad") == "0",
-                   "...and with the window gone there is no build road, which is the ONE thing item 0b "
-                   "withdraws: a build parks and says so on the line, everything else carries on",
+                   "...and with the window gone that road is withdrawn, which since his ruling is a "
+                   "CHANGE of road rather than a limit: the build goes down the processor's own road "
+                   "(B3), and nothing parks",
                    "agentBuildRoad=" + pstr ("agentBuildRoad")
-                   + ", buildParked=" + pstr ("agentBuildParked"));
+                   + ", last build road \"" + pstr ("agentLastBuildRoad") + "\"");
         }
 
         // leave the VST3's window SHUT: the AU's editor opens next, and two would fight over the rack lock
@@ -4237,28 +4847,100 @@ int main (int argc, char* argv[])
         }
         else
         {
-            auto& kick = *linkProcs.front();
-            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", kick.uid), 8000);
-            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", kick.uid), 8000);
+            // ---- THE ROW MEASURES THE LINK IT IS TALKING TO (22 Oct 2026) ----------------------
+            //
+            // Reading the ack fixed the refusal and introduced a worse fault in its place: the uid
+            // came from the V2's own list, which no longer had a usable Kick, so the row AIMED at
+            // the Vocal Link and went on MEASURING the Kick -
+            //
+            //     the Link's own process holds 3 slot(s) [...]; the V2's strip draws 1
+            //     [Renaissance Axx (s)] after 8074 ms  (aimed at 30e4781a31 "88_7even Vox_Lead_01")
+            //
+            // - so it compared one Link's strip with another Link's rack and waited out its whole
+            // 8 s bound for a third slot that was never coming. This tree has the rule written down
+            // from I9c: "a row sets its own target". The target is picked FIRST, and the process
+            // behind it is the one every row in this block reads.
+            juce::String aimName;
+            const auto aimUid = usableLinkUid (rig.freshState(), true, &aimName);
+            int aimedIdx = -1;
+            for (int i = 0; i < (int) linkProcs.size(); ++i)
+                if (linkProcs[(size_t) i]->uid == aimUid) aimedIdx = i;
+            auto& kick = *(aimedIdx >= 0 ? linkProcs[(size_t) aimedIdx] : linkProcs.front());
+            // ---- THE V2 HAS TO AGREE THIS LINK IS THERE, AND THE ACK IS READ (22 Oct 2026) -----
+            //
+            // G1 failed in gate 2026-10-22 with "the Link's own process holds 3 slot(s); the V2's
+            // strip draws 0 (sidecar revision )", which reads as a mirroring fault and is not what
+            // happened. Two lines the row never looked at say so:
+            //
+            //     EJRig: select_link seq=1135 -> FAILED (that uid is not live)
+            //     EJRig: work_on     seq=1136 -> FAILED (that uid is not live)
+            //
+            // The V2 had refused to aim at the Link at all, so the strip was never going to draw it,
+            // and the row reported the consequence instead of the cause. Row I9c learnt this on
+            // 18 Oct, in these words: *"the row's guard tested that the STRING was non-empty, which
+            // is not the same question as whether the Link exists - and the command that would have
+            // told it so had its ack discarded."*  Same fault, four rows along.
+            //
+            // So the uid is resolved from the V2'S OWN published list (the launched ones first), the
+            // acks are read, and a refusal is carried into the rows below as the REFUSAL, in the
+            // V2's words. It is deliberately NOT turned into a blanket skip: a Link whose process is
+            // up and holding a rack while the V2 says its uid is not live is a product fault, and
+            // the rows say which of the two they are looking at.
+            const auto useUid  = aimedIdx >= 0 ? aimUid : kick.uid;
+            const auto selAck  = rig.send (echojay::rig::cmd::selectLink, args1 ("uid", useUid), 8000);
+            const auto workAck = rig.send (echojay::rig::cmd::workOn,     args1 ("uid", useUid), 8000);
+            const bool aimed   = (bool) selAck.getProperty ("ok", false)
+                              && (bool) workAck.getProperty ("ok", false);
+            const auto aimNote = selAck.getProperty ("note", juce::var()).toString() + "/"
+                               + workAck.getProperty ("note", juce::var()).toString();
+            // The Link's own process, independently of what the V2 thinks of it.
+            const bool linkReallyUp = kick.up()
+                                   && (int) kick.state().getProperty ("slotCount", -1) > 0;
             Rig::pump (1200);
 
             // ---- G1: THE MAIN RACK STRIP FOLLOWS A LINK'S OWN RACK (I7) --------------------------
             // The Link already holds its prebuilt plugins, put there by its OWN process, so this is
             // the purest form of Sean's #12: the V2 has never seen those slots and must show them.
             {
+                // ---- AND THE STRIP IS WAITED FOR, WITH A BOUND (22 Oct 2026) -----------------
+                // This read a single pump of 1200 ms. A borrow read is not instant - his 11:32
+                // report was a rack view that said "Reading 0 plugin(s)..." for minutes - so a row
+                // that reads once measures whatever moment it happened to arrive in ("decisions on
+                // uncontrolled timing"). The bound IS the acceptance: a Link's rack must be on the
+                // strip within 8 s of aiming at it, and the row reports how long it took.
+                const int realSlots  = (int) kick.state().getProperty ("slotCount", -1);
+                const auto t0 = juce::Time::getMillisecondCounter();
+                while (juce::Time::getMillisecondCounter() - t0 < 8000u)
+                {
+                    if ((int) rig.freshState().getProperty ("chainView", juce::var())
+                                              .getProperty ("count", -1) >= realSlots) break;
+                    Rig::pump (250);
+                }
+                const int tookMs = (int) (juce::Time::getMillisecondCounter() - t0);
                 const auto st = rig.freshState();
-                const auto lr = linkRowOf (st, kick.uid);
+                const auto lr = linkRowOf (st, useUid);
                 const int drawnSlots = (int) st.getProperty ("chainView", juce::var())
                                                  .getProperty ("count", -1);
-                const int realSlots  = (int) kick.state().getProperty ("slotCount", -1);
                 const auto drawnNames = st.getProperty ("chainView", juce::var())
                                             .getProperty ("slots", juce::var()).toString();
+                if (! aimed && ! linkReallyUp)
+                    scenSkip ("G1", "T2: the main rack strip shows the Link's real rack with no manual switch",
+                              "the V2 refused to aim at this Link (" + aimNote + ") and its process is "
+                              "not up with a rack either, so there is nothing for the strip to mirror",
+                              "A");
+                else
                 scen ("G1", "T2: the main rack strip shows the Link's real rack with no manual switch",
-                      realSlots > 0 && drawnSlots == realSlots,
-                      "the Link's own process holds " + juce::String (realSlots) + " slot(s) ["
+                      aimed && realSlots > 0 && drawnSlots == realSlots,
+                      juce::String (aimed ? "" : "THE V2 REFUSED TO AIM AT IT (" + aimNote + ") while "
+                                                   "its process IS up holding a rack - so the strip was "
+                                                   "never going to mirror anything, and that refusal is "
+                                                   "the fault, not the empty strip. ")
+                      + "the Link's own process holds " + juce::String (realSlots) + " slot(s) ["
                       + kick.state().getProperty ("slots", juce::var()).toString() + "]; the V2's strip "
-                      "draws " + juce::String (drawnSlots) + " [" + drawnNames + "]  (sidecar revision "
-                      + lr.getProperty ("revision", juce::var()).toString() + ")",
+                      "draws " + juce::String (drawnSlots) + " [" + drawnNames + "] after "
+                      + juce::String (tookMs) + " ms  (sidecar revision "
+                      + lr.getProperty ("revision", juce::var()).toString() + ", aimed at " + useUid
+                      + (aimName.isNotEmpty() ? " \"" + aimName + "\"" : juce::String()) + ")",
                       "A", v2.editor.get(), st);
 
                 // ---- E5: AND NO GR FIGURE ON ANY OF THEM (Sean's #7 morning) --------------------
@@ -5739,7 +6421,16 @@ int main (int argc, char* argv[])
                 {
                     const std::string u = words.toStdString();
                     std::smatch m;
-                    const std::regex re (R"(input\s+(-?\d+\.?\d*)\s+loudest\s*/\s*(-?\d+\.?\d*)\s+typical)");
+                    // RE-AIMED 20 Oct 2026. This expected "input -9.4 loudest / -14.8 typical" and the
+                    // sentence is now "in -10.3 loudest, -37.0 typical" - the label lost its "put"
+                    // and the separator became a comma while the payload was reworked through the
+                    // 19th. The row then read loudest=0.0 typical=0.0 out of a sentence that was
+                    // carrying a 26.7 dB gap, and reported the FEATURE as broken.
+                    //
+                    // Two named spellings, not a permissive pattern: "in" or "input", comma or
+                    // slash. A regex that accepts anything would have matched the broken case too,
+                    // which is the whole reason this row exists.
+                    const std::regex re (R"(\bin(?:put)?\s+(-?\d+\.?\d*)\s+loudest\s*[,/]\s*(-?\d+\.?\d*)\s+typical)");
                     if (std::regex_search (u, m, re) && m.size() == 3)
                     {
                         loud = (float) std::atof (m[1].str().c_str());

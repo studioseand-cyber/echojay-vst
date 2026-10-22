@@ -15,6 +15,7 @@
 #include "ChainHost.h"   // check 5 part 2: the load-failure record the inventory reads
 #include "EchoJayUndoHistory.h"
 #include "EJAgentClient.h"
+#include "EJAgentHome.h"   // 19 Oct item 2: echojay::agentIntentForOps, the arm rule
 #include "EJParamPlainNames.h"   // 18 Oct: the row's sentence is built there
 #include "EchoJayParamApply.h"    // 18 Oct: mappedStepNear, the read-back tolerance's arithmetic
 #include <cmath>
@@ -183,7 +184,11 @@ int main()
             SlotRead eq;
             eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true;
             // what the slot itself composed from its read-back, in his words
-            eq.dialSummary = "bell 300 Hz -4.0 dB Q 1.20";
+            // 19 Oct: the slot's own composed text, in the field a read-back actually reads. This
+            // fixture said `dialSummary` until the band read-back's source was corrected - that
+            // field is the EJDialSummary DEBUG row, and modelling it as the band text was the wrong
+            // assumption the BR legs now hold against.
+            eq.liveBands = "band 1: bell 300.0 Hz, -4.0 dB, Q 1.20";
             f.own.slots.push_back (eq);
         }
         ExecutorDo ex (f.sources(), f.sinks());
@@ -238,6 +243,235 @@ int main()
                "EQ1c ...and the ops were actually SENT, which is what makes the refusal above a lie "
                "rather than a judgement", juce::String (f.applyCalls) + " apply call(s)");
     }
+    // ---------------- THE BAND READ-BACK'S SOURCE (19 Oct 2026, his 17:09 run) ----------------
+    //
+    // *"EQ set 'bell 300 Hz -3 dB Q 1.4, bell 3500 Hz -2.5 dB Q 1, highshelf 9000 Hz -2.5 dB Q 0.7'
+    // read back only 'band 1: ...'. If they landed, the read-back text is stale, so read the live
+    // bands."*  They landed: `EXACT built-in apply, 3 band(s), 0 skipped`.
+    //
+    // AND A DEFECT OF MINE THIS CLOSES: the 15:36 fix read `dialSummary` first, which on the OWN
+    // rack is the EJDialSummary DEBUG ROW. It was never seen only because his EQ sets were all on
+    // Links, where that field is empty. These legs hold the ORDER - live bands, then settings, never
+    // the debug row - which is the thing that can silently regress.
+    std::printf ("== THE BAND READ-BACK: live bands first, settings next, the debug row NEVER ==\n");
+    {
+        Fixture f;
+        f.own.slots.clear();
+        {
+            SlotRead eq;
+            eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true;
+            eq.liveBands   = "band 1: bell 300.0 Hz, -3.0 dB, Q 1.40; band 2: bell 3500 Hz, -2.5 dB, "
+                             "Q 1.00; band 3: highshelf 9000 Hz, -2.5 dB, Q 0.70";
+            eq.settings    = "bell 300 Hz -3.0 dB Q 1.20";                 // the STALE one-band text
+            eq.dialSummary = "EJDialSummary:   slot 1 (\"EchoJay EQ\") builtin settings_structured=y "
+                             "shape=params keys=[eq_bands] requested=3 applied=3 manual=0";
+            f.own.slots.push_back (eq);
+        }
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"eq_bands":[)"
+                                        R"({"band":1,"type":"bell","freq_hz":300,"gain_db":-3.0,"q":1.4},)"
+                                        R"({"band":2,"type":"bell","freq_hz":3500,"gain_db":-2.5,"q":1.0},)"
+                                        R"({"band":3,"type":"highshelf","freq_hz":9000,"gain_db":-2.5,"q":0.7}]}})"));
+        const auto words = o.landedLine + " | " + o.userMessage;
+        check (words.contains ("3500") && words.contains ("9000"),
+               "BR1 ALL THREE bands read back, from the EQ's live bands  (RED as it stood: the stale "
+               "card text, which named band 1 only)", o.landedLine.substring (0, 150));
+        check (! words.containsIgnoreCase ("EJDialSummary") && ! words.contains ("requested=")
+               && ! words.contains ("readbackMiss") && ! words.containsIgnoreCase ("shape="),
+               "BR2 ...and the EJDialSummary DEBUG ROW never reaches a read-back  (RED as it stood: "
+               "dialSummary was read FIRST, so the own rack would have reported the debug line)",
+               o.landedLine.substring (0, 150));
+        check (! words.contains ("1.20"),
+               "BR3 ...and the stale one-band text is not used when the live bands are there",
+               o.landedLine.substring (0, 150));
+    }
+    {
+        // THE FALLBACK, and the other direction: with NO live bands (a Link, whose sidecar does not
+        // publish structured bands yet) the composed card text is used - but the debug row still is
+        // not, even when it is the only non-empty field.
+        Fixture f;
+        f.own.slots.clear();
+        {
+            SlotRead eq;
+            eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true;
+            eq.settings    = "bell 300 Hz -3.0 dB Q 1.20";
+            eq.dialSummary = "EJDialSummary:   slot 1 requested=1 applied=1 shape=params";
+            f.own.slots.push_back (eq);
+        }
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"eq_bands":[)"
+                                        R"({"band":1,"type":"bell","freq_hz":300,"gain_db":-3.0,"q":1.2}]}})"));
+        const auto words = o.landedLine + " | " + o.userMessage;
+        check (words.contains ("300") && words.contains ("1.20"),
+               "BR4 with no live bands, the composed card text IS the read-back",
+               o.landedLine.substring (0, 140));
+        check (! words.containsIgnoreCase ("EJDialSummary") && ! words.contains ("requested="),
+               "BR5 ...and the debug row is still never used, even as a last resort",
+               o.landedLine.substring (0, 140));
+    }
+
+    // ------------------------ A BYPASS ISN'T NEWS (19 Oct 2026, his 17:00 run, the minor item)
+    //
+    // *"the add's read-back ended 'The bypass couldn't be read.' - don't show that to the user, a
+    // bypass that isn't asked about isn't news."*
+    //
+    // `bypass` rides along in a slot's structured settings as the op's own switch. slotParam cannot
+    // read it, so it landed in the unreadable list and landedRowSentence turned that into a sentence
+    // at the end of an add that had worked.
+    std::printf ("== BYPASS: not a value to confirm, so never a confession at the end of an add ==\n");
+    {
+        Fixture f;
+        f.own.slots.clear();
+        {
+            SlotRead cl;
+            cl.n = 1; cl.name = "Tube-Tech CL 1B";
+            cl.settings = "Threshold -4.2 dB";
+            f.own.slots.push_back (cl);
+        }
+        f.held = { {"threshold_db", -4.2} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"add","name":"Tube-Tech CL 1B","settings_structured":)"
+                                        R"({"params":{"threshold_db":-4.2,"bypass":0}}})"));
+        const auto words = o.landedLine + " | " + o.userMessage;
+        check (! words.containsIgnoreCase ("bypass"),
+               "BY1 the add's read-back says nothing about the bypass  (RED as it stood: \"...The "
+               "bypass couldn't be read.\" at the end of an add that had worked)",
+               o.landedLine.substring (0, 140));
+        check (! words.containsIgnoreCase ("couldn't be read"),
+               "BY1b ...so the sentence does not end in a confession at all",
+               o.landedLine.substring (0, 140));
+        // THE OTHER DIRECTION: the value he DID ask about is still read back, and a real unreadable
+        // control is still reported. A skip that swallowed everything would be worse than the line.
+        check (words.contains ("-4.2") || words.containsIgnoreCase ("threshold"),
+               "BY2 ...and the Threshold he asked for IS still read back",
+               o.landedLine.substring (0, 140));
+    }
+    {
+        // ---- GENERALLY, NOT BY NAME (19 Oct 2026, his 18:07 run) -------------------------------
+        // *"the add's read-back ended 'The power couldn't be read.' Same as the bypass fix: never
+        // report an unreadable control the call didn't ask for (bypass, power, on/off, anything
+        // similar), generally not by name."*
+        //
+        // The first cut tested `id == "bypass"` and `power` broke it within the hour. The rule is
+        // the VALUE's shape: a switch is a bool, or an int that is only ever 0 or 1. So these four
+        // names are a SAMPLE of the class, not the implementation - the leg would pass for a switch
+        // nobody has thought of yet, which is the whole point of not keying on names.
+        Fixture f;
+        f.own.slots.clear();
+        { SlotRead cl; cl.n = 1; cl.name = "Tube-Tech CL 1B"; cl.settings = "Threshold -4.2 dB";
+          f.own.slots.push_back (cl); }
+        f.held = { {"threshold_db", -4.2} };
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"add","name":"Tube-Tech CL 1B","settings_structured":)"
+                                        R"({"params":{"threshold_db":-4.2,"power":1,"bypass":0,)"
+                                        R"("on":true,"sidechain_enable":false,"whatever_switch":1}}})"));
+        const auto words = o.landedLine + " | " + o.userMessage;
+        // THE CONFESSION CLAUSE, not the whole sentence: scanning the whole line for "on" matched
+        // "read back 1 slot(s) ON the rack" and this leg went red on an English word. The clause is
+        // what the rule is about, and it is the clause that has to be empty of switches.
+        check (! words.containsIgnoreCase ("couldn't be read")
+               && ! words.containsIgnoreCase ("not readable"),
+               "BY4 no switch is confessed about: the read-back has no \"couldn't be read\" clause at "
+               "all  (RED as it stood: \"The power couldn't be read.\" at the end of an add that had "
+               "worked)", o.landedLine.substring (0, 140));
+        for (const auto* sw : { "power", "sidechain_enable", "whatever_switch" })
+            check (! words.containsIgnoreCase (sw),
+                   juce::String ("BY4a ...and \"") + sw + "\" is nowhere in it",
+                   o.landedLine.substring (0, 140));
+        check (! words.containsIgnoreCase ("couldn't be read"),
+               "BY4b ...so the sentence does not end in a confession at all",
+               o.landedLine.substring (0, 140));
+        check (words.contains ("-4.2") || words.containsIgnoreCase ("threshold"),
+               "BY4c ...and the figure that WAS asked for is still read back",
+               o.landedLine.substring (0, 140));
+    }
+    {
+        // AND THE OTHER DIRECTION, which is what stops this becoming a blanket silence: a FIGURE
+        // asked as 0 or 1 is still a figure. A ratio of 1.0 and a gain of 0.0 dB arrive as doubles,
+        // and a double is never treated as a switch.
+        Fixture f;
+        f.own.slots.clear();
+        { SlotRead cl; cl.n = 1; cl.name = "Tube-Tech CL 1B"; f.own.slots.push_back (cl); }
+        f.held = { };                      // nothing readable
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"add","name":"Tube-Tech CL 1B","settings_structured":)"
+                                        R"({"params":{"ratio":1.0,"makeup_db":0.0}}})"));
+        const auto words = o.landedLine + " | " + o.userMessage;
+        check (words.containsIgnoreCase ("ratio") || words.containsIgnoreCase ("makeup")
+               || words.containsIgnoreCase ("make-up") || words.containsIgnoreCase ("gain"),
+               "BY5 a FIGURE asked as 1.0 or 0.0 is still a figure, and an unreadable one is still "
+               "named - the skip is switches, not small numbers", o.landedLine.substring (0, 140));
+    }
+    {
+        Fixture f;
+        f.own.slots.clear();
+        { SlotRead cl; cl.n = 1; cl.name = "Tube-Tech CL 1B"; f.own.slots.push_back (cl); }
+        f.held = { };                      // nothing readable at all
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"add","name":"Tube-Tech CL 1B","settings_structured":)"
+                                        R"({"params":{"threshold_db":-4.2}}})"));
+        check ((o.landedLine + o.userMessage).containsIgnoreCase ("threshold"),
+               "BY3 a control that genuinely could not be read is STILL named - the skip is bypass "
+               "only, not a blanket silence", o.landedLine.substring (0, 140));
+    }
+
+    // ---------------------------- THE SET PATH READS BANDS BACK TOO (19 Oct 2026, his 15:36 run)
+    //
+    // *"'set slot 1: bell 300 Hz -3 dB Q 1.2, highshelf 8000 Hz +3 dB Q 0.7' on an existing EchoJay
+    // EQ came back 'I could not read these values back to confirm them'. The add path reads eq_bands
+    // back (passed at 15:30); make the set path read the bands back too."*
+    //
+    // The add path's band read-back went into checkSlotValues at 13:54; confirmValues - the SET
+    // path - never got it. A band-only set therefore asked for nothing by confirmValues' own count:
+    // `asked` fell back to the settings_structured root, whose one property is an eq_bands ARRAY,
+    // and the loop skips anything that is not a number. Nothing matched, nothing missed, so the
+    // "none of them could be read" branch fired on a set that had in fact landed.
+    std::printf ("== EQ SET READ-BACK: a band set confirms from the slot, not from the request ==\n");
+    {
+        Fixture f;
+        f.own.slots.clear();
+        {
+            SlotRead eq;
+            eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true;
+            eq.liveBands = "band 1: bell 300.0 Hz, -3.0 dB, Q 1.20; band 2: highshelf 8000 Hz, "
+                           "+3.0 dB, Q 0.70";
+            f.own.slots.push_back (eq);
+        }
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"eq_bands":[)"
+                                        R"({"band":1,"type":"bell","freq_hz":300,"gain_db":-3.0,"q":1.2},)"
+                                        R"({"band":2,"type":"highshelf","freq_hz":8000,"gain_db":3.0,"q":0.7}]}})"));
+        const auto words = o.landedLine + " | " + o.userMessage + " | " + juce::JSON::toString (o.result);
+        check (! words.containsIgnoreCase ("could not read these values back"),
+               "EQS1 a band-only SET is not reported unreadable  (RED as it stood: \"I could not read "
+               "these values back to confirm them\" about bands the EQ had applied)",
+               (o.landedLine + " | " + o.userMessage).substring (0, 120));
+        check (words.contains ("300") && words.containsIgnoreCase ("bell"),
+               "EQS1b ...and the ack carries the band's read-back, in the slot's own words",
+               o.landedLine.substring (0, 120));
+        check (words.contains ("8000") && words.containsIgnoreCase ("highshelf"),
+               "EQS1c ...including the second band, so a two-band set is not confirmed by one of them",
+               o.landedLine.substring (0, 120));
+        check ((bool) o.result.getProperty ("confirmed", juce::var (false)),
+               "EQS1d ...and the result says confirmed, which is what B's closing reads",
+               juce::JSON::toString (o.result).substring (0, 120));
+    }
+    {
+        // THE OTHER DIRECTION, same rule as EQR2: a slot that has composed no settings text yet is
+        // reported unreadable rather than confirmed from the request. A read-back that can only
+        // succeed is not a read-back.
+        Fixture f;
+        f.own.slots.clear();
+        { SlotRead eq; eq.n = 1; eq.name = "EchoJay EQ"; eq.builtin = true; f.own.slots.push_back (eq); }
+        ExecutorDo ex (f.sources(), f.sinks());
+        const auto o = runDo (ex, call (R"({"op":"set","slot":1,"settings_structured":{"eq_bands":[)"
+                                        R"({"band":1,"type":"bell","freq_hz":300,"gain_db":-3.0,"q":1.2}]}})"));
+        const auto words = o.landedLine + " | " + o.userMessage + " | " + juce::JSON::toString (o.result);
+        check (! words.contains ("300"),
+               "EQS2 a slot with no composed settings text does NOT get a band read-back invented "
+               "from the request", (o.landedLine + " | " + o.userMessage).substring (0, 120));
+    }
+
     {
         // A STRUCTURED BLOCK IN ANY OTHER SHAPE counts too - the vocabulary grows, and a gate that
         // knows only today's spellings is this defect waiting to happen again.
@@ -853,6 +1087,188 @@ int main()
                "a stepped control with no anchors takes its ladder from range and steps");
         check (echojay::mappedStepNear (juce::var (new juce::DynamicObject()), 0.0) == 0.0,
                "and an entry that says nothing returns 0 - \"cannot say\", never a guess");
+    }
+
+    // ------------------------- WHICH BATCH RE-LEVELS (19 Oct 2026, his 15:36 run, item 2)
+    //
+    // *"Agent builds should get the same silent slot-OUT level match after a plugin is added (here
+    // the Shadow Hills dropped the vocal 2.5 dB and nothing compensated). If B also sets the OUT
+    // trim from a check, B's explicit value wins; don't fight it."*
+    //
+    // `intent:"build"` is what makes a Link arm its post-build level match; the agent's add road
+    // passed nothing, so the one kind of change that alters a rack's loudness with no human at the
+    // controls was the one kind that never re-levelled. Three answers, all three asserted - a rule
+    // tested in one direction only is how an unfalsifiable gate ships.
+    std::printf ("== THE ARM RULE: an add re-levels, an edit never does, an explicit trim wins ==\n");
+    {
+        const auto ops = [] (const char* j) { return juce::JSON::parse (j); };
+
+        check (echojay::agentIntentForOps (ops (R"([{"op":"add","name":"Shadow Hills"}])")) == "build",
+               "INT1 an ADD goes out as intent=build, so the Link arms the silent slot-OUT match  "
+               "(RED as it stood: the agent's sink passed no intent at all and nothing re-levelled)");
+        check (echojay::agentIntentForOps (ops (R"([{"op":"replace","slot":1,"name":"dbx 160"}])")) == "build",
+               "INT1b ...and so does a REPLACE, which changes the plugin in the path just as much");
+
+        juce::String why;
+        check (echojay::agentIntentForOps (ops (R"([{"op":"set","slot":1,"settings_structured":{"params":{"thresh":-18}}}])"), &why).isEmpty(),
+               "INT2 a SET arms nothing - an ordinary edit must never re-level a rack", why);
+        check (echojay::agentIntentForOps (ops (R"([{"op":"bypass","slot":1,"on":true}])")).isEmpty(),
+               "INT2b ...nor a bypass");
+        check (echojay::agentIntentForOps (ops (R"([{"op":"remove","slot":2}])")).isEmpty(),
+               "INT2c ...nor a remove");
+
+        why.clear();
+        check (echojay::agentIntentForOps (ops (R"([{"op":"add","name":"Shadow Hills"},{"op":"slot_out","slot":1,"db":-2.5}])"), &why).isEmpty(),
+               "INT3 an add that ALSO names a slot OUT trim arms nothing - B's explicit value wins, "
+               "and two authors writing one number is the failure", why);
+        check (why.containsIgnoreCase ("slot OUT trim"),
+               "INT3b ...and it says why, because a withheld arm is evidence and must not be silent", why);
+
+        check (echojay::agentIntentForOps (juce::var()).isEmpty(),
+               "INT4 and a batch that is not an array at all answers \"no\" rather than throwing");
+    }
+
+    // ------------------------- A WINDOWLESS BUILD'S OPS (22 Oct 2026, his B3 ruling)
+    //
+    // *"If the user has already pressed Go, a run with no window open finishes its build and
+    //  applies it. The card, its chips and Undo all are there when a window reopens. If the run is
+    //  waiting on a chip or a question, it keeps waiting."*
+    //
+    // With no window there is no loadChainFromJson and no sendChainToLinkOverTheWire, so the build
+    // goes down the road the agent's own adds take - and the conversion that puts it there is
+    // ChainHost::chainArrayToBuildWireOps. The BEHAVIOUR is the rig's (B3 applies with no window,
+    // B3b proves a waiting run applies nothing); what is pure, and therefore belongs here, is what
+    // that conversion produces.
+    //
+    // WHAT EACH LEG WAS RED FOR, because a leg whose red direction is unstated is a leg nobody can
+    // check: BW1 and BW2 fail against editOpsToWireVar alone, which drops dial_on_playback - the
+    // field that closes the loop on a limiter, and whose absence is exactly why his 21 Oct mix bus
+    // landed at about -5.7 LUFS against a target of -8. BW3 is the other direction (no dial in,
+    // none invented). BW4 is the zip: a dial written onto the wrong add would dial a plugin the
+    // server never aimed at, which reads as the plugin misbehaving. BW5 is the rack it replaces.
+    std::printf ("== A WINDOWLESS BUILD: the ops it becomes, and the dial it must not drop ==\n");
+    {
+        const auto chain = [] (const char* j)
+        {
+            auto v = juce::JSON::parse (j);
+            juce::Array<juce::var> out;
+            if (auto* a = v.getArray()) out = *a;
+            return out;
+        };
+        const auto addAt = [] (const juce::var& wire, int which)
+        {
+            int seen = 0;
+            if (auto* a = wire.getArray())
+                for (const auto& o : *a)
+                    if (auto* oo = o.getDynamicObject())
+                        if (oo->getProperty ("op").toString() == "add" && seen++ == which)
+                            return o;
+            return juce::var();
+        };
+
+        // One compressor, with B's dial on it, onto an empty rack.
+        const auto one = ChainHost::chainArrayToBuildWireOps (
+            chain (R"([{"name":"EchoJay Compressor","settings":"slow",
+                        "settings_structured":{"params":{"thresh":-18}},
+                        "dial_on_playback":{"target_lufs":-8,"ceiling":-0.1,"control":"slot_in"}}])"), 0);
+        const auto a0 = addAt (one, 0);
+        check (a0.isObject() && a0.getProperty ("name", juce::var()).toString() == "EchoJay Compressor",
+               "BW1 a chain array becomes the adds' own wire batch - one add, carrying the name",
+               juce::JSON::toString (one, true));
+        check (! a0.getProperty ("dial_on_playback", juce::var()).isVoid()
+               && (double) a0.getProperty ("dial_on_playback", juce::var())
+                            .getProperty ("target_lufs", juce::var()) == -8.0,
+               "BW2 ...and it CARRIES dial_on_playback, which is what measures the limiter it just "
+               "built  (RED without it: dialsOnPlaybackFromOps reads the ops, so a dropped target "
+               "is a build nothing measures - his 21 Oct -5.7 against -8)",
+               juce::JSON::toString (a0.getProperty ("dial_on_playback", juce::var()), true));
+        check (! a0.getProperty ("settings_structured", juce::var()).isVoid(),
+               "BW2b ...and the settings the server validated travel with it too",
+               juce::JSON::toString (a0, true));
+
+        // ---- THE RED DIRECTION, IN THIS SAME BINARY (the both-directions rule) -----------------
+        // BW2 would be unfalsifiable on its own: it asserts a field is present, and a guard that
+        // only ever asks that is green against any conversion that happens to carry everything. So
+        // the road this one REPLACED is run beside it on the same input. editOpsToWireVar is still
+        // the shipped conversion for the window's Link build and is untouched; it carries no dial,
+        // and that is exactly what BW2 is the fix for.
+        {
+            juce::Array<juce::var> one1;
+            {
+                auto v = juce::JSON::parse (R"([{"name":"EchoJay Compressor",
+                                                "dial_on_playback":{"target_lufs":-8}}])");
+                if (auto* a = v.getArray()) one1 = *a;
+            }
+            const auto oldRoad = ChainHost::editOpsToWireVar (ChainHost::chainArrayToReplaceOps (one1, 0));
+            juce::var oldAdd;
+            if (auto* a = oldRoad.getArray())
+                for (const auto& o : *a)
+                    if (o.getProperty ("op", juce::var()).toString() == "add") oldAdd = o;
+            check (oldAdd.isObject()
+                   && oldAdd.getProperty ("dial_on_playback", juce::var()).isVoid(),
+                   "BW2c and the conversion this one replaced DROPS that dial on the same input - the "
+                   "red direction, run here rather than asserted in a comment, which is what makes "
+                   "BW2 a test and not a wish",
+                   juce::JSON::toString (oldAdd, true));
+        }
+
+        // No dial in: none invented. The other direction, which is the half that makes BW2 mean
+        // something.
+        const auto plain = ChainHost::chainArrayToBuildWireOps (
+            chain (R"([{"name":"EchoJay Compressor","settings":"slow"}])"), 0);
+        check (addAt (plain, 0).getProperty ("dial_on_playback", juce::var()).isVoid(),
+               "BW3 a chain with no dial produces adds with NO dial - the field is carried, never "
+               "invented",
+               juce::JSON::toString (plain, true));
+
+        // Two slots, the dial on the SECOND only.
+        const auto two = ChainHost::chainArrayToBuildWireOps (
+            chain (R"([{"name":"Pro-Q 3"},
+                       {"name":"EchoJay Compressor","dial_on_playback":{"target_lufs":-14}}])"), 0);
+        check (addAt (two, 0).getProperty ("dial_on_playback", juce::var()).isVoid()
+               && (double) addAt (two, 1).getProperty ("dial_on_playback", juce::var())
+                                         .getProperty ("target_lufs", juce::var()) == -14.0,
+               "BW4 with two slots the dial lands on the ONE it was written for, by position and "
+               "with the name checked - a dial on the wrong add dials a plugin the server never "
+               "aimed at",
+               juce::JSON::toString (two, true));
+
+        // An entry with no name is skipped by the conversion, so the zip must skip it too or every
+        // dial after it lands one slot early.
+        const auto gap = ChainHost::chainArrayToBuildWireOps (
+            chain (R"([{"settings":"no name at all"},
+                       {"name":"EchoJay Compressor","dial_on_playback":{"target_lufs":-9}}])"), 0);
+        check ((double) addAt (gap, 0).getProperty ("dial_on_playback", juce::var())
+                                      .getProperty ("target_lufs", juce::var()) == -9.0,
+               "BW4b ...and an entry with no name, which the conversion drops, does not shift the "
+               "dials that follow it",
+               juce::JSON::toString (gap, true));
+
+        // The rack it replaces: a build is removes-then-adds, and the wire is 1-based.
+        const auto over = ChainHost::chainArrayToBuildWireOps (
+            chain (R"([{"name":"EchoJay Compressor"}])"), 3);
+        int removes = 0, adds = 0;
+        juce::String slots;
+        if (auto* a = over.getArray())
+            for (const auto& o : *a)
+                if (auto* oo = o.getDynamicObject())
+                {
+                    const auto op = oo->getProperty ("op").toString();
+                    if (op == "remove") { ++removes; slots << oo->getProperty ("slot").toString() << " "; }
+                    if (op == "add")    ++adds;
+                }
+        check (removes == 3 && adds == 1 && slots.trim() == "1 2 3",
+               "BW5 a build over a rack of 3 is three removes and one add, the slots 1-based as the "
+               "wire is  (the convention that has caught this file out before)",
+               "removes=" + juce::String (removes) + " adds=" + juce::String (adds)
+               + " slots [" + slots.trim() + "]");
+        check (echojay::agentIntentForOps (over) == "build",
+               "BW6 ...and the batch reads as intent=build, so a windowless build re-levels exactly "
+               "like the Build button does (his item 2, 19 Oct)");
+        check (ChainHost::chainArrayToBuildWireOps ({}, 2).getArray() != nullptr
+               && ChainHost::chainArrayToBuildWireOps ({}, 2).getArray()->size() == 2,
+               "BW7 and an empty chain array is two removes and nothing else, rather than a throw - "
+               "buildChain refuses an empty build before this, and this says so if it ever does not");
     }
 
     std::printf ("==== agent_round15_guard: %s (%d assertion(s) failed, %d passed) ====\n",

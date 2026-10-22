@@ -215,9 +215,26 @@ int main (int argc, char** argv)
         check (loop.aimWords() == "matched to input",
                "(a) ...as a VOLUME MATCH - a Link is a channel and never hits a target (Sean, 9 Oct)",
                loop.aimWords());
-        check (loop.stageName() == "rack_out",
-               "(a) ...driving the rack's OUT gain, which is the control the OUT caption describes",
+        // ---- RE-AIMED TO SEAN'S 14:0x RULING (19 Oct 2026) ------------------------------------
+        // This pinned "rack_out" - EchoJay's own whole-rack gain - because that is what the match
+        // drove when the leg was written. His ruling moved it:
+        //
+        //   *"Level matching uses the SLOT CARD's OUT trim, the per-slot in/out we built for exactly
+        //    this, never the plugin's own make-up/output."*
+        //
+        // So on a rack WITH slots the stage is `slot_out`, on the outermost slot; `rack_out` is now
+        // only for a rack with no slots at all, where there is no slot trim to use. This rig builds
+        // one slot, so slot_out is the correct answer and "rack_out" was the stale expectation.
+        //
+        // NOT a silent re-baseline: the behavioural assertions in (d) below all PASSED unchanged -
+        // the loop landed -5.99 dB against -6.0 expected and the rack's output matched its input to
+        // 0.01 dB - so what moved is which control holds the figure, which is exactly what he ruled.
+        check (loop.stageName() == "slot_out",
+               "(a) ...driving the SLOT CARD's OUT trim, which is the control his 14:0x ruling names "
+               "(was \"rack_out\" here, from before that ruling)",
                loop.stageName());
+        check (loop.stageName() != "rack_out",
+               "(a) ...and never the whole-rack gain while the rack has a slot to trim");
 
         // ---- (b) ARMING IS NOT A GAIN MOVE ---------------------------------------------------------------
         check (std::abs (loop.currentGainDb()) < 0.001f,

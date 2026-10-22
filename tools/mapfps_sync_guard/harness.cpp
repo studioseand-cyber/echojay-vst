@@ -12,6 +12,7 @@
 // count stays at 63. The network is never touched here: the stub IS the server's answer.
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
+#include "AskShelfLayout.h"   // 20 Oct: the chip flow, extracted so it can be legged here
 #include "ChainHost.h"
 #include "EchoJayParamMaps.h"
 #include "EJStateRoot.h"
@@ -222,6 +223,22 @@ int main()
                 check (r0.getProperty ("ik", juce::var()).isVoid(),
                        "F. ...and the client's own identity key is NOT sent");
             }
+            // ---- THE BUILD NAMES ITSELF (Sean, 21 Oct 2026) ----------------------------------
+            // *"V2 must send appVersion in its /api/params/sync body, or production won't keep its
+            // plugin identities."*  Production decides whether to STORE what the sync resolves on
+            // the asking build's version, so a body without it is answered and then forgotten -
+            // which looks exactly like a sync that worked. Pinned on the BODY, as a string, because
+            // that is what the server reads and nothing in a compiler checks it.
+            {
+                const auto ver = parsedBody.getProperty ("appVersion", juce::var()).toString();
+                check (ver.isNotEmpty(),
+                       "F2 RED-FIRST: the sync body carries appVersion - without it production answers "
+                       "and does not keep the identities", ver);
+                check (ver == juce::String (JucePlugin_VersionString),
+                       "F2 ...and it is THIS binary's version, from the one source CMake writes, so it "
+                       "cannot drift from the build that is asking",
+                       ver + " vs " + juce::String (JucePlugin_VersionString));
+            }
             // The uid a description yields is the product key's, never a second spelling.
             juce::PluginDescription d; d.name = "Pro-Q 3"; d.pluginFormatName = "AudioUnit";
             d.uniqueId = 0x61453c50; d.version = "3.2.3"; d.manufacturerName = "FabFilter";
@@ -282,6 +299,91 @@ int main()
         check (! latch.shouldAsk (sigA), "G. an answer with mapped rows latches THIS generation", whyOk);
         check (latch.shouldAsk ("1430:AudioUnit|10000|1.0:..."),
                "G. ...and a changed inventory is a new generation, which asks again");
+    }
+
+    // ---- SIX CHIPS MUST DRAW (20 Oct 2026, B's capture; Sean's route 2) ----------------------
+    //
+    // B: *"The agent-off pick card with SIX chips was drawn with none at all (five drew fine at
+    // 09:32). The chip row must lay out any number, wrapping to a second row, never drop the lot."*
+    //
+    // The flow was inside the editor and only ui_guard could reach it - and ui_guard SIGSEGVs at
+    // startup in a session with no window server, at HEAD, with no change of mine. So the one leg
+    // that could settle B's report could not run. Sean: *"Extract the ask-shelf layout maths into a
+    // free function and leg it outside ui_guard with B's six real labels."*
+    //
+    // The width oracle is a STUB here, deliberately: 8 px a character is close enough to a 12.5 px
+    // font to make the wrap happen at realistic widths, and it makes the arithmetic deterministic
+    // across machines and font versions. What is under test is the FLOW, not the typeface.
+    std::printf ("== SIX CHIPS: the ask shelf flows any number, and drops none ==\n");
+    {
+        const auto width8 = [] (const juce::String& t) { return t.length() * 8; };
+        juce::StringArray six { "DPR-402 (s)", "SSLComp (s)", "VBC FG-Red",
+                                "Lindell 254E", "Bettermaker", "EchoJay Compressor" };
+        juce::StringArray five { "DPR-402 (s)", "SSLComp (s)", "VBC FG-Red",
+                                 "Lindell 254E", "Bettermaker" };
+        for (int w : { 760, 520, 360, 240 })
+        {
+            const auto f6 = layOutAskChips (six, w, 27, width8);
+            check ((int) f6.rects.size() == 6 && f6.height > 0,
+                   juce::String ("SIX1 at ") + juce::String (w) + "px: all SIX chips get a rect "
+                   "(B's capture: six drew as NONE while five drew fine)",
+                   "rects=" + juce::String ((int) f6.rects.size()) + " h=" + juce::String (f6.height)
+                     + " rows=" + juce::String (f6.rows));
+            bool inside = true; juce::String worst;
+            for (const auto& r : f6.rects)
+                if (r.getY() < 0 || r.getBottom() > f6.height || r.getX() < 0 || r.getRight() > w)
+                { inside = false; worst = r.toString() + " in " + juce::String (w) + "x"
+                                          + juce::String (f6.height); break; }
+            check (inside,
+                   juce::String ("SIX2 at ") + juce::String (w) + "px: every chip is inside the "
+                   "shelf's own measured box", inside ? juce::String ("all inside") : worst);
+            // AND THE HEIGHT COVERS THE ROWS IT FLOWED ONTO: a shelf measured for one row while the
+            // chips occupy two is how a whole row ends up outside the painted background.
+            check (f6.height >= f6.rows * 27,
+                   juce::String ("SIX3 at ") + juce::String (w) + "px: the reserved height covers "
+                   "every row the chips flowed onto",
+                   "h=" + juce::String (f6.height) + " rows=" + juce::String (f6.rows));
+            // FIVE STILL BEHAVES, which is the control: B saw five draw fine, so a fix that broke
+            // five would be trading one report for another.
+            const auto f5 = layOutAskChips (five, w, 27, width8);
+            check ((int) f5.rects.size() == 5 && f5.height > 0,
+                   juce::String ("SIX4 at ") + juce::String (w) + "px: FIVE chips still lay out, "
+                   "unchanged (the case B saw working)",
+                   "rects=" + juce::String ((int) f5.rects.size()));
+        }
+        // THE WRAP ITSELF, at a width where six cannot fit on one line.
+        const auto narrow = layOutAskChips (six, 360, 27, width8);
+        check (narrow.rows >= 2,
+               "SIX5 at 360px the chips WRAP onto more than one row rather than overflowing",
+               juce::String (narrow.rows) + " row(s)");
+        // AND THE DEGENERATE INPUTS LEAVE NOTHING BEHIND: no labels, no width, no oracle.
+        // ---- AND THE SHELF'S TOP STAYS INSIDE THE WINDOW (20 Oct 2026) --------------------------
+        //
+        // The flow is only half the story: the shelf sits ON the composer and grows UPWARDS, so a
+        // tall one put its top off the window and every chip with it - "drawn with none at all".
+        // Five chips are one row and fit; six at a narrow column measured 208 px here.
+        {
+            const juce::Rectangle<int> column { 0, 0, 400, 300 };     // the chat column
+            const juce::Rectangle<int> composer { 10, 260, 380, 36 }; // sits near the bottom
+            const auto tall = askShelfBounds (composer, column, 208);
+            check (tall.getY() >= column.getY(),
+                   "SIX7 a TALL shelf's top is clamped to the chat column, not placed off the window "
+                   "(RED as it stood: chatBox.getY() - height went negative and took every chip with "
+                   "it)", tall.toString());
+            check (tall.getBottom() == composer.getY(),
+                   "SIX7b ...and it still meets the composer, so it is not floating",
+                   tall.toString());
+            const auto shortOne = askShelfBounds (composer, column, 76);
+            check (shortOne.getY() == composer.getY() - 76 && shortOne.getHeight() == 76,
+                   "SIX7c a shelf that FITS is untouched - the clamp only acts when it would not",
+                   shortOne.toString());
+        }
+        check (layOutAskChips ({}, 760, 27, width8).rects.empty()
+               && layOutAskChips (six, 0, 27, width8).rects.empty()
+               && layOutAskChips (six, 760, 0, width8).rects.empty()
+               && layOutAskChips (six, 760, 27, {}).rects.empty(),
+               "SIX6 empty labels, zero width, zero height and a missing oracle each lay out NOTHING "
+               "rather than crashing or inventing a row");
     }
 
     std::printf ("\n==== mapfps_sync_guard: %s (%d assertion(s) failed) ====\n",

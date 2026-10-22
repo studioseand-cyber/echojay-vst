@@ -3304,6 +3304,191 @@ void guardMain()
         }
     }
 
+    // ---- (17) dial_on_playback -> A CALIBRATION BLOCK (20 Oct 2026, B's contract) --------------------
+    //
+    // B sends `dial_on_playback {target_gr_db, control}` on an agent add and A sets that control on the
+    // next playback, silently. The translation is CalibLoop::blockFromDialOnPlayback, and it is here
+    // rather than at the Link's call site because the call site needs a hosted rack and a transport -
+    // and because the three fields that are NOT one-to-one all look right and are not.
+    //
+    // BOTH DIRECTIONS, as ruled: the composer's output is asserted, and then PARSED BACK through
+    // configFromBlock - the thing that will actually read it in the product - and a known-bad shape (the
+    // contract's scalar passed through verbatim) is asserted to fail.
+    {
+        const int numSlots = 3;
+        auto parse = [numSlots] (const juce::var& blk, echojay::CalibLoop::Config& c, juce::String& why)
+        { return echojay::CalibLoop::configFromBlock (blk, numSlots, false, "Tube-Tech CL 1B", c, why); };
+        auto dial = [] (const char* control, const juce::var& target)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("control", control);
+            o->setProperty ("target_gr_db", target);
+            o->setProperty ("rule", "set on the next playback, no chat round (like the slot-OUT match)");
+            return juce::var (o);
+        };
+
+        // (a) A THRESHOLD: stepped, lower is harder, and that follows from what the control IS.
+        {
+            juce::String why;
+            const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (dial ("Threshold", 3), 1, why);
+            check (blk.getDynamicObject() != nullptr, "(17a) a threshold dial composes a block", why);
+            check ((int) blk.getProperty ("slot", -1) == 2,
+                   "(17a) ...on the 1-BASED slot the add landed on (slot index 1 -> wire 2)",
+                   blk.getProperty ("slot", -1).toString());
+            check (blk.getProperty ("mode", {}).toString() == "listen",
+                   "(17a) ...in LISTEN mode, so it drives rather than observes");
+            check (blk.getProperty ("actuator", {}).toString() == "threshold",
+                   "(17a) ...with actuator \"threshold\"", blk.getProperty ("actuator", {}).toString());
+            check (blk.getProperty ("param", {}).toString() == "Threshold",
+                   "(17a) ...naming the control B asked for");
+            echojay::CalibLoop::Config c; juce::String pwhy;
+            check (parse (blk, c, pwhy), "(17a) ...and THE PARSER TAKES IT", pwhy);
+            check (c.slot == 1, "(17a) ...back onto the same slot", juce::String (c.slot));
+            check (c.haveBand && std::abs (c.lo - 2.0f) < 0.01f && std::abs (c.hi - 3.0f) < 0.01f,
+                   "(17a) ...with the band [2, 3] for a target of 3 - the band whose prose has always "
+                   "been \"3 dB\"",
+                   juce::String (c.lo, 2) + "-" + juce::String (c.hi, 2)
+                       + (c.haveBand ? " (stated)" : " (DEFAULTED - the target was ignored)"));
+            check (c.actuator == echojay::CalibLoop::Actuator::Threshold,
+                   "(17a) ...as a THRESHOLD actuator");
+            check (! c.holdOnly, "(17a) ...and it STEPS, which is what \"set that slot\" means");
+            check (std::abs (c.makeupCapDb - 3.0f) < 0.01f,
+                   "(17a) ...with B's own make-up cap default, the target",
+                   juce::String (c.makeupCapDb, 2));
+        }
+
+        // (b) THE SCALAR, PASSED THROUGH VERBATIM, IS THE KNOWN-BAD SHAPE. gr_target_db is read with
+        // .getArray(), so a number leaves the DEFAULT band in place and the target is silently lost.
+        // Asserted at 6 dB, because at 3 the default [2, 3] and the right answer coincide and the bug
+        // would be invisible - which is how it would have shipped.
+        {
+            auto* bad = new juce::DynamicObject();
+            bad->setProperty ("slot", 2);
+            bad->setProperty ("gr_target_db", 6);              // the contract's own scalar
+            bad->setProperty ("mode", "listen");
+            bad->setProperty ("actuator", "threshold");
+            bad->setProperty ("param", "Threshold");
+            echojay::CalibLoop::Config bc; juce::String bwhy;
+            parse (juce::var (bad), bc, bwhy);
+            check (! bc.haveBand && bc.hi < 5.0f,
+                   "(17b) RED-FIRST: a SCALAR gr_target_db is not a band - the target is lost and the "
+                   "default stands, which is why the composer exists",
+                   juce::String (bc.lo, 1) + "-" + juce::String (bc.hi, 1));
+            juce::String why;
+            const auto good = echojay::CalibLoop::blockFromDialOnPlayback (dial ("Threshold", 6), 2, why);
+            echojay::CalibLoop::Config gc; juce::String gwhy;
+            parse (good, gc, gwhy);
+            check (gc.haveBand && std::abs (gc.lo - 5.0f) < 0.01f && std::abs (gc.hi - 6.0f) < 0.01f,
+                   "(17b) ...and the composer's block carries 6 dB as the band [5, 6]",
+                   juce::String (gc.lo, 1) + "-" + juce::String (gc.hi, 1));
+        }
+
+        // (c) A CONTROL WHOSE DIRECTION THE FIELD DOES NOT STATE - B's own example, an LA-2A "Peak
+        // Reduction", where HIGHER is harder. The 28 Sep ruling forbids guessing it from the name, so
+        // this holds and checks: it measures the slot against the target, writes nothing to the plugin,
+        // and above all never falls through to driving EchoJay's own input.
+        {
+            juce::String why;
+            const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (dial ("Peak Reduction", 3), 0, why);
+            check (blk.getDynamicObject() != nullptr, "(17c) an unstated direction still composes a block");
+            check (blk.getProperty ("actuator", {}).toString() == "amount",
+                   "(17c) ...as actuator \"amount\", never \"threshold\" on a guess",
+                   blk.getProperty ("actuator", {}).toString());
+            check (why.contains ("Peak Reduction") && why.containsIgnoreCase ("not guessed"),
+                   "(17c) ...and the reason NAMES THE CONTROL, so the gap is in the log, not in a guess",
+                   why);
+            echojay::CalibLoop::Config c; juce::String pwhy;
+            check (parse (blk, c, pwhy), "(17c) ...the parser takes it", pwhy);
+            check (c.holdOnly, "(17c) ...and it HOLDS AND CHECKS rather than stepping a control whose "
+                               "direction nobody stated");
+            check (c.actuator != echojay::CalibLoop::Actuator::Drive,
+                   "(17c) ...and it is NOT EchoJay's own drive - the harmful fall-through");
+            check (c.params.size() == 1 && c.params[0] == "Peak Reduction",
+                   "(17c) ...with the control still named, so the check can report against it");
+        }
+
+        // (f) B SENDS THE DIRECTION NOW (his contract addition, 20 Oct 2026) ------------------
+        //
+        // *"`sense`: "higher_is_harder" or "lower_is_harder" ... from the profile's measured curve
+        // ... never taken from the control's name (the 28 Sep ruling). bx_opto's Peak Reduction is
+        // higher_is_harder."*  This is the gap flagged at 17:00 and closed by B, and the case that
+        // proves it is the one that HELD instead of dialling in Sean's 15:47 round.
+        {
+            auto dialWithSense = [] (const char* control, const char* sense, const char* actuator)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("control", control);
+                o->setProperty ("target_gr_db", 3);
+                o->setProperty ("sense", sense);
+                o->setProperty ("actuator", actuator);
+                return juce::var (o);
+            };
+            juce::String why;
+            const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (
+                                 dialWithSense ("Peak Reduction", "higher_is_harder", "amount"), 0, why);
+            check (blk.getProperty ("actuator", {}).toString() == "input",
+                   "(17f) bx_opto's \"Peak Reduction\" with B's higher_is_harder becomes the INPUT "
+                   "actuator, which STEPS - the 15:47 case that used to hold and check",
+                   blk.getProperty ("actuator", {}).toString());
+            check (blk.getProperty ("sense", {}).toString() == "higher_is_harder",
+                   "(17f) ...and B's sense travels with it");
+            echojay::CalibLoop::Config c; juce::String pwhy;
+            check (echojay::CalibLoop::configFromBlock (blk, 3, false, "bx_opto", c, pwhy),
+                   "(17f) ...the parser takes it", pwhy);
+            check (! c.holdOnly,
+                   "(17f) ...and it is NOT hold-only any more: a measured curve beats a guess about "
+                   "a word, which is the 28 Sep ruling's own reasoning");
+            check (why.containsIgnoreCase ("higher_is_harder") && why.containsIgnoreCase ("B states"),
+                   "(17f) ...and the reason says the direction came from B, not from the name", why);
+            // A LOWER-IS-HARDER THRESHOLD from B is still a threshold.
+            const auto thr = echojay::CalibLoop::blockFromDialOnPlayback (
+                                 dialWithSense ("Threshold", "lower_is_harder", "threshold"), 0, why);
+            check (thr.getProperty ("actuator", {}).toString() == "threshold",
+                   "(17g) a lower-is-harder threshold from B stays a threshold",
+                   thr.getProperty ("actuator", {}).toString());
+            // AND WITHOUT A SENSE, THE NAME HEURISTIC IS UNCHANGED - an older sender keeps today's
+            // behaviour exactly, which is the whole point of reading the field FIRST rather than ONLY.
+            auto* bare = new juce::DynamicObject();
+            bare->setProperty ("control", "Peak Reduction");
+            bare->setProperty ("target_gr_db", 3);
+            const auto old = echojay::CalibLoop::blockFromDialOnPlayback (juce::var (bare), 0, why);
+            check (old.getProperty ("actuator", {}).toString() == "amount",
+                   "(17h) a sender with NO sense still gets hold-and-check - the name is never "
+                   "guessed from (the 28 Sep ruling stands where B says nothing)",
+                   old.getProperty ("actuator", {}).toString());
+        }
+
+        // (d) EchoJay's OWN compressor: the contract says `threshold_db` on it, and that is a threshold.
+        {
+            juce::String why;
+            const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (dial ("threshold_db", 3), 0, why);
+            check (blk.getProperty ("actuator", {}).toString() == "threshold",
+                   "(17d) threshold_db on the EchoJay Compressor is a THRESHOLD and is stepped",
+                   blk.getProperty ("actuator", {}).toString());
+        }
+
+        // (e) THE THREE WAYS NOTHING STARTS, each with a reason the log can print. A dial that does not
+        // happen has to be sayable: the contract's own fallback is that the slot keeps the gentle start
+        // the add carried, and that is only honest if it is said out loud.
+        {
+            juce::String w1, w2, w3, w4;
+            check (echojay::CalibLoop::blockFromDialOnPlayback (dial ("", 3), 0, w1).isVoid()
+                       && w1.isNotEmpty(),
+                   "(17e) no control: nothing starts, with a reason", w1);
+            check (echojay::CalibLoop::blockFromDialOnPlayback (dial ("Threshold", "loud"), 0, w2).isVoid()
+                       && w2.isNotEmpty(),
+                   "(17e) a non-numeric target: nothing starts, with a reason", w2);
+            check (echojay::CalibLoop::blockFromDialOnPlayback (dial ("Threshold", 3), -1, w3).isVoid()
+                       && w3.isNotEmpty(),
+                   "(17e) THE SLOT NOT RESOLVED: nothing starts - a stale slot pointer is worse than no "
+                   "pointer (the 2 Oct remap lesson)", w3);
+            check (echojay::CalibLoop::blockFromDialOnPlayback (juce::var(), 0, w4).isVoid()
+                       && w4.isNotEmpty(),
+                   "(17e) no field at all: nothing starts, and an older sender is not an error", w4);
+        }
+    }
+
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }
