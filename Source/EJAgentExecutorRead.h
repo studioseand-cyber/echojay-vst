@@ -53,6 +53,11 @@ struct SlotRead
 {
     int   n = 0;                     // 1-based, as the model sees it (contract 8: 1-based everywhere a model sees)
     juce::String name, format, settings, dialSummary, pictureText;
+    /** 19 Oct 2026 (his 17:09 run): the slot's LIVE band lines, asked of the EQ itself. Empty when
+        the slot is not the built-in EQ, or when this rack is a LINK (the sidecar does not publish
+        structured bands yet - see the morning report). A read-back prefers this, then `settings`,
+        and NEVER `dialSummary`: that field is the EJDialSummary DEBUG row by construction. */
+    juce::String liveBands;
     bool  bypassed = false, keepLevel = false, builtin = false;
     float wet = 1.0f, preTrimDb = 0.0f, outGainDb = 0.0f;
     bool  pictureValid = false, grKnown = false;
@@ -127,6 +132,35 @@ struct LevellingRead
     bool  converged = false;
     juce::String state;              // the loop's own word when it has one (armed / measuring / proposed / landed / stale)
     juce::int64 updatedMs = 0;
+    /** ---- THE LIMITING BUDGET REPORT (Sean, 21 Oct 2026; B's CONTRACT_limit_budget) ---------
+        *"If the target can't be reached inside it, stop at the budget, keep the ceiling, and report
+        the level reached so B can say so."*
+
+        ---- AND THE NAMES ARE B'S, WHICH COST A CORRECTION --------------------------------------
+        My first cut sent the MEASURED limiting as `limitAvgDb` and echoed B's budget back as
+        `avgLimitDb`. B's contract reads `avgLimitDb` AS THE MEASUREMENT - its own example is
+        `"avgLimitDb": 3.1` against a budget of 3, which is only sensible as what the limiter was
+        actually taking. Two fields a word-order apart, meaning different things, is a number that
+        would have arrived in the wrong place and read as plausible. So:
+
+          avgLimitDb / peakLimitDb   MEASURED from our own tallies - (the slot's IN level plus the
+                                     input gain we wrote) minus its OUT level, short-term over the
+                                     loud hops. No plugin meter is read, so they exist for any
+                                     limiter. NaN = not measured, and then they are not sent.
+          stoppedAtBudget            true only when the budget is what held the push.
+          reachedLufs                the level it reached when it did.
+          inputDb / limiterSlot      optional in B's contract and cheap here: the input gain the
+                                     loop holds and the slot it drives, which is what B's "push
+                                     anyway" arithmetic adds to.
+
+        The budget itself is NOT echoed back: B sent it, so repeating it is a second copy of one
+        fact - and it was the second copy that produced the name collision. */
+    float avgLimitDb   = std::numeric_limits<float>::quiet_NaN();
+    float peakLimitDb  = std::numeric_limits<float>::quiet_NaN();
+    bool  stoppedAtBudget = false;
+    float reachedLufs  = std::numeric_limits<float>::quiet_NaN();
+    float inputDb      = std::numeric_limits<float>::quiet_NaN();
+    int   limiterSlot  = 0;          // 1-based; 0 = not stated
 };
 
 struct Sources
@@ -215,6 +249,23 @@ struct Sources
     // identity
     std::function<juce::String()> ownName;       // the channel's display name
     std::function<juce::String()> ownKind;       // channel | bus | mix_bus | master
+    std::function<int()> ownWidth;               // the OWN rack's channel count (0 = unknown)
+    /** channelRole for a target ("" = this chain), composed by ChainRole::toVar() on the side that
+        knows - so the agent road and agent off send ONE shape (round (b), 20 Oct 2026). */
+    std::function<juce::var (const juce::String& uid)> channelRoleVar;
+    /** ---- WHAT THE TARGET HAS HEARD (Sean's 18:15 item 2, 20 Oct 2026) --------------------
+        *"B saw no heard playback on own-channel agent turns, even though Sean played first."*
+
+        And the finding was worse than the report: these two blocks are CHAT-ROAD fields
+        (EchoJayAPI's body), so the AGENT road has never sent either of them - on a Link turn or an
+        own-channel one. All the agent start context ever carried about playback was
+        transport.heardSeconds.
+
+        Both composed by the side that knows, for a TARGET ("" = this chain), so the agent road sends
+        the same shapes the chat road does rather than a second spelling of them. Void = nothing to
+        say, which both roads already express as an absent field. */
+    std::function<juce::var (const juce::String& uid)> trackLevelVar;
+    std::function<juce::var (const juce::String& uid)> slotLevelsVar;
     std::function<juce::String()> projectName;
     // racks
     std::function<RackRead()> ownRack;
@@ -236,6 +287,13 @@ struct Sources
         ruling; the GR window is the devices' own and is reset at the same moment. */
     std::function<void()> beginGrWindow;
     std::function<bool()> transportKnown, transportPlaying;
+    /** "Only suggest plugins EchoJay can auto-dial" - his Settings toggle, READ LIVE on every
+        request (his 09:49: an unmapped plugin was added with it on, because neither agent body
+        carried it). Same key the chat road uses: `autoDial`. */
+    std::function<bool()> autoDialOnly;
+    /** The header's genre selector (e.g. "Hip-Hop"), read live. B's mix-bus loudness default depends
+        on it and it arrived EMPTY on agent starts, because only the chat road sent it (B, 21 Oct). */
+    std::function<juce::String()> genre;
     std::function<int()>  chainRevision;
     std::function<juce::StringArray()> inventory;   // installed plugin names; empty = unknown
     /** The installed plugins that CANNOT load in this host, each with the reason, as
@@ -277,6 +335,8 @@ public:
 
     // ToolExecutor
     juce::var startContext() override;
+    bool autoDialOnly() override { return src_.autoDialOnly && src_.autoDialOnly(); }
+    juce::String genreName() override { return src_.genre ? src_.genre() : juce::String(); }
     void look  (const ToolCall& call, Done done) override;
     void doOp  (const ToolCall& call, Done done) override;
     void check (const ToolCall& call, Done done) override;

@@ -32,7 +32,7 @@
 namespace echojay::agent
 {
 
-enum class FrameKind { Round, Delta, ToolCall, Plan, Await, Done, Error, Unknown };
+enum class FrameKind { Round, Delta, ToolCall, Plan, Await, Done, Error, Status, Unknown };
 
 struct ToolCall
 {
@@ -73,6 +73,11 @@ inline FrameKind frameKindOf (const juce::String& name) noexcept
     if (name == "await")     return FrameKind::Await;
     if (name == "done")      return FrameKind::Done;
     if (name == "error")     return FrameKind::Error;
+    // ---- B'S STATUS FRAME (his 15:28 request; CONTRACT_status_frames_2026-10-21) -------------
+    // *"show the latest status text B sends during the wait ... It's one line, in the same muted
+    // style as agent-off's progress lines."*  The SSE event is named `status` on both sides; B sends
+    // one only when the phase CHANGES, so nothing here has to de-duplicate.
+    if (name == "status")    return FrameKind::Status;
     return FrameKind::Unknown;
 }
 
@@ -136,6 +141,12 @@ inline Frame parseFrame (const juce::String& eventName, const juce::String& data
             break;
         case FrameKind::Delta:
             f.text = o->getProperty ("text").toString();
+            break;
+        case FrameKind::Status:
+            // `text` is B's own words, drawn as sent. `round` is optional and only ever used to drop
+            // a frame that arrives after the round moved on.
+            f.text  = o->getProperty ("text").toString();
+            f.round = (int) o->getProperty ("round");
             break;
         case FrameKind::ToolCall:
             f.call = parseToolCall (f.raw);
@@ -225,7 +236,8 @@ inline juce::var toolResultVar (const ToolResult& r)
     return juce::var (o);
 }
 
-inline juce::String buildStepBody (const juce::String& sessionId, int round, const std::vector<ToolResult>& results)
+inline juce::String buildStepBody (const juce::String& sessionId, int round, const std::vector<ToolResult>& results,
+                                   bool autoDialOnly = false)
 {
     auto* o = new juce::DynamicObject();
     o->setProperty ("sessionId", sessionId);
@@ -233,6 +245,24 @@ inline juce::String buildStepBody (const juce::String& sessionId, int round, con
     juce::Array<juce::var> arr;
     for (const auto& r : results) arr.add (toolResultVar (r));
     o->setProperty ("results", juce::var (arr));
+    // ---- "ONLY SUGGEST PLUGINS ECHOJAY CAN AUTO-DIAL" (Sean's 09:49, 21 Oct 2026) -------------
+    //
+    // *"the agent added an unmapped plugin (bx opto Pedal) while his setting ... was on. Confirm
+    // whether that setting is sent on agent start and step requests (as it is on agent off). If
+    // not, send it, under the same key agent off uses."*
+    //
+    // It was not sent on either: `autoDial` appears exactly once in this codebase's request paths,
+    // in EchoJayAPI's CHAT body (`,"autoDial":true`), and in no agent file at all. So the server was
+    // choosing plugins for an agent build with no idea the toggle was on, and an unmapped plugin is
+    // what that looks like.
+    //
+    // SAME KEY, both requests. A step matters as much as a start: a round that picks a plugin at
+    // round 3 is as able to pick an unmapped one as a round that picks at round 1, and a flag only
+    // on the opening request would be honoured for the first choice and forgotten for the rest.
+    //
+    // Sent ONLY WHEN ON and defaulted off, so an older caller's body is byte-for-byte what it was -
+    // the same discipline approvalMode follows below.
+    if (autoDialOnly) o->setProperty ("autoDial", true);
     return juce::JSON::toString (juce::var (o), true);
 }
 
@@ -241,7 +271,9 @@ inline juce::String buildStepBody (const juce::String& sessionId, int round, con
 // sides gate on and goes before beta.
 inline juce::String buildStartBody (const juce::String& goal, const juce::var& context,
                                     const juce::String& appVersion, const juce::String& chatId,
-                                    const juce::String& approvalMode = {})
+                                    const juce::String& approvalMode = {},
+                                    bool autoDialOnly = false,
+                                    const juce::String& genre = {})
 {
     auto* o = new juce::DynamicObject();
     o->setProperty ("goal", goal);
@@ -256,6 +288,14 @@ inline juce::String buildStartBody (const juce::String& goal, const juce::var& c
     if (approvalMode.isNotEmpty()) o->setProperty ("approvalMode", approvalMode);
     if (appVersion.isNotEmpty()) o->setProperty ("appVersion", appVersion);
     if (chatId.isNotEmpty())     o->setProperty ("chatId", chatId);
+    // His 09:49: the auto-dial-only toggle, under the key agent off uses. See buildStepBody.
+    if (autoDialOnly) o->setProperty ("autoDial", true);
+    // ---- THE GENRE, UNDER THE CHAT ROAD'S OWN KEY (B, 21 Oct 2026) ------------------------
+    // *"Send the genre on agent starts (the header's genre selector, e.g. Hip-Hop), under the same
+    // key agent off uses. B's mix bus loudness default depends on it, and it arrived empty."*
+    // Sent only when set, so an unset selector leaves the key ABSENT rather than "" - a default
+    // keyed on an empty string is a default keyed on a guess.
+    if (genre.isNotEmpty()) o->setProperty ("genre", genre);
     return juce::JSON::toString (juce::var (o), true);
 }
 

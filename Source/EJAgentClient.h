@@ -55,6 +55,42 @@ public:
     enum class State { Idle, Connecting, Streaming, Executing, AwaitingApproval, AwaitingAsk, Listening, Posting, Done, Stopped, Failed };
     static const char* stateName (State s) noexcept;
 
+    /** ---- IS THIS RUN ACTUALLY WORKING? (Sean's ruling, 20 Oct 2026) ------------------------
+        *"A run that is only waiting for Sean's answer doesn't block. A message typed in a different
+        chat stops the waiting run ... If a run is actually executing, the notice goes in the chat he
+        typed in and his text stays in the box."*
+
+        His vanished message: the notice *"The agent is still working on build a mix bus. Stop it
+        first, or wait for it to finish."* appeared in the MIX BUS chat, not the Link chat he typed
+        in, and his text was thrown away - for a run that was only sitting on its loudness ask
+        (Commercial / Pushed / Keep it dynamic). It was not working. It was waiting.
+
+        TRUE only for the states where the agent is genuinely mid-flight and a second conversation
+        would race the rack it is editing. Everything else is a question in another shape, and the
+        answer to a question nobody wants to answer is a new instruction.
+
+        A free function so a guard can walk every state without a session, a socket or a window - the
+        decision has been wrong in three different shapes this week and it is one line of truth. */
+    static bool stateBlocksANewMessage (State s) noexcept
+    {
+        switch (s)
+        {
+            case State::Connecting:
+            case State::Streaming:
+            case State::Executing:
+            case State::Posting:
+                return true;                        // mid-flight: two conversations would race the rack
+            case State::AwaitingApproval:           // a plan waiting for Go
+            case State::AwaitingAsk:                // a question waiting for an answer
+            case State::Listening:                  // waiting for playback
+            case State::Idle: case State::Done:
+            case State::Stopped: case State::Failed:
+                return false;                       // waiting on HIM, or over: it does not block
+        }
+        return false;                               // an unknown state never blocks him
+    }
+    bool isWorking() const noexcept { return stateBlocksANewMessage (state_); }
+
     struct Step
     {
         enum class Status { Pending, AwaitingApproval, Running, Done, Failed, Declined, NotRun, Undone, Stopped };
@@ -109,6 +145,9 @@ public:
 
     // ---- control -------------------------------------------------------------
     void start (const juce::String& goal, const juce::String& chatId = {});
+    /** Stop, with a REASON the run's own card shows (his ruling: *"its own card says 'Stopped: you
+        moved on to <channel>'"*). The default is the bare stop every other caller wants. */
+    void stopWithReason (const juce::String& reason);
     void stop();                 // halts at once; the panel stays up in Stopped so Undo all is reachable
     void retry();                // after a retryable error: re-posts the last request body
     void dismiss();              // Done/Stopped/Failed -> Idle (the panel hides)
@@ -149,7 +188,27 @@ public:
 
     // ---- the ask card --------------------------------------------------------
     bool askPending() const noexcept { return state_ == State::AwaitingAsk; }
+    /** ---- B'S LATEST STATUS LINE, OR EMPTY (his 15:28 request, 21 Oct 2026) ------------------
+        *"show the latest status text B sends during the wait ... replacing the previous one as each
+        arrives ... It disappears when the next step appears or an ask is raised. With no status yet,
+        just "Thinking..."."*
+
+        One line, B's own words, never stored and never remembered across a wait: it is cleared when
+        a step arrives, when an ask is raised, and when the run ends - so it can only ever describe
+        the wait happening now. A status that outlived its wait would be a claim about the present
+        made from the past, which is the whole family this week has been about.
+
+        NAMED FOR WHOSE LINE IT IS. statusLine() above is this CLIENT's own state word ("Thinking
+        (round 3)...") and has been since the first round; this is B's. Two different sentences about
+        two different things, so they do not share a name. */
+    juce::String serverStatusLine() const { return statusLine_; }
     echojay::agent::TalkAsk pendingAsk() const { return pendingAsk_; }
+    /** ---- THE CHAT THIS RUN BELONGS TO, FROM THE RUN ITSELF (Sean's 18:18, 20 Oct 2026) -----
+        start() is given the chat id and has kept it in chatId_ all along; nothing could read it.
+        The editor was keying "does this run belong here?" on a member of its OWN that is set when a
+        row is born - and a row does not survive a chat switch, so after one the editor had no
+        answer and fell back to the last run's chat. The run has always known. */
+    juce::String runChatId() const { return chatId_; }
     void answerAsk (const juce::String& choice, bool typed = false);
     /** Which offered choice a typed answer means, or "" for none. Public because the
         rig asserts on it directly and because the composer's hint reads it. */
@@ -236,6 +295,22 @@ private:
         reads the chain tallies in-process and never asks for a wait. */
     bool closingAskSeen_    = false;   // the run has shown its closing ask (id "tc_check...")
     bool userAskedForCheck_ = false;   // ...and the user has tapped "Run a check" since then   // Sean's default for a new user
+    /** ---- HAS THIS RUN ACTUALLY MOVED ANYTHING? (19 Oct 2026, B's section 92, Sean first) ------
+        *"at 17:20 your check(playback) refusal fired in round 1 with nothing changed... refuse a
+        playback check only after a move has landed in this run."*
+
+        TRUE once a `do` step in THIS run has come back ok. The refusal is keyed on this and nothing
+        else, because it is the fact the rule is about: there is no second listen to decline until
+        there has been a first change.
+
+        It replaces closingAskSeen_ as the key. That flag was a proxy - the closing OFFERS the
+        "Run a check" chip, so its presence stood in for "a change has been made" - and it was wrong
+        twice over. Wrong in principle, because a closing can be shown by a run that changed nothing
+        (a question, a read, a refusal). And wrong in fact, because it was never reset: start() did
+        not clear it, so the first run in a session to show a closing left it TRUE for every run
+        after, and round 1's first playback wait was refused before anything had happened at all.
+        Both are fixed here; the flag stays for the log line, which is still worth reading. */
+    bool moveLandedThisRun_ = false;
 
     // ---- transport ------------------------------------------------------------
     struct Cancel
@@ -292,6 +367,9 @@ private:
     std::shared_ptr<Cancel> cancel_;
 
     juce::String goal_, chatId_, sessionId_, checkpoint_;
+    /** Consumed by the next stop() and cleared there, so a reason cannot outlive its stop (his
+        ruling of 20 Oct: the card says "Stopped: you moved on to <channel>"). */
+    juce::String stopReason_;
     int round_ = 0;
     std::vector<Step> steps_;
     juce::StringArray awaitIds_;
@@ -324,6 +402,7 @@ private:
     bool errorRetryable_ = false;
     double costUsd_ = 0.0;
     juce::int64 lastBytesMs_ = 0;
+    juce::String statusLine_;   // B's latest status frame (his 15:28)
     juce::String refusedTypedLine_;
     int undoInFlight_ = 0;
 };

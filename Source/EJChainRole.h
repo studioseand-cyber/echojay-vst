@@ -26,6 +26,21 @@ struct ChainRole
     Kind         kind = Kind::channel;
     juce::String from;        // "prompt" | "placement" | "name", empty when nothing said bus
     juce::String trackName;   // whatever the host reported, for the wire and the line
+    /** ---- WHAT THE SOURCE IS (Sean's round (b), 20 Oct 2026) ------------------------------
+        *"Sent as channelRole on both roads."*  So they live HERE, on the one struct whose toVar()
+        is already the channelRole composer, rather than being assembled a second time wherever a
+        request is built - which is how the agent road came to send no source at all.
+
+          placement       "insert" | "bus" | "send", a LINK's registry fact (where it sits)
+          sourceType      the wire spelling of a ChannelType ("lead_vocal"), WHAT it is
+          sourceTypeFrom  "user" | "classifier" | "name" - the provenance, and the whole rule:
+                          user > classifier > name, and a lower one never overwrites a higher one
+          sourceTypeName  the custom name, when sourceType is "other"
+
+        EVERY ONE OF THEM IS OMITTED WHEN EMPTY. A wrong type is worse than none, so "we could not
+        say" is sent as silence and the reader is left to ask - which is the behaviour every build
+        before this one had, unchanged. */
+    juce::String placement, sourceType, sourceTypeFrom, sourceTypeName;
 
     bool isBus() const noexcept { return kind == Kind::bus; }
     juce::String kindText() const { return kind == Kind::bus ? "bus" : "channel"; }
@@ -39,6 +54,11 @@ struct ChainRole
         o->setProperty ("kind", kindText());
         if (from.isNotEmpty())      o->setProperty ("from", from);
         if (trackName.isNotEmpty()) o->setProperty ("name", trackName);
+        // round (b): additive, and absent when not stated - see the fields' own note.
+        if (placement.isNotEmpty())      o->setProperty ("placement", placement);
+        if (sourceType.isNotEmpty())     o->setProperty ("sourceType", sourceType);
+        if (sourceTypeFrom.isNotEmpty()) o->setProperty ("sourceTypeFrom", sourceTypeFrom);
+        if (sourceTypeName.isNotEmpty()) o->setProperty ("sourceTypeName", sourceTypeName);
         return juce::var (o);
     }
 

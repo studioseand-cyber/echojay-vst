@@ -1,4 +1,5 @@
 #include "EJAgentExecutorDo.h"
+#include "EJRefusalLine.h"   // the one refusal composer (20 Oct)
 #include "ChainHost.h"   // check 5 part 2: the plugins that did not load here
 #include "EJParamPlainNames.h"   // Sean, 15 Oct: a line a person reads names parameters in words
 
@@ -80,6 +81,31 @@ juce::var ExecutorDo::startContext()
                             "in a pick. If the user names one, say what happened to it rather than trying "
                             "again. The mark clears by itself the moment the plugin loads.");
         }
+
+        // ---- AND THE ONES HE HAS SAID NOT TO USE (his 11:5x item 3, 21 Oct 2026) --------------
+        //
+        // The inventory withholds them so they cannot be picked; this NAMES them, with the reason he
+        // gave, for the same reason the no-load list is named: so a user who asks for one by name is
+        // told what happened rather than watching the model pretend it does not exist. His own mark,
+        // so it never clears itself - and the note says that too, because a model that assumes a
+        // mark expires will offer the plugin again next week.
+        if (sinks_.dontUsePlugins)
+            if (const auto marks = sinks_.dontUsePlugins(); marks.getArray() != nullptr
+                                                            && ! marks.getArray()->isEmpty())
+            {
+                // THE KEY IS B'S (CONTRACT_plugins_held_2026-10-21.md, Sean's ruling of 21 Oct):
+                // `plugins_held`, [{name, why}], on EVERY agent start - and the same list goes on the
+                // agent-off chat body (EchoJayAPI::buildChatRequestBody). One name both sides agree
+                // on; my first cut invented `plugins_the_user_will_not_use` and B would have read
+                // nothing.
+                o->setProperty ("plugins_held", marks);
+                o->setProperty ("plugins_held_note",
+                                "Held as demo, expired, unlicensed or simply not wanted - one per "
+                                "{name, why}. They are withheld from the inventory, so do not offer "
+                                "them in any candidate list: no automatic pick, no plan pick, no pick "
+                                "card, no Change <role>. They ARE still used when the user names one. "
+                                "Nothing here clears itself - only the user lifts a mark.");
+            }
 
         // THE UNDO CAPABILITY, DECLARED (14 Oct 2026). B gates the op on this and nothing else:
         // "the server sends it only when the start body's capabilities includes \"undo\"; otherwise it is
@@ -293,12 +319,90 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
         if (op == "replace") { if (! needSlot (o)) return {}; }
         else { bool p = false; const int after = argInt (call, "after", p); if (p) o->setProperty ("after", after); }
         if (const auto ss = argVar (call, "settings_structured"); ss.getDynamicObject() != nullptr)
+        {
             o->setProperty ("settings_structured", ss);
+            // ---- AND THE SLOT'S DISPLAY STRING, WHICH THE WIRE ROAD DROPPED (20 Oct 2026) -------
+            //
+            // B: *"the agent-off request's current chain now lists slots with no settings
+            // ("2: \"Tube-Tech CL 1B\" (AudioUnit)"), so B can't compute what a compressor is
+            // doing. Send each slot's current control values again."*
+            //
+            // MINE, from the one-road move. This op carries `settings_structured` (the dial payload)
+            // and never carried `settings` (the slot tile's display string). The old session/edit-card
+            // road carried the server's own prose there, so the Link's ChainHost got a value from
+            // `setSlotSettings(cur, op.settings)` and published it on its sidecar - which is where
+            // buildCurrentChainInjection reads a Link slot's settings from. Over the wire that field
+            // was empty, so the Link published nothing and B's chain feed printed a bare slot.
+            //
+            // Composed from the values being ASKED FOR, by the one composer that already turns a
+            // structured payload into a person's words. The read-back refines it afterwards (that is
+            // what the dial's own landedValues do for a built-in); this is what the slot says in the
+            // meantime, and it is what the old road sent.
+            if (const auto shown = echojay::params::plainSettingsSummary (ss); shown.isNotEmpty())
+                o->setProperty ("settings", shown);
+        }
         // THE SWEEP: the contract's `add` carries `wet_pct?` (line 98) and this dropped it, so a plugin the
         // server asked for at 40% wet arrived at 100% and the agent had no way to know. parseChainEditOps
         // already reads wet_pct on any op, so passing it through is all that was ever needed.
         { bool pw = false; const double wet = argNum (call, "wet_pct", pw);
           if (pw) o->setProperty ("wet_pct", wet); }
+        // ---- AND dial_on_playback, WHICH THIS DROPPED (Sean's 15:47, 20 Oct 2026) -------------
+        //
+        // *"The dial never moved the threshold. The Bettermaker went in with dial_on_playback
+        // (control "Threshold", dB, lower is harder) at Threshold +5. Sean played the track; the
+        // Threshold stayed at +5 with no GR."*
+        //
+        // MINE, and the same shape as `settings` three lines up: I built the LINK half of B's
+        // contract this afternoon and never carried the field across THIS boundary. B puts it on the
+        // `do add` call next to settings_structured; this function composes the wire op by naming
+        // every field it passes; `dial_on_playback` was not one of them, so it never reached
+        // writeChainEditCommand - which hands `editOps` to the wire verbatim - and the Link's parse
+        // correctly found nothing.
+        //
+        // WHAT THE LOG SHOWED, and why it took a read of two files rather than one line: the Link
+        // says nothing when the field is ABSENT (an older sender is not an error), so the whole
+        // feature was silent end to end. Sean's 15:46:59 is the slot-OUT match doing its ordinary
+        // job - "level match writes the SLOT CARD's OUT trim on slot 1 to -4.31 dB" - which is
+        // exactly what should happen when no dial arms, and it is also what made the fault look like
+        // a dial driving the OUT. It was not: the dial never existed on the wire.
+        //
+        // So the pass-through comes with a LINE AT THE BOUNDARY, in both directions: this one says
+        // the field left the executor, the Link's says it arrived. A pair of lines is what makes the
+        // next silence a one-file read.
+        // ---- level_match: false (B's CONTRACT_level_match_off, 20 Oct 2026) ------------------
+        //
+        // *"When an add carries level_match: false, skip the silent slot-OUT match for that slot.
+        // Leave its OUT at 0 dB."*  Mix bus, master and loudness builds send it.
+        //
+        // AN EXPLICIT FIELD BEATS A DERIVED TEST. I implemented Sean's 20:5x ruling by inferring it -
+        // "is this the mix bus or master, or does the chain contain a limiter?" - which is a proxy
+        // for what B actually knows, and a proxy standing in for a fact is the shape of half this
+        // week's defects. Both now exist and the FIELD wins where it is sent; the derived test stays
+        // as the safety net for a sender that does not send it (B's own words: "A build that doesn't
+        // know the field ignores it").
+        //
+        // `false` is the only value that means anything here - absent and true both mean "behave as
+        // today" - so it is read as a positive statement rather than as a tri-state.
+        if (const auto lm = argVar (call, "level_match"); lm.isBool() && ! (bool) lm)
+        {
+            o->setProperty ("level_match", false);
+            EchoJay_NSLog (("EJAgentDo: " + op + " \"" + name + "\" carries level_match:false - the "
+                            "silent slot-OUT match is skipped for that slot and its OUT stays at 0 dB "
+                            "(B's contract of 20 Oct: the limiter sets the level, and its input gain "
+                            "was computed against the measured level BEFORE any trim)").toRawUTF8());
+        }
+        if (const auto dial = argVar (call, "dial_on_playback"); dial.getDynamicObject() != nullptr)
+        {
+            o->setProperty ("dial_on_playback", dial);
+            EchoJay_NSLog (("EJAgentDo: " + op + " \"" + name + "\" carries dial_on_playback - control \""
+                            + dial.getProperty ("control", juce::var()).toString() + "\", target "
+                            + dial.getProperty ("target_gr_db", juce::var()).toString()
+                            + " dB of gain reduction on the loud phrases. It rides the op to the rack, "
+                              "which sets it on the next playback with no chat round (B's contract of "
+                              "20 Oct). The Link logs its arrival; two lines, one per side of this "
+                              "boundary, because the field crossing it unseen is what cost his 15:47 "
+                              "round.").toRawUTF8());
+        }
     }
     // ---- ITEM 1 (Sean, 14 Oct 2026): "build" IS NOT HERE ANY MORE --------------------------------------
     //
@@ -328,8 +432,39 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
         { refusal = "a set_level needs an option (match, commercial, pushed, dynamic) or a target_lufs"; return {}; }
         if (option.isNotEmpty()) lv->setProperty ("option", option);
         if (pt) lv->setProperty ("target_lufs", target);
-        auto* o = addOp ("set_level");
-        o->setProperty ("level", juce::var (lv));
+        // ---- AND THERE IS NO ROAD FOR IT (Sean's 19:54, 20 Oct 2026) ------------------------
+        //
+        // *"The step "Level commercial to -9 LUFS" was refused with "That step isn't something this
+        // rack can do. You said: FG-X 2"."*
+        //
+        // THE LOG NAMES IT EXACTLY, and B's shape was right:
+        //     step ... FAILED code=not_applied "the rack's ack: status=not_applied,
+        //     reason=op 1 invalid: unknown operation "set_level", slots now 1
+        //
+        // This branch composed a wire op named "set_level" and handed it to the chain channel, which
+        // has never had such an operation: ChainHost's validator ends
+        //   else return bad("unknown operation \"" + op.op + "\"")
+        // and that is what came back. The comment on the `build` branch a few lines above this one
+        // describes THE SAME FAULT, found on 14 Oct, and prescribes the fix: *"A build goes through
+        // buildChain, routed in doOp BEFORE translate runs, exactly as set_rack_out is. It reaches
+        // this function only if that routing is missing, and then it must be a plain refusal rather
+        // than an op that will be refused one layer lower in worse words."*
+        //
+        // set_level has no such routing and no sink to route to - EJAgentHome wires applyChainOps,
+        // buildChain, setRackOutDb, undoOne and undoHistoryStep, and nothing for levelling. So this
+        // is the plain refusal that comment asks for, until the road exists. The alternative is what
+        // he saw: a correct request turned into an op the rack cannot name, refused in words that
+        // describe neither the request nor the limit.
+        refusal = "I can't set a loudness target yet - that road isn't built in this version. "
+                  "Ask for a limiter and I'll add it, then set it by ear.";
+        EchoJay_NSLog (("EJAgentDo: REFUSED set_level (option=\"" + option + "\" target_lufs="
+                        + (pt ? juce::String (target, 1) : juce::String ("absent"))
+                        + ") - the shape is right and there is no road for it: this executor would "
+                          "compose a wire op named \"set_level\" and the chain channel has no such "
+                          "operation (his 19:54; the same fault as \"build\" on 14 Oct). Refused "
+                          "HERE, naming the limit, rather than one layer lower as \"unknown "
+                          "operation\".").toRawUTF8());
+        return {};
     }
     else if (op == "open_editor")
     {
@@ -354,62 +489,8 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
     return juce::var (edits);
 }
 
-// ---- A RACK'S REFUSAL, IN WORDS (16 Oct 2026, Sean's step 8) ---------------------------------
-//
-// He read this on a failed line: "op 1 invalid: ...". It is ChainHost's edit pre-flight speaking in
-// the vocabulary of the protocol it validates - the sender's vocabulary, not a person's. A person
-// has no "op 1", and I4 now bans the phrase outright, so this is where the translation happens: the
-// one seam where a rack's refusal becomes the line on the row.
-//
-// Narrow on purpose. The prefix is dropped and the DETAIL is kept, because the detail is the part
-// that says what was wrong; the only phrase translated is the one piece of jargon inside it that a
-// person cannot act on. Anything this does not recognise comes through exactly as the rack wrote it -
-// a refusal nobody can read is better than a refusal nobody is shown.
-static juce::String plainRefusal (const juce::String& raw)
-{
-    auto t = raw.trim();
-    if (t.isEmpty()) return t;
-    // ---- LINE BY LINE, BECAUSE THE PREFIX IS RARELY FIRST (the green run said so) -------------
-    // My first cut tested the WHOLE string, and the refusal that actually reaches a person is two
-    // lines: "the batch was refused before it started\nop 1 invalid: "EchoJay Transient" not in the
-    // loadable plugin list". The prefix was on the second line and came through untouched - the rig
-    // caught it on the fixed build, which is the only reason this is right now.
-    juce::StringArray out;
-    for (auto line : juce::StringArray::fromLines (t))
-    {
-        auto l = line.trim();
-        if (l.isEmpty()) continue;
-        if (l.startsWithIgnoreCase ("op ") && l.containsIgnoreCase (" invalid:"))
-        {
-            auto detail = l.fromFirstOccurrenceOf (" invalid:", false, false).trim();
-            if (detail.startsWithIgnoreCase ("unknown operation"))
-            {
-                const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
-                                          .upToLastOccurrenceOf ("\"", false, false);
-                detail = quoted.isNotEmpty()
-                             ? ("this rack has no way to \"" + quoted + "\"")
-                             : juce::String ("this rack does not understand one of the changes asked for");
-            }
-            // "not in the loadable plugin list" is the other one a person reads often, and it is
-            // true but mechanical: it means the rack could not find that plugin to load.
-            else if (detail.containsIgnoreCase ("not in the loadable plugin list"))
-            {
-                const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
-                                          .upToLastOccurrenceOf ("\"", false, false);
-                detail = (quoted.isNotEmpty() ? quoted : juce::String ("that plugin"))
-                       + " is not one this rack can load here";
-            }
-            l = detail;
-        }
-        out.add (l);
-    }
-    if (out.isEmpty()) return t;
-    // Led by the plain sentence when the rack's own first line is the protocol's, not a person's.
-    auto joined = out.joinIntoString (" - ");
-    if (joined.startsWithIgnoreCase ("the batch was refused"))
-        joined = "I could not make that change" + joined.fromFirstOccurrenceOf ("started", false, false);
-    return joined;
-}
+// A RACK'S REFUSAL, IN WORDS: moved to EJRefusalLine.h on 20 Oct 2026 so the CLIENT can use the
+// same composer for what Details discloses (his 09:12 run). One composer, two readers.
 
 void ExecutorDo::doOp (const ToolCall& call, Done done)
 {
@@ -707,7 +788,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
             // to whoever sent the ops; a person has no "op 1". Translated here, at the one place the
             // rack's refusal becomes a person's line, and the raw string stays as the technical half
             // where it belongs.
-            const auto userLine = sentence.isNotEmpty() ? plainRefusal (sentence)
+            const auto userLine = sentence.isNotEmpty() ? echojay::plainRefusal (sentence)
                                                         : juce::String ("that change was not applied");
             if (technical.isNotEmpty())
                 done (ToolOutcome::failureFor ("not_applied", technical, userLine));
@@ -737,14 +818,35 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
     });
 }
 
-// ---- FIX 1(b): THE VALUE READ-BACK ---------------------------------------------------------------------
-// Read every parameter the call asked for and compare it with what the slot now holds. Three outcomes, and
-// the middle one is the one that was missing:
-//   every value matches                    -> applied, naming them
-//   some do not                            -> NOT APPLIED, naming each with asked vs actual
-//   none of them can be read at all        -> applied-but-unconfirmed, said plainly rather than claimed
-// The tolerance is per magnitude rather than absolute: a device stores 18 ms as 18.0 and a ratio as 4.0,
-// but a dB value may round, and comparing 0.1 dB with == would make an honest apply look like a failure.
+// ---- WHERE A BAND READ-BACK COMES FROM (19 Oct 2026, his 17:09 run) ---------------------------
+// *"If the set applies only band 1, fix the multi-band set; if they landed, the read-back text is
+// stale, so read the live bands."*  They landed - `EXACT built-in apply, 3 band(s), 0 skipped`.
+//
+// ONE ORDER, AND `dialSummary` IS NOT IN IT. My 15:36 fix read `dialSummary` first, and on the OWN
+// rack that field is the EJDialSummary DEBUG ROW, because its one fill site is dialSummaryRow(i).
+// It was never exposed only because his EQ sets were all on Links, where the field is empty. A
+// debug line reported as a read-back is a worse answer than none.
+//
+//   liveBands   the EQ's own describeBands(), composed under its model lock - the live truth
+//   settings    the slot's composed card text; RECOMPOSED on a dial, so it can lag a band move
+//   (nothing)   absent, reported as unreadable - never invented from the request
+static juce::String bandReadBackFor (const SlotRead& sl)
+{
+    if (sl.liveBands.isNotEmpty()) return sl.liveBands;
+    return sl.settings;
+}
+
+static bool isASwitchNotWorthConfessing (const juce::var& asked)
+{
+    if (asked.isBool()) return true;                      // true/false: a switch, by type
+    if (asked.isInt() || asked.isInt64())                 // 0/1 as an integer: a switch, by range
+    {
+        const auto n = (juce::int64) asked;
+        return n == 0 || n == 1;
+    }
+    return false;                                         // a double, or anything else: a figure
+}
+
 void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyTo,
                                 const juce::var& edits, juce::String sentence, Done done, int attempt)
 {
@@ -779,15 +881,51 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
 
     // WHOSE KNOBS THESE ARE: the tolerance is the control's own ladder, and the map is found by the
     // plugin's name - so the `set` path reads it off the rack exactly as the add path does.
-    juce::String slotName;
+    // READ ONCE, used twice (19 Oct 2026): the slot's name for the row, and the slot's own composed
+    // settings text as the EQ bands' read-back. One read, for the reason checkSlotValues gives: two
+    // reads of a rack a moment apart can disagree, and then the row's name and its figures would
+    // belong to different moments.
+    juce::String slotName, slotSettingsText;
     {
         const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
                                                : (src_.ownRack  ? src_.ownRack()          : RackRead());
         if (rack.valid)
             for (const auto& sl : rack.slots)
-                if (sl.n == slot1) { slotName = sl.name; break; }
+                if (sl.n == slot1)
+                {
+                    slotName = sl.name;
+                    slotSettingsText = bandReadBackFor (sl);
+                    break;
+                }
     }
     juce::StringArray matched, missed, unreadable, matchedPlain, missedPlain;
+
+    // ---- AN EQ BAND IS A SETTING ON THE SET PATH TOO (19 Oct 2026, his 15:36 run) --------------
+    //
+    // *"'set slot 1: bell 300 Hz -3 dB Q 1.2, highshelf 8000 Hz +3 dB Q 0.7' on an existing EchoJay
+    // EQ came back 'I could not read these values back to confirm them'. The add path reads eq_bands
+    // back (passed at 15:30); make the set path read the bands back too."*
+    //
+    // The add path's read-back went into checkSlotValues on 13:54 and this function never got it. A
+    // band-only set therefore asked for NOTHING by this function's count: `asked` fell back to the
+    // root, whose one property is an eq_bands ARRAY, and the loop below skips anything that is not a
+    // number. Nothing matched, nothing missed, so the "none of them could be read" branch fired on a
+    // set that had in fact landed - the same shape of false report as his 12:36 refusal.
+    //
+    // A band is not a numeric control and cannot go through slotParam, so the read-back is the
+    // slot's own composed settings text, taken from the rack rather than from the request. Same
+    // source, same words and same wording as checkSlotValues: "bell 300 Hz, -3.0 dB, Q 1.20".
+    if (root != nullptr)
+        if (auto* bands = root->getProperty ("eq_bands").getArray(); bands != nullptr && ! bands->isEmpty())
+        {
+            if (slotSettingsText.isNotEmpty())
+            {
+                matched.add ("slot " + juce::String (slot1) + " eq_bands: " + slotSettingsText);
+                matchedPlain.add (slotSettingsText);
+            }
+            else
+                unreadable.add ("eq_bands");
+        }
     for (auto& kv : asked->getProperties())
     {
         const auto id = kv.name.toString();
@@ -810,7 +948,10 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
                                   "be read, so it was confirmed by the knob's position)");
                 continue;
             }
-            unreadable.add (id); continue;
+            // HIS 18:07 RULE, AT THE ONE PLACE IT BELONGS: a switch that could not be read is not
+            // news. The figure next to it still is, and a switch that READ fine was compared above.
+            if (! isASwitchNotWorthConfessing (want)) unreadable.add (id);
+            continue;
         }
         const double tol = readBackTolerance (slotName, id, wanted);
         if (std::abs (got - wanted) <= tol)
@@ -864,7 +1005,8 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         auto o = ToolOutcome::failureFor ("not_applied", why,
                                           "The values did not take: " + missedPlain.joinIntoString (", ")
                                           + (matchedPlain.isEmpty() ? juce::String()
-                                                                    : ". What did land: " + matchedPlain.joinIntoString (", ")));
+                                                                    : ". What did land: "
+                                                                        + echojay::params::plainReadBackList (matchedPlain)));
         o.result = juce::var (r);
         done (o);
         return;
@@ -881,7 +1023,8 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     r->setProperty ("confirmed", true);
     done (ToolOutcome::successFor (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
                                    "read back: " + matched.joinIntoString (", "),
-                                   "read back " + matchedPlain.joinIntoString (", ")));   // Sean's #6
+                                   "read back "
+                                     + echojay::params::plainReadBackList (matchedPlain)));   // Sean's #6
 }
 
 
@@ -956,7 +1099,7 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
                                            : (src_.ownRack  ? src_.ownRack()          : RackRead());
     if (rack.valid)
         for (const auto& sl : rack.slots)
-            if (sl.n == slot1) { out.slotName = sl.name; break; }
+            if (sl.n == slot1) { out.slotName = sl.name; out.slotLanded = slot1; break; }
     // ---- BOTH SHAPES, BECAUSE A THIRD PARTY USES THE OTHER ONE (16 Oct 2026) -------------------
     // This read `params` (and the flat form) only. A THIRD-PARTY slot is dialled through `controls`,
     // keyed by the plugin's own control name - the shape the contract names and the shape Sean's four
@@ -981,7 +1124,7 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
         if (rack.valid)
             for (const auto& sl : rack.slots)
                 if (sl.n == slot1)
-                { fromTheSlot = sl.dialSummary.isNotEmpty() ? sl.dialSummary : sl.settings; break; }
+                { fromTheSlot = bandReadBackFor (sl); break; }
         out.askedCount += bands->size();
         if (fromTheSlot.isNotEmpty())
         {
@@ -1003,7 +1146,13 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
         ++out.askedCount;
         const double wanted = (double) want;
         double got = 0.0;
-        if (! src_.slotParam || ! src_.slotParam (applyTo, slot1, id, got)) { out.unreadable.add (id); continue; }
+        if (! src_.slotParam || ! src_.slotParam (applyTo, slot1, id, got))
+        {
+            // Same rule, same reason (his 18:07 run): an unreadable SWITCH is dropped, an unreadable
+            // figure is named. See isASwitchNotWorthConfessing for why this is not at the top of the loop.
+            if (! isASwitchNotWorthConfessing (want)) out.unreadable.add (id);
+            continue;
+        }
         const double tol = readBackTolerance (out.slotName, id, wanted);
         if (std::abs (got - wanted) <= tol)
         {
@@ -1224,9 +1373,58 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // first two were the ones I guessed, this is the one that was actually open.
     if (asks.empty())
     {
-        finish (juce::var (new juce::DynamicObject()),
-                echojay::params::landedRowSentence (opName, {}, {}, {}),
-                landedSentence);
+        // ---- AND AN ADD WITH NO SETTINGS STILL HAS A POSITION (his 11:27 item 2, 21 Oct 2026) --
+        //
+        // *"Include the slot position the add actually landed on in the read-back, so B can state
+        // the order as fact instead of "the order hasn't read back yet"."*
+        //
+        // THIS DOOR IS THE ONE THAT NEEDED IT MOST, and my first cut missed it: with nothing to read
+        // back there is no SettingsCheck to carry the position, so an add that asked for no values -
+        // which is most of B's adds - had no order to state at all. Found by my own SL leg failing
+        // for the wrong reason (its fixture used `settings`, not `settings_structured`), and the
+        // fixture being wrong is what made this door visible.
+        //
+        // THE SAME RESOLUTION AND THE SAME REFUSAL as the read-back's: one slot answering to the
+        // name is the answer; several with a placement takes the placement; several with none claims
+        // NOTHING, because a number here would be B stating a wrong order as fact.
+        int at = 0; juce::String atName;
+        if (opName == "add" || opName == "replace")
+        {
+            const auto wantName = argString (call, "name").trim();
+            const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                                   : (src_.ownRack  ? src_.ownRack()          : RackRead());
+            if (rack.valid && wantName.isNotEmpty())
+            {
+                std::vector<int> hits;
+                for (const auto& sl : rack.slots)
+                    if (echojay::agent::namesMatchLoosely (sl.name, wantName)) hits.push_back (sl.n);
+                bool byAfter = false;
+                const int after = argInt (call, "after", byAfter);
+                if (hits.size() == 1) at = hits.front();
+                else if (hits.size() > 1 && byAfter && after >= 0)
+                    for (int h : hits) if (h == after + 1) at = h;
+                if (at >= 1)
+                    for (const auto& sl : rack.slots) if (sl.n == at) atName = sl.name;
+                EchoJay_NSLog (("EJAgent: " + opName + " \"" + wantName + "\" carried no settings; the "
+                                "landed position is " + (at >= 1 ? "slot " + juce::String (at)
+                                                                 : juce::String ("NOT claimed"))
+                                + " (" + juce::String ((int) hits.size()) + " slot(s) match by name, after="
+                                + (byAfter ? juce::String (after) : juce::String ("-"))
+                                + ") - his 11:27 item 2").toRawUTF8());
+            }
+        }
+        auto* ro = new juce::DynamicObject();
+        if (at >= 1)
+        {
+            ro->setProperty ("slot_landed", at);
+            if (atName.isNotEmpty()) ro->setProperty ("slot_landed_name", atName);
+        }
+        finish (juce::var (ro),
+                echojay::params::landedRowSentence (opName, atName, {}, {}, at),
+                landedSentence
+                + (at >= 1 ? "; it is slot " + juce::String (at) + " on the rack, read back from the "
+                             "rack itself - state the order from this, not from the order you sent"
+                           : juce::String()));
         return;
     }
 
@@ -1242,16 +1440,26 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         all.missedIds.addArray (c.missedIds);
         all.matchedPlain.addArray (c.matchedPlain);
         all.missedPlain.addArray (c.missedPlain);
-        if (all.slotName.isEmpty()) all.slotName = c.slotName;
+        if (all.slotName.isEmpty()) { all.slotName = c.slotName; all.slotLanded = c.slotLanded; }
     }
     // THE ROW READS AS A SENTENCE, THE MODEL KEEPS THE STRUCTURAL LINE (18 Oct 2026). With no
     // settings asked there is nothing to read back, so the row is one word and a full stop; the
     // slot count the model needs as evidence travels on its own half, as it always did.
     if (all.askedCount == 0)
     {
-        finish (juce::var (new juce::DynamicObject()),
-                echojay::params::landedRowSentence (opName, all.slotName, {}, {}),
-                landedSentence);
+        auto* ro = new juce::DynamicObject();
+        if (! slotAmbiguous && all.slotLanded >= 1)
+        {
+            ro->setProperty ("slot_landed", all.slotLanded);
+            if (all.slotName.isNotEmpty()) ro->setProperty ("slot_landed_name", all.slotName);
+        }
+        const int at = slotAmbiguous ? 0 : all.slotLanded;
+        finish (juce::var (ro),
+                echojay::params::landedRowSentence (opName, all.slotName, {}, {}, at),
+                landedSentence
+                + (at >= 1 ? "; it is slot " + juce::String (at) + " on the rack, read back from the "
+                             "rack itself - state the order from this, not from the order you sent"
+                           : juce::String()));
         return;
     }
 
@@ -1349,6 +1557,22 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     auto* r = new juce::DynamicObject();
     r->setProperty ("applied", true);                 // the STRUCTURE landed; that is what this says
     r->setProperty ("op", opName);
+    // ---- WHERE IT LANDED (his 11:27 item 2, 21 Oct 2026) ---------------------------------------
+    //
+    // *"Include the slot position the add actually landed on in the read-back, so B can state the
+    // order as fact instead of "the order hasn't read back yet"."*
+    //
+    // Withheld in exactly one case, and it is the case the rest of this function already turns on:
+    // when the rack holds several slots of that name and the server stated no placement, THIS
+    // READ-BACK CANNOT SAY WHICH ONE THE ADD MADE. A number here would then be a guess wearing the
+    // word "landed", and B would state a wrong order as fact - worse than B saying it doesn't know,
+    // which is what the absence of this field means.
+    const int landedAt = slotAmbiguous ? 0 : all.slotLanded;
+    if (landedAt >= 1)
+    {
+        r->setProperty ("slot_landed", landedAt);
+        if (all.slotName.isNotEmpty()) r->setProperty ("slot_landed_name", all.slotName);
+    }
     r->setProperty ("settings_asked",      all.askedCount);
     r->setProperty ("settings_applied",    all.matched.joinIntoString (", "));
     r->setProperty ("settings_unapplied",  all.missed.joinIntoString ("; "));
@@ -1372,11 +1596,13 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         r->setProperty ("settings_confirmed", false);
         finish (juce::var (r),
                 // Same rule: the add landed, the SETTINGS did not. Lead with the part that is true.
-                "Added it, but the settings did NOT take: " + askedPlain
+                "Added it" + (landedAt >= 1 ? " in slot " + juce::String (landedAt) : juce::String())
+                + ", but the settings did NOT take: " + askedPlain
                 + (all.missedPlain.isEmpty() ? juce::String()
                                              : " - " + all.missedPlain.joinIntoString (", "))
                 + (all.matchedPlain.isEmpty() ? juce::String()
-                                              : ". What did land: " + all.matchedPlain.joinIntoString (", ")),
+                                              : ". What did land: "
+                                                  + echojay::params::plainReadBackList (all.matchedPlain)),
                 // ...and the model's half, which carries the instruction and the ids (Sean's #10: it is
                 // NOT shown on the row).
                 "Added it, but the settings did NOT take: " + all.missed.joinIntoString ("; ")
@@ -1412,10 +1638,14 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
                 // SEAN'S #10: the instruction that used to finish this sentence - "Report it as ADDED
                 // ... do NOT state any figure" - is addressed to the MODEL and he read it in his step
                 // details. It now travels on the model's line only.
-                "Added it. Settings not confirmed: " + why
+                "Added it" + (landedAt >= 1 ? " in slot " + juce::String (landedAt) : juce::String())
+                + ". Settings not confirmed: " + why
                 + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
                 + ", so there is no evidence they were applied.",
-                "Added it. Settings not confirmed: " + why
+                "Added it" + (landedAt >= 1 ? " in slot " + juce::String (landedAt) + " on the rack "
+                                              "(read back from the rack, so the order is a fact)"
+                                            : juce::String())
+                + ". Settings not confirmed: " + why
                 + (unreadablePlain.isEmpty() ? juce::String() : " (" + unreadablePlain + ")")
                 + ", so there is no evidence they were applied. Report it as ADDED, with its settings "
                   "not confirmed. Do NOT call the add itself 'not applied', and do NOT state any "
@@ -1439,10 +1669,15 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // The slot counts and the ids stay on the model's half, which is where the evidence belongs.
     finish (juce::var (r),
             echojay::params::landedRowSentence (opName, all.slotName,
-                                                all.matchedPlain.joinIntoString (", "),
-                                                unreadablePlain),
+                                                echojay::params::plainReadBackList (all.matchedPlain),
+                                                unreadablePlain, landedAt),
             // the MODEL's half: the ids and the slot numbers it needs to retry or explain
-            landedSentence + "; read back " + landedPlain + " - " + all.matched.joinIntoString (", ")
+            landedSentence
+            + (landedAt >= 1 ? "; it is slot " + juce::String (landedAt) + " on the rack, read back "
+                               "from the rack itself - state the order from this, not from the order "
+                               "you sent"
+                             : juce::String())
+            + "; read back " + landedPlain + " - " + all.matched.joinIntoString (", ")
             + (unreadablePlain.isEmpty() ? juce::String()
                                          : ". Not readable, so not confirmed: " + unreadablePlain));
 }

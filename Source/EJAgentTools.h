@@ -225,6 +225,15 @@ public:
     // it if something can turn the call's `channel` argument into a track NAME, and only the executor holds
     // the registry. "" means "the channel you already have open", which needs no words.
     virtual juce::String describeOtherChannel (const ToolCall& call) { juce::ignoreUnused (call); return {}; }
+    /** "Only suggest plugins EchoJay can auto-dial", his Settings toggle, asked FRESH on every
+        request (his 09:49: an unmapped plugin went in with it on, because neither agent body
+        carried it - `autoDial` existed only on the chat road). Defaulted false so an executor that
+        does not know the question behaves exactly as before. */
+    virtual bool autoDialOnly() { return false; }
+    /** The genre the header's selector shows, asked fresh on every request. Empty when nothing is
+        set, and then the key is absent rather than "" - B's loudness default keys on it (B, 21 Oct:
+        it arrived empty because only the chat road sent it). */
+    virtual juce::String genreName() { return {}; }
 
     // ---- WHAT A BUILD WOULD REMOVE, SAID BEFORE THE PRESS (16 Oct 2026, Sean's step 7.4) -------------
     // His report: "make the kick punchier" on a Link already holding Transient Master and Renaissance

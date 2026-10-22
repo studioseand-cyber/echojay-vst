@@ -41,7 +41,21 @@ echojay::agent::DoSinks sinks;
 // And the V2's OWN rack never went anywhere at all: writeChainEditCommand refuses an empty uid,
 // so every agent `do` on the open rack returned -1 and "that rack would not take the change".
 // Two separate silent failures behind one line.
-sinks.applyChainOps = [this] (const juce::String& uid, const juce::var& ops,
+// ITEM 2 (19 Oct 2026): the rule lives in EJAgentHome.h as echojay::agentIntentForOps, where a
+// guard can reach it by name. This wrapper only adds the log line, because the reason an arm was
+// WITHHELD is evidence and must not be silent. A local lambda rather than a file-static function:
+// this is all inside the constructor, where a function definition is not allowed.
+auto intentForOps = [] (const juce::var& ops)
+{
+    juce::String whyNot;
+    const auto intent = echojay::agentIntentForOps (ops, &whyNot);
+    if (intent.isEmpty() && whyNot.containsIgnoreCase ("slot OUT trim"))
+        EchoJay_NSLog (("EJAgentHome: the level match is NOT armed for this batch - " + whyNot
+                        + " (Sean's item 2, 19 Oct: B's value wins, don't fight it)").toRawUTF8());
+    return intent;
+};
+
+sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce::var& ops,
                               std::function<void (bool, juce::String, juce::String)> cb)
 {
     // ---- THE V2'S OWN RACK: applied in-process, through the same applier a user's Apply uses --
@@ -73,15 +87,64 @@ sinks.applyChainOps = [this] (const juce::String& uid, const juce::var& ops,
         // an undo restores the figure the user had rather than the AUTO value. A batch that arrives
         // from another instance keeps the default (false), which is the remote move the op's own
         // comment defends.
+        // Computed BEFORE the apply, because the callback below cannot see `ops` and the one thing
+        // the editor needs from this batch is whether it put a plugin in.
+        // ---- level_match:false ON THE OWN RACK TOO (B's contract of 20 Oct 2026) -------------
+        // The Link reads the field off the wire; the open rack has no wire, so it is read here, from
+        // the same ops. `putAPluginIn` is the only thing the editor uses to decide whether to arm the
+        // post-add match, so withdrawing it is how the field is honoured on this road.
+        bool lmOff = false;
+        if (auto* oa = ops.getArray())
+            for (const auto& ov : *oa)
+                if (auto* oo = ov.getDynamicObject())
+                    if (const auto lm = oo->getProperty ("level_match"); lm.isBool() && ! (bool) lm)
+                    { lmOff = true; break; }
+        if (lmOff)
+            EchoJay_NSLog ("EJLoudness: this own-rack batch carried level_match:false - no post-add "
+                           "match is armed, the slot's OUT stays at 0 dB, and the limiter keeps the "
+                           "level it set (B's contract of 20 Oct)");
+        const bool putAPluginIn = ! lmOff && (intentForOps (ops) == "build");
+        // ---- B'S DIAL ON THE OPEN RACK (his 11:5x item 1, 21 Oct 2026) -----------------------
+        //
+        // *"Arm your limiter target loop whenever B's add carries dial_on_playback target_lufs, even
+        // after a heard build: measure after the limiter on the next playback and correct the input
+        // to the target (input only, ceiling kept). The build hit about -5.7 against -8 because
+        // nothing measured the result."*
+        //
+        // THE FIELD WAS NEVER READ ON THIS ROAD AT ALL. dial_on_playback is handled in
+        // LinkProcessor's chain-cmd apply, which is the Link's road; his mix bus is the V2's OWN
+        // rack, where the agent's ops come through this in-process applier - so the target travelled
+        // with the add, was parsed by nobody, and the limiter kept whatever input gain the build
+        // wrote open-loop. -5.7 against -8 is exactly what "nothing measured the result" looks like.
+        //
+        // AND IT IS INDEPENDENT OF BOTH GATES ABOVE, deliberately:
+        //   - level_match:false withdraws the slot-OUT MATCH and nothing else. B sends it on the
+        //     same adds that carry a target, precisely because the LIMITER owns the level - so
+        //     reading it as "don't measure anything" is how a loudness build ended up unmeasured;
+        //   - postAddMatchRefusal (mix bus / master / a chain with a limiter) refuses a match that
+        //     would write a slot's OUT after the limiter. A limiter target writes the limiter's
+        //     INPUT, which is the one correction his ruling of 20 Oct actually asks for there.
+        // Neither may gate this, and the log says so where someone would be tempted to add it.
+        const auto dials      = LoudnessLoop::dialsOnPlaybackFromOps (ops);
+        const auto addedNames = LoudnessLoop::addedNamesFromOps (ops);
         proc_.getChainHost().applyChainEdits (
             std::move (parsed), /*expectedRevision*/ -1, /*baseSlots*/ {},
-            [this, cb] (const juce::StringArray& results, int appliedCount, bool abortedBeforeStart)
+            [this, cb, putAPluginIn, dials, addedNames] (const juce::StringArray& results, int appliedCount, bool abortedBeforeStart)
             {
                 // SEAN'S #3, the own-rack arm: applyChainEdits bumps the revision, which the panel's
                 // own signature watches - but the agent can change a rack this window is NOT viewing
                 // (it has a Link selected while working on the open rack), and then nothing rebuilt.
                 if (! abortedBeforeStart && appliedCount > 0 && proc_.onAgentChangedRack)
-                    proc_.onAgentChangedRack ({});
+                    proc_.onAgentChangedRack ({}, putAPluginIn);
+                // ...AND B'S DIAL, AFTER that hook on purpose: the hook may have armed the inferred
+                // post-add match, and B's target is EXPLICIT. One loop, so the later arm replaces the
+                // earlier one, and the precedence is the right way round - we can only infer that a
+                // build is a loudness build; B says it.
+                // ---- ONE PER SLOT (his 17:3x item 3) --------------------------------------
+                // Every dial in the batch, each resolved to ITS OWN slot by the name that op added,
+                // so three compressors in one build are three independent dials and not one.
+                if (! abortedBeforeStart && appliedCount > 0 && ! dials.empty())
+                    armDialsOnPlaybackOnOwnRack (dials, addedNames);
                 if (! cb) return;
                 if (abortedBeforeStart || appliedCount <= 0)
                     cb (false, results.isEmpty() ? juce::String ("the rack refused the change")
@@ -99,7 +162,12 @@ sinks.applyChainOps = [this] (const juce::String& uid, const juce::var& ops,
         return;
     }
     // ---- A LINK: written, then WAITED FOR, then reported ------------------------------------
-    const int seq = proc_.writeChainEditCommand (uid, ops, juce::var(), "agent", {});
+    const auto intent = intentForOps (ops);
+    if (intent.isNotEmpty())
+        EchoJay_NSLog (("EJAgentHome: this change puts a plugin in, so it goes out as intent=\"" + intent
+                        + "\" - the Link arms the same silent slot-OUT level match the Build button gets "
+                          "(Sean's item 2, 19 Oct)").toRawUTF8());
+    const int seq = proc_.writeChainEditCommand (uid, ops, juce::var(), "agent", {}, intent);
     if (seq < 0) { if (cb) cb (false, "that rack would not take the change", {}); return; }
     proc_.awaitChainAck (uid, seq, [this, uid, cb] (bool ok, juce::String sentence, juce::String technical, int)
     {
@@ -107,10 +175,15 @@ sinks.applyChainOps = [this] (const juce::String& uid, const juce::var& ops,
         // The 14 Oct refresh sits on the BUILD path; an `add` takes this one, so nothing told the
         // view - "stays empty / Reading 0 plugin(s) until I switch racks". Raised only on success,
         // and only here, where the Link has actually acknowledged the change.
-        if (ok && proc_.onAgentChangedRack) proc_.onAgentChangedRack (uid);
+        if (ok && proc_.onAgentChangedRack) proc_.onAgentChangedRack (uid, false);
         if (cb) cb (ok, sentence, technical);
     });
 };
+// ---- AND THE BUILD ROAD KEEPS A HANDLE ON THAT SAME FUNCTION (his 22 Oct ruling) -----------
+// Not a copy of its body: the function itself, so "apply these ops to that rack" has ONE
+// implementation whether the ops came from an add or from a build with no window open.
+applyOps_ = sinks.applyChainOps;
+
 // ---- ITEM 1 (Sean, 14 Oct 2026): A BUILD TAKES THE SAME ROAD THE BUILD BUTTON TAKES --------
 //
 // Two roads, one per target, and they are the SAME two the user's own Build press uses (the
@@ -140,6 +213,22 @@ sinks.afterMs = [] (int ms, std::function<void()> fn)
 // answer would let the rest of the round through.
 sinks.agentModeOn = [] { return echojay::agentmode::on(); };
 sinks.echoJayOnly = [this] { return proc_.getApi().getEchoJayOnly(); };
+// HIS "DON'T USE" MARKS, read live for the same reason (his 11:5x item 3). The name and the reason
+// he gave; the inventory withholds them either way, and this is what lets the model answer when he
+// asks for one by name instead of leaving a silent hole where a plugin used to be.
+sinks.dontUsePlugins = [this] () -> juce::var
+{
+    juce::Array<juce::var> out;
+    for (const auto& n : proc_.getApi().getDontUsePlugins())
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", n);
+        if (const auto why = proc_.getApi().dontUseReasonFor (n); why.isNotEmpty())
+            o->setProperty ("why", why);
+        out.add (juce::var (o));
+    }
+    return out.isEmpty() ? juce::var() : juce::var (out);
+};
 // ---- ITEM 10 (Sean, 13 Oct 2026): THE RACK'S OUT GAIN ------------------------------------------
 // Two different controls behind one op, because "the rack's OUT" is a different object on each
 // side: this instance's bus gain, or the Link's mixer-strip GAIN. Both are the control the
@@ -315,21 +404,37 @@ EJAgentHome::~EJAgentHome()
 // =============================================================================================
 void EJAgentHome::setBuildRoad (std::function<void (const juce::String&, const juce::String&)> road)
 {
+    // NOTHING WAITS ON THIS ANY MORE (his 22 Oct ruling). It used to service a parked build the
+    // moment a window attached, which was the only way a windowless build ever landed; a build
+    // now applies when it is made, so a window arriving afterwards has nothing to collect but the
+    // card - which the processor has been holding all along.
     buildRoad_ = std::move (road);
-    if (buildRoad_ && parkedBuild_ != nullptr) servicePark();   // a window opened: run what was waiting
 }
 
 void EJAgentHome::buildChain (const juce::String& uid, const juce::var& chainArray,
                               std::function<void (bool, juce::String)> cb)
 {
     // ---- ITEM 1 (Sean, 14 Oct 2026): A BUILD TAKES THE SAME ROAD THE BUILD BUTTON TAKES ------
-    // The road itself is still the editor's (loadChainFromJson / sendChainToLink), handed over as
-    // one function. Not re-implemented here: "two build paths that looked identical in the log is
+    // With a window, that road is the editor's own (loadChainFromJson / sendChainToLink), handed
+    // over as one function. With none, it is the road every agent `add` takes (his 22 Oct ruling,
+    // below). Neither is re-implemented here: "two build paths that looked identical in the log is
     // what let a whole class of failure sit undiagnosed".
     if (chainArray.getArray() == nullptr || chainArray.getArray()->isEmpty())
     { if (cb) cb (false, "that build carried no chain"); return; }
     auto* o = new juce::DynamicObject();
     o->setProperty ("chain", chainArray);
+    // ---- THE BUILD SAYS WHOSE IT IS (his 15:30 ruling, 21 Oct 2026) -------------------------
+    //
+    // *"...and make it impossible after any agent build."*
+    //
+    // IN THE BUILD ITSELF, not in a flag beside it. The road is shared with the Build button on
+    // purpose ("two build paths that looked identical in the log is what let a whole class of
+    // failure sit undiagnosed"), so the thing that differs has to TRAVEL with the build, and it
+    // cannot be left set from a previous build, which a member flag could. Read by
+    // loadChainFromJson (no auto input staging) and by finishChainBubbleWhenDialSettled (no
+    // limiter inserted) - BOTH of them the window's, which is why the windowless road below needs
+    // no marker to honour the same ruling: neither of its readers exists there.
+    o->setProperty ("from", "agent");
     const auto chainJson = juce::JSON::toString (juce::var (o), true);
     const int n = chainArray.getArray()->size();
 
@@ -337,6 +442,8 @@ void EJAgentHome::buildChain (const juce::String& uid, const juce::var& chainArr
     {
         EchoJay_NSLog (("EJAgent: build target uid=" + (uid.isEmpty() ? juce::String ("(local rack)") : uid)
                         + " slots=" + juce::String (n) + " - through the window's own build road").toRawUTF8());
+        lastBuildRoad_   = "window";
+        lastBuildRunKey_ = runKey_;
         buildRoad_ (uid, chainJson);
         if (cb) cb (true, "the build was sent to " + (uid.isEmpty() ? juce::String ("this rack")
                                                                    : juce::String ("that Link"))
@@ -344,64 +451,60 @@ void EJAgentHome::buildChain (const juce::String& uid, const juce::var& chainArr
         return;
     }
 
-    // ---- NO WINDOW: PARKED, NOT LOST, AND NOT PRETENDED ABOUT -------------------------------
+    // ---- NO WINDOW: IT APPLIES, BY THE ROAD THE AGENT'S OWN ADDS TAKE -----------------------
     //
-    // This is the one part of a run that does not yet survive a closed window, and it says so
-    // rather than failing quietly or claiming a landing. The step waits for a window; if one
-    // opens it takes the user's own road, and if none does it fails with that reason in plain
-    // words. Moving the build road itself to the processor is its own piece of work - it is ~750
-    // lines of the most load-bearing path in the plugin, and it drives the chain panel, the tab,
-    // the failed-plugin prompt and the chat's own follow-ups.
-    if (parkedBuild_ != nullptr)
+    // Sean, 22 Oct 2026: *"If the user has already pressed Go, a run with no window open finishes
+    // its build and applies it. The card, its chips and Undo all are there when a window reopens."*
+    // The reasoning, and what this road deliberately does NOT do, is in EJAgentHome.h.
+    //
+    // ONE THING TO SAY OUT LOUD ABOUT HIS 15:30 RULING: an agent build must not stage the input
+    // trim and must insert no limiter. On this road neither can happen BY CONSTRUCTION rather than
+    // by a flag being read correctly - computePreGainAtBuild belongs to loadChainFromJson and the
+    // limiter to finishChainBubbleWhenDialSettled, and both are the window's. The rig's N2 asserts
+    // it on the road a user actually has.
+    if (! applyOps_)
     {
-        if (parkedBuild_->cb) parkedBuild_->cb (false, "a second build arrived while the first was still "
-                                                       "waiting for this plugin's window to open");
-        parkedBuild_.reset();
-    }
-    parkedBuild_ = std::make_unique<ParkedBuild>();
-    parkedBuild_->uid = uid;
-    parkedBuild_->chainJson = chainJson;
-    parkedBuild_->slots = n;
-    parkedBuild_->sinceMs = juce::Time::currentTimeMillis();
-    parkedBuild_->cb = std::move (cb);
-    EchoJay_NSLog (("EJAgent: a build of " + juce::String (n) + " slot(s) is PARKED - no window is open, "
-                    "and building a rack is the one step that still needs one (item 0b)").toRawUTF8());
-    // poll rather than wait on a signal: a window attaching calls setBuildRoad, which services the
-    // park at once, and this is only the bound that stops it waiting for ever.
-    auto alive = alive_;
-    auto* self = this;
-    auto step = std::make_shared<std::function<void()>>();
-    *step = [alive, self, step]
-    {
-        if (! alive->load()) return;
-        if (self->parkedBuild_ == nullptr) return;              // already serviced
-        self->servicePark();
-        if (self->parkedBuild_ != nullptr)
-            juce::Timer::callAfterDelay (500, *step);
-    };
-    juce::Timer::callAfterDelay (500, *step);
-}
-
-void EJAgentHome::servicePark()
-{
-    if (parkedBuild_ == nullptr) return;
-    if (buildRoad_)
-    {
-        auto p = std::move (parkedBuild_);
-        EchoJay_NSLog (("EJAgent: the parked build is going now - a window opened after "
-                        + juce::String ((juce::Time::currentTimeMillis() - p->sinceMs) / 1000) + " s").toRawUTF8());
-        buildRoad_ (p->uid, p->chainJson);
-        if (p->cb) p->cb (true, "the build was sent to " + (p->uid.isEmpty() ? juce::String ("this rack")
-                                                                            : juce::String ("that Link"))
-                                + " (" + juce::String (p->slots) + " slot(s)), once this plugin's window "
-                                  "was opened - building a rack still needs it");
+        // Cannot happen with a constructed home - the sink and this road are assigned together in
+        // the constructor - and it is still said rather than crashed through, because the one
+        // thing this round is about is a build that reports what it did.
+        if (cb) cb (false, "that build could not be applied: this plugin has no road to its own rack");
         return;
     }
-    if (juce::Time::currentTimeMillis() - parkedBuild_->sinceMs < parkedBuildWaitMs) return;
-    auto p = std::move (parkedBuild_);
-    if (p->cb) p->cb (false, "building a rack needs this plugin's window open, and it was not opened - so "
-                             "nothing was built. Everything else in this run went through.");
-    EchoJay_NSLog ("EJAgent: the parked build gave up - no window within its bound, and it says so");
+    int nOld = 0;
+    if (uid.isEmpty())
+        nOld = proc_.getChainHost().getNumSlots();
+    else if (auto it = proc_.linkRackCache.find (uid); it != proc_.linkRackCache.end())
+        if (it->second.valid) nOld = (int) it->second.rack.slots.size();
+    // ---- THE OLD RACK IS ARCHIVED FIRST, AS THE WINDOW'S ROAD DOES ---------------------------
+    // loadChainFromJson archives the live rack before it clears it, "so a build over a populated
+    // rack is recoverable from chain_archive/" - protection that sits BESIDE undo, not instead of
+    // it. A build with no window has the same user and the same risk, so it gets the same belt;
+    // without this line the windowless road would be the one road that could not be recovered
+    // from, and nobody would find that out until they needed it. No-ops on an empty rack.
+    if (uid.isEmpty() && nOld > 0)
+        proc_.getChainHost().archiveCurrentRack ("replaced by an agent build with no window open");
+    const auto wire = ChainHost::chainArrayToBuildWireOps (*chainArray.getArray(), nOld);
+    lastBuildRoad_   = "processor";
+    lastBuildRunKey_ = runKey_;
+    EchoJay_NSLog (("EJAgent: build target uid=" + (uid.isEmpty() ? juce::String ("(local rack)") : uid)
+                    + " slots=" + juce::String (n) + " - NO WINDOW IS OPEN, so it goes down the road the "
+                      "agent's own adds take: " + juce::String (nOld) + " removed, " + juce::String (n)
+                    + " added (his 22 Oct ruling)").toRawUTF8());
+    applyOps_ (uid, wire, [cb, n, uid] (bool ok, juce::String sentence, juce::String technical)
+    {
+        juce::ignoreUnused (technical);
+        if (! cb) return;
+        if (! ok)
+        {
+            cb (false, sentence.isNotEmpty() ? sentence
+                                             : juce::String ("that rack would not take the build"));
+            return;
+        }
+        cb (true, "the build was applied to " + (uid.isEmpty() ? juce::String ("this rack")
+                                                               : juce::String ("that Link"))
+                  + " (" + juce::String (n) + " slot(s)) with no window open - its card, its chips "
+                    "and Undo are in the chat when you open one");
+    });
 }
 
 // =============================================================================================
@@ -476,6 +579,209 @@ void EJAgentHome::agentTranscript (const juce::String& role, const juce::String&
         break;
     }
     if (! windowAttached) parkLine (role, text, live);
+}
+
+// ---- B'S dial_on_playback, ON THE RACK THIS WINDOW HAS OPEN (his 11:5x item 1, 21 Oct 2026) ----
+//
+// *"Arm your limiter target loop whenever B's add carries dial_on_playback target_lufs, even after a
+// heard build: measure after the limiter on the next playback and correct the input to the target
+// (input only, ceiling kept). The build hit about -5.7 against -8 because nothing measured the
+// result."*
+//
+// His 11:5x build was on the MIX BUS - the V2's own rack - and every line of dial_on_playback
+// handling in this build lived on the Link's road (LinkProcessor's chain-cmd apply). So the field
+// arrived, was read by nobody, and the limiter kept the input gain the build had written open-loop.
+// Nothing measured it, which is the whole of why it landed 2.3 dB short.
+//
+// ONE SHAPE, TWO JOBS, told apart by the key B sends - the same split the Link's road makes:
+//   target_lufs   a LIMITER's loudness target -> the loudness loop, aimed at that limiter's INPUT
+//   target_gr_db  a COMPRESSOR's GR target    -> a calibration block, the road agent-off takes
+// Nothing else about the two is alike: one drives level into a ceiling, the other hunts a GR band.
+// ---- EVERY DIAL IN THE BATCH, EACH ON ITS OWN SLOT (his 17:3x item 3, 21 Oct 2026) ------------
+//
+// *"B will send dial_on_playback on every compressor after the first in a build, so you set it from
+// its slot's real input. Confirm that works for several slots in one build (not just the last), each
+// dialled independently."*
+//
+// IT DID NOT WORK, for two reasons, and only one of them was the reading:
+//   1. every reader stopped at the FIRST op carrying a dial (fixed in dialsOnPlaybackFromOps);
+//   2. calibStart stores ONE loop per rack uid, so arming the second dial would have replaced the
+//      first - the last compressor dialled and the rest dropped without a word. calibStartMany is
+//      the road built for "ONE HOLD PER COMPRESSOR" (30 Sep) and it has to be given all of them AT
+//      ONCE, which is why this takes the whole batch rather than being called in a loop.
+//
+// Each dial's slot is resolved from ITS OWN op's name, by identity, so the dials do not depend on
+// their order in the batch and a build whose plugins land out of order still dials the right ones.
+void EJAgentHome::armDialsOnPlaybackOnOwnRack (const std::vector<LoudnessLoop::DialOnOp>& dials,
+                                               const juce::StringArray& addedNames)
+{
+    if (dials.empty()) return;
+    auto& host = proc_.getChainHost();
+    std::vector<echojay::CalibLoop::Config> cfgs;
+    int limiterTargets = 0;
+
+    for (const auto& d : dials)
+    {
+        const auto names = d.name.isNotEmpty() ? juce::StringArray { d.name } : addedNames;
+        // A LIMITER TARGET takes the loudness road and there is at most one: a rack has one place
+        // where loudness is decided. A second is reported rather than silently preferred.
+        if (LoudnessLoop::dialIsLimiterTarget (d.dial))
+        {
+            if (++limiterTargets > 1)
+            {
+                EchoJay_NSLog (("EJLoudness: this batch carries a SECOND limiter target (\"" + d.name
+                                + "\") - ignored. One rack has one loudness decision; the first one's "
+                                  "target stands and this is said rather than silently preferred.").toRawUTF8());
+                continue;
+            }
+            armDialOnPlaybackOnOwnRack (d.dial, names);
+            continue;
+        }
+        // A COMPRESSOR'S GR TARGET: its own slot, its own block, its own config.
+        const int at = LoudnessLoop::slotTheBatchAdded (host, names);
+        if (at < 0)
+        {
+            EchoJay_NSLog (("EJThreshold: a dial_on_playback names \"" + d.name + "\" but no slot on "
+                            "this rack answers to it - NOT dialled, and said so (his 17:09 lesson: a "
+                            "slot is an identity, not a position)").toRawUTF8());
+            continue;
+        }
+        juce::String why;
+        const auto block = echojay::CalibLoop::blockFromDialOnPlayback (d.dial, at, why);
+        if (block.getDynamicObject() == nullptr)
+        {
+            EchoJay_NSLog (("EJThreshold: slot " + juce::String (at + 1) + " (\""
+                            + host.getSlotInfo (at).name + "\") carried dial_on_playback but it could "
+                            "not be read as a calibration block - " + why + ". Nothing is dialled, and "
+                            "nothing claims to have been.").toRawUTF8());
+            continue;
+        }
+        echojay::CalibLoop::Config cfg;
+        juce::String whyCfg;
+        if (! echojay::CalibLoop::configFromBlock (block, host.getNumSlots(), /*bus*/ false,
+                                                   host.getSlotInfo (at).name, cfg, whyCfg))
+        {
+            EchoJay_NSLog (("EJThreshold: slot " + juce::String (at + 1) + "'s block is not usable - "
+                            + whyCfg.trim()).toRawUTF8());
+            continue;
+        }
+        if (whyCfg.isNotEmpty())
+            EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED (slot " + juce::String (at + 1)
+                            + ") - " + whyCfg.trim()).toRawUTF8());
+        cfg.slot    = at;                    // ITS OWN slot, whatever the block said
+        cfg.plugin  = host.getSlotInfo (at).name;
+        cfg.purpose = echojay::CalibLoop::Purpose::buildHold;   // one window, one write, no promise
+        cfgs.push_back (cfg);
+    }
+
+    if (cfgs.empty()) return;
+    juce::StringArray named;
+    for (const auto& c : cfgs) named.add (c.plugin + " (slot " + juce::String (c.slot + 1) + ")");
+    EchoJay_NSLog (("EJThreshold: the OPEN RACK starts " + juce::String ((int) cfgs.size())
+                    + " dial_on_playback hold(s) from one build - " + named.joinIntoString (", ")
+                    + " - each on its own slot's real input, through calibStartMany so one does not "
+                      "replace another (his 17:3x item 3)").toRawUTF8());
+    const int started = proc_.calibStartMany ({}, cfgs);
+    if (started != (int) cfgs.size())
+        EchoJay_NSLog (("EJThreshold: " + juce::String (started) + " of " + juce::String ((int) cfgs.size())
+                        + " hold(s) actually started - the rest were refused by calibStart's own "
+                          "rules (a bus target, a switch as the actuator); their lines are above "
+                          "this one").toRawUTF8());
+}
+
+void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce::StringArray& addedNames)
+{
+    auto* dp = dial.getDynamicObject();
+    if (dp == nullptr) return;
+    auto& host = proc_.getChainHost();
+
+    // WHICH SLOT, BY IDENTITY. The shared rule, so this and the Link's nameTheMatchTarget cannot
+    // drift apart; -1 means no slot on the rack answers to anything this batch added, and then
+    // nothing is armed and the log says why rather than dialling a plugin nobody named.
+    const int added = LoudnessLoop::slotTheBatchAdded (host, addedNames);
+    if (added < 0)
+    {
+        EchoJay_NSLog (("EJLoudness: this own-rack batch carried dial_on_playback but no slot matches "
+                        "what it added (" + addedNames.joinIntoString (", ")
+                        + ") - NOT arming anything. A target needs the slot it belongs to, and the "
+                          "last slot is an index standing in for an identity (his 17:09 lesson).").toRawUTF8());
+        return;
+    }
+    const auto slotName = host.getSlotInfo (added).name;
+
+    // ---- (a) A LIMITER'S LOUDNESS TARGET ----------------------------------------------------
+    float targetLufs = 0.0f;
+    if (LoudnessLoop::dialIsLimiterTarget (dial, &targetLufs))
+    {
+        const auto ctl   = dp->getProperty ("control").toString().trim();
+        const auto ceilV = dp->getProperty ("ceiling");
+        const float ceil = (ceilV.isDouble() || ceilV.isInt() || ceilV.isInt64())
+                             ? (float) (double) ceilV : -0.1f;
+        // B'S LIMITING BUDGET, read the same way on this road as on the Link's (his 21 Oct ruling):
+        // absent is "that half is not bounded", never a number nobody sent.
+        const auto numOr = [dp] (const char* key)
+        {
+            const auto v = dp->getProperty (key);
+            return (v.isDouble() || v.isInt() || v.isInt64())
+                     ? (float) (double) v : std::numeric_limits<float>::quiet_NaN();
+        };
+        const float avgLim  = numOr ("avg_limit_db");
+        const float peakLim = numOr ("peak_limit_db");
+        // THE ARM RESETS THE CHAIN TALLIES (LoudnessLoop::arm), which is what makes "even after a
+        // heard build" mean something: the measurement is of the chain AS IT NOW STANDS, not of an
+        // integrated figure that predates the limiter. His -5.7 was never measured at all; this
+        // measures after the limiter on the next playback and corrects its INPUT.
+        if (proc_.loudnessLoop().armTargetFromDial (targetLufs, added, ctl, ceil, avgLim, peakLim))
+            EchoJay_NSLog (("EJLoudness: the OPEN RACK armed B's limiter target - "
+                            + juce::String ((double) targetLufs, 1) + " LUFS on slot "
+                            + juce::String (added + 1) + " (\"" + slotName + "\"), control \""
+                            + (ctl.isNotEmpty() ? ctl : juce::String ("(none named)"))
+                            + "\", ceiling " + juce::String ((double) ceil, 2) + " dBTP KEPT. It drives "
+                              "that slot's INPUT and nothing after it (his correction of 20 Oct), "
+                              "silently, on the next playback. NOT gated by level_match:false or by "
+                              "postAddMatchRefusal: both govern the slot-OUT match, and this is the "
+                              "limiter's input - the one correction his 20 Oct ruling asks for on a "
+                              "mix bus (his 11:5x item 1).").toRawUTF8());
+        else
+            EchoJay_NSLog ("EJLoudness: the open rack could NOT arm B's limiter target - see the arm "
+                           "line above for the reason. The limiter keeps the input gain the build "
+                           "wrote, which is what a build that does not know the field does.");
+        return;   // one road each: a limiter target is not a compressor dial
+    }
+
+    // ---- (b) A COMPRESSOR'S GR TARGET -------------------------------------------------------
+    // Translated into a calibration block rather than given a mechanism of its own, for the reason
+    // B's own contract gives: *"Agent off already sends a target block (gr_target_db with
+    // calibration), which the plugin dials during playback. No change is needed there."*
+    juce::String why;
+    const auto block = echojay::CalibLoop::blockFromDialOnPlayback (dial, added, why);
+    if (block.getDynamicObject() == nullptr)
+    {
+        EchoJay_NSLog (("EJThreshold: this own-rack add carried dial_on_playback but it could not be "
+                        "read as a calibration block - " + why + ". Nothing is dialled, and nothing "
+                        "claims to have been.").toRawUTF8());
+        return;
+    }
+    echojay::CalibLoop::Config cfg;
+    juce::String whyCfg;
+    if (! echojay::CalibLoop::configFromBlock (block, host.getNumSlots(), /*bus*/ false, slotName, cfg, whyCfg))
+    {
+        EchoJay_NSLog (("EJThreshold: the own-rack dial_on_playback block is not usable - "
+                        + whyCfg.trim()).toRawUTF8());
+        return;
+    }
+    if (whyCfg.isNotEmpty())
+        EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED - " + whyCfg.trim()).toRawUTF8());
+    // A BUILD HOLDS ONCE AND CLOSES: one window, one write, no promise opened and no rung hunted -
+    // the same purpose the Link stamps on a block that arrives with a build, and the thing that
+    // keeps this silent (Purpose::buildHold leaves askOwed empty).
+    cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+    EchoJay_NSLog (("EJThreshold: the OPEN RACK starts B's dial_on_playback hold - \"" + slotName
+                    + "\" slot " + juce::String (added + 1) + ", band " + juce::String (cfg.lo, 1)
+                    + "-" + juce::String (cfg.hi, 1) + " dB, dialling "
+                    + (cfg.params.isEmpty() ? juce::String ("the drive") : cfg.params.joinIntoString (" + "))
+                    + " (his 11:5x item 1: this field was read on the Link's road only)").toRawUTF8());
+    proc_.calibStart ({}, cfg);
 }
 
 void EJAgentHome::parkLine (const juce::String& role, const juce::String& text, bool live)
@@ -570,7 +876,9 @@ juce::String EJAgentHome::ensureRunKey()
         EchoJayProcessor::ChatEntry ce;
         ce.role = "assistant";
         ce.agentJson = juce::JSON::toString (toJson (seed), true);
-        proc_.chatHistory.push_back (std::move (ce));
+        // stage B: through the one door, with the RUN'S KEY as the entry's identity and the run's
+        // own chat as its home - never "the chat on screen", which is what his 19:51 card took.
+        proc_.appendChatEntry (std::move (ce), client_ != nullptr ? client_->runChatId() : juce::String(), runKey_);
         EchoJay_NSLog (("EJAgentHome: opened the run's record, key=" + runKey_
                         + " (asked for by the window's row - one record, one run)").toRawUTF8());
     }
@@ -595,7 +903,9 @@ void EJAgentHome::writeSnapshot()
         EchoJayProcessor::ChatEntry ce;
         ce.role = "assistant";
         ce.agentJson = juce::JSON::toString (toJson (seed), true);
-        proc_.chatHistory.push_back (std::move (ce));
+        // stage B: through the one door, with the RUN'S KEY as the entry's identity and the run's
+        // own chat as its home - never "the chat on screen", which is what his 19:51 card took.
+        proc_.appendChatEntry (std::move (ce), client_ != nullptr ? client_->runChatId() : juce::String(), runKey_);
         EchoJay_NSLog (("EJAgentHome: opened the run's record, key=" + runKey_).toRawUTF8());
     }
     if (sid.isNotEmpty()) lastSession_ = sid;
@@ -613,6 +923,17 @@ void EJAgentHome::writeSnapshot()
         if (v.closing.isEmpty() && prev.closing.isNotEmpty()) v.closing = prev.closing;
         carryAnswersForward (v, prev);   // by position and id, never the id alone (18 Oct 2026)
         e.agentJson = juce::JSON::toString (toJson (v), true);
+        // ---- AND THE STORED COPY FOLLOWS IT (his 09:24 fault, 22 Oct 2026) -----------------
+        //
+        // The row on the replay list used to be the only copy of a windowless run, and his chat
+        // showed nothing because of it. The stored log is updated by this run's ID on every change
+        // - the same door the stamp used to put the card there - so a window that opens at any
+        // moment renders the card from the STORE rather than from a list a chat switch can drop.
+        // The closing is passed as the visible text once there is one; while the run is going the
+        // card's own snapshot carries everything, and an empty string is never written over a
+        // sentence that is already there.
+        proc_.storeAgentCard (e.chatId, e.entryId.isNotEmpty() ? e.entryId : runKey_,
+                              e.agentJson, v.closing.trim());
         return;
     }
 }

@@ -1,4 +1,5 @@
 #include "EJAgentClient.h"
+#include "EJRefusalLine.h"   // the one refusal composer (20 Oct)
 #include "EJAgentFraming.h"
 #include "EJParamPlainNames.h"   // plainifyLine: a line the user reads carries words, not ids
 #include "EJNetCensus.h"   // no network worker outlives the last processor (06d item 1)
@@ -169,6 +170,9 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
     awaitIds_.clear();
     awaitSeen_ = false; planSubmitted_ = false; roundDoFailed_ = false;
     liveText_.clear(); roundTalk_.clear(); roundTalkFlushed_ = false;
+    // THE LEAK B'S SECTION 92 FOUND: none of these three was cleared here, so a session's SECOND
+    // run began believing the first run's closing was still up - and refused its own round 1.
+    closingAskSeen_ = false; userAskedForCheck_ = false; moveLandedThisRun_ = false;
     pendingAsk_ = {}; pendingAskId_.clear();
     playback_ = {}; playbackStepId_.clear();
     errorMessage_.clear(); doneSummary_.clear(); errorRetryable_ = false; costUsd_ = 0.0;
@@ -194,8 +198,12 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
         finishSession (State::Failed, errorMessage_);
         return;
     }
+    // His 09:49: the auto-dial-only toggle rides BOTH agent requests now, under the key agent off
+    // uses. Asked of the executor fresh rather than cached, because a toggle he flips mid-round
+    // means it.
     const auto body = buildStartBody (goal, executor_.startContext(), t.appVersion, chatId,
-                                      approvalModeWord());
+                                      approvalModeWord(), executor_.autoDialOnly(),
+                                      executor_.genreName());
     post ("/api/agent/start", body);
     startTimer (1000);
 }
@@ -214,8 +222,21 @@ void EJAgentClient::stop()
     flushRoundTalk();
     stopTimer();
     setState (State::Stopped);
-    listeners_.call ([] (Listener& l) { l.agentTranscript ("assistant", "Stopped."); });
+    // THE REASON IS THE CARD'S CLOSING LINE (his ruling, 20 Oct 2026): *"its own card says 'Stopped:
+    // you moved on to <channel>'"*. A bare "Stopped." is what every other caller means, and is what
+    // a Stop button press should say.
+    const auto line = stopReason_.isNotEmpty() ? "Stopped: " + stopReason_ : juce::String ("Stopped.");
+    stopReason_.clear();
+    listeners_.call ([&line] (Listener& l) { l.agentTranscript ("assistant", line); });
     changed();
+}
+
+void EJAgentClient::stopWithReason (const juce::String& reason)
+{
+    // Set BEFORE stop(), which consumes it - so a reason can never outlive the stop it describes and
+    // turn up on the next one.
+    stopReason_ = reason.trim();
+    stop();
 }
 
 void EJAgentClient::markUnfinishedStopped()
@@ -743,6 +764,10 @@ void EJAgentClient::onFrame (int generation, Frame f)
         }
         case FrameKind::ToolCall:
         {
+            // HIS WORDS ARE "WHEN THE NEXT STEP APPEARS", and that is HERE - a step appears the
+            // moment its tool_call arrives, not when execution begins (leg SF8 caught the
+            // difference: the line sat under a card that already had a new row on it).
+            statusLine_.clear();
             Step s;
             s.call = f.call;
             s.id = f.call.id.isNotEmpty() ? f.call.id : "tc_local_" + juce::String ((int) steps_.size() + 1);
@@ -955,6 +980,29 @@ void EJAgentClient::onFrame (int generation, Frame f)
             finishSession (State::Failed, "The agent stopped: " + errorMessage_);
             break;
         }
+        case FrameKind::Status:
+        {
+            // ---- B'S STATUS LINE (his 15:28 request, 21 Oct 2026) ---------------------------
+            //
+            // *"show the latest status text B sends during the wait ... replacing the previous one
+            // as each arrives."*
+            //
+            // THE LATEST WINS and nothing accumulates: this is the current word about a wait, not an
+            // entry in the run's history. A frame carrying no text clears nothing and shows nothing -
+            // it is ignored, and said, because an empty status is a frame B did not mean to send.
+            // A frame stamped with an OLD round is dropped: B sends `round` on every frame precisely
+            // so a late one cannot be drawn over a newer phase.
+            const auto t = f.text.trim();
+            if (t.isEmpty())
+            { log ("frame status with no text - ignored"); break; }
+            if (f.round > 0 && round_ > 0 && f.round < round_)
+            { log ("frame status \"" + t + "\" is from round " + juce::String (f.round)
+                   + " and we are on " + juce::String (round_) + " - dropped"); break; }
+            statusLine_ = t;
+            log ("frame status \"" + t + "\"");
+            changed();
+            break;
+        }
         default:
             // ---- WHAT IT SAID, NOT JUST THAT IT CAME (17 Oct 2026) ------------------------------
             // Sean's method for this round is to replay a real session's frames into the runner, and
@@ -1018,6 +1066,9 @@ int EJAgentClient::nextRunnable (const std::vector<Step>& steps, int round, bool
 
 void EJAgentClient::beginExecuting()
 {
+    // THE STATUS DESCRIBES A WAIT, AND THE WAIT IS OVER (his 15:28): a step is about to run, so
+    // the line goes rather than sitting under a card that has moved on.
+    statusLine_.clear();
     setState (State::Executing);
     changed();
     advance();
@@ -1088,10 +1139,22 @@ void EJAgentClient::runStep (Step& s)
     // The exemption needs no flag: the loudness loop reads the chain tallies in-process and never
     // comes through here. This is only the AGENT asking him to play again, which is what his change
     // removes.
-    if (isPlaybackWait (call) && closingAskSeen_ && ! userAskedForCheck_)
+    // ---- AFTER A MOVE, NEVER BEFORE ONE (19 Oct 2026, B's section 92, Sean first) -------------
+    // *"at 17:20 your check(playback) refusal fired in round 1 with nothing changed, and B no longer
+    // draws a step for it... refuse a playback check only after a move has landed in this run."*
+    // Keyed on the landed move, which is the fact the rule is about. See moveLandedThisRun_ for what
+    // closingAskSeen_ was getting wrong, and for why it was true in round 1 at all.
+    // BOTH, and the guards settled which: keyed on the landed move ALONE, eight legs went red with
+    // this refusal's own words in them (PW1/PW3/W3/W4/L4...) - runs that make a change and then
+    // measure it IN THE SAME ROUND, which is an ordinary thing for a run to do and not a second
+    // listen the user never asked for. Section 92 says never refuse BEFORE a move; section 86(1)
+    // says the CLOSING is what offers "Run a check". So a move must have landed AND the closing must
+    // be up. Round 1 with nothing changed runs (92). A mid-run measurement runs. Only a listen asked
+    // for after the run has closed is declined, which is the one case he was complaining about.
+    if (isPlaybackWait (call) && moveLandedThisRun_ && closingAskSeen_ && ! userAskedForCheck_)
     {
-        log ("playback wait REFUSED: the run has shown its closing and the user has not tapped "
-             "\"Run a check\" (B's section 86(1), Sean's no-second-listen change)");
+        log ("playback wait REFUSED: a change has landed in this run, the closing is up, and the user "
+             "has not tapped \"Run a check\" (B's section 86(1)/92, Sean's no-second-listen change)");
         completeStep (generation_, s.id, ToolOutcome::failureFor ("check_not_requested",
                 "a listen after a change needs the user's own \"Run a check\" - the closing offers it. "
                 "Nothing has been measured and nothing is waiting. Do not retry: close with the "
@@ -1121,7 +1184,8 @@ void EJAgentClient::runStep (Step& s)
                 closingAskSeen_ = true;
                 log ("the closing ask is up (" + id + "): only \"Run a check\" listens again now");
             }
-            setState (State::AwaitingAsk);
+            statusLine_.clear();   // waiting on HIM now, not on the server (his 15:28)
+    setState (State::AwaitingAsk);
             log ("ask card: \"" + pendingAsk_.question + "\" choices=" + pendingAsk_.labels.joinIntoString ("|")
                  + "  freeText=" + juce::String (pendingAsk_.allowFreeText ? "y" : "n")
                  + (pendingAsk_.choiceKey.isNotEmpty() ? "  key=" + pendingAsk_.choiceKey : juce::String())
@@ -1169,6 +1233,10 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
         s->undoToken = o.undoToken;
 
         s->result = o.result;
+        // B's section 92: this run has now moved something, which is what arms the no-second-listen
+        // refusal. A `do` that FAILED moved nothing and leaves it alone, so a refused empty set
+        // cannot arm it either.
+        if (s->isDo()) moveLandedThisRun_ = true;
         if (s->modelDetail.isNotEmpty())
             log ("step " + id + " landed line split: the row shows \"" + s->detail
                  + "\" and the model's sentences stay off it");
@@ -1183,7 +1251,22 @@ void EJAgentClient::completeStep (int generation, const juce::String& id, ToolOu
         // item 6(d)'s design, the full list of channels and uids. All of it went straight to the user.
         // The model's copy still travels untouched on s->result below; the user gets one plain line.
         s->detail      = echojay::params::plainifyLine (o.forTheUser());
-        s->modelDetail = o.errorMessage.isNotEmpty() ? o.errorMessage : o.errorCode;
+        // ---- AND DETAILS IS NOT THE ACK EITHER (20 Oct 2026, his 09:12 run) --------------------
+        // *"A refused step shows one plain line ... with the detail behind Details, never the ack
+        // text."*  Item 3 split the LINE from the model's string and sent the model's string to
+        // Details, which was right about the line and wrong about Details: what he opened was
+        //
+        //     the rack's ack: status=not_applied, reason=op 1 invalid: unknown operation
+        //     "set_level", slots now 2
+        //     op 1 invalid: unknown operation "set_level"
+        //
+        // - the edit protocol talking to whoever sent the ops. A person has no "op 1", no status
+        // field and no seq. So what is DISCLOSED is plainified by the same function that writes the
+        // line, and the raw ack still reaches the MODEL untouched on s->result below, which is the
+        // audience it was written for.
+        s->modelDetail = o.errorMessage.isNotEmpty()
+                            ? echojay::params::plainifyLine (echojay::plainRefusal (o.errorMessage))
+                            : o.errorCode;
         s->result = juce::var();
         if (s->isDo()) roundDoFailed_ = true;
         log ("step " + id + " FAILED code=" + o.errorCode + " \"" + o.errorMessage + "\"");
@@ -1278,7 +1361,7 @@ void EJAgentClient::postStepIfComplete()
             }
         }
     log ("STEP round=" + juce::String (round_) + " results=" + juce::String ((int) results.size()));
-    post ("/api/agent/step", buildStepBody (sessionId_, round_, results));
+    post ("/api/agent/step", buildStepBody (sessionId_, round_, results, executor_.autoDialOnly()));
 }
 
 void EJAgentClient::flushRoundTalk()
@@ -1292,6 +1375,8 @@ void EJAgentClient::flushRoundTalk()
 
 void EJAgentClient::finishSession (State s, const juce::String& line)
 {
+    statusLine_.clear();   // the run is over; a status cannot outlive its wait
+
     playback_.active = false; playbackStepId_.clear();
     pendingAsk_ = {}; pendingAskId_.clear();
     stopTimer();

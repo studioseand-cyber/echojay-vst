@@ -5,6 +5,9 @@
 #include "MeterEngine.h"
 #include "LoudnessLoop.h"   // kCountFloorLufs: the window counts what the loop counts; the loop's option / target
 #include "EJLevelRecord.h"  // the stored level record (21t-i), the rack-level levelling record's home
+#include "EJChainRole.h"    // round (b): the ONE channelRole composer, shared with agent off
+#include "EJSlotLevelsBlock.h"   // his 18:15 item 2: the levels block, now on the agent road too
+#include "EJSourceType.h"   // round (b): what a channel IS, and where that answer came from
 #include <cmath>
 
 namespace echojay::agent
@@ -33,6 +36,17 @@ namespace
         if (lv.drives.isNotEmpty()) o->setProperty ("drives", lv.drives);
         if (std::isfinite (lv.landedGainDb)) o->setProperty ("landedGainDb", r1 (lv.landedGainDb));
         o->setProperty ("converged", lv.converged);
+        // the same budget fields check(level) answers with (his ruling of 21 Oct)
+        if (std::isfinite (lv.avgLimitDb))  o->setProperty ("avgLimitDb",  r1 (lv.avgLimitDb));
+        if (std::isfinite (lv.peakLimitDb)) o->setProperty ("peakLimitDb", r1 (lv.peakLimitDb));
+        if (lv.stoppedAtBudget)
+        {
+            o->setProperty ("stoppedAtBudget", true);
+            if (std::isfinite (lv.reachedLufs)) o->setProperty ("reachedLufs", r1 (lv.reachedLufs));
+        }
+        // the same three, on any step result (B's 16:3x note)
+        if (std::isfinite (lv.inputDb) && lv.drives == "limiter_in") o->setProperty ("inputDb", r1 (lv.inputDb));
+        if (lv.limiterSlot >= 1)                                     o->setProperty ("slot", lv.limiterSlot);
     }
 
     // A coarse role from a built-in's name only; third-party roles are the server's to know from its maps.
@@ -240,6 +254,25 @@ juce::var ExecutorRead::levellingVar (const LevellingRead& lv)
     if (std::isfinite (lv.outLufs)) o->setProperty ("outLufs", r1 (lv.outLufs));
     if (std::isfinite (lv.inLufs) && std::isfinite (lv.outLufs)) o->setProperty ("deltaDb", r1 (lv.outLufs - lv.inLufs));
     o->setProperty ("converged", lv.converged);
+    // ---- THE LIMITING BUDGET AND WHAT THE LIMITER IS TAKING (Sean's ruling, 21 Oct 2026) -----
+    // Every figure is sent only when it exists: a measurement absent is "not measured", and a
+    // budget half absent is "not bounded". `stoppedAtBudget` + `reachedLufs` is what lets B say
+    // "that is as loud as it goes inside the limiting you asked for" instead of guessing.
+    if (std::isfinite (lv.avgLimitDb))  o->setProperty ("avgLimitDb",  r1 (lv.avgLimitDb));
+    if (std::isfinite (lv.peakLimitDb)) o->setProperty ("peakLimitDb", r1 (lv.peakLimitDb));
+    if (lv.stoppedAtBudget)
+    {
+        o->setProperty ("stoppedAtBudget", true);
+        if (std::isfinite (lv.reachedLufs)) o->setProperty ("reachedLufs", r1 (lv.reachedLufs));
+    }
+    // ---- THE THREE B READS ON ANY STEP RESULT (its 16:3x note) ------------------------------
+    // B guessed these three in A's style and reads them on any step result, not only on a budget
+    // stop - so they are sent whenever they are TRUE, not only when the budget bit. `inputDb` is
+    // the gain the loop holds on the limiter's input; on this road it is the same number as
+    // `landedGainDb`, which predates it, and B may read either. `slot` is 1-based, as every slot on
+    // this wire is. `targetLufs` is already above, unchanged.
+    if (std::isfinite (lv.inputDb) && lv.drives == "limiter_in") o->setProperty ("inputDb", r1 (lv.inputDb));
+    if (lv.limiterSlot >= 1)                                     o->setProperty ("slot", lv.limiterSlot);
     if (lv.state.isNotEmpty()) o->setProperty ("state", lv.state);
     return juce::var (o);
 }
@@ -740,6 +773,53 @@ juce::var ExecutorRead::startContext()
     ch->setProperty ("kind", kind);
     ch->setProperty ("links", tracksVar (tracks));
     o->setProperty ("channel", juce::var (ch));
+    // ---- WHAT THE SOURCE IS, IN THE SHAPE AGENT-OFF ALREADY SENDS (Sean's 16:0x, 20 Oct 2026) ----
+    //
+    // *"The agent request doesn't tell the server what the source is. B saw "Nafe Main_01" as an
+    // unknown channel and picked a delay with no idea it was a vocal. Send the same source role and
+    // type with every agent request that agent-off already sends."*
+    //
+    // Agent-off's body carries exactly two keys for this, and his 16:03 dump has them verbatim:
+    //     "channelRole":  {"kind":"channel","name":"Nafe Main_01"}
+    //     "channelWidth": "stereo"
+    // So they go out under the SAME NAMES and the same shapes here, rather than a third spelling of
+    // the same fact - B reads one shape for both roads or the two will drift the first time either
+    // changes.
+    //
+    // AND ONE THING SAID OUT LOUD, because it is the actual reason B was blind: NOTHING IN THE
+    // PLUGIN SAYS A LINK IS A VOCAL. channelRole carries a kind ("channel"/"bus"/"mix_bus"/
+    // "master") and a name, and that is all agent-off ever sent either. A Link's registry row has a
+    // PLACEMENT (insert / bus / send) and no source type at all; the only source type this product
+    // holds is the V2's own ChannelType selector, which applies when the target is the V2's own
+    // rack. So `placement` rides along where it exists - it is the type the plugin really has - and
+    // where the source type is genuinely unknown the field is ABSENT rather than filled with a
+    // guess. Making a Link able to state its source is a product change, not a transport fix.
+    {
+        // ---- ONE COMPOSER FOR channelRole, round (b) (20 Oct 2026) -------------------------
+        // The first cut of this built the object here, beside the one in ChainRole::toVar() that
+        // agent-off uses - two assemblers of one wire shape, which is how the agent road came to
+        // send no source type at all. The role now comes from the side that KNOWS (the processor,
+        // through src_.channelRoleVar), and that side builds it with ChainRole::toVar() exactly as
+        // agent-off does. The width stays here because it is this function's own fact.
+        juce::String width;
+        if (target_.isNotEmpty())
+        {
+            for (const auto& t : tracks)
+                if (t.uid == target_)
+                { if (t.channels > 0) width = t.channels == 1 ? "mono" : "stereo"; break; }
+        }
+        else if (src_.ownWidth != nullptr)
+        {
+            const int ch2 = src_.ownWidth();
+            if (ch2 > 0) width = ch2 == 1 ? "mono" : "stereo";
+        }
+        if (src_.channelRoleVar != nullptr)
+        {
+            const auto role = src_.channelRoleVar (target_);
+            if (role.getDynamicObject() != nullptr) o->setProperty ("channelRole", role);
+        }
+        if (width.isNotEmpty()) o->setProperty ("channelWidth", width);
+    }
     const auto lvv = levellingVar (targetLevelling());
     if (! lvv.isVoid()) o->setProperty ("levelling", lvv);
     // ---- THE RECENT CHAT (16 Oct 2026, Sean's step 6, rule (a)) ---------------------------------
@@ -764,14 +844,87 @@ juce::var ExecutorRead::startContext()
         const bool playing = src_.transportPlaying != nullptr && src_.transportPlaying();
         tr->setProperty ("known", known);
         tr->setProperty ("playing", playing);
+        // ---- AND IT IS THE TARGET'S HEARD TIME (Sean's 18:15 item 2) -----------------------
+        // This read ownAnalysis() unconditionally, so on a turn aimed at a LINK the "heard" figure
+        // described the V2's own channel - the same wrong-signal fault the 2 Oct track_level ruling
+        // was about, in the field the model reads to decide whether to ask for playback.
         double heard = 0.0;
-        if (src_.ownAnalysis != nullptr) { const auto a = src_.ownAnalysis(); heard = a.heardSeconds; }
+        if (target_.isNotEmpty() && src_.linkAnalysis != nullptr)
+        { const auto a = src_.linkAnalysis (target_); if (a.valid) heard = a.heardSeconds; }
+        else if (src_.ownAnalysis != nullptr)
+        { const auto a = src_.ownAnalysis(); heard = a.heardSeconds; }
         tr->setProperty ("heardSeconds", heard);
         tr->setProperty ("signalNow", playing && heard > 0.0);
         if (playing && heard > 0.0)
             tr->setProperty ("note", "audio is playing through this rack right now - measure it rather "
                                      "than asking for playback");
         o->setProperty ("transport", juce::var (tr));
+    }
+    // ---- AND THE TWO BLOCKS THE CHAT ROAD HAS BEEN SENDING ALL ALONG (his 18:15 item 2) --------
+    //
+    // *"Confirm that track_level (heard_s, loud_rms, loud_peak) and the levels block are sent on
+    // own-channel agent requests, not only on Link turns."*
+    //
+    // Neither was sent on EITHER - they are composed in EchoJayAPI's chat body, which an agent turn
+    // does not go through. So the agent could only ever learn about playback from
+    // transport.heardSeconds, and a run that wanted a level had to call a tool for it.
+    //
+    // Same field names and same sources as the chat road, for the target this turn is about; absent
+    // when there is nothing measured, which is what both roads already mean by a missing field.
+    {
+        if (src_.trackLevelVar != nullptr)
+            if (const auto tl = src_.trackLevelVar (target_); tl.getDynamicObject() != nullptr)
+                o->setProperty ("track_level", tl);
+        if (src_.slotLevelsVar != nullptr)
+            if (const auto sl = src_.slotLevelsVar (target_); sl.isArray() && ! sl.getArray()->isEmpty())
+                o->setProperty ("slot_levels", sl);
+        // ---- AND THE RACK ITSELF (B's capture of the 21:09-21:10 starts, 20 Oct 2026) ---------
+        //
+        // *"B's captures of the 21:09-21:10 agent-start bodies show NO rack key in the start
+        // context."*  B is right and my reading of the log was wrong: I cited
+        //     EJAgent: add read-back targets slot 1 for "bx_opto" ... rack has 1
+        // as evidence that the request carried the rack. It is the POST-ADD READ-BACK - it proves the
+        // read-back saw the rack after the add, and says nothing about what the start body carried.
+        // The start context had `channel` (uid, name, kind, links) and no rack at all, so a run began
+        // knowing which channel it was on and nothing about what was already in it.
+        //
+        // FROM THE SIDECAR, because the Link is the one publisher of its own rack - the same source
+        // the view and the edit base now take (this round's "one road"). The own rack answers from
+        // its ChainHost through the same reader the `look` tool uses, so a run cannot be told one
+        // thing here and another when it asks.
+        {
+            const auto r = targetRack();
+            if (r.valid)
+            {
+                juce::Array<juce::var> slots;
+                for (const auto& sl : r.slots)
+                {
+                    auto* so = new juce::DynamicObject();
+                    so->setProperty ("slot", sl.n);              // 1-BASED, as every wire number is
+                    so->setProperty ("name", sl.name);
+                    if (sl.format.isNotEmpty())   so->setProperty ("format", sl.format);
+                    if (sl.bypassed)              so->setProperty ("bypassed", true);
+                    if (sl.settings.isNotEmpty()) so->setProperty ("settings", sl.settings);
+                    slots.add (juce::var (so));
+                }
+                auto* rk = new juce::DynamicObject();
+                rk->setProperty ("name", r.name);
+                rk->setProperty ("kind", r.kind);
+                rk->setProperty ("remote", r.remote);
+                rk->setProperty ("slots", juce::var (slots));
+                o->setProperty ("rack", juce::var (rk));
+            }
+            else
+            {
+                // NOT SILENCE. "I could not read this rack" is a different statement from "this rack
+                // is empty", and a run that cannot tell them apart will add what is already there -
+                // which is what three bx_opto on one Link looks like.
+                auto* rk = new juce::DynamicObject();
+                rk->setProperty ("unreadable", true);
+                if (r.why.isNotEmpty()) rk->setProperty ("why", r.why);
+                o->setProperty ("rack", juce::var (rk));
+            }
+        }
     }
     juce::Array<juce::var> caps; caps.add ("look"); caps.add ("check"); caps.add ("wait_for_playback"); caps.add ("checkpoint");
     // ---- ITEM 13 (18 Oct 2026): link_meters, the flag B has been waiting for -------------------
@@ -1550,13 +1703,10 @@ PlaybackReading ExecutorRead::readPlayback()
 // =============================================================================
 namespace
 {
-    juce::String kindOf (ChannelType t)
-    {
-        if (t == ChannelType::FullMix)   return "mix_bus";
-        if (t == ChannelType::MasterBus) return "master";
-        if (EchoJayProcessor::isBusRole (t)) return "bus";
-        return "channel";
-    }
+    // ONE SPELLING, SHARED (20 Oct 2026): this lived here as a file-static and the editor needed the
+    // same answer for Sean's post-add-match ruling. Moved to EJSourceType.h; this stays as the name
+    // every call site in this file already uses.
+    juce::String kindOf (ChannelType t) { return echojay::sourcetype::kindTextForChannelType (t); }
 
     RackRead rackFromHost (const ChainHost& host, const juce::String& name, const juce::String& kind)
     {
@@ -1576,7 +1726,8 @@ namespace
             s.bypassed = info.bypassed; s.keepLevel = info.keepLevel;
             s.wet = info.wet; s.preTrimDb = info.preTrimDb; s.outGainDb = info.outGainDb;
             s.builtin = host.isBuiltinSlot (i);
-            s.dialSummary = host.dialSummaryRow (i);
+            s.dialSummary = host.dialSummaryRow (i);   // DEBUG row: never a read-back source
+            s.liveBands   = host.slotLiveBandText (i);  // his 17:09: the EQ's own bands, now
             s.pictureText = info.pictureText;
             const auto pic = host.slotPicture (i);
             s.pictureValid = pic.valid; s.grKnown = pic.grKnown; s.grDb = pic.grDb;
@@ -1649,6 +1800,79 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     auto ownKind = [p] { return kindOf (p->getChannelType()); };
     s.ownName  = ownName;
     s.ownKind  = ownKind;
+    // THE OWN RACK'S WIDTH, for the channelWidth the agent request now carries (Sean's 16:0x).
+    // A Link's width comes off its registry row (TrackRead::channels); this is the self case, and it
+    // is the same number agent-off's chatTargetChannelWidth() resolves to for the open rack.
+    s.ownWidth = [p] { return p->getMainBusNumInputChannels(); };
+    // READ LIVE, like agentModeOn and echoJayOnly: a toggle he flips mid-round means it, and a
+    // cached answer would let the rest of the round pick an unmapped plugin anyway (his 09:49).
+    s.autoDialOnly = [p] { return p->getApi().getAutoDialMode(); };
+    // The header's genre, live, from the same getter the chat road's `genre` key uses (B, 21 Oct).
+    s.genre = [p] { return p->getGenre(); };
+    // ---- channelRole, BUILT ONCE (round (b), 20 Oct 2026) ------------------------------------
+    // Both roads send the same shape because both go through ChainRole::toVar(). Empty uid = this
+    // chain, whose source type is his own ChannelType selector (provenance "user"); a Link's is the
+    // LINK's to state, so it is read from the sidecar it publishes and never re-derived here - two
+    // guessers would be two answers.
+    // ---- WHAT THE TARGET HAS HEARD (Sean's 18:15 item 2) ------------------------------------
+    // track_level and slot_levels were CHAT-ROAD fields, so an agent turn carried neither - on a
+    // Link or on his own channel. Same shapes, same sources, one target resolver.
+    s.trackLevelVar = [p] (const juce::String& uid) -> juce::var
+    {
+        // OWN RACK: its own pre-chain tap, which is the right one for it.
+        if (uid.isEmpty()) return p->getChainHost().trackLevelVar();
+        // A LINK: the reading IT published, and never V2's own as a substitute - the 2 Oct ruling.
+        // "A reading from the wrong signal is worse than none: it is confidently wrong, and nothing
+        // downstream can tell."
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return {};
+        const juce::File f (dir + "track-level-" + uid + ".json");
+        if (! f.existsAsFile()) return {};
+        const auto v = juce::JSON::parse (f.loadFileAsString());
+        if (auto* o = v.getDynamicObject(); o != nullptr && o->hasProperty ("loud_rms_dbfs")) return v;
+        return {};
+    };
+    s.slotLevelsVar = [p] (const juce::String& uid) -> juce::var
+    {
+        const double sr = p->getSampleRate();
+        if (uid.isEmpty()) return echojay::slotLevelsBlock (p->getChainHost(), sr);
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return {};
+        return echojay::slotLevelsBlock (LinkShm::readRackSidecar (dir, uid), sr);
+    };
+    s.channelRoleVar = [p] (const juce::String& uid) -> juce::var
+    {
+        echojay::ChainRole r;
+        if (uid.isEmpty())
+        {
+            r = p->chainRole();
+            const auto t = p->getChannelType();
+            r.sourceType = echojay::sourcetype::wireNameFor (t);
+            if (r.sourceType.isNotEmpty()) r.sourceTypeFrom = "user";
+            if (t == ChannelType::Other) r.sourceTypeName = p->getCustomChannelName();
+            return r.toVar();
+        }
+        int placement = 0;
+        juce::String name = p->resolveLinkDisplayName (uid);
+        for (const auto& l : p->getLinkSlotInfos())
+            if (l.uid == uid) { placement = l.placement; if (name.isEmpty()) name = l.name; break; }
+        r = echojay::decideChainRole (false, placement, name);
+        r.trackName = name;
+        r.placement = placement == 1 ? "bus" : placement == 2 ? "insert"
+                    : placement == 3 ? "send" : juce::String();
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isNotEmpty())
+            if (const auto rack = LinkShm::readRackSidecar (dir, uid); rack.valid)
+            {
+                r.sourceType     = rack.sourceType;
+                r.sourceTypeFrom = rack.sourceTypeFrom;
+                r.sourceTypeName = rack.sourceTypeName;
+            }
+        return r.toVar();
+    };
     s.projectName = [p] { return p->getProjectName(); };
     s.ownRack  = [p, ownName, ownKind] { return rackFromHost (p->getChainHost(), ownName(), ownKind()); };
     s.tracks   = [p]
@@ -1734,6 +1958,28 @@ Sources bindToProcessor (EchoJayProcessor& proc)
             EchoJay_NSLog (("EJAgent: the inventory withholds " + juce::String (wontLoad.size())
                             + " plugin(s) that did not load here (" + wontLoad.joinIntoString (", ")
                             + ") - they are not offered in a pick until they load").toRawUTF8());
+        // ---- AND THE ONES HE HAS SAID NOT TO USE (his 11:5x item 3, 21 Oct 2026) ---------------
+        //
+        // *"The MLimiterX is an expired demo. Can the plugin tell (it passes audio, so silent-slot
+        // detection won't)? If not, give Sean a way to mark a plugin "don't use" ... and send it so
+        // B leaves it out."*
+        //
+        // A HOST CANNOT TELL. It sees parameters and audio, and an expired demo that passes audio
+        // looks exactly like a licensed one in both - the silent class is detectable only because
+        // silence is itself the symptom. So the mark is his, it persists with the settings, and it
+        // acts in the same two places the no-load mark does: withheld here so it cannot be picked,
+        // and NAMED to the model (startContext) so a user who asks for it by name gets an answer
+        // rather than a silent absence. Unlike the no-load mark, this one never clears itself - only
+        // he can lift it, because only he knows when the licence arrived.
+        const auto dontUse = p->getApi().getDontUsePlugins();
+        for (const auto& no : dontUse)
+            for (int i = names.size(); --i >= 0;)
+                if (names[i].equalsIgnoreCase (no) || ChainHost::namesMatchLoose (names[i], no))
+                    names.remove (i);
+        if (! dontUse.isEmpty())
+            EchoJay_NSLog (("EJAgent: the inventory also withholds " + juce::String (dontUse.size())
+                            + " plugin(s) marked \"don't use\" (" + dontUse.joinIntoString (", ")
+                            + ") - his own mark, which only he can lift").toRawUTF8());
         return names;
     };
     // ---- WHAT CANNOT LOAD, AND WHY, BEFORE THE AGENT PLANS (17 Oct 2026, Sean's item 3) --------
@@ -1967,6 +2213,18 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         const auto out = p->getChainHost().getChainOutLevels();
         if (out.known) l.outLufs = out.levelDb;
         l.converged = loop.everArmed() && ! loop.isArmed() && ! loop.hasProposal();
+        // ---- THE BUDGET AND THE TAKING (Sean's ruling, 21 Oct 2026) --------------------------
+        // Measured from our own tallies, so this is filled for any limiter - the figure B needs in
+        // order to say "that is as loud as it goes inside the limiting you asked for".
+        if (loop.everArmed())
+        {
+            const auto took = loop.limiterTaking();
+            if (took.known()) { l.avgLimitDb = took.avgDb; l.peakLimitDb = took.peakDb; }
+            l.stoppedAtBudget = loop.stoppedAtBudget();
+            if (l.stoppedAtBudget) l.reachedLufs = loop.budgetStopLufs();
+            l.inputDb = loop.currentGainDb();
+            if (loop.limiterSlot() >= 0) l.limiterSlot = loop.limiterSlot() + 1;   // B counts from 1
+        }
         l.updatedMs = rec.updatedMs;
         return l;
     };

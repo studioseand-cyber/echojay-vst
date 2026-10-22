@@ -48,6 +48,29 @@ namespace echojay::agentui
 // snapshot is JSON on a saved message, so an enum's numbering is part of the
 // file format. statusToken()/statusFromToken() put a NAME on the wire instead,
 // and the int is only ever an in-memory convenience.
+/** ---- IS THIS ROW THE RUN THIS WINDOW IS HOLDING? (his 14:15, 21 Oct 2026) ------------------
+
+    The answer decides whether a card draws its CHIPS, its Stop and its Undo, or is drawn as
+    history - so getting it wrong silently removes every control from a card that is still waiting
+    for him. It got it wrong on his 14:15 reopen, and the log's order says how: the adopt recorded
+    the row's integer id, the chat replay then reissued every restored row's id, and the integer
+    named nothing.
+
+      rowKey / liveKey   the run's own key, minted once, carried in the snapshot. THE identity.
+      rowId / liveId     the per-window integer, fast and correct for a row this window wrote,
+                         and reissued by a replay - so it can only ever ADD to the answer.
+      hasSession         whether the client is holding a run at all.
+
+    TRUE means live. A key match wins; the integer is kept as the fast path, because a row this
+    window just created has an id before anything has written a snapshot for it to carry a key in. */
+inline bool rowIsLiveRun (const juce::String& rowKey, const juce::String& liveKey,
+                          int rowId, int liveId, bool hasSession)
+{
+    if (! hasSession) return false;
+    if (rowId != 0 && rowId == liveId) return true;
+    return rowKey.trim().isNotEmpty() && rowKey.trim() == liveKey.trim();
+}
+
 struct RunStep
 {
     juce::String id;
@@ -71,6 +94,61 @@ struct RunStep
     bool expanded = false;      // Details open (by step id, so a relayout cannot collapse it)
     bool autoApplied = false;
 };
+
+/** ---- DOES THIS RUN'S CARD BELONG IN THE CHAT THAT IS OPEN? (Sean's 18:18, 20 Oct 2026) ------
+
+    THE THIRD TIME IN ONE DAY A RUN WENT INVISIBLE, so the decision is a function with a name rather
+    than a condition inside a 200-line sync method, and it is legged both ways.
+
+      runChatId   the chat the LIVE RUN was started in - from the run itself (EJAgentClient::start is
+                  handed it and keeps it), never from a member of the editor. A row does not survive
+                  a chat switch, so anything the editor remembers about "the last row" describes the
+                  last run and not this one: that is the 18:18 fault exactly.
+      openChatId  the chat on screen now.
+
+    TRUE means a row opens here. The two rules it has to satisfy at once:
+      - a NEW run typed in this chat was started with this chat's id -> its card is drawn (his 16:06
+        and 18:18: "blank again. No card, no spinner, no Stop");
+      - an OLDER run still waiting elsewhere carries that chat's id -> refused here, and its card
+        stays where it belongs (his 11:59: survival is not capture).
+
+    AN UNKNOWN EITHER SIDE MEANS DRAW IT. A run with no chat id (nothing told us) and a window with
+    no chat open are both states in which refusing would hide a live run - and an invisible run is
+    the worse failure of the two by a long way: he cannot even stop it. */
+/** ---- RETIRED AS THE BIRTH GATE (stage D, 21 Oct 2026) ------------------------------------
+    The product no longer calls this to decide whether to OPEN a row. Its rule - "an unknown either
+    side means draw it" - was right for a window with no chat open and wrong for a window about to
+    become a different chat, and it could not tell them apart: that is his 19:51 card at the top of
+    a chat it had nothing to do with. A run's entry now exists in its own chat from the moment the
+    run starts (stages A and B), so NOT drawing it in another chat hides nothing, which is what made
+    the old default necessary.
+
+    Kept as a pure, legged decision because the two legs around it still say something true about
+    chat identity, and the rules it used to serve are now held end to end in tools/chat_log_guard
+    (ST: a stopped run's entry cannot appear in another chat; MO: nothing posts to the chat on
+    screen). Nothing in Source calls it. */
+inline bool rowBelongsInChat (const juce::String& runChatId, const juce::String& openChatId)
+{
+    if (runChatId.trim().isEmpty() || openChatId.trim().isEmpty()) return true;
+    return runChatId.trim() == openChatId.trim();
+}
+
+/** ---- IS ANYTHING ON THIS CARD STILL MOVING? (his 14:08 ruling, 21 Oct 2026) ----------------
+    TRUE when the "Thinking..." line belongs under the rows as they stand: there are none yet (the
+    gap between Send and the first step), or the last one has SETTLED - ticked, failed, declined,
+    not run, undone or stopped. FALSE while the last row is itself Running or waiting on an answer,
+    because that row is already the indicator and two moving lines would claim the same work twice.
+
+    A free function with a name, for the reason rowBelongsInChat is one: it is a decision about what
+    he sees, and the guard holds it in both directions. */
+inline bool lastRowHasSettled (const std::vector<RunStep>& steps)
+{
+    using St = EJAgentClient::Step::Status;
+    if (steps.empty()) return true;
+    const int st = steps.back().status;
+    return st != (int) St::Running && st != (int) St::AwaitingApproval
+        && st != (int) St::Pending;
+}
 
 struct RunView
 {
@@ -148,6 +226,24 @@ struct RunView
         `content` is untouched: it is still what the record holds and what an older build reads. */
     void foldProseIntoTheCard()
     {
+        // ---- AN UNDONE RUN'S PROSE IS NOT FOLDED BACK IN (22 Oct 2026) -------------------------
+        //
+        // His #14 ruling - *"after 'Everything the agent changed has been undone' the run still shows
+        // 'Pre gain on the Mix Bus is set to 0 dB', a stale sentence"* - is honoured in build(),
+        // which REPLACES the closing once every change is undone. Rig row C5 kept failing anyway,
+        // and the reason is here: the card's closing is folded from the OPENING plus the closing, and
+        // the opening is the model's own prose, which says the thing the undo just made untrue. The
+        // replacement owned one field and the fold wrote the stale sentence back into it.
+        //
+        //     closing = "The pre gain on the Mix Bus is set to 3 dB.\n\nEverything this run changed
+        //                has been undone, so what it said above no longer describes the rack"
+        //
+        // So the rule belongs to whichever code decides WHAT THE CARD SAYS, which is this function.
+        // `closingBeforeUndo` is set by exactly that replacement and is carried in the snapshot, so
+        // it is the mark that the prose above has been voided - paired with changeCount, which is the
+        // same condition the replacement itself used, so a run that lands something new afterwards
+        // folds normally again instead of latching on a field that survived in the record.
+        if (closingBeforeUndo.isNotEmpty() && changeCount == 0) return;
         const auto b = opening.trim();
         if (b.isEmpty()) return;                     // a card with no prose is unchanged
         dropClosingIfItRepeatsTheOpening();          // the same-sentence rule, one owner
@@ -166,6 +262,17 @@ struct RunView
     bool   playbackActive = false;
     int  state = 0;             // EJAgentClient::State
     bool running = false;       // a live session: the spinner animates, Stop is on the row
+    /** ---- B'S STATUS LINE, UNDER "Thinking..." (his 15:28 request, 21 Oct 2026) --------------
+        *"under the "Thinking..." line, show the latest status text B sends during the wait ...
+        replacing the previous one as each arrives. It's one line, in the same muted style as
+        agent-off's progress lines. It disappears when the next step appears or an ask is raised.
+        With no status yet, just "Thinking...".*
+
+        Carried on the view (and so in the entry's payload, which is where he asked it be drawn
+        from) and set from the client's own latest frame. Empty = no status yet, and then the row is
+        just "Thinking...". It is never recorded as history: the client clears it on a step, an ask
+        and the end, so a reopened card shows "Thinking..." until B sends the next one. */
+    juce::String statusText;
     bool finished = false;      // Done | Stopped | Failed
     bool stepsOpen = true;      // false = collapsed to the closing sentence + "N changes"
     bool showApplyAll = false;
@@ -318,6 +425,10 @@ inline juce::String rightWordFor (const EJAgentClient::Step& s, bool askPendingH
     editor's set of step ids whose Details are open (by id, never by index:
     the row list is rebuilt on every change and an index would move under the
     user - item 3's rule, 13 Oct). */
+/** Declared here, defined below: runViewFrom needs it to tell a closing that repeats a failed
+    step's own line from one that says something new (his 17:20 run). */
+inline juce::String normalisedProse (const juce::String& s);
+
 inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& expanded, bool stepsOpen)
 {
     using S  = EJAgentClient::State;
@@ -347,6 +458,23 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     v.failuresOnly = ! stepsOpen && v.finished && anyFailed;
     v.stepsOpen  = stepsOpen || ! v.finished;
     v.closing    = v.finished ? (c.state() == S::Failed ? c.errorMessage() : c.doneSummary()) : juce::String();
+    // ---- ONCE, NOT TWICE (19 Oct 2026, his 17:20 run) ------------------------------------------
+    // *"a failed step's error shows twice ('slot 0 is not on the rack (1..1).' on two lines); show
+    // it once."*  When the step's failure IS the run's failure, errorMessage() above and that step's
+    // own `detail` are the same sentence, so the row printed it on the step line and again as the
+    // closing. The step line is the one that belongs: it names WHICH step failed, which the closing
+    // cannot. So the closing is kept only when it says something no failed step already says -
+    // exactly the rule the Done frame applies to doneSummary against the round's talk.
+    if (v.closing.isNotEmpty())
+    {
+        const auto key = normalisedProse (v.closing);
+        for (const auto& st : c.steps())
+            if (st.status == St::Failed && normalisedProse (st.detail) == key)
+            {
+                v.closing.clear();
+                break;
+            }
+    }
     v.showStop   = v.running;
     v.showUndoAll = v.finished && c.canUndoAll();
     v.showRetry   = c.state() == S::Failed && c.errorRetryable();
@@ -491,12 +619,42 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     // the pulsing glyph the mockup already uses for work in progress. It costs no new paint code, it
     // makes empty() false so the card has a height, and it goes away by itself the moment a real
     // step arrives - this block cannot outlive the thing it stands in for.
-    else if (v.running && v.steps.empty())
+    // ---- AND UNDER THE LATEST STEP, EVERY TIME (his 14:08 ruling, 21 Oct 2026) ---------------
+    //
+    // *"While an agent run is working, a "Thinking..." line always sits under the latest step, from
+    // the moment that step ticks until the next step appears, every time, not only at the start.
+    // Today "Thinking..." shows before the first step, then disappears once a step completes, so the
+    // card looks idle while it waits on the server (e.g. "read the rack" ticked, then nothing but
+    // "Working" top right). ... The line goes when the run is waiting on Sean (an ask with buttons)
+    // or has finished."*
+    //
+    // WHAT WAS WRONG: the condition was `v.steps.empty()`, so the line stood in for the FIRST step
+    // and nothing else. Every later wait on the server - and a round trip is most of a run's elapsed
+    // time - left a card of ticked lines with nothing moving on it. "Working" top right is true but
+    // it is the same word whether the server is thinking or the run is stuck, which is the whole of
+    // what he could not tell.
+    //
+    // THE THREE CONDITIONS, and each is one of his clauses:
+    //   - the run is WORKING (c.isActive()), so a finished, stopped or failed run has no line;
+    //   - it is NOT waiting on him: askNow covers both shapes of that - an ask riding the last step
+    //     and an ask with no steps yet - and the ask's own buttons are what he is looking at;
+    //   - the latest step has SETTLED. A step still Running is itself the indicator, and a second
+    //     moving line under it would be two things claiming the same work. "From the moment that
+    //     step ticks" is exactly this test.
+    //
+    // It is still the last row, it still carries the pulsing Running glyph, and it still cannot
+    // outlive what it stands in for: the next step pushes it down the moment it arrives.
+    else if (v.running && ! askNow && lastRowHasSettled (v.steps))
     {
         RunStep r;
         r.id     = "thinking";
         r.label  = juce::String::fromUTF8 ("Thinking\xe2\x80\xa6");
         r.status = (int) St::Running;
+        // B'S LATEST WORD ABOUT THE WAIT, under the line and in B's own words (his 15:28). It rides
+        // the same row as `detail`, which is the muted second line the row already draws - so this
+        // is one field and no new paint code, and it disappears with the row it is under.
+        r.detail = c.serverStatusLine().trim();
+        v.statusText = r.detail;
         v.steps.push_back (std::move (r));
     }
     // ---- SEAN'S #18 (16 Oct 2026): A READ IS NOT A CHANGE --------------------------------------
@@ -506,7 +664,12 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     // count is the number of `do` steps that landed and have not been put back; `stepCount` is what
     // the control falls back to naming when that is zero.
     v.changeCount = 0;
+    // THE PHANTOM ROW IS NOT A STEP (his 14:08 ruling, 21 Oct 2026). "Thinking..." is a stand-in for
+    // work that has not reported yet, and now that it sits under EVERY latest step it would inflate
+    // the count on every round trip - "4 steps" for three, the whole time the server is thinking.
+    // Counted out by id, where it is pushed, rather than by subtracting one somewhere later.
     v.stepCount   = (int) v.steps.size();
+    for (const auto& s : v.steps) if (s.id == "thinking") --v.stepCount;
     int i2 = -1;
     for (const auto& s : v.steps)
     {
@@ -544,11 +707,28 @@ inline juce::var toJson (const RunView& v)
     o->setProperty ("closing",   v.closing);
     o->setProperty ("status",    v.statusWord);
     o->setProperty ("mode",      v.modeBadge);
-    o->setProperty ("notice",    v.notice);
+    // ---- THE NOTICE IS NOT PART OF THE RECORD (Sean's 19:5x item 1, 20 Oct 2026) ------------
+    //
+    // *"The "agent is still working on build a mix bus" notice from his earlier blocked send is
+    // still on this run's card, in orange, above the steps. A notice belongs to the send that
+    // triggered it, in that chat, and goes away once it's been seen."*
+    //
+    // It is PER-SEND state - a refused message, an undo-all outcome - and serialising it made it
+    // part of the run's permanent snapshot: written into agentData while it was up, then redrawn by
+    // every later render of that card, including in a chat he had moved on from. start() clears the
+    // live one, which is why the field looked harmless; the copy in the record outlived it.
+    //
+    // So it is NOT written. A card restored from its record has no notice, which is right: a notice
+    // about a send is meaningless once that send is history. The LIVE one still shows, because
+    // runViewFrom copies it from the client on every render.
+    //
+    // (The reader below still accepts it, so a snapshot written by an older build loses the line
+    // rather than failing to parse.)
     o->setProperty ("ask",       v.askQuestion);
     if (v.askTypeHint.isNotEmpty()) o->setProperty ("askHint", v.askTypeHint);
     if (v.failuresOnly)             o->setProperty ("failuresOnly", true);
     o->setProperty ("running",   v.running);
+    if (v.statusText.isNotEmpty()) o->setProperty ("statusText", v.statusText);   // his 15:28
     o->setProperty ("finished",  v.finished);
     o->setProperty ("stepsOpen", v.stepsOpen);
     o->setProperty ("applyAll",  v.showApplyAll);
@@ -616,6 +796,7 @@ inline RunView fromJson (const juce::var& v)
     r.askTypeHint= o->getProperty ("askHint").toString();
     r.failuresOnly = (bool) o->getProperty ("failuresOnly");
     r.running    = (bool) o->getProperty ("running");
+    r.statusText = o->getProperty ("statusText").toString();
     r.finished   = (bool) o->getProperty ("finished");
     r.stepsOpen  = o->hasProperty ("stepsOpen") ? (bool) o->getProperty ("stepsOpen") : true;
     r.showApplyAll = (bool) o->getProperty ("applyAll");
@@ -707,6 +888,11 @@ namespace runmetrics
     static constexpr int gap       = 6;
     static constexpr int lineBtnW  = 52;    // Apply / Skip on a line
     static constexpr int rightW    = 76;    // the right-hand status word column
+    /** The narrowest card width at which the right-hand word keeps its own column (his 17:3x item
+        1). Below it the word moves to the row's second line and the step text takes the full width -
+        240 px leaves a step line about 150 px beside a 76 px column plus the glyph, which is where
+        the squeeze he photographed begins. */
+    static constexpr int kRightWordMinWidth = 240;
     static constexpr int detailsW  = 58;
     static constexpr int footerH   = 30;
     static constexpr int changesH  = 24;
@@ -762,7 +948,27 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
             if (s.applySkip)                      { r.rightButtonW = lineBtnW * 2 + Metrics::btnGap; kind = 2; }
             else if (s.canUndo)                   { r.rightButtonW = Metrics::undoW;  kind = 4; }
             else if (s.hasDetails)                { r.rightButtonW = detailsW;        kind = 3; }
-            else if (s.right.isNotEmpty())        { r.rightButtonW = rightW;          kind = 1; }
+            else if (s.right.isNotEmpty())
+            {
+                // ---- THE WORD GOES UNDER THE LINE WHEN THE WINDOW IS NARROW (his 17:3x item 1) --
+                //
+                // *"the "your answer?" label on the right of a waiting step takes a whole column, so
+                // in a narrow window the step text is squeezed into a thin strip on the left ... Put
+                // that label on its own line, or drop it when the window is narrow; the step text
+                // must always use the card's width."*
+                //
+                // Above the threshold it stays in its column, which is where the mockup puts it.
+                // Below it the column is NOT reserved - the step text takes the whole width - and the
+                // word becomes the row's own second line, where it reads as what it is. The threshold
+                // is the narrowest width at which a step line still has room for a few words beside a
+                // 76 px column; under that the column was taking more than half of some rows.
+                if (width >= kRightWordMinWidth) { r.rightButtonW = rightW; kind = 1; }
+                else
+                {
+                    r.detail = r.detail.isNotEmpty() ? (r.detail + "\n" + s.right) : s.right;
+                    kind = 0;
+                }
+            }
             specs.push_back (r);
             kinds.push_back (kind);
         }
@@ -996,7 +1202,24 @@ inline juce::String normalisedProse (const juce::String& s)
         lastWasSpace = false;
         out << c;
     }
-    return out.trim();
+    // ---- A DASH AND ITS SPACES ARE ONE THING (20 Oct 2026, his 09:36) --------------------------
+    // *"fold-on-pull missed a duplicate closing because the two copies differ only in "-" vs " - ".
+    // Normalise dashes (em, en, hyphen, with or without spaces) and whitespace before comparing."*
+    //
+    // The loop above already maps every dash to '-' and collapses runs of whitespace, which is why
+    // the 16 Oct em-dash twins matched. What it does NOT reconcile is the SPACING around the dash:
+    // "low-mids-about" and "low-mids - about" both survive it and still differ. So the spaces either
+    // side of a dash are dropped, which makes "a - b", "a <em dash> b" and "a-b" one key.
+    //
+    // THIS IS A COMPARISON KEY AND NOTHING ELSE - no displayed text passes through here - so losing
+    // the spacing costs nothing and catches the one difference his duplicates actually had. It is
+    // also the case I failed to leg last night: FP1-FP4 assert the mechanism (a step line, a
+    // closing, a short answer, a real reply) and never a dash twin, which the repair's own comment
+    // three lines away says was the only way two copies ever differed.
+    auto key = out.trim();
+    while (key.contains (" -")) key = key.replace (" -", "-");
+    while (key.contains ("- ")) key = key.replace ("- ", "-");
+    return key;
 }
 
 inline void carryAnswersForward (RunView& now, const RunView& before)

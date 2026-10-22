@@ -15,6 +15,82 @@
 namespace echojay
 {
 
+// ---- A RACK'S REFUSAL, IN WORDS - THE ONE COMPOSER (moved here 20 Oct 2026) ------------------
+//
+// It lived as a file-static in EJAgentExecutorDo.cpp and had ONE caller: the line on the step row.
+// His 09:12 run showed why that was not enough - he opened Details on a refused step and read the
+// edit protocol talking to whoever sent the ops:
+//
+//     the rack's ack: status=not_applied, reason=op 1 invalid: unknown operation "set_level",
+//     slots now 2
+//     op 1 invalid: unknown operation "set_level"
+//
+// *"A refused step shows one plain line ... with the detail behind Details, never the ack text."*
+// So the CLIENT needs the same translation for what it discloses, and a second copy of it is how
+// the line and the detail come to describe one refusal differently. Header-inline, by the same rule
+// the rest of this file keeps: a gate can drive the shipped composer rather than a copy.
+// ---- A RACK'S REFUSAL, IN WORDS (16 Oct 2026, Sean's step 8) ---------------------------------
+//
+// He read this on a failed line: "op 1 invalid: ...". It is ChainHost's edit pre-flight speaking in
+// the vocabulary of the protocol it validates - the sender's vocabulary, not a person's. A person
+// has no "op 1", and I4 now bans the phrase outright, so this is where the translation happens: the
+// one seam where a rack's refusal becomes the line on the row.
+//
+// Narrow on purpose. The prefix is dropped and the DETAIL is kept, because the detail is the part
+// that says what was wrong; the only phrase translated is the one piece of jargon inside it that a
+// person cannot act on. Anything this does not recognise comes through exactly as the rack wrote it -
+// a refusal nobody can read is better than a refusal nobody is shown.
+inline juce::String plainRefusal (const juce::String& raw)
+{
+    auto t = raw.trim();
+    if (t.isEmpty()) return t;
+    // ---- LINE BY LINE, BECAUSE THE PREFIX IS RARELY FIRST (the green run said so) -------------
+    // My first cut tested the WHOLE string, and the refusal that actually reaches a person is two
+    // lines: "the batch was refused before it started\nop 1 invalid: "EchoJay Transient" not in the
+    // loadable plugin list". The prefix was on the second line and came through untouched - the rig
+    // caught it on the fixed build, which is the only reason this is right now.
+    juce::StringArray out;
+    for (auto line : juce::StringArray::fromLines (t))
+    {
+        auto l = line.trim();
+        if (l.isEmpty()) continue;
+        if (l.startsWithIgnoreCase ("op ") && l.containsIgnoreCase (" invalid:"))
+        {
+            auto detail = l.fromFirstOccurrenceOf (" invalid:", false, false).trim();
+            if (detail.startsWithIgnoreCase ("unknown operation"))
+            {
+                const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
+                                          .upToLastOccurrenceOf ("\"", false, false);
+                // HIS WORDS, 20 Oct 09:12: *"A refused step shows one plain line ('That step isn't
+                // something this rack can do.')"*. The old line named the op - "this rack has no way
+                // to \"set level\"" - which reads as a capability statement about a verb the user
+                // never typed. The STEP ROW already says which step it was ("Level match"), so the
+                // line's job is only to say that it cannot be done.
+                juce::ignoreUnused (quoted);
+                detail = "That step isn't something this rack can do.";
+            }
+            // "not in the loadable plugin list" is the other one a person reads often, and it is
+            // true but mechanical: it means the rack could not find that plugin to load.
+            else if (detail.containsIgnoreCase ("not in the loadable plugin list"))
+            {
+                const auto quoted = detail.fromFirstOccurrenceOf ("\"", false, false)
+                                          .upToLastOccurrenceOf ("\"", false, false);
+                detail = (quoted.isNotEmpty() ? quoted : juce::String ("that plugin"))
+                       + " is not one this rack can load here";
+            }
+            l = detail;
+        }
+        out.add (l);
+    }
+    if (out.isEmpty()) return t;
+    // Led by the plain sentence when the rack's own first line is the protocol's, not a person's.
+    auto joined = out.joinIntoString (" - ");
+    if (joined.startsWithIgnoreCase ("the batch was refused"))
+        joined = "I could not make that change" + joined.fromFirstOccurrenceOf ("started", false, false);
+    return joined;
+}
+
+
 struct RefusedOp
 {
     juce::String name;     // plugin name, as the server spelled it

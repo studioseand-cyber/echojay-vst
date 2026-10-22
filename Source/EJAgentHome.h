@@ -25,25 +25,40 @@
 //  was built to remove, and with a window closing in the middle of it the two
 //  copies would differ by exactly the part that matters.
 //
-//  WHAT STILL NEEDS A WINDOW, AND SAYS SO. One of the eight sinks cannot be moved
-//  without moving the plugin's whole build road with it: `buildChain` runs
-//  loadChainFromJson / sendChainToLink, ~750 lines of the most load-bearing path
-//  in the plugin, which drive the chain panel, the tab, the failed-plugin prompt
-//  and the chat's own follow-ups. Moving that is its own piece of work and is
-//  named as such in docs/NEXT_ROUND_QUEUE.md.
+//  THE BUILD, AND WHAT A CLOSED WINDOW DOES TO IT (Sean, 22 Oct 2026 - his B3 ruling):
 //
-//  Until it moves, a build is PARKED rather than lost: the step waits, bounded,
-//  for a window to attach and then takes the user's own road; if no window opens
-//  it fails with that reason in plain words. That is a smaller claim than "the run
-//  survives the window", and it is written down here rather than left for someone
-//  to discover - everything else in a run (edits, OUT moves, reads, undo, asks,
-//  approvals, the closing sentence) genuinely does survive.
+//      "If the user has already pressed Go, a run with no window open finishes its
+//       build and applies it. The card, its chips and Undo all are there when a
+//       window reopens. If the run is waiting on a chip or a question, it keeps
+//       waiting."
+//
+//  Until that ruling a windowless build PARKED: it waited two minutes for a window
+//  and then said it had built nothing. Honest about itself, and the wrong behaviour -
+//  the user had already approved it, and the one step that could not survive a closed
+//  window was the step this whole round exists for.
+//
+//  IT APPLIES NOW, AND NOT BY A NEW ROAD. The editor's loadChainFromJson and
+//  sendChainToLinkOverTheWire stay the window's (they drive the chain panel, the tab,
+//  the failed-plugin prompt and the chat's own follow-ups, and re-implementing them
+//  here is this file's own named fault: "two build paths that looked identical in the
+//  log is what let a whole class of failure sit undiagnosed"). With no window the
+//  build goes down the road that is ALREADY not the editor's - the one every agent
+//  `add` takes: applyChainOps, which is ChainHost::applyChainEdits for the open rack
+//  and writeChainEditCommand + awaitChainAck for a Link. The SAME std::function, held
+//  as applyOps_, not a second copy of its body. That is the move his 19 Oct ruling
+//  made for the Build button on a Link ("make Build use the same path agent-mode adds
+//  use, so there's one road that works"), arriving where it was always going.
+//
+//  A WAITING RUN STILL WAITS, and nothing here changes that: a build only happens
+//  after Go, so a run holding an ask reaches none of this. The rig asserts both
+//  halves (B3 applies with no window, B3b proves a waiting run applies nothing).
 // =============================================================================
 #include <JuceHeader.h>
 #include <memory>
 #include "EJAgentClient.h"
 #include "EJAgentExecutorRead.h"
 #include "EJAgentRunView.h"
+#include "LoudnessLoop.h"   // his 17:3x item 3: DialOnOp, one dial per slot in a batch
 #include "EJStateRoot.h"
 
 class EchoJayProcessor;
@@ -89,10 +104,6 @@ public:
     void buildChain (const juce::String& uid, const juce::var& chainArray,
                      std::function<void (bool, juce::String)> cb);
 
-    /** How long a parked build waits for a window before it gives up and says so.
-        A tunable so a guard can shorten it rather than wait the real bound out. */
-    int parkedBuildWaitMs = 120'000;
-
     /** Lines the run produced with no window attached, for the next editor to
         render. The chat path's orphanedChatTurns_ in all but name, and for the
         same reason: a reply nobody can see is indistinguishable from no reply. */
@@ -112,8 +123,17 @@ public:
         sessionId - which is empty in exactly the window where a row and a record are created. */
     bool newRunSinceLastKey();
     juce::String sessionId() const { return client_ != nullptr ? client_->sessionId() : juce::String(); }
-    /** Whether a build is waiting for a window right now - published to the rig. */
-    bool buildParked() const noexcept { return parkedBuild_ != nullptr; }
+    /** WHICH ROAD THE LAST BUILD TOOK: "window" or "processor" ({} before any build in this
+        session). Published to the rig as agentLastBuildRoad. His 22 Oct ruling is about exactly
+        this fact, so the rig reads it from the BUILD rather than keeping a copy of its own - the
+        thing that cost five rig rows on 20 Oct ("a harness copy of a product switch"). */
+    juce::String lastBuildRoad() const { return lastBuildRoad_; }
+    /** ...AND WHICH RUN THAT ROAD BELONGS TO (22 Oct 2026). A published fact with no run attached
+        is sticky: the rig's B4 waited for "a road is named" and was answered instantly by the
+        PREVIOUS run's "processor", then called the product wrong for it. One field cannot say
+        which run it describes; two can, and then a row can set its own target ("a row sets its
+        own target", 18 Oct). */
+    juce::String lastBuildRunKey() const { return lastBuildRunKey_; }
 
 private:
     void agentChanged() override;
@@ -123,6 +143,27 @@ private:
         entry the first time. THE one author of that record. */
     void writeSnapshot();
     void parkLine (const juce::String& role, const juce::String& text, bool live);
+    /** ---- B'S dial_on_playback ON THE V2'S OWN RACK (his 11:5x item 1, 21 Oct 2026) ----------
+        The Link reads this field in its chain-cmd apply; the open rack's ops come through the
+        in-process applier, which read it nowhere - so his mix-bus limiter went in with an open-loop
+        input gain and nothing ever measured the result (-5.7 LUFS against a target of -8).
+
+        `addedNames` is what the batch added, so the slot is resolved BY IDENTITY after the apply
+        (LoudnessLoop::slotTheBatchAdded), never by an index. Two jobs arrive on one field and are
+        told apart by which key is present: `target_lufs` is a limiter's loudness target and arms the
+        loudness loop at that limiter's INPUT; `target_gr_db` is a compressor's gain-reduction target
+        and becomes a calibration block, the same road agent-off already takes. */
+    void armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce::StringArray& addedNames);
+    /** ---- EVERY DIAL IN ONE BATCH (his 17:3x item 3, 21 Oct 2026) ---------------------------
+        *"B will send dial_on_playback on every compressor after the first in a build ... Confirm
+        that works for several slots in one build (not just the last), each dialled independently."*
+
+        One call per batch, because the GR dials have to go to calibStartMany TOGETHER: calibStart
+        stores one loop per rack uid, so calling it twice for the same rack overwrites the first -
+        which would have dialled the last compressor and silently dropped the rest. calibStartMany
+        is the road built for "ONE HOLD PER COMPRESSOR" (30 Sep) and this is its caller. */
+    void armDialsOnPlaybackOnOwnRack (const std::vector<LoudnessLoop::DialOnOp>& dials,
+                                      const juce::StringArray& addedNames);
     void recordAnswerOnRow (const juce::String& answer);
     EchoJayProcessor& proc_;
     std::unique_ptr<echojay::agent::ToolExecutor> executor_;
@@ -146,13 +187,66 @@ private:
     std::shared_ptr<std::atomic<bool>> alive_ { std::make_shared<std::atomic<bool>> (true) };
     juce::Array<juce::var> parked_;
 
-    struct ParkedBuild
-    {
-        juce::String uid, chainJson;
-        int slots = 0;
-        juce::int64 sinceMs = 0;
-        std::function<void (bool, juce::String)> cb;
-    };
-    std::unique_ptr<ParkedBuild> parkedBuild_;
-    void servicePark();
+    /** THE OPS ROAD, kept because a windowless BUILD takes it (his 22 Oct ruling above). It is
+        the same std::function the executor's applyChainOps sink is given, assigned in the
+        constructor beside it - one implementation of "apply these ops to that rack", so a build
+        with no window cannot drift from an add with no window. */
+    std::function<void (const juce::String&, const juce::var&,
+                        std::function<void (bool, juce::String, juce::String)>)> applyOps_;
+    juce::String lastBuildRoad_, lastBuildRunKey_;
 };
+
+namespace echojay
+{
+// ---- ITEM 2 (Sean, 19 Oct 2026, his 15:36 run): AN AGENT ADD RE-LEVELS LIKE A BUILD ------------
+//
+// *"Agent-off Build level-matches on the slot card's OUT trim on playback. Agent builds should get
+// the same silent slot-OUT level match after a plugin is added (here the Shadow Hills dropped the
+// vocal 2.5 dB and nothing compensated). If B also sets the OUT trim from a check, B's explicit
+// value wins; don't fight it."*
+//
+// The mechanism was already there and the agent's road simply never asked for it: `intent:"build"`
+// is what makes a Link arm its post-build level match (writeChainEditCommand's own documentation),
+// the agent-off Build passes it, and the agent's applyChainOps sink passed nothing - so the one
+// kind of change that alters a rack's loudness with no human at the controls was the one kind that
+// never re-levelled.
+//
+// WHICH OPS COUNT. Only an op that puts a plugin in: `add` and `replace`. An ordinary edit must
+// never re-level a rack (same documentation), so a set, a bypass, a move or a wet change arms
+// nothing - a level match is not a thing to do to a rack because a knob moved.
+//
+// AND B'S VALUE WINS. A batch that carries an explicit `slot_out` has already been told what the
+// trim should be, by B reading a check; arming the loop on top of it would be two authors writing
+// one number, and the loop would overwrite the value it was told. So a slot_out in the batch
+// withdraws the arm. (The LATER command's case - a slot_out arriving while a match armed by an
+// earlier add is still waiting - is LoudnessLoop::standDownQuietly, called from LinkProcessor.)
+//
+// In the header rather than file-static so the rule is reachable by name from a guard: the three
+// answers it gives are the whole of item 2's contract on the sending side.
+inline juce::String agentIntentForOps (const juce::var& ops, juce::String* whyNot = nullptr)
+{
+    const auto* arr = ops.getArray();
+    if (arr == nullptr) return {};
+    bool putsAPluginIn = false, carriesAnExplicitOutTrim = false;
+    for (const auto& o : *arr)
+        if (auto* oo = o.getDynamicObject())
+        {
+            const auto name = oo->getProperty ("op").toString().trim().toLowerCase();
+            if (name == "add" || name == "replace") putsAPluginIn = true;
+            if (name == "slot_out")                 carriesAnExplicitOutTrim = true;
+        }
+    if (! putsAPluginIn)
+    {
+        if (whyNot != nullptr) *whyNot = "no op in this batch puts a plugin in";
+        return {};
+    }
+    if (carriesAnExplicitOutTrim)
+    {
+        if (whyNot != nullptr)
+            *whyNot = "the batch names a slot OUT trim itself, and the explicit value is the one "
+                      "that was asked for";
+        return {};
+    }
+    return "build";
+}
+}   // namespace echojay

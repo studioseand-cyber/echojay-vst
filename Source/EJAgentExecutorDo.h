@@ -90,6 +90,11 @@ struct DoSinks
         both can be on (Sean's 10 Oct ruling). */
     std::function<bool()> echoJayOnly;
 
+    /** The plugins HE has marked "don't use", as [{name, why?}] - or void when none (his 11:5x item
+        3, 21 Oct 2026). Read LIVE, like the two flags above: a mark made mid-round means it. The
+        inventory already withholds them; this is so the model can SAY so when he names one. */
+    std::function<juce::var()> dontUsePlugins;
+
     /** Undo one step / back to a checkpoint, on whichever rack the step belongs to.
         Returns (ok, sentence). */
     std::function<void (const juce::String& token, std::function<void (bool, juce::String)>)> undoOne;
@@ -219,6 +224,17 @@ private:
         juce::StringArray matchedPlain, missedPlain;
         /** The plugin the figures belong to, so the row can say "Compressor: threshold -14 dB". */
         juce::String slotName;
+        /** ---- SEAN'S 11:27 ITEM 2 (21 Oct 2026): WHERE IT LANDED, AS A READ FACT ---------------
+            *"Include the slot position the add actually landed on in the read-back, so B can state
+            the order as fact instead of 'the order hasn't read back yet'."*
+
+            NOT the position that was ASKED for, and not one counted from the op's own `after`: this
+            is set only where `slotName` is - inside the rack read, from the slot that was actually
+            found at this position. The two are set together on purpose, because a position without
+            the name that was read at it is a number from the request, which is the "echo of itself"
+            this read-back exists to avoid. Zero means the rack did not answer, and then nothing is
+            claimed about the order. */
+        int slotLanded = 0;
         int askedCount = 0;
         bool anythingAsked() const { return askedCount > 0; }
     };

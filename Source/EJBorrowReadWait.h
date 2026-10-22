@@ -124,4 +124,54 @@ inline Decision decide (const Reading& r, bool sayWaiting)
                   + juce::String (r.seq) + ")";
     return d;
 }
+
+// ---- AND WHEN THE READ'S OWN SENTENCE STOPS BEING TRUE (his 11:32, 21 Oct 2026) ----------------
+//
+// *"the rack view stuck on "Reading 0 plugin(s) from 88_7even Kick_2_01..." for minutes, while the
+// kHs Compressor sat on the rack and worked. Your 8-second read deadline didn't clear it. ... The
+// line must be replaced as soon as the view has drawn the rack from the sidecar, whatever path set
+// it."*
+//
+// WHAT THE LOG SAID. The read for that uid START-ed at 11:31:52 on a fresh sidecar that was VALID
+// WITH 0 SLOTS, and finished inside the same second - zero slots is nothing to pull, so the finish
+// arm ran at once and engaged. `borrowReadInFlightUid_` was set and cleared normally, so the stall
+// deadline had nothing to fire on: THE READ DID NOT HANG. The sentence outlived it. It is said once,
+// at the start of a read, with the count the sidecar held at that instant, and nothing else ever
+// wrote to that line - so when the Link published its kHs Compressor a moment later and the view
+// drew it from the sidecar, "Reading 0 plugin(s)" sat on top of a correct rack for minutes.
+//
+// A LINE ABOUT WORK IN PROGRESS NEEDS AN END CONDITION, not a longer timeout. The end condition is
+// his: the view has drawn that rack. Here, as a predicate, so the one rule has one home and a guard
+// can hold both of its directions - the thing it must retire, and the lines it must never touch.
+struct ReadNotice
+{
+    juce::String line;          // what the status line says NOW
+    juce::String ownedLine;     // the words the read wrote, if the read wrote them
+    juce::String ownedUid;      // the rack they were written about
+    juce::String viewUid;       // the rack in view now
+    bool  viewValid    = false; // the view has a rack description to draw
+    int   drawnSlots   = 0;     // what the panel is showing
+    int   viewSlots    = 0;     // what the view holds
+    bool  readInFlight = false; // a read for THIS rack is still running
+};
+
+/** TRUE when the read's notice has done its job and must be replaced.
+    THE THREE TESTS, and each one is a line someone would otherwise lose:
+      - IT IS A READ NOTICE. Either the exact words the read wrote about the rack in view (ownership,
+        so a refusal or an edit-flow message written since is never swept), or any writer's
+        "Reading N plugin(s) from ..." - the "whatever path set it" half of his ruling.
+      - THE VIEW HAS DRAWN THAT RACK: valid, for the rack in view, and the panel is showing exactly
+        the slots the view holds - the draw itself, not a prediction of it.
+      - AND DRAWN MEANS DRAWN. An empty rack with a read still in flight is the one case where the
+        sentence is still true, so it survives there until a slot appears or the read ends. */
+inline bool shouldRetireReadNotice (const ReadNotice& n)
+{
+    if (n.line.trim().isEmpty() || n.viewUid.trim().isEmpty() || ! n.viewValid) return false;
+    const bool oursExactly = n.ownedLine.isNotEmpty() && n.line == n.ownedLine
+                             && n.ownedUid == n.viewUid;
+    const bool anyReadNotice = n.line.startsWith ("Reading ") && n.line.contains (" plugin(s) from ");
+    if (! oursExactly && ! anyReadNotice) return false;
+    if (n.drawnSlots != n.viewSlots) return false;
+    return n.viewSlots > 0 || ! n.readInFlight;
+}
 } // namespace echojay::borrowread
