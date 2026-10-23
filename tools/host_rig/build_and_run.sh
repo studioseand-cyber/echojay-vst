@@ -251,6 +251,21 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-buildplan-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_bp", "name": "do", "approval": "ask_first",
+            "summary": "build 3 slots: EchoJay EQ, EchoJay Compressor, EchoJay Limiter",
+            "args": { "op": "build",
+                      "chain": [ { "name": "EchoJay EQ" },
+                                 { "name": "EchoJay Compressor" },
+                                 { "name": "EchoJay Limiter" } ] } },
+          { "event": "await", "ids": ["tc_bp"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Built the chain." } ]
+      ]
+    },
+    {
       "goalContains": "rig-badop-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

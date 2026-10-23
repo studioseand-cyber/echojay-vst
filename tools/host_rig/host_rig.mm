@@ -2402,6 +2402,17 @@ int main (int argc, char* argv[])
                       args1 ("text", "rig-row-marker: set the pre gain, twice (survive the close)"), 15000);
             const bool started = untilProc ([] (const juce::var& p)
                                  { return (bool) p.getProperty ("agentActive", false); }, 40000);
+            // ---- THE SESSION ID IS NOT THERE THE MOMENT THE RUN IS (live road, 23 Oct 2026) ---
+            // `started` waits for agentActive, which is true as soon as the POST is away; the
+            // session id exists only once the server has answered with its first frame. On the mock
+            // road the two arrive in the same millisecond, so this read green for a month; against
+            // 3215 it read "" and the leg failed on a comparison it had no right to make yet
+            // ("session ag_n9uoqULSEc... (was )") while the run itself had survived the close
+            // exactly as item 0b promises. Wait for the id, bounded; if it never comes, the leg says
+            // so and judges the half it can.
+            const bool haveSession = untilProc ([] (const juce::var& p)
+                                     { return p.getProperty ("agentSession", juce::var())
+                                               .toString().isNotEmpty(); }, 20000);
             const auto sessionBefore = pstr ("agentSession");
             const auto keyBefore     = pstr ("agentRunKey");
             v2v.closeEditor();
@@ -2416,11 +2427,16 @@ int main (int argc, char* argv[])
                       "this host did not destroy the plugin's editor on this close, so the window never "
                       "actually went away and the leg would be vacuous: " + v2v.lastCloseNote);
             else
-                check (stillAlive && pstr ("agentSession") == sessionBefore,
+                check (stillAlive && (! haveSession || pstr ("agentSession") == sessionBefore),
                        "ITEM 0b: the window was DESTROYED and the run is still there - same session, still "
                        "live  (RED before item 0b: ~EchoJayEditor called stop() and the run ceased to exist)",
                        "editor gone=" + juce::String ((int) gone) + ", state " + pstr ("agentState")
-                       + ", session " + pstr ("agentSession") + " (was " + sessionBefore + ")");
+                       + ", session " + pstr ("agentSession") + " (was " + sessionBefore + ")"
+                       + (haveSession ? juce::String()
+                                      : juce::String (" - NO session id had arrived before the close, "
+                                                      "so the session half of this leg was not "
+                                                      "testable and only the run's survival is "
+                                                      "judged here")));
             check (pstr ("agentBuildRoad") == "0" || pstr ("agentBuildRoad").isEmpty(),
                    "...and the WINDOW'S build road went with the window - which since his 22 Oct ruling is "
                    "a change of road and no longer a limit: a build now takes the processor's own road "
@@ -2860,7 +2876,26 @@ int main (int argc, char* argv[])
             // ---- B3d: AND UNDO ALL FROM THAT CARD PUTS THE RACK BACK (his own ask) -------------
             // *"Also check that Undo all from that card restores the rack."*  The rack is read from
             // the PROCESSOR's own count, waited for with a bound rather than sampled once.
+            // ---- UNDO ALL IS A FINISHED RUN'S BUTTON (22 Oct 2026, the live road said so) --------
+            //
+            // B3d read `slots 0 -> 4 -> 4` live and I reported it as a possible product red. It is
+            // not: the two checks either side of it SKIPPED with "this run is still live", and Undo
+            // all only appears on a finished run - so the press went nowhere and the row measured a
+            // button that was not there. The product's undo was never exercised. Same gate as its
+            // siblings, and it says which case it is in rather than failing on either.
+            const bool overForUndo = pstr ("agentRowFinished") == "1"
+                                  && ! (bool) pst().getProperty ("agentActive", false);
             const int slotsBeforeUndo = (int) pst().getProperty ("procSlots", -1);
+            if (! overForUndo)
+            {
+                skip ("...and Undo all on that card RESTORES the rack it built with no window open",
+                      "this run is still live (state " + pstr ("agentState") + ", slots "
+                      + juce::String (slotsBeforeUndo) + "), and Undo all is a FINISHED run's button - "
+                      "pressing it here would measure a control that is not on the card. The scripted "
+                      "road asserts this to the letter.");
+            }
+            else
+            {
             rig.send (echojay::rig::cmd::press, args1 ("button", "undo_all"), 10000);
             const bool rackRestored = untilProc ([slotsBefore] (const juce::var& p)
                                       { return (int) p.getProperty ("procSlots", -1) == slotsBefore; },
@@ -2870,6 +2905,7 @@ int main (int argc, char* argv[])
                    "slots " + juce::String (slotsBefore) + " -> " + juce::String (slotsBeforeUndo)
                    + " -> " + juce::String ((int) pst().getProperty ("procSlots", -1))
                    + " (wanted " + juce::String (slotsBefore) + ")");
+            }
             Rig::pump (600);
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
         }
@@ -8816,14 +8852,24 @@ int main (int argc, char* argv[])
         // two out-of-process Links and they arrive in the registry a second or so apart; the first
         // run of this row looked once, found one, and skipped - a row that skips because it asked
         // too early is a row that never runs. Twenty seconds, then it says so.
+        // ---- AND BOTH UIDS ARE THIS ROW'S OWN, RESOLVED NOW (23 Oct 2026) --------------------
+        // `linkUid` is captured near the top of the pass and B5 runs at the very end of it. On the
+        // mock road of gate 23 the V2 refused it twice - "EJRig: work_on seq=3377 -> FAILED (that
+        // uid is not live)" - so the goal was typed into MAIN's chat, the switch went to a Link
+        // chat that had never seen his message, and the row reported his 15:09 order fault from a
+        // comparison it had no subject for ("his row at -1"). I9c learnt this on 18 Oct and G1 on
+        // 22 Oct; this is the same fault a third time, so the row resolves a uid this pass can
+        // prove is alive and READS THE ACK instead of discarding it.
+        juce::String primaryUid = usableLinkUid (rig.freshState(), true);
+        if (primaryUid.isEmpty()) primaryUid = linkUid;
         juce::String otherUid;
-        rig.until ([&otherUid, &linkUid] (const juce::var& s)
+        rig.until ([&otherUid, &primaryUid] (const juce::var& s)
         {
             if (auto* arr = s.getProperty ("links", juce::var()).getArray())
                 for (const auto& l : *arr)
                 {
                     const auto u = l.getProperty ("uid", juce::var()).toString();
-                    if (u.isNotEmpty() && u != linkUid && (bool) l.getProperty ("connected", false))
+                    if (u.isNotEmpty() && u != primaryUid && (bool) l.getProperty ("connected", false))
                     { otherUid = u; return true; }
                 }
             return false;
@@ -8860,16 +8906,26 @@ int main (int argc, char* argv[])
                     ++i;
                 }
         };
-        if (linkUid.isEmpty() || otherUid.isEmpty())
+        if (primaryUid.isEmpty() || otherUid.isEmpty())
             skip ("B5: a Link switch mid-run leaves his message above the card",
-                  "this run has fewer than two connected Links (" + linkUid + ", "
+                  "this run has fewer than two connected Links (" + primaryUid + ", "
                   + (otherUid.isEmpty() ? juce::String ("(no second)") : otherUid)
                   + "), and the switch IS the subject - with one Link there is nowhere to switch to.");
         else
         {
             rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "ask"), 8000);
-            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            const auto aimAck5 = rig.send (echojay::rig::cmd::workOn, args1 ("uid", primaryUid), 10000);
             Rig::pump (800);
+            if (! (bool) aimAck5.getProperty ("ok", false))
+            {
+                skip ("B5: a Link switch mid-run leaves his message above the card",
+                      "the V2 refused to work on " + primaryUid + " (\""
+                      + aimAck5.getProperty ("note", juce::var()).toString() + "\"), so the goal "
+                      "would have been typed into whatever chat was on screen and the order measured "
+                      "in a chat his message was never in.");
+            }
+            else
+            {
             rig.send (echojay::rig::cmd::sendChat, args1 ("text", goal), 15000);
             const bool live = untilProc ([] (const juce::var& p)
                               { const auto s = p.getProperty ("agentState", juce::var()).toString();
@@ -8878,7 +8934,7 @@ int main (int argc, char* argv[])
             // THE SWITCH, mid-run, and back - the two presses his test made.
             rig.send (echojay::rig::cmd::workOn, args1 ("uid", otherUid), 10000);
             Rig::pump (1200);
-            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", primaryUid), 10000);
             Rig::pump (1500);
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             int u1 = -1, c1 = -1;
@@ -8899,7 +8955,7 @@ int main (int argc, char* argv[])
             Rig::pump (1200);
             rig.send (echojay::rig::cmd::workOn, args1 ("uid", otherUid), 10000);
             Rig::pump (900);
-            rig.send (echojay::rig::cmd::workOn, args1 ("uid", linkUid), 10000);
+            rig.send (echojay::rig::cmd::workOn, args1 ("uid", primaryUid), 10000);
             Rig::pump (1500);
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             int u2 = -1, c2 = -1;
@@ -8909,6 +8965,7 @@ int main (int argc, char* argv[])
                    "is still above the card - the order is a place taken once, not a thing recomputed "
                    "on every render",
                    "his row at " + juce::String (u2) + ", the card at " + juce::String (c2));
+            }
         }
         // ---- THE BENCH IS LEFT QUIET (the F3 lesson, 22 Oct 2026) --------------------------------
         // A run left live refuses every typed message after it, by design - last night that cost
@@ -9032,6 +9089,348 @@ int main (int argc, char* argv[])
         Rig::pump (600);
     }
 
+
+    // ---- B7: A BUILD AWAITING A DECISION IS A PLAN, NOT A ONE-LINE APPLY (his 21:52, 22 Oct) ----
+    //
+    // *"A raw 'build N slots' step with Apply/Skip must not be offered for a build either. If the
+    //  server sends a build op with no plan, show it as a plan needing Go, or refuse it plainly."*
+    //
+    // The answer he was given, and what this row reads back from a real host: SHOW IT AS A PLAN.
+    // The heading, one numbered line per slot, and a door that says Go. A readable build is work he
+    // asked for - refusal belongs only to a plan that cannot be READ, which is B1's subject and the
+    // guard's UP legs.
+    //
+    // THE ROW FINDS ITS STEP BY THE ROW'S OWN FACT (`buildPlan`), not by the wording of a label.
+    // The 19 Oct lesson from I9c: a leg that recognises its subject from prose is asserting on
+    // prose, and it goes red the first time the sentence is improved.
+    //
+    // AT THE END, with B5 and B6, for the reason written above them: it leaves a run waiting on a
+    // decision, and nothing downstream should have to tolerate that.
+    leg ("B7: a build awaiting his decision is drawn as a plan with Go (his 21:52 fault)");
+    {
+        const bool liveRoad = liveServerConfigured();
+        // THE AU's PROCESSOR, as B5's note says: the window in play is the AU's, and B5/B6 both went
+        // red once for reading the VST3's line while the run was the AU's.
+        const auto pst7 = [] { return Rig::processorState ("AU"); };
+        const auto untilProc7 = [&pst7] (std::function<bool (const juce::var&)> ok, int ms)
+        {
+            const auto t0 = juce::Time::getMillisecondCounter();
+            while (juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms)
+            { if (ok (pst7())) return true; Rig::pump (250); }
+            return ok (pst7());
+        };
+        // Quiet ground: B6 above leaves the bench quiet, but this row says so for itself rather
+        // than inheriting it - the F3 lesson, and the reason B5/B6 were moved here at all.
+        if ((bool) pst7().getProperty ("agentActive", false))
+        {
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            untilProc7 ([] (const juce::var& p)
+                        { return ! (bool) p.getProperty ("agentActive", false); }, 60000);
+        }
+        rig.send (echojay::rig::cmd::newChat, args1 ("uid", ""), 10000);
+        Rig::pump (400);
+        // NOT APPROVED and asks NOT answered: the subject is what is DRAWN while the decision waits
+        // (G4's reason, verbatim - a row that presses Apply reads a finished run and proves nothing).
+        const auto r = askAgent (rig,
+                                 liveRoad ? juce::String ("build a mix bus on this rack")
+                                          : juce::String ("rig-buildplan-marker: build a mix bus"),
+                                 liveRoad ? 300000 : 60000, false, "yes", false);
+        // Wait, bounded, for a step the row itself calls a build plan.
+        juce::var planStep;
+        juce::String zones;
+        rig.until ([&] (const juce::var& stv)
+        {
+            const auto arow = stv.getProperty ("agentRow", juce::var());
+            zones = arow.getProperty ("zones", juce::var()).toString();
+            if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                    if ((bool) sv.getProperty ("buildPlan", false)) { planStep = sv; return true; }
+            return false;
+        }, liveRoad ? 240000 : 40000);
+        const auto st   = rig.freshState();
+        const auto arow = st.getProperty ("agentRow", juce::var());
+        zones = arow.getProperty ("zones", juce::var()).toString();
+        if (! planStep.isObject())
+            if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+                for (const auto& sv : *arr)
+                    if ((bool) sv.getProperty ("buildPlan", false)) planStep = sv;
+        juce::String stepIds;
+        if (auto* arr = arow.getProperty ("steps", juce::var()).getArray())
+            for (const auto& sv : *arr)
+                stepIds << (stepIds.isEmpty() ? "" : ", ") << sv.getProperty ("id", juce::var()).toString()
+                        << "[" << sv.getProperty ("status", juce::var()).toString() << "]";
+
+        if (! planStep.isObject())
+        {
+            skip ("B7: a build awaiting his decision is drawn as a plan with Go",
+                  liveRoad
+                      ? juce::String ("the live model never put a BUILD in front of a decision on this "
+                                      "run - it is free to read the rack, ask a question or add slots one "
+                                      "at a time, and a row that passed on a run with no build in it "
+                                      "would prove nothing. Steps drawn: [") + stepIds + "]. The claim "
+                                      "runs on the mock road, where the build is scripted, and in the "
+                                      "guard's BP legs."
+                      : juce::String ("the scripted build never reached a waiting decision within 40 s "
+                                      "(agent state ")
+                      + pst7().getProperty ("agentState", juce::var()).toString()
+                      + ", steps drawn: [" + stepIds + "]), so there is nothing drawn to read.");
+        }
+        else
+        {
+            const auto label  = planStep.getProperty ("label", juce::var()).toString();
+            const auto detail = planStep.getProperty ("detail", juce::var()).toString();
+            check (! label.containsIgnoreCase (" slots:") && ! label.containsIgnoreCase ("build 3 slots")
+                   && ! label.containsIgnoreCase ("build 5 slots"),
+                   "B7: the waiting row is no longer the server's raw \"build N slots: a, b, c\" line  "
+                   "(RED as it shipped at 21:52: one row, a comma list he had to parse, in the server's "
+                   "own voice)",
+                   "heading \"" + label + "\"");
+            // ONE NUMBERED LINE PER SLOT, in order. On the mock the chain is known; on the live road
+            // the names are the model's, so what is asserted there is the NUMBERING and the count.
+            int lines = 0, lastAt = -1;
+            bool ordered = true;
+            for (int k = 1; k <= 24; ++k)
+            {
+                const int at = detail.indexOf (juce::String (k) + ". ");
+                if (at < 0) break;
+                if (at < lastAt) ordered = false;
+                lastAt = at;
+                ++lines;
+            }
+            check (lines >= 2 && ordered,
+                   "...and the slots are the row's own NUMBERED LINES, in order - what he can read at a "
+                   "glance on a narrow card, which the comma list could not give him",
+                   juce::String (lines) + " numbered line(s), ordered=" + (ordered ? "y" : "n")
+                   + ", detail \"" + detail.replaceCharacter ('\n', '/').substring (0, 160) + "\"");
+            if (! liveRoad)
+                check (detail.contains ("1. EchoJay EQ") && detail.contains ("2. EchoJay Compressor")
+                       && detail.contains ("3. EchoJay Limiter"),
+                       "...and they are THIS build's three slots, in the chain's order (the mock road, "
+                       "where the plan is known - the live road reads the model's own names)",
+                       "detail \"" + detail.replaceCharacter ('\n', '/') + "\"");
+            const auto zoneWord = [&zones] (const char* kind) -> juce::String
+            {
+                for (auto& e : juce::StringArray::fromTokens (zones, ",", ""))
+                    if (e.trim().upToFirstOccurrenceOf (":", false, false).trim() == kind)
+                        return e.trim().fromFirstOccurrenceOf (":", false, false).trim();
+                return {};
+            };
+            const auto goWord = zoneWord ("1"), noWord = zoneWord ("2");
+            check (goWord == "Go" && noWord == "Cancel",
+                   "...and the pair on that line reads [Go] [Cancel] - the plan's own vocabulary, in "
+                   "place of [Apply] [Skip]  (one door still, as his #4 ruled: this changes the word on "
+                   "it, not the number of them)",
+                   "zones=[" + zones.substring (0, 120) + "]");
+            check (goWord.isNotEmpty(),
+                   "...and the decision is still THERE to press - a plan he cannot say Go to would be "
+                   "worse than the line he complained about",
+                   "apply-line zone \"" + goWord + "\"");
+        }
+        // LEAVE THE BENCH QUIET, whatever happened: this row deliberately leaves a run waiting.
+        if ((bool) pst7().getProperty ("agentActive", false))
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+        const bool quiet = untilProc7 ([] (const juce::var& p)
+                           { return ! (bool) p.getProperty ("agentActive", false); }, 90000);
+        check (quiet, "...and B7 leaves no run going, so the report and the teardown are clean",
+               "agentActive=" + pst7().getProperty ("agentActive", juce::var()).toString());
+        Rig::pump (600);
+        juce::ignoreUnused (r);
+    }
+
+    // ---- B8: LOOKING AT A LINK'S SLOT TAKES NOTHING (his 08:44 fault, 23 Oct 2026) --------------
+    //
+    // *"opening a Link's window to look must not stop the V2's run or take its rack away ... Never
+    //  leave a rack owned by nobody or stuck with a closed Link."*
+    //
+    // WHAT THIS ROW CAN DRIVE, and what it cannot, said plainly: opening a Link's OWN plugin window
+    // is a Logic act (the host decides which plugin window exists), and the rig hosts the Links in
+    // their own processes without windows - so the "open it, close it, control comes back" leg is
+    // HIS test and is named as owed in the report. What the rig can hold, and what the fault
+    // actually was, is the INVARIANT: looking at a Link's slot in the V2 - which is what he was
+    // doing - changes no ownership and ends no run.
+    leg ("B8: looking at a Link's slot changes no ownership and ends no run (his 08:44 fault)");
+    {
+        const auto pst8 = [] { return Rig::processorState ("AU"); };
+        if ((bool) pst8().getProperty ("agentActive", false))
+        {
+            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 8000);
+            Rig::pump (1500);
+        }
+        juce::String linkForLook;
+        rig.until ([&linkForLook] (const juce::var& st)
+        {
+            if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                for (const auto& l : *arr)
+                {
+                    const auto uid = l.getProperty ("uid", juce::var()).toString();
+                    if (uid.isNotEmpty()) { linkForLook = uid; return true; }
+                }
+            return false;
+        }, 20000);
+        if (linkForLook.isEmpty())
+            skip ("B8: looking at a Link's slot changes no ownership and ends no run",
+                  "no Link was published within 20 s, so there is no remote slot to look at. The "
+                  "invariant is also held from the other side by chat_store's SH3/SH4 (the shadow "
+                  "takes no lock, no borrow and no edit session).");
+        else
+        {
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", linkForLook), 10000);
+            Rig::pump (1200);
+            const auto before = rig.freshState();
+            const auto lockBefore   = before.getProperty ("rackLock", juce::var()).toString();
+            const bool borrowBefore = (bool) before.getProperty ("borrowActive", false);
+            // LOOK at a slot: the selection road, which is what carries the live view.
+            rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1), 10000);
+            Rig::pump (2500);
+            const auto after = rig.freshState();
+            const auto lockAfter   = after.getProperty ("rackLock", juce::var()).toString();
+            const bool borrowAfter = (bool) after.getProperty ("borrowActive", false);
+            check (borrowAfter == borrowBefore,
+                   "B8: looking at a Link's slot does not engage a borrow it did not have  (his "
+                   "08:44: the rack went to the Link and the V2's strip read \"Not connected\", and "
+                   "nothing ever asked for it again)",
+                   "borrow " + juce::String ((int) borrowBefore) + " -> " + juce::String ((int) borrowAfter));
+            check (lockAfter == lockBefore || lockAfter == "idle",
+                   "...and it takes no rack lock it did not hold - a look is not a claim",
+                   "lock \"" + lockBefore + "\" -> \"" + lockAfter + "\"");
+            // NO THIRD CHECK HERE, deliberately. I wrote one asserting "no run was ended by the
+            // look" and it could not fail: nothing is running at this point in the suite, so it
+            // read green whatever happened. A leg that cannot go red is worse than no leg - it
+            // reports a claim nobody tested. That half of his ruling is held where it CAN fail:
+            // chat_store's SH3/SH4 (the view takes no lock, no borrow, no edit session) and his own
+            // retest with a run live on the Link.
+        }
+    }
+
+    // ---- B9: THE LIVE VIEW OF A LINK'S PLUGIN (his ruling of 23 Oct 2026) ----------------------
+    //
+    // *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the V2
+    //  (moving meters and gain reduction) without opening the Link's window ... it must never take
+    //  the rack, stop a run or change ownership."*
+    //
+    // WHAT MAKES IT A TEST AND NOT A PICTURE: `shadowFrames`. A view that is "up" proves nothing -
+    // a static picture is up too - so this waits for the copy to have CONSUMED AUDIO from the Link's
+    // own tap ring, which is the whole feature. And an EchoJay plugin only: the standing rule is
+    // that the rig never loads a PACE or iLok plugin, so the licence-refusal path is owed to his own
+    // machine and is named in the report.
+    leg ("B9: a Link slot's plugin is shown LIVE in the V2, and takes nothing (the shadow view)");
+    {
+        // ---- THE ROW SETS ITS OWN TARGET, AND READS THE ACKS (23 Oct 2026) -------------------
+        // The first cut took the FIRST published uid and sent `select_link` alone. Two things went
+        // wrong on the mock road and the log said both: the agent's working target never moved, so
+        // `askAgent`'s add landed on the rack a previous row had left it on ("EJStruct: send
+        // uid=e98297f757" while this row was looking at 6582069a30), and the slot it then shadowed
+        // was whatever had been sitting on that rack - a WAVES plugin, under a comment promising
+        // "an EchoJay plugin only". A row that measures a rack it did not set up reports the
+        // previous row's state; usableLinkUid resolves one this pass can prove is alive, and both
+        // acks are read rather than discarded (the 18 Oct lesson, four rows along).
+        juce::String shadowLink = usableLinkUid (rig.freshState(), true);
+        if (shadowLink.isEmpty())
+            rig.until ([&shadowLink] (const juce::var& st)
+            {
+                if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                    {
+                        const auto uid = l.getProperty ("uid", juce::var()).toString();
+                        if (uid.isNotEmpty() && (bool) l.getProperty ("connected", false))
+                        { shadowLink = uid; return true; }
+                    }
+                return false;
+            }, 20000);
+        if (shadowLink.isEmpty())
+        {
+            skip ("B9: a Link slot's plugin is shown LIVE in the V2",
+                  "no connected Link was published within 20 s, so there is no remote slot to shadow.");
+        }
+        else
+        {
+            const auto selAck9  = rig.send (echojay::rig::cmd::selectLink, args1 ("uid", shadowLink), 10000);
+            const auto workAck9 = rig.send (echojay::rig::cmd::workOn,     args1 ("uid", shadowLink), 10000);
+            const bool aimed9   = (bool) selAck9.getProperty ("ok", false)
+                               && (bool) workAck9.getProperty ("ok", false);
+            Rig::pump (1000);
+            // Put an EchoJay plugin on that Link's rack, by the agent's own road - the rig's own
+            // marker plan, so no third party and no licence is ever touched here.
+            const auto built = askAgent (rig, "rig-linkadd-marker: add a compressor on that Link", 90000);
+            juce::ignoreUnused (built);
+            // THE BORROW AS IT STOOD BEFORE THE LOOK, and WHOSE it was. Read here, because the
+            // claim below is about what the VIEW did and not about what the suite was already
+            // holding.
+            const auto b4     = rig.freshState();
+            const bool borrowBefore9 = (bool) b4.getProperty ("borrowActive", false);
+            const auto borrowUidBefore9 = b4.getProperty ("borrowUid", juce::var()).toString();
+            rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1), 10000);
+            // The view has to come up AND consume audio; 12 s, then it says what it got.
+            bool running = false; double frames = 0.0; juce::String plug;
+            rig.until ([&] (const juce::var& st)
+            {
+                running = (bool) st.getProperty ("shadowRunning", false);
+                frames  = (double) st.getProperty ("shadowFrames", 0.0);
+                plug    = st.getProperty ("shadowPlugin", juce::var()).toString();
+                return running && frames > 0.0;
+            }, 12000);
+            const auto st = rig.freshState();
+            const bool borrowNow = (bool) st.getProperty ("borrowActive", false);
+            const auto borrowUidNow = st.getProperty ("borrowUid", juce::var()).toString();
+            // THE PLUGIN THIS ROW PUT THERE, or nothing to judge (23 Oct 2026). The row's own
+            // promise is "an EchoJay plugin only - the rig never loads a PACE or iLok plugin", and
+            // on the mock road it shadowed a Waves plugin a previous row had left on slot 1 while
+            // still printing that promise. So the identity is CHECKED, and a slot holding something
+            // else makes this a loud skip rather than a verdict about a plugin the row never chose.
+            const bool ejPlug = plug.containsIgnoreCase ("EchoJay");
+            if (! aimed9)
+                skip ("B9: a Link slot's plugin is shown LIVE in the V2",
+                      "the V2 refused to aim at " + shadowLink + " (select \""
+                      + selAck9.getProperty ("note", juce::var()).toString() + "\", work_on \""
+                      + workAck9.getProperty ("note", juce::var()).toString()
+                      + "\"), so this row would be measuring a rack it never selected.");
+            else if (running && ! ejPlug)
+                skip ("B9: a Link slot's plugin is shown LIVE in the V2",
+                      "slot 1 of " + shadowLink + " holds \"" + plug + "\", which is not the EchoJay "
+                      "plugin this row adds - the rig never loads a PACE or iLok plugin, so it will "
+                      "not report a verdict on a third party it did not choose.");
+            else if (! running)
+                skip ("B9: a Link slot's plugin is shown LIVE in the V2",
+                      juce::String ("the live view did not come up within 12 s (shadowRunning=0, "
+                                    "plugin \"") + plug + "\"). Reasons it legitimately might not, "
+                      "each named rather than guessed: the out-of-process Link in this rig may "
+                      "predate the tap, the slot may hold nothing yet, or no copy of that plugin "
+                      "could be made here. The REFUSAL path is what the guard holds (SH1/SH2); this "
+                      "row is the live one and it is owed.");
+            else
+            {
+                check (frames > 0.0,
+                       "B9: the V2's own copy of that Link's slot is RUNNING and has consumed audio "
+                       "from the Link's tap - which is what makes it a live view rather than a "
+                       "picture of one",
+                       "plugin \"" + plug + "\", " + juce::String ((int) frames) + " frame(s) pumped");
+                // THE VIEW'S OWN BORROW, not any borrow anywhere (23 Oct 2026). This read the bare
+                // `borrowActive` flag and went RED on both roads over a borrow held on ANOTHER rack
+                // by an earlier row - a true claim reported as a false one, which costs exactly as
+                // much as the reverse. The question is whether looking CHANGED the borrow, and
+                // whether the rack being shadowed is one this instance holds.
+                check (borrowNow == borrowBefore9 && borrowUidNow == borrowUidBefore9
+                       && borrowUidNow != shadowLink,
+                       "...and it took NO borrow of that rack: a view is not a claim (his 08:44 "
+                       "fault was a rack taken by something he only wanted to look at)",
+                       "borrow " + juce::String ((int) borrowBefore9) + " \"" + borrowUidBefore9
+                       + "\" -> " + juce::String ((int) borrowNow) + " \"" + borrowUidNow
+                       + "\", shadowing " + shadowLink);
+                check (st.getProperty ("shadowUid", juce::var()).toString() == shadowLink,
+                       "...and it is the Link in view that is being shadowed, not whatever was "
+                       "selected last (the row-sets-its-own-target rule, on this road too)",
+                       "shadowUid \"" + st.getProperty ("shadowUid", juce::var()).toString() + "\"");
+                // ...AND IT STOPS WHEN HE LEAVES. "The cost when it is not on screen is zero."
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 10000);
+                const bool stopped = rig.until ([] (const juce::var& s)
+                                     { return ! (bool) s.getProperty ("shadowRunning", false); }, 8000);
+                check (stopped,
+                       "...and leaving that rack STOPS the view, so nothing is streamed for a picture "
+                       "nobody is looking at (the plan's own promise: not \"small\", zero)",
+                       "shadowRunning=" + rig.freshState().getProperty ("shadowRunning", juce::var()).toString());
+            }
+        }
+    }
 
     // ---- THE MATRIX REPORT, written before anything is torn down -----------
     // Written on a red run too: the report IS the artefact (matrix section 7).
