@@ -41,6 +41,31 @@
 namespace echojay
 {
 
+/** ---- THE LIVE VIEW IS OFF IN THE SHIPPED BUILD (his ruling of 16:4x, 23 Oct 2026) ------------
+
+    *"With the 16:33 crash that's two in ten minutes, both on a Link's rack in the V2 ... If the fix
+     isn't quick and certain, ship the next build with the shadow view switched OFF (back to the
+     "coming soon" placeholder), so I can test the other fixes on a build that doesn't crash. The
+     shadow view then comes back in its own round."*
+
+    THE TWO CRASHES WERE ONE DEFECT, and it is fixed below: the copy was handed a two-channel scratch
+    buffer whatever it was, and both of his plugins pull more than two channels, so JUCE's input
+    callback copied from a null pointer on the render thread (_platform_memmove <-
+    renderGetInputCallback <- the plugin's PullInput <- EchoJayProcessor::processBlock, SIGSEGV at
+    0x0, AUHostingServiceXPC, 16:33 with WaveShell and 16:41 with UnFairchild).
+
+    SO WHY IS IT STILL OFF? Because "fixed" and "proven" are different words. The fix is guarded by
+    the arithmetic (chat_store_guard SH8/SH8b) and the rig will exercise the road, but neither can
+    load a PACE or iLok plugin - the standing rule on this machine - so the two plugins that actually
+    crashed cannot be tested here by anything but him. A feature that took his session down twice in
+    ten minutes does not go back in front of him on the strength of a guard that cannot load it.
+
+    ONE SWITCH, READ IN ONE PLACE (the editor's follow road), so turning it on is one line and
+    nothing else changes. Everything else in the feature - the tap, the ring, the refusals, the
+    stale-index fix, the frame count - stays in and stays guarded. */
+constexpr bool kShadowViewEnabled = false;
+
+
 /** The V2's side of the shadow: one hosted copy, one ring, and three readings.
 
     Owned by the processor (it outlives any window, like the run does), driven by the editor:
@@ -76,6 +101,25 @@ public:
     {
         if (inst == nullptr) { whyNot = "no copy was created"; return false; }
         if (ringMap == nullptr) { whyNot = "that Link is not streaming the slot yet"; return false; }
+        // ---- THE BUFFER IS THE COPY'S, NOT A FIXED STEREO PAIR (his 16:33 crash, 23 Oct 2026) --
+        //
+        // A WaveShell copy ("SSLComp (s)") crashed the AU hosting process on the render thread:
+        //   _platform_memmove  <-  juce::AudioUnitPluginInstanceHeadless::renderGetInputCallback
+        //                      <-  AUInputElement::PullInput  (WaveShell1-AU)
+        //                      <-  EchoJayProcessor::processBlock
+        // SIGSEGV, KERN_INVALID_ADDRESS at 0x0: the AU pulled an input channel this buffer did not
+        // have, so JUCE's input callback copied from a null pointer. The buffer was two channels
+        // because `prepare` had no instance to ask - and the one thing that knows how many channels
+        // a plugin can pull is the plugin.
+        //
+        // So it is sized HERE, on the message thread, from the copy's own channel counts, and never
+        // smaller than stereo. The allocation stays off the audio thread exactly as before: pump()
+        // still only reads and writes what this call laid out.
+        const int wantCh = juce::jmax (2, inst->getTotalNumInputChannels(),
+                                          inst->getTotalNumOutputChannels());
+        if (buf_.getNumChannels() != wantCh || buf_.getNumSamples() < kBufFrames)
+            buf_.setSize (wantCh, kBufFrames, false, true, false);
+        buf_.clear();
         auto* hdr = LinkShm::ringHeader (ringMap);
         if (hdr == nullptr || hdr->magic != kLinkMagic)
         { whyNot = "the shadow ring has no header yet"; return false; }
@@ -163,10 +207,19 @@ public:
                 if ((int) n < numSamples)
                     for (int ch = 0; ch < 2; ++ch)
                         buf_.clear (ch, (int) n, numSamples - (int) n);
+                // ...AND EVERY CHANNEL BEYOND THE PAIR IS SILENCE, NOT LEFTOVERS. A sidechain or a
+                // surround leg the ring knows nothing about is fed zeroes: the tap carries one
+                // stereo pair, and handing a plugin last block's samples on a channel we cannot
+                // fill would be a reading of something that was never played.
+                for (int ch = 2; ch < buf_.getNumChannels(); ++ch)
+                    buf_.clear (ch, 0, numSamples);
                 const float inPk = juce::jmax (buf_.getMagnitude (0, 0, numSamples),
                                                buf_.getMagnitude (1, 0, numSamples));
                 juce::MidiBuffer noMidi;
-                juce::AudioBuffer<float> view (buf_.getArrayOfWritePointers(), 2, 0, numSamples);
+                // ALL of the copy's channels, which is what the crash was about: a view narrower
+                // than the plugin is a null pointer waiting for the plugin to pull it.
+                juce::AudioBuffer<float> view (buf_.getArrayOfWritePointers(),
+                                               buf_.getNumChannels(), 0, numSamples);
                 inst_->processBlock (view, noMidi);
                 const float outPk = juce::jmax (view.getMagnitude (0, 0, numSamples),
                                                 view.getMagnitude (1, 0, numSamples));
@@ -205,6 +258,41 @@ public:
         hold nothing: the pointer is valid only while `running()` and only on this thread. */
     juce::AudioProcessor* instance() noexcept { return inst_.get(); }
     juce::SpinLock& lock() noexcept { return lock_; }
+
+    /** ---- THE COPY'S OWN EDITOR, FOR THE V2'S PANEL (his ruling of 23 Oct) ------------------
+        *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the V2
+         (moving meters and gain reduction) without opening the Link's window."*
+
+        The guest's own component, created on the message thread, owned by the caller (the panel
+        parents it and deletes it when it goes). nullptr when nothing is running or the plugin has
+        no editor of its own - and nullptr is a fallback to the static picture, not an error.
+
+        VIEW ONLY, this round: the caller is responsible for dropping the gestures (its own
+        interceptor sits over this component), because a guest editor cannot be asked to grey its
+        controls. docs/SHADOW_VIEW_STAGES_2026-10-23.md, §3.1. */
+    juce::AudioProcessorEditor* createEditorIfPossible()
+    {
+        if (! running() || inst_ == nullptr) return nullptr;
+        if (! inst_->hasEditor()) return nullptr;
+        auto* ed = inst_->createEditorIfNeeded();
+        if (ed != nullptr)
+        {
+            // ---- CLICKS DO NOTHING, THIS ROUND (his ruling of 23 Oct 2026) -----------------
+            //
+            // *"No control through it yet: clicks do nothing."*  A turned knob on the COPY would
+            // move the copy and not the Link, so the picture would start disagreeing with the
+            // plugin it is a picture of - two sources of truth for one value, which is the family
+            // of fault this week was made of. Stage C is what makes a gesture travel.
+            //
+            // AND THE HONEST LIMIT: this is JUCE's own interception, so it covers a JUCE-drawn
+            // editor completely. A guest AU that draws its own NSView may still receive clicks on
+            // that view - the plan's note on guest NSViews - so the report says "clicks are not
+            // wired to anything" rather than "clicks are impossible", and stage C is where the
+            // road is actually built.
+            ed->setInterceptsMouseClicks (false, false);
+        }
+        return ed;
+    }
 
 private:
     juce::SpinLock                           lock_;

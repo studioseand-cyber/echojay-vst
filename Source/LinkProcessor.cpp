@@ -1856,6 +1856,14 @@ void LinkProcessor::pollControlCommand()
         r->setProperty ("streaming", now >= 0 && tap != nullptr && tap->active());
         r->setProperty ("sampleRate", (double) getSampleRate());
         if (now >= 0) r->setProperty ("name", chainHost.getSlotInfo (now).name);
+        // ---- THE REASON, AND THE COUNT (23 Oct 2026) ------------------------------------------
+        // `streaming:false` with no reason sends the V2 guessing, and `streaming:true` with no count
+        // cannot tell "running and silent" from "running and nothing is reaching it" - the two
+        // states B9 could not distinguish for twenty-five seconds. Both travel with the ack now, so
+        // the V2 can say which it is and a log line can be read instead of inferred. ShadowTap's own
+        // header promised this count to the V2 and nothing had ever carried it.
+        if (shadowWhyNot_.isNotEmpty()) r->setProperty ("why", shadowWhyNot_);
+        if (tap != nullptr) r->setProperty ("frames", (double) tap->framesProduced());
         juce::File (resolvedDir + "ctrl-ack-" + id + ".json")
             .replaceWithText (juce::JSON::toString (juce::var (r), true));
         EchoJay_NSLog (("EJCtrl: shadowSlot " + juce::String (slot1) + " seq=" + juce::String (seq)
@@ -4858,6 +4866,7 @@ void LinkProcessor::setShadowSlot (int slot0)
 
     if (want < 0)
     {
+        shadowWhyNot_.clear();                                     // a stop has no reason to carry
         if (shadowMap_ == nullptr && tap->slot() < 0) return;      // already off: say nothing
         // ---- THE ORDER IS THE SAFETY (see ShadowTap::stop) ------------------------------------
         // The slot goes first, so no further block can enter push(); then the pointer; then the
@@ -4879,6 +4888,26 @@ void LinkProcessor::setShadowSlot (int slot0)
                           "pre-trim now does one atomic load per block and nothing else (stage A; his "
                           "\"stop when he leaves it\")").toRawUTF8());
         return;
+    }
+
+    // ---- A SLOT THAT CANNOT STREAM IS REFUSED, NOT PROMISED (23 Oct 2026) ---------------------
+    // The rig's B9 read "streaming slot 1" from here and zero frames for twenty-five seconds: this
+    // function tested only that the slot EXISTS, and a bypassed or unloaded slot has no pre-trim
+    // node in the graph, so no block can reach the tap. echojay::slotCanStream holds that rule and
+    // the words; the ack carries them to the V2, which keeps the static picture and says why.
+    {
+        juce::String why;
+        if (! echojay::slotCanStream (chainHost.slotHasLoadedPlugin (want),
+                                      chainHost.getSlotInfo (want).bypassed, &why))
+        {
+            shadowWhyNot_ = why;
+            EchoJay_NSLog (("EJShadow: NOT streaming slot " + juce::String (want + 1) + " - " + why
+                            + ". Nothing is claimed and nothing is mapped: a tap on a slot the graph "
+                              "does not run would show him a picture that can never move (the rig's "
+                              "B9, 23 Oct)").toRawUTF8());
+            return;
+        }
+        shadowWhyNot_.clear();
     }
 
     if (tap->slot() == want && shadowMap_ != nullptr) return;      // already shadowing that slot

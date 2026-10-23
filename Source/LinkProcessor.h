@@ -439,6 +439,11 @@ private:
     // other published field (B's 20 Oct capture: the set republished and the gate dropped it).
     juce::String lastPublishedSourceType_, lastPublishedSourceTypeFrom_;
     // ---- the shadow ring (stage A): the Link's half of the muted shadow -----------------------
+    // WHY THE LAST REFUSAL IS KEPT (23 Oct 2026): the ctrl ack says `streaming: false`, and on its
+    // own that is a verdict with no reason - the V2 then has to guess between "an older Link",
+    // "it refused" and "nothing is on that slot". One string, written where the refusal is decided
+    // and read where the ack is composed, so the line he sees is the Link's own words.
+    juce::String shadowWhyNot_;
     void* shadowMap_ = nullptr;
     int   shadowFd_  = -1;
     juce::String shadowPath_;
@@ -858,6 +863,11 @@ private:
     std::atomic<int>      ringLastDropped_     { 0 };
     std::atomic<uint32_t> ringLastOverflow_    { 0 };
     std::atomic<int>      ringSetParamPending_ { 0 };   // staged for the message thread, by ruling
+
+    // The shadow view's selector is NOT here: it rides the control channel's `shadowSlot` field,
+    // which setShadowSlot() has served since 21 Oct, with an ack naming what is streaming. My first
+    // cut added a second road for it on the command ring - two roads to one fact, which is the
+    // family of fault I keep reporting - and it is deleted. See docs/SHADOW_VIEW_STAGES_2026-10-23.md.
     // Mute/solo layer (27 Aug 2026): THREE reasons, ONE silence, composed
     // — never shared. muteUserOn_ is the user's mix decision (persists in
     // saved state; a session release must never clear it). soloOn_ is this

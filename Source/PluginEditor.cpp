@@ -2265,7 +2265,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainListPanel.repaint();
         startBorrow (uid);
     };
-    chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
+    chainListPanel.onSelectSlot = [this](int i)
+    {
+        chainSelectedSlot_ = i;
+        // ---- THE LIVE VIEW FOLLOWS THE SELECTION (his ruling of 23 Oct 2026) ---------------
+        // A Link slot gets the V2's own live copy; the main rack's own slots never needed one
+        // (they are hosted here, and their editors have always been real).
+        const auto view = chainViewUid();
+        if (view.isNotEmpty()) shadowFollowSelection (view, i);
+        else                   shadowStopIfRunning ("the main rack's own slots are already live");
+    };
     // ITEM 7 (17 Oct 2026): a slot editor only ever draws on the rack's own tab. The panel asks;
     // switchToTab is the single writer of the visible tab, so nothing else has to be re-asserted.
     chainListPanel.onEditorNeedsChainTab = [this]
@@ -3586,6 +3595,13 @@ EchoJayEditor::~EchoJayEditor() {
     // FIRST in the destructor, while the workspace, the chat list and the client are all still
     // alive - the next line takes the bridge off and after that no frame can reach this editor.
     saveInterruptedAgentRun();
+
+    // ---- THE LIVE VIEW GOES WITH THE WINDOW (stage B, 23 Oct 2026) ---------------------------
+    // The copy and the ring live on the PROCESSOR, like the run does, so a closing window would
+    // otherwise leave a Link copying a block per block into a ring nobody reads. The run survives
+    // the window (item 0b) because a run is work he asked for; a VIEW is only a view, and the
+    // plan's promise is that it costs nothing when it is not on screen.
+    shadowStopIfRunning ("the window is closing");
 
     // ITEM 0: the bridge holds a reference to THIS editor and the client holds a pointer to the
     // bridge, so it comes off first - before anything else here starts taking the window apart.
@@ -13832,6 +13848,22 @@ void EchoJayEditor::withRackLock(const juce::String& uid, std::function<void()> 
 void EchoJayEditor::borrowSelectionTick()
 {
     auto& p = processorRef;
+    // ---- THE LIVE VIEW STOPS WHEN HE LEAVES THAT RACK, AND THAT IS NOT THE BORROW'S BUSINESS --
+    //
+    // *"Only the slot in view is shadowed; stop when he leaves it"* - the plan's rule, and the
+    // reason the feature costs nothing when it is not on screen ("not small, zero").
+    //
+    // IT STOOD BELOW THE BORROW'S EARLY RETURN, AND THE RIG CAUGHT IT (B9, both roads, 23 Oct 2026).
+    // `if (p.borrowActive()) return;` is forty lines down, so with ANY borrow live - the agent's
+    // own, on a completely different rack - this test was never reached and the view kept streaming
+    // after he had left it: borrow on e98297f757, the view on 6582069a30, "leaving that rack STOPS
+    // the view" RED with shadowRunning=1 eight seconds after the move. The same family as the rest
+    // of today: a decision placed behind a condition that has nothing to do with it.
+    //
+    // It asks two things - what rack is in view, and what the shadow is showing - and neither is the
+    // borrow's, so it runs FIRST, before any of this function's returns.
+    if (p.shadowRunning() && p.shadowUid() != chainViewUid())
+        shadowStopIfRunning ("the rack in view is no longer that Link's");
     // ---- A READ IN FLIGHT HAS A DEADLINE (Sean's 21:05 / 21:09 / 21:11, 20 Oct 2026) ----------
     //
     // *"Clicking another rack hangs on 'connecting to rack'. Something is stuck in the Link command
@@ -13889,6 +13921,8 @@ void EchoJayEditor::borrowSelectionTick()
     if (p.borrowActive())
     {
         if (p.borrowUid() == p.pendingAutoEngage_) p.pendingAutoEngage_.clear();
+        // THE RUN'S RECLAIM IS SPENT: it got its rack back, so the next loss may ask again (08:44).
+        runReclaimArmedFor_.clear();
         return;
     }
     // COMMIT 2c LIVENESS (17 Sep 2026): while a Link rack is SELECTED and its
@@ -13922,6 +13956,51 @@ void EchoJayEditor::borrowSelectionTick()
         // now SAYS so ("Not connected to this rack.") instead of sitting on "Connecting to rack..."
         // for ever, which is the honest version of what leg b2 was protecting.
         const juce::String view = chainViewUid();
+        // ---- ...BUT A LIVE RUN ON THAT RACK IS A DEMAND (his 08:44 fault, 23 Oct 2026) --------
+        //
+        // *"opening a Link's window to look must not stop the V2's run or take its rack away. If
+        //  the Link does take control while its window is open, closing that window hands control
+        //  straight back to the V2, the strip reconnects, and Undo all works again. Never leave a
+        //  rack owned by nobody or stuck with a closed Link."*
+        //
+        // The demand-driven rule above is kept exactly as his 20 Oct ruling wrote it - VIEWING does
+        // not engage - and the agent's run is added to the two things that genuinely need the hosted
+        // copy. It was already one of them in fact and not in code: his vocal run was mid
+        // dial-on-playback on Aitch_4_01 when the Link's own window took the rack back, and from
+        // then on nothing asked for it again, so closing the Link left the rack held by a window
+        // that was gone ("not engaging 4814a16004 - nothing has asked to engage this rack yet").
+        //
+        // ONCE PER LOSS. The flag is cleared when the session comes back or the view moves, so a
+        // Link that is still holding its rack is not asked once a second for ever.
+        if (! view.isEmpty() && ! p.borrowActive() && p.pendingAutoEngage_.isEmpty()
+            && borrowReadInFlightUid_.isEmpty() && ! p.borrowApplyInFlight_
+            && runReclaimArmedFor_ != view)
+        {
+            if (auto* home = p.agentHomeIfBuilt())
+            {
+                if (home->runTargetUid() == view && home->runNeedsItsRack())
+                {
+                    bool capable = false;
+                    if (auto it = p.linkRackCache.find (view); it != p.linkRackCache.end())
+                        capable = it->second.rack.borrowCapable;
+                    if (capable)
+                    {
+                        runReclaimArmedFor_ = view;
+                        p.pendingAutoEngage_ = view;
+                        p.setRackLockWant (view);
+                        EchoJay_NSLog (("EJBorrow: the agent's run is working on " + view
+                                        + " and this instance does not hold it - ASKING TO ENGAGE "
+                                          "again (his 08:44 ruling: a run is a demand for the hosted "
+                                          "copy, so closing the Link's own window hands control "
+                                          "straight back rather than leaving the rack with a window "
+                                          "that is gone). Once per loss, not once per tick.").toRawUTF8());
+                    }
+                }
+            }
+        }
+        // ...and the flag follows the VIEW here; the session coming back clears it at the early
+        // return above, which is the only place borrowActive() can still be true.
+        if (! runReclaimArmedFor_.isEmpty() && view != runReclaimArmedFor_) runReclaimArmedFor_.clear();
         // ---- AND THE HELD-BUT-NEVER-ENGAGED RACK (19 Oct 2026, Sean, 08:52) -------------------
         //
         // *"Why is the Kick's Link rack 'Connecting' at all when the Link has been live the whole
@@ -24829,6 +24908,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Draw messages with scroll offset
     g.saveState();
     g.reduceClipRegion(chatX, chatTop2, chatW, chatBottomEdge - chatTop2);
+    // THE SAME RECTANGLE THE ZONES ARE JUDGED BY (his 08:44 fault): one source for what is drawn
+    // and what is pressable, taken here so the two cannot drift.
+    chatZoneClip_ = { chatX, chatTop2, chatW, juce::jmax (0, chatBottomEdge - chatTop2) };
     // Track waveform card positions for overlay buttons
     activeWavePlayBtns = 0;
     activeChainBuildBtns = 0;
@@ -29705,6 +29787,32 @@ void EchoJayEditor::onAskChipTapped(int i)
     // not the consent. Confirm re-enters loadChainFromJson with
     // replaceConfirmed=true — the block re-parses fresh, so nothing stale
     // is captured across the ask.
+    // ---- B'S ONE-RUN RULE: THE SUPERSEDE'S OWN ANSWER (23 Oct 2026) ------------------------
+    // Start puts the message back through the send road WITH consent recorded, so the road takes
+    // ruling 1's branch and stops the old run once. Cancel leaves the live run alone and returns
+    // his text to the box - the same promise ruling 3 makes for a refusal.
+    if (intent == "supersede_start" || intent == "supersede_cancel")
+    {
+        logTap (intent);
+        const auto held = askChipVars[(size_t) i].getProperty ("supersede_msg", juce::var()).toString();
+        supersedePendingReplaceAsks();
+        askShelfVisible_ = false;
+        resized();
+        EchoJay_NSLog (("EJAgent: [supersede-ask] answer="
+                        + juce::String (intent == "supersede_start" ? "start" : "cancel")
+                        + ", his message is " + juce::String (held.length()) + " chars and is "
+                        + (intent == "supersede_start" ? "sent now" : "back in the box")).toRawUTF8());
+        if (intent == "supersede_start" && held.isNotEmpty())
+        {
+            supersedeConsent_ = held;            // the road reads this and stops the old run once
+            sendChatMessage (held);
+        }
+        else if (held.isNotEmpty())
+        {
+            chatInput.setText (held, false);     // never lose what he typed (his ruling 3, 20 Oct)
+        }
+        return;
+    }
     if (intent == "build_confirm" || intent == "build_cancel")
     {
         logTap(intent);
@@ -32035,8 +32143,19 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
     bool replaces = false;
     const auto ask = processorRef.calibTakeAsk (uid, &replaces);
     if (ask.isNotEmpty()) postOrReplaceSettleLine (uid, ask, replaces);
+    // The loop's own name for the plugin it dialled, taken BEFORE the closing is drained - the take
+    // clears the loop's owed flags, and a name read after that is a name read from a cleared state.
+    const auto dialledPlugin = processorRef.calibLoad (uid).plugin;
     const auto closing = processorRef.calibTakeClosing (uid);
-    if (closing.isNotEmpty()) appendLocalResultBubble (closing);
+    if (closing.isNotEmpty())
+    {
+        // ---- A RUN'S DIAL REPORTS ON ITS OWN STEP (his test 4, 08:43, 23 Oct 2026) ----------
+        // *"the dial's result lands inside the card: the dial step finishes and shows its result
+        //  ... Nothing appears outside the card."*  The run's own keepPlayingFor list decides, so
+        // a hand-driven dial keeps the chat line it has always had.
+        if (! processorRef.routeDialClosingToAgentCard (dialledPlugin, closing))
+            appendLocalResultBubble (closing);
+    }
     // 6 Oct 2026 (Sean's ruling for 06a): an edit the Link never confirmed is DROPPED, and the user is told once.
     // Drained here because this is where the processor's other one-shot chat line is drained - one door, not two.
     const auto parkedNotice = processorRef.takeBorrowParkedNotice();
@@ -34564,7 +34683,28 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
     // 19 Oct 2026: APPENDED, each stamped with this card's message. It used to assign, so a chat
     // with two runs in it left only the last card pressable - his "Details is in the wrong place".
     // The chat paint clears the list once before drawing any card, so this accumulates every card.
-    for (const auto& z : L.zones) agentRunZones_.push_back ({ msgIndex, z });
+    // ---- A ZONE IS PRESSABLE ONLY WHERE IT IS VISIBLE (his 08:44 fault, 23 Oct 2026) -------
+    //
+    // *"I opened the Link's OWN window to check its gain reduction. Then the V2's card showed
+    //  'How's it sounding? stopped' / 'Stopped.'"*  His log: `EJAgentRow: press kind=7 step=-` at
+    // 08:44:56 - kind 7 is STOP - and then the run's own stop. Not the window closing (that came 38
+    // seconds later, and item 0b held: the run survived it). A CLICK reached the card's Stop.
+    //
+    // The chat clips what it DRAWS to chatZoneClip_ and clipped nothing it could be clicked on, so
+    // every card scrolled out of the chat's strip kept a full set of live buttons over whatever is
+    // painted there instead. A press on a control nobody can see is not a press.
+    //
+    // Each zone is clipped to that rectangle and dropped when nothing of it survives, so a
+    // half-scrolled button is pressable on its visible half and nowhere else.
+    for (const auto& z : L.zones)
+    {
+        if (chatZoneClip_.isEmpty()) break;
+        const auto visible = z.rect.getIntersection (chatZoneClip_);
+        if (visible.isEmpty()) continue;
+        auto clipped = z;
+        clipped.rect = visible;
+        agentRunZones_.push_back ({ msgIndex, clipped });
+    }
     agentRunZoneMsg_ = msgIndex;
     agentRowPaintRect_ = area;
 
@@ -34642,8 +34782,11 @@ void EchoJayEditor::drawAgentRunRow (juce::Graphics& g, juce::Rectangle<int> are
         bool primary = false, danger = false;
         switch (z.kind)
         {
-            case RunHit::ApplyLine: label = "Apply"; primary = true; break;
-            case RunHit::SkipLine:  label = "Skip";  break;
+            // THE LAYOUT'S OWN WORD, as with ToggleSteps below: it already decided between
+            // Apply/Skip and a build plan's Go/Cancel (his 21:52), and a second switch here would
+            // be two authors for one button - the shape of three faults this week.
+            case RunHit::ApplyLine: label = z.label.isNotEmpty() ? z.label : juce::String ("Apply"); primary = true; break;
+            case RunHit::SkipLine:  label = z.label.isNotEmpty() ? z.label : juce::String ("Skip");  break;
             case RunHit::Details:
                 label = (z.stepIndex >= 0 && z.stepIndex < (int) v.steps.size() && v.steps[(size_t) z.stepIndex].expanded)
                             ? juce::String::fromUTF8 ("Details \xe2\x96\xbe")
@@ -34790,7 +34933,12 @@ juce::var EchoJayEditor::rigAgentRowState() const
     for (const auto& s : v.steps)
     {
         auto* so = new juce::DynamicObject();
+        // THE ROW'S OWN ID AND ITS OWN KIND, named rather than inferred (his B7/B3d lesson): a rig
+        // row that had to recognise "a build awaiting Go" from the WORDING of a label would be
+        // asserting on prose, and the dial step is only findable by its id at all.
+        so->setProperty ("id", s.id);
         so->setProperty ("label", s.label);
+        so->setProperty ("buildPlan", s.buildPlan);
         so->setProperty ("status", echojay::agentui::statusToken (s.status));
         so->setProperty ("right", s.right);
         so->setProperty ("detail", s.detail);
@@ -36541,6 +36689,240 @@ void EchoJayEditor::presentReplaceAsk(const juce::String& question,
     EchoJay_NSLog(shownLog.toRawUTF8());
     resized();
     repaint();
+}
+
+/** Where a stored chat lives, in his words. The chat carries its channel's uid and title; the
+    label comes from the one function that already turns a uid into the name he sees, so the
+    supersede question cannot name a channel differently from the strip (B's one-run rule). */
+/** ---- THE SHADOW VIEW, FOLLOWED FROM THE SELECTION (stage B, 23 Oct 2026) ------------------
+    *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the V2
+     (moving meters and gain reduction) without opening the Link's window. Replace "The live view
+     of this plugin is coming soon" with it. No control through it yet: clicks do nothing, and it
+     must never take the rack, stop a run or change ownership."*
+
+    Three steps, in this order and each refusable: ask that Link to tap the slot's INPUT into its
+    shadow ring (the control channel's `shadowSlot`, which the Link has served since 21 Oct, with an
+    ack saying what is streaming); make a copy of the plugin on the message thread through the ONE
+    instantiate site, with its withhold check, so a licence-bound plugin is refused rather than
+    prompted; then start the view, which refuses a rate mismatch.
+
+    NOTHING HERE TAKES ANYTHING. No lease, no borrow, no rack lock, no state written anywhere. His
+    08:44 fault was an ownership change nobody asked for, and the view-only ruling says this feature
+    may never be another one - which is a guarded claim, not a promise in a comment.
+
+    EVERY REFUSAL ENDS IN THE STATIC PICTURE, with one plain line. That is the designed failure of
+    the plan's §4 and not an error: the shadow is an upgrade on top of the picture, never the only
+    road to seeing a slot.                                                                        */
+void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
+{
+    // ---- THE ONE SWITCH (his ruling of 16:4x, 23 Oct 2026) ------------------------------------
+    // Off in this build after two crashes in ten minutes, both through this road. Read here, before
+    // anything is asked of the Link and before any copy is made, so with it off the feature costs
+    // nothing and reaches nothing: no tap, no ring, no instance, no pump. The reason, and what has
+    // to be true before it goes back on, are written where the flag is (EJShadowView.h).
+    if (! echojay::kShadowViewEnabled)
+    {
+        shadowStopIfRunning ("the live view is switched off in this build");
+        return;
+    }
+    if (uid.isEmpty() || slot0 < 0) { shadowStopIfRunning ("nothing is selected"); return; }
+    if (processorRef.shadowRunning() && processorRef.shadowUid() == uid
+        && processorRef.shadowSlot() == slot0)
+        return;                                   // already showing that one
+    if (shadowAsking_ && shadowWantUid_ == uid && shadowWantSlot_ == slot0) return;
+
+    shadowStopIfRunning ("he moved to another slot");
+    shadowWantUid_ = uid; shadowWantSlot_ = slot0;
+
+    // WHICH PLUGIN? The SIDECAR's slot, which is the Link's own description of its rack - the same
+    // authority the rack view draws from. Never the mirror's: that is the pair of sources his 09:59
+    // fault came from, and this road would open the wrong plugin's interface under this slot.
+    auto it = processorRef.linkRackCache.find (uid);
+    if (it == processorRef.linkRackCache.end() || ! it->second.valid
+        || slot0 >= (int) it->second.rack.slots.size())
+        return;
+    const auto pName = it->second.rack.slots[(size_t) slot0].name;
+    const auto pFmt  = it->second.rack.slots[(size_t) slot0].format;
+    if (pName.isEmpty()) return;
+
+    auto& chHost = processorRef.getChainHost();
+    ChainHost::WithholdReason withheld = ChainHost::WithholdReason::None;
+    auto desc = chHost.resolveByName (pName, pFmt, nullptr, &withheld);
+    if (desc.name.isEmpty() && withheld == ChainHost::WithholdReason::None)
+        desc = chHost.resolveByName (pName, {}, nullptr, &withheld);
+    // A WITHHELD PLUGIN IS NEVER INSTANTIATED HERE. On this Mac an iLok/PACE prompt is the one
+    // thing that must never happen, and the withhold list is what already knows (the plan's §4).
+    if (desc.name.isEmpty() || ChainHost::isWithheld (withheld)
+        || ChainHost::isWithheld (chHost.withholdReason (desc)))
+    {
+        EchoJay_NSLog (("EJShadow: not opening a live view of \"" + pName + "\" - "
+                        + (desc.name.isEmpty() ? juce::String ("it is not in this machine's plugin list")
+                                               : ChainHost::withholdReasonText (withheld))
+                        + ". The static picture stays, which is the designed failure (plan §4)").toRawUTF8());
+        return;
+    }
+
+    // ---- STEP 1: ASK THAT LINK TO TAP THE SLOT ------------------------------------------------
+    int err = 0;
+    const auto dir = LinkShm::resolveDir (err);
+    if (dir.isEmpty()) return;
+    const int seq = (int) (juce::Time::currentTimeMillis() & 0x7fffffff);
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty ("v", 1);
+    cmd->setProperty ("seq", seq);
+    cmd->setProperty ("shadowSlot", slot0 + 1);     // 1-based on the wire, 0 = stop
+    juce::File (dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File (dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText (juce::JSON::toString (juce::var (cmd), true));
+    shadowAsking_ = true;
+    EchoJay_NSLog (("EJShadow: asked " + uid + " to tap the input of slot " + juce::String (slot0 + 1)
+                    + " (\"" + pName + "\") seq=" + juce::String (seq)
+                    + " - a request for AUDIO and nothing else").toRawUTF8());
+
+    // ---- STEP 2: THE ACK, WITH A BOUND, THEN THE COPY ----------------------------------------
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor> (this);
+    auto poll = std::make_shared<std::function<void (int)>>();
+    *poll = [safeThis, poll, dir, uid, slot0, pName, desc, seq] (int left)
+    {
+        juce::Timer::callAfterDelay (120, [safeThis, poll, dir, uid, slot0, pName, desc, seq, left]
+        {
+            if (safeThis == nullptr) return;
+            // He may have moved on while we waited: the want is the authority, not this closure.
+            if (safeThis->shadowWantUid_ != uid || safeThis->shadowWantSlot_ != slot0)
+            { safeThis->shadowAsking_ = false; return; }
+            juce::File ack (dir + "ctrl-ack-" + uid + ".json");
+            bool streaming = false;
+            juce::String why;
+            if (ack.existsAsFile())
+            {
+                const auto v = juce::JSON::parse (ack.loadFileAsString());
+                if (auto* o = v.getDynamicObject(); o != nullptr && (int) o->getProperty ("seq") == seq)
+                {
+                    streaming = (bool) o->getProperty ("streaming");
+                    why       = o->getProperty ("why").toString();
+                }
+                else if (left > 0) { (*poll) (left - 1); return; }
+            }
+            else if (left > 0) { (*poll) (left - 1); return; }
+
+            if (! streaming)
+            {
+                // THE LINK'S OWN REASON, when it gave one (23 Oct 2026). This said "an older Link,
+                // or it refused" whatever had happened, which is a sentence that covers every case
+                // and explains none - and the Link now refuses a slot it cannot tap at all. His
+                // line names the cause when the Link named it, and keeps the old guess only for a
+                // Link too old to say.
+                safeThis->shadowAsking_ = false;
+                EchoJay_NSLog (("EJShadow: " + uid + " is not streaming slot "
+                                + juce::String (slot0 + 1) + " - "
+                                + (why.isNotEmpty() ? why
+                                                    : juce::String ("no reason given (an older Link, "
+                                                                    "or it refused)"))
+                                + " - the static picture stays").toRawUTF8());
+                if (why.isNotEmpty())
+                {
+                    safeThis->chainListPanel.statusText = "No live view of " + pName + ": " + why + ".";
+                    safeThis->chainListPanel.repaint();
+                }
+                return;
+            }
+            // THE COPY, through the ONE instantiate site, on the message thread, with the plan's
+            // bound: a creation that never calls back leaves `shadowAsking_` set and nothing else,
+            // and the next selection clears it.
+            safeThis->processorRef.getChainHost().asyncCreatePlugin (desc,
+                [safeThis, uid, slot0, pName] (std::unique_ptr<juce::AudioPluginInstance> inst,
+                                               const juce::String& loadErr)
+            {
+                if (safeThis == nullptr) return;
+                safeThis->shadowAsking_ = false;
+                if (safeThis->shadowWantUid_ != uid || safeThis->shadowWantSlot_ != slot0) return;
+                if (inst == nullptr)
+                {
+                    EchoJay_NSLog (("EJShadow: no live copy of \"" + pName + "\" could be created: "
+                                    + loadErr + " - the static picture stays").toRawUTF8());
+                    return;
+                }
+                juce::String whyNot;
+                if (! safeThis->processorRef.shadowBegin (uid, slot0, pName, std::move (inst), whyNot))
+                {
+                    EchoJay_NSLog (("EJShadow: the live view of \"" + pName + "\" did not start: "
+                                    + whyNot).toRawUTF8());
+                    safeThis->chainListPanel.statusText = "A live view of " + pName + " isn't "
+                                                          "available: " + whyNot + ".";
+                    safeThis->chainListPanel.repaint();
+                    return;
+                }
+                // The panel asks for the editor through createSlotEditorForView, which now answers
+                // with the copy's own. Ask it to redraw the selected slot.
+                safeThis->chainListPanel.showInline (slot0, false);
+                safeThis->chainListPanel.repaint();
+                // ---- AND A VIEW THAT IS UP AND RECEIVING NOTHING SAYS SO (23 Oct 2026) --------
+                // B9 sat on a running copy with zero frames for twenty-five seconds and nothing
+                // anywhere said it: a live view and a frozen one look identical on screen, which is
+                // the one thing a live view must never be. The copy's own counter answers it, so it
+                // is READ once after a bound rather than left to be inferred from a still meter.
+                // This only reports - it never takes the view down, because a late first block is
+                // not a failure and his picture should not flicker for one.
+                juce::Timer::callAfterDelay (2000, [safeThis, uid, slot0, pName]
+                {
+                    if (safeThis == nullptr) return;
+                    auto& pr = safeThis->processorRef;
+                    if (! pr.shadowRunning() || pr.shadowUid() != uid || pr.shadowSlot() != slot0) return;
+                    if (pr.shadowFramesPumped() > 0) return;              // it is moving; nothing to say
+                    EchoJay_NSLog (("EJShadow: the live view of \"" + pName + "\" is up but NO AUDIO "
+                                    "has arrived from " + uid + " in 2 s (0 frames consumed). The "
+                                    "picture is therefore still - the ring is mapped and the Link "
+                                    "acked the tap, so what is missing is blocks reaching that slot "
+                                    "(nothing playing, or the slot is not in the Link's graph)")
+                                   .toRawUTF8());
+                });
+            });
+        });
+    };
+    (*poll) (25);                                   // 25 x 120 ms = 3 s, then it gives up and says so
+}
+
+void EchoJayEditor::shadowStopIfRunning (const juce::String& why)
+{
+    const bool wasRunning = processorRef.shadowRunning();
+    const auto uid = wasRunning ? processorRef.shadowUid() : shadowWantUid_;
+    shadowWantUid_.clear(); shadowWantSlot_ = -1; shadowAsking_ = false;
+    processorRef.shadowEnd();
+    // ...AND THE LINK STOPS WRITING. Without this the tap keeps copying a block per block for a
+    // view nobody is looking at - "the cost of the feature when it is not on screen is zero, not
+    // small" is the plan's own promise, and it is this message that keeps it.
+    if (uid.isNotEmpty())
+    {
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (dir.isNotEmpty())
+        {
+            auto* cmd = new juce::DynamicObject();
+            cmd->setProperty ("v", 1);
+            cmd->setProperty ("seq", (int) (juce::Time::currentTimeMillis() & 0x7fffffff));
+            cmd->setProperty ("shadowSlot", 0);         // 0 = stop
+            juce::File (dir + "ctrl-cmd-" + uid + ".json")
+                .replaceWithText (juce::JSON::toString (juce::var (cmd), true));
+        }
+    }
+    if (wasRunning)
+        EchoJay_NSLog (("EJShadow: the live view is down - " + why).toRawUTF8());
+}
+
+juce::String EchoJayEditor::channelNameForChat (const juce::String& chatId) const
+{
+    if (chatId.isEmpty()) return {};
+    for (const auto& c : workspace.getChats())
+    {
+        if (c.id != chatId) continue;
+        if (c.linkUid.isNotEmpty())
+        {
+            const auto label = channelDisplayLabel (c.linkUid);
+            if (label.isNotEmpty()) return label;
+        }
+        return c.title;
+    }
+    return {};
 }
 
 LinkShm::RackSidecar EchoJayEditor::readLinkRackSidecar(const juce::String& uid) const
@@ -39294,6 +39676,21 @@ void EchoJayEditor::publishRigState()
     // ---- which rack this window is working on, and what the agent was told it is
     o->setProperty ("workingUid", workingOnUid());
     o->setProperty ("viewUid",    chainViewUid());
+    // ---- THE SHADOW VIEW, NAMED RATHER THAN INFERRED (stage B, 23 Oct 2026) ----------------
+    // A row about the live view must be able to say WHICH slot of WHICH Link is running and whether
+    // audio is actually moving through the copy - "the view is up" inferred from a picture on screen
+    // would pass against a static one. framesPumped is the only honest proof that it is live.
+    o->setProperty ("shadowRunning", processorRef.shadowRunning());
+    o->setProperty ("shadowUid",     processorRef.shadowUid());
+    o->setProperty ("shadowSlot",    processorRef.shadowSlot() + 1);     // 1-based, 0 = none
+    o->setProperty ("shadowPlugin",  processorRef.shadowPluginName());
+    o->setProperty ("shadowFrames",  (double) processorRef.shadowFramesPumped());
+    o->setProperty ("borrowActive",  processorRef.borrowActive());
+    // WHICH rack is borrowed, not just whether any is (23 Oct 2026). B9 asserted "the view took no
+    // borrow" against the bare flag and failed on a borrow that belonged to another rack entirely -
+    // the row could not tell the difference because the state did not carry it. A claim about one
+    // rack needs the rack's name in the reading.
+    o->setProperty ("borrowUid",     processorRef.borrowUid());
     o->setProperty ("agentTarget", agentTargetLast_);
     o->setProperty ("agentModeOn", agentModeOn());
     // The MODE, not just the boolean (Sean's Auto ruling): a row that sets Auto has to be able to assert
@@ -39703,8 +40100,48 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     {
         if (! ag->isWorking())
         {
-            // RULING 1: only waiting, so it does not block. Stopped with a reason its OWN card
-            // shows, in its own chat - and the message goes on to start its own run below.
+            // ---- NEVER CANCEL A RUN SILENTLY (B's one-run rule + Sean, 23 Oct 2026) ---------
+            //
+            // *"The server allows one agent run per account. Before a new run supersedes a live
+            //  one, the plugin asks: 'This will stop the run on <Link or channel>. Start anyway?'
+            //  with Start / Cancel. Never cancel silently."*
+            //
+            // His test 2 at 08:28 is what that reads like without the question: he typed in the
+            // Kick's chat, the Vocal run - alive, mid-build, waiting on its chips - was stopped on
+            // the spot, and the only sign of it was a card that then froze. Ruling 1 of 20 Oct
+            // (a waiting run does not BLOCK a new one) stands; what it may not do is end the old
+            // run without asking.
+            //
+            // THE ASK CARRIES THE MESSAGE, so neither answer loses anything: Start stops that run
+            // and sends this text, Cancel leaves the run alone and puts the text back in the box.
+            // The run is named by WHERE IT IS, which is the fact he needs to decide - and it is the
+            // run's own chat's channel, not the one on screen.
+            if (! supersedeConsent_.isNotEmpty() || supersedeConsent_ != msg)
+            {
+                const auto runsWhere = channelNameForChat (ag->runChatId());
+                auto* start  = new juce::DynamicObject();
+                start->setProperty ("label",  "Start anyway");
+                start->setProperty ("intent", "supersede_start");
+                start->setProperty ("supersede_msg", msg);
+                auto* cancel = new juce::DynamicObject();
+                cancel->setProperty ("label",  "Cancel");
+                cancel->setProperty ("intent", "supersede_cancel");
+                cancel->setProperty ("supersede_msg", msg);
+                juce::Array<juce::var> choices;
+                choices.add (juce::var (start));
+                choices.add (juce::var (cancel));
+                const auto question = "This will stop the run on "
+                                    + (runsWhere.isNotEmpty() ? runsWhere : juce::String ("another channel"))
+                                    + ". Start anyway?";
+                presentReplaceAsk (question, choices, "a new run would supersede a live one",
+                                   "EJAgent: [supersede-ask] a message typed in chat " + currentChatId
+                                   + " would stop the run in chat " + ag->runChatId()
+                                   + " - ASKING first (B's one-run rule; never cancel silently). "
+                                     "His text rides on the chips, so neither answer loses it.");
+                chatInput.setText ({}, false);   // it is on the chips now, not lost
+                return;
+            }
+            supersedeConsent_.clear();           // spent: this message is the one he said Start to
             const auto where = chatTargetChannelName();
             EchoJay_NSLog (("EJAgent: a message typed in chat " + currentChatId + " is not for the run "
                             "waiting in chat " + ag->runChatId() + " - that run is WAITING, not working ("
@@ -47907,7 +48344,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
     // ---- ITEM 0: the agent run row's own controls ----------------------------------------
     // Same gate as every other assistant-painted zone, and FIRST among them because the run row's
     // buttons sit inside an assistant bubble that no other zone claims.
-    if (assistantHit && !agentRunZones_.empty())
+    if (assistantHit && !agentRunZones_.empty() && chatZoneClip_.contains (pos))
     {
         for (const auto& pz : agentRunZones_)
             if (pz.z.rect.contains(pos))

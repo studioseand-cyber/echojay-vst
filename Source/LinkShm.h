@@ -598,6 +598,31 @@ inline juce::String makeAudioFilename(const juce::String& linkName)
     return "audio_" + safe + ".bin";
 }
 
+/** ---- THE SHADOW RING (stage A's write side, 23 Oct 2026) -----------------------------------
+    `shadow_<name>.bin`, the SAME layout as the audio ring (LinkShmHeader + kLinkRingFrames x 2 ch
+    float), and deliberately a SECOND FILE rather than a second consumer of audio_<name>.bin:
+    `readIdx` is one cursor, so capture, solo and the audition are already mutually exclusive, and a
+    fourth consumer would mean the shadow silently stealing frames from a bounce (the plan's §1).
+
+    Written by the Link at the INPUT of the one slot the V2 asked for, and at no other time: with no
+    slot asked for, the tap stores -1 and the cost is two atomic loads per slot per block. */
+inline juce::String makeShadowFilename (const juce::String& linkName)
+{
+    const juce::String safe = makeSafeFilePart (linkName);
+    if (safe.isEmpty()) return {};
+    return "shadow_" + safe + ".bin";
+}
+
+/** The shadow ring's name for a Link whose AUDIO ring name is already known - which is the V2's
+    case: the registry row carries `audioFile` as the Link itself wrote it, so deriving the shadow
+    name from THAT rather than from a display name means the two sides cannot disagree about the
+    file even if the Link has since been renamed. Empty in, empty out. */
+inline juce::String shadowFilenameFromAudio (const juce::String& audioFilename)
+{
+    if (! audioFilename.startsWith ("audio_")) return {};
+    return "shadow_" + audioFilename.fromFirstOccurrenceOf ("audio_", false, false);
+}
+
 /// Registry filename. v2 appends the LinkMeterFrame array; the name is
 /// bumped because openFileMapped ftruncates to the opener's size — an old
 /// build opening a v2 file would shrink it under a live v2 mapping (SIGBUS).

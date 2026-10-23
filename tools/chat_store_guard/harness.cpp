@@ -28,6 +28,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "EJAgentClientTestAccess.h"   // B's one-run rule: feed the client frames with no server
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -116,6 +117,10 @@ struct EchoJayTabStripTestAccess
         return n;
     }
     static void clearChat (EchoJayEditor& e) { e.currentChatId = {}; e.chatMessages.clear(); }
+    /** B's one-run rule (23 Oct): what is left in the composer after the send road refuses or asks.
+        openChat and send already exist above - the leg uses THOSE, so it drives the shipped switch
+        and the shipped send rather than a copy of either. */
+    static juce::String composerText (EchoJayEditor& e) { return e.chatInput.getText(); }
     static void pend (EchoJayProcessor& p, const juce::String& uid) { p.pendingChannelUid = uid; }
     static juce::String channelLabel (EchoJayEditor& e, const juce::String& uid) { return e.channelDisplayLabel (uid); }
     static std::vector<EchoJayEditor::ChatMsg>& msgs (EchoJayEditor& e) { return e.chatMessages; }
@@ -1238,6 +1243,392 @@ int main()
                "PL2 ...it is filed in the chat the ROW states, which is where the run actually ran - "
                "the chatId stamped at creation is the only authority that cannot have moved",
                "cards in \"chatMixBus\" " + juce::String (inMix));
+    }
+
+    // =============================================================================================
+    //  HIS TEST 2 (08:28, 23 Oct 2026): A RUN'S CARD IS STILL WRITTEN AFTER A LINK SWITCH
+    // =============================================================================================
+    //
+    // *"Its card is stuck on 'Thinking...' with 'Hide steps' and NO steps showing; it had shown
+    //  'read the rack' earlier."*  Two Links, a run live on one, several switches between them.
+    //
+    // THE CAUSE: EJAgentHome::writeSnapshot found the run's row by walking proc.chatHistory, and a
+    // chat or Link switch CLEARS that list (loadChatFromWorkspace - his own rule 2 of 18 Oct, which
+    // is right: a switch must not carry one chat's messages into another). So from the first switch
+    // onwards the loop fell through and the card stopped being written ANYWHERE, while the run went
+    // on perfectly - B's 3215 log has the Kick plan card reaching the plugin at 08:29:57 with
+    // nothing on screen ever saying so (B's note 1 of this morning: same cause, same line).
+    //
+    // The home now holds the row's address itself and writes through the STORE, which is the
+    // authority. These legs are about exactly that: the list is emptied, and the card still lands.
+    {
+        EchoJayProcessor ps;
+        WsChat c; c.id = "chatSwitch"; c.title = "Aitch_4_01"; c.trackName = "test project";
+        ps.workspace.addChat (c);
+        const juce::String key = "run-switch-1";
+        echojay::agentui::RunView v0; v0.runKey = key; v0.opening = "Thinking...";
+        EchoJayProcessor::ChatEntry card; card.role = "assistant";
+        card.agentJson = juce::JSON::toString (echojay::agentui::toJson (v0), true);
+        ps.appendChatEntry (std::move (card), "chatSwitch", key);
+
+        const auto storedAt = [&ps, &key] (const juce::String& chatId)
+        {
+            return ps.storedAgentCardJson (chatId, key);
+        };
+        check (storedAt ("chatSwitch").isNotEmpty(),
+               "SW0 the fixture: the run's card is in the STORE under its own key, as the stamp puts "
+               "it there",
+               juce::String (storedAt ("chatSwitch").length()) + " chars");
+
+        // THE SWITCH, exactly as loadChatFromWorkspace does it: the replay list is emptied.
+        ps.chatHistory.clear();
+        check (ps.chatHistory.empty() && storedAt ("chatSwitch").isNotEmpty(),
+               "SW1 ...and a Link switch empties the processor's replay list while the STORE keeps "
+               "the card - which is why the store has to be the thing the home writes to",
+               "chatHistory " + juce::String ((int) ps.chatHistory.size()) + " row(s)");
+
+        // THE WRITE THE HOME MAKES, through the one door it uses, with the list still empty: a later
+        // snapshot (a step, then the stop) has to reach the store by (chat, entry) alone.
+        echojay::agentui::RunView v1; v1.runKey = key; v1.opening = "Thinking...";
+        { echojay::agentui::RunStep st; st.id = "tc_1"; st.label = "read the rack";
+          st.status = (int) EJAgentClient::Step::Status::Done; v1.steps.push_back (st); }
+        v1.statusWord = "Stopped"; v1.finished = true;
+        const auto json1 = juce::JSON::toString (echojay::agentui::toJson (v1), true);
+        ps.storeAgentCard ("chatSwitch", key, json1, "Stopped.");
+        const auto back = echojay::agentui::fromJson (juce::JSON::parse (storedAt ("chatSwitch")));
+        check (back.steps.size() == 1 && back.steps[0].label == "read the rack",
+               "SW2 ...so the card written AFTER the switch reaches the stored row by its own (chat, "
+               "entry) address and keeps its steps  (RED as it shipped at 08:28: the home looked for "
+               "its row on the emptied list, found nothing, and wrote nothing - the card froze on "
+               "\"Thinking...\" with no steps while the run carried on)",
+               juce::String ((int) back.steps.size()) + " step(s)");
+        check (back.finished && back.statusWord == "Stopped",
+               "SW3 ...including the fact that it ENDED, which is the half that made the frozen card "
+               "a lie rather than just stale",
+               "finished=" + juce::String ((int) back.finished) + " word \"" + back.statusWord + "\"");
+        check (ps.storedAgentCardJson ("chatSwitch", "some-other-key").isEmpty()
+               && ps.storedAgentCardJson ("noSuchChat", key).isEmpty(),
+               "SW4 ...and the address is exact: another key, or another chat, finds nothing - a "
+               "write that fell back to \"the first card in the chat\" would file one run's state "
+               "onto another run's row, which is his 15:20 fault with a new cause",
+               "both empty");
+    }
+
+    // =============================================================================================
+    //  THE SHADOW VIEW TAKES NOTHING (stage B, 23 Oct 2026)
+    // =============================================================================================
+    //
+    // *"it must never take the rack, stop a run or change ownership."*  His 08:44 fault was an
+    // ownership change nobody asked for, so the view-only promise is a GUARDED claim and not a
+    // sentence in a comment. These legs are about what the shadow does NOT do, which is the half
+    // that can regress silently - a view that stops working is visible, a view that quietly takes a
+    // rack is what cost him a run this morning.
+    {
+        EchoJayProcessor pv; pv.prepareToPlay (48000.0, 512);
+        const juce::String uid = "shadowuid01";
+
+        // THE RING'S NAME HAS ONE AUTHOR: derived from the audio ring the Link itself named, so a
+        // rename cannot leave the two sides looking at different files.
+        check (LinkShm::shadowFilenameFromAudio ("audio_Aitch_4_01.bin") == "shadow_Aitch_4_01.bin",
+               "SH0 the shadow ring's name is the Link's OWN audio ring name with its prefix "
+               "swapped - one author, so the V2 and the Link cannot disagree about the file",
+               LinkShm::shadowFilenameFromAudio ("audio_Aitch_4_01.bin"));
+        check (LinkShm::shadowFilenameFromAudio ("registry_v3.bin").isEmpty(),
+               "SH0b ...and anything that is not an audio ring gets no shadow name at all, rather "
+               "than a plausible one pointing at nothing",
+               "\"" + LinkShm::shadowFilenameFromAudio ("registry_v3.bin") + "\"");
+
+        // A BEGIN WITH NO COPY REFUSES, AND SAYS WHY IN WORDS HE COULD READ.
+        juce::String whyNot;
+        check (! pv.shadowBegin (uid, 0, "Tube-Tech CL 1B", nullptr, whyNot)
+               && whyNot.isNotEmpty(),
+               "SH1 a view with no copy of the plugin REFUSES and says why - the static picture "
+               "stays, which is the plan's designed failure (§4) and not an error",
+               "\"" + whyNot + "\"");
+        check (! pv.shadowRunning(),
+               "SH2 ...and nothing is left running after a refusal",
+               "running=" + juce::String ((int) pv.shadowRunning()));
+
+        // AND THE THING THAT MATTERS MOST: a refused OR a running view takes no rack, no lock and
+        // no lease. Read straight off the processor's own state rather than inferred.
+        check (pv.rackLockWantUid().isEmpty() && ! pv.borrowActive() && pv.pendingAutoEngage_.isEmpty(),
+               "SH3 ...and the shadow takes NO rack lock, NO borrow and NO pending engage - the "
+               "view-only ruling, asserted on the processor's own state  (his 08:44 fault was a "
+               "rack taken by something he only wanted to LOOK at)",
+               "lockWant \"" + pv.rackLockWantUid() + "\", borrow "
+               + juce::String ((int) pv.borrowActive()) + ", pending \"" + pv.pendingAutoEngage_ + "\"");
+        check (! pv.editActive(),
+               "SH4 ...and it is not the edit session either: the audition's machinery minus the "
+               "lease is the whole design, and a shadow that opened a session would be the lease "
+               "arriving by the back door",
+               "editActive=" + juce::String ((int) pv.editActive()));
+
+        // ...AND A SECOND END IS HARMLESS. shadowEnd is called on every selection change, on the
+        // view moving and in the destructor; a second call that did anything would be a crash
+        // waiting for the third.
+        pv.shadowEnd(); pv.shadowEnd();
+        check (! pv.shadowRunning() && pv.shadowFramesPumped() == 0,
+               "SH5 ...and stopping a view that is not running does nothing at all - it is called "
+               "from the selection, the tick and the destructor, so it has to be idempotent",
+               "frames " + juce::String (pv.shadowFramesPumped()));
+
+        // ---- AND A SLOT THAT CANNOT STREAM IS REFUSED BEFORE IT IS PROMISED (23 Oct 2026) ------
+        //
+        // The rig's B9 read "EJShadow: streaming slot 1" from the Link and then zero frames for
+        // twenty-five seconds with no line anywhere saying why. The tap hangs off the slot's
+        // PRE-TRIM node, and rebuildGraph only wires that node for a slot with a plugin that is not
+        // bypassed, so for any other slot "streaming" is a claim that cannot come true - and
+        // "running and silent" was indistinguishable from "never started", which is the
+        // unfalsifiable shape this house refuses.
+        //
+        // BOTH DIRECTIONS, because one is worth nothing: a slot that CAN stream must not be refused
+        // either, or the feature would simply never come up and the leg would still read green.
+        {
+            juce::String whyTap;
+            check (echojay::slotCanStream (true, false, &whyTap) && whyTap.isEmpty(),
+                   "SH6 a loaded, un-bypassed slot CAN be tapped - the view comes up for the case it "
+                   "is for (the other half of the refusal, without which this leg would pass on a "
+                   "feature that never worked at all)",
+                   "why \"" + whyTap + "\"");
+            whyTap.clear();
+            const bool noPlug = echojay::slotCanStream (false, false, &whyTap);
+            check (! noPlug && whyTap.containsIgnoreCase ("no plugin"),
+                   "SH6b ...and a slot with NOTHING LOADED is refused with the reason in words, "
+                   "rather than acked as streaming  (RED as it shipped: the Link said \"streaming "
+                   "slot 1\" and no frame could ever arrive)",
+                   "\"" + whyTap + "\"");
+            whyTap.clear();
+            const bool byp = echojay::slotCanStream (true, true, &whyTap);
+            check (! byp && whyTap.containsIgnoreCase ("bypassed"),
+                   "SH6c ...and a BYPASSED slot too: rebuildGraph's own test is \"!s.bypassed && "
+                   "s.node\", and a slot that fails either half never sees a block",
+                   "\"" + whyTap + "\"");
+        }
+
+        // ---- A COPY WIDER THAN THE BUFFER IS A CRASH, NOT A GLITCH (his 16:33, 23 Oct 2026) ---
+        //
+        // His crash report, in one line: _platform_memmove <- renderGetInputCallback <-
+        // AUInputElement::PullInput (WaveShell1-AU) <- EchoJayProcessor::processBlock, SIGSEGV at
+        // 0x0 on the render thread. The copy of "SSLComp (s)" pulled an input channel the shadow's
+        // two-channel scratch buffer did not have, so JUCE copied from a null pointer.
+        //
+        // THE LEG IS THE PLUGIN'S SHAPE, not the crash: a copy that reports more channels than a
+        // stereo pair must be given a buffer that holds them. A four-channel stand-in stands for the
+        // WaveShell, because the rig never loads a licence-bound plugin and this guard loads none at
+        // all - what is asserted is the arithmetic the null pointer came from.
+        {
+            struct WideCopy : public juce::AudioProcessor
+            {
+                WideCopy() : juce::AudioProcessor (BusesProperties()
+                                 .withInput  ("In",   juce::AudioChannelSet::quadraphonic(), true)
+                                 .withOutput ("Out",  juce::AudioChannelSet::stereo(), true)) {}
+                const juce::String getName() const override { return "Wide Copy"; }
+                void prepareToPlay (double, int) override {}
+                void releaseResources() override {}
+                // THE PULL THE CRASH CAME FROM: it reads every channel it was promised. With a
+                // buffer that is too narrow this is the read that was a memmove from 0x0.
+                void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+                {
+                    sawChannels = b.getNumChannels();
+                    for (int ch = 0; ch < getTotalNumInputChannels(); ++ch)
+                        if (ch < b.getNumChannels()) sum += b.getMagnitude (ch, 0, b.getNumSamples());
+                        else ++pulledPastTheEnd;
+                }
+                double getTailLengthSeconds() const override { return 0.0; }
+                bool acceptsMidi() const override { return false; }
+                bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+                bool hasEditor() const override { return false; }
+                int getNumPrograms() override { return 1; }
+                int getCurrentProgram() override { return 0; }
+                void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; }
+                void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {}
+                void setStateInformation (const void*, int) override {}
+                int sawChannels = 0, pulledPastTheEnd = 0; float sum = 0.0f;
+            };
+            echojay::ShadowView sv;
+            sv.prepare (48000.0, 512);
+            auto wide = std::make_unique<WideCopy>();
+            auto* widePtr = wide.get();
+            wide->prepareToPlay (48000.0, 512);
+            juce::MemoryBlock ring2 ((size_t) kLinkShmSize, true);
+            auto* h2 = LinkShm::ringHeader (ring2.getData());
+            h2->magic = kLinkMagic; h2->version = kLinkVersion; h2->sampleRate = 48000.0f;
+            h2->numChannels = 2; h2->capacityFrames = kLinkRingFrames;
+            juce::String why2;
+            const bool up = sv.start (std::move (wide), ring2.getData(), "uidwide", 0, "Wide Copy", why2);
+            check (up, "SH8 a copy with more channels than a stereo pair starts (the case his crash "
+                       "came from - nothing here refuses it, so the buffer has to hold it)",
+                   up ? juce::String ("up") : "refused: " + why2);
+            sv.pump (256);
+            check (widePtr->sawChannels >= widePtr->getTotalNumInputChannels()
+                   && widePtr->pulledPastTheEnd == 0,
+                   "SH8b ...and it is handed EVERY channel it can pull, so no block reads past the "
+                   "end of the buffer  (RED as it shipped at 16:33: the buffer was two channels "
+                   "whatever the plugin was, and his WaveShell copy pulled a third - memmove from "
+                   "0x0 on the render thread, in our own input callback)",
+                   "saw " + juce::String (widePtr->sawChannels) + " channel(s), wanted "
+                   + juce::String (widePtr->getTotalNumInputChannels()) + ", read past the end "
+                   + juce::String (widePtr->pulledPastTheEnd) + " time(s)");
+            sv.stop();
+        }
+
+        // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------
+        //
+        // ShadowTap's own header promised this count to the V2 ("to tell the shadow is running and
+        // silent from the shadow is not running - two states that look identical on a meter and
+        // must never be confused") and nothing had ever carried it. These legs hold the counter's
+        // two halves on the tap itself: it counts only its OWN slot's blocks, and a tap pointed
+        // elsewhere produces exactly zero - which is why zero frames is evidence of where the tap
+        // is pointed and not of silence.
+        {
+            echojay::ShadowTap tap;
+            std::vector<float> l ((size_t) 256, 0.25f), r ((size_t) 256, -0.25f);
+            // No ring: nothing is written and nothing is counted, whatever the slot says.
+            tap.setSlot (0);
+            check (! tap.push (0, l.data(), r.data(), 256) && tap.framesProduced() == 0,
+                   "SH7 a tap with no ring mapped writes nothing and counts nothing - the slot alone "
+                   "is not an invitation to copy into a pointer nobody set",
+                   "frames " + juce::String ((int) tap.framesProduced()));
+            // A ring, but the block belongs to another slot: the count stays at zero, which is the
+            // reading that tells a mis-pointed tap from a silent one.
+            juce::MemoryBlock ring ((size_t) kLinkShmSize, true);
+            auto* hdr = LinkShm::ringHeader (ring.getData());
+            hdr->magic = kLinkMagic; hdr->version = kLinkVersion;
+            hdr->sampleRate = 48000.0f; hdr->numChannels = 2;
+            hdr->capacityFrames = kLinkRingFrames;
+            tap.setRing (ring.getData());
+            check (! tap.push (3, l.data(), r.data(), 256) && tap.framesProduced() == 0,
+                   "SH7b ...and a block from ANOTHER slot is not copied either: the count is the "
+                   "tap's own slot's, so zero frames means the tap is pointed elsewhere and never "
+                   "means the music stopped",
+                   "frames " + juce::String ((int) tap.framesProduced()));
+            check (tap.push (0, l.data(), r.data(), 256) && tap.framesProduced() == 256,
+                   "SH7c ...and its own slot's block IS copied and counted - so a non-zero count is "
+                   "proof that audio reached the slot the view is showing",
+                   "frames " + juce::String ((int) tap.framesProduced()));
+            tap.stop();
+            check (! tap.push (0, l.data(), r.data(), 256) && tap.slot() < 0,
+                   "SH7d ...and after stop() the slot is cleared FIRST, so no further block can "
+                   "enter push() at all - the order is the whole of the safety when the owner is "
+                   "about to unmap",
+                   "slot " + juce::String (tap.slot()));
+        }
+    }
+
+    // =============================================================================================
+    //  B'S ONE-RUN RULE: A NEW RUN ASKS BEFORE IT STOPS A LIVE ONE (23 Oct 2026)
+    // =============================================================================================
+    //
+    // *"The server allows one agent run per account. Before a new run supersedes a live one, the
+    //  plugin asks: 'This will stop the run on <Link or channel>. Start anyway?' with Start /
+    //  Cancel. Never cancel silently."*
+    //
+    // His test 2 at 08:28 is the fault: he typed in the Kick's chat and the Vocal run - alive, mid
+    // build, waiting on its chips - was stopped on the spot with nothing said. The 20 Oct ruling
+    // that a WAITING run does not block a new one is kept; the silence is what goes.
+    {
+        auto* edS = static_cast<EchoJayEditor*> (edBase.get());
+        WsChat ca; ca.id = "chatRunA"; ca.title = "Aitch_4_01"; ca.trackName = "p";
+        WsChat cb; cb.id = "chatRunB"; cb.title = "88_7even Kick_2_01"; cb.trackName = "p";
+        proc.workspace.addChat (ca); proc.workspace.addChat (cb);
+        auto& client = proc.agentHome().client();
+        A::openChat (*edS, "chatRunA");
+        client.start ("build a vocal chain", "chatRunA");
+        EJAgentClientTestAccess::feed (client, "round", "{\"sessionId\":\"ag_sup\",\"round\":1}");
+        EJAgentClientTestAccess::feed (client, "tool_call",
+            R"EJ({"id":"tc_sup","name":"talk","approval":"free","args":{"ask":{"question":"Go, change it, or cancel?","choices":[{"label":"Go"},{"label":"Cancel"}],"allowFreeText":true}}})EJ");
+        EJAgentClientTestAccess::feed (client, "await", "{\"ids\":[\"tc_sup\"]}");
+        EJAgentClientTestAccess::endStream (client, true, 200, {});
+        const bool waiting = client.isActive() && ! client.isWorking();
+        check (waiting,
+               "SU0 the fixture: a run is LIVE on Aitch_4_01 and waiting on its chips - which is the "
+               "state his Vocal run was in at 08:28",
+               juce::String (EJAgentClient::stateName (client.state())));
+        if (waiting)
+        {
+            // ...and he types in the OTHER channel's chat.
+            A::openChat (*edS, "chatRunB");
+            const int msgsBefore = (int) A::msgs (*edS).size();
+            A::send (*edS, "build a kick bus");
+            // THE RUN IS STILL THERE. Nothing was ended by his typing alone.
+            check (client.isActive(),
+                   "SU1 typing in another channel's chat does NOT stop the live run on the spot  (RED "
+                   "as it shipped at 08:28: it was stopped silently and the only sign was a card that "
+                   "then froze on \"Thinking...\")",
+                   "state " + juce::String (EJAgentClient::stateName (client.state())));
+            // ...and he is ASKED, with his own text held on the chips.
+            juce::String question, chips, heldMsg;
+            for (const auto& m : A::msgs (*edS))
+            {
+                if (m.askData.isEmpty()) continue;
+                auto v = juce::JSON::parse (m.askData);
+                if (auto* o = v.getDynamicObject())
+                    if (auto* cs = o->getProperty ("choices").getArray())
+                    {
+                        bool mine = false;
+                        for (const auto& cv : *cs)
+                            if (cv.getProperty ("intent", juce::var()).toString().startsWith ("supersede_"))
+                                mine = true;
+                        if (! mine) continue;
+                        question = o->getProperty ("question").toString();
+                        chips.clear();
+                        for (const auto& cv : *cs)
+                        {
+                            chips << (chips.isEmpty() ? "" : "|") << cv.getProperty ("label", juce::var()).toString();
+                            const auto held = cv.getProperty ("supersede_msg", juce::var()).toString();
+                            if (held.isNotEmpty()) heldMsg = held;
+                        }
+                    }
+            }
+            check (question.contains ("This will stop the run on")
+                   && question.contains ("Aitch_4_01") && question.contains ("Start anyway?"),
+                   "SU2 ...he is asked first, in B's words, naming WHERE that run is - the fact he "
+                   "needs to decide, taken from the RUN'S OWN chat and not from the one on screen",
+                   "\"" + question + "\"");
+            check (chips.containsIgnoreCase ("Start anyway") && chips.containsIgnoreCase ("Cancel"),
+                   "SU3 ...with Start and Cancel to answer it",
+                   "chips [" + chips + "]");
+            check (heldMsg == "build a kick bus",
+                   "SU4 ...and his typed message RIDES ON THE CHIPS, so neither answer loses it - "
+                   "Start sends it, Cancel puts it back in the box (his ruling 3 of 20 Oct: a typed "
+                   "message is never dropped silently)",
+                   "\"" + heldMsg + "\"");
+            juce::ignoreUnused (msgsBefore);
+            if (client.isActive()) client.stop();
+        }
+    }
+
+    // =============================================================================================
+    //  HIS TEST 4 (08:43): A RUN'S DIAL REPORTS ON ITS OWN STEP, NOT AS A LINE BELOW THE CARD
+    // =============================================================================================
+    {
+        EchoJayProcessor pd;
+        const juce::String plugin = "Mixland Vac Attack";
+        const juce::String line   = "Adjusted the Mixland Vac Attack's Left Reduction to +0.0 dB - "
+                                    "it is working 0.2 dB.";
+        check (! pd.routeDialClosingToAgentCard (plugin, line),
+               "DR0 the fixture, and the other direction first: with no run keeping the playback for "
+               "that plugin the dial's line is NOT taken - a hand-driven dial keeps the chat line it "
+               "has always had, and a rule that swallowed every dial's sentence into a card that may "
+               "not exist would lose it",
+               "took it = no");
+        pd.keepPlayingFor.add (plugin);          // what a run arms when it reads a keep_playing dial
+        check (pd.routeDialClosingToAgentCard (plugin, line),
+               "DR1 ...and when the RUN owns that dial the line is taken onto the card instead  (RED "
+               "as it shipped at 08:43: calibTickAndPost posted it with appendLocalResultBubble, so "
+               "it arrived as a loose message below the card)",
+               "took it = yes");
+        check (pd.agentDialResults[plugin].contains ("working 0.2 dB"),
+               "DR2 ...and it is kept under the PLUGIN'S NAME, which is what the card's dial step is "
+               "keyed by - one name, one row, one sentence",
+               "\"" + pd.agentDialResults[plugin] + "\"");
+        check (! pd.routeDialClosingToAgentCard ("Some Other Plugin", line),
+               "DR3 ...and only for the plugins this run armed: another plugin's dial is still the "
+               "chat's, because the run never asked anyone to keep playing for it",
+               "took it = no");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

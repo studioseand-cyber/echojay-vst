@@ -232,6 +232,84 @@ juce::String ChainHost::loadFailureReasonFor(const juce::String& name)
                     return e->getProperty("why").toString();
     return {};
 }
+/** ---- THE PLUGINS WHOSE VALUES THIS BUILD CANNOT READ BACK (23 Oct 2026) -------------------
+    docs in echojay-saas: CONTRACT_plugins_unreadable_2026-10-23.md. One small JSON beside the other
+    per-plugin records: { "unreadable": { "<lowercased name>": { name, why, when } } }.
+
+    WHY IT IS A RECORD AND NOT A SESSION FLAG: B's own reasoning is that the server only learns this
+    from an ack on an add, "so the first build for each user with each such plugin always fails
+    once". A record is what turns "always once" into "once ever", and it is this machine's own fact -
+    Kathy's Mac reads Solid Bus Comp's Threshold back and Sean's build does not.
+
+    AND IT CLEARS ITSELF on a successful read-back, because the usual cause is a parameter map that
+    had not arrived yet: a plugin marked for ever by one bad day would be withheld from value steps
+    long after the reason went away, which is the mistake the no-load list was careful not to make. */
+juce::File ChainHost::getValuesUnreadableFile()
+{ return appSupportDir().getChildFile ("plugin_values_unreadable.json"); }
+
+void ChainHost::noteValuesUnreadable (const juce::String& name, const juce::String& why)
+{
+    const auto key = name.trim().toLowerCase();
+    if (key.isEmpty()) return;
+    const auto f = getValuesUnreadableFile();
+    auto v = f.existsAsFile() ? juce::JSON::parse (f.loadFileAsString()) : juce::var();
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) { root = new juce::DynamicObject(); v = juce::var (root); }
+    auto marks = root->getProperty ("unreadable");
+    auto* mo = marks.getDynamicObject();
+    if (mo == nullptr) { mo = new juce::DynamicObject(); marks = juce::var (mo); }
+    if (mo->hasProperty (key)) return;                // the FIRST reason wins, as the no-load list does
+    auto* e = new juce::DynamicObject();
+    e->setProperty ("name", name.trim());
+    e->setProperty ("why", why.trim());
+    e->setProperty ("when", juce::Time::getCurrentTime().toISO8601 (true));
+    mo->setProperty (key, juce::var (e));
+    root->setProperty ("unreadable", marks);
+    f.replaceWithText (juce::JSON::toString (v, true));
+    EchoJay_NSLog (("EJValues: \"" + name.trim() + "\" is marked as NOT READING ITS VALUES BACK on "
+                    "this build (" + why.trim() + ") - it goes in every agent start from now on, so "
+                    "the server stops giving it a value step (B's contract of 23 Oct)").toRawUTF8());
+}
+
+void ChainHost::clearValuesUnreadable (const juce::String& name)
+{
+    const auto key = name.trim().toLowerCase();
+    if (key.isEmpty()) return;
+    const auto f = getValuesUnreadableFile();
+    if (! f.existsAsFile()) return;
+    auto v = juce::JSON::parse (f.loadFileAsString());
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) return;
+    auto* mo = root->getProperty ("unreadable").getDynamicObject();
+    if (mo == nullptr || ! mo->hasProperty (key)) return;
+    mo->removeProperty (key);
+    f.replaceWithText (juce::JSON::toString (v, true));
+    EchoJay_NSLog (("EJValues: \"" + name.trim() + "\" read its values back - the mark is CLEARED, "
+                    "so it can carry a value step again (the usual cause is a parameter map that had "
+                    "not arrived yet, and a mark that outlived its reason would be worse)").toRawUTF8());
+}
+
+juce::var ChainHost::valuesUnreadableList()
+{
+    juce::Array<juce::var> out;
+    const auto f = getValuesUnreadableFile();
+    if (! f.existsAsFile()) return juce::var (out);
+    auto v = juce::JSON::parse (f.loadFileAsString());
+    auto* root = v.getDynamicObject();
+    if (root == nullptr) return juce::var (out);
+    if (auto* mo = root->getProperty ("unreadable").getDynamicObject())
+        for (const auto& kv : mo->getProperties())
+            if (auto* e = kv.value.getDynamicObject())
+            {
+                auto* row = new juce::DynamicObject();
+                row->setProperty ("name", e->getProperty ("name"));
+                const auto why = e->getProperty ("why").toString();
+                if (why.isNotEmpty()) row->setProperty ("why", why);
+                out.add (juce::var (row));
+            }
+    return juce::var (out);
+}
+
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
 juce::File ChainHost::getStateOversizeFile() { return appSupportDir().getChildFile("chain_state_oversize.txt"); }
 
@@ -892,6 +970,23 @@ public:
     // argument for where that is: the signal the plugin actually hears. So the shadow is a SECOND
     // SINK here rather than a new node in the graph - no topology change and no ordering to get
     // wrong. `mySlot` is this node's own index, so the tap's test is one comparison.
+    //
+    // ---- AND THAT INDEX IS NOT A CONSTANT (his test 2 at 16:35, 23 Oct 2026) --------------
+    //
+    // *"The V2 shows the X-Limit's real interface, so the view comes up, but NOTHING moves: TP mom
+    //  and TP max sit at -99.99 dBTP and every meter is empty, while the song was playing."*
+    //
+    // The index used to be baked in at construction, and the node is constructed ONCE per slot
+    // ("if (! s.preTrimNode)"). `slots_` is a vector: an insert or an erase SHIFTS the elements
+    // after it, carrying each slot's node with it - so after one insert the moved slot's node still
+    // says 0 while its slot is 1. Two nodes then answer to 0, nobody answers to 1, and a tap aimed
+    // at slot 1 is fed by nothing at all. His rack had plugins added through the session, which is
+    // why the picture arrived and never moved, and it is the same zero-frame reading the rig's B9
+    // row got on both roads.
+    //
+    // So the index is an ATOMIC the host sets on EVERY rebuild, from the slot's address in the
+    // vector - the one place that knows it - and the audio thread reads it per block. One authority,
+    // refreshed by the same pass that wires the node.
     explicit SlotPreTrim (std::shared_ptr<std::atomic<float>> trimDb,
                           std::shared_ptr<echojay::LevelTally> inTally = nullptr,
                           std::shared_ptr<echojay::ShadowTap> shadow = nullptr,
@@ -901,6 +996,9 @@ public:
               .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
           trimDb_ (std::move (trimDb)), inTally_ (std::move (inTally)),
           shadow_ (std::move (shadow)), mySlot_ (mySlot) {}
+    /** The slot this node belongs to, set by rebuildGraph on every pass. Message thread. */
+    void setSlotIndex (int i) noexcept { mySlot_.store (i, std::memory_order_release); }
+    int  slotIndex() const noexcept { return mySlot_.load (std::memory_order_relaxed); }
     void prepareToPlay (double sampleRate, int) override
     { smooth_.reset (sampleRate, 0.05); smooth_.setCurrentAndTargetValue (gainNow());
       if (inTally_) inTally_->prepare (sampleRate); }
@@ -921,7 +1019,7 @@ public:
         // ...and the SHADOW, from the same signal and after the same trim. Costs one relaxed atomic
         // load per block on every slot that is not being shadowed, and nothing else.
         if (shadow_ && b.getNumChannels() >= 1)
-            shadow_->push (mySlot_, b.getReadPointer (0),
+            shadow_->push (mySlot_.load (std::memory_order_relaxed), b.getReadPointer (0),
                            b.getNumChannels() >= 2 ? b.getReadPointer (1) : nullptr,
                            b.getNumSamples());
     }
@@ -943,7 +1041,7 @@ private:
     std::shared_ptr<std::atomic<float>> trimDb_;
     std::shared_ptr<echojay::LevelTally> inTally_;
     std::shared_ptr<echojay::ShadowTap>  shadow_;
-    int mySlot_ = -1;
+    std::atomic<int> mySlot_ { -1 };
     juce::LinearSmoothedValue<float> smooth_ { 1.0f };
 };
 
@@ -9016,6 +9114,12 @@ void ChainHost::rebuildGraph()
             // slot's audio the moment anything was bypassed.
             const int myIdx = (int) (&s - slots_.data());
             if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared, s.inTallyShared, shadowTap_, myIdx));
+            // AND THE EXISTING NODE IS TOLD WHERE IT NOW LIVES (23 Oct 2026, his test 2 at 16:35).
+            // The node is created once and the vector shifts under it on every insert and erase, so
+            // the index it was born with goes stale and the shadow tap feeds the wrong slot or none.
+            // Set here, on every pass, because this loop is the only place that knows the answer.
+            else if (auto* pt = dynamic_cast<SlotPreTrim*> (s.preTrimNode->getProcessor()))
+                pt->setSlotIndex (myIdx);
             if (!s.blendNode)
                 s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.inTallyShared));
             active.push_back({ s.node->nodeID, s.blendNode->nodeID, s.preTrimNode->nodeID });
@@ -10568,6 +10672,14 @@ bool ChainHost::slotHasLiveReads(int slot) const
     if (slot < 0 || slot >= (int) slots_.size()) return false;
     const auto& s = slots_[(size_t) slot];
     return ! s.liveReadFailed && ! s.liveReads.isEmpty();
+}
+
+bool ChainHost::slotHasLoadedPlugin(int slot) const
+{
+    if (slot < 0 || slot >= (int) slots_.size()) return false;
+    // `node` is the graph's own answer: it is set when the instance is in the graph and cleared with
+    // it, which is the same thing rebuildGraph tests before it wires a pre-trim node at all.
+    return slots_[(size_t) slot].node != nullptr;
 }
 
 bool ChainHost::hasLiveReadForIndex(int slot, int paramIndex) const

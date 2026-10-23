@@ -950,6 +950,8 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         EchoJayFader::gainForDb(busGainDb_.load(std::memory_order_relaxed)));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
+    // The shadow view's scratch buffer, allocated HERE and never on the audio thread (stage B).
+    shadowView_.prepare(sampleRate, samplesPerBlock);
     selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
     abMeterEngine.prepare(sampleRate, samplesPerBlock);
     cmpMeter[0].prepare(sampleRate, samplesPerBlock);
@@ -1573,6 +1575,14 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     left  = buffer.getReadPointer(0);
     right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     meterEngine.processBlock(left, right, buffer.getNumSamples());
+
+    // ---- THE SHADOW VIEW, ONE BLOCK (stage B, 23 Oct 2026) ---------------------------------
+    //
+    // The V2's copy of the Link slot in view runs here and its output is thrown away inside the
+    // object - nothing in this buffer is touched and nothing is heard. It does nothing at all
+    // while no slot is in view (one atomic load), and it never blocks: pump() only TRIES its lock.
+    // docs/SHADOW_VIEW_STAGES_2026-10-23.md.
+    shadowView_.pump (buffer.getNumSamples());
 
     // Self key tap (§6.1) — same tap point as the meters. Fed ONLY while the
     // declared role is a music bus: on a vocal or unknown role the engine
@@ -3955,6 +3965,18 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
         if (editActive() && editSession_.uid == viewUid
             && editSession_.slot0 == slot)
             return editCreateEditor();
+        // ---- THE SHADOW VIEW (his ruling of 23 Oct 2026) -----------------------------------
+        // *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the
+        //  V2 (moving meters and gain reduction) without opening the Link's window."*
+        //
+        // THE SAME SEAM every other slot editor comes through, which is why the panel needs no
+        // layout change and the floating road works too: this function is the one author for "give
+        // me this slot's editor", and for a Link slot the answer is now the V2's own copy - fed
+        // from that Link's shadow ring, output discarded, nothing owned. Only for the uid and slot
+        // the shadow is actually running on; anything else still returns nothing, which is the
+        // static picture and its one plain line.
+        if (shadowView_.running() && shadowView_.uid() == viewUid && shadowView_.slot() == slot)
+            return shadowCreateEditor();
         return nullptr;
     }
     return getChainHost().createEditorForSlot(slot);
@@ -4263,6 +4285,128 @@ void EchoJayProcessor::rackLockTick()
                                + "\"").toRawUTF8());
             break;
     }
+}
+
+/** ---- THE SHADOW VIEW: THE V2'S SIDE (stage B, 23 Oct 2026) --------------------------------
+    *"I see that plugin's real editor live in the V2 (moving meters and gain reduction) without
+     opening the Link's window... it must never take the rack, stop a run or change ownership."*
+
+    editBegin's machinery MINUS THE LEASE, which is the whole difference and the reason this is a
+    separate function rather than a flag on that one: no setRackLockWant, no leaseId, no renewal
+    timer, no borrow. Nothing here is undone by anything, because nothing here takes anything.
+
+    The ring is the LINK'S shadow ring, named from the audio ring the registry already carries, so
+    the two sides cannot disagree about the file. ShadowView::start refuses a rate mismatch, and a
+    refusal leaves the static picture on screen with one plain line - the plan's §4 rule.         */
+bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
+                                    const juce::String& pluginName,
+                                    std::unique_ptr<juce::AudioProcessor> inst,
+                                    juce::String& whyNot)
+{
+    if (inst == nullptr) { whyNot = "no copy of that plugin could be created here"; return false; }
+    shadowEnd();                            // one slot at a time, by design
+
+    // Which ring file? The one the Link itself named, with its own prefix swapped - never a second
+    // derivation from a display name that a rename could have moved.
+    juce::String audioFile;
+    for (int i = 0; i < kMaxLinkSlots; ++i)
+        if (activeLinkSlots[i].uid == uid && activeLinkSlots[i].shmKey.isNotEmpty())
+            { audioFile = activeLinkSlots[i].shmKey; break; }
+    const auto file = LinkShm::shadowFilenameFromAudio (audioFile);
+    if (file.isEmpty())
+    { whyNot = "this instance is not connected to that Link's audio yet"; return false; }
+
+    if (linkResolvedDir.isEmpty()) { int e = 0; linkResolvedDir = LinkShm::resolveDir (e); }
+    if (linkResolvedDir.isEmpty())
+    { whyNot = "there is no shared folder for the two plugins to meet in"; return false; }
+
+    shadowRingPath_ = linkResolvedDir + file;
+    int fd = -1, err = 0;
+    // READ-WRITE and CREATE-IF-MISSING=false: the LINK owns this file's existence, and a V2 that
+    // created it would make an empty ring look like a streaming one. Read-write because
+    // ringConsume writes the read cursor back into the mapping.
+    shadowRingMap_ = LinkShm::openFileMapped (shadowRingPath_, kLinkShmSize, false, fd, err,
+                                              /*createIfMissing*/ false);
+    shadowRingFd_  = fd;
+    if (shadowRingMap_ == nullptr)
+    {
+        whyNot = "that Link has not started streaming the slot yet";
+        shadowRingPath_.clear(); shadowRingFd_ = -1;
+        return false;
+    }
+
+    // ---- A STEREO COPY WHERE THE PLUGIN ALLOWS ONE (his 16:33 crash, 23 Oct 2026) -------------
+    //
+    // The tap carries ONE STEREO PAIR. A WaveShell plugin brings more than that - a key/sidechain
+    // input leg - and when his SSLComp copy pulled a channel the scratch buffer did not have, JUCE's
+    // input callback copied from a null pointer and took the AU hosting process down on the render
+    // thread. Two things stop that, and both are here because one of them can fail:
+    //   1. ASK for a plain 2-in/2-out and disable every other bus, which is the shape the ring can
+    //      actually feed. A plugin that refuses keeps its own layout - that is its right.
+    //   2. ShadowView::start then sizes its buffer to whatever the copy ENDED UP with, so even a
+    //      refusal leaves every channel it can pull one we own.
+    // Said in the log either way: this is the kind of thing that is worth knowing per plugin.
+    {
+        auto want = inst->getBusesLayout();
+        for (int i = 0; i < want.inputBuses.size(); ++i)
+            want.inputBuses.getReference (i) = (i == 0 ? juce::AudioChannelSet::stereo()
+                                                       : juce::AudioChannelSet::disabled());
+        for (int i = 0; i < want.outputBuses.size(); ++i)
+            want.outputBuses.getReference (i) = (i == 0 ? juce::AudioChannelSet::stereo()
+                                                        : juce::AudioChannelSet::disabled());
+        const bool took = inst->setBusesLayout (want);
+        EchoJay_NSLog (("EJShadow: the copy of \"" + pluginName + "\" is "
+                        + (took ? juce::String ("a plain stereo pair (every other bus disabled)")
+                                : "keeping its own bus layout - it refused plain stereo")
+                        + ", " + juce::String (inst->getTotalNumInputChannels()) + " in / "
+                        + juce::String (inst->getTotalNumOutputChannels())
+                        + " out; the scratch buffer is sized to that, so no block can pull a channel "
+                          "this instance does not own (his 16:33 crash)").toRawUTF8());
+    }
+
+    // PREPARED BEFORE IT IS INSTALLED: the audio thread must never meet a plugin that has not seen
+    // prepareToPlay (the audition's rule, and the same words are in ShadowView::start's contract).
+    inst->prepareToPlay (hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
+                         hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
+    if (! shadowView_.start (std::move (inst), shadowRingMap_, uid, slot0, pluginName, whyNot))
+    {
+        LinkShm::closeMapped (shadowRingMap_, kLinkShmSize, shadowRingFd_, shadowRingPath_, false);
+        shadowRingMap_ = nullptr; shadowRingFd_ = -1; shadowRingPath_.clear();
+        return false;
+    }
+    EchoJay_NSLog (("EJShadow: the V2 is now running its own copy of \"" + pluginName + "\" on slot "
+                    + juce::String (slot0 + 1) + " of " + uid + ", fed from " + file
+                    + " - output DISCARDED, no lease, no borrow, nothing owned (stage B)").toRawUTF8());
+    return true;
+}
+
+void EchoJayProcessor::shadowEnd()
+{
+    if (! shadowView_.running() && shadowRingMap_ == nullptr) return;
+    const auto frames = shadowView_.framesPumped();
+    const auto was    = shadowView_.pluginName();
+    shadowView_.stop();                     // the flag, then the instance, under its own lock
+    // DEFERRED UNMAP, the same discipline the drain ring uses: a block that had already passed the
+    // flag may still be inside pump() with the old pointer. The file is the LINK'S, so it is never
+    // unlinked from here.
+    if (shadowRingMap_ != nullptr)
+    {
+        auto* dying = shadowRingMap_; const int dyingFd = shadowRingFd_;
+        shadowRingMap_ = nullptr; shadowRingFd_ = -1; shadowRingPath_.clear();
+        juce::Timer::callAfterDelay (200, [dying, dyingFd]
+        {
+            LinkShm::closeMapped (dying, kLinkShmSize, dyingFd, {}, /*unlink*/ false);
+        });
+    }
+    if (was.isNotEmpty())
+        EchoJay_NSLog (("EJShadow: the V2's copy of \"" + was + "\" is released after "
+                        + juce::String (frames) + " frame(s) - nothing was heard from it and "
+                        "nothing of it is written anywhere").toRawUTF8());
+}
+
+juce::AudioProcessorEditor* EchoJayProcessor::shadowCreateEditor()
+{
+    return shadowView_.createEditorIfPossible();
 }
 
 void EchoJayProcessor::editBegin(const juce::String& uid, int slot0,
@@ -7314,6 +7458,47 @@ void EchoJayProcessor::appendChatEntry (ChatEntry e, const juce::String& chatId,
 
 /** The card, into the store it belongs to. One door for both writers (this stamp and the run's own
     snapshot), so there is one rule for "which row is this run's" and it is the id. */
+/** ---- THE DIAL'S RESULT GOES ON THE CARD, NOT UNDER IT (his test 4, 08:43, 23 Oct 2026) ----
+    His log, the whole fault in one line:
+
+        08:40:58  EJThreshold: closing message handed to the chat: Adjusted the Mixland Vac Attack's
+                  Left Reduction to +0.0 dB - it is working 0.2 dB. Does that sit better...?
+
+    "handed to the chat" was literal: calibTickAndPost posted it with appendLocalResultBubble, which
+    is an ordinary chat line and knows nothing about the run that asked for the dial. B's contract
+    says the dial is a STEP of the run; a step's outcome belongs on the step.
+
+    THE RUN'S OWN LIST DECIDES, not the prose: `keepPlayingFor` is what the run armed when it read
+    the dial, so a plugin in it is a dial this run owns and a plugin outside it is somebody's hand on
+    a knob. A hand-driven dial keeps the chat line it has always had - the rule is about the run's
+    dials, and taking every dial's sentence into a card that may not exist would lose it.           */
+bool EchoJayProcessor::routeDialClosingToAgentCard (const juce::String& plugin,
+                                                    const juce::String& sentence)
+{
+    if (plugin.isEmpty() || sentence.trim().isEmpty()) return false;
+    if (! keepPlayingFor.contains (plugin)) return false;
+    agentDialResults.set (plugin, sentence.trim());
+    EchoJay_NSLog (("EJThreshold: the dial's closing line goes ON THE RUN'S CARD for \"" + plugin
+                    + "\" (his 08:43 ruling), not into the chat as a line of its own: \""
+                    + sentence.trim().substring (0, 90) + "\"").toRawUTF8());
+    return true;
+}
+
+juce::String EchoJayProcessor::storedAgentCardJson (const juce::String& chatId,
+                                                    const juce::String& entryId) const
+{
+    if (chatId.isEmpty() || entryId.isEmpty()) return {};
+    // const road: the store's own list, read without asking for a mutable chat
+    for (const auto& c : workspace.getChats())
+    {
+        if (c.id != chatId) continue;
+        for (const auto& m : c.messages)
+            if (m.entryId == entryId) return m.agentJson;
+        break;
+    }
+    return {};
+}
+
 void EchoJayProcessor::storeAgentCard (const juce::String& chatId, const juce::String& entryId,
                                       const juce::String& agentJson, const juce::String& content)
 {
@@ -8564,9 +8749,42 @@ bool EchoJayProcessor::calibTargetIsBus(const juce::String& uid, juce::String& w
 void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfgIn)
 {
     auto cfg = cfgIn;      // 30 Sep: the staging substitution below writes to it
+    // ---- WHAT THE BUS RULE IS ACTUALLY ABOUT (his test 1 at 16:26, 23 Oct 2026) ----------------
+    //
+    // *"a dial on playback is part of the build. On the card, each dial is its own step right after
+    //  its add, running while I play."*  His build asked for one: the Shadow Hills' "Discrete
+    //  Threshold 1", a named control on the plugin. The log says what happened to it:
+    //      EJThreshold: NOT STARTED - this chain's role is bus
+    //      EJThreshold: 0 of 1 hold(s) actually started
+    // So the dial never armed, the card never drew its step, and the closing waited for a dial that
+    // did not exist. He played until he gave up and stopped the run.
+    //
+    // THE 29 SEP RULE IS KEPT, AND READ FOR WHAT IT SAYS: "ON A BUS, NOTHING WRITES IN OR OUT". Its
+    // fault was the EMO-D5 hold writing +10.5 dB to slot 2's OUT on the Mix Bus and distorting the
+    // chain - the slot's STAGING, which on a bus belongs to the last stage and the Level slot. That
+    // is the Drive actuator, by definition ("EchoJay's own pre-slot gain stage"), and the loop
+    // itself already says a named control is a different thing: EJCalibLoop's begin writes
+    // `preDb = (actuator == Drive) ? startDb : 0`, with the comment "a named control leaves the
+    // staging alone".
+    //
+    // So the refusal follows the reason rather than the target: on a bus a DRIVE dial is still
+    // refused, and a dial that writes the plugin's own control runs. One rule, one reason, and
+    // nothing that could bring the EMO-D5 write back.
     { juce::String whyNot;
       if (calibTargetIsBus(uid, whyNot))
-      { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return; } }
+      {
+          if (cfg.actuator == echojay::CalibLoop::Actuator::Drive)
+          { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot
+                           + " (a DRIVE dial writes the slot's IN and OUT, which is the write the"
+                             " 29 Sep rule is about)").toRawUTF8()); return; }
+          EchoJay_NSLog(("EJThreshold: the bus rule does not stop this one - " + whyNot
+                         + " - but this dial writes \"" + cfg.params.joinIntoString (", ")
+                         + "\" ON THE PLUGIN and leaves the"
+                           " slot's IN and OUT alone (EJCalibLoop::begin: a named control leaves the"
+                           " staging alone). His 16:26: the Shadow Hills' own threshold never dialled"
+                           " because this refusal was aimed at the target rather than at the"
+                           " write.").toRawUTF8());
+      } }
     auto loop = calibLoad(uid);
     // A RE-TARGET IS ONLY A RE-TARGET WHILE NOTHING ELSE CHANGED. The same slot, the same plugin, the same mode
     // and the same actuator means the band moved and the work done stands. A different actuator (or a passive

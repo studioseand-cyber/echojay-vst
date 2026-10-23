@@ -652,6 +652,11 @@ public:
     bool hasLiveReadForIndex(int slot, int paramIndex) const;
     // Did this slot answer the sweep at all? See SlotInfo::hasLiveReads.
     bool slotHasLiveReads(int slot) const;
+    /** Is there a loaded plugin NODE in this slot? Not "is there a name": a slot can carry a name,
+        a settings line and a whole mirror row with nothing instantiated behind it. The shadow tap
+        asks because a slot with no node has no pre-trim node in the graph either, so no block will
+        ever reach it (echojay::slotCanStream states that rule and why it matters). */
+    bool slotHasLoadedPlugin(int slot) const;
 
     // The model's settings line for one slot, composed HERE because this is
     // the only place the echo (authored at apply time) and the live reads
@@ -2363,6 +2368,25 @@ public:
         withheldFromCache's own comment gives. */
     juce::String scannedTypeNamed (const juce::String& name) const;
     static juce::String loadFailureReasonFor(const juce::String& name);
+
+    // ---- WHOSE VALUES THIS BUILD CANNOT READ BACK (B's contract of 23 Oct 2026) ------------
+    //
+    // *"the plugins whose values your build knows it can't read back, by the inventory's spelling
+    //  ... the server joins it to what it remembers, and never gives those plugins a value step."*
+    //
+    // Sean's test 0: Solid Bus Comp was picked for the first glue stage and its step said "Settings
+    // not confirmed" - because its Threshold does not read back on HIS build, while it reads on
+    // Kathy's Mac (29 of 29). Nothing but this machine can know that, so this machine remembers it:
+    // noted the first time a read-back concludes the values cannot be read, and sent on every start
+    // so the first build for a user with such a plugin stops failing once by construction.
+    //
+    // PERSISTED beside the other per-plugin records, and it CLEARS ITSELF the moment a read-back
+    // succeeds - a plugin whose map arrives later must not be held back for ever by one bad day.
+    static void noteValuesUnreadable (const juce::String& name, const juce::String& why);
+    static void clearValuesUnreadable (const juce::String& name);
+    /** [{name, why}], newest first, for the agent's start context. Empty when nothing is marked. */
+    static juce::var valuesUnreadableList();
+    static juce::File getValuesUnreadableFile();
     void maybeReloadEntriesCache();
 
     // ---- Popout-only plugins (both hosts) ----------------------------------

@@ -2786,6 +2786,39 @@ private:
         drawn for, and the press acts on THAT message. */
     struct PaintedRunZone { int msgIndex = -1; echojay::agentui::RunZone z; };
     std::vector<PaintedRunZone> agentRunZones_;   // rebuilt by every chat paint, one entry per zone
+    /** ---- WHAT THE CHAT CAN BE CLICKED IN (his 08:44 fault, 23 Oct 2026) --------------------
+        The chat paint reduces the clip region to this rectangle, so a card scrolled out of view is
+        not DRAWN outside it - but the zone list it authored was hit-tested with no such limit, and
+        drawAgentRunRow's own comment ("the rects drawn ARE the rects hit") was false for every one
+        of them. A click meant for something else landed on a run card's Stop at 08:44:56 and ended
+        a run he had not asked to end. Set by the paint, required by mouseDown. */
+    juce::Rectangle<int> chatZoneClip_;
+    /** B's one-run rule: the message he said "Start anyway" to. The send road reads it once, so the
+        ask is asked once per message and the consent cannot be reused by the next one. */
+    juce::String supersedeConsent_;
+
+    // ---- THE SHADOW VIEW'S DRIVER (stage B, 23 Oct 2026) -----------------------------------
+    //
+    // *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the V2
+    //  ... No control through it yet: clicks do nothing, and it must never take the rack, stop a
+    //  run or change ownership."*   docs/SHADOW_VIEW_STAGES_2026-10-23.md.
+    //
+    // What the editor owns is the DECISION and the asking: which slot is in view, telling that Link
+    // to tap it, making the copy, and taking both down when he leaves. The processor owns the copy
+    // and the ring; the panel needs no change at all, because the copy's editor comes back through
+    // createSlotEditorForView like every other slot's.
+    juce::String shadowWantUid_;        // what is on screen now (empty = nothing wanted)
+    int          shadowWantSlot_ = -1;
+    bool         shadowAsking_   = false;   // a request is in flight; one at a time
+    /** Ask that Link to tap this slot's input, then make the copy and start the view. Does nothing
+        when the same slot is already running, and takes the previous one down first. */
+    void shadowFollowSelection (const juce::String& uid, int slot0);
+    /** Tell the Link to stop tapping and release the copy. Safe to call when nothing is running. */
+    void shadowStopIfRunning (const juce::String& why);
+    /** His 08:44 ruling: the rack a live run needs is re-armed ONCE per loss, not every tick - a
+        re-arm per second against a Link that is still holding its own rack would be a spin that
+        looks like progress (the 19 Oct lesson on the held-but-never-engaged lock). */
+    juce::String runReclaimArmedFor_;
     int agentRunZoneMsg_ = -1;                    // the last card painted (the live row's ticker)
 
     /** The run's model for this message: the LIVE client when the message is this session's
@@ -3644,8 +3677,26 @@ private:
             // The shadow (docs/PLAN_LIVE_SHADOW_2026-10-20.md) is the real answer, and until it
             // lands the honest thing is one line that promises nothing and offers nothing. The
             // plugin's NAME is drawn by the card as it always was; this is the line under it.
+            // ---- AND THE LIVE VIEW HAS LANDED (23 Oct 2026) --------------------------------
+            //
+            // His ruling: *"Replace 'The live view of this plugin is coming soon' with it."*  When
+            // the shadow IS running for this slot, this line is never reached at all - the panel
+            // asks createSlotEditorForView and gets the copy's own editor, which is the view.
+            //
+            // So what is left here is the case where there is no live view: an older Link that
+            // cannot stream, a plugin this machine withholds (a licence - the one thing that must
+            // never prompt), or a refusal. The static picture is the honest answer there, and the
+            // line says so without promising a date. The SPECIFIC reason, when there is one, is on
+            // the panel's own status line, written where the refusal happened.
+            // ---- AND WITH THE VIEW SWITCHED OFF, HIS OLD LINE COMES BACK (16:4x, 23 Oct) ----
+            // Two crashes in ten minutes took the view out of this build (echojay::
+            // kShadowViewEnabled says why). While it is off there is no live view to promise, so the
+            // line is the one he wrote for exactly this state rather than a sentence about a feature
+            // he cannot see.
             juce::ignoreUnused (pluginName);
-            return "The live view of this plugin is coming soon";
+            if (! echojay::kShadowViewEnabled)
+                return "The live view of this plugin is coming soon";
+            return "No live view of this one here - its settings below are read from the Link";
         }
         // Rack lock: TRUE while viewing a remote rack this main does not
         // hold — remote edit affordances disable, tooltip says why. Set only
@@ -6911,6 +6962,10 @@ private:
         target's, resolved through the same effectiveChannelUid() the width already uses. */
     echojay::ChainRole chatTargetChainRole() const;
     juce::String       chatTargetChannelName() const;
+    /** The channel a STORED chat belongs to, in his words ("Aitch_4_01"), for a sentence about a
+        run that is somewhere else - B's one-run rule asks "stop the run on <where>?" and the run's
+        own chat is the only honest source of <where>. Empty when the store cannot say. */
+    juce::String       channelNameForChat (const juce::String& chatId) const;
     // 21n item 4: groups client half - build on a group's target Links; the last build's uids / card line for the guard
     int  buildChainOnTargets(const juce::StringArray& uids, const juce::String& chainJson, bool each);
     juce::StringArray lastGroupBuildUids_; juce::String lastGroupBuildLine_;

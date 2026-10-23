@@ -18,6 +18,7 @@
 #include "EchoJayWorkspace.h"   // 22 Oct 2026: the chat store is the PROCESSOR'S, so a windowless run can append
 #include "DashPoll.h"
 #include "LinkShm.h"
+#include "EJShadowView.h"   // stage B of the muted shadow: the V2's own copy of the slot in view
 #include "EchoJayUndoHistory.h"   // 21n item 3
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EJChainRole.h"    // 21t-m item 5: the chain's role, from its three sources
@@ -648,6 +649,39 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // kEditCushionFrames above STAYS: it is the ring read target for the slot-edit audition and the solo
     // press, which are their own features and still consume rings.
     static constexpr uint32_t kEditReseekTrip    = 8192;
+
+    // ---- THE SHADOW VIEW (stage B wired up, 23 Oct 2026) -----------------------------------
+    //
+    // *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the V2
+    //  (moving meters and gain reduction) without opening the Link's window ... No control through
+    //  it yet: clicks do nothing, and it must never take the rack, stop a run or change
+    //  ownership."*
+    //
+    // The audition's machinery WITHOUT the lease, which is what the plan asked for: a prepared copy,
+    // fed from the Link's shadow ring, output discarded. No setRackLockWant, no borrow, no lease
+    // file, nothing a release has to undo - his 08:44 fault was an ownership change nobody asked
+    // for, and this feature may never be another one.
+    //
+    // docs/SHADOW_VIEW_STAGES_2026-10-23.md says what this covers and what control still needs.
+    echojay::ShadowView shadowView_;
+    void*        shadowRingMap_ = nullptr;
+    int          shadowRingFd_  = -1;
+    juce::String shadowRingPath_;
+    /** Install a prepared copy and start consuming that Link's shadow ring. The caller has already
+        asked the Link to tap the slot (the control channel's `shadowSlot`) and seen its ack. FALSE
+        with `whyNot` set changes nothing - the view falls back to the static picture, which is the
+        designed failure and not an error. */
+    bool shadowBegin (const juce::String& uid, int slot0, const juce::String& pluginName,
+                      std::unique_ptr<juce::AudioProcessor> inst, juce::String& whyNot);
+    /** Stop consuming and release the copy. The ring is unmapped AFTER the view has let go. */
+    void shadowEnd();
+    bool shadowRunning() const noexcept { return shadowView_.running(); }
+    juce::String shadowUid() const { return shadowView_.uid(); }
+    int  shadowSlot() const noexcept { return shadowView_.slot(); }
+    juce::String shadowPluginName() const { return shadowView_.pluginName(); }
+    juce::int64 shadowFramesPumped() const noexcept { return shadowView_.framesPumped(); }
+    /** The copy's own editor, for the V2's panel. Message thread; nullptr when nothing is running. */
+    juce::AudioProcessorEditor* shadowCreateEditor();
 
     bool editActive() const { return editSession_.slot0 >= 0; }
     /// Install a prepared instance and start the lease (message thread).
@@ -1515,6 +1549,10 @@ public:
     /** The run's card into the stored log, by its entry id (the run's key) - an update if that run
         already has a row there, an append if it does not. Called from the stamp and from the run's
         own snapshot, so both writers take one road (22 Oct 2026, his 09:24 fault). */
+    /** The stored card for a run's row, by the chat and entry id the run was minted with. Empty
+        when the store has no such row. The home asks this when the replay list has been cleared by
+        a chat switch - the store is the authority and the list was only ever a cache. */
+    juce::String storedAgentCardJson (const juce::String& chatId, const juce::String& entryId) const;
     void storeAgentCard (const juce::String& chatId, const juce::String& entryId,
                          const juce::String& agentJson, const juce::String& content);
     void stampChatEntry (ChatEntry& e, const juce::String& chatId, const juce::String& runKey = {});
@@ -1771,6 +1809,24 @@ public:
         "still needs the playback" is two facts from two owners and never a cached guess.
         (docs/CONTRACT_keep_playing_2026-10-22.md, B to A, 22 Oct 2026 - Sean's test 9.) */
     juce::StringArray keepPlayingFor;
+
+    /** ---- WHAT EACH DIAL FINALLY SAID, FOR THE CARD (his test 4 at 08:43, 23 Oct 2026) ------
+        *"the dial-on-playback result for the Mixland Vac Attack arrived as a loose message below
+         the card. Per B's keep-playing contract, the dial's result lands inside the card: the dial
+         step finishes and shows its result, then the card says it's done. Nothing appears outside
+         the card."*
+
+        The calibration loop's closing sentence, kept per plugin for the run that owns that dial, so
+        the card's dial step can finish WITH its result instead of vanishing and leaving the sentence
+        to be posted as a chat bubble. Cleared with keepPlayingFor, once per run, in the one
+        predicate both minting roads consult. Keyed by the plugin's name, which is what the dial
+        step is keyed by too - one name, one row, one sentence. */
+    juce::StringPairArray agentDialResults;
+
+    /** Takes the calibration loop's closing line for `plugin` into the run's card when a run owns
+        that dial, and returns TRUE when it did. FALSE means no run owns it and the line is an
+        ordinary chat line, as it always was for a hand-driven dial. */
+    bool routeDialClosingToAgentCard (const juce::String& plugin, const juce::String& sentence);
 
     /** LINK MIXER per-strip rack SCROLL offset in pixels, keyed the same way
         the cache is (Link uid, or "MIX BUS" for the pinned strip). ON THE

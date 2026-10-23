@@ -97,6 +97,37 @@ private:
     std::atomic<juce::uint64> produced_ { 0 };
 };
 
+/** CAN THIS SLOT BE TAPPED AT ALL? (23 Oct 2026, from the rig's own B9)
+
+    The tap lives on the slot's PRE-TRIM NODE, and ChainHost::rebuildGraph puts that node in the
+    graph for a slot that has a plugin and is not bypassed - its own line is
+    `for (auto& s : slots_) if (!s.bypassed && s.node)`. A slot that fails either test never sees a
+    block, so no frame can ever reach the tap.
+
+    Saying "streaming slot 1" about such a slot is a claim that cannot come true, and the rig read
+    exactly that: the Link acked `streaming` and the V2 ran its copy for twenty-five seconds on
+    ZERO frames, with no line anywhere saying why. Zero frames and "not started" looked identical,
+    which is the shape this house calls unfalsifiable - and it is the same rule the GR window keeps:
+    nothing measured is never reported as "no signal".
+
+    So the question is asked BEFORE the claim, and the answer carries its reason in the words the V2
+    will show him. Kept here, next to the tap whose rule it states, so the Link's refusal and the
+    guard's leg read the same function rather than two copies of one condition. */
+inline bool slotCanStream (bool hasPlugin, bool bypassed, juce::String* whyNot = nullptr)
+{
+    if (! hasPlugin)
+    {
+        if (whyNot != nullptr) *whyNot = "that slot has no plugin loaded on the Link";
+        return false;
+    }
+    if (bypassed)
+    {
+        if (whyNot != nullptr) *whyNot = "that slot is bypassed on the Link, so no audio reaches it";
+        return false;
+    }
+    return true;
+}
+
 /** The shadow ring's filename for a Link, beside the drain ring's `audio_<name>.bin`. A SEPARATE
     FILE, deliberately: LinkShm's ring has ONE read cursor, so capture, solo and the edit audition
     are already mutually exclusive on the drain ring (its own header says so - *"readIdx is one
