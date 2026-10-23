@@ -58,9 +58,87 @@ juce::var load (const juce::String& name, bool& okOut)
     return v;
 }
 
+/** ---- B'S DIAL CONTRACT OF 23 Oct, ON ITS OWN FIXTURE --------------------------------------
+    NOT inside the contract-drop section, and that is the point: this guard SKIPS ENTIRELY when
+    ~/Desktop/ej_contract is absent, and legs written in there would have read green while never
+    running once - the unfalsifiable-check family, which is exactly what this repo's own notes warn
+    about. These legs carry their own block, so they run on every build. */
+static void dialSidesAndWordsLegs()
+{
+// ---------------------------------------------------------------------------------------------------------
+    std::printf ("\n-- B'S DIAL CONTRACT OF 23 Oct: EVERY SIDE, AND B'S OWN DONE LINE --\n");
+    //
+    // *"Move every control in `controls` together, to the same value, every time. Never one side."*
+    // *"When the dial is done, show one line from `say`, filled in."*   *"ask: false: no question."*
+    //
+    // Sean's 08:43: only the LEFT Reduction moved on the Mixland Vac Attack, the line claimed success
+    // at 0.2 dB against a 1 dB target, and it ended in a question.
+    {
+        const auto blk = juce::JSON::parse (R"EJ({
+          "chain": [{"name":"Mixland Vac Attack"}],
+          "calibrations": [{
+            "slot": 1, "gr_target_db": [0.5, 1.5], "actuator": "amount", "param": "Left Reduction",
+            "controls": ["Left Reduction", "Right Reduction"], "sense": "higher_is_harder",
+            "say": {
+              "reached": "The Mixland Vac Attack is set: about {gr} dB on the loud phrases.",
+              "short": "The Mixland Vac Attack only reaches {gr} dB here at {end}; it's doing less than planned.",
+              "over": "The Mixland Vac Attack still does {gr} dB here at its lightest setting; it's doing more than planned.",
+              "end_words": { "hardest": "its hardest setting", "lightest": "its lightest setting" }
+            },
+            "ask": false
+          }]
+        })EJ");
+        std::vector<echojay::CalibLoop::Config> dcs;
+        juce::String dwhy;
+        const int n = echojay::CalibLoop::configsFromBlock (blk, 1, false, nullptr, dcs, dwhy);
+        check (n == 1, "DS0 the fixture: one calibration block is read", juce::String (n));
+        if (n == 1)
+        {
+            const auto& c = dcs[0];
+            check (c.params.size() == 2 && c.params.contains ("Left Reduction")
+                   && c.params.contains ("Right Reduction"),
+                   "DS1 `controls` becomes EVERY side the dial moves - both Reductions, not just the "
+                   "left  (RED as it shipped at 08:43: only the left side moved, and his Shadow Hills "
+                   "finding is the same family)",
+                   juce::String (c.params.size()) + ": " + c.params.joinIntoString (" + "));
+            check (! c.askAfterDial,
+                   "DS2 ...and `ask: false` is carried, so no question follows the dial  (RED at 08:43: "
+                   "\"Does that sit better with the rest of the mix?\" - the dial contract of 20 Oct "
+                   "has said since then that the dial is silent)",
+                   "askAfterDial=" + juce::String ((int) c.askAfterDial));
+            check (c.sayReached.contains ("{gr}") && c.sayShort.contains ("{end}")
+                   && c.endLightest == "its lightest setting",
+                   "DS3 ...and B's three sentences and its end words arrive intact, to be filled in "
+                   "here - one author for the prose, which is the rule every other line follows",
+                   "reached \"" + c.sayReached.substring (0, 40) + "...\"");
+            // AND THE OTHER DIRECTION: a block with no `controls` still moves the one control it
+            // names, and a block with no `say` keeps the sentence this build has always composed.
+            const auto plain = juce::JSON::parse (R"EJ({
+              "chain": [{"name":"bx_opto Pedal"}],
+              "calibrations": [{"slot":1,"gr_target_db":[2,3],"actuator":"threshold","param":"Peak Reduction"}]
+            })EJ");
+            std::vector<echojay::CalibLoop::Config> pcs;
+            juce::String pwhy;
+            const int pn = echojay::CalibLoop::configsFromBlock (plain, 1, false, nullptr, pcs, pwhy);
+            check (pn == 1 && pcs[0].params.size() == 1 && pcs[0].params[0] == "Peak Reduction"
+                   && pcs[0].askAfterDial && pcs[0].sayReached.isEmpty(),
+                   "DS4 and a block with no `controls` and no `say` is UNCHANGED - one control, this "
+                   "build's own sentence, its question as before  (\"If controls is absent, control as "
+                   "before\" - the rule has to be additive or every older server breaks)",
+                   pn == 1 ? juce::String (pcs[0].params.size()) + " control(s), ask="
+                             + juce::String ((int) pcs[0].askAfterDial)
+                           : juce::String ("no block"));
+        }
+    }
+
+}
+
 void guardMain()
 {
     std::printf ("== comp_contract_guard: the plugin against the server's own output ==\n");
+
+    // FIRST, and never behind the drop's gate: see the note on dialSidesAndWordsLegs.
+    dialSidesAndWordsLegs();
 
     const auto dir = contractDir();
     if (! dir.isDirectory())
@@ -68,7 +146,8 @@ void guardMain()
         note ("~/Desktop/ej_contract does not exist: nothing to check against. A missing contract drop is not a "
               "plugin fault, so this guard passes - and says so rather than inventing a fixture.");
         ++skipped;
-        std::printf ("\n==== comp_contract_guard: GREEN (0 failed, %d skipped) ====\n", skipped);
+        std::printf ("\n==== comp_contract_guard: %s (%d failed, %d skipped) ====\n",
+                     failures == 0 ? "GREEN" : "RED", failures, skipped);
         return;
     }
     const auto doneFile = dir.getChildFile ("DONE");

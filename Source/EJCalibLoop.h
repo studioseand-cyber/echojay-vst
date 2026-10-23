@@ -94,6 +94,10 @@ struct CalibLoop
     // overall cap is 200 windows, about ten minutes: that is not a judgement about music, it is the outer bound
     // on a pass that is making no progress at all, and Sean had passed it twice over.
     static constexpr int kStaleRunEnd  = 20;
+    // ---- THE TWO-SENSOR HOLD'S DEADLINE (his 16:40, 23 Oct 2026) ---------------------------------
+    // Eight windows, about 24 s: long enough that a quiet phrase does not end a dial, short enough
+    // that he is never the thing that gives up. See (4c) for what happens when it is reached.
+    static constexpr int kDisagreeEnd  = 8;
     static constexpr int kMaxWindows   = 200;
     static constexpr float kCeilingDbTp = -3.0f;   // the input ceiling the drive may not push past (21p item 3)
 
@@ -143,6 +147,10 @@ struct CalibLoop
     float  lastGr      = std::numeric_limits<float>::quiet_NaN();
     double noSignalMs  = 0.0;
     int    staleRun    = 0;    // 06d item 9: consecutive windows that were not a sample
+    // How many CONSECUTIVE judged windows the two GR sensors have disagreed on (his 16:40, 23 Oct):
+    // the hold at (4c) ends when it reaches kDisagreeEnd. Reset the moment they agree, because a
+    // disagreement that resolves is not a disagreement - it is one phrase.
+    int    disagreeRun = 0;
     bool   judgedAny   = false; // 06d item 9: has ANY window ever been a sample? decides which ending is honest
     bool   awaitFresh  = false;        // a move or a handover just happened: the next window is not judged
     State  state       = State::Idle;
@@ -156,6 +164,9 @@ struct CalibLoop
     // takes it LATER (calibTakeClosing reads the stored loop), so a loop that ends at its close - which is now
     // every loop - would have nothing left to say. The text is captured at the close and this is what is posted.
     juce::String closingOwedText;
+    // B's sentences for this dial, carried from the block (CONTRACT_dial_sides_and_words_2026-10-23).
+    juce::String sayReached_, sayShort_, sayOver_, endHardest_, endLightest_;
+    bool         askAfterDial_ = true;
     // Letter (l), 30 Sep 2026 ruling: IS THIS A COMPRESSOR SLOT? A compressor's input is MEANT to go over its
     // threshold, so the -3 dBTP no-stage-above ceiling (21p item 3) does not belong on it - that ceiling belongs on
     // the OUT, which the hold owns. On a compressor slot the loop's IN is bounded by the slot range (+/-12) only.
@@ -464,6 +475,18 @@ struct CalibLoop
         // IS the step" rule then read every nudge-only block as already-moved and bought nothing: "ease off" did
         // nothing at all. This flag is the wire's own answer and the only thing that rule may consult.
         bool   startFromBlock = false;
+        // ---- B'S OWN WORDS FOR THE DONE LINE, AND NO QUESTION AFTER IT ---------------------
+        //      (docs/CONTRACT_dial_sides_and_words_2026-10-23.md, B to A, 23 Oct 2026)
+        //
+        // *"show one line from `say`, filled in ... ask: false: no question after it. No "Does
+        //  that sit better?". It's the step's result."*
+        //
+        // Sean's 08:43: the line ended in a question, and the dial contract has said since 20 Oct
+        // that the dial is silent with no chat round. The sentences are the SERVER'S - one author
+        // for the prose, like every other line on the card - and {gr} / {end} are filled on this
+        // side because only this side has measured them.
+        juce::String sayReached, sayShort, sayOver, endHardest, endLightest;
+        bool   askAfterDial = true;     // false once B's block says so; true keeps today's behaviour
         bool   dynamicsSlot = false;      // (l): set by the caller from ChainHost::slotIsDynamics - see the member
         // COMP_PROFILE_SPEC_v1 section 6.6, AND WHERE THEY ACTUALLY LIVE (1 Oct 2026, against B's real output):
         // expected_gr_db, expected_level_db and from_profile are fields of the CALIBRATION BLOCK for that
@@ -893,6 +916,50 @@ struct CalibLoop
                 for (const auto& e : *pa) { const auto n = e.toString().trim(); if (n.isNotEmpty()) out.params.add (n); }
             else if (pv.toString().trim().isNotEmpty()) out.params.add (pv.toString().trim());
         }
+        // ---- ...AND `controls`: EVERY SIDE THE DIAL NAMES (B's contract of 23 Oct 2026) -------
+        //
+        // *"Move every control in `controls` together, to the same value, every time. Never one
+        //  side. If `controls` is absent, `control` as before."*
+        //
+        // Sean's 08:43: only the LEFT Reduction moved on the Mixland Vac Attack, and his Shadow
+        // Hills finding (only the right dial moved) is the same family. `params` already moves a
+        // pair together - that machinery has been here since the MC 77's "Input L/R" - so what was
+        // missing was only the LIST. Added to params, deduplicated, and `controls` WINS where both
+        // are present: it is the fuller statement of the same fact.
+        {
+            const auto cv = o->getProperty ("controls");
+            if (auto* ca = cv.getArray())
+            {
+                juce::StringArray every;
+                for (const auto& e : *ca)
+                { const auto n = e.toString().trim(); if (n.isNotEmpty()) every.addIfNotAlreadyThere (n); }
+                if (! every.isEmpty())
+                {
+                    for (const auto& already : out.params) every.addIfNotAlreadyThere (already);
+                    out.params = every;
+                    whyOut << "controls names " << juce::String (every.size())
+                           << " side(s) - every one of them moves together, to the same value "
+                              "(B's contract of 23 Oct; his 08:43: only the left side moved). ";
+                }
+            }
+        }
+        // ---- the done line is B's, and there is no question after it --------------------------
+        {
+            const auto sv = o->getProperty ("say");
+            if (auto* so = sv.getDynamicObject())
+            {
+                out.sayReached = so->getProperty ("reached").toString();
+                out.sayShort   = so->getProperty ("short").toString();
+                out.sayOver    = so->getProperty ("over").toString();
+                if (auto* ew = so->getProperty ("end_words").getDynamicObject())
+                {
+                    out.endHardest  = ew->getProperty ("hardest").toString();
+                    out.endLightest = ew->getProperty ("lightest").toString();
+                }
+            }
+            const auto av = o->getProperty ("ask");
+            if (! av.isVoid()) out.askAfterDial = (bool) av;
+        }
 
         // ---- sense: FROM THE KIND (21t-j, 28 Sep 2026 ruling), never from the wire's opinion --------------
         // The 10:24:56 block declared the MC 77's "Input L/R" as actuator "threshold" with sense
@@ -1110,6 +1177,9 @@ struct CalibLoop
         plugin = c.plugin; slot = c.slot;
         lo = juce::jmin (c.lo, c.hi); hi = juce::jmax (c.lo, c.hi);
         mode = c.mode; actuator = c.actuator; params = c.params; senseSign = c.senseSign < 0 ? -1 : 1;
+        // B's own words for the done line, and whether a question follows it (23 Oct 2026).
+        sayReached_ = c.sayReached; sayShort_ = c.sayShort; sayOver_ = c.sayOver;
+        endHardest_ = c.endHardest; endLightest_ = c.endLightest; askAfterDial_ = c.askAfterDial;
         minDb = juce::jmin (c.minDb, c.maxDb); maxDb = juce::jmax (c.minDb, c.maxDb);
         stepDb = (c.stepDb > 0.0f) ? c.stepDb : kStepDb;
         judged = 0; asked = false; noSignalSaid = false; pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0;
@@ -1642,6 +1712,44 @@ struct CalibLoop
             const bool crestUnder = w.grCrestDb < lo, crestOver = w.grCrestDb > hi;
             if (! ((levelUnder && crestUnder) || (levelOver && crestOver)))
             {
+                // ---- AND A HOLD HAS AN ENDING (his test 3 at 16:40, 23 Oct 2026) -------------
+                //
+                // *"after "Keep it playing until the UnFairchild is set" nothing happens at all.
+                //  The UnFairchild never dials and stays at threshold 2 while I keep playing."*
+                //
+                // His log, every window for eighty seconds: state=held-disagree, level 0.5 dB,
+                // crest -0.2 dB, band 0.5-1.5. The rule above is right - nothing moves on one
+                // sensor's word without a profile - and it had NO ENDING, so a plugin doing almost
+                // nothing (a 0.7 dB disagreement that will never resolve while it barely works)
+                // held the dial, the card and the whole run for as long as he cared to play.
+                //
+                // This is the fifth unbounded wait in this file's history and item 9's rule covers
+                // it in its own words: "a loop that reads a sensor needs a deadline, a staleness
+                // test on the sensor, and a sentence for each way it can end." The staleness test
+                // is above; this is the deadline and the sentence.
+                //
+                // EIGHT WINDOWS, about twenty-four seconds. A disagreement during one quiet phrase
+                // is ordinary and resolves when the loud part comes back, so the bound is several
+                // windows rather than one; eighty seconds of it is not a passing phrase, and he
+                // should never be the thing that times out.
+                if (++disagreeRun >= kDisagreeEnd)
+                {
+                    const float reached = juce::jmax (w.grLevelDb, w.grCrestDb);
+                    state = State::Clamped; closingOwed = true;
+                    closingOwedText = plugin + " only reaches " + juce::String (std::abs (reached), 1)
+                                    + " dB of gain reduction here, and its two meters disagree about "
+                                      "it (level " + juce::String (w.grLevelDb, 1) + " dB, crest "
+                                    + juce::String (w.grCrestDb, 1) + " dB). I have left it where it "
+                                      "is rather than dial on a reading I cannot trust.";
+                    s.finished = true; s.closing = closingOwedText;
+                    s.card = card();
+                    s.logLine = log ("ended-disagree")
+                                + "  (" + juce::String (disagreeRun) + " windows with the sensors "
+                                  "apart, so the hold ends and says what it measured rather than "
+                                  "waiting on a disagreement that is not resolving - his 16:40)";
+                    endHere();
+                    return s;
+                }
                 s.card = card();
                 // log() takes the STATE WORD only - the window line is a fixed shape and every figure in it has
                 // a name. The clause after it is the one thing the shape cannot say: WHY this window moved nothing.
@@ -1652,6 +1760,7 @@ struct CalibLoop
                             + " dB; nothing moves on one sensor's word without a profile)";
                 return s;
             }
+            disagreeRun = 0;      // they agree: the run of disagreement is over, not merely paused
         }
 
         // (5) OUT OF THE BAND: one step toward it, unless the budget, the range or the HEADROOM says stop.
@@ -2531,6 +2640,17 @@ struct CalibLoop
             "Anything else on this chain you want changed?",
             "How is it sounding to you?"
         };
+        // ---- B'S LINE WINS, AND IT IS THE WHOLE LINE (his 08:43; B's contract of 23 Oct) -----
+        //
+        // *"show one line from `say`, filled in ... ask: false: no question after it. No 'Does that
+        //  sit better?'. It's the step's result."*
+        //
+        // ONE AUTHOR FOR THE PROSE, which is the rule every other line on the card already follows.
+        // {gr} is the measured reduction and {end} the end it stopped at - the two facts only this
+        // side has - and nothing else is substituted, so a sentence B changes needs no change here.
+        if (const auto own = sayLineFilled(); own.isNotEmpty())
+            return own;
+
         const int n = (int) (sizeof (kQuestions) / sizeof (kQuestions[0]));
         int pick = (phraseIdx + 1) % n;
         if (pick == phraseIdx) pick = (pick + 1) % n;   // never the same one twice running
@@ -2556,7 +2676,35 @@ struct CalibLoop
                       ? "Adjusted the " + plugin + "'s " + knobText() + " to " + driveText()
                         + " dB - it is working " + grText() + " dB."
                       : "Adjusted the " + plugin + " to " + driveText() + " dB - it is working " + grText() + " dB.";
-        return what + " " + kQuestions[pick];
+        // ...and even without B's sentences, `ask: false` means no question (the dial contract of
+        // 20 Oct said the dial is silent; his 08:43 is what one looks like when it is not).
+        return askAfterDial_ ? (what + " " + kQuestions[pick]) : what;
+    }
+
+    /** B's own done line for this dial, filled in, or empty when the block carried none.
+
+        Which of the three: `reached` within about 0.5 dB of the target, `over` when the control is
+        at its LIGHTEST end and still doing more than asked, `short` when it ran out of travel the
+        other way and is still under. {gr} is one decimal under 1 dB and whole dB from 1 up, which
+        is B's own rule for it, and {end} comes from end_words. */
+    juce::String sayLineFilled() const
+    {
+        if (sayReached_.isEmpty() && sayShort_.isEmpty() && sayOver_.isEmpty()) return {};
+        if (lastGr != lastGr) return {};          // nothing measured: no line to fill
+        const float gr = lastGr;
+        const juce::String grText = std::abs (gr) < 1.0f ? juce::String (gr, 1)
+                                                         : juce::String ((int) std::lround (gr));
+        const float target = 0.5f * (lo + hi);
+        juce::String line, endWord;
+        if (std::abs (gr - target) <= 0.5f || (gr >= lo && gr <= hi))
+            line = sayReached_;
+        else if (gr > hi)
+        { line = sayOver_;  endWord = endLightest_; }
+        else
+        { line = sayShort_; endWord = endHardest_; }
+        if (line.isEmpty()) line = sayReached_.isNotEmpty() ? sayReached_ : sayShort_;
+        if (line.isEmpty()) return {};
+        return line.replace ("{gr}", grText).replace ("{end}", endWord);
     }
 
     // ---- the state as it rides the sidecar -------------------------------------------------------------------
