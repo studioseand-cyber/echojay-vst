@@ -521,6 +521,31 @@ void EJAgentHome::buildChain (const juce::String& uid, const juce::var& chainArr
 // =============================================================================================
 //  THE RECORD: one author, whether a window is attached or not
 // =============================================================================================
+/** ---- WHO NEEDS THAT RACK (his 08:44 fault, 23 Oct 2026) ------------------------------------
+    *"opening a Link's window to look must not stop the V2's run or take its rack away. If the Link
+     does take control while its window is open, closing that window hands control straight back to
+     the V2, the strip reconnects, and Undo all works again."*
+
+    The 20 Oct ruling made the borrow DEMAND-DRIVEN - "viewing a rack must not engage it; engage
+    only when something actually needs the hosted copy" - which is right, and it left the agent's own
+    run without a voice: his vocal run was dialling on that rack when the Link took it back, and
+    nothing afterwards asked for it again ("EJBorrow: not engaging 4814a16004 - nothing has asked to
+    engage this rack yet", 08:45:36). So the run says so here, and the tick asks.
+
+    A FINISHED run still counts while its Undo all is live: that button walks the rack back to the
+    run's checkpoint, and "Undo all showed but could not be pressed" is what it looks like when the
+    rack it would walk back is not held. */
+juce::String EJAgentHome::runTargetUid() const
+{
+    return executor_ != nullptr ? executor_->targetUid() : juce::String();
+}
+
+bool EJAgentHome::runNeedsItsRack() const
+{
+    if (client_ == nullptr) return false;
+    return client_->isActive() || client_->canUndoAll();
+}
+
 void EJAgentHome::agentChanged()
 {
     // ---- WHERE THE RUN STARTED, WRITTEN DOWN ONCE (16 Oct 2026) --------------------------------
@@ -876,6 +901,7 @@ bool EJAgentHome::newRunSinceLastKey()
     // writeSnapshot), and it is true exactly once per run - so a dial from the last run cannot hold
     // this one's listen open, and neither road has to remember to do it.
     proc_.keepPlayingFor.clear();
+    proc_.agentDialResults.clear();   // ...and what the last run's dials said (his 08:43 ruling)
     return true;
 }
 
@@ -894,7 +920,9 @@ juce::String EJAgentHome::ensureRunKey()
         ce.agentJson = juce::JSON::toString (toJson (seed), true);
         // stage B: through the one door, with the RUN'S KEY as the entry's identity and the run's
         // own chat as its home - never "the chat on screen", which is what his 19:51 card took.
-        proc_.appendChatEntry (std::move (ce), client_ != nullptr ? client_->runChatId() : juce::String(), runKey_);
+        runChatId_  = client_ != nullptr ? client_->runChatId() : juce::String();
+        runEntryId_ = runKey_;          // the row's identity IS the run's key (stage B)
+        proc_.appendChatEntry (std::move (ce), runChatId_, runKey_);
         EchoJay_NSLog (("EJAgentHome: opened the run's record, key=" + runKey_
                         + " (asked for by the window's row - one record, one run)").toRawUTF8());
     }
@@ -921,35 +949,57 @@ void EJAgentHome::writeSnapshot()
         ce.agentJson = juce::JSON::toString (toJson (seed), true);
         // stage B: through the one door, with the RUN'S KEY as the entry's identity and the run's
         // own chat as its home - never "the chat on screen", which is what his 19:51 card took.
-        proc_.appendChatEntry (std::move (ce), client_ != nullptr ? client_->runChatId() : juce::String(), runKey_);
+        runChatId_  = client_ != nullptr ? client_->runChatId() : juce::String();
+        runEntryId_ = runKey_;          // the row's identity IS the run's key (stage B)
+        proc_.appendChatEntry (std::move (ce), runChatId_, runKey_);
         EchoJay_NSLog (("EJAgentHome: opened the run's record, key=" + runKey_).toRawUTF8());
     }
     if (sid.isNotEmpty()) lastSession_ = sid;
 
+    // ---- THE ROW IS FOUND BY THE RUN, NOT BY A LIST THE WINDOW CAN EMPTY -------------------
+    //
+    // *"Its card is stuck on 'Thinking...' with 'Hide steps' and NO steps showing"* (his test 2,
+    // 08:28 on 23 Oct, after switching Links several times while the run was live).
+    //
+    // THE CAUSE, and it is one line: this walked proc_.chatHistory for a row whose key matched, and
+    // a chat or Link switch CLEARS that list - loadChatFromWorkspace, "a switch never carries one
+    // chat's messages into another" (his rule 2 of 18 Oct, which is right). From his first switch
+    // onwards the loop fell through without writing, so the run's card stopped being recorded
+    // anywhere while the run itself carried on perfectly - the log has the Kick run reaching its
+    // question at 08:29:57 with nothing on screen saying so. The comment this replaces even said
+    // the point was to render "from the STORE rather than from a list a chat switch can drop", and
+    // then gated the write on that very list.
+    //
+    // So the previous snapshot is taken from the row if it is still on the list, ELSE from the
+    // STORE, which is the authority either way; the list is updated when it is there, and the store
+    // is written always. The address comes from the home's own runChatId_/runEntryId_, taken when
+    // the row was minted, so no list and no window decides whether a run is recorded.
+    const auto chatId  = runChatId_.isNotEmpty() ? runChatId_
+                                                 : (client_ != nullptr ? client_->runChatId() : juce::String());
+    const auto entryId = runEntryId_.isNotEmpty() ? runEntryId_ : runKey_;
+    EchoJayProcessor::ChatEntry* row = nullptr;
     for (auto& e : proc_.chatHistory)
     {
         if (e.agentJson.isEmpty()) continue;
-        const auto prev = fromJson (juce::JSON::parse (e.agentJson));
-        if (prev.runKey != runKey_) continue;
-        auto v = runViewFrom (*client_, {}, false);
-        v.runKey  = runKey_;
-        v.opening = prev.opening;
-        // NEVER LOSE A SENTENCE WE WERE GIVEN: a stopped run has no doneSummary, and the answers
-        // recorded on a question's row are not in the client's model at all.
-        if (v.closing.isEmpty() && prev.closing.isNotEmpty()) v.closing = prev.closing;
-        carryAnswersForward (v, prev);   // by position and id, never the id alone (18 Oct 2026)
-        e.agentJson = juce::JSON::toString (toJson (v), true);
-        // ---- AND THE STORED COPY FOLLOWS IT (his 09:24 fault, 22 Oct 2026) -----------------
-        //
-        // The row on the replay list used to be the only copy of a windowless run, and his chat
-        // showed nothing because of it. The stored log is updated by this run's ID on every change
-        // - the same door the stamp used to put the card there - so a window that opens at any
-        // moment renders the card from the STORE rather than from a list a chat switch can drop.
-        // The closing is passed as the visible text once there is one; while the run is going the
-        // card's own snapshot carries everything, and an empty string is never written over a
-        // sentence that is already there.
-        proc_.storeAgentCard (e.chatId, e.entryId.isNotEmpty() ? e.entryId : runKey_,
-                              e.agentJson, v.closing.trim());
-        return;
+        if (fromJson (juce::JSON::parse (e.agentJson)).runKey != runKey_) continue;
+        row = &e;
+        break;
     }
+    const auto prevJson = row != nullptr ? row->agentJson
+                                         : proc_.storedAgentCardJson (chatId, entryId);
+    if (row == nullptr && prevJson.isEmpty() && chatId.isEmpty())
+        return;                       // no row anywhere and nowhere to put one: nothing to write
+    const auto prev = fromJson (juce::JSON::parse (prevJson));
+    auto v = runViewFrom (*client_, {}, false);
+    v.runKey  = runKey_;
+    v.opening = prev.opening;
+    // NEVER LOSE A SENTENCE WE WERE GIVEN: a stopped run has no doneSummary, and the answers
+    // recorded on a question's row are not in the client's model at all.
+    if (v.closing.isEmpty() && prev.closing.isNotEmpty()) v.closing = prev.closing;
+    carryAnswersForward (v, prev);   // by position and id, never the id alone (18 Oct 2026)
+    const auto json = juce::JSON::toString (toJson (v), true);
+    if (row != nullptr) row->agentJson = json;
+    proc_.storeAgentCard (row != nullptr && row->chatId.isNotEmpty() ? row->chatId : chatId,
+                          row != nullptr && row->entryId.isNotEmpty() ? row->entryId : entryId,
+                          json, v.closing.trim());
 }

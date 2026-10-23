@@ -112,6 +112,11 @@ public:
 
     /** The run's key and session, so a reopened window can find the row it owns. */
     juce::String runKey() const { return runKey_; }
+    /** The rack this run is working on ("" = the open rack), and whether it still needs it. The
+        V2's borrow tick asks both: his 08:44 ruling is that opening a Link's window must not take
+        the rack from a live run, and that closing it hands control straight back. */
+    juce::String runTargetUid() const;
+    bool runNeedsItsRack() const;
     /** THE KEY, MINTED HERE IF IT DOES NOT EXIST YET (Sean's #11, 16 Oct 2026). This object is the
         one author of the run's RECORD, and the editor's row is a mirror of it - but a run started in
         a LIVE window had the editor mint a key of its own first and push a second chat-history entry,
@@ -171,6 +176,15 @@ private:
     std::unique_ptr<EJAgentClient> client_;
     std::function<void (const juce::String&, const juce::String&)> buildRoad_;
     juce::String runKey_, lastSession_;
+    /** ---- WHERE THIS RUN'S ROW LIVES, HELD BY THE HOME ITSELF (his test 2, 08:28, 23 Oct) -----
+        The snapshot used to be written only by walking proc_.chatHistory for a row whose key
+        matched - and a chat or Link SWITCH clears that list (loadChatFromWorkspace, "a switch never
+        carries one chat's messages into another"). So from his first switch onwards the loop found
+        nothing and the run's card stopped being written anywhere, which is why the Vocal card sat
+        at "Thinking..." with no steps while its run was perfectly alive. These two are taken when
+        the row is minted and are the home's own answer to "which row is mine", so a list the window
+        empties can no longer silence the record. */
+    juce::String runChatId_, runEntryId_;
     // 18 Oct 2026: which run runKey_ belongs to. The sessionId could not answer that at the moment a
     // run starts (it is empty until the server replies), so a second run adopted the first one's
     // record - see newRunCheck().
