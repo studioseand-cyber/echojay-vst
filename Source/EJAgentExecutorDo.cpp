@@ -107,6 +107,28 @@ juce::var ExecutorDo::startContext()
                                 "Nothing here clears itself - only the user lifts a mark.");
             }
 
+        // ---- AND THE ONES WHOSE VALUES THIS BUILD CANNOT READ BACK (B's contract, 23 Oct) ----
+        //
+        // *"plugins_unreadable: [{ name, why }] ... the plugins whose values your build knows it
+        //  can't read back, by the inventory's spelling ... the server joins it to what it
+        //  remembers, and never gives those plugins a value step."*
+        //
+        // Sean's test 0: Solid Bus Comp was picked for the first glue stage and its step read
+        // "Settings not confirmed". B can only learn that from an ack on an add, so every user hits
+        // it once per plugin; this machine's own record turns "once each time" into "once ever".
+        // Note the SHAPE is B's (plugins_held's), so neither side invents a key the other cannot read.
+        if (const auto unreadable = ChainHost::valuesUnreadableList();
+            unreadable.getArray() != nullptr && ! unreadable.getArray()->isEmpty())
+        {
+            o->setProperty ("plugins_unreadable", unreadable);
+            o->setProperty ("plugins_unreadable_note",
+                            "This build cannot read these plugins' values back - one per "
+                            "{name, why}. Do not give them a step that SETS or DIALS a value: there "
+                            "is no way to confirm it landed, so the step can only ever report "
+                            "\"not confirmed\". A plugin named by the user is still used, and set by "
+                            "ear. A mark clears itself the moment a read-back succeeds.");
+        }
+
         // THE UNDO CAPABILITY, DECLARED (14 Oct 2026). B gates the op on this and nothing else:
         // "the server sends it only when the start body's capabilities includes \"undo\"; otherwise it is
         // refused in process (undo_unavailable)". The op was built this morning and the guard proved it, and
@@ -1497,15 +1519,44 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     const bool enterPending = anyDialPending && ! pendingBudget;
     const int  looksLeft    = enterPending ? kPendingLooks : triesLeft;
     const bool inPending    = pendingBudget || enterPending;
-    if ((! all.missed.isEmpty() || ! all.unreadable.isEmpty()) && looksLeft > 1 && sinks_.afterMs != nullptr)
+    // ---- NOTHING REPORTED YET IS A REASON TO LOOK AGAIN, NOT A VERDICT (his test 4, 08:40) ----
+    //
+    // *"the Tube-Tech CL 1B step said 'Settings not confirmed: the plugin had not reported them
+    //  yet', although the compressor was clearly working. The read-back ran before the plugin
+    //  reported its values. Wait for the plugin's report, within a bound."*
+    //
+    // His log says it waited for NOTHING AT ALL: "Tube-Tech CL 1B loaded at host sampleRate" and
+    // the landed line "Settings not confirmed: the plugin had not reported them yet" are both at
+    // 08:40:20, and the re-reading line (24 more looks) that appears three seconds later belongs to
+    // the NEXT add. Zero looks on the one that needed them.
+    //
+    // THE GATE WAS THE BUG, in one line: it re-read when something had been read and was WRONG
+    // (missed) or was known to be unreadable - and a plugin that has reported nothing at all
+    // produces neither, so the one case that most needs another look was the one case that got
+    // none. A freshly loaded plugin attaches its settings after the load (EJDial's own
+    // "no settings yet [slot-loaded]" line, printed for this very slot a moment before).
+    //
+    // So "the plugin has told us nothing yet, and we asked it for something" joins the two existing
+    // reasons. The bound is the same bound, the pending ceiling is the same ceiling, and a clean
+    // read still finishes at once - a plugin that answers immediately never reaches this test.
+    const bool nothingReportedYet = all.matched.isEmpty() && all.missed.isEmpty()
+                                 && all.unreadable.isEmpty() && ! asks.empty();
+    if (echojay::agent::readBackShouldLookAgain ((int) asks.size(), ! all.matched.isEmpty(),
+                                                 ! all.missed.isEmpty(), ! all.unreadable.isEmpty())
+        && looksLeft > 1 && sinks_.afterMs != nullptr)
     {
         const auto aliveW = this->alive();
         auto callCopy = std::make_shared<ToolCall> (call);
-        EchoJay_NSLog (("EJAgent: " + juce::String (all.missed.size() + all.unreadable.size())
-                        + " setting(s) have not landed or cannot be read yet - "
-                        "re-reading in 800 ms (" + juce::String (looksLeft - 1) + " more look(s), dial "
+        const juce::String whyLook = nothingReportedYet
+            ? ("the plugin has reported NO values yet for " + juce::String ((int) asks.size())
+               + " asked setting(s)")
+            : (juce::String (all.missed.size() + all.unreadable.size())
+               + " setting(s) have not landed or cannot be read yet");
+        EchoJay_NSLog (("EJAgent: " + whyLook + " - re-reading in 800 ms ("
+                        + juce::String (looksLeft - 1) + " more look(s), dial "
                         + (anyDialPending ? "STILL PENDING" : "settled")
-                        + "), because a map that is still arriving is not a setting that did not take").toRawUTF8());
+                        + "), because a map that is still arriving - or a plugin that has not "
+                          "attached its settings yet - is not a setting that did not take").toRawUTF8());
         // 800 ms x 6 = about four seconds, not one and a half. A third party's map comes from the
         // SERVER: the rig watched the V2 ask for it, finish the request without it, and receive it a
         // moment after the read-back had already given up and said "this build cannot read that
@@ -1630,6 +1681,19 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
             : stillDialling
                 ? juce::String ("the plugin had not reported them yet")
                 : juce::String ("this build cannot read that plugin's values back");
+        // ---- AND IT IS REMEMBERED, SO IT FAILS ONCE AND NOT EVERY TIME (B's contract, 23 Oct) --
+        //
+        // *"the server only learns that from your ack on an add ... so the first build for each user
+        //  with each such plugin always fails once."*  Only the BUILD'S OWN limit is marked: a slot
+        // that was still dialling is a timing fact (his test 4 at 08:40, fixed above by waiting for
+        // the report), and an ambiguous slot is about the rack, not the plugin. Marking either would
+        // hold a perfectly readable plugin back from every value step it could have carried.
+        if (! stillDialling && ! slotAmbiguous)
+        {
+            const auto marked = argString (call, "name").trim();
+            if (marked.isNotEmpty())
+                ChainHost::noteValuesUnreadable (marked, "its values do not read back on this build");
+        }
         finish (juce::var (r),
                 // SEAN'S #5 (16 Oct 2026): "Never 'Not applied: add X' when X was added: say 'Added X.
                 // Settings not confirmed.'" The sentence LEADS with what landed, so no renderer and no
@@ -1657,6 +1721,12 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     }
     r->setProperty ("settings_state", all.unreadable.isEmpty() ? "applied" : "partly_confirmed");
     r->setProperty ("settings_confirmed", all.unreadable.isEmpty());
+    // ...AND THE MARK CLEARS ITSELF (B's contract of 23 Oct). Something read back, so whatever was
+    // wrong before is not wrong now - usually a parameter map that had not arrived yet. A mark that
+    // outlived its reason would hold a readable plugin back from every value step it could carry.
+    if (all.unreadable.isEmpty())
+        if (const auto nm = argString (call, "name").trim(); nm.isNotEmpty())
+            ChainHost::clearValuesUnreadable (nm);
     // ---- SEAN'S #6 (16 Oct 2026): THE ROW READS AS WORDS, THE RESULT KEEPS THE IDS --------------
     // What he saw: "slot 2 threshold_db -14.00, slot 2 ratio 4.00". What he asked for: "Compressor:
     // threshold -14 dB, ratio 4:1". Same figures, same order, one audience each - the model's copy

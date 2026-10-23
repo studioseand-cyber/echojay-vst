@@ -1663,6 +1663,16 @@ void ExecutorRead::beginPlaybackWindow()
     linkHeardBase_ = a.valid ? a.heardSeconds : 0.0f;
 }
 
+juce::String ExecutorRead::keepPlayingPlugin() const
+{
+    return src_.keepPlayingPlugin ? src_.keepPlayingPlugin() : juce::String();
+}
+
+juce::StringPairArray ExecutorRead::dialResults() const
+{
+    return src_.dialResults ? src_.dialResults() : juce::StringPairArray();
+}
+
 PlaybackReading ExecutorRead::readPlayback()
 {
     PlaybackReading r;
@@ -2281,6 +2291,7 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     // (dialPending, which the ChainHost computes for the open rack and a Link publishes in its
     // sidecar). Neither is guessed here and nothing is cached: the answer is read at the moment
     // the client asks, because a dial lands while the user is playing.
+    s.dialResults = [p] () -> juce::StringPairArray { return p->agentDialResults; };
     s.keepPlayingPlugin = [p] () -> juce::String
     {
         if (p->keepPlayingFor.isEmpty()) return {};

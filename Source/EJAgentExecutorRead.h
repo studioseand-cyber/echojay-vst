@@ -291,6 +291,8 @@ struct Sources
         on, or empty. Bound to the processor, which is where both the names and the dials' state
         live; absent in a harness, which then answers "nothing is waiting". */
     std::function<juce::String()> keepPlayingPlugin;
+    /** The landed dials' own sentences, by plugin name (his 08:43 ruling). */
+    std::function<juce::StringPairArray()> dialResults;
     /** "Only suggest plugins EchoJay can auto-dial" - his Settings toggle, READ LIVE on every
         request (his 09:49: an unmapped plugin was added with it on, because neither agent body
         carried it). Same key the chat road uses: `autoDial`. */
@@ -336,6 +338,7 @@ public:
     // The session's channel: "" = this instance's own rack, else a Link uid (the active chat's). Set at start.
     void setTarget (const juce::String& linkUid) { target_ = linkUid; }
     juce::String target() const { return target_; }
+    juce::String targetUid() const override { return target_; }   // the base's name for it
 
     // ToolExecutor
     juce::var startContext() override;
@@ -347,6 +350,11 @@ public:
     void beginPlaybackWindow() override;
 
     PlaybackReading readPlayback() override;
+    /** B's keep-playing contract (22 Oct 2026): the plugin a keep_playing dial is still setting, or
+        empty. Const because the card asks it on every repaint (point 2's step) and the client asks
+        it before every stop prompt (point 1) - it reads the racks and changes nothing. */
+    juce::String keepPlayingPlugin() const override;
+    juce::StringPairArray dialResults() const override;
     juce::String captureCheckpoint (const juce::String& label) override;
     juce::String describeOtherChannel (const ToolCall& call) override;   // item 2: the track name, or "" for self
     juce::StringArray buildWouldRemove (const ToolCall& call) override;  // step 7.4: what a build takes OFF the rack

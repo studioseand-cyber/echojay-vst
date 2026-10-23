@@ -312,7 +312,14 @@ public:
         Defaulted, not pure: every other implementer (the guards' stubs, the read-only executor)
         answers "nothing is waiting" without being touched, and only the road that arms dials has
         anything to say. */
-    virtual juce::String keepPlayingPlugin() { return {}; }
+    virtual juce::String keepPlayingPlugin() const { return {}; }
+    /** Which Link's rack this run is aimed at, or empty for the open rack. Asked by the V2's
+        borrow tick: a LIVE RUN on a rack is a demand for the hosted copy (his 08:44 ruling), and
+        the 20 Oct "viewing does not engage" rule needs a demander to name itself. */
+    virtual juce::String targetUid() const { return {}; }
+    /** What this run's dials finally said, keyed by the plugin's name (his 08:43 ruling: the dial's
+        result lands ON its step, never as a chat line below the card). Empty until one lands. */
+    virtual juce::StringPairArray dialResults() const { return {}; }
 
     // undo
     virtual juce::String captureCheckpoint (const juce::String& label) = 0;   // "" = no checkpoint available
@@ -340,7 +347,7 @@ public:
     void check (const ToolCall&, Done done) override { done (ToolOutcome::failure ("not_in_phase", "this build has no agent executor wired (stub)")); }
     void beginPlaybackWindow() override {}
     PlaybackReading readPlayback() override { return {}; }
-    juce::String keepPlayingPlugin() override { return {}; }
+    juce::String keepPlayingPlugin() const override { return {}; }
     juce::String captureCheckpoint (const juce::String&) override { return {}; }
     void undoStep (const juce::String&, Done done) override { done (ToolOutcome::failure ("not_in_phase", "no executor: nothing was applied, so nothing can be undone")); }
     void undoToCheckpoint (const juce::String&, Done done) override { done (ToolOutcome::failure ("not_in_phase", "no executor: nothing was applied, so nothing can be undone")); }
