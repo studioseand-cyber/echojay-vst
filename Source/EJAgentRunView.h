@@ -71,6 +71,10 @@ inline bool rowIsLiveRun (const juce::String& rowKey, const juce::String& liveKe
     return rowKey.trim().isNotEmpty() && rowKey.trim() == liveKey.trim();
 }
 
+/** Declared here, defined at the foot of the file (it forwards to the protocol's own copy, so
+    the client and this view compare prose with the SAME function - see its note down there). */
+inline juce::String normalisedProse (const juce::String& s);
+
 struct RunStep
 {
     juce::String id;
@@ -89,6 +93,10 @@ struct RunStep
     juce::String answered;      // "You said: ..." once a chip is tapped
     int  status = 0;            // EJAgentClient::Step::Status
     bool applySkip = false;     // Ask mode, awaiting a decision -> [Apply] [Skip] on the line
+    /** His 21:52: a build awaiting his decision is a PLAN, so the pair reads [Go] [Cancel] and the
+        slots are this row's own numbered lines. Set only for a build whose every slot names a
+        plugin - the unreadable ones never become a decision at all (his 21:48). */
+    bool buildPlan = false;
     bool canUndo = false;
     bool hasDetails = false;    // a failed line with a technical message behind it
     bool expanded = false;      // Details open (by step id, so a relayout cannot collapse it)
@@ -279,6 +287,10 @@ struct RunView
     bool showStop = false;
     bool showUndoAll = false;
     bool showGotIt = false;
+    /** His 08:10 point 2: the BUTTON says "Got it" too until the run can promise nothing else will
+        need playback. One rule for the line and the button - two surfaces saying different things
+        about the same fact is what he read at 08:08 and 08:10. */
+    bool canStopPlaying = false;
     bool showRetry = false;
     bool onePlanLine = false;   // item 2: one line means ONE apply, named "Apply"
     /** TRUE when the steps are collapsed but a FAILED line is still shown: Sean's #13 asked for Hide
@@ -327,6 +339,7 @@ struct RunView
         showApplyAll   = false;
         showUndoAll    = false;
         showGotIt      = false;
+        canStopPlaying = false;
         playbackActive = false;
         for (auto& s : steps) { s.applySkip = false; s.canUndo = false; }
         if (statusWord.isEmpty()) statusWord = "Done";
@@ -427,7 +440,6 @@ inline juce::String rightWordFor (const EJAgentClient::Step& s, bool askPendingH
     user - item 3's rule, 13 Oct). */
 /** Declared here, defined below: runViewFrom needs it to tell a closing that repeats a failed
     step's own line from one that says something new (his 17:20 run). */
-inline juce::String normalisedProse (const juce::String& s);
 
 inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& expanded, bool stepsOpen)
 {
@@ -477,8 +489,12 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     }
     v.showStop   = v.running;
     v.showUndoAll = v.finished && c.canUndoAll();
-    v.showRetry   = c.state() == S::Failed && c.errorRetryable();
+    // RETRY FOR AN UNREADABLE PLAN TOO (his 21:48, 22 Oct 2026). The run itself has not failed -
+    // the server is answering - but the only thing it offered named no plugin in two of its slots,
+    // so the card says it could not read the plan and the one road out is to ask again.
+    v.showRetry   = (c.state() == S::Failed && c.errorRetryable()) || c.planUnreadable();
     v.showGotIt   = c.state() == S::Listening;
+    v.canStopPlaying = c.stopInviteAllowed();
     v.onePlanLine = c.planLines().size() <= 1;
     // ---- SEAN'S #4 (16 Oct 2026): ONE WAITING LINE HAS ONE PAIR OF BUTTONS ---------------------
     // "One pending line: show only the line's buttons. Two or more: add Apply all / Skip all under
@@ -572,6 +588,37 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         r.hasDetails  = s.status == St::Failed && s.modelDetail.isNotEmpty() && s.modelDetail != s.detail;
         r.expanded    = expanded.contains (s.id);
         r.applySkip   = s.status == St::AwaitingApproval && c.state() == S::AwaitingApproval;
+        // ---- A BUILD AWAITING A DECISION IS DRAWN AS A PLAN (his 21:52, 22 Oct 2026) ---------
+        //
+        // *"A raw 'build N slots' step with Apply/Skip must not be offered for a build either ...
+        //  show it as a plan needing Go, or refuse it plainly."*  Refusal belongs to a plan that
+        // cannot be READ (21:48, and the step is already Failed by the time it gets here); a
+        // readable one is work he asked for, so it is drawn as the plan it is.
+        //
+        // The slots come from `s.call` through the protocol's one reader, so this cannot offer a
+        // chain the refusal would have refused, and there is no second copy of the chain to drift.
+        // The heading is the SERVER's when it sent a plan frame this round - one author for the
+        // words - and our own sentence only when it did not.
+        //
+        // AND ONLY WHEN THE SERVER SENT NO PLAN CARD - which is his ruling word for word ("if the
+        // server sends a build op WITH NO PLAN"). B's own fix of 23 Oct makes every build a plan
+        // first, so the ordinary road now arrives as a plan card whose items carry the server's own
+        // per-step words ("elysia alpha mix for about 2 dB"). Re-heading those rows here would
+        // overwrite the better sentence AND put the plan on screen twice - his test 8b, arriving
+        // from the other side. This draws the plan only where there is none.
+        if (r.applySkip && ! c.planCardThisRound())
+        {
+            juce::StringArray slots;
+            if (echojay::agent::buildPlanSlots (s.call, slots))
+            {
+                r.buildPlan = true;
+                r.label = "The plan: build this chain";
+                juce::String lines;
+                for (int k = 0; k < slots.size(); ++k)
+                    lines << (k > 0 ? "\n" : "") << juce::String (k + 1) << ". " << slots[k];
+                r.detail = r.detail.isNotEmpty() ? lines + "\n" + r.detail : lines;
+            }
+        }
         if (askHere)
         {
             const auto& pending = c.pendingAsk();
@@ -597,17 +644,38 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
             //   the question says MORE than the label -> the block's text becomes the ROW's, and the
             //     block goes. Nothing is lost and nothing is said twice, which is what he asked for
             //     ("if it's ours, render it once, inside the step").
+            // ---- AND ONCE IS ONCE WITHOUT COMPARING PROSE AT ALL (his test 1, 16:24, 23 Oct) --
+            //
+            // *"the plan is STILL shown twice, in the card with chips and then in full as plain
+            //  text below the card."*  Third day, same two fields - and that session's log settles
+            //  where it is NOT. B's contract holds exactly as written: the plan card's tool_call
+            //  carries the text and the message frame for it has EMPTY text and only `of` pointing
+            //  at the card, which this client logs as "frame unknown event=message skipped". The
+            //  plan's text appears in six log lines all session, three per card - the frame, the
+            //  step and the ask - so nothing arrived twice and nothing was flushed to the chat.
+            //
+            // THE TEST ITSELF WAS THE FAULT, and it was a PROXY: prose standing in for identity.
+            // The row's label is composed from the call when its frame arrives; the question is the
+            // ask's own; they reach this view by different roads and in that session they differed
+            // by ONE character - "4. bx clipper" on the row, "4. bx_clipper" in the question.
+            // Containment after normalising dashes and spaces cannot see a difference in the MIDDLE
+            // of a string, so both copies were kept. Normalising underscores too would buy a day:
+            // any wording the two roads do not share breaks it again.
+            //
+            // IDENTITY CANNOT DRIFT. `askHere` means this step IS the pending ask (its id is the
+            // ask's id), so the row and the block are two drawings of ONE thing - there is nothing
+            // to compare. The block goes, always, and the row keeps the chips, which is his 18 Oct
+            // ruling unchanged ("the row wins, it carries the chips").
+            //
+            // WHICH TEXT the row shows is then a presentation choice and not a test, and it is made
+            // so that nothing can be LOST: the longer of the two, because one is sometimes the
+            // fuller sentence (the talk's text prepended to the ask) and the other is sometimes the
+            // more canonical spelling. A tie keeps the label, which is what the row already had.
             if (v.askQuestion.isNotEmpty())
             {
-                const auto qn = normalisedProse (v.askQuestion);
-                const auto ln = normalisedProse (r.label);
-                if (qn == ln || (qn.isNotEmpty() && ln.contains (qn)))
-                    v.askQuestion.clear();
-                else if (ln.isNotEmpty() && qn.contains (ln))
-                {
+                if (v.askQuestion.trim().length() > r.label.trim().length())
                     r.label = v.askQuestion;     // the fuller sentence, on the row with the chips
-                    v.askQuestion.clear();
-                }
+                v.askQuestion.clear();           // one ask, one drawing of it, by construction
             }
             r.chips       = pending.labels;
             r.chipNotes   = pending.details;     // "the chips don't show their notes" (18 Oct)
@@ -615,6 +683,57 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         }
         r.right       = rightWordFor (s, askHere);
         if (s.status == St::Done || s.status == St::Undone) ++v.changeCount;
+        v.steps.push_back (std::move (r));
+    }
+    // ---- B'S KEEP-PLAYING CONTRACT, POINT 2: THE DIAL IS ITS OWN STEP (22 Oct 2026) -----------
+    //
+    // *"Show the dial as its own step on the run card, with the plugin's name, until the dial lands
+    //  or gives up"* (docs/CONTRACT_keep_playing_2026-10-22.md, and his overnight item 4).
+    //
+    // His test 9: the plan's second compressor was "set on the first playback for about 1 dB" and the
+    // card showed NO step for that dial - so the only sign of it was the listen refusing to end, and
+    // a card that holds him on playback without saying what for is a card that looks stuck. Point 1
+    // (never say "you can stop") is in the client; this is the line he reads while it happens.
+    //
+    // THE STEP COMES FROM THE EXECUTOR'S OWN ANSWER - the same question point 1 asks before it
+    // holds the stop prompt - so the step and the prompt cannot disagree about whether a dial is
+    // still going. It is drawn while one is pending and gone when it lands, which is what "until the
+    // dial lands or gives up" means; the step that ADDED the plugin keeps its own line either way.
+    // The executor names ONE plugin: the first slot of this run that still has a dial pending. If
+    // two dialled at once the card would name them one after the other rather than side by side,
+    // which is a limit of the accessor and not of this drawing - and it is the honest limit to have,
+    // because the alternative is this view keeping its own list of what is dialling (two sources of
+    // truth for one fact, which is the family three of this week's faults came from).
+    // It is pushed LAST, so the number it carries is one past the steps that did the work.
+    //
+    // ---- AND IT FINISHES WITH ITS RESULT (his test 4 at 08:43, 23 Oct 2026) ------------------
+    //
+    // *"the dial-on-playback result arrived as a loose message below the card ... the dial step
+    //  finishes and shows its result, then the card says it's done. Nothing appears outside the
+    //  card."*  So the step does NOT vanish when the dial lands: it becomes a Done step carrying
+    //  the sentence the dial itself wrote. The landed ones are drawn first, in the order the run
+    //  armed them, and the one still working last - which is the order he reads them in.
+    const auto landed = c.dialResults();
+    for (const auto& name : landed.getAllKeys())
+    {
+        RunStep r;
+        r.id     = "dial:" + name;
+        r.label  = "The " + name + " set itself on the playback";
+        r.detail = landed[name];                  // the dial's own sentence, not a second wording
+        r.right  = "set";
+        r.status = (int) St::Done;
+        v.steps.push_back (std::move (r));
+        ++v.changeCount;
+    }
+    if (const auto dialling = c.keepPlayingPlugin();
+        dialling.isNotEmpty() && ! landed.containsKey (dialling))
+    {
+        RunStep r;
+        r.id     = "dial:" + dialling;
+        r.label  = "Keep it playing while the " + dialling + " sets itself";
+        r.detail = "I'll say when it's done.";
+        r.right  = "setting itself";
+        r.status = (int) St::Running;
         v.steps.push_back (std::move (r));
     }
     if (askNow && c.steps().empty())
@@ -762,6 +881,7 @@ inline juce::var toJson (const RunView& v)
     o->setProperty ("stop",      v.showStop);
     o->setProperty ("undoAll",   v.showUndoAll);
     o->setProperty ("gotIt",     v.showGotIt);
+    o->setProperty ("canStop",   v.canStopPlaying);
     o->setProperty ("retry",     v.showRetry);
     o->setProperty ("onePlanLine", v.onePlanLine);
     o->setProperty ("changes",   v.changeCount);
@@ -797,6 +917,7 @@ inline juce::var toJson (const RunView& v)
         }
         so->setProperty ("status", statusToken (s.status));
         if (s.applySkip)   so->setProperty ("applySkip", true);
+        if (s.buildPlan)   so->setProperty ("buildPlan", true);
         if (s.canUndo)     so->setProperty ("canUndo", true);
         if (s.hasDetails)  so->setProperty ("hasDetails", true);
         if (s.expanded)    so->setProperty ("expanded", true);
@@ -830,6 +951,7 @@ inline RunView fromJson (const juce::var& v)
     r.showStop   = (bool) o->getProperty ("stop");
     r.showUndoAll= (bool) o->getProperty ("undoAll");
     r.showGotIt  = (bool) o->getProperty ("gotIt");
+    r.canStopPlaying = (bool) o->getProperty ("canStop");
     r.showRetry  = (bool) o->getProperty ("retry");
     r.onePlanLine= (bool) o->getProperty ("onePlanLine");
     r.changeCount= (int)  o->getProperty ("changes");
@@ -865,6 +987,7 @@ inline RunView fromJson (const juce::var& v)
                     s.chipHandSet.add (k < hand.length() && hand[k] == '1');
                 s.status      = statusFromToken (so->getProperty ("status").toString());
                 s.applySkip   = (bool) so->getProperty ("applySkip");
+                s.buildPlan   = (bool) so->getProperty ("buildPlan");
                 s.canUndo     = (bool) so->getProperty ("canUndo");
                 s.hasDetails  = (bool) so->getProperty ("hasDetails");
                 s.expanded    = (bool) so->getProperty ("expanded");
@@ -1013,10 +1136,14 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
                 if (kind == 2)
                 {
                     const int bw = lineBtnW;
+                    // A BUILD PLAN SAYS GO AND CANCEL (his 21:52). The ZONE carries the word, so the
+                    // painter and the rig read the same label from the same place - a second switch
+                    // in the painter would be two authors for one button.
+                    const bool plan = v.steps[(size_t) si].buildPlan;
                     L.zones.push_back ({ { rr.button.getX(), rr.button.getY(), bw, rr.button.getHeight() },
-                                         RunHit::ApplyLine, si, {} });
+                                         RunHit::ApplyLine, si, plan ? "Go" : "Apply" });
                     L.zones.push_back ({ { rr.button.getX() + bw + Metrics::btnGap, rr.button.getY(), bw, rr.button.getHeight() },
-                                         RunHit::SkipLine, si, {} });
+                                         RunHit::SkipLine, si, plan ? "Cancel" : "Skip" });
                 }
                 else if (kind == 3) L.zones.push_back ({ rr.button, RunHit::Details, si, {} });
                 else if (kind == 4) L.zones.push_back ({ rr.button, RunHit::Undo,    si, {} });
@@ -1101,7 +1228,8 @@ inline RunRects layoutRun (const RunView& v, int x0, int y0, int width)
         else                 { footer.add ("Apply");      footerKinds.push_back (RunHit::ApplyAll); }
         footer.add ("Skip all"); footerKinds.push_back (RunHit::SkipAll);
     }
-    if (v.showGotIt)  { footer.add ("Got it, you can stop"); footerKinds.push_back (RunHit::GotIt); }
+    if (v.showGotIt)  { footer.add (v.canStopPlaying ? "Got it, you can stop" : "Got it");
+                        footerKinds.push_back (RunHit::GotIt); }
     if (v.showStop)   { footer.add ("Stop");     footerKinds.push_back (RunHit::Stop); }
     if (v.showRetry)  { footer.add ("Retry");    footerKinds.push_back (RunHit::Retry); }
     if (v.showUndoAll){ footer.add ("Undo all"); footerKinds.push_back (RunHit::UndoAll); }
@@ -1215,39 +1343,12 @@ inline void drawRunGlyph (juce::Graphics& g, juce::Rectangle<int> r, int status,
     as one space, and the ends are trimmed. Those are the two things that differ between one copy of
     a sentence and another here; nothing else is touched, because a comparison that ignored more
     would start merging answers that really are different. */
-inline juce::String normalisedProse (const juce::String& s)
-{
-    juce::String out;
-    bool lastWasSpace = false;
-    for (int i = 0; i < s.length(); ++i)
-    {
-        auto c = s[i];
-        if (c == 0x2014 || c == 0x2013 || c == 0x2012 || c == 0x2212 || c == 0x2010 || c == 0x2011)
-            c = '-';                                  // em, en, figure, minus, hyphen, non-breaking
-        const bool isSpace = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
-        if (isSpace) { if (! lastWasSpace && out.isNotEmpty()) out << ' '; lastWasSpace = true; continue; }
-        lastWasSpace = false;
-        out << c;
-    }
-    // ---- A DASH AND ITS SPACES ARE ONE THING (20 Oct 2026, his 09:36) --------------------------
-    // *"fold-on-pull missed a duplicate closing because the two copies differ only in "-" vs " - ".
-    // Normalise dashes (em, en, hyphen, with or without spaces) and whitespace before comparing."*
-    //
-    // The loop above already maps every dash to '-' and collapses runs of whitespace, which is why
-    // the 16 Oct em-dash twins matched. What it does NOT reconcile is the SPACING around the dash:
-    // "low-mids-about" and "low-mids - about" both survive it and still differ. So the spaces either
-    // side of a dash are dropped, which makes "a - b", "a <em dash> b" and "a-b" one key.
-    //
-    // THIS IS A COMPARISON KEY AND NOTHING ELSE - no displayed text passes through here - so losing
-    // the spacing costs nothing and catches the one difference his duplicates actually had. It is
-    // also the case I failed to leg last night: FP1-FP4 assert the mechanism (a step line, a
-    // closing, a short answer, a real reply) and never a dash twin, which the repair's own comment
-    // three lines away says was the only way two copies ever differed.
-    auto key = out.trim();
-    while (key.contains (" -")) key = key.replace (" -", "-");
-    while (key.contains ("- ")) key = key.replace ("- ", "-");
-    return key;
-}
+/** ---- ONE COMPARATOR, AND IT NOW LIVES BESIDE THE PROTOCOL (23 Oct 2026) --------------------
+    The body moved to EJAgentProtocol.h so the CLIENT can ask the same question this view asks: his
+    test 0 at 08:10 had the plan drawn once on the card and once as the chat row's own prose, and
+    the rule that drops the second copy has to be the same rule on both surfaces or they disagree
+    again. This forwarder keeps every `agentui::normalisedProse` call site exactly as it was. */
+inline juce::String normalisedProse (const juce::String& s) { return echojay::agent::normalisedProse (s); }
 
 inline void carryAnswersForward (RunView& now, const RunView& before)
 {

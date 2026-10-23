@@ -44,6 +44,7 @@
 #include "EJAgentProtocol.h"
 #include "EJAgentTools.h"
 #include "EJAgentClient.h"
+#include "EJAgentClientTestAccess.h"
 #include "EJAgentExecutorRead.h"   // SZ2/SZ3 call the product's own inventoryPage
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"    // V: the run ROW, whose geometry is what Sean reads in Logic
@@ -55,13 +56,8 @@
 using namespace echojay::agent;
 
 // The one named seam (declared friend in EJAgentClient.h).
-struct EJAgentClientTestAccess
-{
-    static void setRecorder (EJAgentClient& c, std::function<void (const juce::String&, const juce::String&)> fn) { c.postOverride_ = std::move (fn); }
-    static void feed (EJAgentClient& c, const juce::String& event, const juce::String& data) { c.onFrame (c.generation_, parseFrame (event, data)); }
-    static void feedStale (EJAgentClient& c, const juce::String& event, const juce::String& data) { c.onFrame (c.generation_ - 1, parseFrame (event, data)); }
-    static void endStream (EJAgentClient& c, bool terminal, int status, const juce::String& err) { c.onStreamEnded (c.generation_, terminal, status, err); }
-};
+// The client's test door is now one shared header (tools/include/EJAgentClientTestAccess.h),
+// included above, so the two harnesses that feed frames cannot drift apart.
 
 namespace
 {
@@ -122,7 +118,9 @@ struct FakeExecutor : ToolExecutor
     /** B's keep-playing contract (22 Oct 2026): the plugin a keep_playing dial is still setting,
         or empty. The product reads this from the racks; a fake only has to be able to say both. */
     juce::String keepPlaying;
-    juce::String keepPlayingPlugin() override { return keepPlaying; }
+    juce::String keepPlayingPlugin() const override { return keepPlaying; }
+    juce::StringPairArray dialsLanded;                                   // his 08:43 ruling
+    juce::StringPairArray dialResults() const override { return dialsLanded; }
     juce::String captureCheckpoint (const juce::String& label) override { checkpointLabel = label; return "cp_7"; }
     void undoStep (const juce::String& t, Done done) override { undoneTokens.push_back (t); done (ToolOutcome::success (juce::var())); }
     void undoToCheckpoint (const juce::String& cp, Done done) override { undoneCheckpoint = cp; done (ToolOutcome::success (juce::var())); }
@@ -326,6 +324,14 @@ int main()
         check (r.transcript.size() == 1 && r.transcript[0].first == "user" && r.transcript[0].second == "build a mix bus chain", "R1d the goal is the user's turn in the transcript");
         r.round (1); r.delta ("Looking at the rack"); r.delta (" and the level...");
         check (r.client.liveText() == "Looking at the rack and the level...", "R1e deltas accumulate as the live text");
+        // THE BUILD IN THIS SCENE NAMES ITS PLUGINS NOW (22 Oct 2026). "API-2500" is spelled without
+        // its "(s)" suffix for one reason: these fixtures are R"(...)" raw strings and ')"' closes
+        // one, so the name as the summary spells it would end the literal mid-JSON. It cost a build.
+        // It was {"op":"build"} with no chain at all - shorthand for "a build line", which is what this layout scene is about. His
+        // 21:48 fault made that shorthand illegal: a build naming no plugin is never offered (UP1),
+        // and the product already refused an empty one at apply time ("that build carried no chain").
+        // The three names are the ones this step's own summary describes, so the line it draws - which
+        // is the thing L0 measures - is unchanged.
         r.tool (kLook); r.tool (kDoSet); r.tool (kCheck);
         r.plan (R"({"round":1,"heading":"One change needs your ok.","items":[{"id":"tc_2","summary":"EchoJay EQ: bell 300 Hz -2 dB Q 1.4","why":"over the 3 dB line","approval":"ask_first"}]})");
         check (r.client.steps().size() == 3 && r.client.steps()[1].label == "EchoJay EQ: bell 300 Hz -2 dB Q 1.4"
@@ -493,7 +499,17 @@ int main()
                && std::abs ((double) res.getProperty ("integratedLufs", {}) + 14.2) < 0.05 && std::abs ((double) res.getProperty ("loudestLufs", {}) + 11.9) < 0.05
                && std::abs ((double) res.getProperty ("peakDbtp", {}) + 1.3) < 0.05 && ! res.hasProperty ("short"),
                "W2b min_seconds heard: {played:true, seconds, integratedLufs, loudestLufs, peakDbtp}");
-        check (r.step ("tc_13")->detail == "Got it, you can stop." && r.client.state() != EJAgentClient::State::Listening, "W2c the row reads \"Got it, you can stop.\" and the wait is over");
+        // ---- RE-AIMED 23 Oct 2026, AND SAID PLAINLY: this leg asserted the OLD sentence ------
+        // It read `detail == "Got it, you can stop."`, which his 08:10 ruling overturns: this
+        // fixture's run has shown no closing, so the run cannot promise that nothing else will need
+        // playback and the honest line is "Got it." W2's subject is unchanged - the minimum is
+        // reached, the wait ends, the reading goes back - and that is what it now reads. The
+        // stop INVITATION has its own pair of legs below (KS1/KS2), where it belongs.
+        check (r.step ("tc_13")->detail == "Got it." && r.client.state() != EJAgentClient::State::Listening,
+               "W2c the row says the listen is done and the wait is over  (the sentence is \"Got it.\" "
+               "and not \"you can stop\", because this run has rounds still to come - his 08:10 point 2)",
+               "detail \"" + r.step ("tc_13")->detail + "\", state "
+               + juce::String (EJAgentClient::stateName (r.client.state())));
         // ---- PW (19 Oct 2026, his 12:33): EACH FIGURE WITH ITS OWN WINDOW -------------------
         // *"check playback still says loudest 3 s -17.5 LUFS under integrated -14.1. If integrated
         // is measured over a longer window than the last 8 s, put both on the same window, or name
@@ -744,7 +760,7 @@ int main()
         r.round (1);
         r.delta ("I will read the rack and the analysis first, then propose a corrective EQ, glue compression, saturation, a level trim and a limiter at -0.1 dBTP.");
         r.tool (kLook);
-        r.tool (R"({"id":"tc_2","name":"do","args":{"op":"build"},"approval":"ask_first","summary":"Build: EchoJay EQ (bell 300 Hz -2 dB Q 1.4, high shelf 10 kHz +1 dB), API-2500 (s) ratio 4:1 attack 10 ms release 300 ms, bx_saturator V2 drive 2 dB, EchoJay Level option dynamic target -12 LUFS, EchoJay Limiter ceiling -0.1 dBTP","why":"a build needs your ok"})");
+        r.tool (R"({"id":"tc_2","name":"do","args":{"op":"build","chain":[{"name":"EchoJay EQ"},{"name":"API-2500"},{"name":"bx_saturator V2"}]},"approval":"ask_first","summary":"Build: EchoJay EQ (bell 300 Hz -2 dB Q 1.4, high shelf 10 kHz +1 dB), API-2500 (s) ratio 4:1 attack 10 ms release 300 ms, bx_saturator V2 drive 2 dB, EchoJay Level option dynamic target -12 LUFS, EchoJay Limiter ceiling -0.1 dBTP","why":"a build needs your ok"})");
         r.tool (R"({"id":"tc_3","name":"do","args":{"op":"set_pre_gain","db":-6},"approval":"ask_first","summary":"pre-gain -6 dB"})");
         r.plan (R"({"round":1,"heading":"Here is the plan for the mix bus - two changes need your ok before anything is applied to the rack.","items":[{"id":"tc_2","summary":"Build: EchoJay EQ (bell 300 Hz -2 dB Q 1.4, high shelf 10 kHz +1 dB), API-2500 (s) ratio 4:1 attack 10 ms release 300 ms, bx_saturator V2 drive 2 dB, EchoJay Level option dynamic target -12 LUFS, EchoJay Limiter ceiling -0.1 dBTP","why":"a build needs your ok","approval":"ask_first"},{"id":"tc_3","summary":"pre-gain -6 dB","approval":"ask_first"}]})");
         r.await ({ "tc_1", "tc_2", "tc_3" });
@@ -1620,6 +1636,180 @@ int main()
             check (L.askQuestion.isEmpty(), "Z4b ...so the layout reserves nothing for the block either");
         }
         {
+            // ---- A PLAN WITH A NAMELESS SLOT IS NEVER OFFERED (his 21:48 fault, 22 Oct 2026) ----
+            //
+            // *"'build 6 slots: EchoJay EQ, EchoJay Compressor, EchoJay Compressor, , , EchoJay
+            //  Limiter' with Apply/Skip. Two slots have NO name ... The fallback must never offer a
+            //  slot with no plugin. If the plan can't be read, say so plainly ('I couldn't read the
+            //  plan, try again') with a Retry chip, rather than building a generic chain."*
+            //
+            // His own six-slot op, two entries nameless, exactly as it arrived.
+            Rig w;
+            w.client.start ("build a mix bus", "chat_unreadable");
+            w.round (1);
+            w.tool (R"EJ({"id":"tc_bad","name":"do","approval":"ask_first","summary":"build a mix bus","args":{"op":"build","chain":[{"name":"EchoJay EQ"},{"name":"EchoJay Compressor"},{"name":"EchoJay Compressor"},{"settings":"glue"},{},{"name":"EchoJay Limiter"}]}})EJ");
+            w.await ({ "tc_bad" });
+            pumpMs (20);
+            const auto* bad = w.step ("tc_bad");
+            check (bad != nullptr && bad->status == EJAgentClient::Step::Status::Failed,
+                   "UP1 a build whose slots name no plugin is NOT offered for approval  (RED as it "
+                   "shipped at 21:48: it came up as a plan line with Apply/Skip, and Apply would have "
+                   "put four plugins in and dropped two without saying so)",
+                   bad == nullptr ? juce::String ("no step at all")
+                                  : juce::String ("status ") + juce::String ((int) bad->status));
+            check (bad != nullptr && bad->detail == "I couldn't read the plan, try again.",
+                   "UP2 ...and it says so in his words, rather than building a generic chain",
+                   bad != nullptr ? "\"" + bad->detail + "\"" : juce::String());
+            const auto badView = runViewFrom (w.client, {}, true);
+            check (w.client.planUnreadable() && badView.showRetry,
+                   "UP3 ...and the card offers RETRY, which is the only honest road out of a plan that "
+                   "cannot be read",
+                   "planUnreadable=" + juce::String ((int) w.client.planUnreadable())
+                   + " showRetry=" + juce::String ((int) badView.showRetry));
+            check (bad != nullptr && bad->modelDetail.contains ("name no plugin")
+                   && bad->modelDetail.contains ("\"op\""),
+                   "UP4 ...and the op AS IT ARRIVED is kept behind Details, so the next one of these "
+                   "answers whether the names were absent or spelled under a key we do not read - "
+                   "evidence for B rather than a guess about B",
+                   bad != nullptr ? bad->modelDetail.substring (0, 80) : juce::String());
+
+            // ---- HIS 21:52: THAT BUILD IS A PLAN, NOT A ONE-LINE APPLY ---------------------
+            //
+            // *"A raw 'build N slots' step with Apply/Skip must not be offered for a build either.
+            //  If the server sends a build op with no plan, show it as a plan needing Go, or refuse
+            //  it plainly."*  The answer is SHOW IT (the reasoning is on buildPlanSlots): a readable
+            // build is work he asked for, so it is drawn as a plan - a heading, a numbered line per
+            // slot, and one door that says Go. His own row, from the log at 21:52:20.
+            Rig b;
+            b.client.start ("build a mix bus", "chat_2152");
+            b.round (1);
+            b.tool (R"EJ({"id":"tc_2152","name":"do","approval":"ask_first","summary":"build 5 slots: bx townhouse Buss Compressor, elysia alpha mix, elysia museq mix, MSaturator, bx clipper","args":{"op":"build","chain":[{"name":"bx townhouse Buss Compressor"},{"name":"elysia alpha mix"},{"name":"elysia museq mix"},{"name":"MSaturator"},{"name":"bx clipper"}]}})EJ");
+            b.await ({ "tc_2152" });
+            pumpMs (20);
+            {
+                const auto v = runViewFrom (b.client, {}, true);
+                const echojay::agentui::RunStep* row = nullptr;
+                for (const auto& st : v.steps) if (st.id == "tc_2152") row = &st;
+                check (row != nullptr && ! row->label.containsIgnoreCase ("build 5 slots"),
+                       "BP1 the row is no longer the server's raw \"build 5 slots: a, b, c, d, e\" line "
+                       "- the comma list he had to parse is gone from the heading  (RED as it shipped "
+                       "at 21:52)",
+                       row != nullptr ? "\"" + row->label + "\"" : juce::String ("no row"));
+                check (row != nullptr && row->buildPlan,
+                       "BP2 ...the row is marked as a PLAN, which is the decision he asked for "
+                       "(\"show it as a plan needing Go\") rather than a refusal of readable work",
+                       row != nullptr ? juce::String ((int) row->buildPlan) : juce::String());
+                // ONE NUMBERED LINE PER SLOT, in the chain's order and all five of them.
+                bool allNumbered = row != nullptr;
+                const char* want[] = { "1. bx townhouse Buss Compressor", "2. elysia alpha mix",
+                                       "3. elysia museq mix", "4. MSaturator", "5. bx clipper" };
+                int lastAt = -1;
+                for (const auto* wn : want)
+                {
+                    const int at = row != nullptr ? row->detail.indexOf (wn) : -1;
+                    if (at < 0 || at < lastAt) allNumbered = false;
+                    lastAt = at;
+                }
+                check (allNumbered,
+                       "BP3 ...and the slots are the row's OWN NUMBERED LINES, all five, in the chain's "
+                       "order - which is what he can read at a glance on a narrow card and what the "
+                       "comma list could not give him",
+                       row != nullptr ? "\"" + row->detail.replaceCharacter ('\n', '/') + "\""
+                                      : juce::String());
+                // THE DOOR SAYS GO. The word lives on the ZONE, so this reads the same place the
+                // painter does - a leg that read a literal in the painter would pass on a card
+                // nobody can press.
+                const auto L = layoutRun (v, 0, 0, 420);
+                juce::String goWord, noWord;
+                for (const auto& z : L.zones)
+                {
+                    if (z.kind == echojay::agentui::RunHit::ApplyLine) goWord = z.label;
+                    if (z.kind == echojay::agentui::RunHit::SkipLine)  noWord = z.label;
+                }
+                check (goWord == "Go" && noWord == "Cancel",
+                       "BP4 ...and the pair on the line reads [Go] [Cancel], the plan's own vocabulary, "
+                       "instead of [Apply] [Skip]  (one door, as his #4 ruled - this changes the WORD "
+                       "on it, not the number of them)",
+                       "\"" + goWord + "\" / \"" + noWord + "\"");
+                check (! goWord.isEmpty(),
+                       "BP4b ...and the decision is still THERE - a plan he cannot say Go to would be "
+                       "worse than the line he complained about",
+                       "apply zone label \"" + goWord + "\"");
+            }
+            // ---- AND NOT WHEN THE SERVER ALREADY LAID THE PLAN OUT ------------------------
+            //
+            // His ruling is word for word about a build arriving WITH NO PLAN, and B's own fix of
+            // 23 Oct makes every build a plan first: the plan card's items carry the server's own
+            // per-step words ("elysia alpha mix for about 2 dB"). Re-heading those rows would throw
+            // the better sentence away AND draw the plan twice - his test 8b from the other side.
+            // So this leg sends the same build WITH a plan card and asserts we leave it alone.
+            {
+                Rig pc;
+                pc.client.start ("build a mix bus", "chat_plancard");
+                pc.round (1);
+                pc.tool (R"EJ({"id":"tc_pc","name":"do","approval":"ask_first","summary":"elysia alpha mix for about 2 dB, then the EchoJay Limiter","args":{"op":"build","chain":[{"name":"elysia alpha mix"},{"name":"EchoJay Limiter"}]}})EJ");
+                pc.plan (R"EJ({"round":1,"heading":"Measured: -14.3 LUFS, +1.5 dBTP.","items":[{"id":"tc_pc","summary":"elysia alpha mix for about 2 dB, then the EchoJay Limiter","why":"a build needs your ok","approval":"ask_first"}]})EJ");
+                pc.await ({ "tc_pc" });
+                pumpMs (20);
+                const auto v = runViewFrom (pc.client, {}, true);
+                const echojay::agentui::RunStep* row = nullptr;
+                for (const auto& st : v.steps) if (st.id == "tc_pc") row = &st;
+                check (row != nullptr && ! row->buildPlan
+                       && row->label.contains ("elysia alpha mix for about 2 dB"),
+                       "BP6 and a build that arrives WITH the server's plan card keeps the server's own "
+                       "words on its row - one author for the prose, and the plan is not drawn twice "
+                       "(his 21:52 ruling says \"with no plan\"; B's 23 Oct fix makes the plan the "
+                       "ordinary road, so this is now the common case)",
+                       row == nullptr ? juce::String ("no row")
+                                      : "buildPlan=" + juce::String ((int) row->buildPlan)
+                                        + ", label \"" + row->label + "\"");
+            }
+
+            // AND AN ORDINARY OP IS UNTOUCHED: an `add` awaiting approval keeps Apply/Skip. The rule
+            // is about builds, and a change that quietly renamed every button would be a bigger
+            // fault than the one it fixed.
+            {
+                Rig a;
+                a.client.start ("add a compressor", "chat_add");
+                a.round (1);
+                a.tool (R"EJ({"id":"tc_add","name":"do","approval":"ask_first","summary":"add EchoJay Compressor","args":{"op":"add","name":"EchoJay Compressor"}})EJ");
+                a.await ({ "tc_add" });
+                pumpMs (20);
+                const auto v = runViewFrom (a.client, {}, true);
+                const auto L = layoutRun (v, 0, 0, 420);
+                juce::String w1, w2;
+                for (const auto& z : L.zones)
+                {
+                    if (z.kind == echojay::agentui::RunHit::ApplyLine) w1 = z.label;
+                    if (z.kind == echojay::agentui::RunHit::SkipLine)  w2 = z.label;
+                }
+                bool planned = false;
+                for (const auto& st : v.steps) if (st.buildPlan) planned = true;
+                check (! planned && w1 == "Apply" && w2 == "Skip",
+                       "BP5 and a plain `add` awaiting his decision still reads [Apply] [Skip] with no "
+                       "plan heading - the ruling is about BUILDS, and the other direction is what "
+                       "makes it a rule rather than a rename",
+                       "\"" + w1 + "\" / \"" + w2 + "\", buildPlan=" + juce::String ((int) planned));
+            }
+
+            // THE OTHER DIRECTION, and it is the one that matters most: an ordinary build is still
+            // offered. A rule that refused every build would be worse than the fault it fixes.
+            Rig g;
+            g.client.start ("build a mix bus", "chat_readable");
+            g.round (1);
+            g.tool (R"EJ({"id":"tc_good","name":"do","approval":"ask_first","summary":"build a mix bus","args":{"op":"build","chain":[{"name":"EchoJay EQ"},{"name":"EchoJay Compressor"},{"name":"EchoJay Limiter"}]}})EJ");
+            g.await ({ "tc_good" });
+            pumpMs (20);
+            const auto* good = g.step ("tc_good");
+            check (good != nullptr && good->status == EJAgentClient::Step::Status::AwaitingApproval
+                   && ! g.client.planUnreadable(),
+                   "UP5 and a build whose every slot names a plugin is offered exactly as before - "
+                   "three named slots, awaiting his decision",
+                   good == nullptr ? juce::String ("no step")
+                                   : juce::String ("status ") + juce::String ((int) good->status)
+                                     + ", unreadable=" + juce::String ((int) g.client.planUnreadable()));
+        }
+        {
             // ---- B'S KEEP-PLAYING CONTRACT (docs/CONTRACT_keep_playing_2026-10-22.md) -----------
             //
             // *"While any slot from this run has keep_playing and its dial_on_playback has not
@@ -1672,6 +1862,179 @@ int main()
                    "a run he could never stop playing for)",
                    "state " + juce::String (EJAgentClient::stateName (w.client.state()))
                    + ", line \"" + freedLine + "\"");
+        }
+        {
+            // ---- THE READ-BACK WAITS FOR THE PLUGIN'S REPORT (his test 4 at 08:40, 23 Oct) ----
+            //
+            // *"the Tube-Tech CL 1B step said 'Settings not confirmed: the plugin had not reported
+            //  them yet', although the compressor was clearly working. The read-back ran before the
+            //  plugin reported its values. Wait for the plugin's report, within a bound."*
+            //
+            // His log: "Tube-Tech CL 1B loaded at host sampleRate" and the landed line "Settings not
+            // confirmed" are BOTH at 08:40:20, and the "re-reading in 800 ms (24 more looks)" line
+            // three seconds later belongs to the next add. Zero looks on the one that needed them.
+            using echojay::agent::readBackShouldLookAgain;
+            check (readBackShouldLookAgain (2, /*matched*/ false, /*missed*/ false, /*unreadable*/ false),
+                   "RB1 a plugin that has reported NOTHING against 2 asked settings is a reason to "
+                   "look again  (RED as it shipped at 08:40: the condition only re-read what had "
+                   "been read and was wrong, so the one case that most needed another look got none)",
+                   "looks again = yes");
+            check (readBackShouldLookAgain (1, false, true, false)
+                   && readBackShouldLookAgain (1, false, false, true),
+                   "RB2 ...and the two reasons it always had still hold: a value read back WRONG, or "
+                   "one known to be unreadable",
+                   "both yes");
+            check (! readBackShouldLookAgain (2, /*matched*/ true, false, false),
+                   "RB3 ...and a clean read finishes AT ONCE - a plugin that answers immediately "
+                   "never reaches this test, which is what keeps the fix from costing every add 800 ms",
+                   "looks again = no");
+            check (! readBackShouldLookAgain (0, false, false, false),
+                   "RB4 ...and an add that asked for NOTHING waits for nothing: there is no report "
+                   "owed, so \"nothing reported\" is not a reason to look  (an add with no settings "
+                   "has its own door, and this would have held it open for 20 s)",
+                   "looks again = no");
+        }
+        {
+            // ---- "YOU CAN STOP" IS ONLY SAID WHEN IT IS TRUE (his test 0 point 2, 08:10) -------
+            //
+            // *"The first listen still says 'Got it, you can stop.' on a build goal, and the plan
+            //  then asks me to keep playing. On a build goal, the first listen says 'Got it' only,
+            //  never 'you can stop'; the stop line only comes when nothing in the run will need
+            //  playback."*
+            //
+            // His 08:08:29 and 08:10:19, in one fixture: a listen early in a build run, then the
+            // same run's closing listen. BOTH DIRECTIONS IN ONE PLACE, because the rule is not
+            // "never say it" - a run he can never stop playing for would be the fault with the sign
+            // flipped, and it is the shape KP3 already guards for the dial.
+            Rig e;
+            e.ex.reading.transportKnown    = true;
+            e.ex.reading.playing           = true;
+            e.ex.reading.heardAboveSeconds = 12.0f;
+            e.client.start ("build a mix bus", "chat_stopinvite");
+            e.round (1);
+            e.tool (R"EJ({"id":"tc_first","name":"check","summary":"wait for playback","approval":"free","args":{"what":"playback","min_seconds":8}})EJ");
+            e.await ({ "tc_first" });
+            pumpMs (120);
+            const auto firstLine = e.step ("tc_first") != nullptr ? e.step ("tc_first")->detail : juce::String();
+            check (firstLine.containsIgnoreCase ("got it")
+                   && ! firstLine.containsIgnoreCase ("you can stop"),
+                   "KS1 the FIRST listen of a build run says \"Got it.\" and nothing more - the run has "
+                   "its plan still to write and will ask for playback again  (RED as it shipped at "
+                   "08:08:29: \"Got it, you can stop.\", and round 10's plan then ended \"Keep it "
+                   "playing while the Pro Audio DSP DSM V3 sets itself\")",
+                   "\"" + firstLine + "\"");
+            const auto vFirst = runViewFrom (e.client, {}, true);
+            check (! vFirst.canStopPlaying,
+                   "KS1b ...and the BUTTON agrees with the line, because both ask one function - two "
+                   "surfaces disagreeing about one fact is how this got on screen",
+                   "canStopPlaying=" + juce::String ((int) vFirst.canStopPlaying));
+            // ...AND THEN THE CLOSING, which is the one moment the run can promise it. B's own
+            // marker for it: a talk ask whose id starts tc_check (section 86(1)).
+            e.round (2);
+            e.tool (R"EJ({"id":"tc_check_done","name":"talk","approval":"free","args":{"ask":{"question":"That's the chain in and set. How's it sounding?","choices":[{"label":"Sounds good"},{"label":"Run a check"}],"allowFreeText":true}}})EJ");
+            e.await ({ "tc_check_done" });
+            pumpMs (20);
+            e.client.answerAsk ("Run a check");
+            e.round (3);
+            e.tool (R"EJ({"id":"tc_last","name":"check","summary":"wait for playback","approval":"free","args":{"what":"playback","min_seconds":8}})EJ");
+            e.await ({ "tc_last" });
+            pumpMs (120);
+            const auto lastLine = e.step ("tc_last") != nullptr ? e.step ("tc_last")->detail : juce::String();
+            check (lastLine.containsIgnoreCase ("you can stop"),
+                   "KS2 ...and the CLOSING listen does say \"you can stop\" - by then the run has shown "
+                   "its closing and nothing else is coming, so the sentence is true  (a rule that only "
+                   "ever withheld it would leave him playing for a run that had finished)",
+                   "\"" + lastLine + "\"");
+        }
+        {
+            // ---- THE CONTRACT'S POINT 2: THE DIAL IS ITS OWN STEP (his overnight item 4) -------
+            //
+            // *"the dial on playback appears as its own numbered step on the card"* - because at
+            // 15:24 the ONLY sign that a compressor was still setting itself was the listen refusing
+            // to end, and a card that holds him on playback without a line saying what for is a card
+            // that looks stuck. Point 1 (above) is the prompt it withholds; this is the line he reads
+            // while it happens, and both answer the SAME function on the executor so they cannot
+            // disagree - which is what the legs below pin, in both directions.
+            Rig w;
+            w.ex.keepPlaying = "bx_opto Pedal";
+            w.ex.reading.transportKnown    = true;
+            w.ex.reading.playing           = true;
+            w.ex.reading.heardAboveSeconds = 12.0f;
+            w.client.start ("build a vocal chain with two compressors", "chat_kp2");
+            w.round (1);
+            w.tool (R"EJ({"id":"tc_wait2","name":"check","summary":"wait for playback","approval":"free","args":{"what":"playback","min_seconds":8}})EJ");
+            w.await ({ "tc_wait2" });
+            pumpMs (120);
+            {
+                const auto v = runViewFrom (w.client, {}, true);
+                const echojay::agentui::RunStep* dial = nullptr;
+                for (const auto& st : v.steps)
+                    if (st.id == "dial:bx_opto Pedal") dial = &st;
+                check (dial != nullptr,
+                       "KP4 the dial on playback is a STEP OF ITS OWN on the card, not only a line in "
+                       "the playback block  (RED as it shipped: the card had no row for it at all, so "
+                       "the dial was invisible unless he read the log)",
+                       dial != nullptr ? juce::String ("id \"") + dial->id + "\""
+                                       : juce::String ("no dial step among ")
+                                         + juce::String ((int) v.steps.size()) + " steps");
+                check (dial != nullptr && dial->label.contains ("bx_opto Pedal"),
+                       "KP4b ...and the step NAMES THE PLUGIN, as the contract asks - \"the dial\" with "
+                       "no name is the same silence in longer words",
+                       dial != nullptr ? "\"" + dial->label + "\"" : juce::String());
+                check (dial != nullptr && dial->status == (int) EJAgentClient::Step::Status::Running,
+                       "KP4c ...and it is RUNNING, so it draws as work in flight rather than something "
+                       "done or waiting on him - he has nothing to answer, he has only to keep playing",
+                       dial != nullptr ? juce::String ("status ") + juce::String (dial->status)
+                                       : juce::String());
+                check (! v.steps.empty() && v.steps.back().id == "dial:bx_opto Pedal",
+                       "KP4d ...and it is the LAST step, so its number is one past the steps that did "
+                       "the work - a dial that renumbered the plan would move the rows he is reading",
+                       v.steps.empty() ? juce::String ("no steps")
+                                       : juce::String ("last is \"") + v.steps.back().id + "\"");
+            }
+            // ---- THE DIAL LANDS: THE STEP FINISHES AND SHOWS ITS RESULT (his 08:43 ruling) --
+            //
+            // *"the dial-on-playback result arrived as a loose message below the card ... the dial
+            //  step finishes and shows its result, then the card says it's done. Nothing appears
+            //  outside the card."*
+            //
+            // RE-AIMED FROM "THE STEP GOES", which is what I built this morning before his 08:43
+            // report and which would have thrown the result away: the row vanished and the only
+            // copy of "Adjusted the Mixland Vac Attack's Left Reduction to +0.0 dB" was the chat
+            // bubble he was complaining about. The step stays; it stops ASKING and starts TELLING.
+            w.ex.keepPlaying = {};
+            w.ex.dialsLanded.set ("bx_opto Pedal",
+                                  "Adjusted the bx_opto Pedal's Drive to +1.4 dB - it is working "
+                                  "1.1 dB.");
+            pumpMs (120);
+            {
+                const auto v = runViewFrom (w.client, {}, true);
+                const echojay::agentui::RunStep* dial = nullptr;
+                for (const auto& st : v.steps)
+                    if (st.id == "dial:bx_opto Pedal") dial = &st;
+                check (dial != nullptr && dial->status == (int) EJAgentClient::Step::Status::Done,
+                       "KP5 when the dial lands its step FINISHES - it is still there, now done, so "
+                       "the card stops asking him to keep playing without losing the row  (RED as it "
+                       "shipped at 08:43: there was no dial row at all and the result was posted as a "
+                       "chat line BELOW the card)",
+                       dial == nullptr ? juce::String ("no dial step")
+                                       : juce::String ("status ") + juce::String (dial->status));
+                check (dial != nullptr && dial->detail.contains ("working 1.1 dB"),
+                       "KP5b ...and it carries the DIAL'S OWN SENTENCE as its result - the dial wrote "
+                       "it, the step shows it, and nothing composes a second wording of it",
+                       dial != nullptr ? "\"" + dial->detail + "\"" : juce::String());
+                check (! dial->label.containsIgnoreCase ("keep it playing"),
+                       "KP5c ...and it no longer asks him to keep playing, because it is done",
+                       dial != nullptr ? "\"" + dial->label + "\"" : juce::String());
+                // ONE ROW PER PLUGIN, not one asking and one telling.
+                int dialRows = 0;
+                for (const auto& st : v.steps) if (st.id.startsWith ("dial:")) ++dialRows;
+                check (dialRows == 1,
+                       "KP5d ...and there is exactly ONE row for that dial, not a finished one beside "
+                       "a still-asking one - the row is keyed by the plugin so the two states cannot "
+                       "both be drawn",
+                       juce::String (dialRows) + " dial row(s)");
+            }
         }
         {
             // ---- THE PLAN, ONCE (his test 8, 22 Oct 2026) ---------------------------------------
@@ -1727,6 +2090,155 @@ int main()
                    "the sentence did not",
                    "block=\"" + v.askQuestion + "\", row=\""
                    + (v.steps.empty() ? juce::String() : v.steps.back().label.substring (0, 80)) + "\"");
+        }
+        {
+            // ---- THE PLAN ONCE, ON THE SURFACE THE 22 OCT FIX COULD NOT SEE (his test 0, 08:10) --
+            //
+            // *"The plan is shown TWICE again: inside the step with Go / Change chips, then in full
+            //  as plain text below the card. Your plan-once render was meant to be in this build."*
+            //
+            // WHY IT DID NOT CATCH THIS ONE, and it is worth writing down: Z4c counts the copies on
+            // the CARD - opening, closing, the question block, every step's label and detail - and
+            // the second copy here is not on the card at all. It is the chat row's own prose
+            // (ChatMsg::content), which the client writes by flushing the ROUND'S STREAMED TEXT as
+            // an assistant line. B sends the plan twice by design and correctly: once as the deltas
+            // that stream it while the model writes, and once as the talk's ask, which is the
+            // formal version with the chips. The card draws the ask; the chat row drew the deltas;
+            // neither knew about the other. Z4c could never see it because `opening` is the
+            // EDITOR's field and runViewFrom leaves it empty - the guard was reading a surface the
+            // fault does not live on.
+            //
+            // So this leg reads the TRANSCRIPT, which is the road to that bubble, and it is his
+            // 08:10 shape exactly: the plan streamed, then the same plan as the ask, then Go.
+            Rig d;
+            d.client.start ("build a mix bus", "chat_test0");
+            d.round (1);
+            const char* kPlanProse =
+                "Measured: the loudest 3 s sit around -13.4 LUFS, peaks are hitting +1.3 dBTP. "
+                "Here's the plan for the mix bus: 1. Solid Bus Comp at 4 for about 1 dB. "
+                "2. Pro Audio DSP DSM V3, set on the first playback. 3. bx clipper, a light clip. "
+                "4. EchoJay Limiter for -8 LUFS, ceiling -0.1 dBTP.";
+            d.delta (kPlanProse);                       // the model writing it, as it streams
+            d.tool (juce::String (R"EJ({"id":"tc_plan0","name":"talk","approval":"free","args":{"ask":{"question":")EJ")
+                    + kPlanProse + " Go?\",\"choices\":[{\"label\":\"Go\"},{\"label\":\"Change limiter\"},{\"label\":\"Cancel\"}],\"allowFreeText\":true}}}");
+            d.await ({ "tc_plan0" });
+            pumpMs (20);
+            d.client.answerAsk ("Go");                  // his press at 08:10:34 - this posts the step
+            pumpMs (20);
+            int proseLines = 0;
+            juce::String firstProse;
+            for (const auto& t : d.transcript)
+                if (t.first == "assistant" && t.second.contains ("Here's the plan for the mix bus"))
+                { ++proseLines; if (firstProse.isEmpty()) firstProse = t.second; }
+            const auto v = runViewFrom (d.client, {}, true);
+            bool onTheCard = false;
+            for (const auto& st : v.steps)
+                if (st.label.contains ("Here's the plan for the mix bus")) onTheCard = true;
+            check (onTheCard,
+                   "Z4f the plan is on the card, in the step that carried the chips (the half that was "
+                   "always right, and the ground for the next leg)",
+                   "steps " + juce::String ((int) v.steps.size()));
+            check (proseLines == 0,
+                   "Z4g ...and the SAME plan is not also sent to the chat as a plain assistant line - "
+                   "which is the second copy he read below the card at 08:10  (RED as it shipped: the "
+                   "round's streamed prose was flushed as a chat line whatever the card had already "
+                   "drawn, so B sending the plan as deltas AND as the ask put it on screen twice)",
+                   juce::String (proseLines) + " plain line(s); first \""
+                   + firstProse.substring (0, 70) + "\"");
+            // ---- B'S FRAME EXACTLY AS HE SENDS IT, AND TWO SPELLINGS (his test 1, 16:24) -----
+            //
+            // *"the plan is STILL shown twice, in the card with chips and then in full as plain text
+            //  below the card ... B confirms the server sends the plan once: the plan card's
+            //  tool_call carries the text, and the message frame for it has EMPTY text and only
+            //  'of' pointing at the card. So the copy below is drawn by the plugin."*
+            //
+            // So this leg is the WIRE he had, not an approximation of it: the talk's ask carries the
+            // plan, and B's message frame follows with empty text and `of`. Z4f/Z4g above hold the
+            // flush road (deltas), which that session's log shows was not involved at all - this is
+            // the other road, the card's own two fields.
+            //
+            // AND THE TWO SPELLINGS ARE THE POINT. The row's label and the ask's question differed
+            // by one character in the middle ("4. bx clipper" against "4. bx_clipper"), which is
+            // exactly what containment cannot see: with the prose test in place this leg is RED,
+            // and it stays red for any other wording the two roads do not share, which is why the
+            // fix is identity and not a wider normaliser.
+            {
+                Rig d3;
+                d3.client.start ("build a mix bus", "chat_test1");
+                d3.round (6);
+                // The row's spelling - this is what describeCall composes the label from.
+                const char* kRowSpelling =
+                    "Build this mix bus chain?\n"
+                    "1. EchoJay EQ - cut about 1 dB at 300 Hz\n"
+                    "2. SSL Native Bus Compressor 2 at 2:1, Threshold 20 for about 2 dB\n"
+                    "3. Shadow Hills Mastering Compressor, set on the first playback\n"
+                    "4. bx clipper - a light clip, about 1.5 dB off the peaks\n"
+                    "5. EchoJay Limiter for -8 LUFS, ceiling -0.1 dBTP. Go?";
+                // The ask's spelling: one character different, in the middle. His session's own pair.
+                const juce::String kAskSpelling = juce::String (kRowSpelling).replace ("bx clipper", "bx_clipper");
+                // THE CALL'S OWN SUMMARY carries the row's spelling and the ASK carries the other,
+                // which is the pair his log shows: the frame logged "4. bx clipper" as the step's
+                // label while the ask card read "4. bx_clipper". No `text`, because that session's
+                // talk had none - the whole plan was in the ask.
+                d3.tool (juce::String (R"EJ({"id":"tc_pick_look_ask_6_1","name":"talk","approval":"free","summary":")EJ")
+                         + kRowSpelling + R"EJ(","args":{"ask":{"question":")EJ" + kAskSpelling
+                         + R"EJ(","choices":[{"label":"Go"},{"label":"Change limiter"},{"label":"Cancel"}],"allowFreeText":true}}})EJ");
+                // B'S MESSAGE FRAME FOR THAT CARD: empty text, `of` pointing at the call. The client
+                // must take nothing from it - and this is the frame the fault was blamed on first.
+                EJAgentClientTestAccess::feed (d3.client, "message",
+                                               R"({"text":"","of":"tc_pick_look_ask_6_1"})");
+                d3.await ({ "tc_pick_look_ask_6_1" });
+                pumpMs (20);
+                const auto v3 = runViewFrom (d3.client, {}, true);
+                // COUNT THE COPIES, on every surface the card has and in the chat: the question
+                // block, every step's label and detail, and the transcript's assistant lines.
+                int copies = 0;
+                const auto counts = [] (const juce::String& t)
+                { return t.contains ("Build this mix bus chain?") ? 1 : 0; };
+                copies += counts (v3.askQuestion);
+                for (const auto& st : v3.steps) copies += counts (st.label) + counts (st.detail);
+                int chatCopies = 0;
+                for (const auto& t : d3.transcript) if (counts (t.second)) ++chatCopies;
+                check (copies == 1,
+                       "Z4i the plan is drawn ONCE on the card, with B's frame exactly as he sends it "
+                       "(the ask carries the plan; the message frame has empty text and only `of`) and "
+                       "the row and the question spelled one character apart  (RED as it shipped at "
+                       "16:24: the row said \"4. bx clipper\" and the question \"4. bx_clipper\", so "
+                       "the containment test kept both - prose standing in for identity)",
+                       juce::String (copies) + " cop(ies) on the card, block=\""
+                       + v3.askQuestion.substring (0, 40) + "\"");
+                check (chatCopies == 0,
+                       "Z4j ...and none of it reaches the chat either: B's empty message frame is not "
+                       "a sentence, and nothing on the card is repeated below it",
+                       juce::String (chatCopies) + " chat line(s)");
+                bool chipsOnTheCopy = false;
+                for (const auto& st : v3.steps)
+                    if (counts (st.label) && ! st.chips.isEmpty()) chipsOnTheCopy = true;
+                check (chipsOnTheCopy,
+                       "Z4k ...and the one copy is the row that carries the chips, not a block he "
+                       "cannot answer (his 18 Oct ruling: the row wins, it carries the chips)",
+                       chipsOnTheCopy ? "chips on the plan's row" : "the plan is on a row with no chips");
+            }
+            // AND NOT BY SILENCING THE ROUND'S PROSE IN GENERAL: a round whose streamed text is its
+            // own (a sentence the card does not carry) still reaches the chat, or every run loses
+            // its words.
+            Rig d2;
+            d2.client.start ("what is on this rack?", "chat_test0b");
+            d2.round (1);
+            d2.delta ("I had a look at the rack: there are four slots, and the compressor on slot 2 "
+                      "is doing most of the work on the loud phrases right now.");
+            d2.tool (R"EJ({"id":"tc_look0","name":"look","approval":"free","args":{"what":"rack"}})EJ");
+            d2.await ({ "tc_look0" });
+            pumpMs (20);
+            bool kept = false;
+            for (const auto& t : d2.transcript)
+                if (t.first == "assistant" && t.second.contains ("there are four slots")) kept = true;
+            check (kept,
+                   "Z4h and a round whose streamed prose is NOT on the card still reaches the chat - the "
+                   "rule drops a REPEAT, it does not silence the run  (the fault with the sign flipped: "
+                   "a plugin that swallowed the model's words would be worse than one that said them "
+                   "twice)",
+                   "assistant lines: " + juce::String (d2.assistantLines()));
         }
         {
             // AND THE QUESTION IS NEVER LOST. The block goes because the ROW carries it: a rule that

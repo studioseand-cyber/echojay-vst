@@ -202,6 +202,20 @@ public:
         (round 3)...") and has been since the first round; this is B's. Two different sentences about
         two different things, so they do not share a name. */
     juce::String serverStatusLine() const { return statusLine_; }
+    /** ---- A PLAN THIS RUN COULD NOT READ (his 21:48 fault, 22 Oct 2026) --------------------
+        True once a build op arrived whose chain names no plugin in one or more slots. The card
+        offers RETRY on it: the run has not failed as a whole - the server is answering - but the
+        one thing it offered cannot be acted on, and "try again" is the only honest road out.
+        Cleared when a new run starts, like every other per-run fact. */
+    bool planUnreadable() const noexcept { return planUnreadable_; }
+    /** B's keep-playing contract, point 2 (22 Oct 2026): the plugin a dial is still setting on this
+        playback, or empty. Forwarded from the executor rather than cached, because the card asks it
+        on every repaint and a cached answer would draw a step for a dial that had already landed -
+        and point 1's prompt asks the SAME function, so the step and the prompt cannot disagree. */
+    juce::String keepPlayingPlugin() const { return executor_.keepPlayingPlugin(); }
+    /** What this run's dials have reported, by plugin name - the card's dial step reads it, so the
+        result shows ON the step and never as a line below the card (his 08:43 ruling). */
+    juce::StringPairArray dialResults() const { return executor_.dialResults(); }
     echojay::agent::TalkAsk pendingAsk() const { return pendingAsk_; }
     /** ---- THE CHAT THIS RUN BELONGS TO, FROM THE RUN ITSELF (Sean's 18:18, 20 Oct 2026) -----
         start() is given the chat id and has kept it in chatId_ all along; nothing could read it.
@@ -242,6 +256,13 @@ public:
     juce::String doneReason() const { return doneReason_; }          // complete | stopped | hard_cap | error
     double costUsd() const noexcept { return costUsd_; }
     juce::String planHeading() const { return planHeading_; }        // the plan frame's heading for this round
+    /** Did the SERVER send a plan card this round? Not "is the heading non-empty" - a plan frame may
+        carry items and no heading, and the question the card asks is whether the server has already
+        laid the plan out (his 21:52 ruling is about a build arriving with NO plan). */
+    bool planCardThisRound() const { return planCardThisRound_; }
+    /** May the run tell him he can stop playing? See stopInviteAllowed() in the .cpp - his 08:10
+        ruling: on a build goal the first listen says "Got it" only. */
+    bool stopInviteAllowed() const;
     int  ofSoftCap() const noexcept { return ofSoftCap_; }
     // One line the panel shows above the checklist until cleared: a refused send while active, an undo-all outcome.
     juce::String notice() const { return refusedTypedLine_; }
@@ -335,7 +356,11 @@ private:
     void runStep (Step& s);
     void completeStep (int generation, const juce::String& id, echojay::agent::ToolOutcome o);
     void postStepIfComplete();
-    void flushRoundTalk();                        // this round's talk -> transcript, once
+    void flushRoundTalk();
+    /** Does the card already say this prose? Empty when it does not; otherwise the reason, for the
+        log. The road to the chat row's own bubble is the transcript, so this is asked before a
+        round's streamed text is sent down it (his test 0, 08:10, 23 Oct). */
+    juce::String cardAlreadySays (const juce::String& prose) const;                        // this round's talk -> transcript, once
     void finishSession (State s, const juce::String& line);
     void markUnfinishedStopped();
     Step* stepById (const juce::String& id);
@@ -376,6 +401,7 @@ private:
     bool awaitSeen_ = false;
     int  awaitTimeoutMs_ = 0, ofSoftCap_ = 0;
     juce::String planHeading_, doneReason_;
+    bool planCardThisRound_ = false;
     bool planSubmitted_ = false;
     bool roundDoFailed_ = false;
     juce::String liveText_, roundTalk_;
@@ -403,6 +429,7 @@ private:
     double costUsd_ = 0.0;
     juce::int64 lastBytesMs_ = 0;
     juce::String statusLine_;   // B's latest status frame (his 15:28)
+    bool planUnreadable_ = false;   // his 21:48: a build whose slots named no plugin
     juce::String refusedTypedLine_;
     int undoInFlight_ = 0;
 };

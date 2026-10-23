@@ -173,6 +173,7 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
     // THE LEAK B'S SECTION 92 FOUND: none of these three was cleared here, so a session's SECOND
     // run began believing the first run's closing was still up - and refused its own round 1.
     closingAskSeen_ = false; userAskedForCheck_ = false; moveLandedThisRun_ = false;
+    planUnreadable_ = false;    // his 21:48: a new run has read nothing yet, so it has refused nothing
     pendingAsk_ = {}; pendingAskId_.clear();
     playback_ = {}; playbackStepId_.clear();
     errorMessage_.clear(); doneSummary_.clear(); errorRetryable_ = false; costUsd_ = 0.0;
@@ -183,7 +184,7 @@ void EJAgentClient::start (const juce::String& goalIn, const juce::String& chatI
     lastBody_.clear(); lastPath_.clear(); lastErrorCode_.clear();
     refusedTypedLine_.clear();
     sessionId_.clear(); round_ = 0; ofSoftCap_ = 0; awaitTimeoutMs_ = 0;
-    planHeading_.clear(); doneReason_.clear();
+    planHeading_.clear(); planCardThisRound_ = false; doneReason_.clear();
     goal_ = goal; chatId_ = chatId;
 
     checkpoint_ = executor_.captureCheckpoint ("agent: " + goal);
@@ -745,7 +746,7 @@ void EJAgentClient::onFrame (int generation, Frame f)
             round_ = f.round;
             if (f.ofSoftCap > 0) ofSoftCap_ = f.ofSoftCap;
             awaitIds_.clear(); awaitSeen_ = false; planSubmitted_ = false; roundDoFailed_ = false;
-            planHeading_.clear(); awaitTimeoutMs_ = 0;
+            planHeading_.clear(); planCardThisRound_ = false; awaitTimeoutMs_ = 0;
             liveText_.clear(); roundTalk_.clear(); roundTalkFlushed_ = false;
             log ("frame round session=" + sessionId_ + " round=" + juce::String (round_));
             setState (State::Streaming);
@@ -830,6 +831,29 @@ void EJAgentClient::onFrame (int generation, Frame f)
             }
             s.autoApplied = autoRan;
             s.status = (f.call.askFirst() && ! autoRan) ? Step::Status::AwaitingApproval : Step::Status::Pending;
+            // ---- A PLAN WITH A NAMELESS SLOT IS NOT OFFERED (his 21:48 fault, 22 Oct 2026) -----
+            //
+            // *"The fallback must never offer a slot with no plugin. If the plan can't be read, say
+            //  so plainly ... with a Retry chip, rather than building a generic chain."*
+            //
+            // The line he was shown read "build 6 slots: EchoJay EQ, EchoJay Compressor, EchoJay
+            // Compressor, , , EchoJay Limiter" with Apply/Skip. Pressing Apply would have put four
+            // plugins in and dropped two without saying so, because the build path drops a name it
+            // cannot resolve. So the step does not become a decision at all: it is FAILED, with the
+            // sentence he asked for, and the run offers Retry.
+            //
+            // AND THE EVIDENCE FOR B GOES IN THE LOG, not a guess about B: the op exactly as it
+            // arrived, so tomorrow's answer is "the names were absent" or "they were under <key>".
+            if (juce::String why; echojay::agent::buildPlanIsUnreadable (f.call, &why))
+            {
+                s.status      = Step::Status::Failed;
+                s.detail      = "I couldn't read the plan, try again.";
+                s.modelDetail = why + " - the op as it arrived: "
+                              + juce::JSON::toString (f.call.args, true);
+                planUnreadable_ = true;
+                log ("UNREADABLE PLAN REFUSED: " + why + " - not offering it. The op as it arrived: "
+                     + juce::JSON::toString (f.call.args, true));
+            }
             log ("frame tool_call id=" + s.id + " name=" + f.call.name + " approval=" + f.call.approval
                  + " mode=" + juce::String (approvalModeWord())
                  + (autoRan ? juce::String (" AUTO-APPLIED")
@@ -846,6 +870,7 @@ void EJAgentClient::onFrame (int generation, Frame f)
             // items in card order. The items' tool_call frames normally precede it; an item with no step yet gets
             // one so the card is never short a line, and the card's summary wins over a derived label.
             planHeading_ = f.planHeading.trim();
+            planCardThisRound_ = true;
             for (const auto& item : f.planItems)
             {
                 auto* s = stepById (item.id);
@@ -1364,13 +1389,81 @@ void EJAgentClient::postStepIfComplete()
     post ("/api/agent/step", buildStepBody (sessionId_, round_, results, executor_.autoDialOnly()));
 }
 
+/** ---- DOES THE CARD ALREADY SAY IT? (his test 0, 08:10, 23 Oct 2026) -----------------------
+    *"The plan is shown TWICE again: inside the step with Go / Change chips, then in full as plain
+     text below the card."*
+
+    B sends the plan twice and both are right: the DELTAS stream it while the model writes it, and
+    the talk's ASK carries the formal version with Go / Change / Cancel. The card draws the ask. The
+    chat row's own prose is the round's streamed text, flushed below. Neither writer knew about the
+    other, so the plan reached two surfaces - and the 22 Oct plan-once rule could not see it,
+    because that rule counts the copies ON THE CARD and this copy is not on the card at all.
+
+    So the question is asked HERE, before the prose goes down the road to that bubble, with the same
+    comparator the card uses (agent::normalisedProse - one function, moved beside the protocol for
+    exactly this). Containment either way: the streamed text and the formal version are rarely
+    character-identical (the ask adds "Go?", the stream may stop mid-sentence), and either direction
+    means the same plan said twice.
+
+    THE LENGTH FLOOR IS THE WHOLE SAFETY OF IT: only prose long enough to BE a plan is ever dropped.
+    A short line - "Done.", "Got it." - can never be swallowed by a step label that happens to
+    contain it, which is the fault with the sign flipped and would cost him the model's words.     */
+juce::String EJAgentClient::cardAlreadySays (const juce::String& prose) const
+{
+    const auto key = echojay::agent::normalisedProse (prose);
+    static constexpr int kFloor = 60;            // characters: a plan, not a sentence of manners
+    if (key.length() < kFloor) return {};
+    const auto ask = echojay::agent::normalisedProse (pendingAsk_.question);
+    if (ask.length() >= kFloor && (ask.contains (key) || key.contains (ask)))
+        return "the question on the card carries it (" + juce::String (ask.length()) + " chars)";
+    for (const auto& s : steps_)
+    {
+        const auto lab = echojay::agent::normalisedProse (s.label);
+        if (lab.length() >= kFloor && (lab.contains (key) || key.contains (lab)))
+            return "step " + s.id + "'s own line carries it (" + juce::String (lab.length()) + " chars)";
+    }
+    return {};
+}
+
 void EJAgentClient::flushRoundTalk()
 {
     if (roundTalkFlushed_) return;
     roundTalkFlushed_ = true;
     const auto t = roundTalk_.trim();
     if (t.isEmpty()) return;
+    if (const auto why = cardAlreadySays (t); why.isNotEmpty())
+    {
+        log ("the round's streamed prose is NOT sent to the chat as a line of its own - " + why
+             + ", so it would have been on screen twice (his test 0, 08:10). " + juce::String (t.length())
+             + " chars held back.");
+        return;
+    }
     listeners_.call ([&] (Listener& l) { l.agentTranscript ("assistant", t); });
+}
+
+/** ---- MAY THE RUN SAY HE CAN STOP PLAYING? (his test 0 point 2, 08:10, 23 Oct 2026) ---------
+    *"The first listen still says 'Got it, you can stop.' on a build goal, and the plan then asks me
+     to keep playing. On a build goal, the first listen says 'Got it' only, never 'you can stop';
+     the stop line only comes when nothing in the run will need playback."*
+
+    At 08:08:29 the minimum was reached in round 2 of "build a mix bus" and the card said he could
+    stop; at 08:10:19 round 10's plan ended "Keep it playing while the Pro Audio DSP DSM V3 sets
+    itself... Go?". Both sentences were true when written and the pair of them is not.
+
+    THE OLD RULE WAS "IS A DIAL PENDING RIGHT NOW", which at the first listen is always no - nothing
+    is on the rack yet, so there is nothing to be dialling. That is a decision about the FUTURE made
+    from the present, which is the "decisions on uncontrolled timing" family.
+
+    WHAT THE RUN CAN HONESTLY PROMISE: nothing more will need playback once the run has shown its
+    CLOSING - B's own marker (a talk ask whose id starts tc_check, section 86(1)), which is also the
+    only thing that offers "Run a check". Before that the run has rounds to come and may well ask
+    for playback again, so the honest line is "Got it." and nothing more. This reads no prose from
+    the goal: "is this a build goal" by keyword would be a proxy, and the rule is the same for every
+    goal - say it when it is true, which is at the end.                                            */
+bool EJAgentClient::stopInviteAllowed() const
+{
+    if (executor_.keepPlayingPlugin().isNotEmpty()) return false;   // the contract's point 1
+    return closingAskSeen_;
 }
 
 void EJAgentClient::finishSession (State s, const juce::String& line)
@@ -1561,7 +1654,10 @@ void EJAgentClient::tickPlayback()
             return;
         }
         playback_.reached = true;
-        playback_.line = "Got it, you can stop.";
+        // "Got it" alone until the run can honestly promise nothing else will need playback
+        // (his 08:10 point 2 - the rule is stopInviteAllowed(), one place for both surfaces).
+        playback_.line = stopInviteAllowed() ? juce::String ("Got it, you can stop.")
+                                             : juce::String ("Got it.");
         endPlayback ("min reached");
         return;
     }

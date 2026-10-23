@@ -496,6 +496,164 @@ inline juce::var askAnswerVar (const juce::String& text, bool typed)
 
 // The checklist line for a call: the SERVER's summary when it sent one (one
 // author for the words), else a short derived line so no row is ever blank.
+/** ---- A BUILD WITH A NAMELESS SLOT IS AN UNREADABLE PLAN (Sean, 22 Oct 21:48) --------------
+    *"the plugin fell back to its default chain ... 'build 6 slots: EchoJay EQ, EchoJay Compressor,
+     EchoJay Compressor, , , EchoJay Limiter' with Apply/Skip. Two slots have NO name ... The
+     fallback must never offer a slot with no plugin. If the plan can't be read, say so plainly
+     ('I couldn't read the plan, try again') with a Retry chip, rather than building a generic
+     chain."*
+
+    The plan ARRIVED (a plan frame and the build op, 21:49:12); two of its six entries had no name
+    this side could read. Whether they were empty on the wire or spelled under a key we do not read,
+    the card must not offer to build them - an offer naming nothing is an offer to do something
+    nobody chose, and Apply on it would have put four plugins in and silently dropped two.
+
+    PURE AND HERE, beside describeCall, so the guards drive the shipped rule and the reason a plan
+    was refused is one function rather than a judgement made at three call sites. `whyOut` carries
+    the sentence for the log - the user's own line is in the client, where the step is built. */
+/** What a build op's chain actually says, read ONCE. Two questions are asked of it - "can this be
+    read at all" (his 21:48) and "what are its slots, to show as a plan" (his 21:52) - and they are
+    answered from this one reading so they cannot drift apart: a chain the card offers as a plan is
+    by construction a chain the refusal below did not refuse. `names` is in chain order and holds
+    only the entries that named something. */
+struct BuildChainRead
+{
+    bool isBuild = false;        // a `do` whose op is "build"
+    int  entries = 0;            // how many slots the chain carried
+    int  nameless = 0;           // how many of them named no plugin this side can read
+    juce::StringArray names;     // the ones that did, in order
+};
+
+inline BuildChainRead readBuildChain (const ToolCall& c)
+{
+    BuildChainRead r;
+    if (c.name != "do") return r;
+    auto* o = c.args.getDynamicObject();
+    if (o == nullptr) return r;
+    if (o->getProperty ("op").toString().trim().toLowerCase() != "build") return r;
+    r.isBuild = true;
+    auto* chain = o->getProperty ("chain").getArray();
+    if (chain == nullptr) return r;
+    r.entries = chain->size();
+    for (const auto& ev : *chain)
+    {
+        auto* eo = ev.getDynamicObject();
+        const auto name = eo != nullptr ? eo->getProperty ("name").toString().trim() : juce::String();
+        if (name.isEmpty()) ++r.nameless;
+        else                r.names.add (name);
+    }
+    return r;
+}
+
+inline bool buildPlanIsUnreadable (const ToolCall& c, juce::String* whyOut = nullptr)
+{
+    const auto r = readBuildChain (c);
+    if (! r.isBuild) return false;
+    if (r.entries == 0)
+    {
+        if (whyOut != nullptr) *whyOut = "the build carried no chain at all";
+        return true;
+    }
+    if (r.nameless > 0)
+    {
+        if (whyOut != nullptr)
+            *whyOut = juce::String (r.nameless) + " of " + juce::String (r.entries)
+                    + " slot(s) in this build name no plugin";
+        return true;
+    }
+    return false;
+}
+
+/** ---- A BUILD IS A PLAN, NOT A ONE-LINE "APPLY" (Sean, 22 Oct 21:52) ------------------------
+    *"A raw 'build N slots' step with Apply/Skip must not be offered for a build either. If the
+     server sends a build op with no plan, show it as a plan needing Go, or refuse it plainly."*
+
+    What he was shown, from his log at 21:52:20 -
+
+        name=do approval=ask_first mode=ask waits ()
+        "build 5 slots: bx townhouse Buss Compressor, elysia alpha mix, elysia museq mix,
+         MSaturator, bx clipper"
+
+    - one row, the server's own summary as the words, and [Apply] [Skip] on the end of it. The
+    decision was right there; the thing he was deciding ABOUT was a comma list he had to parse, in
+    the server's voice ("build 5 slots"), with the plugins running off the end of a narrow card.
+
+    MY ANSWER TO HIS "which, and why": SHOW IT AS A PLAN NEEDING GO, and keep refusal for a plan
+    that cannot be READ (the function above). A readable build is work he asked for; refusing it
+    because the server did not wrap it in a plan frame would withhold the thing he wanted over a
+    detail of the wire. So a readable build becomes the plan's own shape - a heading, one numbered
+    line per slot - and the decision stays a single door, saying Go rather than Apply.
+
+    TRUE only for a build that IS readable, so the two roads never both claim the same call. */
+inline bool buildPlanSlots (const ToolCall& c, juce::StringArray& out)
+{
+    const auto r = readBuildChain (c);
+    if (! r.isBuild || r.entries == 0 || r.nameless > 0) return false;
+    out = r.names;
+    return out.size() > 0;
+}
+
+/** ---- THE ONE PROSE COMPARATOR (moved here 23 Oct 2026) -------------------------------------
+    A comparison key for "are these two the same sentence": whitespace collapsed, every kind of dash
+    folded to '-', and the spaces either side of a dash dropped. No displayed text passes through
+    it. It lived in EJAgentRunView.h while only the card needed it; his test 0 at 08:10 needed the
+    CLIENT to ask the same question (the plan was on the card and in the chat row's own prose, from
+    two writers neither of which knew about the other), and two spellings of one comparator is how
+    the 15:20 duplicate got through in the first place. `agentui::normalisedProse` forwards here. */
+inline juce::String normalisedProse (const juce::String& s)
+{
+    juce::String out;
+    bool lastWasSpace = false;
+    for (int i = 0; i < s.length(); ++i)
+    {
+        auto c = s[i];
+        if (c == 0x2014 || c == 0x2013 || c == 0x2012 || c == 0x2212 || c == 0x2010 || c == 0x2011)
+            c = '-';                                  // em, en, figure, minus, hyphen, non-breaking
+        const bool isSpace = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+        if (isSpace) { if (! lastWasSpace && out.isNotEmpty()) out << ' '; lastWasSpace = true; continue; }
+        lastWasSpace = false;
+        out << c;
+    }
+    // ---- A DASH AND ITS SPACES ARE ONE THING (20 Oct 2026, his 09:36) --------------------------
+    // *"fold-on-pull missed a duplicate closing because the two copies differ only in "-" vs " - ".
+    // Normalise dashes (em, en, hyphen, with or without spaces) and whitespace before comparing."*
+    //
+    // The loop above already maps every dash to '-' and collapses runs of whitespace, which is why
+    // the 16 Oct em-dash twins matched. What it does NOT reconcile is the SPACING around the dash:
+    // "low-mids-about" and "low-mids - about" both survive it and still differ. So the spaces either
+    // side of a dash are dropped, which makes "a - b", "a <em dash> b" and "a-b" one key.
+    //
+    // THIS IS A COMPARISON KEY AND NOTHING ELSE - no displayed text passes through here - so losing
+    // the spacing costs nothing and catches the one difference his duplicates actually had. It is
+    // also the case I failed to leg last night: FP1-FP4 assert the mechanism (a step line, a
+    // closing, a short answer, a real reply) and never a dash twin, which the repair's own comment
+    // three lines away says was the only way two copies ever differed.
+    auto key = out.trim();
+    while (key.contains (" -")) key = key.replace (" -", "-");
+    while (key.contains ("- ")) key = key.replace ("- ", "-");
+    return key;
+}
+
+/** ---- SHOULD THE READ-BACK LOOK AGAIN? (his test 4 at 08:40, 23 Oct 2026) -------------------
+    *"the Tube-Tech CL 1B step said 'Settings not confirmed: the plugin had not reported them yet',
+     although the compressor was clearly working. The read-back ran before the plugin reported its
+     values. Wait for the plugin's report, within a bound."*
+
+    His log: the plugin loaded and the step concluded in the SAME SECOND, with no re-read at all.
+    The old condition re-read when something had been read and was WRONG (`missed`) or was known to
+    be unreadable - and a plugin that has reported nothing produces neither, so the one case that
+    most needs another look got none. A freshly loaded plugin attaches its settings after the load.
+
+    PURE AND HERE so both directions can be driven by a guard: the shipped decision, not a copy of
+    it. The BOUND is the caller's (looksLeft, and the pending ceiling); this answers only "is there
+    a reason to look again at all".                                                               */
+inline bool readBackShouldLookAgain (int askedCount, bool anyMatched, bool anyMissed,
+                                     bool anyUnreadable)
+{
+    if (anyMissed || anyUnreadable) return true;            // read, and wrong or unreadable
+    return askedCount > 0 && ! anyMatched;                  // asked, and NOTHING has come back yet
+}
+
 inline juce::String describeCall (const ToolCall& c)
 {
     // ---- A QUESTION'S LINE IS THE QUESTION (18 Oct 2026, Sean in Logic) ------------------------

@@ -175,6 +175,7 @@ function(ej_add_guard NAME)
     target_include_directories(${NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Source
         ${CMAKE_SOURCE_DIR}/tools/guard_common
+        ${CMAKE_SOURCE_DIR}/tools/include
         ${CMAKE_BINARY_DIR}/${EJ_ARTEFACTS}/JuceLibraryCode)
     set_target_properties(${NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/guards)
     # ONE precompiled JuceHeader per plugin side: the first guard compiles it, every other guard on that side
