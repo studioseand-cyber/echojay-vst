@@ -1,0 +1,11 @@
+scenario C2-live
+captured 2026-10-23T13:52:40.856+01:00
+  [user] Add an EchoJay EQ to this rack, then add an EchoJay Compressor before it
+  [assistant] Added the EchoJay Compressor at threshold -19.5 dB, 3:1, for about 3 dB on the loud hits, from what was heard.
+  run row: status=Done changes=3 steps=4 zones=[11:3 changes,8:Undo all]
+  opening: Added the EchoJay Compressor at threshold -19.5 dB, 3:1, for about 3 dB on the loud hits, from what was heard.
+  closing: Added the EchoJay Compressor at threshold -19.5 dB, 3:1, for about 3 dB on the loud hits, from what was heard.
+    step "add EchoJay Compressor" [done] right="applied" detail="Added EchoJay Compressor in slot 1. Read back: threshold -19.5 dB, ratio 3:1, makeup 0 dB." chips=[]
+    step "add EchoJay EQ" [done] right="applied" detail="Added EchoJay EQ in slot 1." chips=[]
+    step "move slot 1 to 2" [done] right="applied" detail="Moved." chips=[]
+    step "How's it sounding?" [done] right="" detail="" chips=[]

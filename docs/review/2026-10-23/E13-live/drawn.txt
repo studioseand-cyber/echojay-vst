@@ -1,0 +1,13 @@
+scenario E13-live
+captured 2026-10-23T13:33:45.919+01:00
+  [user] What is the loudness of this rack?
+  [assistant] I couldn't get a loudness reading on what I heard - playback kept cutting off after about a second each time, so I have no figure to quote, peak or otherwise. Let me know once you can hold the loudest part playing for several seconds and I'll check again.
+  run row: status=Done changes=0 steps=6 zones=[11:6 steps]
+  opening: I couldn't get a loudness reading on what I heard - playback kept cutting off after about a second each time, so I have no figure to quote, peak or otherwise. Let me know once you can hold the loudest part playing for several seconds and I'll check again.
+  closing: I couldn't get a loudness reading on what I heard - playback kept cutting off after about a second each time, so I have no figure to quote, peak or otherwise. Let me know once you can hold the loudest part playing for several seconds and I'll check again.
+    step "Nothing is playing right now, so I can't read a loudness figure yet. Can you play the loudest section of the mix?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "Can you keep the loudest part playing a bit longer?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "Please hit play and let the loudest chorus or section run for at least 8-10 seconds without stopping, then let me know." [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]

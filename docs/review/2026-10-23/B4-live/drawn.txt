@@ -1,0 +1,10 @@
+scenario B4-live
+captured 2026-10-23T13:14:10.756+01:00
+  [user] Add a compressor to this rack
+  [assistant] 
+  run row: status=Waiting for your answer changes=1 steps=2 zones=[12,4:Sounds good,4:Run a check,4:Use a different one,7:Stop]
+  opening: 
+  closing: 
+    step "add EchoJay Compressor after slot 1" [done] right="applied" detail="Added EchoJay Compressor in slot 21. Read back: threshold -10 dB, ratio 2:1, makeup 0 dB." chips=[]
+    step "Added the EchoJay Compressor after the Renaissance Axx (s), a gentle starting point. Play it and I'll set it to about 3 dB.
+How's it sounding?" [running] right="your answer?" detail="" chips=[Sounds good, Run a check, Use a different one]

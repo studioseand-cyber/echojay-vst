@@ -1,0 +1,12 @@
+scenario E3-live
+captured 2026-10-23T14:02:07.906+01:00
+  [user] How much gain reduction is Renaissance Axx (s) doing?
+  [assistant] Still only picking up about 2.5 seconds - it doesn't seem to be registering a longer play.
+  run row: status=Done changes=0 steps=5 zones=[11:5 steps]
+  opening: Still only picking up about 2.5 seconds - it doesn't seem to be registering a longer play.
+  closing: Still only picking up about 2.5 seconds - it doesn't seem to be registering a longer play.
+    step "Did you mean a plugin on one of the linked tracks, or is Renaissance Axx the name of something else in your session?" [done] right="" detail="" chips=[]
+    step "Play the loudest section now?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 2.5 s - using what was heard." chips=[]
+    step "Keep playing?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 2.5 s - using what was heard." chips=[]

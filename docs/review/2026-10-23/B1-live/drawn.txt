@@ -1,0 +1,17 @@
+scenario B1-live
+captured 2026-10-23T12:47:44.683+01:00
+  [user] Make the kick punchier
+  [assistant] The change to slot 1: Threshold -18, Gain 2 was sent but not confirmed by the plugin's read-back (threshold, gain) - check it on the plugin.
+  run row: status=Done changes=1 steps=10 zones=[3,11:1 change,8:Undo all]
+  opening: The change to slot 1: Threshold -18, Gain 2 was sent but not confirmed by the plugin's read-back (threshold, gain) - check it on the plugin.
+  closing: The change to slot 1: Threshold -18, Gain 2 was sent but not confirmed by the plugin's read-back (threshold, gain) - check it on the plugin.
+    step "read the rack - on 88_7even Kick_2_02" [done] right="" detail="" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "Play audio now?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr on slot 1" [done] right="" detail="I measured what reaches Renaissance Axx (s) and what leaves it: in -20.1 loudest, -20.1 typical; out -4.5 loudest, -4.5 typical dBFS RMS. I cannot read its own gain-reduction meter." chips=[]
+    step "Measured: From 1 s of playback: the loudest 3 s of what you just played sit around ? LUFS, true peak -1.5 dBTP. Plan: set slot 1: Threshold -18, Gain 2. Go?" [done] right="" detail="" chips=[]
+    step "set slot 1: Threshold -18, Gain 2 - on 88_7even Kick_2_02" [failed] right="not applied" detail="This is on 88_7even Kick_2_02's channel, not the one you have open." chips=[]
+    step "set slot 1: Threshold -18, Gain 2 - on 88_7even Kick_2_02" [done] right="applied" detail="read back threshold -15" chips=[]
+    step "How's it sounding?" [done] right="" detail="" chips=[]

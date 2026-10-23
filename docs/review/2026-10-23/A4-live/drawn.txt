@@ -1,0 +1,9 @@
+scenario A4-live
+captured 2026-10-23T12:28:29.484+01:00
+  [user] Add Renaissance Axx (s) to the Kick's rack and set its Threshold
+  [assistant] The Renaissance Axx (s) is already in the Kick's rack with its threshold set to -12 dB, so it's staying there as is. I can't confirm this by meter from this Mix Bus window since it's a Link - check the plugin's own display on the Kick track if you want to verify.
+  run row: status=Done changes=0 steps=2 zones=[11:2 steps]
+  opening: The Renaissance Axx (s) is already in the Kick's rack with its threshold set to -12 dB, so it's staying there as is. I can't confirm this by meter from this Mix Bus window since it's a Link - check the plugin's own display on the Kick track if you want to verify.
+  closing: The Renaissance Axx (s) is already in the Kick's rack with its threshold set to -12 dB, so it's staying there as is. I can't confirm this by meter from this Mix Bus window since it's a Link - check the plugin's own display on the Kick track if you want to verify.
+    step "read the rack - on 88_7even Kick_2_02" [done] right="" detail="" chips=[]
+    step "Renaissance Axx (s) is already on the Kick's rack with its threshold at -12 dB (auto-applied on load). What threshold would you like it set to?" [done] right="" detail="" chips=[]

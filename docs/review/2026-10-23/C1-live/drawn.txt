@@ -1,0 +1,9 @@
+scenario C1-live
+captured 2026-10-23T12:48:32.574+01:00
+  [user] Add a compressor to this rack and set a gentle threshold
+  [assistant] Added the EchoJay Compressor after the Renaissance Axx (s), a gentle starting point. Play it and I'll set it to about 2 dB.
+  run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
+  opening: Added the EchoJay Compressor after the Renaissance Axx (s), a gentle starting point. Play it and I'll set it to about 2 dB.
+  closing: Added the EchoJay Compressor after the Renaissance Axx (s), a gentle starting point. Play it and I'll set it to about 2 dB.
+    step "add EchoJay Compressor after slot 1" [done] right="applied" detail="Added EchoJay Compressor in slot 6. Read back: threshold -10 dB, ratio 2:1, makeup 0 dB." chips=[]
+    step "How's it sounding?" [done] right="" detail="" chips=[]

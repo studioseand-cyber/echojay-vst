@@ -1,0 +1,11 @@
+scenario A8-live
+captured 2026-10-23T13:41:18.301+01:00
+  [user] Add Pro-C 2 to this rack
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=3 zones=[3,4:EchoJay Compressor,4:Pro-C 3,7:Stop]
+  opening: 
+  closing: 
+    step "add FabFilter Pro-C 2 - FabFilter Pro-C 2 will need setting by hand (no map to dial it with)" [failed] right="not applied" detail="FabFilter Pro-C 2 is not one this rack can load here" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "I checked your inventory and you don't have FabFilter Pro-C 2 installed - only Pro-C 3 is available, and it's not something EchoJay can dial in itself (it'd be added with no settings, for you to set by ear).
+Want me to add Pro-C 3 instead, or skip this?" [running] right="your answer?" detail="" chips=[EchoJay Compressor, Pro-C 3]
