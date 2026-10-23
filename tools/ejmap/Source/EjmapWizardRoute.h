@@ -361,7 +361,9 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
         if (a.category == "multiband") return { Route::held, "multiband", "held: no server category (multiband is not measured by the wizard yet)" };
         return { Route::outOfScope, a.category, "not an EchoJay category (" + a.category + "): not loaded" };
     }
-    if (nameCategory.isNotEmpty()) return { Route::measure, nameCategory, "its name says " + nameCategory };
+    // Kathy, 24 Oct: the wizard's OWN name rule is a hint too, the same as the catalogue's - the signature reads route; the name is used
+    // only where they ran and could not settle (afterSignature)
+    if (nameCategory.isNotEmpty()) return { Route::categorise, nameCategory, "its name says " + nameCategory + " - a hint only: the signature reads decide" };
     if (outOfScope.isNotEmpty()) return { Route::outOfScope, outOfScope, "out of scope (" + outOfScope + "): not loaded" };
     return { Route::categorise, {}, "no category from the server or the name: the signature reads decide" };
 }

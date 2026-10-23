@@ -11271,6 +11271,10 @@ void testWizardCategories()
                && unsettled.route == wizroute::Route::measure && unsettled.category == "compressor" && unsettled.byHint && unsettled.why.contains ("the catalogue's hint")
                && noRead.route == wizroute::Route::needsCategory && oos.route == wizroute::Route::outOfScope && noHint.route == wizroute::Route::needsCategory
                && run.contains ("sig.getProperty (\"out_of_scope\", \"\").toString(), sig.getProperty (\"why\", \"\").toString(), p.d.category);")
+               // Kathy, 24 Oct: the wizard's own name rule is a hint too - "Funny Comp" with no server category goes to the reads, its name the hint
+               && [] { wizroute::Answer none; none.rule = wizroute::Rule::C; const auto d = wizroute::route (none, wizard::wizardCategory ("Funny Comp", {}), {});
+                       const auto after = wizroute::afterSignature (true, false, {}, {}, "no signature", d.category);
+                       return d.route == wizroute::Route::categorise && d.category == "compressor" && after.route == wizroute::Route::measure && after.byHint && after.category == "compressor"; }()
                && run.contains ("(sig.getProperty (\"settled_by\", \"\").toString() == \"name\" || d.byHint) && (d.category == \"pitch\" || d.category == \"tuner\")"),
                "wizard WZ-BANSWERS-3: the catalogue's compressor is a hint (" + wizroute::routeName (r1.route) + "); the reads' eq wins; unsettled reads use the hint ('" + unsettled.why
                  + "'); never without reads, never over out of scope");
@@ -11936,7 +11940,7 @@ void testWizardRoute()
     Answer serverReverb; serverReverb.category = "reverb"; const auto dWins = route (serverReverb, "compressor", {});
     check (dA.route == Route::skipHave && dP.route == Route::skipPending && ! loadsToCategorise (dA) && ! loadsToCategorise (dP) && loadsNothing (dA) && loadsNothing (dP)
            && dB.route == Route::quickCheck && ! loadsToCategorise (dB) && dC1.route == Route::categorise && dC1.category == "compressor" && dC1.why.contains ("a hint only")   // 24 Oct: a hint
-           && dC2.route == Route::outOfScope && dName.route == Route::measure && dOos.route == Route::outOfScope && loadsNothing (dOos)
+           && dC2.route == Route::outOfScope && dName.route == Route::categorise && dName.category == "compressor" && dName.why.contains ("its name says compressor - a hint only") && dOos.route == Route::outOfScope && loadsNothing (dOos)
            && dCat.route == Route::categorise && loadsToCategorise (dCat) && dWins.route == Route::categorise && dWins.category == "reverb",
            "wizard WZ-ROUTE-2: A and pending_review never loaded; B quick check only; the server's category is a hint the signature reads decide on (24 Oct; it still beats a 'comp' name as the hint); out of scope unloaded; the rest categorised");
     // WZ-ROUTE-3 AFTER THE READS: nothing dropped - unsettled (or a licence window) -> needs_category with the leaning; eq / dynamics -> measured
