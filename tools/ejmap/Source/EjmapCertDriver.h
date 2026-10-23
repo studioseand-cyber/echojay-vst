@@ -5084,7 +5084,7 @@ inline int runLimiter (const SweepOptions& opt)
     say ("LIMITER: -> " + outDir.getChildFile (stem + ".limiter.json").getFullPathName());
     // THE DRAFT: the spec's section 6 `ceiling` block (a limiter profile is a compressor profile PLUS this block), cert/phaseb/limiter/drafts/
     {
-        auto* D = new juce::DynamicObject(); D->setProperty ("schema", "ej_comp_profile ceiling block (LIMITER_PROFILE_SPEC section 6)"); D->setProperty ("spec", drafts::specTag ("LIMITER_PROFILE_SPEC")); D->setProperty ("status", drafts::statusLine ("LIMITER_PROFILE_SPEC") + "; the ceiling block only - the amount curve and tone check are the compressor profile's");
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", "ej_limiter_profile/1");   /* 24 Oct (Sean / B): an id, was a sentence */ D->setProperty ("spec", drafts::specTag ("LIMITER_PROFILE_SPEC")); D->setProperty ("status", drafts::statusLine ("LIMITER_PROFILE_SPEC") + "; the ceiling block only - the amount curve and tone check are the compressor profile's");
         D->setProperty ("block", "ceiling");
         D->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())));
         D->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "997 Hz sine, peak at the ceiling label + 6 dB, amount at its hard end; sample peak and BS.1770 4x-oversampled true peak over 0.75 s"));
@@ -6685,7 +6685,7 @@ inline int runDeesser (const SweepOptions& opt)
     say ("DS: -> " + outDir.getChildFile (stem + ".deesser.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
     // THE DRAFT: the spec's section 6 `deesser` block (a de-esser profile is a compressor profile measured on the sibilance signal PLUS this block)
     {
-        auto* D = new juce::DynamicObject(); D->setProperty ("schema", "ej_comp_profile deesser block (DEESSER_PROFILE_SPEC section 6)"); D->setProperty ("spec", drafts::specTag ("DEESSER_PROFILE_SPEC")); D->setProperty ("status", drafts::statusLine ("DEESSER_PROFILE_SPEC") + "; the deesser block only - the amount curve on noise is the compressor profile's"); D->setProperty ("block", "deesser");
+        auto* D = new juce::DynamicObject(); D->setProperty ("schema", "ej_deesser_profile/1"); D->setProperty ("spec", drafts::specTag ("DEESSER_PROFILE_SPEC")); D->setProperty ("status", drafts::statusLine ("DEESSER_PROFILE_SPEC") + "; the deesser block only - the amount curve on noise is the compressor profile's"); D->setProperty ("block", "deesser");
         D->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, base.getProperty ("map_fp", juce::var())));
         D->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-cert), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, deesser::noiseSignalDescription()));
         D->setProperty ("deesser", deesser::deesserBlock (rec));
@@ -7033,9 +7033,9 @@ namespace draftpass
             { "timing",     "timing",     ".timing.json",     "time_block",         "COMP_TIMING_SPEC",           "ej_comp_profile time block (COMP_TIMING_SPEC section 7)" },
             { "tuners",     "tuner",      ".json",            "tuner_profile",      "TUNER_PROFILE_SPEC",         "ej_tuner_profile/1" },
             { "multiband",  "multiband",  ".multiband.json",  "multiband_profile",  "MULTIBAND_PROFILE_PROPOSAL", "ej_multiband_profile/0" },
-            { "limiter",    "limiter",    ".limiter.json",    "limiter_ceiling",    "LIMITER_PROFILE_SPEC",       "ej_comp_profile ceiling block (LIMITER_PROFILE_SPEC section 6)" },
+            { "limiter",    "limiter",    ".limiter.json",    "limiter_ceiling",    "LIMITER_PROFILE_SPEC",       "ej_limiter_profile/1" },
             { "eq",         "eq",         ".eq.json",         "eq_profile",         "EQ_PROFILE_SPEC",            "ej_eq_profile/1" },
-            { "deesser",    "deesser",    ".deesser.json",    "deesser_block",      "DEESSER_PROFILE_SPEC",       "ej_comp_profile deesser block (DEESSER_PROFILE_SPEC section 6)" },
+            { "deesser",    "deesser",    ".deesser.json",    "deesser_block",      "DEESSER_PROFILE_SPEC",       "ej_deesser_profile/1" },
             { "saturation", "saturation", ".saturation.json", "saturation_profile", "SATURATION_PROFILE_SPEC",    "ej_saturation_profile/1" },
             { "reverb",     "reverbdelay", ".reverbdelay.json", "space_profile",    "REVERB_DELAY_PROFILE_SPEC",  "ej_space_profile/1" },
             { "delay",      "reverbdelay", ".reverbdelay.json", "space_profile",    "REVERB_DELAY_PROFILE_SPEC",  "ej_space_profile/1" },

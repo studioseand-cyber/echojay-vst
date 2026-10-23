@@ -1,0 +1,58 @@
+{
+  "schema": "ej_pitch_profile/1",
+  "category": "pitch",
+  "measurement": "shift",
+  "spec": "PITCHSHIFT_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against PITCHSHIFT_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "MFreqShifter",
+    "manufacturer": "MeldaProduction",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|61516444|14.16.0",
+    "version": "14.16.0",
+    "map_fp": "df77fbade5a3d0d2ec9cc9c6572086d0c79400ad65c5a7c83a2c2cd1097925db"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-wizard), probe d790dc15972d",
+    "date": "2026-10-22",
+    "sample_rate": 48000,
+    "signal": "220 Hz sine, -18 dBFS"
+  },
+  "shifts": [
+    {
+      "index": 1,
+      "control": "Shift",
+      "unit": "kHz",
+      "labels": "shift",
+      "measuring_writes": [
+        {
+          "index": 0,
+          "norm": 1.0,
+          "why": "the mix fully wet"
+        }
+      ],
+      "positions": [
+        {
+          "norm": 0.5,
+          "display": "0 Hz",
+          "expected_out_hz": 220.0,
+          "expected_cents": 0.0,
+          "label_unit": "khz",
+          "read": true,
+          "windows": 139,
+          "out_hz": 220.0,
+          "shift_cents": 0.0,
+          "shift_semitones": 0.0,
+          "error_cents": 0.0,
+          "iqr_cents": 0.0,
+          "steady": true,
+          "agrees": true,
+          "why": "out 220.00 Hz: a shift of 0.00 st, 0.0 cents from the label (5 allowed)"
+        }
+      ],
+      "verdict": "measured",
+      "why": "1 steady labelled position(s) (3 needed)",
+      "tolerance_cents": 5.0
+    }
+  ]
+}

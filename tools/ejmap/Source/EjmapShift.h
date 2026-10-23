@@ -141,6 +141,70 @@ inline Unlabelled unlabelledVerdict (const std::vector<Reading>& rs)
     u.verdict = "measured_unlabelled"; u.why = "shifts " + juce::String (u.lowCents / 100.0, 2) + " to " + juce::String (u.highCents / 100.0, 2) + " st over its travel; its labels state no shift, so nothing is judged";
     return u;
 }
+// PITCH BY NAME NEEDS A PITCH LABEL (Kathy, 23 Oct): a plugin routed to the shift pass by its NAME goes there only when at least one
+// control's labels are semitones, cents, intervals or ratios; otherwise it goes for review (Auto-Tune SoundSoap: its only frequency
+// labels were filters' Hz, read as shifts). What counts, from the label texts the extract read ("" = no pitch label):
+//   "interval"  an interval name ("-Octave", "5th", "3rd M") - intervalSemitones
+//   "semitones" / "cents" / "octaves"  a label that leads with a number and names the unit (st, semi, semitone(s), ct, cent(s), oct,
+//               octave(s)); or bare numbers on a control NAMED for it (semi / transpose -> semitones, cent -> cents)
+//   "ratio"     bare numbers around 1 (labelKind "ratio") on a control named pitch / shift / ratio / transpose
+// Hz is never a pitch label here (a frequency shifter, a filter's cutoff), nor a raw 0-1 position (Pitchwheel)
+// a control name's WORDS, camelCase split too ("PitchCents" -> pitch, cents): a name is matched by whole words, never inside another word
+// (SoundSoap's "De-Click Percentage" is not a cents control, nor a "Pan Center")
+inline juce::StringArray nameWords (const juce::String& name)
+{
+    juce::StringArray w; juce::String cur;
+    for (int i = 0; i < name.length(); ++i)
+    {
+        const auto c = name[i];
+        if (! juce::CharacterFunctions::isLetterOrDigit (c)) { if (cur.isNotEmpty()) w.add (cur.toLowerCase()); cur.clear(); continue; }
+        if (juce::CharacterFunctions::isUpperCase (c) && cur.isNotEmpty() && juce::CharacterFunctions::isLowerCase (cur.getLastCharacter())) { w.add (cur.toLowerCase()); cur.clear(); }
+        cur += c;
+    }
+    if (cur.isNotEmpty()) w.add (cur.toLowerCase());
+    return w;
+}
+inline juce::String pitchLabelOf (const juce::StringArray& labels, const juce::String& controlName)
+{
+    const auto words = nameWords (controlName);
+    auto named = [&words] (std::initializer_list<const char*> ws) { for (const auto& x : words) for (const char* w : ws) if (x == w || (juce::String (w).endsWithChar ('*') && x.startsWith (juce::String (w).dropLastCharacters (1)))) return true; return false; };
+    bool allBare = ! labels.isEmpty();
+    for (const auto& raw : labels)
+    {
+        const auto t = raw.trim(); if (t.isEmpty()) continue;
+        if (intervalSemitones (t)) return "interval";
+        const auto lead = t.trimCharactersAtStart ("+- ");
+        const bool leadsNumber = lead.isNotEmpty() && (juce::CharacterFunctions::isDigit (lead[0]) || lead[0] == '.');
+        const auto word = t.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
+        if (word.isNotEmpty()) allBare = false;
+        if (! leadsNumber || word.isEmpty()) continue;
+        if (word == "st" || word == "semi" || word == "semis" || word == "semitone" || word == "semitones") return "semitones";
+        if (word == "ct" || word == "cent" || word == "cents") return "cents";
+        if (word == "oct" || word == "octave" || word == "octaves") return "octaves";
+    }
+    if (allBare)
+    {
+        if (named ({ "semi", "semis", "semitone", "semitones", "transpos*" })) return "semitones";
+        if (named ({ "cent", "cents" })) return "cents";
+        if (labelKind (labels, {}, controlName) == "ratio" && named ({ "pitch", "shift", "ratio", "transpos*" })) return "ratio";
+    }
+    return {};
+}
+// the same question asked of a MAP, for a plugin whose extract this run did not read (a map from an earlier build): a labelled switch's
+// label texts; an anchored control has only its numbers - named semi / transpose / cent, or a ratio range (0.5-2) on a pitch-named control
+inline juce::String pitchLabelOfMap (const juce::var& map, juce::String* control = nullptr)
+{
+    if (const auto* co = map.getProperty ("controls", {}).getDynamicObject())
+        for (const auto& p : co->getProperties())
+        {
+            const auto name = p.value.getProperty ("name", p.name.toString()).toString(); juce::StringArray texts;
+            if (const auto* lo = p.value.getProperty ("labels", {}).getDynamicObject()) for (const auto& l : lo->getProperties()) texts.add (l.name.toString());
+            else if (const auto* an = p.value.getProperty ("anchors", {}).getArray()) for (const auto& a : *an) if (a.isArray() && a.size() >= 1) texts.add (juce::String ((double) a[0], 4));
+            if (const auto k = pitchLabelOf (texts, name); k.isNotEmpty()) { if (control != nullptr) *control = name; return k; }
+        }
+    return {};
+}
+
 // THE CONTROLS a shift pass reads: a pitch / shift / semitone / transpose / coarse / fine / cents / interval word (a frequency shifter's
 // "shift" / "frequency"), and none naming something else (mix, formant, feedback, delay, voices' level / pan, speed, the key)
 inline bool shiftNamed (const juce::String& name)

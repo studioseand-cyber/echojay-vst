@@ -25,6 +25,12 @@ namespace ejprobe
 {
 
 inline constexpr int kSetReadBudgetMs = 20000;
+// THE MAP STEP'S BOUND, SCALED BY PARAMETER COUNT (Kathy, 23 Oct): a big plugin's sweep (StudioRack, CLA MixHub, Scheps Omni Channel)
+// outran the caller's flat per-process bound with other work running and needed a second try alone. Once the plugin has loaded and its
+// list is known, the extract DECLARES its own bound ("GUARD<TAB>seconds", the hang guard every caller already honours, direct and served):
+// the base, the set-then-read budget, and kExtractGuardPerParamS for every parameter. A load that hangs never reaches the declaration
+inline constexpr double kExtractGuardBaseS = 120.0, kExtractGuardPerParamS = 1.0;
+inline double extractGuardS (int params) { return kExtractGuardBaseS + kSetReadBudgetMs / 1000.0 + kExtractGuardPerParamS * (params > 0 ? params : 0); }
 
 inline void runExtract (juce::AudioPluginInstance& inst)
 {
@@ -34,6 +40,7 @@ inline void runExtract (juce::AudioPluginInstance& inst)
     cfg.settle = [] { const double t0 = juce::Time::getMillisecondCounterHiRes();
                       while (juce::Time::getMillisecondCounterHiRes() - t0 < 15.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); } };
     const auto& ps = inst.getParameters();
+    std::printf ("GUARD\t%.0f\n", extractGuardS (ps.size())); std::fflush (stdout);   // 23 Oct: read by the caller while the sweep runs
     const double start = juce::Time::getMillisecondCounterHiRes(); double setReadMs = 0.0; int setReads = 0;
     for (int i = 0; i < ps.size(); ++i)
     {

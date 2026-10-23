@@ -1,0 +1,129 @@
+{
+  "schema": "ej_filter_profile/1",
+  "category": "filter",
+  "spec": "FILTER_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against FILTER_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "OneKnob Filter (m)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|58557763|12.0.0",
+    "version": "12.0.0",
+    "map_fp": "63034b5cce7c1cbcce2061431126898a399c9ebffe47595da0469558af2b0c09"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-wizard), probe d790dc15972d",
+    "date": "2026-10-22",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "filters": [
+    {
+      "index": 0,
+      "control": "Filter",
+      "stepped": false,
+      "open_position": {
+        "norm": 1.0,
+        "display": "10.0",
+        "why": "the most open position: every other is read against it, so what this control does not move cancels"
+      },
+      "type": "lowpass",
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "0.0",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": 4.92,
+          "cutoff_hz": 19.399999999999999,
+          "slope_db_oct": 15.699999999999999,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 1.27,
+          "resonance_hz": 14.699999999999999,
+          "natural_hz": 16.899999999999999,
+          "tones": 136
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "1.7",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": 0.61,
+          "cutoff_hz": 76.700000000000003,
+          "slope_db_oct": 14.199999999999999,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 5.5,
+          "resonance_hz": 50.0,
+          "natural_hz": 52.700000000000003,
+          "tones": 136
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "3.3",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": -0.8,
+          "cutoff_hz": 255.699999999999989,
+          "slope_db_oct": 14.199999999999999,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 6.53,
+          "resonance_hz": 149.300000000000011,
+          "natural_hz": 169.800000000000011,
+          "tones": 136
+        },
+        {
+          "norm": 0.5,
+          "display": "5.0",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": -1.66,
+          "cutoff_hz": 904.100000000000023,
+          "slope_db_oct": 14.199999999999999,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 7.36,
+          "resonance_hz": 528.700000000000045,
+          "natural_hz": 570.299999999999955,
+          "tones": 136
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "6.7",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": -0.04,
+          "cutoff_hz": 2873.599999999999909,
+          "slope_db_oct": 15.300000000000001,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 5.7,
+          "resonance_hz": 1767.299999999999955,
+          "natural_hz": 1960.099999999999909,
+          "tones": 136
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "8.3",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": -0.0,
+          "cutoff_hz": 8247.5,
+          "slope_db_oct": 21.399999999999999,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 5.22,
+          "resonance_hz": 5582.0,
+          "natural_hz": 5941.100000000000364,
+          "tones": 136
+        },
+        {
+          "norm": 1.0,
+          "display": "10.0",
+          "result": "open",
+          "reason": "the most open position (the reference)",
+          "tones": 136
+        }
+      ],
+      "verdict": "measured",
+      "why": "0 labelled position(s) judged (3 needed to certify)",
+      "tolerance_pct": 5.0
+    }
+  ]
+}

@@ -5079,6 +5079,108 @@ void testSweepQuietReference()
                && mainCpp.contains ("return a == \"--cert-filter\" ? ejmap::cert::runFilter (o) : ejmap::cert::runPitchShift (o);"),
                "cert CERT-22: Mic Mod -> review; HP -3 dB " + juce::String (hp2.cutoffHz, 1) + " Hz; against the open position " + juce::String (against.cutoffHz, 1) + " Hz; '+7 st' expects " + juce::String (e7.outHz, 2) + " Hz");
     }
+    // WZ-TRUST-19..22 THE FILTER AND PITCH-SHIFT COUNTING RULES (Kathy, 23 Oct), on the 22 Oct run's real drafts (tests/fixtures/drafts_22oct)
+    {
+        using namespace ejmap::trust;
+        const auto fx = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/drafts_22oct");
+        auto draft = [&fx] (const char* prefix) { return juce::JSON::parse (fx.findChildFiles (juce::File::findFiles, false, juce::String (prefix) + ".*")[0].loadFileAsString()); };
+        // WZ-TRUST-19 FILTER: a cutoff = a high / low-pass with Hz labels, 3+ measured positions, moving an octave or more; certified = every
+        // cutoff certified under one convention with 3+ judged positions all within tolerance
+        const auto cs = judgeFilterDraft (draft ("filter_cleansweep_v2")), dx = judgeFilterDraft (draft ("filter_drumxchanger")), ff = judgeFilterDraft (draft ("filter_filterfreak1"));
+        const auto lv = judgeFilterDraft (draft ("filter_lovend")), ok = judgeFilterDraft (draft ("filter_oneknob_m"));
+        auto synth = [] (double hi, int judged, int within, const char* verdict, const char* convention = "-3 dB point") {
+            juce::String ps; for (int i = 0; i < 4; ++i) ps << (i ? "," : "") << "{\"norm\":" << i * 0.3 << ",\"display\":\"x\",\"result\":\"measured\",\"cutoff_hz\":" << (100.0 + i * (hi - 100.0) / 3.0)
+                                                            << (i < judged ? juce::String (",\"within_tolerance\":") + (i < within ? "true" : "false") : juce::String()) << "}";
+            return judgeFilterDraft (juce::JSON::parse ("{\"filters\":[{\"control\":\"Cutoff\",\"unit\":\"Hz\",\"type\":\"lowpass\",\"verdict\":\"" + juce::String (verdict)
+                                                        + "\",\"convention\":\"" + juce::String (convention) + "\",\"positions\":[" + ps + "]}]}")); };
+        const auto sOk = synth (400.0, 3, 3, "certified"), sNarrow = synth (190.0, 3, 3, "certified"), sTwoJudged = synth (400.0, 2, 2, "certified"), sMiss = synth (400.0, 3, 2, "certified"),
+                   sVerdict = synth (400.0, 3, 3, "measured"), sNoConv = synth (400.0, 3, 3, "certified", "");   // no ONE convention recorded: not the certification
+        check (cs.certified && cs.identified.size() == 2 && ! dx.certified && dx.identified.size() == 2 && dx.why.contains ("Original Highpass Cutoff")
+               && ff.certified && ff.identified.joinIntoString (",") == "Frequency" && lv.identified.isEmpty() && ! lv.certified && ok.identified.isEmpty()
+               && sOk.certified && sNarrow.identified.isEmpty() && sTwoJudged.identified.size() == 1 && ! sTwoJudged.certified && ! sMiss.certified && ! sVerdict.certified
+               && sNoConv.identified.size() == 1 && ! sNoConv.certified,
+               "wizard WZ-TRUST-19: filter drafts - cleansweep V2 certified (" + cs.identified.joinIntoString (", ") + "), DrumXchanger not (" + dx.why + "), FilterFreak1 by its Frequency only ("
+                 + ff.identified.joinIntoString (",") + "), a shelf and a knob without Hz labels are no cutoff; under an octave, 2 judged, a miss or no certified verdict certify nothing");
+        // WZ-TRUST-20 PITCH SHIFT: a shift control = 3+ steady judged positions, most agreeing; certified = every one agrees (5 cents)
+        const auto up = judgeShiftDraft (draft ("shift_ultrapitch3_m")), ss = judgeShiftDraft (draft ("shift_soundsoap")), pw = judgeShiftDraft (draft ("shift_pitchwheel")),
+                   mf = judgeShiftDraft (draft ("shift_mfreqshifter"));
+        auto shift = [] (int judged, int agree, const char* verdict) {
+            juce::String ps; for (int i = 0; i < 4; ++i) ps << (i ? "," : "") << "{\"norm\":" << i * 0.3 << ",\"display\":\"+" << i << " st\",\"read\":true,\"steady\":" << (i < judged ? "true" : "false")
+                                                            << ",\"agrees\":" << (i < agree ? "true" : "false") << ",\"why\":\"w\"}";
+            return judgeShiftDraft (juce::JSON::parse ("{\"shifts\":[{\"control\":\"Pitch\",\"verdict\":\"" + juce::String (verdict) + "\",\"positions\":[" + ps + "]}]}")); };
+        const auto tAll = shift (3, 3, "agrees"), tMost = shift (3, 2, "agrees"), tHalf = shift (4, 2, "agrees"), tTwo = shift (2, 2, "agrees"), tVerdict = shift (3, 3, "measured");
+        check (up.certified && up.identified.size() == 3 && ss.identified.isEmpty() && pw.identified.isEmpty() && mf.identified.isEmpty()
+               && tAll.certified && tMost.identified.size() == 1 && ! tMost.certified && tHalf.identified.isEmpty() && tTwo.identified.isEmpty() && ! tVerdict.certified && tVerdict.identified.size() == 1,
+               "wizard WZ-TRUST-20: shift drafts - UltraPitch 3 Voices certified (" + up.identified.joinIntoString (", ") + "); SoundSoap (" + ss.why + "), Pitchwheel, MFreqShifter not shift controls; "
+                 + "2 of 3 agreeing maps but does not certify, half or 2 judged identify nothing");
+        // WZ-TRUST-21 THE LEVEL: "filter" needs cutoff|freq, every cutoff a dial target and read back; "pitch" needs a shift control only when
+        // a pitch-shift draft was read (a tuner keeps __never__); a pitch-shift position's display is a reading though it carries a "why"
+        ejmap::trust::Measured mF; mF.roles["cutoff"] = juce::StringArray { "Highpass Cutoff", "Lowpass Cutoff" };
+        const auto fmap = juce::JSON::parse (R"({"category":"filter","controls":{"Highpass Cutoff":{"name":"Highpass Cutoff","kind":"anchored","anchors":[[20,0],[2000,1]]},"Lowpass Cutoff":{"name":"Lowpass Cutoff","kind":"anchored","anchors":[[200,0],[20000,1]]}}})");
+        std::map<juce::String, ejmap::trust::ControlReadback> rbBoth; rbBoth["Highpass Cutoff"].judged = 3; rbBoth["Lowpass Cutoff"].judged = 3;
+        std::map<juce::String, ejmap::trust::ControlReadback> rbOne; rbOne["Highpass Cutoff"].judged = 3;
+        const auto fBoth = levelFor (fmap, false, "", rbBoth, mF), fOne = levelFor (fmap, false, "", rbOne, mF);
+        ejmap::trust::Measured mS; mS.pitchShift = true; mS.roles["shift"] = juce::StringArray { "Pitch" };
+        const auto pmap = juce::JSON::parse (R"({"category":"pitch","controls":{"Pitch":{"name":"Pitch","kind":"mode","labels":{"-12 st":0.0,"0 st":0.5,"+12 st":1.0}}}})");
+        std::map<juce::String, ejmap::trust::ControlReadback> rbP; rbP["Pitch"].judged = 3;
+        const auto pS = levelFor (pmap, false, "", rbP, mS), pTuner = levelFor (pmap, false, "", rbP, ejmap::trust::Measured {});
+        ejmap::trust::Readings rPitch, rOther;
+        readingsFromList (juce::JSON::parse (R"([{"norm":0.5,"display":"0 st","read":true,"why":"out 220 Hz"},{"norm":1.0,"display":"+12 st","why":"not read"}])"), "Pitch", rPitch);
+        check (needsFor ("filter") == juce::StringArray { "cutoff|freq" } && needsFor ("pitch") == juce::StringArray { "__never__" } && needsFor ("pitch", true) == juce::StringArray { "shift" }
+               && fBoth.level == "mapped" && fBoth.dialable.size() == 2 && fOne.level == "unsure" && fOne.why.contains ("Lowpass Cutoff")
+               && pS.level == "mapped" && pS.dialable.joinIntoString (",") == "Pitch" && pTuner.level == "unsure" && pTuner.why.contains ("__never__")
+               && rPitch["Pitch"].size() == 1 && rPitch["Pitch"][0].display == "0 st",
+               "wizard WZ-TRUST-21: a filter maps with every cutoff read back ('" + fOne.why + "' with one), a shifter on its shift control, a tuner stays never; a read pitch position counts ("
+                 + juce::String ((int) rPitch["Pitch"].size()) + " of 2)");
+        // WZ-TRUST-22 THE RUN: bx_cleansweep V2's map filed as an EQ, with its filter draft, is counted a FILTER and certified; UltraPitch 3
+        // Voices is certified by its pitch-shift draft - each saying which; a NEWER EQ draft with a measured band keeps the plugin an EQ
+        const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_trust22_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+        auto runWith = [&] (bool newerEq) {
+            work.deleteRecursively(); const auto maps = work.getChildFile ("maps"), wz = work.getChildFile ("wizard"); maps.createDirectory();
+            auto mc = juce::JSON::parse (fx.getChildFile ("map_cleansweep_v2.json").loadFileAsString()); mc.getDynamicObject()->setProperty ("category", "eq");
+            auto mu = juce::JSON::parse (fx.getChildFile ("map_ultrapitch3_m.json").loadFileAsString()); mu.getDynamicObject()->setProperty ("category", "pitch");
+            maps.getChildFile ("c.json").replaceWithText (juce::JSON::toString (mc)); maps.getChildFile ("u.json").replaceWithText (juce::JSON::toString (mu));
+            for (const char* p : { "filter_cleansweep_v2", "shift_ultrapitch3_m" })
+            {   const auto f = fx.findChildFiles (juce::File::findFiles, false, juce::String (p) + ".*")[0];
+                const auto dir = wz.getChildFile ("phaseb").getChildFile (juce::String (p).startsWith ("filter") ? "filters" : "pitchshift").getChildFile ("drafts"); dir.createDirectory();
+                f.copyFileTo (dir.getChildFile (f.getFileName().fromFirstOccurrenceOf (".", false, false))); }
+            if (newerEq)
+            {   const auto dir = wz.getChildFile ("phaseb").getChildFile ("wizard_eq").getChildFile ("drafts"); dir.createDirectory();
+                dir.getChildFile ("AudioUnit_417f6232_2.16.1.eq_profile.draft.json").replaceWithText (R"J({"schema":"ej_eq_profile/1","plugin":{"name":"bx_cleansweep V2","format":"AudioUnit","version":"2.16.1"},"measured":{"date":"2026-10-23"},"bands":[{"verdict":"measured","gain_control":"(none)","freq_control":"(none)"}]})J"); }
+            ejmap::trustrun::runTrustLevels (maps, {}, juce::StringArray { wz.getFullPathName() }, {}, {}, {}, work.getChildFile ("out"));
+            std::map<juce::String, juce::var> rows; const auto all = juce::JSON::parse (work.getChildFile ("out").getChildFile ("trust_levels.json").loadFileAsString());   // held: never a pointer into a temporary
+            if (const auto* a = all.getArray()) for (const auto& x : *a) rows[x.getProperty ("product", "").toString()] = x;
+            return rows; };
+        auto plain = runWith (false); auto withEq = runWith (true); work.deleteRecursively();
+        const auto c1 = plain["bx_cleansweep V2"], u1 = plain["UltraPitch 3 Voices (m)"], c2 = withEq["bx_cleansweep V2"];
+        check (c1.getProperty ("category", "").toString() == "filter" && c1.getProperty ("level", "").toString() == "certified" && c1.getProperty ("why", "").toString().contains ("filter measurement")
+               && u1.getProperty ("level", "").toString() == "certified" && u1.getProperty ("why", "").toString().contains ("pitch-shift measurement")
+               && c2.getProperty ("category", "").toString() == "eq" && c2.getProperty ("level", "").toString() != "certified",
+               "wizard WZ-TRUST-22: the run counts cleansweep V2 a filter (" + c1.getProperty ("level", "").toString() + ": " + c1.getProperty ("why", "").toString() + "), UltraPitch "
+                 + u1.getProperty ("level", "").toString() + "; with a newer EQ measurement it stays " + c2.getProperty ("category", "").toString() + " (" + c2.getProperty ("level", "").toString() + ")");
+    }
+    // CERT-24 (carried from feat/ejmap-wizard e7ba11ee / 5e8074e2, 24 Oct): the shift label reader the pitch-by-name gate uses (the gate is
+    // the wizard's), the extract's parameter-scaled GUARD, and the limiter / de-esser drafts written under their ids
+    {
+        using namespace ejmap;
+        const auto px = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_extract.h").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto fx = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/drafts_22oct");
+        juce::String shCtl; const auto sh = shift::pitchLabelOfMap (juce::JSON::parse (fx.getChildFile ("map_soundshifter_m.json").loadFileAsString()), &shCtl);
+        const auto soap = shift::pitchLabelOfMap (juce::JSON::parse (fx.getChildFile ("map_soundsoap.json").loadFileAsString()));
+        const auto declared = phaseb::declaredGuardS ("0\tA\t\t0\t0\t1\t0\nGUARD\t1140\n");
+        check (shift::pitchLabelOf ({ "-Octave", "- 5th", "Unison" }, "Voice 1 Pitch") == "interval" && shift::pitchLabelOf ({ "20 Hz", "140 Hz" }, "Lo-Cut Freq").isEmpty()
+               && shift::pitchLabelOf ({ "0", "50", "100" }, "De-Click Percentage").isEmpty() && shift::pitchLabelOf ({ "-99", "99" }, "PitchCents") == "cents"
+               && sh == "ratio" && shCtl == "Pitch" && soap.isEmpty()
+               && px.contains ("inline constexpr double kExtractGuardBaseS = 120.0, kExtractGuardPerParamS = 1.0;")
+               && px.contains ("return kExtractGuardBaseS + kSetReadBudgetMs / 1000.0 + kExtractGuardPerParamS * (params > 0 ? params : 0);")
+               && px.indexOf ("std::printf (\"GUARD\\t%.0f\\n\", extractGuardS (ps.size())); std::fflush (stdout);") > 0
+               && px.indexOf ("std::printf (\"GUARD\\t%.0f\\n\", extractGuardS (ps.size())); std::fflush (stdout);") < px.indexOf ("for (int i = 0; i < ps.size(); ++i)")
+               && declared && std::abs (phaseb::effectiveGuardS (120.0, declared) - 1140.0) < 1e-9
+               && drv.contains ("D->setProperty (\"schema\", \"ej_limiter_profile/1\");") && drv.contains ("D->setProperty (\"schema\", \"ej_deesser_profile/1\");")
+               && ! drv.contains ("ceiling block (LIMITER_PROFILE_SPEC section 6)") && ! drv.contains ("deesser block (DEESSER_PROFILE_SPEC section 6)"),
+               "cert CERT-24: pitch labels (SoundShifter " + sh + " on " + shCtl + ", SoundSoap none); the extract declares its bound before sweeping; the drafts carry their ids");
+    }
     // CERT-23 (carried from feat/ejmap-wizard fe7a2859 / 5972915c, 22 Oct): the full map, the log taper, the resonant-filter conventions, the
     // shallow-filter edge and the voice isolation are shared code; their pins come with them, less the parts that test the wizard's own run
     // WZ-FULLMAP-1 THE WIZARD SAVES FULL MAPS (Kathy, 22 Oct, decision 0): the store's format (schema 2.4, controls with range / unit /
@@ -11275,7 +11377,8 @@ int main (int, char**)
                && trr.contains ("r.format = trust::formatOfRecord (d, f.getFileName());") && trr.contains ("v1Pass[r.category].insert ({ r.product, r.format });")
                && trr.contains ("const std::pair<juce::String, juce::String> key { name, fmt };")
                && trr.contains ("(cat == \"compressor\" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == \"amp_sim\" && v1Pass[\"saturation\"].count (key))")
-               && trr.contains ("|| (cat == \"compressor\" && v1Pass[\"multiband\"].count (key));")
+               && trr.contains ("|| (cat == \"compressor\" && v1Pass[\"multiband\"].count (key))")
+               && trr.contains ("|| (cat == \"filter\" && pd.filterCert.count (fmt)) || (cat == \"pitch\" && pd.shiftCert.count (fmt));")   // 23 Oct: by format too
                && mainTl.contains ("else if (k == \"--certified-profiles\") profiles = cwdFile (v); }") && mainTl.contains ("outD, human, reviewFirst, profiles);"),
                "wizard WZ-TRUST-15: certification counts only in the format it was measured in (publish list by its profiles' format, v1 drafts by theirs); a listed product with no stated format certifies nothing");
     }
