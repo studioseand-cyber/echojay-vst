@@ -73,7 +73,10 @@ inline int runCertV1 (const juce::File& cert, const juce::File& outFile)
     return 0;
 }
 
-struct ProductData { std::vector<std::pair<juce::String, trust::Readings>> readings; std::vector<trust::SourceMeta> metas; trust::Measured measured; };   // metas: one per reading source (the recency rule)
+// metas: one per reading source (the recency rule); 23 Oct: per format, when a filter measurement last found a cutoff and when an EQ
+// measurement last measured a band (the newer decides filter or EQ), and the formats a filter / pitch-shift draft certified in
+struct ProductData { std::vector<std::pair<juce::String, trust::Readings>> readings; std::vector<trust::SourceMeta> metas; trust::Measured measured;
+                     std::map<juce::String, juce::int64> filterAt, eqBandAt; std::set<juce::String> filterCert, shiftCert; };
 inline void loadRecords (const juce::File& root, const juce::String& tag, std::map<juce::String, ProductData>& by)
 {
     auto take = [&] (const juce::File& f, const juce::String& category)
@@ -106,11 +109,28 @@ inline void loadRecords (const juce::File& root, const juce::String& tag, std::m
             if (schema == "ej_saturation_profile/1") adopt ("drive", "drive", rec.getProperty ("drive", {}).getProperty ("verdict", "").toString() == "drive");
             if (schema == "ej_gate_profile/1") adopt ("threshold", "threshold", rec.getProperty ("verdict", "").toString() == "measured");
             if (rec.getProperty ("ceiling", {}).isObject()) adopt ("ceiling", "ceiling", (bool) rec.getProperty ("ceiling", {}).getProperty ("holds_true_peak", false));
+            // 23 Oct (Kathy): THE FILTER AND PITCH-SHIFT DRAFTS (EjmapTrust.h 2b) - their identified cutoff / shift controls are measured roles,
+            // and the format each certified in is kept (certified only in the format it was measured in, as every category)
+            if (schema == "ej_filter_profile/1")
+            {
+                const auto j = trust::judgeFilterDraft (rec); const auto fmt = trust::formatOfRecord (rec, f.getFileName());
+                for (const auto& c : j.identified) pd.measured.roles["cutoff"].addIfNotAlreadyThere (c);
+                if (! j.identified.isEmpty()) pd.filterAt[fmt] = std::max (pd.filterAt[fmt], trust::metaOfRecord (rec, f.getFileName()).atMs);
+                if (j.certified) pd.filterCert.insert (fmt);
+            }
+            if (schema == "ej_pitch_profile/1" && rec.getProperty ("measurement", "").toString() == "shift")
+            {
+                const auto j = trust::judgeShiftDraft (rec); const auto fmt = trust::formatOfRecord (rec, f.getFileName());
+                pd.measured.pitchShift = true;
+                for (const auto& c : j.identified) pd.measured.roles["shift"].addIfNotAlreadyThere (c);
+                if (j.certified) pd.shiftCert.insert (fmt);
+            }
             if (schema == "ej_eq_profile/1")
                 if (const auto* bs = rec.getProperty ("bands", {}).getArray())
                     for (const auto& b : *bs)
                         if (b.getProperty ("verdict", "").toString() == "measured")
                         {
+                            { const auto fm = trust::formatOfRecord (rec, f.getFileName()); pd.eqBandAt[fm] = std::max (pd.eqBandAt.count (fm) ? pd.eqBandAt[fm] : (juce::int64) -1, trust::metaOfRecord (rec, f.getFileName()).atMs); }
                             const auto g = b.getProperty ("gain_control", "").toString(), f = b.getProperty ("freq_control", "").toString();
                             if (g.isNotEmpty() && g != "(none)") pd.measured.roles["gain"].addIfNotAlreadyThere (g);
                             if (f.isNotEmpty() && f != "(none)") pd.measured.roles["freq"].addIfNotAlreadyThere (f);
@@ -208,7 +228,7 @@ inline juce::Array<juce::var> reviewItems (const juce::var& m, const trust::Meas
     juce::Array<juce::var> items;
     const auto cat = m.getProperty ("category", "").toString(); const auto fp = m.getProperty ("fp", "").toString();
     const auto* co = m.getProperty ("controls", {}).getDynamicObject(); if (co == nullptr) return items;
-    juce::StringArray needRoles; for (const auto& need : trust::needsFor (cat)) for (const auto& alt : juce::StringArray::fromTokens (need, "|", "")) for (const auto& r : juce::StringArray::fromTokens (alt, "+", "")) needRoles.addIfNotAlreadyThere (r);
+    juce::StringArray needRoles; for (const auto& need : trust::needsFor (cat, measured.pitchShift)) for (const auto& alt : juce::StringArray::fromTokens (need, "|", "")) for (const auto& r : juce::StringArray::fromTokens (alt, "+", "")) needRoles.addIfNotAlreadyThere (r);
     const auto R = trust::rolesOf (m, measured);
     juce::Array<juce::var> pluginSections;   // every named section this plugin's controls carry, for the role dropdown
     { juce::StringArray seen; for (const auto& p : co->getProperties()) { const auto l = trust::sectionLabel (trust::knownSection (trust::sectionOf (p.value.getProperty ("name", p.name.toString()).toString())));
@@ -259,7 +279,7 @@ inline juce::StringArray roleControlsOf (const juce::var& map, const trust::Meas
 {
     const auto cat = map.getProperty ("category", "").toString(); const auto R = trust::rolesOf (map, measured);
     juce::StringArray out;
-    for (const auto& need : trust::needsFor (cat)) { const auto c = trust::meetNeed (need, R, cat); if (c.isEmpty()) return {}; for (const auto& n : c) out.addIfNotAlreadyThere (n); }
+    for (const auto& need : trust::needsFor (cat, measured.pitchShift)) { const auto c = trust::meetNeed (need, R, cat); if (c.isEmpty()) return {}; for (const auto& n : c) out.addIfNotAlreadyThere (n); }
     return out;
 }
 inline std::vector<double> bridgeNorms() { return { 0.1, 0.3, 0.5, 0.7, 0.9 }; }
@@ -305,9 +325,18 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         auto m = readJson (f); if (! m.isObject()) continue;
-        const auto name = m.getProperty ("identity", {}).getProperty ("name", "").toString(), cat = m.getProperty ("category", "").toString();
+        const auto name = m.getProperty ("identity", {}).getProperty ("name", "").toString(); auto cat = m.getProperty ("category", "").toString();
         static const ProductData none;
         const auto it = by.find (name); const auto& pd = it != by.end() ? it->second : none;
+        // 23 Oct (Kathy): FILTER IS A CATEGORY - a map filed as an EQ (or with none) whose plugin a filter measurement found a cutoff in, in
+        // this format, more recently than any EQ measurement measured a band there (the wizard's newer routing decides), is counted as a
+        // filter (the map store is never written: this is the trust run's copy)
+        const auto mfmt = m.getProperty ("identity", {}).getProperty ("format", "").toString();
+        if ((cat == "eq" || cat.isEmpty() || cat == "filter") && pd.filterAt.count (mfmt) && (! pd.eqBandAt.count (mfmt) || pd.filterAt.at (mfmt) > pd.eqBandAt.at (mfmt)))
+        {
+            if (cat != "filter") m.getDynamicObject()->setProperty ("category_from", "a filter measurement (filed as '" + cat + "')");
+            cat = "filter"; m.getDynamicObject()->setProperty ("category", cat);
+        }
         const auto rb = trust::creditMap (m, pd.readings, pd.metas, &otherFormat);
         for (const auto& [ctl, r] : rb) { if (r.superseded > 0) { supersededReadings += r.superseded; ++supersededControls; } snappedReadings += r.snapped; }
         const auto fpKey = m.getProperty ("fp", "").toString();
@@ -315,9 +344,13 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         const auto fmt = m.getProperty ("identity", {}).getProperty ("format", "").toString();
         const std::pair<juce::String, juce::String> key { name, fmt };   // 17 Oct (rulings 2): certified only in the format it was measured in
         const bool certified = (cat == "compressor" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == "amp_sim" && v1Pass["saturation"].count (key))
-                               || (cat == "compressor" && v1Pass["multiband"].count (key));   // 16 Oct: a multiband passes per band (mbv1)
+                               || (cat == "compressor" && v1Pass["multiband"].count (key))    // 16 Oct: a multiband passes per band (mbv1)
+                               || (cat == "filter" && pd.filterCert.count (fmt)) || (cat == "pitch" && pd.shiftCert.count (fmt));   // 23 Oct: the two drafts' own certification
         const auto heldWhy = heldWhyFor (held, name);
-        const auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
+        auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
+        if (L.level == "certified" && (cat == "filter" || cat == "pitch") && ! compCert.count (key) && ! (v1Pass.count (cat) && v1Pass[cat].count (key)))   // 23 Oct: say which
+            L.why = cat == "filter" ? "passed the filter measurement's certification: every cutoff matches its labels under one convention, 3+ judged positions"
+                                    : "passed the pitch-shift measurement's certification: every judged position within 5 cents, 3+ positions";
         if (L.level == "unsure" && L.why.startsWith ("role not identified")) review.addArray (reviewItems (m, measured, rb));
         // the credited copy: each judged control carries its read-back, as the sweep writes it. 18 Oct (B): a params-format map (CLA-76,
         // PuigChild 670) keeps its role controls in params - they were credited and levelled but their read-back was never written there

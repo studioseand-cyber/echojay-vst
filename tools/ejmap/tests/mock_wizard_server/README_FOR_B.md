@@ -2,7 +2,13 @@
 
 This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its top lists every change since v1). Everything in it was produced on our side against our own mock; nothing came from a real server.
 
-**What is new since the 21 Oct package:**
+**What is new since the 22 Oct package (24 Oct: your answers on v1.1; the contract's changelog, "24 Oct"):**
+- **The two draft ids:** `ej_limiter_profile/1` and `ej_deesser_profile/1` (were sentences). The one real de-esser draft in `18_real_results` carries its new id; nothing else in it changed.
+- **Held, as your server holds them** until you have their validators: `ej_limiter_profile/1`, `ej_deesser_profile/1`, `ej_readback_sweep/1` (any result kind).
+- **Another plugin's `map.json`** is 422 `shape` (was `identity` in our mock).
+- **A "need" plugin whose only results are a reference vote or a bridge read** now gets its outcome too: `18_real_results` sends **32** results (was 30).
+
+**What was new in the 22 Oct package:**
 - **The mock is v1.1:** your reason codes (names, statuses, retryable or not, your words), the `held` status, the `/complete` counts, `started_at` on POST /runs, required `measured_at`, the server's queue of "need" answers, the promo refusal order, compressor agreement (ruling 10) and `expires_at`.
 - **The fixtures were recorded again** against it, from the real wizard client. Scenario `18_real_results` sends **30 REAL results** from the 20 Oct wizard run (one Mac): 12 compressor profiles with their tone checks, plus one real result of every other kind. Their `measured_at` are the run's own times; everything else as the engine packed it.
 - **Your `wizard-deep-replay.py` is included unchanged**, beside our `replay.py`. Both give 0 differences against this mock with `--shift-created`.
@@ -47,8 +53,8 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 01_happy_path | device sign-in, the catalogue check (`run_id` required), the run (with the wizard's `started_at`), results |
 | 02_offline_then_retry | the result sent after the wizard was offline. **The offline attempts never reached a server, so they cannot be recorded**; the client keeps the result and retries with back-off (5 s, doubling to 10 min) |
 | 03_duplicate_upload | the same result sent again: `200 duplicate` |
-| 04_rejected_upload | a result the validator refuses (`422`, your reason code and words), and one with an unknown schema: `200 held` (kept, never promoted or served, not counted as accepted) |
-| 04b_full_map | every result carries the plugin's full map: one accepted; a parameter list, and another plugin's map, refused (`bad_map`) |
+| 04_rejected_upload | a result the validator refuses (`422`, your reason code and words), and one with an unknown schema: `201 held` (kept, never promoted or served, not counted as accepted) |
+| 04b_full_map | every result carries the plugin's full map: one accepted; a parameter list, and another plugin's map, refused (`shape`) |
 | 05_rate_limited | `429 rate_limited` with `retry_after_s`, then the same result accepted |
 | 06_results_missing | `/complete` naming a result the server does not have: `409 results_missing` |
 | 07_happy_path_end_with_promo | the run's end: the counts (received / accepted / new / checked) and the promo issued, with `expires_at` |
@@ -63,7 +69,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |
 | 16_sign_in_denied | the user denies the sign-in: `access_denied` |
-| 18_real_results | the 30 real results (above): every one accepted, none held, none refused |
+| 18_real_results | the real results (above), 32 with the two outcomes: 30 accepted, 2 HELD by design (the de-esser draft and the bridge read), none refused |
 
 ## 3. Replay against any base URL
 

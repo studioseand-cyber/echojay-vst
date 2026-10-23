@@ -32,9 +32,14 @@ inline juce::var fileJson (const juce::File& bundle, const juce::String& rel) { 
 // v1.1 (rulings 4 / 5): measuredAtOf - plugin_id -> when that plugin finished (the engine's record; REQUIRED on every result: a plugin the
 // engine has no time for carries the packing time, never a later one); needIds - the server's queue, every plugin it answered "need" for
 // this run: the run's last pack gives each one a result, "not_reached" when nothing else was sent for it
+// the states an outcome may carry (contract v1.1 §4: the mock's OUTCOME_STATES, B's validator)
+inline const juce::StringArray& outcomeStates()
+{ static const juce::StringArray k { "needs_licence", "needs_hardware", "demo", "silent", "crashed", "timed_out", "not_measurable", "wont_load", "custom_default",
+                                     "not_reached", "waves_skipped", "measured", "ready_from_version" }; return k; }
 inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& bundle, const juce::String& runId, bool finishing,
                                   const std::map<juce::String, Identity>& idOf, const std::map<juce::String, juce::String>& pidOfProduct,
-                                  const std::map<juce::String, juce::String>& measuredAtOf = {}, const juce::StringArray& needIds = {})
+                                  const std::map<juce::String, juce::String>& measuredAtOf = {}, const juce::StringArray& needIds = {},
+                                  const std::map<juce::String, std::pair<juce::String, juce::String>>& stateOf = {})
 {
     std::vector<Doc> out; const auto created = juce::Time::getCurrentTime().toISO8601 (true);
     auto add = [&] (const juce::String& kind, const juce::String& pid, const juce::String& product, const juce::var& fp, juce::DynamicObject* payload, juce::DynamicObject* files)
@@ -112,10 +117,16 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
     });
     if (finishing)   // v1.1 §5 (ruling 5): the server's queue - a plugin it answered "need" for that has no result yet gets its outcome
     {
-        std::set<juce::String> have; for (const auto& d : out) have.insert (d.pluginId);
+        // B's answers (24 Oct): a reference_vote or a bridge_read is not a result FOR the queue - a "need" plugin with only those still gets its
+        // outcome, or the run can never finish. The outcome is the plugin's own final state (stateOf: the run's row) when it has one an
+        // outcome may carry, else not_reached
+        std::set<juce::String> have; for (const auto& d : out) if (d.kind != "reference_vote" && d.kind != "bridge_read") have.insert (d.pluginId);
         for (const auto& pid : needIds)
             if (! have.count (pid))
-            {   auto* pl = new juce::DynamicObject(); pl->setProperty ("state", "not_reached"); pl->setProperty ("why", "the run ended before this plugin was measured");
+            {   auto* pl = new juce::DynamicObject(); const auto st = stateOf.find (pid);
+                const bool own = st != stateOf.end() && outcomeStates().contains (st->second.first);
+                pl->setProperty ("state", own ? st->second.first : juce::String ("not_reached"));
+                pl->setProperty ("why", own && st->second.second.isNotEmpty() ? st->second.second : juce::String ("the run ended before this plugin was measured"));
                 add ("outcome", pid, {}, {}, pl, nullptr); }
     }
     return out;

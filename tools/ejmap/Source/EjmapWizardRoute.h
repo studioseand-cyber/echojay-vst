@@ -92,7 +92,8 @@ inline juce::String routeName (Route r)
                  case Route::categorise: return "categorise"; case Route::needsCategory: return "needs_category"; case Route::held: return "held"; }
     return {};
 }
-struct Decision { Route route = Route::categorise; juce::String category, why; juce::StringArray passes; bool limiterKnown = false; };   // passes: see Answer
+struct Decision { Route route = Route::categorise; juce::String category, why; juce::StringArray passes; bool limiterKnown = false;
+                  bool byHint = false; };   // passes: see Answer; byHint (24 Oct): measured on the catalogue's hint (the reads could not settle)
 // THE KNOWN MULTIBANDS (Kathy, 12 Oct): the server has no multiband category, and a multiband with none reads as "dynamics" and
 // spends ~10 min in the compressor certification before it refuses (OTT, 591 s). So the wizard ships EJ Map's own list - the 17
 // products Sean's cert found multiband (cert outcomes state "multiband", 8-9 Oct) - by plugin uid (any version): held straight away.
@@ -170,6 +171,17 @@ inline juce::StringArray passesFor (const juce::String& category, const juce::St
     if (category == "eq" && (cutoffMoved || filterNamed (product))) return { "filters" };
     if ((category == "pitch" || category == "tuner") && (pitchByName || shifterNamed (product))) return { "pitchshift" };
     return phaseBFor (category);
+}
+// PITCH BY NAME NEEDS A PITCH LABEL (Kathy, 23 Oct): a plugin whose category came from its NAME alone ("routed by its name") is sent to
+// the pitch-shift pass only when one of its controls is labelled in semitones, cents, intervals or ratios (shift::pitchLabelOf: pitchLabel
+// is that control's kind, "" for none); otherwise it goes for review - the name proposed pitch, nothing on the plugin agrees
+inline Decision gatePitchByName (Decision d, bool byName, const juce::String& pitchLabel, const juce::String& labelControl = {})
+{
+    if (d.route != Route::measure || ! byName || (d.category != "pitch" && d.category != "tuner")) return d;
+    if (pitchLabel.isNotEmpty()) { d.why << " (pitch labels: " << labelControl << (labelControl.isNotEmpty() ? " in " : "") << pitchLabel << ")"; return d; }
+    d.route = Route::needsCategory; d.passes.clear();
+    d.why = "routed to pitch by its name, but no control's labels are semitones, cents, intervals or ratios: for review";
+    return d;
 }
 // THE MEASURING ORDER (Kathy, 12 Oct): fastest and most useful first, so a user who stops early has given the most valuable results.
 // Each inner list runs as one Phase B pass (--jobs within it); a stop ends the order there. limitercomp is its own pass AFTER limiter
@@ -342,9 +354,11 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
     if (a.category.isNotEmpty())
     {   // the server's names (Sean's 12); an internal label from a local catalogue: multiband -> held, the rest out of scope (never sent)
         if (! a.passes.isEmpty()) return { Route::measure, a.category, a.why, a.passes, a.limiterKnown };   // a limiter the database has half of
-        if (measurable (a.category)) return { Route::measure, a.category, "the server's category: " + a.category };
+        // B's answers (24 Oct): the catalogue's category may be B's GUESS from the name - a HINT only. The wizard's own measured categoriser
+        // routes (the signature reads); the hint is used only where the reads ran and could not settle (afterSignature)
+        if (measurable (a.category) || wizserver::isServerCategory (a.category))
+            return { Route::categorise, a.category, "the catalogue says " + a.category + " - a hint only: the signature reads decide" };
         if (a.category == "multiband") return { Route::held, "multiband", "held: no server category (multiband is not measured by the wizard yet)" };
-        if (wizserver::isServerCategory (a.category)) return { Route::sendOther, a.category, "the server's category (" + a.category + ") is not measured by the wizard yet: sent so EchoJay knows it" };
         return { Route::outOfScope, a.category, "not an EchoJay category (" + a.category + "): not loaded" };
     }
     if (nameCategory.isNotEmpty()) return { Route::measure, nameCategory, "its name says " + nameCategory };
@@ -357,9 +371,11 @@ inline bool loadsToCategorise (const Decision& d) { return d.route == Route::cat
 inline bool loadsNothing (const Decision& d) { return d.route == Route::skipHave || d.route == Route::skipPending || d.route == Route::outOfScope; }
 
 // after the signature reads (EJ Map's categorise::decide, or its out-of-scope / licence refusals)
-inline Decision afterSignature (bool readsRan, bool settled, const juce::String& category, const juce::String& outOfScope, const juce::String& why)
+inline Decision afterSignature (bool readsRan, bool settled, const juce::String& category, const juce::String& outOfScope, const juce::String& why, const juce::String& hint = {})
 {
     if (outOfScope.isNotEmpty()) return { Route::outOfScope, outOfScope, "out of scope (" + outOfScope + ")" };
+    if (readsRan && ! settled && measurable (hint))   // 24 Oct: the catalogue's hint, as a name proposes - the measuring pass decides
+    { Decision d { Route::measure, hint, "the signature reads did not settle; the catalogue's hint (" + hint + "): the measuring pass decides" }; d.byHint = true; return d; }
     if (! readsRan || ! settled) return { Route::needsCategory, category, why };   // a licence window or no signature: Sean labels it from the map + reads
     if (category == "eq") return { Route::measure, "eq", "the signature: " + why };
     if (category == "dynamics") return { Route::measure, "compressor", "the signature (dynamics; the compressor certification decides): " + why };

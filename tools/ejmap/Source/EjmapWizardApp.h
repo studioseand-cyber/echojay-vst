@@ -531,6 +531,13 @@ inline juce::String scanLeftWords (const juce::var& progress, const juce::String
 }
 // the now line: the engine's own (plugin + what it is doing, "LinEQ Lowband - checking controls 12 of 40")
 inline juce::String nowWords (const juce::var& progress) { return progress.getProperty ("now", {}).getProperty ("line", "").toString(); }
+// THE PACKING STAGE (Kathy, 23 Oct; the 22 Oct log's last 4 s: "0 of 1 done" under a full bar): the engine counts its packing as a one-job
+// stage of its own - the screen never shows that count; while packing (and once done) the counter says what is happening
+inline juce::String packingWords() { return "Packing results..."; }
+inline bool packingStage (const juce::String& stage) { return stage == "Packing" || stage == "Done"; }
+inline juce::String counterWords (const juce::var& progress, bool measuringScreen);
+inline juce::String measuringCounterWords (const juce::String& stage, const juce::var& progress)
+{ return packingStage (stage) ? packingWords() : stage == "Measuring" ? counterWords (progress, true) : juce::String(); }
 // the ticking counter, per stage
 inline juce::String counterWords (const juce::var& progress, bool measuringScreen)
 {
@@ -559,7 +566,28 @@ inline bool progressLogDue (ProgressLogClock& c, const juce::String& stageKey, d
     if (stageKey == c.lastKey && c.lastMs >= 0.0 && nowMs - c.lastMs < kProgressLogEveryS * 1000.0) return false;
     c.lastKey = stageKey; c.lastMs = nowMs; return true;
 }
-inline juce::String progressLogLine (const juce::String& screen, const juce::var& progress, const juce::String& stepText, double barValue, const juce::String& barRight, const juce::String& counter)
+// THE BATTERY (Kathy, 23 Oct): the 22 Oct run ran on battery and macOS forced a Low Power Sleep at 3% - a keep-awake cannot stop that.
+// On battery: a notice on every screen ("Please plug in your Mac - the run takes several hours"), the run goes on. Below
+// kBatteryPausePercent ON BATTERY while scanning or measuring: the same clean pause as the button, saying why; plugged in again, it
+// carries on by itself (a pause the battery caused, never the user's). Every change goes to the log, and each progress line says the power
+struct Power { bool known = false, onBattery = false; int percent = -1; };   // known: macOS answered; a Mac with no battery is never on it
+inline constexpr int kBatteryPausePercent = 20;
+inline juce::String plugInNotice() { return "Please plug in your Mac - the run takes several hours"; }
+inline juce::String powerWords (const Power& p) { return ! p.known ? juce::String() : p.onBattery ? "battery " + juce::String (p.percent) + "%" : juce::String ("AC"); }
+struct BatteryStep { bool notice = false, pause = false, resume = false; juce::String why; };
+inline BatteryStep batteryStep (const Power& p, bool running, bool pausedForBattery)
+{
+    BatteryStep s; if (! p.known) return s;
+    s.notice = p.onBattery;
+    if (running && ! pausedForBattery && p.onBattery && p.percent >= 0 && p.percent < kBatteryPausePercent)
+    { s.pause = true; s.why = "the battery is at " + juce::String (p.percent) + "%"; }
+    if (pausedForBattery && ! p.onBattery) s.resume = true;
+    return s;
+}
+inline juce::String batteryPausedText (int percent)
+{ return "The battery is at " + juce::String (percent) + "%, so the wizard paused safely - nothing is lost. Plug in your Mac and it carries on by itself."; }
+inline juce::String progressLogLine (const juce::String& screen, const juce::var& progress, const juce::String& stepText, double barValue, const juce::String& barRight, const juce::String& counter,
+                                     const juce::String& power = {})
 {
     const auto mp = progress.getProperty ("measure_progress", {});
     juce::String l = "progress | screen " + screen + " | stage " + progress.getProperty ("stage", "").toString() + " | step " + (stepText.isEmpty() ? juce::String ("-") : stepText)
@@ -574,6 +602,7 @@ inline juce::String progressLogLine (const juce::String& screen, const juce::var
     const auto nw = nowWords (progress); if (nw.isNotEmpty()) l << " | now '" << nw << "'";
     juce::StringArray js; for (const auto& j : jobLines (progress)) js.add (j.name + (j.fraction >= 0.0 ? " " + juce::String (juce::roundToInt (100.0 * juce::jlimit (0.0, 1.0, j.fraction))) + "%" : juce::String (" checking")));
     if (! js.isEmpty()) l << " | jobs '" << js.joinIntoString ("; ") << "'";
+    if (power.isNotEmpty()) l << " | power " << power;   // 23 Oct: the battery
     return l;
 }
 // THE STOP (Kathy, 13 Oct, beta item 1): the same words whether it stopped while checking or while measuring

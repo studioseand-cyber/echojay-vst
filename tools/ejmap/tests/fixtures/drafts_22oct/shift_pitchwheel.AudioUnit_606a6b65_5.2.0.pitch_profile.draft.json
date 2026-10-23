@@ -1,0 +1,124 @@
+{
+  "schema": "ej_pitch_profile/1",
+  "category": "pitch",
+  "measurement": "shift",
+  "spec": "PITCHSHIFT_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against PITCHSHIFT_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "Pitchwheel",
+    "manufacturer": "QuikQuak",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|606a6b65|5.2.0",
+    "version": "5.2.0",
+    "map_fp": "ef8ce2611c52b1d797b5b46a6d856864b0a93016cf47f6fdb730a3fdb4cf9469"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-wizard), probe d790dc15972d",
+    "date": "2026-10-22",
+    "sample_rate": 48000,
+    "signal": "220 Hz sine, -18 dBFS"
+  },
+  "shifts": [
+    {
+      "index": 2,
+      "control": "Pitch",
+      "labels": "position",
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "0.0000000",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 155.340000000000003,
+          "shift_cents": -602.5,
+          "shift_semitones": -6.02,
+          "iqr_cents": 3.5,
+          "steady": true,
+          "why": "out 155.34 Hz: a shift of -6.02 st (unlabelled)"
+        },
+        {
+          "norm": 0.16666667163372,
+          "display": "0.1666670",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 174.449999999999989,
+          "shift_cents": -401.699999999999989,
+          "shift_semitones": -4.02,
+          "iqr_cents": 5.4,
+          "steady": true,
+          "why": "out 174.45 Hz: a shift of -4.02 st (unlabelled)"
+        },
+        {
+          "norm": 0.333333343267441,
+          "display": "0.3333330",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 195.849999999999994,
+          "shift_cents": -201.300000000000011,
+          "shift_semitones": -2.01,
+          "iqr_cents": 4.4,
+          "steady": true,
+          "why": "out 195.85 Hz: a shift of -2.01 st (unlabelled)"
+        },
+        {
+          "norm": 0.5,
+          "display": "0.5000000",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 220.0,
+          "shift_cents": 0.0,
+          "shift_semitones": 0.0,
+          "iqr_cents": 0.0,
+          "steady": true,
+          "why": "out 220.00 Hz: a shift of 0.00 st (unlabelled)"
+        },
+        {
+          "norm": 0.666666686534882,
+          "display": "0.6666670",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 247.080000000000013,
+          "shift_cents": 201.0,
+          "shift_semitones": 2.01,
+          "iqr_cents": 5.5,
+          "steady": true,
+          "why": "out 247.08 Hz: a shift of 2.01 st (unlabelled)"
+        },
+        {
+          "norm": 0.833333313465118,
+          "display": "0.8333330",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 277.449999999999989,
+          "shift_cents": 401.600000000000023,
+          "shift_semitones": 4.02,
+          "iqr_cents": 5.8,
+          "steady": true,
+          "why": "out 277.45 Hz: a shift of 4.02 st (unlabelled)"
+        },
+        {
+          "norm": 1.0,
+          "display": "1.0000000",
+          "label_unit": "none",
+          "read": true,
+          "windows": 139,
+          "out_hz": 311.689999999999998,
+          "shift_cents": 603.100000000000023,
+          "shift_semitones": 6.03,
+          "iqr_cents": 0.0,
+          "steady": true,
+          "why": "out 311.69 Hz: a shift of 6.03 st (unlabelled)"
+        }
+      ],
+      "verdict": "measured_unlabelled",
+      "why": "shifts -6.02 to 6.03 st over its travel; its labels state no shift, so nothing is judged",
+      "tolerance_cents": 5.0
+    }
+  ]
+}

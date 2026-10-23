@@ -962,6 +962,7 @@ inline int runWizard (const WizardOptions& wo)
     std::set<juce::String> catNames; for (const auto& p : toCategorise) catNames.insert (plugins[p.i].desc.name);
     std::vector<size_t> mapIdx; for (const auto* l : { &toMap, &toCategorise }) for (const auto& p : *l) { const auto& d = plugins[p.i].desc; if (! store.count (juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version)) mapIdx.push_back (p.i); }
     std::map<juce::String, juce::String> early;   // product -> a state settled while mapping (needs_licence / crashed / wont_load)
+    std::map<juce::String, std::pair<juce::String, juce::String>> pitchLabels;   // 23 Oct: product -> (the pitch-label kind, its control) the extract read; "" = none
     say ("WIZARD: map store " + opt.ledger.getChildFile ("maps").getFullPathName().replace (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), "~") + ": "
          + juce::String ((int) store.size()) + " map(s); " + juce::String ((int) mapIdx.size()) + " plugin(s) to map (the database settled the rest without loading them)");
     if (! mapIdx.empty())
@@ -991,6 +992,11 @@ inline int runWizard (const WizardOptions& wo)
             const auto fp = echojay::fingerprintForDescription (d, (int) ps.size());
             const auto cat = wizard::wizardCategory (d.name, catalogue);
             const auto fm = wizardMapOf (r.out, fp, fmtTag (d), uid, d, ps, cat);   // 22 Oct (decision 0): the FULL map
+            {   // 23 Oct (Kathy): the label texts the extract read, for the pitch-by-name gate (the map keeps only a dial's numbers)
+                auto& pl = pitchLabels[d.name];
+                for (const auto& xp : fullmap::parseExtract (r.out).params)
+                {   juce::StringArray texts; for (const auto& pt : xp.points) texts.add (pt.t);
+                    if (const auto k = shift::pitchLabelOf (texts, xp.name); k.isNotEmpty()) { pl = { k, xp.name }; break; } } }
             opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (fm.map) + "\n");
             store[uid + "|" + d.version] = { fp, cat };
             if (! catNames.count (d.name)) prog.finished (d.name, false);   // 14 Oct: a plugin whose signature reads follow is done after them
@@ -1034,9 +1040,17 @@ inline int runWizard (const WizardOptions& wo)
         }
         if (sig.getProperty ("why", "").toString().startsWith ("a window")) wizroute::rememberLicenceWindow (licenceMemF, pid);   // 14 Oct
         auto d = wizroute::afterSignature ((bool) sig.getProperty ("reads_ran", false), (bool) sig.getProperty ("settled", false), sig.getProperty ("category", "").toString(),
-                                           sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString());
+                                           sig.getProperty ("out_of_scope", "").toString(), sig.getProperty ("why", "").toString(), p.d.category);   // 24 Oct (B's answers): the catalogue's category, a hint only
         // 22 Oct (Kathy, calls 3 and 4): an EQ read by moving its cutoff, or named a filter -> the filter pass; pitch by name -> the shift pass
-        if (d.route == wizroute::Route::measure) d.passes = wizroute::passesFor (d.category, ir.desc.name, sig.getProperty ("category_writes", {}).size() > 0, sig.getProperty ("settled_by", "").toString() == "name");
+        if (d.route == wizroute::Route::measure) d.passes = wizroute::passesFor (d.category, ir.desc.name, sig.getProperty ("category_writes", {}).size() > 0, sig.getProperty ("settled_by", "").toString() == "name" || d.byHint);
+        // 23 Oct (Kathy): pitch by name only with a pitch label - the extract's label texts, else the map's (a map from an earlier build)
+        if (d.route == wizroute::Route::measure && (sig.getProperty ("settled_by", "").toString() == "name" || d.byHint) && (d.category == "pitch" || d.category == "tuner"))
+        {
+            juce::String pl, plc;
+            if (const auto it = pitchLabels.find (ir.desc.name); it != pitchLabels.end()) { pl = it->second.first; plc = it->second.second; }
+            else if (const auto mf = opt.ledger.getChildFile ("maps").getChildFile (fpOf (ir.desc) + ".json"); mf.existsAsFile()) pl = shift::pitchLabelOfMap (juce::JSON::parse (mf.loadFileAsString()), &plc);
+            d = wizroute::gatePitchByName (d, true, pl, plc);
+        }
         p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
         const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope"
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
@@ -1313,7 +1327,9 @@ inline int runWizard (const WizardOptions& wo)
             // v1.1 (rulings 4 / 5): each plugin's measured_at, and the server's queue - every plugin it answered "need" for this run gets a result
             std::map<juce::String, juce::String> measuredAtOf; for (const auto& rv : rows) if (rv.hasProperty ("measured_at")) measuredAtOf[rv.getProperty ("plugin_id", "").toString()] = rv.getProperty ("measured_at", "").toString();
             juce::StringArray needIds; if (const auto* ca = catAnswers.getDynamicObject()) for (const auto& [k, v] : ca->getProperties()) if (v.getProperty ("status", "").toString() == "need") needIds.add (k.toString());
-            const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != "checkpoint", idOf, pidOfProduct, measuredAtOf, needIds);
+            std::map<juce::String, std::pair<juce::String, juce::String>> stateOf;   // 24 Oct (B's answers): a need plugin's own final state for its outcome
+            for (const auto& rv : rows) if (const auto pid = rv.getProperty ("plugin_id", "").toString(); pid.isNotEmpty()) stateOf[pid] = { rv.getProperty ("state", "").toString(), rv.getProperty ("why", "").toString() };
+            const auto docs = wizresults::fromPack (Mv, B, wo.runId, runKind != "checkpoint", idOf, pidOfProduct, measuredAtOf, needIds, stateOf);
             const auto em = wizresults::emit (docs, box, [&] (const juce::String& t) { return wizard::personalProblems (t, home, user, juce::String (host).upToFirstOccurrenceOf (".", false, false)); });
             say ("WIZARD: results for the outbox (" + runKind + "): " + juce::String (em.added) + " new, " + juce::String (em.already) + " already there" + (em.refused > 0 ? ", " + juce::String (em.refused) + " REFUSED (" + em.refusedWhy.joinIntoString ("; ") + ")" : juce::String()));
         }

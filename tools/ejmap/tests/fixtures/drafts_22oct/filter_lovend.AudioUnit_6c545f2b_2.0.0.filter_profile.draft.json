@@ -1,0 +1,112 @@
+{
+  "schema": "ej_filter_profile/1",
+  "category": "filter",
+  "spec": "FILTER_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against FILTER_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "LOVEND",
+    "manufacturer": "AnalogObsession",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|6c545f2b|2.0.0",
+    "version": "2.0.0",
+    "map_fp": "258a3582662fd9a13bfa977edc6ea1a3b2552f8a6bb780e5eeffee39ac09edce"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-wizard), probe d790dc15972d",
+    "date": "2026-10-22",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "filters": [
+    {
+      "index": 0,
+      "control": "Frequency",
+      "unit": "Hz",
+      "stepped": false,
+      "measured_as": "shelf (the EQ shelf measurement): 7 of 7 positions are shelves",
+      "type": "shelf",
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "60",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 75.299999999999997,
+          "gain_db": 5.66,
+          "label_hz": 60.0,
+          "off_pct": 25.5,
+          "within_tolerance": false
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "80",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 100.400000000000006,
+          "gain_db": 5.69,
+          "label_hz": 80.0,
+          "off_pct": 25.5,
+          "within_tolerance": false
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "100",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 124.299999999999997,
+          "gain_db": 5.72,
+          "label_hz": 100.0,
+          "off_pct": 24.300000000000001,
+          "within_tolerance": false
+        },
+        {
+          "norm": 0.5,
+          "display": "120",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 149.099999999999994,
+          "gain_db": 5.77,
+          "label_hz": 120.0,
+          "off_pct": 24.199999999999999,
+          "within_tolerance": false
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "140",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 174.599999999999994,
+          "gain_db": 5.77,
+          "label_hz": 140.0,
+          "off_pct": 24.699999999999999,
+          "within_tolerance": false
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "160",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 198.5,
+          "gain_db": 5.78,
+          "label_hz": 160.0,
+          "off_pct": 24.100000000000001,
+          "within_tolerance": false
+        },
+        {
+          "norm": 1.0,
+          "display": "180",
+          "result": "shelf",
+          "shape": "low_shelf",
+          "corner_hz": 222.099999999999994,
+          "gain_db": 5.77,
+          "label_hz": 180.0,
+          "off_pct": 23.399999999999999,
+          "within_tolerance": false
+        }
+      ],
+      "verdict": "measured",
+      "why": "7 of 7 labelled cutoffs outside 5 %",
+      "tolerance_pct": 5.0
+    }
+  ]
+}

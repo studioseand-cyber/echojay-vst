@@ -46,7 +46,8 @@ inline std::vector<DbEntry> loadDb (const juce::File& folder)
         if (f.getFileName().endsWith (".tonecheck.json")) continue;
         DbEntry e; e.profile = juce::JSON::parse (f.loadFileAsString()); e.file = f.getFileName();
         const auto schema = e.profile.getProperty ("schema", "").toString();
-        if (! schema.startsWith ("ej_comp_profile") && ! schema.startsWith ("ej_eq_profile")) continue;   // the two categories the wizard measures
+        // the two categories the wizard measures (24 Oct: a limiter / de-esser draft's id, as their old sentence schemas were read here too)
+        if (! schema.startsWith ("ej_comp_profile") && ! schema.startsWith ("ej_eq_profile") && schema != "ej_limiter_profile/1" && schema != "ej_deesser_profile/1") continue;
         const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json"); if (tc.existsAsFile()) e.tonecheck = juce::JSON::parse (tc.loadFileAsString());
         if (f.getParentDirectory().getFileName() == "limitercomp") { e.pass = "limitercomp"; e.cat = "limiter"; }   // a limiter's compressor pass
         db.push_back (e);

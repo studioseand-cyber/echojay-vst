@@ -1,0 +1,239 @@
+{
+  "schema": "ej_filter_profile/1",
+  "category": "filter",
+  "spec": "FILTER_PROFILE_SPEC v0.2 PROPOSAL",
+  "status": "DRAFT against FILTER_PROFILE_SPEC v0.2 (a proposal): data only, not exported, not published",
+  "plugin": {
+    "name": "SPL DrumXchanger",
+    "manufacturer": "Plugin Alliance",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|61756e11|1.15.1",
+    "version": "1.15.1",
+    "map_fp": "72600726cf6dd605f7d2bc119b5e52367739d828e8e9efe0efc590bd0ec644dd"
+  },
+  "measured": {
+    "tool": "EJ Map (feat/ejmap-wizard), probe d790dc15972d",
+    "date": "2026-10-22",
+    "sample_rate": 48000,
+    "signal": "multitone 10 Hz-23.5 kHz (24 kHz asked; the top 1/12-octave step under Nyquist at 48 kHz), 1/12 oct (136 tones; 1/24 = 271 for Q), -12 dBFS peak; gain map also at -30"
+  },
+  "filters": [
+    {
+      "index": 3,
+      "control": "Original Lowpass Cutoff",
+      "unit": "Hz",
+      "stepped": false,
+      "open_position": {
+        "norm": 1.0,
+        "display": "22000 Hz",
+        "why": "the most open position: every other is read against it, so what this control does not move cancels"
+      },
+      "type": "lowpass",
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "20 Hz",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": -1.6,
+          "cutoff_hz": 23.399999999999999,
+          "slope_db_oct": 11.300000000000001,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 1.07,
+          "resonance_hz": 12.0,
+          "natural_hz": 17.100000000000001,
+          "label_hz": 20.0,
+          "tones": 136
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "64 Hz",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": -0.02,
+          "cutoff_hz": 64.299999999999997,
+          "slope_db_oct": 11.0,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 64.0,
+          "off_pct": 0.4,
+          "within_tolerance": true,
+          "tones": 136
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "206 Hz",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 206.0,
+          "slope_db_oct": 11.0,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 206.0,
+          "off_pct": 0.0,
+          "within_tolerance": true,
+          "tones": 136
+        },
+        {
+          "norm": 0.5,
+          "display": "663 Hz",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 662.399999999999977,
+          "slope_db_oct": 10.9,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 663.0,
+          "off_pct": -0.1,
+          "within_tolerance": true,
+          "tones": 136
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "2131 Hz",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 2127.5,
+          "slope_db_oct": 10.9,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 2131.0,
+          "off_pct": -0.2,
+          "within_tolerance": true,
+          "tones": 136
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "6847 Hz",
+          "result": "measured",
+          "type": "lowpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 6849.699999999999818,
+          "slope_db_oct": 11.6,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 6847.0,
+          "off_pct": 0.0,
+          "within_tolerance": true,
+          "tones": 136
+        },
+        {
+          "norm": 1.0,
+          "display": "22000 Hz",
+          "result": "open",
+          "reason": "the most open position (the reference)",
+          "tones": 136
+        }
+      ],
+      "verdict": "certified",
+      "why": "5 of 5 labelled cutoffs within 5 % (-3 dB point)",
+      "tolerance_pct": 5.0,
+      "convention": "-3 dB point"
+    },
+    {
+      "index": 4,
+      "control": "Original Highpass Cutoff",
+      "unit": "Hz",
+      "stepped": false,
+      "open_position": {
+        "norm": 0.0,
+        "display": "20 Hz",
+        "why": "the most open position: every other is read against it, so what this control does not move cancels"
+      },
+      "type": "highpass",
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "20 Hz",
+          "result": "open",
+          "reason": "the most open position (the reference)",
+          "tones": 136
+        },
+        {
+          "norm": 0.166666999459267,
+          "display": "57 Hz",
+          "result": "measured",
+          "type": "highpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 64.400000000000006,
+          "slope_db_oct": 11.0,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 57.0,
+          "off_pct": 13.0,
+          "within_tolerance": false,
+          "tones": 136
+        },
+        {
+          "norm": 0.333332985639572,
+          "display": "164 Hz",
+          "result": "measured",
+          "type": "highpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 206.800000000000011,
+          "slope_db_oct": 11.0,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 164.0,
+          "off_pct": 26.100000000000001,
+          "within_tolerance": false,
+          "tones": 136
+        },
+        {
+          "norm": 0.5,
+          "display": "469 Hz",
+          "result": "measured",
+          "type": "highpass",
+          "passband_db": 0.0,
+          "cutoff_hz": 664.200000000000045,
+          "slope_db_oct": 11.0,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 469.0,
+          "off_pct": 41.600000000000001,
+          "within_tolerance": false,
+          "tones": 136
+        },
+        {
+          "norm": 0.666666984558105,
+          "display": "1343 Hz",
+          "result": "measured",
+          "type": "highpass",
+          "passband_db": -0.0,
+          "cutoff_hz": 2134.900000000000091,
+          "slope_db_oct": 11.0,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 1343.0,
+          "off_pct": 59.0,
+          "within_tolerance": false,
+          "tones": 136
+        },
+        {
+          "norm": 0.833333015441895,
+          "display": "3843 Hz",
+          "result": "measured",
+          "type": "highpass",
+          "passband_db": -0.09,
+          "cutoff_hz": 6800.699999999999818,
+          "slope_db_oct": 11.5,
+          "slope_basis": "-6 to -18 dB",
+          "label_hz": 3843.0,
+          "tones": 136
+        },
+        {
+          "norm": 1.0,
+          "display": "11000 Hz",
+          "result": "measured",
+          "type": "highpass",
+          "passband_db": -8.58,
+          "cutoff_hz": 12538.600000000000364,
+          "slope_db_oct": 13.699999999999999,
+          "slope_basis": "-6 to -18 dB",
+          "resonance_db": 5.33,
+          "resonance_hz": 19776.700000000000728,
+          "natural_hz": 19162.0,
+          "label_hz": 11000.0,
+          "tones": 136
+        }
+      ],
+      "verdict": "measured",
+      "why": "no one convention holds at every judged position (-3 dB point: 4 of 4 outside; natural frequency: 4 of 4 outside)",
+      "tolerance_pct": 5.0
+    }
+  ]
+}

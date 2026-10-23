@@ -32,6 +32,8 @@
 #include <mutex>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/ps/IOPowerSources.h>   // 23 Oct: the battery
+#include <IOKit/ps/IOPSKeys.h>
 #include <spawn.h>
 #include <sys/sysctl.h>
 #include <mach/mach.h>
@@ -140,6 +142,35 @@ static bool hasWindow (int pid)
         CFRelease (list);
     }
     return found;
+}
+// THE POWER (Kathy, 23 Oct): what macOS says powers the Mac now, and the internal battery's charge (IOPowerSources; no permission asked).
+// A Mac with no battery reports AC: known, never on battery
+ejmap::wizapp::Power readPower()
+{
+    ejmap::wizapp::Power p;
+    // REHEARSALS ONLY: EJ_WIZARD_POWER_FILE names a file holding "battery <percent>" or "ac" - the pause and the carry-on can be rehearsed
+    // without unplugging the Mac (never set in a tester's run; unset, macOS is asked)
+    if (const char* f = std::getenv ("EJ_WIZARD_POWER_FILE"); f != nullptr && *f)
+    {   const auto t = juce::File (juce::String::fromUTF8 (f)).loadFileAsString().trim().toLowerCase();
+        if (t.isNotEmpty()) { p.known = true; p.onBattery = t.startsWith ("battery"); p.percent = p.onBattery ? t.fromFirstOccurrenceOf (" ", false, false).getIntValue() : 100; return p; } }
+    CFTypeRef info = IOPSCopyPowerSourcesInfo(); if (info == nullptr) return p;
+    if (CFStringRef src = IOPSGetProvidingPowerSourceType (info)) { p.known = true; p.onBattery = CFStringCompare (src, CFSTR (kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo; }
+    if (CFArrayRef list = IOPSCopyPowerSourcesList (info))
+    {
+        for (CFIndex i = 0; i < CFArrayGetCount (list); ++i)
+        {
+            CFDictionaryRef d = IOPSGetPowerSourceDescription (info, CFArrayGetValueAtIndex (list, i)); if (d == nullptr) continue;
+            auto type = (CFStringRef) CFDictionaryGetValue (d, CFSTR (kIOPSTypeKey));
+            if (type == nullptr || CFStringCompare (type, CFSTR (kIOPSInternalBatteryType), 0) != kCFCompareEqualTo) continue;
+            int cur = 0, mx = 0;
+            if (auto n = (CFNumberRef) CFDictionaryGetValue (d, CFSTR (kIOPSCurrentCapacityKey))) CFNumberGetValue (n, kCFNumberIntType, &cur);
+            if (auto n = (CFNumberRef) CFDictionaryGetValue (d, CFSTR (kIOPSMaxCapacityKey))) CFNumberGetValue (n, kCFNumberIntType, &mx);
+            if (mx > 0) p.percent = (int) std::lround (100.0 * cur / mx);
+        }
+        CFRelease (list);
+    }
+    CFRelease (info);
+    return p;
 }
 ejmap::wizapp::DawHit openDaw (int ignorePid = 0)
 {
@@ -346,6 +377,13 @@ public:
             g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
             g.drawText (wizapp::testBanner(), juce::Rectangle<int> (0, 0, getWidth(), 22), juce::Justification::centred);
         }
+        if (powerNotice.isNotEmpty())
+        {   // 23 Oct (THE BATTERY): on every screen while the Mac is on battery, under the buttons (never over them); the run goes on
+            const auto pill = juce::Rectangle<float> ((float) getWidth() / 2.0f - 200.0f, (float) getHeight() - 27.0f, 400.0f, 22.0f);
+            g.setColour (juce::Colour (0xfffff4e0)); g.fillRoundedRectangle (pill, 11.0f);
+            g.setColour (juce::Colour (0xffb26a00)); g.drawRoundedRectangle (pill, 11.0f, 1.0f);
+            g.setFont (juce::FontOptions (12.5f, juce::Font::bold)); g.drawText (powerNotice, pill.toNearestInt(), juce::Justification::centred);
+        }
         const auto r = getLocalBounds().reduced (40, 28);
         if (logo.isValid())   // the logo is white on transparent (made for the plugin's dark UI): drawn in ink through its alpha
         { const float w = 210.0f, h = w * (float) logo.getHeight() / (float) logo.getWidth(); g.setColour (ink);
@@ -452,6 +490,7 @@ private:
     juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }, anyway { wizapp::kCarryOnAnyway }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
+    wizapp::Power power; bool batteryPaused = false; double lastPowerCheck = -1.0e9; juce::String powerNotice, lastPowerLog;   // 23 Oct: the battery
     juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0; ejmap::wizapp::DawHit dawHit; int dawIgnoredPid = 0;   // 17 Oct: the hit (for the words and the log), the DAW the user chose to carry on beside   // 15 Oct: a pause the DAW caused, and where it carries on
     double shownPctT = 0.0; std::vector<wizapp::JobLine> jobsNow; juce::String doneLine; juce::int64 heartbeatMs = 0;   // 15 Oct (FEELS FROZEN)
     wizapp::StepBar stepBar; juce::String stepText, nowText, lastSnapStep;
@@ -730,7 +769,7 @@ private:
                 {   // 15 Oct: the bar's % (this session's, else the stopped engine's own), never a count
                     const int pct = shownPct > 0 ? shownPct : wizapp::measuringPercent (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()), 0);
                     title = resumeTo == Screen::scan ? juce::String ("Paused") : wizapp::pausedTitle (pct);
-                    text = dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, kNetworked ? (bool) offlineNow : lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
+                    text = batteryPaused ? wizapp::batteryPausedText (power.percent) : dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, kNetworked ? (bool) offlineNow : lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
                 }
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true);
                 anyway.setVisible (dawPaused.isNotEmpty()); break;   // 17 Oct: Carry on anyway, beside the DAW
@@ -814,7 +853,7 @@ private:
             case Screen::measuring: pauseNow ("the Pause button", false); break;
             case Screen::scan: if (retryCatalogue) { retryCatalogue = false; primary.setVisible (false); if (session != nullptr && session->needsSignIn) { show (Screen::welcome); break; } title = "Checking your plugins"; showBar = true; checkCatalogue(); } break;   // 21 Oct
             case Screen::upload: if (kNetworked && ! completing) { primary.setVisible (false); secondary.setVisible (false); title = "Sending your results"; showBar = true; nextTryMs = 0.0; } break;   // 21 Oct: Try again
-            case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning (a DAW still open pauses it again)
+            case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; batteryPaused = false; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning (a DAW still open pauses it again)
             default: break;
         }
     }
@@ -929,12 +968,30 @@ private:
     {
         if (appInterrupted() != 0 && ! quitting) { appInterrupted() = 0; logLine ("Ctrl-C: a pause (no question asked)"); if (requestQuit (false)) juce::JUCEApplication::getInstance()->quit(); }
         if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastDawCheck >= 2000.0) { lastDawCheck = now; dawWatch (openDaw (dawIgnoredPid)); }
+        if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastPowerCheck >= 10000.0) { lastPowerCheck = now; powerWatch (readPower()); }
         if (screen == Screen::scan || screen == Screen::measuring) pollEngine();
         if (screen == Screen::upload) tickUpload();
         if (cfg.autoMode && ! quitting) autoAdvance();
         if (cfg.autoResetTest && resetTestButton.isVisible() && ++resetTicks == 6)
         {   cfg.autoResetTest = false; snap ("before_reset"); resetTestNow(); snap ("after_reset");
             juce::Timer::callAfterDelay (1500, [] { juce::JUCEApplication::getInstance()->quit(); }); }
+    }
+    // THE BATTERY (Kathy, 23 Oct; wizapp::batteryStep): the notice on every screen while on battery; below 20% on battery while scanning or
+    // measuring, the button's clean pause with the reason; plugged in again, a pause the battery caused carries on by itself. Logged
+    void powerWatch (const wizapp::Power& p)
+    {
+        power = p;
+        const bool running = (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing;
+        const auto step = wizapp::batteryStep (p, running, batteryPaused && screen == Screen::paused);
+        const auto notice = step.notice ? wizapp::plugInNotice() : juce::String();
+        if (notice != powerNotice) { powerNotice = notice; repaint(); }
+        const auto words = wizapp::powerWords (p);
+        if (words.isNotEmpty() && (words.upToFirstOccurrenceOf (" ", false, false) != lastPowerLog.upToFirstOccurrenceOf (" ", false, false)))
+        { lastPowerLog = words; logLine ("power: " + words + (step.notice ? " - the notice asks to plug in" : "")); }
+        if (step.pause && dawPaused.isEmpty())
+        { batteryPaused = true; resumeTo = screen; logLine ("paused by itself: " + step.why); pauseNow (step.why, false); return; }
+        if (step.resume)
+        { logLine ("carrying on by itself: plugged in (" + words + ")"); batteryPaused = false; show (resumeTo); }
     }
     // SHARING THE MAC (Kathy, 15 Oct): a DAW opens while the wizard scans or measures -> the same clean pause as the button, with the DAW's
     // name; only a pause the DAW caused carries on by itself, once no DAW has been open for kDawQuietS. The user's own pause never does
@@ -989,7 +1046,8 @@ private:
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
             jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 15 Oct (FEELS FROZEN)
             stepText = wizapp::stepLine (true, (int) p.getProperty ("stage_index", 0)); nowText = wizapp::nowWords (p);   // 18 Oct (NEVER LOOKS FROZEN)
-            doneLine = stage == "Measuring" || stage == "Packing" ? wizapp::counterWords (p, true) : juce::String();   // 18 Oct (BAR % WRONG): "19 of 389 done - 83 skipped"
+            doneLine = wizapp::measuringCounterWords (stage, p);   // 18 Oct (BAR % WRONG): "19 of 389 done - 83 skipped"; 23 Oct: "Packing results..." while packing
+            if (wizapp::packingStage (stage)) jobsNow.clear();       // 23 Oct: no "the contribution bundle 0%" job line under a full bar
             if (pausing) { barLeft = "Pausing - saving what's done"; barRight = {}; }
             else if (finishing && stage != "Packing" && stage != "Done") { barLeft = kMode == wizapp::Mode::beta ? "Saving what's measured" : "Sending what's measured"; barRight = {}; }
             else if (const auto rb = wizapp::readyBar (p, cur); rb.on)
@@ -1004,7 +1062,7 @@ private:
         repaint(); snapAtQuarters();
         // 20 Oct (Kathy): the progress line - every 30 s and at every stage change - so a tester's log shows what the screen showed
         if (wizapp::progressLogDue (progressClock, wizapp::screenName (screen) + "|" + stage + "|" + stepText, juce::Time::getMillisecondCounterHiRes()))
-            logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine));
+            logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine, wizapp::powerWords (power)));
     }
     void pollEngineExit()
     {

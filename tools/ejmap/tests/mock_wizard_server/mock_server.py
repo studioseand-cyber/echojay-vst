@@ -23,10 +23,12 @@ FINAL_STATES = {"measured", "not_measurable", "needs_licence", "needs_hardware",
                 "timed_out", "waves_skipped", "not_reached", "ready_from_version", "needs_category", "other_category", "out_of_scope", "held"}
 # v1.1: EXACTLY the schemas the wizard's drafts carry (the cert's draft writers; pinned by WZ-SCHEMAS-1) - the hand-written names before
 # (ej_reverb_delay_profile/1, ej_deesser_profile/1, ej_limiter_profile/1) were never sent, so real reverb / delay / strip / de-esser / limiter
-# results would have been refused (v1) or held (v1.1). Two are sentences, not ids: as the wizard sends them today (a decision for the server side)
+# results would have been refused (v1) or held (v1.1)
 PROFILE_SCHEMAS = {"ej_comp_profile/1", "ej_eq_profile/1", "ej_saturation_profile/1", "ej_space_profile/1", "ej_strip_profile/0",
                    "ej_transient_profile/1", "ej_gate_profile/1", "ej_tuner_profile/1", "ej_filter_profile/1", "ej_pitch_profile/1",
-                   "ej_comp_profile ceiling block (LIMITER_PROFILE_SPEC section 6)", "ej_comp_profile deesser block (DEESSER_PROFILE_SPEC section 6)"}
+                   "ej_limiter_profile/1", "ej_deesser_profile/1"}   # 24 Oct (Sean / B): ids, were sentences; known, and HELD (HELD_SCHEMAS) until B's validators exist
+# B's answers (24 Oct): schemas B's server HOLDS by design until B has their validators - any result kind, never refused for them
+HELD_SCHEMAS = {"ej_readback_sweep/1", "ej_limiter_profile/1", "ej_deesser_profile/1"}
 MAP_SCHEMAS = {"2.4", "2.3"}   # 22 Oct (decision 0): a result's map.json is a FULL map in the map store's format
 
 
@@ -650,7 +652,7 @@ def validate(doc, rid, result_id, run=None, acct=None):
                 return "shape"
             uid = str((f.get("identity") or {}).get("uid", "")).lower()
             if not uid or ("|" + uid + "|") not in ("|" + pid.lower() + "|") or (fp and f.get("fp") and f.get("fp") != fp):
-                return "identity"
+                return "shape"   # B's answers (24 Oct): another plugin's map.json is a malformed result ("shape"), not tampering
             continue
         if name.endswith(".tonecheck.json") and "schema" not in f:   # the tone check: known by its name and shape
             if "g_db" not in f:
@@ -664,6 +666,9 @@ def validate(doc, rid, result_id, run=None, acct=None):
         ffp = (f.get("plugin") or {}).get("map_fp")
         if fp and ffp and ffp != fp:
             return "identity"
+        if f.get("schema") in HELD_SCHEMAS:
+            held = True   # B's answers (24 Oct): held by design until B's validator exists
+            continue
         if kind == "profile" and f.get("schema") not in PROFILE_SCHEMAS:
             held = True   # ruling 3: accepted and HELD
             continue

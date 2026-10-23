@@ -272,7 +272,8 @@ struct Roles
 // measured: role -> controls a measurement identified (confirmed, or found on a control its name did not propose); dropped: controls a
 // measurement REFUTED for the role their name proposed - the name rule never claims them back
 struct Measured { std::map<juce::String, juce::StringArray> roles; std::set<juce::String> dropped;
-                 std::map<juce::String, juce::String> section; };   // control -> its known section, when a person said which (16 Oct)
+                 std::map<juce::String, juce::String> section;   // control -> its known section, when a person said which (16 Oct)
+                 bool pitchShift = false; };                      // 23 Oct: a pitch-shift measurement's draft was read (needsFor "pitch")
 inline juce::String ruleRoleOfMeasured (const juce::String& recordRole, const juce::String& category)
 {
     if (recordRole == "eq_gain") return "gain";
@@ -307,8 +308,11 @@ inline Roles rolesOf (const juce::var& map, const Measured& measured = {})
 }
 // THE DIAL TARGETS: what a category needs identified (and read back) before it may be dialled. Each entry is alternatives ('|');
 // "freq+gain" = an EQ band whose freq and gain share a section
-inline juce::StringArray needsFor (const juce::String& category)
+// 23 Oct (Kathy): "filter" needs a CUTOFF (a filter draft's measured cutoff, or a frequency control by name + Hz); "pitch" needs a SHIFT
+// control when a pitch-shift measurement was read (pitchShift) - a tuner keeps "__never__" (the tuner spec decides)
+inline juce::StringArray needsFor (const juce::String& category, bool pitchShift = false)
 {
+    if (category.toLowerCase() == "pitch" && pitchShift) return { "shift" };
     static const std::map<juce::String, juce::StringArray> k {
         { "compressor",       { "threshold" } },
         { "limiter",          { "ceiling|threshold" } },
@@ -321,6 +325,7 @@ inline juce::StringArray needsFor (const juce::String& category)
         { "delay",            { "delay_time|mix" } },
         { "transient_shaper", { "attack|release|mix" } },
         { "channel_strip",    { "threshold|freq+gain" } },
+        { "filter",           { "cutoff|freq" } },
     };
     const auto it = k.find (category.toLowerCase()); return it != k.end() ? it->second : juce::StringArray { "__never__" };   // pitch: the tuner spec decides
 }
@@ -373,6 +378,13 @@ inline juce::StringArray meetNeed (const juce::String& need, const Roles& R, con
     auto secOf = [&R] (const juce::String& n) { const auto it = R.sectionFor.find (n); return it != R.sectionFor.end() ? it->second : knownSection (sectionOf (n)); };
     for (const auto& alt : juce::StringArray::fromTokens (need, "|", ""))
     {
+        // 23 Oct: a filter's cutoffs and a shifter's shift controls are ALL dial targets (a high-pass AND a low-pass, every voice) - each
+        // one measured, each one must read back; never a choice between them
+        if (alt == "cutoff" || alt == "shift")
+        {
+            if (const auto it = R.identified.find (alt); it != R.identified.end() && ! it->second.isEmpty()) return it->second;
+            continue;
+        }
         if (alt == "freq+gain")
         {
             const auto fi = R.identified.find ("freq"), gi = R.identified.find ("gain");
@@ -415,7 +427,9 @@ inline void readingsFromList (const juce::var& list, const juce::String& control
             if (x.isObject() && x.hasProperty ("norm") && x.hasProperty ("display"))
             {
                 const auto d = x.getProperty ("display", "").toString();
-                if (d.trim().isNotEmpty() && ! x.hasProperty ("why")) out[control].push_back ({ (double) x.getProperty ("norm", 0.0), d });
+                // a "why" marks a position that was not read - except a pitch-shift position, which explains every reading it took
+                // ("read": true, 23 Oct): its display at that norm is a reading like any other
+                if (d.trim().isNotEmpty() && (! x.hasProperty ("why") || (bool) x.getProperty ("read", false))) out[control].push_back ({ (double) x.getProperty ("norm", 0.0), d });
             }
 }
 inline void readingsWalk (const juce::var& v, Readings& out, int depth = 0)
@@ -805,6 +819,69 @@ inline std::vector<double> refineNorms (const std::vector<Anchor>& a, const std:
 }
 
 //==============================================================================
+// 2b. THE FILTER AND PITCH-SHIFT COUNTING RULES (Kathy, 23 Oct): the two measurements' drafts, read the way the other categories' are
+//   FILTER (ej_filter_profile/1): a CUTOFF control is identified by measurement when the draft read it as a high- or low-pass whose
+//     labels are Hz, at kDraftMinMeasured or more measured positions, its cutoff moving at least kCutoffMinSpread (an octave) over its
+//     travel - a shape switch (no Hz labels, a small spread) or a shelf is not a cutoff. CERTIFIED when every identified cutoff passed
+//     the existing certification: its verdict certified under ONE recorded convention, at least kDraftMinJudged judged positions, every
+//     judged one within the frequency tolerance
+//   PITCH SHIFT (ej_pitch_profile/1, measurement "shift"): a SHIFT control is identified when kDraftMinJudged or more steady read
+//     positions were judged against their labels and most agree (Auto-Tune SoundSoap's Lo-Cut agreed at 1 of 5: not a shift control;
+//     an unlabelled shifter has nothing judged: not identified). CERTIFIED when every judged position of every identified shift control
+//     agrees within the tolerance (5 cents) and its verdict says so
+inline constexpr double kCutoffMinSpread = 2.0;
+inline constexpr int kDraftMinMeasured = 3, kDraftMinJudged = 3;
+struct DraftRoles { juce::StringArray identified; bool certified = false; juce::String why; };
+inline DraftRoles judgeFilterDraft (const juce::var& d)
+{
+    DraftRoles r; int certs = 0; juce::StringArray notCert;
+    if (const auto* fs = d.getProperty ("filters", {}).getArray())
+        for (const auto& c : *fs)
+        {
+            const auto type = c.getProperty ("type", "").toString(), name = c.getProperty ("control", "").toString();
+            if (c.getProperty ("unit", "").toString().toLowerCase() != "hz" || (type != "lowpass" && type != "highpass") || name.isEmpty()) continue;
+            double lo = 0.0, hi = 0.0; int measured = 0, judged = 0, within = 0;
+            if (const auto* ps = c.getProperty ("positions", {}).getArray())
+                for (const auto& p : *ps)
+                {
+                    const double hz = (double) p.getProperty ("cutoff_hz", 0.0);
+                    if (p.getProperty ("result", "").toString() == "measured" && hz > 0.0) { lo = measured == 0 ? hz : std::min (lo, hz); hi = std::max (hi, hz); ++measured; }
+                    if (p.hasProperty ("within_tolerance")) { ++judged; if ((bool) p.getProperty ("within_tolerance", false)) ++within; }
+                }
+            if (measured < kDraftMinMeasured || lo <= 0.0 || hi / lo < kCutoffMinSpread) continue;
+            r.identified.add (name);
+            const bool cert = c.getProperty ("verdict", "").toString() == "certified" && c.getProperty ("convention", "").toString().isNotEmpty()
+                              && judged >= kDraftMinJudged && within == judged;
+            if (cert) ++certs; else notCert.add (name);
+        }
+    r.certified = ! r.identified.isEmpty() && certs == r.identified.size();
+    r.why = r.identified.isEmpty() ? juce::String ("no cutoff measured") : r.certified ? "every cutoff matches its labels: " + r.identified.joinIntoString (", ")
+                                                                                     : "cutoff(s) not certified: " + notCert.joinIntoString (", ");
+    return r;
+}
+inline DraftRoles judgeShiftDraft (const juce::var& d)
+{
+    DraftRoles r; int certs = 0; juce::StringArray notCert;
+    if (const auto* ss = d.getProperty ("shifts", {}).getArray())
+        for (const auto& c : *ss)
+        {
+            const auto name = c.getProperty ("control", "").toString(); if (name.isEmpty()) continue;
+            int judged = 0, agree = 0;
+            if (const auto* ps = c.getProperty ("positions", {}).getArray())
+                for (const auto& p : *ps)
+                    if ((bool) p.getProperty ("read", false) && (bool) p.getProperty ("steady", false) && p.getProperty ("agrees", {}).isBool())
+                    { ++judged; if ((bool) p.getProperty ("agrees", false)) ++agree; }
+            if (judged < kDraftMinJudged || agree * 2 <= judged) continue;
+            r.identified.add (name);
+            if (agree == judged && c.getProperty ("verdict", "").toString() == "agrees") ++certs; else notCert.add (name);
+        }
+    r.certified = ! r.identified.isEmpty() && certs == r.identified.size();
+    r.why = r.identified.isEmpty() ? juce::String ("no shift control judged") : r.certified ? "every judged position agrees: " + r.identified.joinIntoString (", ")
+                                                                                         : "shift control(s) not certified: " + notCert.joinIntoString (", ");
+    return r;
+}
+
+//==============================================================================
 // 3. THE LEVEL
 struct Level { juce::String level, why; juce::StringArray dialable;
                std::vector<std::pair<juce::String, juce::String>> roles; };   // 18 Oct (B): (the need a control met, the control) - the semantic travels with the control
@@ -821,7 +898,7 @@ inline Level levelFor (const juce::var& map, bool certified, const juce::String&
             if (const auto it = R.identified.find (part); it != R.identified.end() && it->second.contains (c)) return part;
         return need; };
     juce::StringArray missing, unread;
-    for (const auto& need : needsFor (map.getProperty ("category", "").toString()))
+    for (const auto& need : needsFor (map.getProperty ("category", "").toString(), measured.pitchShift))
     {
         auto ctl = meetNeed (need, R, map.getProperty ("category", "").toString());
         if (ctl.isEmpty()) { missing.add (need); continue; }
