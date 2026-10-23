@@ -11219,6 +11219,7 @@ void testWizardCategories()
                && app.contains ("{ batteryPaused = true; resumeTo = screen; logLine (\"paused by itself: \" + step.why); pauseNow (step.why, false); return; }")
                && app.contains ("{ logLine (\"carrying on by itself: plugged in (\" + words + \")\"); batteryPaused = false; show (resumeTo); }")
                && app.contains ("text = batteryPaused ? wizapp::batteryPausedText (power.percent)") && app.contains ("if (powerNotice.isNotEmpty())")
+               && app.contains ("if (screen == Screen::paused && autoTicks == 8 && ! batteryPaused)")   // 24 Oct: a rehearsal waits on a battery pause
                && app.contains ("logLine (wizapp::progressLogLine (wizapp::screenName (screen), p, stepText, barValue, barRight, doneLine, wizapp::powerWords (power)));"),
                "wizard WZ-BATTERY-1: the notice on battery (50% runs on), the pause below 20% while running ('" + b19.why + "'; 20% and idle do not pause), carrying on when plugged in; logged: '"
                  + line.fromLastOccurrenceOf (" | power", true, false) + "'");
