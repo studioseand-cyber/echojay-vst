@@ -664,6 +664,33 @@ inline bool readBackShouldLookAgain (int askedCount, bool anyMatched, bool anyMi
     return askedCount > 0 && ! anyMatched;                  // asked, and NOTHING has come back yet
 }
 
+/** ---- HOW MANY MORE LOOKS, AND WHY (his 21:32 read-back, 24 Oct 2026) --------------------
+
+    The confirm road calls its re-read with a budget of ONE, so `readBackShouldLookAgain` saying
+    "look again" buys nothing on its own: the only thing that can make this road wait is the slot
+    reporting that its DIAL IS STILL RUNNING, which raises the ceiling to kPendingLooks.
+
+    That is why a late `dialPending` cost him a figure at 21:32 - the write had landed, the dial
+    confirmed it one second later, and the read-back had already said it could not be read. The
+    publishing half is fixed where it belongs (the dial's state is its own publish trigger now,
+    EJRackSidecarFill.h); this is the half that does the waiting, extracted so a guard can hold it
+    instead of trusting a line inside a lambda.
+
+    `pendingBudget` is how the recursion knows it has ALREADY raised the ceiling: without it, a
+    count that passed the default would raise it again on every pass and the read-back would never
+    end. */
+struct ReadBackBudget { int looksLeft = 0; bool inPending = false; };
+
+inline ReadBackBudget readBackLookBudget (int triesLeft, bool pendingBudget, bool anyDialPending,
+                                          int pendingLooks)
+{
+    const bool enterPending = anyDialPending && ! pendingBudget;
+    ReadBackBudget b;
+    b.looksLeft = enterPending ? pendingLooks : triesLeft;
+    b.inPending = pendingBudget || enterPending;
+    return b;
+}
+
 inline juce::String describeCall (const ToolCall& c)
 {
     // ---- A QUESTION'S LINE IS THE QUESTION (18 Oct 2026, Sean in Logic) ------------------------

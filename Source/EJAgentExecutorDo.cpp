@@ -1516,9 +1516,13 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     // Raised ONCE, and `pendingBudget` is how this function knows it already did: the recursion
     // counts down through the default budget on its way to zero, so a test on the count alone would
     // raise the ceiling again every time it passed six and the read-back would never end.
-    const bool enterPending = anyDialPending && ! pendingBudget;
-    const int  looksLeft    = enterPending ? kPendingLooks : triesLeft;
-    const bool inPending    = pendingBudget || enterPending;
+    // ONE AUTHOR FOR THE ARITHMETIC (24 Oct 2026): extracted to EJAgentProtocol.h so the guard can
+    // hold it directly. His 21:32 figure was lost to this road having a budget of one unless the
+    // slot reported pending - which it did not, because the pending fact was published late.
+    const auto budget       = echojay::agent::readBackLookBudget (triesLeft, pendingBudget,
+                                                                  anyDialPending, kPendingLooks);
+    const int  looksLeft    = budget.looksLeft;
+    const bool inPending    = budget.inPending;
     // ---- NOTHING REPORTED YET IS A REASON TO LOOK AGAIN, NOT A VERDICT (his test 4, 08:40) ----
     //
     // *"the Tube-Tech CL 1B step said 'Settings not confirmed: the plugin had not reported them

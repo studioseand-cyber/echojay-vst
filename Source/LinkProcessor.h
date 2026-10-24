@@ -440,6 +440,9 @@ private:
     // What the LAST publish carried, so a change of source type is a publish trigger like every
     // other published field (B's 20 Oct capture: the set republished and the gate dropped it).
     juce::String lastPublishedSourceType_, lastPublishedSourceTypeFrom_;
+    // His 21:32 read-back: the dial's state is its OWN publish trigger, because every reader that
+    // waits for a dial waits on this and the epoch's road is the settle (EJRackSidecarFill.h).
+    juce::String lastPublishedDialFp_;
     // ---- the shadow ring (stage A): the Link's half of the muted shadow -----------------------
     // WHY THE LAST REFUSAL IS KEPT (23 Oct 2026): the ctrl ack says `streaming: false`, and on its
     // own that is a verdict with no reason - the V2 then has to guess between "an older Link",

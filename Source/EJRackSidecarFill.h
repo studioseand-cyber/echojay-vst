@@ -22,6 +22,47 @@ namespace echojay
 {
 // The slot list and the rack-level values every publisher agrees on. `lastEditMs` is the publisher's own last
 // local edit stamp; `eqSlot` and `curve` are the Link's to supply (V2 passes -1 and nothing).
+// ---- WHAT THE READ-BACK WAITS FOR, AND WHY IT HAS TO BE PUBLISHED AT ONCE -------------------
+//
+// His 21:32 test, 24 Oct 2026: the agent set the CL 1B's Threshold to -20, the write landed, and
+// the step said *"I could not read these values back to confirm them (Threshold)"* - one second
+// BEFORE the dial actually ran and confirmed it at -19.8.
+//
+// The chain, in one line each:
+//   * the read-back's only road to "wait, the dial is still running" is the sidecar's dialPending;
+//   * a dial write bumps the hosted-parameter epoch, and an epoch-only change republishes through
+//     the SETTLE path, so the pending fact arrives late;
+//   * and the confirm road calls its re-read with a budget of ONE, so the ONLY thing that can make
+//     it look again is `anyDialPending` raising the ceiling to twenty-five looks.
+//
+// So a late "pending" is not a cosmetic lag: it is the difference between waiting twenty seconds
+// for a figure and reporting that the figure cannot be read. The fingerprint below is what a
+// publisher compares to decide that the dial's state has MOVED and must go out now, settle or no
+// settle - and it carries the CONFIRMATION too, because that is the other fact the read-back is
+// waiting for.
+//
+// A STRING, NOT A COUNT: two slots swapping pending states has the same count and a different
+// meaning, and a count is how a publisher convinces itself nothing changed.
+inline juce::String dialStateFingerprint (const std::vector<std::pair<bool, bool>>& pendingAndConfirmed)
+{
+    juce::String out;
+    for (const auto& [pending, confirmed] : pendingAndConfirmed)
+        out << (pending ? 'P' : '.') << (confirmed ? 'C' : '.');
+    return out;
+}
+
+/** The same fingerprint, taken from the host a Link is publishing. */
+inline juce::String dialStateFingerprint (const ChainHost& host)
+{
+    std::vector<std::pair<bool, bool>> rows;
+    const int n = host.getNumSlots();
+    rows.reserve ((size_t) juce::jmax (0, n));
+    for (int i = 0; i < n; ++i)
+        rows.emplace_back (host.getSlotInfo (i).dialPending,
+                           host.slotDialConfirmedLabels (i).isNotEmpty());
+    return dialStateFingerprint (rows);
+}
+
 inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
                                   const ChainHost& host,
                                   juce::int64 lastEditMs,
@@ -64,6 +105,24 @@ inline void fillRackSidecarSlots (LinkShm::RackSidecar& rc,
         // read-back on a Link can wait for the round trip instead of calling an unread value a
         // failed write.
         back.dialPending  = s.dialPending;
+        // ---- AND WHAT THE DIAL CONFIRMED, WHATEVER THE METERS SAW (his 21:32, 24 Oct 2026) -----
+        //
+        // THIS LINE WAS INSIDE THE LEVELS BLOCK, five lines below, gated on
+        // `lv.measured && lv.in.known`. So a slot whose input level had not been measured - nothing
+        // playing, or the window not yet filled - published NO dialOk at all, however settled its
+        // dial was. The read-back's "confirmed by position" road (19 Oct, written for exactly this
+        // plugin: *"the CL 1B's Threshold ... the applier checks the parameter's own normalised
+        // round-trip, so the write is verified; what fails is turning the plugin's display into a
+        // figure"*) then found nothing and said "could not read these values back to confirm".
+        //
+        // His 21:32 test is that, to the second: the agent set Threshold -20, the write landed, and
+        // the dial confirmed it ONE SECOND LATER at -19.8 - after the read-back had already given
+        // up. It passed this morning because audio was playing then.
+        //
+        // Whether the dial confirmed a write has NOTHING to do with whether this slot heard
+        // anything. Two unrelated facts, one condition - so it moves out here, beside dialPending,
+        // which is the fact it belongs with.
+        back.dialConfirmed = host.slotDialConfirmedLabels (i);
         // ---- ITEM 13: THIS SLOT'S MEASUREMENTS (18 Oct 2026, Sean) ------------------------------
         //
         // *"On the Kick's Link, check gr fails with 'Gain reduction cannot be read from a Link yet',

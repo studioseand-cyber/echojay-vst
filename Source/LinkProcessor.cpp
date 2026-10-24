@@ -584,6 +584,14 @@ void LinkProcessor::publishRackSidecar()
     const int  epoch    = chainHost.getHostedChangeEpoch();
     const bool uidMoved = (instanceUid_ != lastPublishedUid_);   // 6 Sep 2026: a re-minted identity moves its sidecar with it, or the solo fabric cannot find it
     const bool revMoved = (rev   != lastPublishedRackRev_);
+    // ---- A DIAL STARTING OR FINISHING IS A PUBLISH TRIGGER (his 21:32, 24 Oct 2026) -----------
+    // Readers wait on `dialPending` and on the confirmation, and a dial write only bumps the
+    // hosted-parameter epoch - which republishes through the SETTLE path below, i.e. late. Late is
+    // the whole fault: the agent's read-back has a budget of one look unless the slot reports
+    // pending, so a pending flag that arrives after the read-back has given up is a figure he is
+    // told cannot be read. Its own trigger, and it bypasses the settle with the other urgent ones.
+    const auto dialFp      = echojay::dialStateFingerprint (chainHost);
+    const bool dialMoved   = (dialFp != lastPublishedDialFp_);
     const bool epMoved  = (epoch != lastPublishedEpoch_);
     // §8 closed loop: a mute-state FLIP must republish promptly — the main
     // confirms the commanded mute through this sidecar, and a stale
@@ -769,11 +777,11 @@ void LinkProcessor::publishRackSidecar()
     const bool srcMoved = (sourceType_     != lastPublishedSourceType_)
                        || (sourceTypeFrom_ != lastPublishedSourceTypeFrom_);
     if (!revMoved && !epMoved && !curveMoved && !preGainMoved && !muteMoved && !uidMoved && !metersMoved
-        && !srcMoved)
+        && !srcMoved && !dialMoved)
         return;
     // A meter-driven publish is not a gesture to coalesce: its whole point is to be RECENT, and the
     // settle below would hold it back by exactly the interval that made the reading stale.
-    if (!revMoved && !preGainMoved && !metersMoved)
+    if (!revMoved && !preGainMoved && !metersMoved && !dialMoved)
     {
         // A settle test ALONE would starve under sustained automation: a host
         // automating an EQ emits changes every block, so the "last change"
@@ -819,6 +827,7 @@ void LinkProcessor::publishRackSidecar()
     rc.muteSoloCapable = true;   // this binary composes and scans
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
+    lastPublishedDialFp_ = dialFp;      // taken here, where the publish really happens
     rc.masterWet = chainHost.getMasterWet();
     // ---- WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026) ------------------------------
     // Guessed from this Link's own display name unless he has set it, and published with its
