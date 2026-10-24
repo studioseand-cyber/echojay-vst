@@ -65,6 +65,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 12_below_minimum_then_met_by_checks | `below_minimum`; the queue is every plugin the server answered "need", and the wizard sends an outcome for each; a check under another run_id doesn't count |
 | 13_failed_cheat_check | a tampered upload (wrong SHA-256), then no code (`failed_checks`) |
 | 13b_offline_before_run | v1.1: the tester was offline from before POST /runs; on reconnect the run is created with the wizard's own `started_at` and **every result is accepted**. Two controls that hold at any replay time: a missing `measured_at` (`shape`) and one ten years ahead (`timestamp`) |
+| 13d_four_at_once | v1.1 (24 Oct): `measure_started_at` - four compressor profiles measured at once, **all accepted**; then a fifth at once, a compressor measured in 30 s, a start after its end (`timestamp` each) and a missing start (`shape`); an outcome whose start is its end, accepted. Every time is relative, so either replay keeps each verdict |
 | 13c_promo_refusal_order | v1.1: two refusals at once answer with the first in the agreed order: account > collection > not finished > failed checks > below minimum |
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |
@@ -78,7 +79,7 @@ python3 -I wizard-deep-replay.py --base http://127.0.0.1:8787 --fixtures fixture
 python3 replay.py --base http://127.0.0.1:8787 --mock --shift-created                                # ours: status + error/status/reason
 python3 replay.py --base https://<your staging> --client-id <yours> --shift-created                  # ours, against yours (stops at each test hook)
 ```
-- **`--shift-created`:** your script moves each result's `created` so the earliest is a minute ago, keeping the gaps. Ours moves every time the wizard sent (`created`, `measured_at`, `started_at`) by that same amount.
+- **`--shift-created`:** your script moves each result's `created` so the earliest is a minute ago, keeping the gaps. Ours moves every time the wizard sent (`created`, `measured_at`, `measure_started_at`, `started_at`) by that same amount.
 - **Placeholders:** both bind each one to the real value your server returns the first time it appears, and use it in the later requests.
 - **Test hooks against your server:** ours stops at each one and says what to do on your side, then carries on when you press Return.
 - **On our mock, both give 0 differences** (run on 22 Oct against a fresh mock).

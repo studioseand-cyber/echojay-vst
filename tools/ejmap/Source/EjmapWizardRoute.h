@@ -29,7 +29,8 @@ namespace ejmap::wizroute
 enum class Rule { A, B, C, pendingReview };
 // passes (13 Oct, limiters): when not empty, the only Phase B passes still to run (a limiter the database has half of); limiterKnown:
 // the database holds its limiter pass, so its compressor pass may run without a limiter row of this Mac's own
-struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; juce::StringArray passes; bool limiterKnown = false; juce::String heldWhy; };   // heldWhy (21 Oct): the server holds it
+struct Answer { Rule rule = Rule::C; juce::String category, why; const wizard::DbEntry* entry = nullptr; juce::StringArray passes; bool limiterKnown = false; juce::String heldWhy;
+                bool categoryKnown = false; };   // 24 Oct (Kathy): the category comes from a served map / profile / certified data (known), not a name guess   // heldWhy (21 Oct): the server holds it
 inline juce::String pluginId (const juce::String& uid, const juce::String& version, const juce::String& format = "AudioUnit") { return format + "|" + uid.toLowerCase() + "|" + version; }   // 17 Oct: tagged by format
 // <db>/pending_review.json: [{"plugin_id": "AudioUnit|uid|version", "product": ...}] - what other users already sent as needs_category
 inline std::set<juce::String> loadPending (const juce::File& db)
@@ -65,7 +66,9 @@ inline Answer ask (const std::vector<wizard::DbEntry>& db, const std::set<juce::
     if (L.match == wizard::Match::exact) { a.rule = Rule::A; a.entry = L.entry; a.category = L.entry->category(); a.why = L.why; return a; }
     if (pending.count (pid.toLowerCase())) { a.rule = Rule::pendingReview; a.why = "already sent for review by another user"; return a; }
     if (L.match == wizard::Match::sameControls) { a.rule = Rule::B; a.entry = L.entry; a.category = L.entry->category(); a.why = L.why; return a; }
-    a.rule = Rule::C; a.category = serverCategory (catalogue, pid, name); a.why = L.why; return a;
+    a.rule = Rule::C; a.category = serverCategory (catalogue, pid, name); a.why = L.why;
+    a.categoryKnown = a.category.isNotEmpty();   // 24 Oct: Sean's database (Sean-approved) - known, until B sends category_source
+    return a;
 }
 
 // THE SERVER'S CATALOGUE ANSWER (contract v1 §2, 21 Oct): have -> skipped entirely (rule A); held pending_review -> not re-sent; held for
@@ -75,6 +78,7 @@ inline Answer fromCatalogue (const juce::var& answers, const juce::String& pid)
     Answer a; const auto e = answers.getProperty ("by_plugin_id", {}).getProperty (juce::Identifier (pid.isNotEmpty() ? pid : juce::String ("?")), {});
     const auto st = e.getProperty ("status", "").toString(), reason = e.getProperty ("reason", "").toString();
     const auto cat = e.getProperty ("category", juce::var()); a.category = cat.isString() ? cat.toString() : juce::String();
+    a.categoryKnown = a.category.isNotEmpty() && e.getProperty ("category_source", "").toString() == "known";   // 24 Oct: B's category_source; absent = a guess
     if (st == "have") { a.rule = Rule::A; a.why = "EchoJay already has it (" + e.getProperty ("level", "mapped").toString() + ")"; return a; }
     if (st == "held" && reason == "pending_review") { a.rule = Rule::pendingReview; a.why = "another tester already sent it: waiting for review"; return a; }
     if (st == "held") { a.rule = Rule::C; a.heldWhy = "held by EchoJay (" + (reason.isNotEmpty() ? reason : juce::String ("no reason given")) + "): not measured"; return a; }
@@ -93,7 +97,7 @@ inline juce::String routeName (Route r)
     return {};
 }
 struct Decision { Route route = Route::categorise; juce::String category, why; juce::StringArray passes; bool limiterKnown = false;
-                  bool byHint = false; };   // passes: see Answer; byHint (24 Oct): measured on the catalogue's hint (the reads could not settle)
+                  bool byHint = false; juce::String hintFrom; };   // hintFrom (24 Oct): "catalogue" | "name" - only a catalogue hint is never demoted   // passes: see Answer; byHint (24 Oct): measured on the catalogue's hint (the reads could not settle)
 // THE KNOWN MULTIBANDS (Kathy, 12 Oct): the server has no multiband category, and a multiband with none reads as "dynamics" and
 // spends ~10 min in the compressor certification before it refuses (OTT, 591 s). So the wizard ships EJ Map's own list - the 17
 // products Sean's cert found multiband (cert outcomes state "multiband", 8-9 Oct) - by plugin uid (any version): held straight away.
@@ -354,16 +358,19 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
     if (a.category.isNotEmpty())
     {   // the server's names (Sean's 12); an internal label from a local catalogue: multiband -> held, the rest out of scope (never sent)
         if (! a.passes.isEmpty()) return { Route::measure, a.category, a.why, a.passes, a.limiterKnown };   // a limiter the database has half of
-        // B's answers (24 Oct): the catalogue's category may be B's GUESS from the name - a HINT only. The wizard's own measured categoriser
-        // routes (the signature reads); the hint is used only where the reads ran and could not settle (afterSignature)
+        // Kathy, 24 Oct: a KNOWN category (a served map / profile / certified data) routes, as before; a GUESSED one (B's catalogue from the
+        // name) is a HINT - the wizard's own signature reads route, the hint where they ran and could not settle, never demoted (afterSignature)
+        if (a.categoryKnown && measurable (a.category)) return { Route::measure, a.category, "the catalogue knows it: " + a.category };
+        if (a.categoryKnown && wizserver::isServerCategory (a.category))
+            return { Route::sendOther, a.category, "the catalogue knows it (" + a.category + "), not measured by the wizard yet: sent so EchoJay knows it" };
         if (measurable (a.category) || wizserver::isServerCategory (a.category))
-            return { Route::categorise, a.category, "the catalogue says " + a.category + " - a hint only: the signature reads decide" };
+        { Decision d { Route::categorise, a.category, "the catalogue says " + a.category + " - a hint only: the signature reads decide" }; d.hintFrom = "catalogue"; return d; }
         if (a.category == "multiband") return { Route::held, "multiband", "held: no server category (multiband is not measured by the wizard yet)" };
         return { Route::outOfScope, a.category, "not an EchoJay category (" + a.category + "): not loaded" };
     }
     // Kathy, 24 Oct: the wizard's OWN name rule is a hint too, the same as the catalogue's - the signature reads route; the name is used
     // only where they ran and could not settle (afterSignature)
-    if (nameCategory.isNotEmpty()) return { Route::categorise, nameCategory, "its name says " + nameCategory + " - a hint only: the signature reads decide" };
+    if (nameCategory.isNotEmpty()) { Decision d { Route::categorise, nameCategory, "its name says " + nameCategory + " - a hint only: the signature reads decide" }; d.hintFrom = "name"; return d; }
     if (outOfScope.isNotEmpty()) return { Route::outOfScope, outOfScope, "out of scope (" + outOfScope + "): not loaded" };
     return { Route::categorise, {}, "no category from the server or the name: the signature reads decide" };
 }
@@ -373,9 +380,18 @@ inline bool loadsToCategorise (const Decision& d) { return d.route == Route::cat
 inline bool loadsNothing (const Decision& d) { return d.route == Route::skipHave || d.route == Route::skipPending || d.route == Route::outOfScope; }
 
 // after the signature reads (EJ Map's categorise::decide, or its out-of-scope / licence refusals)
-inline Decision afterSignature (bool readsRan, bool settled, const juce::String& category, const juce::String& outOfScope, const juce::String& why, const juce::String& hint = {})
+inline Decision afterSignature (bool readsRan, bool settled, const juce::String& category, const juce::String& outOfScope, const juce::String& why, const juce::String& hint = {},
+                                bool hintFromCatalogue = false)
 {
     if (outOfScope.isNotEmpty()) return { Route::outOfScope, outOfScope, "out of scope (" + outOfScope + ")" };
+    // 24 Oct (Kathy): the reads never DEMOTE a measurable catalogue category to a category EchoJay does not measure (modulation): the
+    // catalogue's stands, and its measuring pass decides (a name hint has no such weight)
+    // a strip the catalogue names stays a strip: at its defaults most sections are bypassed, so the reads see one (CLA Vocals: a tail) -
+    // the strip pass measures each section
+    if (readsRan && hintFromCatalogue && hint == "channel_strip" && category != "channel_strip")
+    { Decision d { Route::measure, hint, "the signature reads " + (category.isNotEmpty() ? category : juce::String ("no one section")) + ", but the catalogue's channel_strip stays a strip: the strip pass measures each section (" + why + ")" }; d.byHint = true; return d; }
+    if (readsRan && settled && hintFromCatalogue && measurable (hint) && ! measurable (category) && category != "dynamics" && ! wizserver::isServerCategory (category))
+    { Decision d { Route::measure, hint, "the signature reads " + category + ", but the catalogue's " + hint + " is never demoted: the measuring pass decides (" + why + ")" }; d.byHint = true; return d; }
     if (readsRan && ! settled && measurable (hint))   // 24 Oct: the catalogue's hint, as a name proposes - the measuring pass decides
     { Decision d { Route::measure, hint, "the signature reads did not settle; the catalogue's hint (" + hint + "): the measuring pass decides" }; d.byHint = true; return d; }
     if (! readsRan || ! settled) return { Route::needsCategory, category, why };   // a licence window or no signature: Sean labels it from the map + reads

@@ -44,6 +44,27 @@ def map_problem(m, pid):
     return None
 
 ALLOW_S = 300   # v1.1 §4: the timestamp allowance, 5 minutes either way
+# v1.1 (Sean / B, 24 Oct): measure_started_at is REQUIRED. A profile's measuring took at least its category's minimum (half the shortest
+# real measuring time per category, 19-23 Oct, rounded down: MEASURE_TIMES_FOR_B.md); every other kind measured nothing for the profile and
+# carries measure_started_at == measured_at - no minimum. No more than MAX_OVERLAP measurements of one run overlap in time (the wizard
+# measures 4 at a time); a span of no length overlaps nothing
+MIN_MEASURE_S = {"compressor": 76, "limiter": 76, "eq": 4, "saturation": 2, "de-esser": 6, "reverb": 6, "delay": 9, "filter": 1, "gate": 11,
+                 "transient_shaper": 6, "channel_strip": 4, "pitch": 3, "amp_sim": 2}   # amp_sim: measured by the saturation pass
+MAX_OVERLAP = 4
+
+
+def overlap_with(spans, s, e):
+    """the most measurements running at once in [s, e) - spans already accepted for the run, plus this one"""
+    ev = [(s, 1), (e, -1)]
+    for a, b in spans:
+        if a < e and s < b:
+            ev += [(max(a, s), 1), (min(b, e), -1)]
+    ev.sort(key=lambda x: (x[0], x[1]))   # an end before a start at the same instant: back to back is not overlapping
+    c = most = 0
+    for _, k in ev:
+        c += k
+        most = max(most, c)
+    return most
 # B's codes (REASON_CODES_FOR_KATHY.md, 22 Oct): the 422 reasons and their words; <Plugin> is the result's plugin name
 REJECT_WORDS = {
     "hash_mismatch": "One result arrived damaged, so it wasn't used.",
@@ -408,10 +429,17 @@ class Handler(BaseHTTPRequestHandler):
                 out.append({"plugin_id": pid, "status": "need", "category": c.get("category"), "reason": "fingerprint_differs"})
             else:
                 e = {"plugin_id": pid, "status": c["status"]}
-                for k in ("level", "category", "reason"):
+                for k in ("level", "category", "reason", "category_source"):
                     if c.get(k) is not None:
                         e[k] = c[k]
                 out.append(e)
+        # B's category_source (24 Oct, v1.1): known | guessed, omitted when the category is null. The mock's seeded categories are Sean's
+        # database (known) unless a seed says "guessed"; a category from a tester's served result is known (it was measured)
+        for e in out:
+            if e.get("category") is not None and "category_source" not in e:
+                e["category_source"] = "known"
+            elif e.get("category") is None:
+                e.pop("category_source", None)
         with LOCK:   # v1.1 §5: the run's queue is the server's - every plugin answered "need" under this run
             STATE["needs"].setdefault((acct, rid), set()).update(e["plugin_id"] for e in out if e["status"] == "need")
         return self._send(200, {"results": out, "categories_version": "mock-2026-10-22"})
@@ -469,14 +497,14 @@ class Handler(BaseHTTPRequestHandler):
         bad = validate(doc, rid, result_id, run, acct)
         if bad == "held":   # v1.1 §4 (ruling 3): a schema no validator knows yet - kept, never promoted or served, not counted as accepted
             with LOCK:
-                run["results"][result_id] = sha; run["received"].add(result_id); run["covered"].add(doc["plugin"]["plugin_id"])
+                run["results"][result_id] = sha; run["received"].add(result_id); run["covered"].add(doc["plugin"]["plugin_id"]); add_span(run, doc)
                 STATE["holding"].setdefault(acct, {})[result_id] = dict(doc, _held=True)
             return self._send(201, {"status": "held", "result_id": result_id, "stored": "holding",
                                     "message": "EchoJay can't check %s's measurements yet, so they're kept but not used for now." % name})
         if bad:
             return self._reject(run, result_id, bad, name)
         with LOCK:
-            run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id)
+            run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc)
             pid = doc["plugin"]["plugin_id"]; run["covered"].add(pid)
             if doc["kind"] == "profile" and pid in STATE["needs"].get((acct, rid), set()):
                 run["new"].add(result_id)
@@ -605,6 +633,12 @@ OUTCOME_STATES = {"needs_licence", "needs_hardware", "demo", "silent", "crashed"
                   "not_reached", "waves_skipped", "measured", "ready_from_version"}
 
 
+def add_span(run, doc):
+    s, e = parse_time(doc.get("measure_started_at")), parse_time(doc.get("measured_at"))
+    if s is not None and e is not None and e > s:
+        run.setdefault("spans", []).append((s, e))
+
+
 def validate(doc, rid, result_id, run=None, acct=None):
     """The stand-in for the served intake's validators, with B's reason codes (v1.1 §4 / §7): shape, result_id, identity, timestamp,
     validator - or "held" (a file of a schema no validator knows yet) - or None"""
@@ -629,6 +663,15 @@ def validate(doc, rid, result_id, run=None, acct=None):
     t = now()
     if created > t + ALLOW_S or m > t + ALLOW_S:
         return "timestamp"
+    if "measure_started_at" not in doc:
+        return "shape"
+    ms = parse_time(doc.get("measure_started_at"))
+    if ms is None or ms > m:
+        return "timestamp"
+    if kind == "profile" and m - ms < MIN_MEASURE_S.get((doc.get("payload") or {}).get("category"), 0):
+        return "timestamp"   # measured faster than that category can be
+    if run is not None and m > ms and overlap_with(run.get("spans", []), ms, m) > MAX_OVERLAP:
+        return "timestamp"   # more measurements at once than one Mac runs
     if run is not None:
         if run.get("started_at") is not None and created < run["started_at"] - ALLOW_S:   # the WIZARD's start, never the server's run record (offline)
             return "timestamp"

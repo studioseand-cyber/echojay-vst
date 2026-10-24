@@ -89,7 +89,7 @@ def send(base, rq, bound):
             return e.code, body
 
 
-TIME_FIELDS = ("created", "measured_at", "started_at")
+TIME_FIELDS = ("created", "measured_at", "measure_started_at", "started_at")
 
 
 def times_in(rq):

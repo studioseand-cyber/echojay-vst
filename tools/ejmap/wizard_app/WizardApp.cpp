@@ -490,7 +490,7 @@ private:
     juce::Image logo; juce::TextButton primary, secondary, resetTestButton { "Reset test" }, anyway { wizapp::kCarryOnAnyway }; juce::TextEditor email, password; juce::ToggleButton agree; bool diskRefused = false; juce::String device; juce::File savedFile; juce::var eligibility;
     const juce::Colour accent { 0xff3d5afe }, ink { 0xff141824 };
     Screen screen = Screen::welcome; juce::String title, text, barLeft, barRight, bigCode, pauseNote; bool showBar = false; double barValue = 0.0;
-    wizapp::Power power; bool batteryPaused = false; double lastPowerCheck = -1.0e9; juce::String powerNotice, lastPowerLog;   // 23 Oct: the battery
+    wizapp::Power power; bool batteryPaused = false, plugInFirst = false; double lastPowerCheck = -1.0e9; juce::String powerNotice, lastPowerLog;   // 23 Oct: the battery
     juce::String dawPaused; Screen resumeTo = Screen::measuring; double dawQuietSince = -1.0, lastDawCheck = 0.0; ejmap::wizapp::DawHit dawHit; int dawIgnoredPid = 0;   // 17 Oct: the hit (for the words and the log), the DAW the user chose to carry on beside   // 15 Oct: a pause the DAW caused, and where it carries on
     double shownPctT = 0.0; std::vector<wizapp::JobLine> jobsNow; juce::String doneLine; juce::int64 heartbeatMs = 0;   // 15 Oct (FEELS FROZEN)
     wizapp::StepBar stepBar; juce::String stepText, nowText, lastSnapStep;
@@ -769,7 +769,7 @@ private:
                 {   // 15 Oct: the bar's % (this session's, else the stopped engine's own), never a count
                     const int pct = shownPct > 0 ? shownPct : wizapp::measuringPercent (juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()), 0);
                     title = resumeTo == Screen::scan ? juce::String ("Paused") : wizapp::pausedTitle (pct);
-                    text = batteryPaused ? wizapp::batteryPausedText (power.percent) : dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, kNetworked ? (bool) offlineNow : lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
+                    text = plugInFirst && wizapp::carryOnBlocked (power) ? juce::String (wizapp::kPlugInFirst) + ". " + wizapp::batteryPausedText (power.percent) : batteryPaused ? wizapp::batteryPausedText (power.percent) : dawPaused.isNotEmpty() ? wizapp::dawPausedText (dawPaused, dawHit.windows) : wizapp::pausedText (kMode, kNetworked ? (bool) offlineNow : lastSendKept);   // 15 Oct: the DAW's own line (17 Oct: no window -> "still running in the background")
                 }
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true);
                 anyway.setVisible (dawPaused.isNotEmpty()); break;   // 17 Oct: Carry on anyway, beside the DAW
@@ -853,7 +853,10 @@ private:
             case Screen::measuring: pauseNow ("the Pause button", false); break;
             case Screen::scan: if (retryCatalogue) { retryCatalogue = false; primary.setVisible (false); if (session != nullptr && session->needsSignIn) { show (Screen::welcome); break; } title = "Checking your plugins"; showBar = true; checkCatalogue(); } break;   // 21 Oct
             case Screen::upload: if (kNetworked && ! completing) { primary.setVisible (false); secondary.setVisible (false); title = "Sending your results"; showBar = true; nextTryMs = 0.0; } break;   // 21 Oct: Try again
-            case Screen::paused: logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; batteryPaused = false; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning (a DAW still open pauses it again)
+            case Screen::paused:
+                if (wizapp::carryOnBlocked (power))   // 24 Oct (Kathy): never carry on into a sleep - stay paused, carry on once plugged in
+                { logLine ("carry on refused: " + wizapp::powerWords (power) + " - " + wizapp::kPlugInFirst); plugInFirst = true; batteryPaused = true; show (Screen::paused); break; }
+                logLine ("carry on"); dawPaused.clear(); dawQuietSince = -1.0; batteryPaused = false; plugInFirst = false; show (resumeTo); break;   // 15 Oct: a paused scan carries on scanning (a DAW still open pauses it again)
             default: break;
         }
     }
@@ -992,7 +995,7 @@ private:
         if (step.pause && dawPaused.isEmpty())
         { batteryPaused = true; resumeTo = screen; logLine ("paused by itself: " + step.why); pauseNow (step.why, false); return; }
         if (step.resume)
-        { logLine ("carrying on by itself: plugged in (" + words + ")"); batteryPaused = false; show (resumeTo); }
+        { logLine ("carrying on by itself: plugged in (" + words + ")"); batteryPaused = false; plugInFirst = false; show (resumeTo); }
     }
     // SHARING THE MAC (Kathy, 15 Oct): a DAW opens while the wizard scans or measures -> the same clean pause as the button, with the DAW's
     // name; only a pause the DAW caused carries on by itself, once no DAW has been open for kDawQuietS. The user's own pause never does
@@ -1014,6 +1017,8 @@ private:
     void onAnyway()
     {
         if (screen != Screen::paused || dawPaused.isEmpty()) return;
+        if (wizapp::carryOnBlocked (power))   // 24 Oct: beside a DAW too - never carry on into a sleep
+        { logLine ("carry on refused: " + wizapp::powerWords (power) + " - " + wizapp::kPlugInFirst); plugInFirst = true; batteryPaused = true; show (Screen::paused); return; }
         logLine ("carry on anyway beside " + wizapp::dawLogLine (dawHit)); dawIgnoredPid = dawHit.pid;
         dawPaused.clear(); dawQuietSince = -1.0; anyway.setVisible (false); show (resumeTo);
     }

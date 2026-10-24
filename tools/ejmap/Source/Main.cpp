@@ -886,6 +886,12 @@ namespace
                 for (const auto& d : dropped) std::cout << "DROP\t" << d << std::endl;
                 return dropped.isEmpty() ? 0 : 3;
             }
+            if (a == "--recategorise" && i + 1 < argc)   // 24 Oct: a run's cached reads decided again under today's rules (reads only)
+            {
+                juce::File hints; for (int j = i + 2; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--hints") hints = cwdFile (argAt (argc, argv, j + 1));
+                if (! hints.existsAsFile()) { std::cerr << "usage: ejmap --recategorise <engine dir> --hints <json>" << std::endl; return 2; }
+                return ejmap::cert::runRecategorise (cwdFile (argAt (argc, argv, i + 1)), hints);
+            }
             if (a == "--full-maps" && i + 1 < argc)   // 22 Oct (decision 1): full maps for a guarded name list, into a scratch folder
             {
                 juce::File out, probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe"); int toMs = 120000;

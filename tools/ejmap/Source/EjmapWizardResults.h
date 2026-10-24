@@ -29,7 +29,7 @@ inline juce::var pluginBlock (const juce::String& pid, const juce::String& produ
 inline juce::var fileJson (const juce::File& bundle, const juce::String& rel) { return juce::JSON::parse (bundle.getChildFile (rel).loadFileAsString()); }
 
 // manifest + bundle folder -> the documents. idOf: plugin_id -> (vendor, product); pidOfProduct: a crash entry names only its product
-// v1.1 (rulings 4 / 5): measuredAtOf - plugin_id -> when that plugin finished (the engine's record; REQUIRED on every result: a plugin the
+// v1.1 (rulings 4 / 5): measuredAtOf - plugin_id -> when that plugin finished (startedAtOf, 24 Oct: when it began) (the engine's record; REQUIRED on every result: a plugin the
 // engine has no time for carries the packing time, never a later one); needIds - the server's queue, every plugin it answered "need" for
 // this run: the run's last pack gives each one a result, "not_reached" when nothing else was sent for it
 // the states an outcome may carry (contract v1.1 §4: the mock's OUTCOME_STATES, B's validator)
@@ -39,7 +39,8 @@ inline const juce::StringArray& outcomeStates()
 inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& bundle, const juce::String& runId, bool finishing,
                                   const std::map<juce::String, Identity>& idOf, const std::map<juce::String, juce::String>& pidOfProduct,
                                   const std::map<juce::String, juce::String>& measuredAtOf = {}, const juce::StringArray& needIds = {},
-                                  const std::map<juce::String, std::pair<juce::String, juce::String>>& stateOf = {})
+                                  const std::map<juce::String, std::pair<juce::String, juce::String>>& stateOf = {},
+                                  const std::map<juce::String, juce::String>& startedAtOf = {})
 {
     std::vector<Doc> out; const auto created = juce::Time::getCurrentTime().toISO8601 (true);
     auto add = [&] (const juce::String& kind, const juce::String& pid, const juce::String& product, const juce::var& fp, juce::DynamicObject* payload, juce::DynamicObject* files)
@@ -51,7 +52,12 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
         const auto rid = wizcontract::resultIdFor (runId, kind, pid); d->setProperty ("result_id", rid); d->setProperty ("kind", kind);
         d->setProperty ("plugin", pluginBlock (pid, product.isNotEmpty() ? product : (it != idOf.end() ? it->second.product : juce::String()), it != idOf.end() ? it->second.vendor : juce::String(), fp));
         d->setProperty ("created", created);   // the packing time
-        { const auto m = measuredAtOf.find (pid); d->setProperty ("measured_at", m != measuredAtOf.end() && m->second.isNotEmpty() ? m->second : created); }   // v1.1: when it finished
+        {   const auto m = measuredAtOf.find (pid); const bool known = m != measuredAtOf.end() && m->second.isNotEmpty();
+            d->setProperty ("measured_at", known ? m->second : created);   // v1.1: when it finished
+            // v1.1 (Sean / B, 24 Oct, REQUIRED): when its measuring began - the engine's start for that finish, else measured_at itself
+            // (a result that measured nothing, or one the engine has no time for: no minimum applies)
+            const auto s0 = startedAtOf.find (pid);
+            d->setProperty ("measure_started_at", known && s0 != startedAtOf.end() && s0->second.isNotEmpty() ? s0->second : d->getProperty ("measured_at").toString()); }
         d->setProperty ("payload", payload != nullptr ? juce::var (payload) : juce::var (new juce::DynamicObject()));
         d->setProperty ("files", files != nullptr ? juce::var (files) : juce::var (new juce::DynamicObject()));
         out.push_back ({ rid, kind, pid, dv });

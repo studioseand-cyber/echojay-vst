@@ -12,9 +12,10 @@ request.json (the catalogue check). Read only: nothing in the run folders is wri
 
 measured_at (contract v1.1 §4) for a run packed before measured_at existed comes from that run's own records, in this order: the plugin's
 Phase B row time ("at"); else its last line in loads.log; else the run's first loads.log time (a plugin never loaded).
+measure_started_at (24 Oct, REQUIRED): that Phase B row's start ("started_at", else "at" less "seconds"); anything else its measured_at.
 """
 import argparse, glob, json, os, plistlib, shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def iso_local(stamp):
@@ -42,18 +43,21 @@ def vendors():
 
 
 def times(engine):
-    rows = {}
+    rows, starts = {}, {}
     for f in glob.glob(os.path.join(engine, "phaseb", "*", "*.phaseb.json")):
         r = json.load(open(f))
         t = iso_local(r.get("at", ""))
-        if t and r.get("product"):
-            rows[r["product"]] = max(rows.get(r["product"], t), t)
+        if t and r.get("product") and t >= rows.get(r["product"], t):
+            rows[r["product"]] = t
+            # measure_started_at (Sean / B, 24 Oct): that row's child's start - "started_at" from 24 Oct on, else "at" less "seconds"
+            starts[r["product"]] = r.get("started_at") or (datetime.fromisoformat(t) - timedelta(seconds=float(r.get("seconds") or 0))).isoformat(timespec="seconds")
     loads, first = {}, None
     for line in open(os.path.join(engine, "loads.log")):
         parts = line.rstrip("\n").split("\t")
         if len(parts) >= 3:
             first = first or parts[0]
             loads[parts[2]] = parts[0]
+    rows["_starts"] = starts
     return rows, loads, first
 
 
@@ -72,7 +76,7 @@ def main():
     src = os.path.join(a.engine, "contribution")
     rows, loads, first = times(a.engine)
     ven = vendors()
-    measured, ids, plugins = {}, {}, []
+    measured, started, ids, plugins = {}, {}, {}, []
 
     def take(rel, base=src):
         d = os.path.join(B, rel); os.makedirs(os.path.dirname(d), exist_ok=True); shutil.copy(os.path.join(base, rel), d)
@@ -80,6 +84,7 @@ def main():
     def note(e, rows=rows, loads=loads, first=first):
         pid, prod = e.get("plugin_id"), e.get("product", "")
         measured[pid] = rows.get(prod) or loads.get(prod) or first
+        started[pid] = rows["_starts"][prod] if rows.get(prod) else measured[pid]   # measured nothing on record: its measured_at
         ids[pid] = {"vendor": ven.get(prod, ""), "product": prod}
         fp = e.get("map_fp")
         plugins.append({"plugin_id": pid, "name": prod, "vendor": ven.get(prod, ""), "version": pid.split("|")[2], "format": pid.split("|")[0], "type": "aufx",
@@ -136,10 +141,11 @@ def main():
     for e in man.get("crashed", []):
         pid = pid_of.get(e["product"])
         if pid:
-            measured[pid] = loads.get(e["product"]) or first; ids[pid] = {"vendor": ven.get(e["product"], ""), "product": e["product"]}
+            measured[pid] = loads.get(e["product"]) or first; started[pid] = measured[pid]; ids[pid] = {"vendor": ven.get(e["product"], ""), "product": e["product"]}
             plugins.append({"plugin_id": pid, "name": e["product"], "vendor": ven.get(e["product"], ""), "version": pid.split("|")[2], "format": pid.split("|")[0], "type": "aufx", "fingerprint": None})
     json.dump(man, open(os.path.join(out, "manifest.json"), "w"), indent=1)
     json.dump(measured, open(os.path.join(out, "measured_at.json"), "w"), indent=1)
+    json.dump(started, open(os.path.join(out, "measure_started_at.json"), "w"), indent=1)
     json.dump(ids, open(os.path.join(out, "identities.json"), "w"), indent=1)
     json.dump({"plugins": plugins}, open(os.path.join(out, "request.json"), "w"), indent=1)
     json.dump(pid_of, open(os.path.join(out, "pid_of_product.json"), "w"), indent=1)

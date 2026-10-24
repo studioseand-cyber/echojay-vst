@@ -584,6 +584,11 @@ inline BatteryStep batteryStep (const Power& p, bool running, bool pausedForBatt
     if (pausedForBattery && ! p.onBattery) s.resume = true;
     return s;
 }
+// CARRY ON ON A LOW BATTERY (Kathy, 24 Oct; the 23 Oct run: Carry on at 19% paused again at 18%, then macOS slept at 1%): below
+// kBatteryPausePercent on battery, Carry on does not carry on - it says why and the run stays paused until the Mac is plugged in, then
+// carries on by itself (the user asked to carry on)
+inline constexpr const char* kPlugInFirst = "Plug in first - the Mac will sleep at low battery";
+inline bool carryOnBlocked (const Power& p) { return p.known && p.onBattery && p.percent >= 0 && p.percent < kBatteryPausePercent; }
 inline juce::String batteryPausedText (int percent)
 { return "The battery is at " + juce::String (percent) + "%, so the wizard paused safely - nothing is lost. Plug in your Mac and it carries on by itself."; }
 inline juce::String progressLogLine (const juce::String& screen, const juce::var& progress, const juce::String& stepText, double barValue, const juce::String& barRight, const juce::String& counter,
