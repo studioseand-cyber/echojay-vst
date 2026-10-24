@@ -68,15 +68,18 @@ minute the chain started building the five fixes below. Both are read and neithe
 - [x] Guard (global_undo_guard, GREEN): **RA1/RA1b** three wire adds become one undo entry with a
       label that says what it takes back; **RA2** top slot first, so no remove shifts a slot a later
       remove names; **RA3** redo is refused outright rather than adding a bare copy.
-- [ ] His own retest is what proves the rest: the Link's window opened and closed mid-run, then Undo
-      all on the finished card. The rig can drive the run but not his window.
+- [ ] **His own retest** is what proves the rest: the Link's window opened and closed mid-run, then
+      Undo all on the finished card. The rig can drive the run but not his window. *(Not mine to
+      tick - it is in the report's retest steps as step 4.)*
 
 ## 5. The supersede ask replaces the refusal (his 21:06)
 - [x] The ask was gated on `! isWorking()` - a WAITING run could be superseded, a WORKING one could
       only be refused, which is the 20 Oct split his 21:06 ruling removes. The question now comes
       first for both, and Start anyway stops the old run whatever it was doing.
 - [x] Never repeated: the ask remembers the message it is up for, so a second Enter adds nothing.
-- [ ] Guard.
+- [x] Guard (chat_store_guard GREEN 141): SU5 a second Enter adds no second ask and repeats no line;
+      SU6/SU6b/SU6c/SU6d a WORKING run is asked about, the refusal line is gone from that chat, and
+      the old run keeps going until Start anyway is pressed.
 
 ## 4b. Undo on a Link (the same item, what was found)
 - [x] **The cause:** his log says "undo all walked the history back to the run's checkpoint - 0
@@ -102,10 +105,13 @@ is the band convention above. Nothing was installed - the chain refuses a red - 
 both guards were re-run green, and the chain restarted. (It also carries a new rule of its own, from
 last night's lesson: a test that TIMES OUT is re-run alone before the install is refused, because a
 timeout under LTO thrash is the suite's weather and not a verdict. A real failure still stops it.)
-- [ ] Build (three trees, four bundles, both AAX), S4, S5, install + UUIDs
-- [ ] The rig: mock road, then the live road against 3215
-- [ ] Grouped commits of the whole tree
-- [ ] `docs/MORNING_REPORT_2026-10-24.md`: UUIDs, every verdict, what is owed, exact retest steps
+- [x] Build (three trees, four bundles, both AAX), **S4 85/85, S5 GREEN**, installed - V2 AU
+      `96420D29-5A29-3573-8148-EB7E8F6AB8BB`, V2 VST3 `0267A847-15DB-3353-BA7C-F7FB76286386`,
+      Link AU `63ADDBF5-CC8F-3269-86E3-5B9F2FF93B54`, Link VST3 `EB7EDED9-4E81-3D9A-A615-EDC7DC66BBB7`
+- [x] The rig: mock (156/4) and the live road against 3215 (84/7), plus a fourth mock pass (88/2) to
+      confirm the row fixes. No new product red on either road.
+- [x] Grouped commits: five tonight plus the docs; tree clean.
+- [x] `docs/MORNING_REPORT_2026-10-24.md` written: UUIDs, every verdict, what is owed, retest steps.
 
 ## The mock road's verdict (attempt 2, 00:43-01:03) and what it found
 
@@ -146,3 +152,13 @@ live road was running.
 Five grouped commits tonight (the dial's direction; the dial as part of the build; undo on a Link with
 the supersede ask and the live view; the rig's three rows; the docs). Tree clean, S4 85/85, S5 green,
 installed, both rig roads run, and the morning report is `docs/MORNING_REPORT_2026-10-24.md`.
+
+## The loop's close, 03:3x
+
+Everything on tonight's list is ticked or named as blocked, the morning report is written, the tree is
+clean and nothing of mine is running. The only unticked box left is his own retest, which is his to
+do. Two items are blocked and said so with evidence: B's dial step (a capability I will not declare
+half-built, by B's own design) and B's clip drive (a new dial kind, with the contracts now in hand).
+Three things are owed from the small hours: the live view cannot copy an EchoJay built-in, the rig
+cannot press an editor replace-ask's chips, and I9c still measures a figure that depends on the Link's
+param map.
