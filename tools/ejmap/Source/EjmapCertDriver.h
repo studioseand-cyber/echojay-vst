@@ -3948,6 +3948,9 @@ inline int runCategorisePropose (const SweepOptions& opt, const juce::StringArra
                     else d.why += "; the cutoff move was not read (see the cutoff_* traces)";
                 }
         }
+        {   // 24 Oct (Kathy; carried from feat/ejmap-wizard 9a4c94a5): several sections -> a channel strip (the reads AND the controls; categorise::stripRule)
+            juce::StringArray names; for (const auto& [i, lr] : parseListParams (lp.out)) names.add (lr.name);
+            d = categorise::stripRule (d, row.sig, names); }
         row.byName = d.byName;
         row.category = d.category; row.why = d.why; row.settled = d.settled; row.also = d.also;
         say ("  " + row.product + ": " + (d.settled ? d.category + " - " : juce::String ("UNSETTLED - ")) + d.why + " (" + juce::String (row.seconds, 0) + " s)");
@@ -7459,6 +7462,9 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 row->setProperty ("records", records); row->setProperty ("raw_files", rawN);
                 if (outcome == "timed_out") row->setProperty ("reason", "hang guard " + juce::String (cat.guardS / 60.0, 0) + " min reached: partial data kept (" + juce::String (rawN) + " trace(s)), the record " + (records.isEmpty() ? juce::String ("not written") : juce::String ("written")));
             }
+            // v1.1 (Sean / B, 24 Oct: measure_started_at): the child's own start and end, to the millisecond - "at" is whole seconds and stamped
+            // after the derivation, so a pool of 4 read as 5 or 6 overlapping; these are what the result's measure_started_at / measured_at carry
+            row->setProperty ("started_at", res.startedAt.toISO8601 (true)); row->setProperty ("ended_at", (res.startedAt + juce::RelativeTime::seconds (seconds)).toISO8601 (true));
             row->setProperty ("outcome", outcome); row->setProperty ("seconds", std::round (seconds)); row->setProperty ("at", nowStamp()); row->setProperty ("probe", id.cdhash);
             writeAtomic (rowFile (phasebDir, cat.name, pp.stem), juce::JSON::toString (juce::var (row.get())));   // the DONE marker, whole or absent
             tmp.deleteRecursively();

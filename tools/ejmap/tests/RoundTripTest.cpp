@@ -5181,6 +5181,26 @@ void testSweepQuietReference()
                && ! drv.contains ("ceiling block (LIMITER_PROFILE_SPEC section 6)") && ! drv.contains ("deesser block (DEESSER_PROFILE_SPEC section 6)"),
                "cert CERT-24: pitch labels (SoundShifter " + sh + " on " + shCtl + ", SoundSoap none); the extract declares its bound before sweeping; the drafts carry their ids");
     }
+    // CERT-25 (carried from feat/ejmap-wizard 9a4c94a5, 24 Oct): the strip rule - the reads find dynamics and another behaviour AND the
+    // controls name a compressor and two of EQ / gate / tail, no drive control - in the categorise step; a cached signature reads back;
+    // each Phase B row records its child's own start and end to the millisecond (the results' measure_started_at)
+    {
+        namespace C = ejmap::categorise;
+        C::Signatures s; s.responseRead = true; s.levelDepDb = 3.0; s.freqSpanDb = 1.0; s.tailRead = true; s.rt60s = 0.9; s.harmRead = true; s.thdLoDb = -80.0; s.thdHiDb = -70.0;
+        C::Signatures one = s; one.levelDepDb = 0.01;
+        C::Decision d; d.category = "reverb"; d.why = "a tail"; d.settled = true;
+        const juce::StringArray strip { "Input", "Compress", "Bass", "Treble", "Reverb", "Delay", "Output" }, drive { "Compress", "Bass", "Reverb", "Drive" },
+                                noComp { "Attack", "Release", "Bass", "Reverb" }, oneSection { "Compress", "Bass", "Output" };
+        const auto a = C::stripRule (d, s, strip), c1 = C::stripRule (d, s, drive), c2 = C::stripRule (d, s, noComp), c3 = C::stripRule (d, s, oneSection), c4 = C::stripRule (d, one, strip);
+        const auto rt = C::sigFromVar (C::sigVar (s));
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const int stripAt = drv.indexOf ("            d = categorise::stripRule (d, row.sig, names); }"), byNameAt = drv.indexOf (stripAt, "row.byName = d.byName;");
+        check (a.category == "channel_strip" && a.settled && a.why.contains ("dynamics + tail") && c1.category == "reverb" && c2.category == "reverb" && c3.category == "reverb" && c4.category == "reverb"
+               && rt.responseRead && std::abs (rt.levelDepDb - 3.0) < 0.01 && rt.rt60s && std::abs (*rt.rt60s - 0.9) < 0.01
+               && stripAt > 0 && byNameAt > stripAt && byNameAt - stripAt < 400 && juce::String (C::kRulesVersion) == "2026-10-24"
+               && drv.contains ("row->setProperty (\"started_at\", res.startedAt.toISO8601 (true)); row->setProperty (\"ended_at\", (res.startedAt + juce::RelativeTime::seconds (seconds)).toISO8601 (true));"),
+               "cert CERT-25: the strip rule ('" + a.why + "'; a drive control, no compressor control, one section or one read leave it a reverb), in the categorise step; Phase B rows carry their child's start and end");
+    }
     // CERT-23 (carried from feat/ejmap-wizard fe7a2859 / 5972915c, 22 Oct): the full map, the log taper, the resonant-filter conventions, the
     // shallow-filter edge and the voice isolation are shared code; their pins come with them, less the parts that test the wizard's own run
     // WZ-FULLMAP-1 THE WIZARD SAVES FULL MAPS (Kathy, 22 Oct, decision 0): the store's format (schema 2.4, controls with range / unit /
@@ -5380,7 +5400,7 @@ void testSweepQuietReference()
                && drv.contains ("{ args.add (\"--neutral-sets\"); args.add (neutralsets::setsOf (nw->second));")
                && drv.contains ("neutralsets::patch (rec, nw->second); ro->setProperty (\"neutral_raised\", neutralsets::raisedVar (nw->second));")
                && mainCpp.contains ("else if (k == \"--neutral-sets\") setenv (\"EJ_PROBE_NEUTRAL_SETS\", v.toRawUTF8(), 1);")
-               && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-21",
+               && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-24",
                "cert WZ-NEUTRAL-1 (the wizard fills it): the raised drive rides at the front of every set= list of the measuring child (" + resp.joinIntoString (" ").fromFirstOccurrenceOf ("--response", true, false) + "), every neutral list says it, an old cached signature is read again");
     }
 }

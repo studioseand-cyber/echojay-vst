@@ -122,7 +122,7 @@ struct Decision { juce::String category, why; bool settled = false; juce::String
 // setting, the spread across the tones, the harmonics against the fundamental - so the louder output a raised drive gives is never the
 // effect itself; the decision says how far the level moved and that it is not the signature
 inline constexpr double kDriveRaiseNorm = 0.75, kResonantSpanDb = 10.0;
-inline constexpr const char* kRulesVersion = "2026-10-21";   // the wizard re-reads a cached signature taken under other rules
+inline constexpr const char* kRulesVersion = "2026-10-24";   // 24 Oct: the strip rule (stripRule)   // the wizard re-reads a cached signature taken under other rules
 // RAISED FROM ITS DEFAULT (21 Oct, the first real run: StandardCLIP opens its Input Gain above 0.75, and 0.75 took it DOWN 12 dB): the
 // drive goes three quarters of the way from its default to the top - 0.75 from 0, never below where it opened; none when it opens at the top
 inline std::optional<double> raisedNorm (double defNorm)
@@ -277,6 +277,56 @@ inline juce::var sigVar (const Signatures& s)
     if (s.pitchRead) sg->setProperty ("pitch_move_cents", std::round (s.pitchMoveCents * 10.0) / 10.0);
     juce::Array<juce::var> ns; for (const auto& n : s.notes) ns.add (n); sg->setProperty ("notes", ns);
     return juce::var (sg);
+}
+// the reverse of sigVar: a cached signature read back (rounded as stored), so a decision can be taken again under newer rules
+inline Signatures sigFromVar (const juce::var& v)
+{
+    Signatures s; if (! v.isObject()) return s;
+    if (v.hasProperty ("level_dependence_db")) { s.responseRead = true; s.levelDepDb = (double) v["level_dependence_db"]; s.freqSpanDb = (double) v.getProperty ("frequency_span_db", 0.0); }
+    if (v.hasProperty ("repeats")) { s.tailRead = true; s.repeats = (int) v["repeats"]; if (! v["rt60_s"].isVoid()) s.rt60s = (double) v["rt60_s"]; }
+    if (v.hasProperty ("thd_db_at_m6")) { s.harmRead = true; s.thdLoDb = (double) v["thd_db_at_m30"]; s.thdHiDb = (double) v["thd_db_at_m6"]; s.harmDb = s.thdHiDb;
+                                          if (v.hasProperty ("sideband_db")) s.sidebandDb = (double) v["sideband_db"]; }
+    if (v.hasProperty ("pitch_move_cents")) { s.pitchRead = true; s.pitchMoveCents = (double) v["pitch_move_cents"]; }
+    return s;
+}
+// SEVERAL SECTIONS -> CHANNEL STRIP (Kathy, 24 Oct; the 23 Oct run read Waves' signature strips as one section - reverb, saturation, a
+// compressor, even modulation). A strip is seen from both sides: the READS find two or more behaviours, one of them dynamics (the gain
+// moving with level), and the CONTROLS name a compressor (threshold / ratio / compress) and two or more of the EQ, gate and tail sections,
+// with no drive control. Measured on the 23 Oct run's 444 reads: 17 caught, all 17 channel strips in Sean's database; looser forms (any two
+// families, attack / release as dynamics) called 15 to 34 distortions, reverbs and dynamics plugins strips. Most strips (their sections
+// bypassed at the defaults) are NOT caught by this - a strip the catalogue names stays a strip (wizroute::afterSignature)
+inline juce::StringArray readSections (const Signatures& s)
+{
+    juce::StringArray r;
+    if (s.responseRead && s.levelDepDb >= kLevelDb) r.add ("dynamics");
+    if (s.responseRead && s.freqSpanDb >= kFreqDb) r.add ("eq");
+    if (s.harmRead && s.thdHiDb >= kThdAudibleDb && s.thdHiDb - s.thdLoDb >= kThdRiseDb) r.add ("saturation");
+    if (s.tailRead && s.rt60s && *s.rt60s >= kTailS) r.add ("tail");
+    return r;
+}
+inline juce::StringArray controlFamilies (const juce::StringArray& names)
+{
+    static const std::vector<std::pair<const char*, std::vector<const char*>>> fam {
+        { "dynamics", { "thresh", "ratio", "compress" } },
+        { "eq",       { "eq", "freq", "treble", "bass", "band", "presence", "hpf", "lpf" } },
+        { "tail",     { "reverb", "verb", "delay", "dly", "echo", "decay", "plate", "spring" } },
+        { "drive",    { "drive", "satur", "distort", "tube", "crunch", "fuzz" } },
+        { "gate",     { "gate", "expand" } } };
+    juce::StringArray out;
+    for (const auto& [f, ws] : fam)
+        for (const auto& n : names) { const auto l = n.toLowerCase(); bool hit = false; for (const char* w : ws) if (l.contains (w)) { hit = true; break; } if (hit) { out.addIfNotAlreadyThere (f); break; } }
+    return out;
+}
+inline Decision stripRule (Decision d, const Signatures& s, const juce::StringArray& controlNames)
+{
+    if (d.category == "channel_strip") return d;
+    const auto rs = readSections (s), cf = controlFamilies (controlNames);
+    const int sections = (int) cf.contains ("eq") + (int) cf.contains ("gate") + (int) cf.contains ("tail");
+    if (rs.size() < 2 || ! rs.contains ("dynamics") || ! cf.contains ("dynamics") || sections < 2 || cf.contains ("drive")) return d;
+    d.category = "channel_strip"; d.settled = true; d.byName = false; d.also.clear();
+    d.why = "the reads find " + rs.joinIntoString (" + ") + " and the controls hold " + cf.joinIntoString (" + ") + " sections: a channel strip, each section measured by the strip pass"
+            + (d.why.isNotEmpty() ? " (alone, the reads said: " + d.why + ")" : juce::String());
+    return d;
 }
 inline juce::var rowVar (const Row& r)
 {
