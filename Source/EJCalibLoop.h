@@ -98,6 +98,17 @@ struct CalibLoop
     // Eight windows, about 24 s: long enough that a quiet phrase does not end a dial, short enough
     // that he is never the thing that gives up. See (4c) for what happens when it is reached.
     static constexpr int kDisagreeEnd  = 8;
+    // ---- WHAT "DISAGREE" MEANS (his test 4 at 09:10, 24 Oct 2026) --------------------------------
+    //
+    // *"'Disagree' should only mean the two readings fall on opposite sides of the band, or apart by
+    //  more than a set margin. Two readings both short means step."*
+    //
+    // His Vac Attack read level 0.5 dB and crest 0.3 dB against a band of 0.3-1.0, and was told its
+    // meters disagreed. They could not have agreed more: both readings sat INSIDE the band. The old
+    // test only recognised agreement when both sensors were outside it on the SAME side, so every
+    // pair that landed in the band - the one place a dial is trying to reach - was a disagreement.
+    // This is the margin the second half of his rule asks for.
+    static constexpr float kSensorMarginDb = 1.0f;
     static constexpr int kMaxWindows   = 200;
     static constexpr float kCeilingDbTp = -3.0f;   // the input ceiling the drive may not push past (21p item 3)
 
@@ -1747,7 +1758,24 @@ struct CalibLoop
         {
             const bool levelUnder = w.grLevelDb < lo, levelOver = w.grLevelDb > hi;
             const bool crestUnder = w.grCrestDb < lo, crestOver = w.grCrestDb > hi;
-            if (! ((levelUnder && crestUnder) || (levelOver && crestOver)))
+            // ---- HIS RULE, IN HIS TWO CLAUSES (test 4 at 09:10, 24 Oct 2026) -----------------
+            //
+            // *"'Disagree' should only mean the two readings fall on opposite sides of the band, or
+            //  apart by more than a set margin. Two readings both short means step."*
+            //
+            // AND THE ORIGINAL PURPOSE OF THIS GATE SURVIVES IT INTACT, which is the test I put the
+            // change through before making it. Both runaways it was built for are opposite-sides
+            // cases and both are still held:
+            //   - the 19:43 CL 1B: crest ~0 (under the band) with level over it  -> held;
+            //   - level_loop_guard case (9): level 6 dB over, crest ~0 (under)   -> held.
+            // What is no longer held is a pair sitting in the band, or a pair that both say the same
+            // thing: SHORT. Stepping when both sensors say short cannot walk the control away from
+            // the target - it walks TOWARDS it - and the run's own deadlines (kMaxWindows,
+            // kStaleRunEnd) and the control's range still bound it if a sensor is simply broken.
+            const bool oppositeSides = (levelUnder && crestOver) || (levelOver && crestUnder);
+            const bool farApart      = std::abs (w.grLevelDb - w.grCrestDb) > kSensorMarginDb;
+            const bool bothShort     = w.grLevelDb < hi - 0.05f && w.grCrestDb < hi - 0.05f;
+            if ((oppositeSides || farApart) && ! bothShort)
             {
                 // ---- AND A HOLD HAS AN ENDING (his test 3 at 16:40, 23 Oct 2026) -------------
                 //
@@ -1779,7 +1807,12 @@ struct CalibLoop
                     //  that had arrived exactly where it was asked to reported a shortfall. The
                     //  reading and the band already answer the question - the line just has to read
                     //  them instead of assuming the unhappy case.
-                    const bool atTarget = reached >= lo - 0.05f;
+                    // ---- "ALREADY" IS A CLAIM ABOUT THE TARGET (his 09:10, 24 Oct 2026) ----
+                    // *"'already' is wrong when it's short of the target."*  It was measured
+                    // against the band's LOW edge, which for a 1 dB target is 0.3 - so 0.5 dB was
+                    // reported as "doing about 0.5 dB already" when it was half of what was asked.
+                    // The target is the top of the band and always was; this reads it.
+                    const bool atTarget = reached >= hi - 0.05f;
                     state = State::Clamped; closingOwed = true;
                     closingOwedText = atTarget
                         ? plugin + " is doing about " + juce::String (std::abs (reached), 1)
