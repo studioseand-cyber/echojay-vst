@@ -4405,16 +4405,22 @@ bool ChainHost::readControlDb (int slotIndex, const juce::String& controlName, f
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
     auto* proc = const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex);
     if (proc == nullptr) return false;
-    const auto want = controlName.trim().toLowerCase();
-    for (auto* p : proc->getParameters())
-        if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want)
-        {
-            double db = 0.0;
-            if (! echojay::parseDisplayDb (p->getText (p->getValue(), 256), db)) return false;
-            if (db <= -1.0e8 || db >= 1.0e8) return false;   // "-inf" is not a reading
-            outDb = (float) db;
-            return true;
-        }
+    // ---- THE KNOB, NOT A METER WITH THE SAME NAME (his 21:04, 23 Oct 2026) -------------------
+    // This scanned for the FIRST parameter whose name matched, and bx_opto has two called "Peak
+    // Reduction": the knob (at 33) and a read-out of what it is doing (0.0 dB, because nothing was
+    // being reduced yet). The dial read the read-out, took it as the knob's position, and the
+    // opening write then set the knob to 0 - so the add's 33 became "no compression", which is
+    // what he saw as "the dial went the wrong way" on three plugins. echojay::namedControl is the
+    // one matcher now, and the write road below uses it too, so a read and a write can no longer
+    // mean different parameters.
+    if (auto* p = echojay::namedControl (*proc, controlName, echojay::kParamNameQueryLen))
+    {
+        double db = 0.0;
+        if (! echojay::parseDisplayDb (p->getText (p->getValue(), 256), db)) return false;
+        if (db <= -1.0e8 || db >= 1.0e8) return false;   // "-inf" is not a reading
+        outDb = (float) db;
+        return true;
+    }
     return false;
 }
 
@@ -4425,9 +4431,7 @@ bool ChainHost::readControlRaw (int slotIndex, const juce::String& controlName,
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
     auto* proc = const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex);
     if (proc == nullptr) return false;
-    const auto want = controlName.trim().toLowerCase();
-    for (auto* p : proc->getParameters())
-        if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want)
+    if (auto* p = echojay::namedControl (*proc, controlName, echojay::kParamNameQueryLen))
         {
             outRaw  = p->getValue();
             outText = p->getText (p->getValue(), 256);
@@ -4447,11 +4451,17 @@ bool ChainHost::landControlAtDb (int slotIndex, const juce::String& controlName,
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
     auto* proc = getSlotProcessor (slotIndex);
     if (proc == nullptr) return false;
-    juce::AudioProcessorParameter* q = nullptr;
-    const auto want = controlName.trim().toLowerCase();
-    for (auto* p : proc->getParameters())
-        if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want) { q = p; break; }
-    if (q == nullptr) return false;
+    // SETTABLE ONLY on the write road: a parameter that is not automatable is a read-out, and
+    // setValueNotifyingHost on one of those either does nothing or moves something nobody named.
+    auto* q = echojay::namedControl (*proc, controlName, echojay::kParamNameQueryLen,
+                                     /*settableOnly*/ true);
+    if (q == nullptr)
+    {
+        EchoJay_NSLog (("EJThreshold: no readback search on \"" + controlName + "\" - this plugin has "
+                        "no SETTABLE control by that name (a read-out of the same name is not one; "
+                        "his 21:04)").toRawUTF8());
+        return false;
+    }
 
     const auto r = echojay::searchForDb (*q, targetDb, toleranceDb, maxSteps);
     if (r.refusal.isNotEmpty())

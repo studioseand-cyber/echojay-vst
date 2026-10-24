@@ -88,6 +88,144 @@ static void dialSidesAndWordsLegs()
             "ask": false
           }]
         })EJ");
+        // ---- THE DIAL'S BAND, ITS SILENCE AND ITS PARAMETER (his 20:51 and 21:04, 23 Oct) -----
+        //
+        // Three faults he read as "the dial went the wrong way" on three plugins, and none of them
+        // was a direction:
+        //
+        //  (a) THE BAND CONTAINED NOTHING. configFromBlock turned B's "target 1 dB" into
+        //      [target - 1, target] = 0.0-1.0, so no compression at all was inside the band: his
+        //      Lindell SBC read 0.1 dB for six windows, counted as in-band twice, and finished
+        //      without ever stepping. A band that silence satisfies cannot fail, so it tests nothing.
+        //
+        //  (b) THE DIAL ASKED A QUESTION. "...it is working 0.1 dB. Does that sit better with the
+        //      rest of the mix?" below the card, because `askAfterDial` defaulted to true and his
+        //      block carried no `ask`. On this road the default is now the other way.
+        //
+        //  (c) IT READ A METER AS A KNOB. bx_opto names "Peak Reduction" twice - the knob (33) and a
+        //      read-out of what the knob is doing (0.0 dB) - and the name scan took the first match,
+        //      so the opening write put 0.0 on the knob and the add's 33 became no compression.
+        //      DS8 holds the matcher that now decides, and it is the SAME one the write road uses.
+        {
+            // READ THE BLOCK, which is what these two fixes produce. (A threshold Config needs a
+            // host to read the control's range, and configsFromBlock refuses without one - my first
+            // cut of this leg asked for a Config and got none, which is a leg measuring its own
+            // fixture rather than the product.)
+            const auto blockFor = [] (double target)
+            {
+                auto dial = juce::JSON::parse (juce::String (R"EJ({"control":"Threshold","target_gr_db":)EJ")
+                                               + juce::String (target)
+                                               + R"EJ(,"sense":"lower_is_harder","actuator":"threshold"})EJ");
+                juce::String why;
+                return echojay::CalibLoop::blockFromDialOnPlayback (dial, 0, why);
+            };
+            const auto bandOf = [] (const juce::var& blk, float& lo, float& hi)
+            {
+                if (auto* a = blk.getProperty ("gr_target_db", juce::var()).getArray(); a != nullptr && a->size() == 2)
+                { lo = (float) (double) a->getUnchecked (0); hi = (float) (double) a->getUnchecked (1); return true; }
+                return false;
+            };
+            float lo1 = -1.0f, hi1 = -1.0f, lo2 = -1.0f, hi2 = -1.0f;
+            const auto b1 = blockFor (1.0), b2 = blockFor (0.4);
+            const bool got1 = bandOf (b1, lo1, hi1), got2 = bandOf (b2, lo2, hi2);
+            check (got1 && lo1 > 0.05f && std::abs (hi1 - 1.0f) < 1.0e-3f,
+                   "DS5 a 1 dB target's band EXCLUDES SILENCE - its low end is clear of zero while the "
+                   "band keeps its shape ([target-1, target], the convention level_loop_guard 17a/17b "
+                   "state)  (RED as it shipped at 20:51: 0.0-1.0, so his Lindell read 0.1 dB, counted "
+                   "that as in-band twice and finished without stepping once)",
+                   "band " + juce::String (lo1, 2) + "-" + juce::String (hi1, 2));
+            check (got2 && lo2 > 0.05f,
+                   "DS5b ...and a SMALL target keeps a floor clear of zero, so no target can ever be "
+                   "satisfied by a plugin doing nothing at all",
+                   "target 0.4 -> band " + juce::String (lo2, 2) + "-" + juce::String (hi2, 2));
+            float lo3 = -1.0f, hi3 = -1.0f;
+            const bool got3 = bandOf (blockFor (3.0), lo3, hi3);
+            check (got3 && std::abs (lo3 - 2.0f) < 1.0e-3f && std::abs (hi3 - 3.0f) < 1.0e-3f,
+                   "DS5c ...and a band that was never in doubt is UNMOVED: a 3 dB target is still 2-3, "
+                   "the shape every other leg and every closing's prose assumes  (my first cut of DS5 "
+                   "straddled the target instead and level_loop_guard 17a/17b caught it - a convention "
+                   "changed for no reason is a regression, however well meant)",
+                   "target 3 -> band " + juce::String (lo3, 2) + "-" + juce::String (hi3, 2));
+            const auto askV = b1.getProperty ("ask", juce::var());
+            check (! askV.isVoid() && ! (bool) askV,
+                   "DS6 ...and a dial on playback asks NO question unless B's own block asks for one  "
+                   "(RED at 20:51: \"it is working 0.1 dB. Does that sit better with the rest of the "
+                   "mix?\" arrived below the card)",
+                   askV.isVoid() ? juce::String ("the block carries no `ask` at all")
+                                 : ("ask=" + juce::String ((int) (bool) askV)));
+            // ...and B's own `ask: true` still wins, so this is a DEFAULT and not a new refusal.
+            auto dialAsks = juce::JSON::parse (R"EJ({"control":"Threshold","target_gr_db":1,"ask":true,"sense":"lower_is_harder","actuator":"threshold"})EJ");
+            juce::String whyA;
+            const auto bAsk = echojay::CalibLoop::blockFromDialOnPlayback (dialAsks, 0, whyA);
+            check ((bool) bAsk.getProperty ("ask", juce::var (false)),
+                   "DS6b ...and a block that DOES ask for a question keeps it - the silence is this "
+                   "road's default, not a rule B cannot override",
+                   "ask=" + bAsk.getProperty ("ask", juce::var()).toString());
+        }
+        {
+            // DS8: the knob wins over a read-out of the same name, and a WRITE will not take the
+            // read-out at all. A four-parameter stand-in, because the rig never loads a licensed
+            // plugin and this is arithmetic about parameter flags, not about bx_opto.
+            struct TwoNamed : public juce::AudioProcessor
+            {
+                struct P : public juce::AudioProcessorParameter
+                {
+                    P (juce::String n, bool autom, juce::String txt) : nm (std::move (n)), au (autom), tx (std::move (txt)) {}
+                    float getValue() const override { return v; }
+                    void setValue (float nv) override { v = nv; }
+                    float getDefaultValue() const override { return 0.0f; }
+                    juce::String getName (int) const override { return nm; }
+                    juce::String getLabel() const override { return {}; }
+                    juce::String getText (float, int) const override { return tx; }
+                    float getValueForText (const juce::String& t) const override { return t.getFloatValue(); }
+                    bool isAutomatable() const override { return au; }
+                    juce::String nm, tx; bool au; float v = 0.0f;
+                };
+                TwoNamed()
+                {
+                    addParameter (meter = new P ("Peak Reduction", false, "0.0 dB"));   // the read-out
+                    addParameter (knob  = new P ("Peak Reduction", true,  "33"));       // the control
+                }
+                const juce::String getName() const override { return "Two Named"; }
+                void prepareToPlay (double, int) override {}
+                void releaseResources() override {}
+                void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+                double getTailLengthSeconds() const override { return 0.0; }
+                bool acceptsMidi() const override { return false; }
+                bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+                bool hasEditor() const override { return false; }
+                int getNumPrograms() override { return 1; }
+                int getCurrentProgram() override { return 0; }
+                void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; }
+                void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {}
+                void setStateInformation (const void*, int) override {}
+                P* meter = nullptr; P* knob = nullptr;
+            };
+            TwoNamed tn;
+            auto* got  = echojay::namedControl (tn, "Peak Reduction", 64);
+            auto* gotW = echojay::namedControl (tn, "Peak Reduction", 64, /*settableOnly*/ true);
+            check (got == tn.knob && gotW == tn.knob,
+                   "DS8 a plugin that names the same control twice - a knob and a read-out of what the "
+                   "knob is doing - resolves to the KNOB, on the read road and the write road alike  "
+                   "(RED as it shipped at 21:04: the first match won, so the dial read the read-out's "
+                   "\"0.0 dB\" as the knob's position and the opening write put 0.0 on a knob at 33)",
+                   got == nullptr ? juce::String ("nothing matched")
+                                  : juce::String ("read ") + (got == tn.knob ? "knob" : "meter")
+                                    + ", write " + (gotW == tn.knob ? "knob" : (gotW == nullptr ? "refused" : "meter")));
+            // ...and the OTHER direction: a plugin whose only match is a read-out offers nothing to
+            // write, so the loop holds instead of writing to something that cannot take it.
+            struct OnlyMeter : public TwoNamed
+            { OnlyMeter() { knob->au = false; } };
+            OnlyMeter om;
+            check (echojay::namedControl (om, "Peak Reduction", 64, true) == nullptr
+                   && echojay::namedControl (om, "Peak Reduction", 64) != nullptr,
+                   "DS8b ...and a name that ONLY matches read-outs can still be read and never written, "
+                   "which is the honest answer rather than a write that lands nowhere",
+                   "write refused, read allowed");
+        }
         std::vector<echojay::CalibLoop::Config> dcs;
         juce::String dwhy;
         const int n = echojay::CalibLoop::configsFromBlock (blk, 1, false, nullptr, dcs, dwhy);

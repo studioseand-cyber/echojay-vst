@@ -151,6 +151,12 @@ struct CalibLoop
     // the hold at (4c) ends when it reaches kDisagreeEnd. Reset the moment they agree, because a
     // disagreement that resolves is not a disagreement - it is one phrase.
     int    disagreeRun = 0;
+    // ---- THE FIRST STEP IS ALSO A MEASUREMENT OF THE DIRECTION (his 20:51, 23 Oct 2026) ---------
+    // What the reduction was before the first step, and which way this loop wanted it to go. Read
+    // once, on the window after that step, and then `senseChecked` closes the question for good.
+    float  grAtFirstStep       = std::numeric_limits<float>::quiet_NaN();
+    bool   firstStepWantedMore = false;
+    bool   senseChecked        = false;
     bool   judgedAny   = false; // 06d item 9: has ANY window ever been a sample? decides which ending is honest
     bool   awaitFresh  = false;        // a move or a handover just happened: the next window is not judged
     State  state       = State::Idle;
@@ -767,10 +773,41 @@ struct CalibLoop
         const bool senseStated = (senseWire == "higher_is_harder" || senseWire == "lower_is_harder");
         const bool  isThreshold = senseStated ? (actWire == "threshold")
                                               : control.containsIgnoreCase ("threshold");
+        // ---- THE BAND MUST NOT CONTAIN "NOTHING" (his test 2 at 20:51, 23 Oct 2026) ---------
+        //
+        // *"Lindell SBC added at threshold 4.34, the dial moved it to +4.8 and ended at 0.1 dB
+        //  against a 1 dB target."*
+        //
+        // The band was [target - 1, target], so B's "target 1 dB" became **0.0 - 1.0** - and 0 dB of
+        // gain reduction is inside it. His log: six windows at gr 0.1, -0.4, 0.1 ... "in the band,
+        // twice running" and the hold finished having never stepped once. The direction was never in
+        // doubt (the start line says "lower is harder" and it is right); the target was simply
+        // satisfied by doing nothing. A band that "no compression" passes is an unpassable test
+        // turned inside out: it cannot fail, so it measures nothing.
+        //
+        // THE BAND KEEPS ITS SHAPE AND GAINS A FLOOR. My first cut of this straddled the target
+        // (t-0.5 to t+0.5) and level_loop_guard's 17a/17b were right to refuse it: the band is
+        // [target - 1, target] by convention, and that convention is stated in prose the whole
+        // system quotes - "the band whose prose has always been 3 dB". A target of 3 means 2-3, and
+        // nothing about his Lindell needed that changed.
+        //
+        // What DID need changing is the one case where the convention lands on zero: a target of
+        // 1 dB gave 0.0-1.0, and "no compression at all" was inside the band. So the low end is
+        // floored clear of zero and everything else is untouched: 3 -> 2.0-3.0 as before, 1 ->
+        // 0.3-1.0, 0.4 -> 0.3-0.4. No band can be satisfied by silence, and no band that was already
+        // honest has moved.
+        static constexpr float kBandFloor = 0.3f;
         juce::Array<juce::var> band;
-        band.add (juce::var (target - 1.0f));
+        band.add (juce::var (juce::jmax (kBandFloor, target - 1.0f)));
         band.add (juce::var (target));
         auto* blk = new juce::DynamicObject();
+        // ---- A DIAL NEVER ASKS A QUESTION (B's contract of 23 Oct; his 20:51) ---------------
+        // *"No message outside the card and no question after a dial; the result goes on the card
+        //  using B's done line."*  His Lindell closing arrived as "...it is working 0.1 dB. Does
+        //  that sit better with the rest of the mix?" because `askAfterDial` defaults to true and
+        //  his block carried no `ask`. A dial on playback is a step's result, not a conversation,
+        //  so on THIS road the default is inverted: silent unless B's own block asks for a question.
+        blk->setProperty ("ask", dp->hasProperty ("ask") ? dp->getProperty ("ask") : juce::var (false));
         blk->setProperty ("slot", addedSlot0 + 1);               // 1-BASED, as the wire is
         blk->setProperty ("gr_target_db", juce::var (band));
         blk->setProperty ("mode", "listen");                     // it must DRIVE, not observe
@@ -1735,12 +1772,25 @@ struct CalibLoop
                 if (++disagreeRun >= kDisagreeEnd)
                 {
                     const float reached = juce::jmax (w.grLevelDb, w.grCrestDb);
+                    // ---- AND IT SAYS WHICH IT IS (his test 3 at 20:57, 23 Oct 2026) -----------
+                    // *"the target was about 1 dB and it measured 1.0, so "only reaches" is wrong.
+                    //  When it is at target but the meters disagree, say that."*  Quite right: the
+                    //  first cut of this line said "only reaches" whatever the figure was, so a dial
+                    //  that had arrived exactly where it was asked to reported a shortfall. The
+                    //  reading and the band already answer the question - the line just has to read
+                    //  them instead of assuming the unhappy case.
+                    const bool atTarget = reached >= lo - 0.05f;
                     state = State::Clamped; closingOwed = true;
-                    closingOwedText = plugin + " only reaches " + juce::String (std::abs (reached), 1)
-                                    + " dB of gain reduction here, and its two meters disagree about "
-                                      "it (level " + juce::String (w.grLevelDb, 1) + " dB, crest "
-                                    + juce::String (w.grCrestDb, 1) + " dB). I have left it where it "
-                                      "is rather than dial on a reading I cannot trust.";
+                    closingOwedText = atTarget
+                        ? plugin + " is doing about " + juce::String (std::abs (reached), 1)
+                          + " dB already; its meters disagree about it (level "
+                          + juce::String (w.grLevelDb, 1) + " dB, crest "
+                          + juce::String (w.grCrestDb, 1) + " dB), so I left it as it is."
+                        : plugin + " only reaches " + juce::String (std::abs (reached), 1)
+                          + " dB of gain reduction here, and its two meters disagree about "
+                            "it (level " + juce::String (w.grLevelDb, 1) + " dB, crest "
+                          + juce::String (w.grCrestDb, 1) + " dB). I have left it where it "
+                            "is rather than dial on a reading I cannot trust.";
                     s.finished = true; s.closing = closingOwedText;
                     s.card = card();
                     s.logLine = log ("ended-disagree")
@@ -1772,6 +1822,42 @@ struct CalibLoop
         if (writesNamedParam())
         {
             const bool harder = w.grDb < lo;                      // too little reduction -> work it harder
+            // ---- THE DIRECTION IS CHECKED AGAINST THE FIRST STEP (his test 2, 20:51, 23 Oct) ---
+            //
+            // *"Check the dial's direction per plugin: which way the control increases gain
+            //  reduction, from the map or profile, or measured by the dial's first step."*
+            //
+            // The declared sense comes first and usually stands: B sends it from the profile's
+            // measured curve, and on his Lindell it was right ("lower is harder"). But a sense can
+            // be wrong - sampled on different material, or a control the curve mapped loosely - and
+            // the dial has the one piece of evidence nobody else has: what happened when it moved.
+            //
+            // So the FIRST step is also a measurement. If GR went the wrong way by more than the
+            // noise on this sensor, the sense is inverted ONCE, out loud, and the loop carries on
+            // from where it is. Once per loop and never again, because a second flip is an
+            // oscillation and would walk the control to a limit - and if the first flip was wrong
+            // the clamp and the band still end the loop with a sentence.
+            if (steps == 1 && ! senseChecked && (lastGr == lastGr) && (grAtFirstStep == grAtFirstStep))
+            {
+                senseChecked = true;
+                const float moved = w.grDb - grAtFirstStep;      // + = more reduction after the step
+                const bool wantedMore = firstStepWantedMore;
+                if (std::abs (moved) > 0.25f && ((wantedMore && moved < 0.0f) || (! wantedMore && moved > 0.0f)))
+                {
+                    senseSign = -senseSign;
+                    log ("sense-inverted");
+                    EchoJay_NSLog (("EJThreshold: \"" + plugin + "\" - the FIRST STEP measured the "
+                                    "direction and it was the other way: " + knobText() + " moved to "
+                                    + driveText() + " dB and the reduction went from "
+                                    + juce::String (grAtFirstStep, 1) + " to " + juce::String (w.grDb, 1)
+                                    + " dB while this loop wanted "
+                                    + (wantedMore ? "MORE" : "LESS")
+                                    + ". The declared sense is inverted for the rest of this loop "
+                                      "(once, never twice - his 20:51 ruling)").toRawUTF8());
+                }
+            }
+            if (steps == 0)
+            { grAtFirstStep = w.grDb; firstStepWantedMore = harder; }
             const float wantP = value + (harder ? (float) senseSign : -(float) senseSign) * kStepDb;
             if (steps >= effMaxSteps() || wantP < minDb - 1.0e-4f || wantP > maxDb + 1.0e-4f)
             {
@@ -2672,6 +2758,16 @@ struct CalibLoop
                 // But the DRIVE is EchoJay's own pre-slot gain, not the plugin's control, so "the compressor's
                 // drive" misattributes it - and loudness_loop_guard 21t-d (1) asserts the drive form, correctly.
                 // So: a named plugin control is named; the drive keeps the wording it has always had.
+                // ---- AND A DIAL THAT FELL SHORT SAYS SO SHORTLY (his 20:51, 23 Oct 2026) ------
+                // *"the result goes on the card using B's done line (short: "only reaches 0.1 dB
+                //  here...")."*  B's own `say.short` is used when his block carries one
+                // (sayLineFilled, above). Without one, this is that shape rather than a sentence
+                // about a knob position he did not ask about: his Lindell line led with "Adjusted
+                // the Lindell SBC's Threshold to +4.8 dB", which was the dial's OPENING write of
+                // the value the plugin already had, and read as though the dial had moved it there.
+                : (lastGr == lastGr && lastGr + 0.05f < lo)
+                      ? plugin + " only reaches " + grText() + " dB here, short of the "
+                        + juce::String (lo, 1) + "-" + juce::String (hi, 1) + " dB it was aiming for."
                 : writesNamedParam()
                       ? "Adjusted the " + plugin + "'s " + knobText() + " to " + driveText()
                         + " dB - it is working " + grText() + " dB."

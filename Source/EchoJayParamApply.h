@@ -784,6 +784,42 @@ inline juce::StringArray readOnlyParamNames (const juce::AudioProcessor& p, int 
         if (params[i] != nullptr && ! params[i]->isAutomatable()) out.add (params[i]->getName (nameLen));
     return out;
 }
+/** ---- WHICH PARAMETER *IS* A NAMED CONTROL (his 21:04, 23 Oct 2026) -------------------------
+
+    A plugin may expose the SAME NAME twice: the knob, and a read-out of what the knob is doing.
+    bx_opto does - his log has the dial reading "Peak Reduction" as 0.00 dB in the same second as the
+    card's read-back reporting Peak Reduction = 33 - and the dial then wrote its reading back, so the
+    add's 33 became 0 and the plugin stopped compressing. His three "the dial went the wrong way"
+    reports (Vac Attack to +0.0, Lindell 4.34 -> 4.8, bx_opto to +0.0) are this, not a direction:
+    a name scan that takes the FIRST match is a proxy standing in for an identity.
+
+    The line between the two is the one this file already draws for the map builder: isAutomatable()
+    is the AU's own flag, and measured on the PuigChild 660 its six controls are "Readable, Writable"
+    while all 69 LED/VU rows are "Not Real Time, Readable". So a SETTABLE match wins over a
+    read-only one of the same name, and read and write pick the same parameter because they both
+    come here.
+
+    Returns nullptr when nothing matches. A read-only match is returned only when there is no
+    settable one, because a read-out is still better than nothing for a pure READING - the caller
+    that is about to WRITE asks `settableOnly`. */
+inline juce::AudioProcessorParameter* namedControl (juce::AudioProcessor& proc,
+                                                    const juce::String& controlName,
+                                                    int nameLen,
+                                                    bool settableOnly = false)
+{
+    const auto want = controlName.trim().toLowerCase();
+    if (want.isEmpty()) return nullptr;
+    juce::AudioProcessorParameter* readOnlyMatch = nullptr;
+    for (auto* q : proc.getParameters())
+    {
+        if (q == nullptr) continue;
+        if (q->getName (nameLen).trim().toLowerCase() != want) continue;
+        if (q->isAutomatable()) return q;                  // the control
+        if (readOnlyMatch == nullptr) readOnlyMatch = q;   // a read-out of the same name
+    }
+    return settableOnly ? nullptr : readOnlyMatch;
+}
+
 inline int settableParamCount (const juce::AudioProcessor& p, int cap)
 {
     const auto& params = p.getParameters();
