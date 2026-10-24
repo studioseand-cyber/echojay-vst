@@ -668,6 +668,16 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     int          shadowRingFd_  = -1;
     juce::String shadowRingPath_;
     juce::String shadowSeedNote_;      // FOLLOW layer 1: why this view is on defaults, if it is
+    // ---- FOLLOW layer 2: the Link's parameter values, read at the editor's rate --------------
+    void*        shadowValMap_ = nullptr;
+    int          shadowValFd_  = -1;
+    juce::String shadowValPath_;
+    std::vector<float> shadowValRead_;     // one frame's values, reused, never allocated on a tick
+    juce::uint32 shadowValSeqSeen_ = 0;    // the last STABLE seq applied; unchanged = no new frame
+    juce::uint32 shadowCopyDigest_ = 0;    // the copy's schema, taken once when the view starts
+    juce::String shadowFollowNote_;        // what he reads when the knobs are NOT being followed
+    bool         shadowFollowSaid_ = false;
+    int          shadowFollowFrames_ = 0, shadowFollowWrites_ = 0;
     /** Install a prepared copy and start consuming that Link's shadow ring. The caller has already
         asked the Link to tap the slot (the control channel's `shadowSlot`) and seen its ack. FALSE
         with `whyNot` set changes nothing - the view falls back to the static picture, which is the
@@ -682,6 +692,13 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         the plain line the card shows. ONE PLACE, so the ack's refusal and the plugin's refusal
         cannot be worded differently by two call sites. */
     juce::String shadowSeedNote() const { return shadowSeedNote_; }
+    /** FOLLOW layer 2: read the Link's latest values for the tapped slot and write the CHANGED
+        ones into the copy. Message thread, called from the editor's own timer - a parameter write
+        is a plugin call and belongs nowhere else. Cheap and silent when there is no new frame. */
+    void shadowFollowTick();
+    /** Empty while the knobs are following; otherwise the one plain line saying they are not. */
+    juce::String shadowFollowNote() const { return shadowFollowNote_; }
+    int shadowFollowWrites() const noexcept { return shadowFollowWrites_; }
     /** Stop consuming and release the copy. The ring is unmapped AFTER the view has let go. */
     void shadowEnd();
     bool shadowRunning() const noexcept { return shadowView_.running(); }

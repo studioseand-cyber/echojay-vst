@@ -2813,6 +2813,7 @@ private:
     // to tap it, making the copy, and taking both down when he leaves. The processor owns the copy
     // and the ring; the panel needs no change at all, because the copy's editor comes back through
     // createSlotEditorForView like every other slot's.
+    juce::String shadowFollowNoteShown_;   // FOLLOW layer 2: the last line put on the card
     juce::String shadowWantUid_;        // what is on screen now (empty = nothing wanted)
     int          shadowWantSlot_ = -1;
     bool         shadowAsking_   = false;   // a request is in flight; one at a time

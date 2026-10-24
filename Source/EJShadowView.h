@@ -39,8 +39,9 @@
 #include "EJShadowTap.h"
 #include "EJPluginCallWindow.h"   // his 08:58 crash, 24 Oct: no render while we are inside a plugin
 #include "EJShadowChannels.h"  // his 12:14 crash, 24 Oct: an unfed key bus is a null pointer
-#include "EJShadowKeep.h"
-#include "EJShadowState.h"  // FOLLOW layer 1, and the repeat-crash marker his ruling asked for      // his 14:27 crash, 24 Oct: a hosted AU is never disposed mid-session
+#include "EJShadowKeep.h"    // his 14:27 crash, 24 Oct: a hosted AU is never disposed mid-session
+#include "EJShadowState.h"   // FOLLOW layer 1, and the repeat-crash marker his ruling asked for
+#include "EJShadowValues.h"  // FOLLOW layer 2: the Link's values, written into the copy
 
 namespace echojay
 {
@@ -190,6 +191,7 @@ public:
             leaving = std::move (inst_);
             ring_ = nullptr;
             keyPlan_.clear();   // the plan belongs to the copy and dies with it
+            lastApplied_.clear();   // and so does what layer 2 last wrote into it
         }
         // ---- IT IS NEVER DESTROYED HERE (his 14:27 crash, 24 Oct 2026) -------------------------
         //
@@ -344,6 +346,40 @@ public:
         VIEW ONLY, this round: the caller is responsible for dropping the gestures (its own
         interceptor sits over this component), because a guest editor cannot be asked to grey its
         controls. docs/SHADOW_VIEW_STAGES_2026-10-23.md, §3.1. */
+    /** ---- FOLLOW LAYER 2: WRITE WHAT MOVED INTO THE COPY (24 Oct 2026) --------------------
+
+        Message thread only, and it says so by taking the PluginCallWindow: a parameter write is a
+        call into a hosted plugin, and the 08:58 rule is that the copy does not render while we are
+        inside one of those. The bench leg asks that question of the real plugin; this is the answer
+        we take anyway, because it costs one atomic and buys the whole hazard.
+
+        CHANGED-ONLY, against what was LAST APPLIED and not against the copy's current value: a
+        plugin that quantises or ignores a write would otherwise be written to on every tick for
+        ever. The record lives here and dies with the view, so a NEW view applies everything once -
+        which is exactly what a new view should do.
+
+        Returns how many parameters moved, or -1 when there is no copy to write to. */
+    int followApply (const float* values, int count)
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        if (inst_ == nullptr) return -1;
+        const PluginCallWindow noRenderWhileWeAreInHere;
+        return echojay::shadowApplyChangedValues (*inst_, values, count, lastApplied_);
+    }
+
+    /** The copy's own schema digest, for the mismatch refusal, and its parameter count. Asked once
+        per view, so computed rather than cached - a cache here would be a second fact. */
+    juce::uint32 copySchemaDigest()
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        return inst_ != nullptr ? echojay::shadowSchemaDigest (*inst_) : 0u;
+    }
+    int copyParamCount()
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        return inst_ != nullptr ? inst_->getParameters().size() : 0;
+    }
+
     juce::AudioProcessorEditor* createEditorIfPossible()
     {
         if (! running() || inst_ == nullptr) return nullptr;
@@ -384,6 +420,7 @@ public:
 
 private:
     juce::SpinLock                           lock_;
+    std::vector<float>                       lastApplied_;      // FOLLOW layer 2, under lock_
     std::unique_ptr<juce::AudioProcessor>    inst_;      // under lock_
     void*                                    ring_ = nullptr;   // under lock_; owned by the caller
     juce::AudioBuffer<float>                 buf_;      // allocated at prepare, audio thread's own

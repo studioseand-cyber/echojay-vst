@@ -4349,6 +4349,32 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
         return false;
     }
 
+    // ---- FOLLOW LAYER 2: THE LINK'S VALUES, MAPPED READ-ONLY (24 Oct 2026) --------------------
+    //
+    // *"the Link publishes the tapped slot's parameter values, the V2 writes only the changed ones
+    // into the copy."*  ONE NAME, from the uid, shared by both processes (EJShadowValues.h) -
+    // never a second derivation of one fact, which is what the audio ring's name is.
+    //
+    // READ-ONLY AND CREATE-IF-MISSING=FALSE, for the same reason the ring is: the LINK owns this
+    // file's existence, and a V2 that created it would turn "an older Link" into a frame of
+    // zeros - which would be applied to his knobs. Absence is the answer, and it is said out loud.
+    shadowValSeqSeen_ = 0; shadowFollowNote_.clear(); shadowFollowSaid_ = false;
+    shadowFollowFrames_ = 0; shadowFollowWrites_ = 0;
+    {
+        const auto vpath = linkResolvedDir + echojay::shadowValuesFileNameFor (uid);
+        int vfd = -1, verr = 0;
+        shadowValMap_ = LinkShm::openFileMapped (vpath, echojay::kShadowValFileSize,
+                                                 /*readOnly*/ true, vfd, verr,
+                                                 /*createIfMissing*/ false);
+        shadowValFd_   = vfd;
+        shadowValPath_ = shadowValMap_ != nullptr ? vpath : juce::String();
+        if (shadowValMap_ == nullptr)
+            EchoJay_NSLog (("EJShadow: no values file from " + uid + " (" + vpath + ") - the view "
+                            "will show and hear this slot but its knobs will NOT follow the Link. "
+                            "That is an older Link on the other side, and the card says so")
+                           .toRawUTF8());
+    }
+
     // ---- THE COPY KEEPS ITS OWN BUSES, AND EVERY KEY BUS IS FED (his 12:14 crash, 24 Oct 2026) --
     //
     // THIS ASKED FOR A PLAIN 2-IN/2-OUT AND DISABLED EVERY OTHER BUS, and that request is what took
@@ -4443,15 +4469,101 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
         shadowRingMap_ = nullptr; shadowRingFd_ = -1; shadowRingPath_.clear();
         return false;
     }
+    // THE COPY'S SCHEMA, ONCE. It cannot change while this copy is installed, and walking every
+    // parameter's name at the editor's rate would be the dearest thing in the follow road.
+    shadowCopyDigest_ = shadowView_.copySchemaDigest();
     EchoJay_NSLog (("EJShadow: the V2 is now running its own copy of \"" + pluginName + "\" on slot "
                     + juce::String (slot0 + 1) + " of " + uid + ", fed from " + file
                     + " - output DISCARDED, no lease, no borrow, nothing owned (stage B)").toRawUTF8());
     return true;
 }
 
+/** ---- FOLLOW LAYER 2, THE V2'S HALF (24 Oct 2026) -----------------------------------------
+    *"change a knob on the Link's own window with the V2's view open, and the view should follow
+     within a moment."*
+
+    Called from the editor's 20 Hz timer, which with the Link's 30 Hz publish puts a knob on screen
+    within 35 to 85 ms - the figure the design note states, and the clock each half runs on is
+    named there rather than assumed.
+
+    CHEAP AND SILENT WHEN THERE IS NOTHING TO DO. An unchanged seq means NO NEW FRAME, which is a
+    different thing from "nothing moved" and must never be confused with it: this returns without
+    touching the plugin, and the staleness is readable rather than inferred.                     */
+void EchoJayProcessor::shadowFollowTick()
+{
+    if (! shadowView_.running()) return;
+
+    if (shadowValMap_ == nullptr)
+    {
+        if (! shadowFollowSaid_)
+        {
+            shadowFollowSaid_ = true;
+            shadowFollowNote_ = echojay::shadowMirrorDecision (false, 0, 0, 0, 0).line;
+        }
+        return;
+    }
+
+    if ((int) shadowValRead_.size() < echojay::kShadowValMax)
+        shadowValRead_.resize ((size_t) echojay::kShadowValMax, 0.0f);
+
+    echojay::ShadowValueHeader h {};
+    int count = 0;
+    const bool read = echojay::readShadowValues (shadowValMap_, h, shadowValRead_.data(),
+                                                 echojay::kShadowValMax, count);
+    if (read && h.seq == shadowValSeqSeen_) return;            // no new frame: nothing to do
+
+    const auto decision = echojay::shadowMirrorDecision (read, h.schemaDigest, shadowCopyDigest_,
+                                                         count, shadowView_.copyParamCount());
+    if (decision.what != echojay::ShadowMirror::Apply)
+    {
+        if (! shadowFollowSaid_)
+        {
+            shadowFollowSaid_ = true;
+            shadowFollowNote_ = decision.line;
+            EchoJay_NSLog (("EJShadow: " + decision.line + " (the Link's digest "
+                            + juce::String ((int) h.schemaDigest) + ", this copy's "
+                            + juce::String ((int) shadowCopyDigest_) + ", "
+                            + juce::String (count) + " value(s) read)").toRawUTF8());
+        }
+        return;
+    }
+
+    // A FRAME FOR ANOTHER SLOT IS NEVER APPLIED. The Link reuses one file across slot switches, so
+    // between the request and the first publish a frame can still name the slot he just left -
+    // and those values on these knobs is precisely the mis-apply the digest cannot catch, because
+    // two slots can hold the same plugin.
+    if (h.slot != shadowView_.slot()) return;
+
+    shadowValSeqSeen_ = h.seq;
+    ++shadowFollowFrames_;
+    const int moved = shadowView_.followApply (shadowValRead_.data(), count);
+    if (moved > 0) shadowFollowWrites_ += moved;
+    shadowFollowNote_.clear();
+
+    if (shadowFollowFrames_ == 1)
+        EchoJay_NSLog (("EJShadow: the live view is FOLLOWING slot " + juce::String (h.slot + 1)
+                        + " of " + shadowView_.uid() + " - " + juce::String ((int) h.paramCount)
+                        + " parameter(s) on the Link, " + juce::String (count) + " carried, "
+                        + juce::String (moved) + " written into the copy on the first frame "
+                        "(every one of them, by definition), the Link's sweep costing "
+                        + juce::String ((double) h.sweepMicros / 1000.0, 3) + " ms. From here only "
+                        "what moves is written").toRawUTF8());
+}
+
 void EchoJayProcessor::shadowEnd()
 {
     if (! shadowView_.running() && shadowRingMap_ == nullptr) return;
+    // FOLLOW layer 2's mapping goes first and goes immediately: only the message thread ever reads
+    // it, in this process, and this IS the message thread - so there is no block to wait out, which
+    // is the whole reason the values do not ride the audio ring.
+    if (shadowValMap_ != nullptr)
+    {
+        LinkShm::closeMapped (shadowValMap_, echojay::kShadowValFileSize, shadowValFd_,
+                              shadowValPath_, /*unlink*/ false);
+        shadowValMap_ = nullptr; shadowValFd_ = -1; shadowValPath_.clear();
+    }
+    shadowValSeqSeen_ = 0; shadowCopyDigest_ = 0; shadowFollowNote_.clear();
+    shadowFollowSaid_ = false; shadowFollowFrames_ = 0; shadowFollowWrites_ = 0;
     const auto frames = shadowView_.framesPumped();
     const auto was    = shadowView_.pluginName();
     shadowView_.stop();                     // the flag, then the instance, under its own lock

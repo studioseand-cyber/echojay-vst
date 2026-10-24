@@ -428,6 +428,10 @@ void LinkProcessor::timerCallback()
     // pointer. A rack with no ring is not a failure - the file channel carries everything, which is the
     // correct fallback - so this is attempted quietly and once.
     ringTick();
+    // ---- FOLLOW layer 2: the tapped slot's parameter values, on the tick that already exists ---
+    // One branch per tick when no live view is on this Link, which is the normal state. The cost of
+    // the feature when it is not on screen is zero, not "small" - the same bar stage A set.
+    publishShadowValuesTick();
     // SEAN'S #1 (16 Oct 2026): has the V2 answered the maps this rack asked for? On the heartbeat
     // divider below rather than every 30 Hz tick: it is a file stat, and the answer is not urgent to
     // the millisecond - a dial that lands a second after the plugin appeared is still a dial, and a
@@ -4914,6 +4918,80 @@ void LinkProcessor::setSourceTypeFromUser (const juce::String& wire, const juce:
 //  already measures this signal (ChainHost's SlotPreTrim, and its own 28 Sep comment is the
 //  argument for the tap point). Nothing is inserted, nothing is reordered, and what is heard cannot
 //  change - which is the first line of his design and the only one that is not negotiable.
+/** ---- FOLLOW LAYER 2, THE LINK'S HALF (24 Oct 2026) ----------------------------------------
+    *"the Link publishes the tapped slot's parameter values, the V2 writes only the changed ones
+     into the copy ... change a knob on the Link's own window with the V2's view open, and the view
+     should follow within a moment."*
+
+    THE MESSAGE THREAD, on the 30 Hz tick this timer already runs. A parameter read is a plugin
+    call; LinkProcessor's own ruling on kSetParam says such a call "can never be made real-time
+    safe", and that is as true of getValue as it is of a write.
+
+    WHAT IT COSTS IS MEASURED AND SAID, not assumed: the first sweep of each tap logs its own
+    duration, and every frame carries it, so the V2 and the log can both see what this is costing
+    rather than trusting a figure out of a design note.                                          */
+void LinkProcessor::publishShadowValuesTick()
+{
+    if (shadowValMap_ == nullptr) return;
+    auto* tap = chainHost.shadowTap().get();
+    const int slot = tap != nullptr ? tap->slot() : -1;
+    if (slot < 0) return;
+
+    auto* proc = chainHost.getSlotProcessor (slot);
+    if (proc == nullptr) return;
+
+    const auto& params = proc->getParameters();
+    const int have = params.size();
+    const int n    = juce::jmin (have, echojay::kShadowValMax);
+    if (n <= 0) return;
+
+    // THE DIGEST IS RECOMPUTED WHEN THE SLOT CHANGES, not every tick: it walks every parameter's
+    // name, which is the one genuinely dear thing here, and a plugin's parameter list does not
+    // change under a running tap without the rack's structure changing with it.
+    if (shadowValDigestSlot_ != slot)
+    {
+        shadowValDigest_     = echojay::shadowSchemaDigest (*proc);
+        shadowValDigestSlot_ = slot;
+        shadowValSaidCost_   = false;
+    }
+
+    if ((int) shadowValScratch_.size() < n) shadowValScratch_.resize ((size_t) n, 0.0f);
+
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < n; ++i)
+        shadowValScratch_[(size_t) i] = params[i]->getValue();
+    const auto sweepMs = juce::Time::getMillisecondCounterHiRes() - t0;
+
+    echojay::ShadowValueHeader h {};
+    h.slot              = slot;
+    h.paramCount        = (juce::uint32) have;
+    h.published         = (juce::uint32) n;
+    h.schemaDigest      = shadowValDigest_;
+    h.structureRevision = (juce::uint32) juce::jmax (0, chainHost.getChainRevision());
+    h.stateGeneration   = 0;                      // layer 3 moves this
+    h.sweepMicros       = (juce::uint32) juce::jlimit (0.0, 4.0e9, sweepMs * 1000.0);
+    echojay::publishShadowValues (shadowValMap_, h, shadowValScratch_.data(), n);
+
+    if (! shadowValSaidCost_)
+    {
+        shadowValSaidCost_ = true;
+        EchoJay_NSLog (("EJShadow: following slot " + juce::String (slot + 1) + " for the live view: "
+                        + juce::String (have) + " parameter(s), one full sweep = "
+                        + juce::String (sweepMs, 3) + " ms, published at 30 Hz ("
+                        + juce::String (sweepMs * 3.0, 2) + "% of this thread) - the V2 writes only "
+                        "what moved").toRawUTF8());
+    }
+    if (have > echojay::kShadowValMax && ! shadowValSaidTruncated_)
+    {
+        shadowValSaidTruncated_ = true;
+        EchoJay_NSLog (("EJShadow: slot " + juce::String (slot + 1) + " has " + juce::String (have)
+                        + " parameters and a frame carries " + juce::String (echojay::kShadowValMax)
+                        + ", so the live view follows the first " + juce::String (echojay::kShadowValMax)
+                        + " and NOT the rest. The count travels with every frame so the V2 can say so "
+                          "rather than show a half-followed picture as a followed one").toRawUTF8());
+    }
+}
+
 void LinkProcessor::setShadowSlot (int slot0)
 {
     auto tap = chainHost.shadowTap();
@@ -4939,6 +5017,16 @@ void LinkProcessor::setShadowSlot (int slot0)
             {
                 LinkShm::closeMapped (dying, kLinkShmSize, dyingFd, dyingPath, /*unlink*/ true);
             });
+        // AND THE VALUES FILE GOES WITH IT. Only the message thread ever touches this one, in
+        // either process, so there is no block to wait out - but it is closed AFTER the tap has
+        // stopped, so the last frame a V2 reads is never newer than the audio it belongs to.
+        if (shadowValMap_ != nullptr)
+        {
+            LinkShm::closeMapped (shadowValMap_, echojay::kShadowValFileSize, shadowValFd_,
+                                  shadowValPath_, /*unlink*/ true);
+            shadowValMap_ = nullptr; shadowValFd_ = -1; shadowValPath_.clear();
+        }
+        shadowValDigestSlot_ = -1; shadowValSaidTruncated_ = false; shadowValSaidCost_ = false;
         EchoJay_NSLog (("EJShadow: STOPPED on this Link - " + juce::String (frames)
                         + " frame(s) were streamed while it ran, and the ring is unlinked. The slot's "
                           "pre-trim now does one atomic load per block and nothing else (stage A; his "
@@ -5002,6 +5090,32 @@ void LinkProcessor::setShadowSlot (int slot0)
         shadowMap_ = map; shadowFd_ = fd; shadowPath_ = path;
         tap->resetFrames();
         tap->setRing (map);
+
+        // ---- FOLLOW LAYER 2'S FILE, MAPPED BESIDE THE RING (24 Oct 2026) ---------------------
+        // One name from the uid, used by both processes (EJShadowValues.h) - not two derivations
+        // of one fact, which is what the audio ring's name is and what nobody should copy. A
+        // failure here is NOT a failure of the view: the picture and the audio are the ring's, and
+        // a V2 that finds no values file simply says the knobs are not being followed.
+        {
+            const auto vpath = resolvedDir + echojay::shadowValuesFileNameFor (instanceUid_);
+            int vfd = -1, verr = 0;
+            auto* vmap = LinkShm::openFileMapped (vpath, echojay::kShadowValFileSize,
+                                                  /*readOnly*/ false, vfd, verr);
+            if (vmap == nullptr)
+                EchoJay_NSLog (("EJShadow: the live view's VALUES file at " + vpath + " would not "
+                                "map (errno " + juce::String (verr) + ") - the picture and the "
+                                "audio are unaffected, but its knobs will not follow this Link")
+                               .toRawUTF8());
+            else
+            {
+                // ZEROED ON CREATION, so a stale frame from a previous tap on another slot can
+                // never be read as this slot's. seq 0 is "never published", which readShadowValues
+                // treats as no frame at all rather than as a frame of zeros.
+                std::memset (vmap, 0, echojay::kShadowValFileSize);
+                shadowValMap_ = vmap; shadowValFd_ = vfd; shadowValPath_ = vpath;
+                shadowValDigestSlot_ = -1; shadowValSaidTruncated_ = false; shadowValSaidCost_ = false;
+            }
+        }
     }
     tap->setSlot (want);
     EchoJay_NSLog (("EJShadow: streaming slot " + juce::String (want + 1) + " (\""

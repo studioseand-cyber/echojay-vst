@@ -27732,6 +27732,27 @@ void EchoJayEditor::timerCallback()
         if (! agentRowPaintRect_.isEmpty()) repaint (agentRowPaintRect_);
     }
     serviceRigHook();                    // ask A: inert unless ECHOJAY_STATE_HOME and EJ_RIG_HOOK=1
+    // ---- FOLLOW LAYER 2: THE LIVE VIEW FOLLOWS THE LINK'S KNOBS (24 Oct 2026) -----------------
+    // *"change a knob on the Link's own window with the V2's view open, and the view should follow
+    // within a moment."*  This tick plus the Link's 30 Hz publish is that moment: 35 to 85 ms.
+    // It returns at once when no view is running and when no new frame has arrived, so the idle
+    // cost is one atomic load and a seq comparison.
+    {
+        processorRef.shadowFollowTick();
+        const auto note = processorRef.shadowFollowNote();
+        if (note != shadowFollowNoteShown_)
+        {
+            shadowFollowNoteShown_ = note;
+            // IT NEVER OVERWRITES LAYER 1'S LINE WITH A BLANK. The seed's sentence is about which
+            // settings the view OPENED on and is still true; this one is about whether the knobs
+            // are following. Only a real sentence replaces what is on the card.
+            if (note.isNotEmpty())
+            {
+                chainListPanel.statusText = processorRef.shadowPluginName() + ": " + note + ".";
+                chainListPanel.repaint();
+            }
+        }
+    }
     {   // item 2: the strip's OUT caption, change-detected so the strip only repaints when the words move
         const auto cap = rackOutGainCaption();
         if (cap != chainListPanel.rackOutCaption) { chainListPanel.rackOutCaption = cap; chainListPanel.repaint(); }

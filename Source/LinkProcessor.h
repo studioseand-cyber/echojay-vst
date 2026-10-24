@@ -2,6 +2,7 @@
 
 #include "EJRemoteControl.h"   // stage 1: the lease is control only - no bypass, no mute, no detour
 #include "EJCmdRing.h"        // stage 3: the value ring
+#include "EJShadowValues.h"   // FOLLOW layer 2: the tapped slot's parameter values, at 30 Hz
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "LoudnessLoop.h"   // LEVELLING V2 (10 Oct 2026): every Link levels its OWN rack
@@ -447,6 +448,19 @@ private:
     void* shadowMap_ = nullptr;
     int   shadowFd_  = -1;
     juce::String shadowPath_;
+    // ---- FOLLOW layer 2: the tapped slot's parameter values, published at 30 Hz ---------------
+    // A SECOND, TINY FILE beside the ring (EJShadowValues.h says why it cannot be a field on
+    // anything that already exists). Mapped when the tap starts and closed when it stops, so a
+    // Link with no live view on it pays one branch per tick and nothing else.
+    void* shadowValMap_ = nullptr;
+    int   shadowValFd_  = -1;
+    juce::String shadowValPath_;
+    std::vector<float> shadowValScratch_;      // one sweep's values, reused, never allocated on a tick
+    juce::uint32 shadowValDigest_ = 0;         // recomputed when the slot or the plugin changes
+    int  shadowValDigestSlot_ = -1;
+    bool shadowValSaidTruncated_ = false;      // the "more than we can carry" line, said once
+    bool shadowValSaidCost_ = false;           // the measured sweep cost, said once per tap
+    void publishShadowValuesTick();
     void nameTheMatchTarget (const std::vector<ChainHost::ChainEditOp>& ops);
     void armLoudnessAfterBuild (const juce::String& via);
     /** The slot whose OUT trim the level match writes, or -1 when the rack has no slots (19 Oct
