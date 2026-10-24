@@ -14375,7 +14375,9 @@ int main (int, char**)
             // 6. REJECTED (v1.1, B's codes): the validator's refusal goes to rejected/ with B's reason and the server's words, never retried;
             // a file of a schema no validator knows is HELD - accepted, kept, never used, marked sent with the server's words
             const auto noCurve = juce::String ("profiles/AudioUnit_aaaa000a_1.0.comp_profile.json");
-            bundle.getChildFile (noCurve).replaceWithText ("{\"schema\": \"ej_comp_profile/1\", \"plugin\": {\"plugin_id\": \"AudioUnit|aaaa000a|1.0\"}}");   // no amount curve
+            {   // 24 Oct: the real profile with its amount curve removed - a real shape the validator refuses for one missing part
+                auto nc = juce::JSON::parse (realProfile ("aaaa000a", "ej_comp_profile/1", 0.0)); nc.getDynamicObject()->removeProperty ("amount");
+                bundle.getChildFile (noCurve).replaceWithText (juce::JSON::toString (nc)); }
             const auto m3 = manifestWith ("{\"product\": \"Plug aaaa000a\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000a|1.0\", \"profile\": \"" + noCurve + "\"},"
                                           "{\"product\": \"Plug aaaa0010\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0010|1.0\", \"profile\": \"" + profileFile ("aaaa0010", "ej_bogus/9") + "\"}", {});
             ejmap::wizresults::emit (spanned (ejmap::wizresults::fromPack (m3, bundle, runId, false, {}, {})), box, {});
@@ -14384,6 +14386,7 @@ int main (int, char**)
             const auto heldStatus = juce::JSON::parse (box.sent().findChildFiles (juce::File::findFiles, false, "*.status.json")[0].loadFileAsString());
             check (stRej.rejected == 1 && stRej.rejectedWords[0] == "Plug aaaa000a's measurements didn't pass our checks, so they weren't used." && stRej2.rejected == 0 && stRej2.sent == 0
                    && box.count (box.rejected()) == 1 && reason.getProperty ("reason", "") == juce::var ("validator")
+                   && [&] { const auto v = juce::JSON::parse (bundle.getChildFile (noCurve).loadFileAsString()); return v.hasProperty ("fit") && v.hasProperty ("quality") && ! v.hasProperty ("amount"); }()   // 24 Oct: the real shape less its curve
                    && stRej.held == 1 && stRej.heldWords[0] == "EchoJay can't check Plug aaaa0010's measurements yet, so they're kept but not used for now." && heldStatus.getProperty ("status", "") == juce::var ("held"),
                    "contract WZ-CONTRACT-6: a rejected result is kept apart with B's reason (" + reason.getProperty ("reason", "").toString() + ") and the words '" + stRej.rejectedWords.joinIntoString ("")
                      + "', never retried; an unknown schema is held ('" + stRej.heldWords.joinIntoString ("") + "')");
