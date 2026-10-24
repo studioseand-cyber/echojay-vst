@@ -52,6 +52,23 @@ inline std::map<juce::String, StoreEntry> mapStore (const juce::File& ledger)
     }
     return m;
 }
+// THE PITCH-LABEL RECORD (24 Oct; the 23 Oct run): the map step reads a plugin's label texts once, but every later scan of the same run - the
+// measuring engine's own, one after each pause - finds the plugin already mapped, so the label was gone and the map (a dial keeps only its
+// numbers) had none: UltraPitch went to review on the rescan and was never measured. Kept beside the store's maps (never in maps/, which
+// is read as maps), keyed by map fingerprint, for every scan after; "" kind = read, no pitch label
+inline void rememberPitchLabel (const juce::File& ledger, const juce::String& fp, const std::pair<juce::String, juce::String>& pl)
+{
+    if (fp.isEmpty()) return;
+    const auto f = ledger.getChildFile ("pitch_labels.json"); auto all = juce::JSON::parse (f.loadFileAsString()); if (! all.isObject()) all = juce::var (new juce::DynamicObject());
+    auto* o = new juce::DynamicObject(); o->setProperty ("kind", pl.first); o->setProperty ("control", pl.second);
+    all.getDynamicObject()->setProperty (fp, juce::var (o)); ledger.createDirectory(); f.replaceWithText (juce::JSON::toString (all));
+}
+inline bool recalledPitchLabel (const juce::File& ledger, const juce::String& fp, std::pair<juce::String, juce::String>& out)
+{
+    const auto all = juce::JSON::parse (ledger.getChildFile ("pitch_labels.json").loadFileAsString());
+    const auto rec = all.getProperty (fp, {}); if (fp.isEmpty() || ! rec.isObject()) return false;
+    out = { rec.getProperty ("kind", "").toString(), rec.getProperty ("control", "").toString() }; return true;
+}
 inline std::vector<std::pair<int, juce::String>> paramsOfList (const juce::String& listOut)
 {
     std::vector<std::pair<int, juce::String>> ps; std::set<int> seen;
@@ -996,7 +1013,8 @@ inline int runWizard (const WizardOptions& wo)
                 auto& pl = pitchLabels[d.name];
                 for (const auto& xp : fullmap::parseExtract (r.out).params)
                 {   juce::StringArray texts; for (const auto& pt : xp.points) texts.add (pt.t);
-                    if (const auto k = shift::pitchLabelOf (texts, xp.name); k.isNotEmpty()) { pl = { k, xp.name }; break; } } }
+                    if (const auto k = shift::pitchLabelOf (texts, xp.name); k.isNotEmpty()) { pl = { k, xp.name }; break; } }
+                rememberPitchLabel (opt.ledger, fp, pl); }   // 24 Oct: for every later scan of the run
             opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (fm.map) + "\n");
             store[uid + "|" + d.version] = { fp, cat };
             if (! catNames.count (d.name)) prog.finished (d.name, false);   // 14 Oct: a plugin whose signature reads follow is done after them
@@ -1047,7 +1065,9 @@ inline int runWizard (const WizardOptions& wo)
         if (d.route == wizroute::Route::measure && (sig.getProperty ("settled_by", "").toString() == "name" || d.byHint) && (d.category == "pitch" || d.category == "tuner"))
         {
             juce::String pl, plc;
+            std::pair<juce::String, juce::String> rec;
             if (const auto it = pitchLabels.find (ir.desc.name); it != pitchLabels.end()) { pl = it->second.first; plc = it->second.second; }
+            else if (recalledPitchLabel (opt.ledger, fpOf (ir.desc), rec)) { pl = rec.first; plc = rec.second; }   // 24 Oct: a later scan of the run
             else if (const auto mf = opt.ledger.getChildFile ("maps").getChildFile (fpOf (ir.desc) + ".json"); mf.existsAsFile()) pl = shift::pitchLabelOfMap (juce::JSON::parse (mf.loadFileAsString()), &plc);
             d = wizroute::gatePitchByName (d, true, pl, plc);
         }

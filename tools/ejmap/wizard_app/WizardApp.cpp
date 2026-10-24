@@ -882,6 +882,7 @@ private:
         if (! kTest || engine.running()) return;
         const int n = wizapp::resetTest (cfg.work); cfg.work.createDirectory(); seedTestBuild (cfg); cfg.only = wizapp::testOnlyPlugins (cfg.work);
         account = juce::var(); receipt = juce::var(); crashed.clear(); lastSendKept = false; lastCheckpointSeq = 0; email.clear(); password.clear();
+        lastPowerLog.clear();   // 24 Oct: the reset clears the log, so the power is said again at the next check
         logLine ("reset test: " + juce::String (n) + " item(s) cleared, config.json kept, the snapshot seeded again");
         resetShownProgress();   // 18 Oct (BAR % WRONG): the 98.9% was the run before the reset, kept by "never go back"
         show (Screen::welcome);

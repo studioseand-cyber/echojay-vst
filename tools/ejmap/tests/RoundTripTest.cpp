@@ -11311,6 +11311,24 @@ void testWizardCategories()
                && cert::paramsOfList (out).size() == 2 && fullmap::parseExtract (out).params.size() == 2,
                "wizard WZ-MAPGUARD-1: the extract declares its bound before the first sweep (" + juce::String (declared ? *declared : 0.0, 0) + " s for the sample), the caller takes it, never below its own; the parsers skip the line");
     }
+    // WZ-PITCHGATE-2 THE PITCH-LABEL RECORD (24 Oct; the 23 Oct run sent UltraPitch to review on its measuring engine's rescan): what the map
+    // step read is kept beside the store's maps by fingerprint and read by every later scan - before the map, which keeps only a dial's numbers
+    {
+        using namespace ejmap;
+        const auto led = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_wz_pl_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+        cert::rememberPitchLabel (led, "fp_up", { "interval", "Voice 1 Pitch" }); cert::rememberPitchLabel (led, "fp_none", { "", "" }); cert::rememberPitchLabel (led, "", { "interval", "x" });
+        std::pair<juce::String, juce::String> up, none, other;
+        const bool fUp = cert::recalledPitchLabel (led, "fp_up", up), fNone = cert::recalledPitchLabel (led, "fp_none", none), fOther = cert::recalledPitchLabel (led, "fp_other", other);
+        const bool notInMaps = ! led.getChildFile ("maps").exists(); led.deleteRecursively();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const int inProc = run.indexOf ("if (const auto it = pitchLabels.find (ir.desc.name); it != pitchLabels.end())"), rec = run.indexOf ("else if (recalledPitchLabel (opt.ledger, fpOf (ir.desc), rec))"),
+                  mapFb = run.indexOf ("pl = shift::pitchLabelOfMap (juce::JSON::parse (mf.loadFileAsString()), &plc);");
+        check (fUp && up.first == "interval" && up.second == "Voice 1 Pitch" && fNone && none.first.isEmpty() && ! fOther && notInMaps
+               && run.contains ("rememberPitchLabel (opt.ledger, fp, pl); }") && inProc > 0 && rec > inProc && mapFb > rec
+               && app.contains ("lastPowerLog.clear();   // 24 Oct: the reset clears the log"),
+               "wizard WZ-PITCHGATE-2: the map step's pitch label is kept by fingerprint (" + up.first + " on " + up.second + "), read by a later scan before the map; a reset says the power again");
+    }
     // WZ-PITCHGATE-1 PITCH BY NAME NEEDS A PITCH LABEL (Kathy, 23 Oct): the labels the 22 Oct run's extracts read - UltraPitch's intervals,
     // SoundShifter's ratio and semitones - pass; Auto-Tune SoundSoap's filter Hz, MFreqShifter's Hz and Pitchwheel's raw 0-1 do not, and a
     // name-routed pitch plugin with none goes for review; the map is asked when the extract was not read this run
