@@ -56,6 +56,9 @@
 //   teardown       the product's ordering: a copy rendering with its editor open, then the INSTANCE
 //                  freed while the editor still lives, then the editor, then a SECOND instance with
 //                  its own view while window notifications fly. This is the leg that has to crash.
+//   followparams   FOLLOW layer 2's three open questions, on the real plugin: does the guest view
+//                  REDRAW when the host writes a parameter (his eye answers that one), what a full
+//                  getValue() sweep costs, and whether writing while the copy renders is safe.
 //   teardown_safe  the fix's ordering: the EDITOR first, then the instance KEPT (never disposed),
 //                  then the same second instance and the same notifications. Has to survive.
 //
@@ -67,6 +70,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>              // std::fmod, the followparams sweep
 
 namespace
 {
@@ -257,6 +261,179 @@ void churnWindows (const juce::String& leg, juce::DocumentWindow* w, int ms)
     }
 }
 
+/** ---- FOLLOW LAYER 2'S THREE OPEN QUESTIONS, ASKED ON THE REAL PLUGIN (24 Oct 2026) ---------
+
+    Layer 1 shipped and passed: the copy opens on the Link's real settings. Layer 2 is the
+    continuous mirror - the Link publishes the tapped slot's parameter values at 30 Hz and the V2
+    writes the changed ones into the copy. Three things about that are CLAIMS until this plugin
+    answers them, and the design note says so in as many words:
+
+      1. DOES A GUEST AU'S OWN VIEW REDRAW when the host writes its parameter? If it does not, the
+         mirror still fixes the copy's audio and its meters, and the knobs in the picture stay
+         where they were - which would be a different promise to Sean and he must hear it before
+         the round, not after.
+      2. WHAT DOES A FULL PARAMETER SWEEP COST? The Link would call getValue() for every parameter
+         of the tapped slot, thirty times a second, on its message thread. Nobody has ever measured
+         it on a real plugin. A number here sizes the publish; a guess here is how you ship a stall.
+      3. IS WRITING A PARAMETER WHILE THE COPY RENDERS SAFE on this plugin? The product writes on
+         the message thread while the audio thread is inside the same instance. That is the shape
+         of the 08:58 crash (a plugin call with a render underneath it), and if it bites here then
+         layer 2 needs the PluginCallWindow around its writes - a design change, not a tweak.
+
+    SO THE EYE IS PART OF THE INSTRUMENT, and that is why this leg asks for him. Questions 2 and 3
+    this harness answers by itself and asserts; question 1 is a picture and only he can see it, so
+    the leg names the parameter it is driving, drives it slowly and visibly, and says what to look
+    for. EJ_FOLLOW_PARAM=<index> picks a different one without a rebuild. */
+int runFollowParamsLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
+                        const juce::PluginDescription& d, int seconds)
+{
+    auto inst = makeOne (fm, d, leg, "the live copy");
+    if (inst == nullptr) return 3;
+
+    // THE FIX'S SHAPE, always: the plugin's own layout with every enabled non-main input bus
+    // self-keyed from the main pair. A narrowed layout is his 12:14 crash and must never be the
+    // ground a NEW question is asked on.
+    const auto plan = echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*inst));
+    inst->prepareToPlay (kRate, kBlock);
+    say (leg, "prepared at " + juce::String ((int) kRate) + " Hz, " + juce::String (kBlock)
+            + " frames, own layout, " + juce::String ((int) plan.size()) + " self-key copy(ies)");
+
+    // ---- QUESTION 2: WHAT A FULL SWEEP COSTS ---------------------------------------------------
+    auto& params = inst->getParameters();
+    const int n = params.size();
+    if (n == 0) { say (leg, "REFUSED: this instance reports no parameters at all"); return 3; }
+
+    const int sweeps = 200;
+    const auto s0 = juce::Time::getMillisecondCounterHiRes();
+    double sink = 0.0;
+    for (int k = 0; k < sweeps; ++k)
+        for (auto* prm : params) sink += (double) prm->getValue();
+    const auto sweepMs = (juce::Time::getMillisecondCounterHiRes() - s0) / (double) sweeps;
+    say (leg, juce::String (n) + " parameters; ONE FULL SWEEP of getValue() = "
+            + juce::String (sweepMs, 3) + " ms"
+            + " -> at 30 Hz that is " + juce::String (sweepMs * 30.0, 2)
+            + " ms of every 1000 ms on the Link's message thread ("
+            + juce::String (sweepMs * 30.0 / 10.0, 2) + "% of it)"
+            + (sink > 1.0e9 ? " " : ""));            // sink is only here to defeat the optimiser
+
+    // ---- WHICH PARAMETER DOES HE WATCH? --------------------------------------------------------
+    // A name he will recognise on the plugin's own panel, preferred in this order; anything else
+    // falls back to the first parameter with a name. An index in EJ_FOLLOW_PARAM overrides.
+    const char* preferred[] = { "Input Gain", "Output Gain", "Threshold", "Ratio", "Attack",
+                                "Release", "Gain", "Input", "Output" };
+    int which = -1;
+    if (auto* env = std::getenv ("EJ_FOLLOW_PARAM"))
+    {
+        which = juce::jlimit (0, n - 1, juce::String::fromUTF8 (env).getIntValue());
+        say (leg, "EJ_FOLLOW_PARAM picked parameter " + juce::String (which));
+    }
+    for (const auto* want : preferred)
+    {
+        if (which >= 0) break;
+        for (int i = 0; i < n; ++i)
+            if (params[i]->getName (64).equalsIgnoreCase (juce::String::fromUTF8 (want)))
+            { which = i; break; }
+    }
+    for (int i = 0; which < 0 && i < n; ++i)
+        if (params[i]->getName (64).isNotEmpty()) which = i;
+    if (which < 0) which = 0;
+
+    juce::String firstFew;
+    for (int i = 0; i < juce::jmin (n, 16); ++i)
+        firstFew << (i == 0 ? "" : ", ") << i << "=" << params[i]->getName (24);
+    say (leg, "its parameters: " + firstFew + (n > 16 ? ", ..." : ""));
+
+    auto* driven = params[which];
+    const auto drivenName = driven->getName (64);
+    const float startValue = driven->getValue();
+    say (leg, "DRIVING parameter " + juce::String (which) + " \"" + drivenName
+            + "\", which reads \"" + driven->getCurrentValueAsText() + "\" ("
+            + juce::String (startValue, 4) + " normalised) right now");
+
+    // ---- THE EDITOR, AND THE RENDER UNDERNEATH IT ----------------------------------------------
+    std::unique_ptr<EditorWindow> win;
+    if (inst->hasEditor())
+        if (auto* ed = inst->createEditorIfNeeded())
+        {
+            win = std::make_unique<EditorWindow> (ed);
+            say (leg, "the copy's own editor is open (" + juce::String (ed->getWidth()) + "x"
+                    + juce::String (ed->getHeight()) + ")");
+        }
+    if (win == nullptr) { say (leg, "REFUSED: no editor, so question 1 cannot be asked"); return 3; }
+
+    const int channels = juce::jmax (2, inst->getTotalNumInputChannels(),
+                                        inst->getTotalNumOutputChannels());
+    Renderer r (*inst, leg, channels, kBlock, 0, nullptr, plan);
+    r.startThread (juce::Thread::Priority::highest);
+    say (leg, "rendering " + juce::String (channels) + " channel(s) at real time, as the product does");
+
+    say (leg, "");
+    say (leg, "#### WATCH THE PLUGIN'S WINDOW. \"" + drivenName + "\" is being swept slowly from "
+              "end to end by the HOST, exactly as the Link's values would drive it. Does that "
+              "control MOVE on the plugin's own panel?  (A still control means layer 2 mirrors the "
+              "audio and the meters but not the picture - which is a promise I would have to "
+              "correct before building it.)");
+    say (leg, "");
+
+    // ---- THE SWEEP: THE MESSAGE THREAD WRITES WHILE THE RENDER THREAD IS INSIDE THE PLUGIN -----
+    // 10 writes a second, a triangle from end to end, so it is unmistakable to the eye and slow
+    // enough that a lazy repaint still has time to show.
+    const auto tRun = juce::Time::getMillisecondCounterHiRes();
+    const double periodMs = (double) seconds * 1000.0 / 2.0;       // one up-and-down over the leg
+    int    writes = 0, lastSaid = -1;
+    double nextWriteAt = tRun;
+    float  minSeen = 2.0f, maxSeen = -1.0f;
+
+    while (juce::Time::getMillisecondCounterHiRes() - tRun < seconds * 1000.0)
+    {
+        juce::Timer::callPendingTimersSynchronously();
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+
+        const auto now = juce::Time::getMillisecondCounterHiRes();
+        if (now >= nextWriteAt)
+        {
+            nextWriteAt = now + 100.0;
+            const double phase = std::fmod (now - tRun, periodMs) / periodMs;        // 0..1
+            const float  want  = (float) (phase < 0.5 ? phase * 2.0 : 2.0 - phase * 2.0);
+            driven->setValueNotifyingHost (want);
+            ++writes;
+            const float back = driven->getValue();
+            minSeen = juce::jmin (minSeen, back);
+            maxSeen = juce::jmax (maxSeen, back);
+        }
+
+        const int sec = (int) ((now - tRun) / 1000.0);
+        if (sec != lastSaid)
+        {
+            lastSaid = sec;
+            say (leg, "t=" + juce::String (sec) + "s blocks=" + juce::String (r.blocks.load())
+                    + " writes=" + juce::String (writes)
+                    + " \"" + drivenName + "\"=" + juce::String (driven->getValue(), 4)
+                    + " (\"" + driven->getCurrentValueAsText() + "\")");
+        }
+    }
+
+    r.stopThread (2000);
+
+    // ---- WHAT THIS HARNESS CAN ANSWER BY ITSELF ------------------------------------------------
+    const bool landed = (maxSeen - minSeen) > 0.25f;
+    say (leg, juce::String (landed ? "PASS" : "FAIL")
+            + ": the host's writes LANDED on the plugin - \"" + drivenName + "\" read back across "
+            + juce::String (minSeen, 3) + " to " + juce::String (maxSeen, 3)
+            + " over " + juce::String (writes) + " writes"
+            + (landed ? "" : " (a parameter that does not move cannot be mirrored, and layer 2 "
+                             "would have to say so for this plugin)"));
+    say (leg, "PASS: writing a parameter on the message thread while the copy renders did not take "
+              "this process down (" + juce::String (r.blocks.load()) + " blocks rendered under it)");
+
+    // THE SAFE TEARDOWN, which is now the house's: the EDITOR first, then the instance is KEPT.
+    win.reset();
+    inst->releaseResources();
+    say (leg, "SURVIVED " + juce::String (seconds) + " s");
+    keepForeverOnTheBench (std::move (inst));
+    return landed ? 0 : 4;
+}
+
 /** HIS 14:27 CRASH: the ordering of a teardown, with the real plugin.
 
     One leg, two orderings, chosen by name. Everything else is held identical: the same layout (the
@@ -367,6 +544,10 @@ int main (int argc, char** argv)
 
     // HIS 14:27 CRASH is about an ORDERING, not a render, so its legs own the whole run.
     if (leg == "teardown" || leg == "teardown_safe") return runTeardownLeg (leg, fm, d, seconds);
+    // FOLLOW layer 2's three questions own their whole run too: the sweep timing has to be taken
+    // before a render starts competing for the thread, and the sweep he WATCHES has to be the only
+    // thing moving on the panel.
+    if (leg == "followparams") return runFollowParamsLeg (leg, fm, d, seconds);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;

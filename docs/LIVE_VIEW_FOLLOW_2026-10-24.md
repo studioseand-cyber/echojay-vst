@@ -160,17 +160,34 @@ What FOLLOW does about it, in order of value:
 | **FOLLOW total** | | **~3.5 days** |
 | C1–C3, D2 | CONTROL, per §1/§5 of the previous note | ~2.5 days |
 
-## 8. What I have not established
+## 8. What the bench answered, 24 Oct 21:19, with him at the Mac
 
-- **The cost of a full parameter sweep per 30 Hz tick on the Link's message thread** for a
-  200-parameter plugin. F2 must measure it and the guard must assert the tick's budget in
-  wall-clock, not in counts. If it is too dear, the sweep goes round-robin in chunks and the follow
-  latency rises — which is a figure to state, not a thing to hide.
+The supervised leg `followparams` ran 40 s against the real Tube-Tech CL 1B (`tools/shadow_live_repro`,
+signed, Logic closed, one process). All three of §8's open questions are now closed, two by the
+harness and one by his eye:
+
+| question | answer |
+|---|---|
+| does a guest AU's own view redraw when the HOST writes its parameter? | **Yes.** Sean watched the Threshold control follow the sweep on the CL 1B's own panel. So the mirror moves the picture, knobs and all - the promise does not have to be narrowed. |
+| what does a full parameter sweep cost the Link's message thread? | **Nothing measurable.** The CL 1B exposes 8 parameters (Gain, Ratio, Threshold, Meter, Attack, Release, Select Attack Release, Sidechain); one full `getValue()` sweep is under a microsecond - 0.01 ms per second at 30 Hz. The 256-value frame is far more than this plugin needs and no round-robin is required. |
+| is writing a parameter while the copy renders safe? | **On this plugin, yes:** 348 writes on the message thread with 3,748 blocks rendering underneath, no crash. The `PluginCallWindow` precaution is kept anyway - it costs one atomic, and one plugin surviving is not every plugin surviving. |
+
+The writes also demonstrably LAND rather than merely being accepted: Threshold read back across
+0.001 to 0.997, and the plugin's own value text tracked it ("Off" to "-38.7" to "1.1"), which is the
+plugin reporting its own state and not our number echoed back.
+
+## 9. What is still not established
+
+- **The sweep cost on a BIG plugin.** The CL 1B has 8 parameters. A Pro-Q or a WaveShell with 200+
+  is a different measurement, and the one that decides whether the sweep ever needs to go
+  round-robin. The figure travels in every frame (`sweepMicros`) precisely so this can be read off
+  a real session instead of guessed at again.
 - **The cost and size of `getStateInformation` on the tapped slot at 1 Hz.** The pull road caps at
-  4 MB but has never been timed per second. F3 bails out to on-demand if it is dear, and says so.
-- **Whether a guest AU's own view redraws when the host writes its parameter.** It should —
-  `setValueNotifyingHost` reaches an AU's parameter-listener road — but it is a claim until the
-  Tube-Tech is driven on the bench, under the supervised exception. That is the first bench leg.
+  4 MB but has never been timed per second. Layer 1 logs it per pull, so the data is accumulating;
+  layer 3 bails out to on-demand if it is dear, and says so.
 - **Whether `setStateInformation` on a copy whose Cocoa view is attached is safe** on the Softube
-  plugins. F1 applies the state *before* the editor exists, which avoids the question entirely;
-  F3 cannot, and that is the one genuinely new risk in FOLLOW.
+  plugins. Layer 1 applies the state *before* the editor exists, which avoids the question
+  entirely; layer 3 cannot, and that is the one genuinely new risk left in FOLLOW.
+- **Whether a plugin that reports no parameter change for an interface move exists in his rack.**
+  The CL 1B reports everything on its panel, which is why layer 2 is enough for it. Layer 3 is for
+  the plugins that do not, and none has been identified by name yet.

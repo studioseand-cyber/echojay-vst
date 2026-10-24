@@ -2080,6 +2080,131 @@ int main()
                    "cleared");
         }
 
+        // ---- SH16: THE VIEW FOLLOWS THE LINK'S KNOBS, OR REFUSES TO GUESS (FOLLOW layer 2) ---
+        //
+        // *"the Link publishes the tapped slot's parameter values, the V2 writes only the changed
+        // ones into the copy."*  Three things are held here: the frame round-trips through shared
+        // memory; a file nobody has published to is NO FRAME rather than a frame of zeros (which
+        // would be applied to his knobs); and the apply is genuinely changed-only.
+        {
+            struct ParamHost final : public juce::AudioProcessor
+            {
+                ParamHost (const juce::StringArray& names)
+                    : juce::AudioProcessor (BusesProperties()
+                           .withInput  ("In",  juce::AudioChannelSet::stereo(), true)
+                           .withOutput ("Out", juce::AudioChannelSet::stereo(), true))
+                {
+                    for (const auto& n : names)
+                        addParameter (new juce::AudioParameterFloat (n.toLowerCase(), n, 0.0f, 1.0f, 0.0f));
+                }
+                const juce::String getName() const override { return "ParamHost"; }
+                void prepareToPlay (double, int) override {}
+                void releaseResources() override {}
+                bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
+                void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+                double getTailLengthSeconds() const override { return 0.0; }
+                bool acceptsMidi() const override { return false; }
+                bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+                bool hasEditor() const override { return false; }
+                int getNumPrograms() override { return 1; }
+                int getCurrentProgram() override { return 0; }
+                void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; }
+                void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {}
+                void setStateInformation (const void*, int) override {}
+            };
+
+            // THE FRAME, THROUGH A REAL BUFFER. A heap block the size of the file is exactly what
+            // the mapping is to both sides - the seqlock and the memcpy do not know the difference.
+            std::vector<juce::uint8> file ((size_t) echojay::kShadowValFileSize, 0);
+
+            echojay::ShadowValueHeader never {};
+            int neverCount = -1;
+            check (! echojay::readShadowValues (file.data(), never, nullptr, 0, neverCount)
+                   && neverCount == 0,
+                   "SH16 a values file NOBODY HAS PUBLISHED TO reads as NO FRAME, not as a frame of "
+                   "zeros - zeros here would be written onto his knobs as if the Link had sent them",
+                   "seq 0 = never published");
+
+            float vals[8] = { 0.10f, 0.20f, 0.30f, 0.40f, 0.50f, 0.60f, 0.70f, 0.80f };
+            echojay::ShadowValueHeader out {};
+            out.slot = 2; out.paramCount = 8; out.published = 8;
+            out.schemaDigest = 0xABCD1234u; out.sweepMicros = 1234;
+            echojay::publishShadowValues (file.data(), out, vals, 8);
+
+            echojay::ShadowValueHeader in {};
+            float got[8] = {};
+            int gotCount = 0;
+            const bool read = echojay::readShadowValues (file.data(), in, got, 8, gotCount);
+            check (read && gotCount == 8 && in.slot == 2 && in.paramCount == 8
+                   && in.schemaDigest == 0xABCD1234u && in.sweepMicros == 1234
+                   && std::abs (got[0] - 0.10f) < 1.0e-6f && std::abs (got[7] - 0.80f) < 1.0e-6f,
+                   "SH16a a published frame round-trips whole - the slot, the counts, the digest, "
+                   "the measured sweep cost and the values",
+                   "slot=" + juce::String (in.slot) + " n=" + juce::String (gotCount)
+                   + " seq=" + juce::String ((int) in.seq));
+            check (in.seq != 0 && (in.seq & 1u) == 0u,
+                   "SH16b ...and the seq it hands back is STABLE and non-zero, which is what the V2 "
+                   "compares to tell a new frame from the one it already applied",
+                   "seq=" + juce::String ((int) in.seq));
+
+            // THE DIGEST, BOTH DIRECTIONS.
+            ParamHost a ({ "Threshold", "Ratio", "Attack", "Release" });
+            ParamHost b ({ "Threshold", "Ratio", "Attack", "Release" });
+            ParamHost c ({ "Threshold", "Ratio", "Attack" });
+            ParamHost d ({ "Threshold", "Ratio", "Attack", "Makeup" });
+            check (echojay::shadowSchemaDigest (a) == echojay::shadowSchemaDigest (b),
+                   "SH16c the same parameter list digests the same, or the mirror would refuse "
+                   "itself for ever (the known-good direction)",
+                   juce::String::toHexString ((int) echojay::shadowSchemaDigest (a)));
+            check (echojay::shadowSchemaDigest (a) != echojay::shadowSchemaDigest (c)
+                   && echojay::shadowSchemaDigest (a) != echojay::shadowSchemaDigest (d)
+                   && echojay::shadowSchemaDigest (c) != echojay::shadowSchemaDigest (d),
+                   "SH16d ...and a different COUNT or a renamed parameter digests differently - an "
+                   "index with no identity behind it is how a value lands on the wrong knob",
+                   "all three differ");
+
+            // THE DECISION.
+            const auto older = echojay::shadowMirrorDecision (false, 0, 0, 0, 0);
+            check (older.what == echojay::ShadowMirror::Refuse
+                   && older.line.contains ("older build"),
+                   "SH16e no frame at all is reported as the LINK'S age, with the picture kept",
+                   "\"" + older.line + "\"");
+            const auto wrong = echojay::shadowMirrorDecision (true, 111u, 222u, 4, 4);
+            check (wrong.what == echojay::ShadowMirror::Refuse
+                   && wrong.line.contains ("wrong control"),
+                   "SH16f a digest mismatch REFUSES rather than applying by index",
+                   "\"" + wrong.line + "\"");
+            const auto fine = echojay::shadowMirrorDecision (true, 333u, 333u, 4, 4);
+            check (fine.what == echojay::ShadowMirror::Apply && fine.line.isEmpty(),
+                   "SH16g a frame that agrees is applied, and nothing is said",
+                   "apply");
+
+            // CHANGED-ONLY, which is the whole promise about what this costs the plugin.
+            std::vector<float> lastApplied;
+            const float first[4] = { 0.25f, 0.50f, 0.75f, 1.00f };
+            const int moved1 = echojay::shadowApplyChangedValues (a, first, 4, lastApplied);
+            check (moved1 == 4,
+                   "SH16h the FIRST frame writes every parameter, because nothing has been applied "
+                   "to this copy yet",
+                   "moved=" + juce::String (moved1));
+            const int moved2 = echojay::shadowApplyChangedValues (a, first, 4, lastApplied);
+            check (moved2 == 0,
+                   "SH16i the SAME frame again writes NOTHING - steady state costs the plugin no "
+                   "calls at all, which is the difference between a mirror and a busy loop",
+                   "moved=" + juce::String (moved2));
+            const float oneMoved[4] = { 0.25f, 0.50f, 0.75f, 0.40f };
+            const int moved3 = echojay::shadowApplyChangedValues (a, oneMoved, 4, lastApplied);
+            check (moved3 == 1,
+                   "SH16j ...and one knob moving on the Link writes exactly one parameter here",
+                   "moved=" + juce::String (moved3));
+            check (std::abs (a.getParameters()[3]->getValue() - 0.40f) < 1.0e-3f,
+                   "SH16k ...the one that moved, with the value that was published",
+                   juce::String (a.getParameters()[3]->getValue(), 4));
+        }
+
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------
         //
         // ShadowTap's own header promised this count to the V2 ("to tell the shadow is running and
