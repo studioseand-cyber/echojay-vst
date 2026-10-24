@@ -1597,6 +1597,136 @@ int main()
                    "nothing, which is the static picture and its one line", "source = other");
         }
 
+        // ---- AN UNFED KEY BUS IS A NULL POINTER (his 12:14 crash, 24 Oct 2026) -----------------
+        //
+        // The live view's third crash, and the first proven on the plugin itself. shadowBegin asked
+        // the copy for a plain 2-in/2-out and DISABLED every other bus; the Tube-Tech CL 1B declares
+        // a key bus, pulled it anyway, and read 0x0 inside its own render. A supervised bench run
+        // (tools/shadow_live_repro) reproduced his Logic crash frame for frame - all six offsets
+        // inside the plugin identical - in one second with that layout, and survived sixty seconds
+        // and 5,620 blocks with the layout left alone and the key self-keyed from the main pair.
+        //
+        // THE RULE IS CHAINHOST'S OWN, so the two roads cannot drift, and it lives in a header as a
+        // plan these legs can construct without a licence-bound plugin anywhere near them.
+        {
+            using echojay::ShadowInputBus;
+            using echojay::ShadowChannelCopy;
+            const auto says = [] (const std::vector<ShadowChannelCopy>& p)
+            {
+                juce::String t;
+                for (const auto& c : p) t << (t.isEmpty() ? "" : ", ")
+                                          << "ch" << c.destChannel << "<-ch" << c.srcChannel;
+                return t.isEmpty() ? juce::String ("nothing") : t;
+            };
+
+            // HIS CRASH'S PLUGIN, by its shape: 2 input buses, 4 channels, the key starting at
+            // channel 2 - which is exactly what ChainHost logged for it ("from plugin channel 2").
+            const std::vector<ShadowInputBus> cl1b { { 2, true, 0 }, { 2, true, 2 } };
+            const auto planCl1b = echojay::selfKeyCopyPlan (cl1b);
+            check (planCl1b == std::vector<ShadowChannelCopy> { { 2, 0 }, { 3, 1 } },
+                   "SH11 the Tube-Tech's shape self-keys its key bus from the main pair  (RED as it "
+                   "shipped at 12:14: the copy asked for a plain stereo pair with that bus DISABLED, "
+                   "JUCE still installed its render callback, and the plugin read what was behind an "
+                   "empty buffer)", says (planCl1b));
+
+            // A MONO key gets channel 0 and NOT an L+R sum - ChainHost's wording, because a summing
+            // node is a new thing to get wrong on every slot and a key off one channel of a
+            // correlated pair tracks the programme closely enough.
+            const auto planMono = echojay::selfKeyCopyPlan ({ { 2, true, 0 }, { 1, true, 2 } });
+            check (planMono == std::vector<ShadowChannelCopy> { { 2, 0 } },
+                   "SH11b ...a MONO key bus is fed channel 0 only, never a sum", says (planMono));
+
+            // A DISABLED bus is fed nothing: there is no channel of ours that belongs to it, and
+            // JUCE hands it a 0-channel buffer whatever we do.
+            const auto planOff = echojay::selfKeyCopyPlan ({ { 2, true, 0 }, { 2, false, 2 } });
+            check (planOff.empty(),
+                   "SH11c ...a disabled bus is fed nothing, because nothing in our buffer is its",
+                   says (planOff));
+
+            // EVERY enabled non-main bus, not just the first - Sean's ruling of 6 Oct, which this
+            // road has to honour too or a two-key plugin is half fed here and fully fed in the rack.
+            const auto planThree = echojay::selfKeyCopyPlan ({ { 2, true, 0 }, { 2, true, 2 },
+                                                               { 2, true, 4 } });
+            check (planThree == std::vector<ShadowChannelCopy> { { 2, 0 }, { 3, 1 }, { 4, 0 }, { 5, 1 } },
+                   "SH11d ...and EVERY enabled non-main bus is fed, which is his 6 Oct ruling, not "
+                   "just the first one", says (planThree));
+
+            const auto planPlain = echojay::selfKeyCopyPlan ({ { 2, true, 0 } });
+            check (planPlain.empty() && echojay::highestPlannedChannel (planPlain) == -1,
+                   "SH11e ...and a plugin with one input bus plans no copy at all, so the ordinary "
+                   "case costs nothing", says (planPlain));
+
+            // ---- AND THE PUMP ACTUALLY DOES IT, on a stand-in with a key bus ------------------
+            //
+            // The legs above are the arithmetic; this one is the road. A two-bus stub, a ring
+            // carrying a real signal, one pump - and the stub reports what arrived on its key.
+            struct KeyWatcher : public juce::AudioProcessor
+            {
+                KeyWatcher() : juce::AudioProcessor (BusesProperties()
+                                   .withInput  ("In",  juce::AudioChannelSet::stereo(), true)
+                                   .withInput  ("Key", juce::AudioChannelSet::stereo(), true)
+                                   .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+                const juce::String getName() const override { return "KeyWatcher"; }
+                void prepareToPlay (double, int) override {}
+                void releaseResources() override {}
+                bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
+                void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+                {
+                    ++rendered;
+                    mainPeak = b.getNumChannels() > 1 ? juce::jmax (b.getMagnitude (0, 0, b.getNumSamples()),
+                                                                    b.getMagnitude (1, 0, b.getNumSamples()))
+                                                      : 0.0f;
+                    keyPeak  = b.getNumChannels() > 3 ? juce::jmax (b.getMagnitude (2, 0, b.getNumSamples()),
+                                                                    b.getMagnitude (3, 0, b.getNumSamples()))
+                                                      : -1.0f;
+                    channelsSeen = b.getNumChannels();
+                }
+                double getTailLengthSeconds() const override { return 0.0; }
+                bool acceptsMidi() const override { return false; }
+                bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+                bool hasEditor() const override { return false; }
+                int getNumPrograms() override { return 1; }
+                int getCurrentProgram() override { return 0; }
+                void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; }
+                void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {}
+                void setStateInformation (const void*, int) override {}
+                int rendered = 0, channelsSeen = 0;
+                float mainPeak = 0.0f, keyPeak = -1.0f;
+            };
+
+            echojay::ShadowView sv;
+            sv.prepare (48000.0, 512);
+            auto kw = std::make_unique<KeyWatcher>();
+            auto* kwPtr = kw.get();
+            kw->prepareToPlay (48000.0, 512);
+            juce::MemoryBlock ring4 ((size_t) kLinkShmSize, true);
+            auto* h4 = LinkShm::ringHeader (ring4.getData());
+            h4->magic = kLinkMagic; h4->version = kLinkVersion; h4->sampleRate = 48000.0f;
+            h4->numChannels = 2; h4->capacityFrames = kLinkRingFrames;
+            // A REAL SIGNAL in the ring, because silence on a key is indistinguishable from an
+            // unfed key - which is the 4 Oct defect Kathy measured and the one this must not reach.
+            std::vector<float> tone ((size_t) 2048, 0.0f), toneR ((size_t) 2048, 0.0f);
+            for (size_t i = 0; i < tone.size(); ++i)
+            { tone[i] = 0.5f; toneR[i] = -0.5f; }
+            const float* chPtrs[2] { tone.data(), toneR.data() };
+            LinkShm::ringProduce (ring4.getData(), chPtrs, 2, (int) tone.size());
+            juce::String why4;
+            const bool up4 = sv.start (std::move (kw), ring4.getData(), "uidkey", 0, "KeyWatcher", why4);
+            check (up4, "SH11f a copy WITH a key bus starts, and its buffer holds every channel it "
+                        "declares", up4 ? juce::String ("4 in / 2 out") : "refused: " + why4);
+            sv.pump (256);
+            check (kwPtr->rendered == 1 && kwPtr->channelsSeen >= 4 && kwPtr->keyPeak > 0.1f,
+                   "SH11g ...and the key bus ARRIVES CARRYING THE MAIN PAIR  (RED as it shipped at "
+                   "12:14: pump cleared every channel beyond the pair, so the key was digital "
+                   "silence - on the Tube-Tech, with the bus disabled too, it was a null read)",
+                   "channels " + juce::String (kwPtr->channelsSeen) + ", main peak "
+                   + juce::String (kwPtr->mainPeak, 3) + ", key peak " + juce::String (kwPtr->keyPeak, 3));
+            sv.stop();
+        }
+
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------
         //
         // ShadowTap's own header promised this count to the V2 ("to tell the shadow is running and
