@@ -9872,8 +9872,8 @@ void testWizardCategories()
     // WZ-CAT-3 AFTER THE READS: a settled category the cert measures is measured (saturation, reverb, delay, pitch -> tuners); modulation is sent
     const auto sa = afterSignature (true, true, "saturation", {}, "thd"), rv = afterSignature (true, true, "reverb", {}, "tail"), pi = afterSignature (true, true, "pitch", {}, "cents"), mo = afterSignature (true, true, "modulation", {}, "sidebands");
     check (sa.route == Route::measure && sa.category == "saturation" && rv.route == Route::measure && pi.route == Route::measure && phaseBFor (pi.category) == juce::StringArray { "tuners" }
-           && mo.route == Route::outOfScope,
-           "wizard WZ-CAT-3: saturation / reverb / pitch settled by signature are measured; modulation is an internal label (out of scope, never sent)");
+           && mo.route == Route::needsCategory && mo.category.isEmpty() && mo.why.contains ("modulation"),   // 25 Oct (Kathy): to review, never dropped; the label is never sent
+           "wizard WZ-CAT-3: saturation / reverb / pitch settled by signature are measured; modulation is an internal label (to review with no leaning, never sent)");
     // WZ-CAT-4 THE ESTIMATE covers every category from its own figure (Sean's measured medians; strips its stated estimate)
     using namespace ejmap::wizprog;
     std::vector<Item> q; for (const auto* k : { "deesser", "limiter", "limitercomp", "saturation", "gate", "transient", "multiband", "tuners", "reverb", "delay", "strips" }) { Item it; it.product = k; it.kind = k; q.push_back (it); }
@@ -12030,12 +12030,61 @@ void testWizardRoute()
                && dG.route == Route::categorise && dG.category == "delay" && dG.hintFrom == "catalogue"
                && primal.categoryKnown && dPrimal.route == Route::measure && dPrimal.category == "delay"
                && modG.route == Route::measure && modG.category == "saturation" && modG.byHint && modG.why.contains ("never demoted")
-               && modN.category == "modulation" && modN.route != Route::measure
+               && modN.route == Route::needsCategory && modN.category.isEmpty()
                && stripG.route == Route::measure && stripG.category == "channel_strip" && stripG.why.contains ("stays a strip")
                && stripU.route == Route::measure && stripU.category == "channel_strip"
                && satG.route == Route::measure && satG.category == "saturation" && ! satG.byHint
                && oosG.route == Route::outOfScope && noRead.route == Route::needsCategory,
                "wizard WZ-HYBRID-1: known routes (" + dK.why + "; PrimalTap " + dPrimal.category + "); a guess is a hint; never demoted ('" + modG.why + "'); a strip stays a strip; a name hint has no such weight");
+    }
+    // WZ-UNCAT-1 THE READS NEVER DROP A PLUGIN (Kathy, 25 Oct): with no catalogue category, out of scope is filed only for the clear cases
+    // decided by type and words (instrument, MIDI, meter / analyser, utility); a read of "modulation" goes to review, never out of scope.
+    // The cases are the 24 Oct beta rehearsal's own reads, uncategorised: Saphira (m) (a distortion read as modulation) and REQ 2 (m) (flat)
+    {
+        namespace C = ejmap::categorise;
+        C::Signatures saphira; saphira.responseRead = true; saphira.levelDepDb = 0.06; saphira.freqSpanDb = 2.25; saphira.tailRead = true; saphira.repeats = 0;
+        saphira.harmRead = true; saphira.thdLoDb = -44.1; saphira.thdHiDb = -35.9; saphira.harmDb = -35.9; saphira.sidebandDb = -24.3; saphira.pitchRead = true;
+        C::Signatures req2; req2.responseRead = true; req2.tailRead = true; req2.harmRead = true; req2.thdLoDb = -999.0; req2.thdHiDb = -187.4; req2.harmDb = -187.4; req2.sidebandDb = -41.6; req2.pitchRead = true;
+        const auto dS = C::decide (saphira, {}), dR = C::decide (req2, {});
+        const auto rS = afterSignature (true, dS.settled, dS.category, {}, dS.why), rR = afterSignature (true, dR.settled, dR.category, {}, dR.why);
+        const auto inst = afterSignature (true, true, "modulation", C::outOfScope ("aumu", "Keys", ""), "an instrument");
+        const auto meter = afterSignature (true, false, {}, C::outOfScope ("aufx", "Insight Meter", ""), "a meter");
+        const auto midi = afterSignature (true, false, {}, C::outOfScope ("aumi", "Arp", ""), "midi");
+        const auto util = afterSignature (true, false, {}, C::outOfScope ("aufx", "Gain Utility", ""), "a utility");
+        check (dS.settled && dS.category == "modulation" && rS.route == Route::needsCategory && rS.category.isEmpty() && rS.why.contains ("not a clear out-of-scope case")
+               && ! dR.settled && rR.route == Route::needsCategory
+               && inst.route == Route::outOfScope && inst.category == "instrument" && meter.route == Route::outOfScope && midi.route == Route::outOfScope && midi.category == "midi"
+               && util.route == Route::outOfScope,
+               "wizard WZ-UNCAT-1: uncategorised Saphira reads " + dS.category + " -> " + routeName (rS.route) + "; REQ 2 -> " + routeName (rR.route) + "; instrument / meter / MIDI / utility stay out of scope");
+    }
+    // WZ-SOUND-1 THE FIRST-SOUND CHECK AND THE TWIN'S WINDOW (Kathy, 25 Oct; the 24 Oct run's UAD strips): a plugin routed on a KNOWN
+    // category, never checked on this Mac, plays one short tone under the window / crash watch before measuring - a window files it
+    // needs_licence (remembered), a crash crashed, a timeout timed_out, without the long measurement; a clean pass is kept and never repeated.
+    // A VST3 twin's licence window counts for its AU too
+    {
+        Answer k; k.category = "channel_strip"; k.categoryKnown = true; Answer g; g.category = "channel_strip";
+        const auto dK = route (k, {}, {}), dG = route (g, {}, {}); Decision other { Route::sendOther, "amp_sim", "x" }; other.known = true;
+        const auto win = audioCheckVerdict (true, false, false), crash = audioCheckVerdict (false, true, false), slow = audioCheckVerdict (false, false, true), ok = audioCheckVerdict (false, false, false);
+        const auto ledger = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_sound_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        rememberAudioChecked (ledger, "AudioUnit|2626669|11.2.0"); rememberAudioChecked (ledger, "AudioUnit|2626669|11.2.0");
+        const auto checked = loadAudioChecked (ledger); const auto onDisk = ledger.getChildFile ("audio_checked.json").loadFileAsString(); ledger.deleteRecursively();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const int mapStop = run.indexOf ("if (wizardStop() != 0) return stoppedInScan (\"mapping\");"), soundAt = run.indexOf ("THE FIRST-SOUND CHECK (Kathy, 25 Oct; wizroute::needsAudioCheck)"), states = run.indexOf ("auto fpOf = [&] (const juce::PluginDescription& d)");
+        check (dK.known && dK.route == Route::measure && ! dG.known && dG.route == Route::categorise
+               && needsAudioCheck (dK, false) && ! needsAudioCheck (dK, true) && ! needsAudioCheck (dG, false) && ! needsAudioCheck (other, false)
+               && win.state == "needs_licence" && win.why.contains ("window") && crash.state == "crashed" && slow.state == "timed_out" && ok.state.isEmpty()
+               && audioCheckArgs().contains ("--tail") && audioCheckArgs().contains ("tail_s=1")
+               && checked.size() == 1 && checked.count ("audiounit|2626669|11.2.0") == 1 && onDisk.contains ("audiounit|2626669|11.2.0")
+               && mapStop > 0 && soundAt > mapStop && states > soundAt
+               && run.indexOf (soundAt, "if (early.count (d.name)) continue;") > soundAt
+               && run.contains ("if (wizroute::needsAudioCheck (p.d, checked.count (wizroute::pluginId (juce::String::toHexString (d.uniqueId).toLowerCase(), d.version, fmtTag (d)).toLowerCase()) > 0)) ds.push_back (d); }")
+               && run.contains ("const auto v = wizroute::audioCheckVerdict (r.kind == ChildResult::Kind::uiShown, r.kind == ChildResult::Kind::signaled, r.kind == ChildResult::Kind::timedOut);")
+               && run.contains ("if (v.state.isEmpty()) { if (r.cleanExit()) wizroute::rememberAudioChecked (opt.ledger, pid); ++played; return; }")
+               && run.contains ("if (v.state == \"needs_licence\") wizroute::rememberLicenceWindow (licenceMemF, pid);")
+               && run.contains ("early[d.name] = v.state; earlyWhy[d.name] = v.why;")
+               && run.contains ("const auto checked = wizroute::loadAudioChecked (opt.ledger);")
+               && run.contains ("wizroute::rememberLicenceWindow (licF, twinPid); }   // 25 Oct (Kathy): the twin's window counts for its AU too"),
+               "wizard WZ-SOUND-1: a known-category plugin plays one short tone before measuring (" + win.state + " / " + crash.state + " / " + slow.state + " / played), once per Mac; the twin's window counts for its AU");
     }
     // WZ-STRIP-RULE-1 SEVERAL SECTIONS -> CHANNEL STRIP (Kathy, 24 Oct): the reads find dynamics and another behaviour AND the controls name a
     // compressor and two of EQ / gate / tail, no drive control; one side alone, or a drive control (a distortion), leaves the reads' category

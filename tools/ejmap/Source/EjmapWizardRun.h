@@ -739,7 +739,8 @@ inline int runWizard (const WizardOptions& wo)
                     bool window = false;
                     prog.now (d.name, "reading it beside its AU");   // 18 Oct
                     const auto why = bridgeRead (opt, au, d, paramsFromStore (opt.ledger, store, au), ps, bridgeDir, window, &bridgeLoads);
-                    if (window) wizroute::rememberLicenceWindow (licF, bundleKey);
+                    if (window) { wizroute::rememberLicenceWindow (licF, bundleKey);
+                                  wizroute::rememberLicenceWindow (licF, twinPid); }   // 25 Oct (Kathy): the twin's window counts for its AU too - never measured unlicensed
                     juce::String st = window ? juce::String ("needs_licence") : juce::String ("not_measurable"), rowWhy = why;
                     if (! window && why.endsWith ("in both formats") && ! why.startsWith ("0 "))   // 18 Oct: the read's own outcome, never a bare "read"
                         st = bridgeVerdict (juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (au)).loadFileAsString()), juce::JSON::parse (bridgeDir.getChildFile (bridgeRecordName (d)).loadFileAsString()), rowWhy);
@@ -1067,6 +1068,39 @@ inline int runWizard (const WizardOptions& wo)
         [&] { return jobs::jobsNowForUser (juce::jmax (1, opt.jobs)); });   // 15 Oct: 2 at a time while the user is active
     }
     if (wizardStop() != 0) return stoppedInScan ("mapping");
+    {   // THE FIRST-SOUND CHECK (Kathy, 25 Oct; wizroute::needsAudioCheck): a known-category plugin this Mac has never checked plays one short
+        // tone under the window / crash watch before it is queued for measuring; a window, crash or timeout files it held
+        const auto checked = wizroute::loadAudioChecked (opt.ledger);
+        std::vector<juce::PluginDescription> ds;
+        for (const auto& p : toMap)
+        {   const auto& d = plugins[p.i].desc;
+            if (early.count (d.name)) continue;   // mapping already settled it
+            if (wizroute::needsAudioCheck (p.d, checked.count (wizroute::pluginId (juce::String::toHexString (d.uniqueId).toLowerCase(), d.version, fmtTag (d)).toLowerCase()) > 0)) ds.push_back (d); }
+        if (! ds.empty())
+        {
+            say ("WIZARD: first-sound check: " + juce::String ((int) ds.size()) + " known-category plugin(s) this Mac has not played sound through yet");
+            std::vector<size_t> idx; for (size_t k = 0; k < ds.size(); ++k) idx.push_back (k);
+            jobs::Pool<size_t, juce::StringArray, ChildResult> pool;
+            pool.laneOf = [&] (const size_t& k) { jobs::LaneInputs in; in.uad = uad::isUadProduct (ds[k].name, ds[k].manufacturerName); in.pace = paceHeld (ds[k], bundlesAll, in.paceWhy); return jobs::laneFor (in); };
+            pool.stopped = [] { return wizardStop() != 0; };
+            pool.prepare = [&] (const size_t& k) -> std::optional<juce::StringArray>
+            {   const auto& d = ds[k]; prog.now (d.name, "playing one short tone through it");
+                auto args = juce::StringArray { opt.probe.getFullPathName(), d.name, d.fileOrIdentifier, juce::String::toHexString (d.uniqueId) }; args.addArray (wizroute::audioCheckArgs()); return args; };
+            pool.run = [&] (const juce::StringArray& a) { return runChild (a, loadTimeoutFor (a[2]) + 15000); };
+            pool.discard = [] (const size_t&, juce::StringArray&) {};   // stopped: nothing kept, it is checked again next time
+            int played = 0, held = 0;
+            pool.finish = [&] (const size_t& k, juce::StringArray&, ChildResult& r)
+            {   const auto& d = ds[k]; const auto pid = wizroute::pluginId (juce::String::toHexString (d.uniqueId).toLowerCase(), d.version, fmtTag (d));
+                const auto v = wizroute::audioCheckVerdict (r.kind == ChildResult::Kind::uiShown, r.kind == ChildResult::Kind::signaled, r.kind == ChildResult::Kind::timedOut);
+                if (v.state.isEmpty()) { if (r.cleanExit()) wizroute::rememberAudioChecked (opt.ledger, pid); ++played; return; }   // an unclean exit: measured, checked again next time
+                if (v.state == "needs_licence") wizroute::rememberLicenceWindow (licenceMemF, pid);
+                early[d.name] = v.state; earlyWhy[d.name] = v.why; ++held; say ("  " + d.name + ": " + v.why + " (" + r.describe() + ")"); };
+            if (opt.jobs > 0) pool.jobsNow = [&] { return jobs::jobsNowForUser (juce::jmax (1, opt.jobs)); };
+            pool (idx, juce::jmax (1, opt.jobs));
+            say ("WIZARD: first-sound check: " + juce::String (played) + " played, " + juce::String (held) + " held (window / crash / timeout)");
+            if (wizardStop() != 0) return stoppedInScan ("checking sound");
+        }
+    }
     auto fpOf = [&] (const juce::PluginDescription& d) { const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; return store.count (k) ? store.at (k).fp : juce::String(); };
     for (const auto& p : toMap)
     {

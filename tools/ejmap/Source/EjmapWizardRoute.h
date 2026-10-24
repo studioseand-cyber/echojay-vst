@@ -97,7 +97,7 @@ inline juce::String routeName (Route r)
     return {};
 }
 struct Decision { Route route = Route::categorise; juce::String category, why; juce::StringArray passes; bool limiterKnown = false;
-                  bool byHint = false; juce::String hintFrom; };   // hintFrom (24 Oct): "catalogue" | "name" - only a catalogue hint is never demoted   // passes: see Answer; byHint (24 Oct): measured on the catalogue's hint (the reads could not settle)
+                  bool byHint = false; juce::String hintFrom; bool known = false; };   // known (25 Oct): routed on a KNOWN catalogue category - no signature read ran   // hintFrom (24 Oct): "catalogue" | "name" - only a catalogue hint is never demoted   // passes: see Answer; byHint (24 Oct): measured on the catalogue's hint (the reads could not settle)
 // THE KNOWN MULTIBANDS (Kathy, 12 Oct): the server has no multiband category, and a multiband with none reads as "dynamics" and
 // spends ~10 min in the compressor certification before it refuses (OTT, 591 s). So the wizard ships EJ Map's own list - the 17
 // products Sean's cert found multiband (cert outcomes state "multiband", 8-9 Oct) - by plugin uid (any version): held straight away.
@@ -266,6 +266,34 @@ inline void rememberLicenceWindow (const juce::File& f, const juce::String& plug
     auto s = loadLicenceMemory (f); if (! s.insert (pluginId.toLowerCase()).second) return;
     juce::Array<juce::var> a; for (const auto& x : s) a.add (x); f.replaceWithText (juce::JSON::toString (juce::var (a)));
 }
+// THE FIRST-SOUND CHECK (Kathy, 25 Oct; the 24 Oct run). A plugin routed on a KNOWN category skips the signature reads, and those reads
+// were where a licence window first showed: the UAD strips loaded silently for their maps, then crashed or showed a window once audio ran
+// in the measuring pass. So before measuring such a plugin this Mac has never checked, ONE short tone runs through it (load, ~1 s of 997 Hz,
+// quit) under the window / crash watch. A window -> needs_licence (remembered), a crash -> crashed, a timeout -> timed_out: filed held,
+// without the long measurement. A clean pass is kept in <store>/audio_checked.json (beside the maps, like the pitch labels) and never
+// repeated on this Mac
+inline bool needsAudioCheck (const Decision& d, bool checkedBefore) { return d.route == Route::measure && d.known && ! checkedBefore; }
+struct AudioVerdict { juce::String state, why; };   // state empty: it played; measure it
+// a crash is a probe killed by a signal; any other unclean end (an exit code) is not this check's to judge - it is measured as before
+inline AudioVerdict audioCheckVerdict (bool windowShown, bool crashed, bool timedOut)
+{
+    if (windowShown) return { "needs_licence", "a licence or sign-in window appeared when it first played sound - closed, never clicked; not measured" };
+    if (timedOut) return { "timed_out", "it did not finish playing a one-second tone: not measured" };
+    if (crashed) return { "crashed", "it crashed when it first played sound: not measured" };
+    return {};
+}
+inline juce::StringArray audioCheckArgs() { return { "--tail", "db=-12", "burst_ms=300", "tail_s=1", "hz=997", "win_ms=1" }; }
+inline std::set<juce::String> loadAudioChecked (const juce::File& ledger)
+{
+    std::set<juce::String> s; const auto v = juce::JSON::parse (ledger.getChildFile ("audio_checked.json").loadFileAsString());
+    if (const auto* a = v.getArray()) for (const auto& x : *a) s.insert (x.toString().toLowerCase());
+    return s;
+}
+inline void rememberAudioChecked (const juce::File& ledger, const juce::String& pluginId)
+{
+    auto s = loadAudioChecked (ledger); if (! s.insert (pluginId.toLowerCase()).second) return;
+    juce::Array<juce::var> a; for (const auto& x : s) a.add (x); ledger.createDirectory(); ledger.getChildFile ("audio_checked.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+}
 // THE WAVESHELL GUARD (Kathy, 14 Oct). Waves plugins live inside shared WaveShell bundles (this Mac: WaveShell2-AU 12.0 holds 589 of 616).
 // Measured here: a load takes 3.7 s, the first as quick as the rest - so no longer first-load limit is needed. But if a SHELL hangs or
 // fails (a broken install, a licence check that never answers), every one of its plugins would wait the full limit. So: a WaveShell load
@@ -360,7 +388,7 @@ inline Decision route (const Answer& a, const juce::String& nameCategory, const 
         if (! a.passes.isEmpty()) return { Route::measure, a.category, a.why, a.passes, a.limiterKnown };   // a limiter the database has half of
         // Kathy, 24 Oct: a KNOWN category (a served map / profile / certified data) routes, as before; a GUESSED one (B's catalogue from the
         // name) is a HINT - the wizard's own signature reads route, the hint where they ran and could not settle, never demoted (afterSignature)
-        if (a.categoryKnown && measurable (a.category)) return { Route::measure, a.category, "the catalogue knows it: " + a.category };
+        if (a.categoryKnown && measurable (a.category)) { Decision d { Route::measure, a.category, "the catalogue knows it: " + a.category }; d.known = true; return d; }
         if (a.categoryKnown && wizserver::isServerCategory (a.category))
             return { Route::sendOther, a.category, "the catalogue knows it (" + a.category + "), not measured by the wizard yet: sent so EchoJay knows it" };
         if (measurable (a.category) || wizserver::isServerCategory (a.category))
@@ -399,7 +427,11 @@ inline Decision afterSignature (bool readsRan, bool settled, const juce::String&
     if (category == "dynamics") return { Route::measure, "compressor", "the signature (dynamics; the compressor certification decides): " + why };
     if (measurable (category)) return { Route::measure, category, "the signature: " + why };   // saturation, reverb, delay, pitch (12 Oct: all categories)
     if (wizserver::isServerCategory (category)) return { Route::sendOther, category, "the signature (" + category + ", not measured by the wizard yet): " + why };
-    return { Route::outOfScope, category, "the signature reads " + category + " - not an EchoJay category: " + why };   // modulation: an internal label, never sent
+    // 25 Oct (Kathy): THE READS NEVER DROP A PLUGIN. Out of scope is filed only for the clear cases, all decided by type and words before
+    // any load (instrument, MIDI, meter / analyser, utility, pedal board: the first line). A read of a category EchoJay does not measure
+    // ("modulation": heavy distortion reads that way, Saphira in the 24 Oct rehearsal) is doubtful - it goes to review with no leaning (the
+    // label is internal, never sent), never dropped
+    return { Route::needsCategory, {}, "the signature reads " + category + " - not an EchoJay category, and not a clear out-of-scope case: for review (" + why + ")" };
 }
 
 // the summary's words for these live in wizard::summaryLine (needs_category / other_category / out_of_scope / pending_review)
