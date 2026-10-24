@@ -441,6 +441,43 @@ inline juce::String rightWordFor (const EJAgentClient::Step& s, bool askPendingH
 /** Declared here, defined below: runViewFrom needs it to tell a closing that repeats a failed
     step's own line from one that says something new (his 17:20 run). */
 
+/** ---- ONE DRAWING OF ONE DIAL, WHEREVER IT IS DRAWN (his test 3 of 16:40, 23 Oct 2026) --------
+
+    The step for a dial on playback: running while it dials, Done with its own result when it lands.
+    Called from beside the add that armed it, and again at the end for any dial no add on this card
+    claimed - `drawn` is what keeps those two from drawing the same dial twice.
+
+    The RESULT is the dial's own sentence (B's done line, or ours when B sent none) and never a
+    second wording of it: his 08:43 ruling, and the reason the client keeps the landed results. */
+inline void pushDialStepFor (const juce::String& plugin, const EJAgentClient& c, RunView& v,
+                             juce::StringArray& drawn)
+{
+    if (plugin.isEmpty() || drawn.contains (plugin)) return;
+    const auto landed   = c.dialResults();
+    const auto dialling = c.keepPlayingPlugin();
+    const bool hasLanded = landed.containsKey (plugin);
+    if (! hasLanded && dialling != plugin) return;      // no dial here: nothing to draw
+    drawn.add (plugin);
+    RunStep r;
+    r.id = "dial:" + plugin;
+    if (hasLanded)
+    {
+        r.label  = "The " + plugin + " set itself on the playback";
+        r.detail = landed[plugin];
+        r.right  = "set";
+        r.status = (int) EJAgentClient::Step::Status::Done;
+        ++v.changeCount;
+    }
+    else
+    {
+        r.label  = "Keep it playing while the " + plugin + " sets itself";
+        r.detail = "I'll say when it's done.";
+        r.right  = "setting itself";
+        r.status = (int) EJAgentClient::Step::Status::Running;
+    }
+    v.steps.push_back (std::move (r));
+}
+
 inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& expanded, bool stepsOpen)
 {
     using S  = EJAgentClient::State;
@@ -567,6 +604,9 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     // (a talk-only round that asks straight away) it gets a row of its own so the chips have somewhere to
     // live - a question with no visible chips is how the rig stalled five rows on 15 Oct.
     const int lastIdx = (int) c.steps().size() - 1;
+    // Which dials this card has already drawn. Shared by the two call sites (beside an add, and the
+    // tail sweep), so a dial is drawn exactly once wherever its add happens to be.
+    juce::StringArray drawnDials;
     int i = -1;
     for (const auto& s : c.steps())
     {
@@ -683,7 +723,20 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         }
         r.right       = rightWordFor (s, askHere);
         if (s.status == St::Done || s.status == St::Undone) ++v.changeCount;
+        const auto addedHere = echojay::agent::addedPluginName (s.call);
         v.steps.push_back (std::move (r));
+        // ---- AND A DIAL'S STEP SITS WITH ITS ADD (his test 3 at 16:40, 23 Oct 2026) ------------
+        //
+        // *"On the card, each dial is its own step right after its add, running while I play, and it
+        //  shows its result on that step."*
+        //
+        // The dial steps used to be appended after every other step, so on a four-plugin build the
+        // dials sat in a block at the bottom and the card read as "four adds, then two dials" rather
+        // than as the order the work happens in. The run's own lists still decide WHETHER there is a
+        // dial (keepPlayingFor and the landed results, which is the 08:43 road); this only decides
+        // where it is drawn, and the drawing follows the add it belongs to.
+        if (addedHere.isNotEmpty())
+            pushDialStepFor (addedHere, c, v, drawnDials);
     }
     // ---- B'S KEEP-PLAYING CONTRACT, POINT 2: THE DIAL IS ITS OWN STEP (22 Oct 2026) -----------
     //
@@ -713,29 +766,19 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
     //  card."*  So the step does NOT vanish when the dial lands: it becomes a Done step carrying
     //  the sentence the dial itself wrote. The landed ones are drawn first, in the order the run
     //  armed them, and the one still working last - which is the order he reads them in.
-    const auto landed = c.dialResults();
-    for (const auto& name : landed.getAllKeys())
-    {
-        RunStep r;
-        r.id     = "dial:" + name;
-        r.label  = "The " + name + " set itself on the playback";
-        r.detail = landed[name];                  // the dial's own sentence, not a second wording
-        r.right  = "set";
-        r.status = (int) St::Done;
-        v.steps.push_back (std::move (r));
-        ++v.changeCount;
-    }
-    if (const auto dialling = c.keepPlayingPlugin();
-        dialling.isNotEmpty() && ! landed.containsKey (dialling))
-    {
-        RunStep r;
-        r.id     = "dial:" + dialling;
-        r.label  = "Keep it playing while the " + dialling + " sets itself";
-        r.detail = "I'll say when it's done.";
-        r.right  = "setting itself";
-        r.status = (int) St::Running;
-        v.steps.push_back (std::move (r));
-    }
+    // ...AND ANY DIAL WHOSE ADD IS NOT ON THIS CARD still gets its step here, at the end. A dial can
+    // outlive the step that armed it (a run that was reloaded from the store, or a dial armed by a
+    // build whose own step the server never sent), and a dial nobody can see is the fault his 16:40
+    // ruling is about. Only the ones no add claimed, so nothing is drawn twice.
+    // HELD IN A LOCAL, NOT ITERATED OFF THE CALL. dialResults() returns by value and getAllKeys()
+    // returns a reference INTO it, so `for (auto& n : c.dialResults().getAllKeys())` walks a list
+    // whose owner died at the end of that expression - which is exactly what it did: KP5 went from
+    // green to "no dial step" the moment I wrote it that way.
+    const auto landedNow = c.dialResults();
+    for (const auto& name : landedNow.getAllKeys())
+        pushDialStepFor (name, c, v, drawnDials);
+    if (const auto dialling = c.keepPlayingPlugin(); dialling.isNotEmpty())
+        pushDialStepFor (dialling, c, v, drawnDials);
     if (askNow && c.steps().empty())
     {
         RunStep r;

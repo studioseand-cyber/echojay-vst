@@ -600,6 +600,16 @@ inline bool buildPlanSlots (const ToolCall& c, juce::StringArray& out)
     CLIENT to ask the same question (the plan was on the card and in the chat row's own prose, from
     two writers neither of which knew about the other), and two spellings of one comparator is how
     the 15:20 duplicate got through in the first place. `agentui::normalisedProse` forwards here. */
+/** The plugin an `add` (or `replace`) call puts in, or empty for any other call. One reading of the
+    two fields the executor itself reads (`op` and `name`), so the card can draw a dial's step beside
+    the add that armed it (his test 3 of 16:40) without a second idea of what an add is. */
+inline juce::String addedPluginName (const ToolCall& c)
+{
+    const auto op = argString (c, "op").trim().toLowerCase();
+    if (op != "add" && op != "replace") return {};
+    return argString (c, "name").trim();
+}
+
 inline juce::String normalisedProse (const juce::String& s)
 {
     juce::String out;

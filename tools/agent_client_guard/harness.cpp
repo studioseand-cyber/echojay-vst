@@ -2002,6 +2002,46 @@ int main()
             // report and which would have thrown the result away: the row vanished and the only
             // copy of "Adjusted the Mixland Vac Attack's Left Reduction to +0.0 dB" was the chat
             // bubble he was complaining about. The step stays; it stops ASKING and starts TELLING.
+            // ---- AND ITS STEP SITS WITH ITS ADD (his test 3 of 16:40, 23 Oct 2026) ---------
+            //
+            // *"On the card, each dial is its own step right after its add."*  The dial steps were
+            // appended after everything else, so a four-plugin build read as "four adds, then the
+            // dials" instead of as the order the work happens in. Two adds here, the dial armed for
+            // the FIRST one: its step has to be the row after that add and not the last row on the
+            // card. KP4d's rule (a dial never renumbers the plan) is unchanged for a dial whose add
+            // is not on the card - that is the tail sweep, and KP5 below still measures it.
+            {
+                Rig w2;
+                w2.ex.keepPlaying = "bx_opto Pedal";
+                w2.client.start ("build a vocal chain", "chat_kp6");
+                w2.round (1);
+                w2.tool (R"EJ({"id":"tc_add_opto","name":"do","approval":"free","args":{"op":"add","name":"bx_opto Pedal"}})EJ");
+                w2.tool (R"EJ({"id":"tc_add_vsm","name":"do","approval":"free","args":{"op":"add","name":"Vertigo VSM-3"}})EJ");
+                w2.await ({ "tc_add_opto", "tc_add_vsm" });
+                pumpMs (60);
+                const auto v6 = runViewFrom (w2.client, {}, true);
+                int atAdd = -1, atDial = -1, atVsm = -1;
+                for (int k = 0; k < (int) v6.steps.size(); ++k)
+                {
+                    if (v6.steps[(size_t) k].id == "tc_add_opto")        atAdd  = k;
+                    if (v6.steps[(size_t) k].id == "dial:bx_opto Pedal") atDial = k;
+                    if (v6.steps[(size_t) k].id == "tc_add_vsm")         atVsm  = k;
+                }
+                juce::StringArray order;
+                for (const auto& st : v6.steps) order.add (st.id);
+                check (atAdd >= 0 && atDial == atAdd + 1 && atVsm > atDial,
+                       "KP6 the dial's step is the row straight after the add that armed it, not the "
+                       "last row on the card  (his 16:40: \"each dial is its own step right after its "
+                       "add\" - they were all appended at the end, so a build read as every add and "
+                       "then every dial)",
+                       "order: " + order.joinIntoString (" | "));
+                check (atDial >= 0 && v6.steps[(size_t) atDial].status
+                                        == (int) EJAgentClient::Step::Status::Running,
+                       "KP6b ...and it is RUNNING there while he plays, so the row he is reading is the "
+                       "one doing the work",
+                       atDial < 0 ? juce::String ("no dial step")
+                                  : juce::String ("status ") + juce::String (v6.steps[(size_t) atDial].status));
+            }
             w.ex.keepPlaying = {};
             w.ex.dialsLanded.set ("bx_opto Pedal",
                                   "Adjusted the bx_opto Pedal's Drive to +1.4 dB - it is working "

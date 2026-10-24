@@ -130,12 +130,31 @@ sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce:
         // Recorded as the dials are read, before anything is applied, so the client's question
         // ("may he stop yet?") can be answered from the moment the first dial is armed. The dials'
         // own state answers the other half of it; this is only the list of who counts.
+        // ---- A DIAL ON PLAYBACK *IS* A KEEP-PLAYING (his tests 1-3, 16:2x-20:51, 23 Oct 2026) --
+        //
+        // This was gated on `keep_playing`, a second field saying what `dial_on_playback` already
+        // says - two sources of truth for one fact, and his Lindell op carried only the first. The
+        // run therefore never registered the dial, and everything downstream reads this list:
+        //   - no "Keep it playing while the <plugin> sets itself" step was drawn (his test 1);
+        //   - routeDialClosingToAgentCard found the plugin absent and returned false, so the
+        //     result fell through to a loose chat bubble below the card (his test 2, item 2);
+        //   - and the run could have told him he could stop while a dial was still going.
+        //
+        // His ruling of 16:40 settles it: *"a dial on playback is part of the build."*  So every
+        // dial armed by a build is registered, and `keep_playing` - when B sends it - only decides
+        // what the log line says about where the instruction came from.
         for (const auto& d : dials)
-            if (d.keepPlaying && d.name.isNotEmpty())
+            if (d.name.isNotEmpty())
             {
                 proc_.keepPlayingFor.addIfNotAlreadyThere (d.name);
-                EchoJay_NSLog (("EJLoudness: \"" + d.name + "\" carries keep_playing - this run will not "
-                                "say \"you can stop\" until its dial lands (B's contract of 22 Oct)").toRawUTF8());
+                EchoJay_NSLog (("EJLoudness: \"" + d.name + "\" has a dial on playback"
+                                + (d.keepPlaying ? juce::String (" and carries keep_playing")
+                                                 : juce::String (" (no keep_playing field - the dial "
+                                                                 "itself is the instruction, his 16:40 "
+                                                                 "ruling)"))
+                                + " - this run will not say \"you can stop\" until its dial lands, its "
+                                  "card draws a step for it, and its result lands ON that step rather "
+                                  "than in the chat (B's contract of 22 Oct, his 08:43 and 20:51)").toRawUTF8());
             }
         const auto addedNames = LoudnessLoop::addedNamesFromOps (ops);
         proc_.getChainHost().applyChainEdits (
@@ -178,10 +197,60 @@ sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce:
         EchoJay_NSLog (("EJAgentHome: this change puts a plugin in, so it goes out as intent=\"" + intent
                         + "\" - the Link arms the same silent slot-OUT level match the Build button gets "
                           "(Sean's item 2, 19 Oct)").toRawUTF8());
+    // ---- WHAT WOULD TAKE THIS BACK (his 21:04, 23 Oct 2026) --------------------------------
+    //
+    // *"UNDO ALL IS NOT CLICKABLE on a run that says "Done" ... a finished run's Undo all on a Link
+    //  is clickable and restores the rack."*
+    //
+    // His log says what it actually did: "undo all walked the history back to the run's checkpoint -
+    // 0 step(s), depth now 0 (the run started at 0)" and then FAILED "there was nothing left to
+    // undo" - while the run's four steps each carried an undo token. The history was EMPTY because
+    // this road, the wire, records nothing: ChainHost::pushUndo covers the local rack and the
+    // borrowed copy, a remote PARAMETER move records a `remoteValue` entry (stage 5, 10 Oct), and a
+    // remote STRUCTURAL edit - which is what every agent add to a Link is - had no entry at all.
+    // The `chain` kind cannot serve: it restores a snapshot through rackFor(uid), and an unleased
+    // Link has no host here to restore into.
+    //
+    // So the inverse goes out the way the edit did: as ops. The reverse of an append is a remove of
+    // the slot it landed on, and the ack says how many slots the rack has afterwards, so the adds
+    // are the last K - removed in DESCENDING order, since removing a lower slot would shift the
+    // ones above it. Each remove carries the name it expects, and applyUndoEntry drops any whose
+    // slot no longer holds that plugin: an entry that would delete something else is worse than no
+    // entry at all (the history's own "found by identity, skipped when absent" rule).
+    //
+    // ONLY FOR APPENDS, and said out loud otherwise: a positioned add does not land on the end, so
+    // the arithmetic below would name the wrong slot. That case is owed rather than guessed.
+    juce::StringArray appendedNames;
+    bool everyAddAppends = true, anyAdd = false;
+    if (auto* oa = ops.getArray())
+        for (const auto& ov : *oa)
+            if (auto* oo = ov.getDynamicObject())
+            {
+                const auto w = oo->getProperty ("op").toString().trim().toLowerCase();
+                if (w != "add") continue;
+                anyAdd = true;
+                if (oo->hasProperty ("slot")) { everyAddAppends = false; continue; }
+                appendedNames.add (oo->getProperty ("name").toString().trim());
+            }
     const int seq = proc_.writeChainEditCommand (uid, ops, juce::var(), "agent", {}, intent);
     if (seq < 0) { if (cb) cb (false, "that rack would not take the change", {}); return; }
-    proc_.awaitChainAck (uid, seq, [this, uid, cb] (bool ok, juce::String sentence, juce::String technical, int)
+    proc_.awaitChainAck (uid, seq, [this, uid, cb, appendedNames, everyAddAppends, anyAdd]
+                         (bool ok, juce::String sentence, juce::String technical, int slotsAfter)
     {
+        if (ok && anyAdd)
+        {
+            if (everyAddAppends && ! appendedNames.isEmpty() && slotsAfter >= appendedNames.size())
+                proc_.recordRemoteAddsForUndo (uid, appendedNames, slotsAfter);
+            else
+                EchoJay_NSLog (("EJAgentHome: this change on " + uid + " is NOT recorded for undo - "
+                                + (everyAddAppends ? "the rack reported " + juce::String (slotsAfter)
+                                                     + " slot(s), fewer than the " + juce::String (appendedNames.size())
+                                                     + " added"
+                                                   : juce::String ("one of its adds names a position, so the "
+                                                                   "added plugins are not the last slots"))
+                                + ". \"Undo all\" will say it cannot take this one back rather than "
+                                  "remove the wrong slot (his 21:04)").toRawUTF8());
+        }
         // ---- SEAN'S #3 (16 Oct 2026): TELL THE WINDOW THE RACK MOVED ---------------------------
         // The 14 Oct refresh sits on the BUILD path; an `add` takes this one, so nothing told the
         // view - "stays empty / Reading 0 plugin(s) until I switch racks". Raised only on success,
