@@ -1,0 +1,315 @@
+// shadow_live_repro (24 Oct 2026): ONE question, asked on the bench, about a plugin the rig is
+// normally forbidden to load.
+//
+// WHY THIS EXISTS. His 12:14 crash (AUHostingServiceXPC_arrow-2026-10-24-121523.ips) died on the
+// AUOOPRenderingServer thread, nineteen seconds after the live view started:
+//
+//     cl1bST_VST_AU_Protect  (the Tube-Tech's own code, SIGSEGV at 0x0)
+//     AudioToolboxCore       AudioUnitRender
+//     EchoJay V2             juce::AudioUnitPluginInstanceHeadless::processAudio
+//     EchoJay V2             EchoJayProcessor::processBlock
+//
+// That is the live view's copy being rendered by EJShadowView::pump. Nothing was in flight on the
+// message thread this time (thread 0 was in LinkShm::resolveDir), so the 08:58 rule - no render
+// while we are inside a plugin call - could not have stopped it, and neither could the editor
+// ordering: the copy was the one with the editor on it, which is what that fix was for.
+//
+// So the question is what is DIFFERENT about our render, and the honest way to answer it is to vary
+// one thing at a time against the real plugin. Sean granted a one-off supervised exception to the
+// rig rule for exactly this (the rig never loads iLok or PACE plugins unsupervised), so every leg
+// here is one process, named, bounded and reported, and the runner prints what the operating system
+// did to it.
+//
+// WHAT THIS IS NOT. It cannot render the copy from inside another AU's render callback, which is
+// where the product's pump actually runs (Logic's render thread, nested inside JuceAU::Render). If
+// every leg below survives, that nesting is the next suspect and the report says so rather than
+// declaring the plugin innocent.
+//
+//   shadow_live_repro <leg> [seconds] ["<name>"] ["<AudioUnit:identifier>"] [uidHex]
+//
+// Legs, each a separate process:
+//   product    what the V2 does now: plain stereo asked for (every other bus DISABLED),
+//              prepareToPlay(48000, 512), the copy's own editor created and shown, rendered from a
+//              background thread at real time.
+//   noeditor   the same copy, rendered the same way, with NO editor. Isolates the open interface.
+//   keyfed     the plugin's OWN layout kept and every channel fed, which is what ChainHost does for
+//              this plugin ("input bus 1 (sidechain) fed from main"). Isolates the disabled key bus.
+//   bigblock   the product shape, then ONE block larger than the prepared block. Isolates
+//              kAudioUnitProperty_MaximumFramesPerSlice.
+//   playhead   the product shape with a playhead that supplies host time and a sample position.
+//              Isolates the missing playhead (our copy has none, so every block says host time 0).
+//   selfkey    THE FIX, exactly: the layout left alone, the pair in channels 0/1, every enabled
+//              non-main input bus self-keyed from it by echojay::selfKeyCopyPlan - the same call
+//              EJShadowView::start makes. This is the leg that has to survive.
+//   selfkey_big  the fix, then ONE block larger than the prepared block, so the maximum-frames
+//              question is asked again without the crashing layout confusing the answer.
+//
+// Exit 0 = it survived the whole duration. Any signal = the leg reproduced a crash, and the runner
+// reports which leg and how many seconds in.
+#include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
+#include <JuceHeader.h>
+#include "EJShadowChannels.h"   // the FIX's own rule, so the leg and the product share one author
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+
+namespace
+{
+// The defaults are his crash's plugin and the rate his session ran at.
+constexpr double kRate       = 48000.0;
+constexpr int    kBlock      = 512;
+constexpr int    kBigBlock   = 1024;
+constexpr int    kBufFrames  = 8192;      // EJShadowView::kBufFrames, the same capacity
+constexpr float  kFeedPeak   = 0.126f;    // about -18 dBFS, so a compressor actually works
+
+void say (const juce::String& leg, const juce::String& line)
+{
+    std::printf ("[%s] %s\n", leg.toRawUTF8(), line.toRawUTF8());
+    std::fflush (stdout);
+}
+
+/** A playhead that answers, for the one leg that asks whether the missing one matters.
+
+    The product's copy has NO playhead, so AudioUnitPluginInstanceHeadless::processAudio clears
+    kAudioTimeStampHostTimeValid and renders every block with a host time of zero. This supplies a
+    monotonic host time and sample position instead, which is what a host would. */
+struct TickingPlayHead final : public juce::AudioPlayHead
+{
+    std::atomic<juce::int64> samples { 0 };
+
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo p;
+        const auto s = samples.load (std::memory_order_relaxed);
+        p.setTimeInSamples (s);
+        p.setTimeInSeconds ((double) s / kRate);
+        p.setHostTimeNs ((juce::uint64) (juce::Time::getHighResolutionTicks()
+                                         * (1.0e9 / (double) juce::Time::getHighResolutionTicksPerSecond())));
+        p.setBpm (120.0);
+        p.setIsPlaying (true);
+        return p;
+    }
+};
+
+/** The render loop, on its own thread, at real time - the product renders this copy from the host's
+    audio thread, so a leg that rendered as fast as it could would be testing something else. */
+struct Renderer final : public juce::Thread
+{
+    Renderer (juce::AudioPluginInstance& i, const juce::String& legName, int channels,
+              int blockFrames, int bigAfterBlocks, TickingPlayHead* ph,
+              std::vector<echojay::ShadowChannelCopy> keyPlan = {})
+        : juce::Thread ("repro render"), inst (i), leg (legName), block (blockFrames),
+          bigAfter (bigAfterBlocks), playHead (ph), plan (std::move (keyPlan))
+    {
+        // Sized exactly as EJShadowView::start sizes it: from the copy's own channel counts, never
+        // narrower than a stereo pair, and the capacity the pump uses.
+        buf.setSize (channels, kBufFrames);
+        buf.clear();
+    }
+
+    void run() override
+    {
+        juce::Random rng (1234);
+        juce::MidiBuffer noMidi;
+        const double perBlockMs = 1000.0 * (double) block / kRate;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        double nextDue = t0;
+
+        while (! threadShouldExit())
+        {
+            const int n = (bigAfter > 0 && blocks.load() == bigAfter) ? kBigBlock : block;
+            if (n == kBigBlock)
+                say (leg, "the next block is " + juce::String (n) + " frames, and the copy was "
+                          "prepared for " + juce::String (block)
+                        + " - this is the maximum-frames-per-slice leg");
+
+            // The ring carries one stereo pair; every channel beyond it is silence, never
+            // leftovers. The same rule as pump(), for the same reason.
+            for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+                if (ch < 2)
+                    for (int i = 0; i < n; ++i)
+                        buf.setSample (ch, i, kFeedPeak * (rng.nextFloat() * 2.0f - 1.0f));
+                else
+                    buf.clear (ch, 0, n);
+
+            // The fix's own copy, in the fix's own order: the pair, silence everywhere else, then
+            // every planned key channel fed from the pair.
+            for (const auto& c : plan)
+                buf.copyFrom (c.destChannel, 0, buf, c.srcChannel, 0, n);
+
+            juce::AudioBuffer<float> view (buf.getArrayOfWritePointers(), buf.getNumChannels(), 0, n);
+            inst.processBlock (view, noMidi);
+            if (playHead != nullptr) playHead->samples.fetch_add (n);
+            blocks.fetch_add (1);
+            framesDone.fetch_add (n);
+
+            nextDue += perBlockMs;
+            const auto now = juce::Time::getMillisecondCounterHiRes();
+            if (nextDue > now) juce::Thread::sleep ((int) (nextDue - now));
+            else               nextDue = now;        // never run a backlog faster than real time
+        }
+    }
+
+    juce::AudioPluginInstance& inst;
+    juce::String leg;
+    juce::AudioBuffer<float> buf;
+    int block, bigAfter;
+    TickingPlayHead* playHead;
+    std::vector<echojay::ShadowChannelCopy> plan;
+    std::atomic<int> blocks { 0 };
+    std::atomic<juce::int64> framesDone { 0 };
+};
+
+struct EditorWindow final : public juce::DocumentWindow
+{
+    EditorWindow (juce::AudioProcessorEditor* ed)
+        : juce::DocumentWindow ("live copy", juce::Colours::black, 0)
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (ed, true);
+        centreWithSize (ed->getWidth(), ed->getHeight());
+        setVisible (true);
+    }
+    void closeButtonPressed() override {}
+};
+} // namespace
+
+int main (int argc, char** argv)
+{
+    const juce::String leg = argc >= 2 ? juce::String::fromUTF8 (argv[1]) : juce::String ("product");
+    const int seconds      = argc >= 3 ? juce::jlimit (2, 600, atoi (argv[2])) : 60;
+
+    juce::ScopedJuceInitialiser_GUI juceInit;
+    juce::AudioPluginFormatManager fm;
+    // The EDITOR-CAPABLE registration, which is what ChainHost uses (juce::AudioUnitPluginFormat
+    // derives from the headless one and overrides createPluginInstance). The live copy comes from
+    // ChainHost::asyncCreatePlugin, so it is an editor-capable instance and this must match it.
+    juce::addDefaultFormatsToManager (fm);
+
+    juce::PluginDescription d;
+    d.pluginFormatName = "AudioUnit";
+    d.name             = argc >= 4 ? juce::String::fromUTF8 (argv[3]) : juce::String ("Tube-Tech CL 1B");
+    d.fileOrIdentifier = argc >= 5 ? juce::String::fromUTF8 (argv[4])
+                                   : juce::String ("AudioUnit:Effects/aufx,clST,SfTb");
+    if (argc >= 6) d.uniqueId = d.deprecatedUid = (int) (juce::int64) juce::String (argv[5]).getHexValue64();
+
+    say (leg, "\"" + d.name + "\" | " + d.fileOrIdentifier + " | " + juce::String (seconds) + " s");
+
+    std::unique_ptr<juce::AudioPluginInstance> inst;
+    juce::String err;
+    bool done = false;
+    fm.createPluginInstanceAsync (d, kRate, kBlock,
+        [&] (std::unique_ptr<juce::AudioPluginInstance> p, const juce::String& e)
+        { inst = std::move (p); err = e; done = true; });
+
+    // Bounded, and the bound is generous because a licence check may put a window in front of Sean.
+    const double tStart = juce::Time::getMillisecondCounterHiRes();
+    while (! done && juce::Time::getMillisecondCounterHiRes() - tStart < 120000.0)
+    {
+        juce::Timer::callPendingTimersSynchronously();
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+    }
+    if (! done)          { say (leg, "REFUSED: no callback in 120 s (a licence prompt?)"); return 3; }
+    if (inst == nullptr) { say (leg, "REFUSED: " + err.replace ("\n", " ")); return 3; }
+    say (leg, "instantiated: " + juce::String (inst->getTotalNumInputChannels()) + " in / "
+            + juce::String (inst->getTotalNumOutputChannels()) + " out, "
+            + juce::String (inst->getBusCount (true)) + " input bus(es)");
+
+    // ---- THE ONE THING EACH LEG VARIES ---------------------------------------------------------
+    const bool ownLayout = (leg == "keyfed" || leg.startsWith ("selfkey"));
+    if (! ownLayout)
+    {
+        // What PluginProcessor::shadowBegin does today: ask for a plain stereo pair and DISABLE
+        // every other bus, because the shadow ring carries one stereo pair and nothing else.
+        auto want = inst->getBusesLayout();
+        for (int i = 0; i < want.inputBuses.size(); ++i)
+            want.inputBuses.getReference (i) = (i == 0 ? juce::AudioChannelSet::stereo()
+                                                      : juce::AudioChannelSet::disabled());
+        for (int i = 0; i < want.outputBuses.size(); ++i)
+            want.outputBuses.getReference (i) = (i == 0 ? juce::AudioChannelSet::stereo()
+                                                        : juce::AudioChannelSet::disabled());
+        const bool took = inst->setBusesLayout (want);
+        say (leg, juce::String (took ? "asked for a plain stereo pair and it took"
+                                     : "asked for a plain stereo pair and it REFUSED")
+                + ": " + juce::String (inst->getTotalNumInputChannels()) + " in / "
+                + juce::String (inst->getTotalNumOutputChannels()) + " out");
+    }
+    else
+    {
+        say (leg, "keeping the plugin's OWN layout - the shape ChainHost gives a rack slot "
+                  "(\"input bus 1 (sidechain) fed from main\")");
+    }
+
+    std::unique_ptr<TickingPlayHead> ph;
+    if (leg == "playhead")
+    {
+        ph = std::make_unique<TickingPlayHead>();
+        inst->setPlayHead (ph.get());
+        say (leg, "a playhead is installed, so every block carries a host time and a sample position");
+    }
+
+    inst->prepareToPlay (kRate, kBlock);
+    say (leg, "prepared at " + juce::String ((int) kRate) + " Hz, " + juce::String (kBlock) + " frames");
+
+    std::unique_ptr<EditorWindow> win;
+    if (leg != "noeditor")
+    {
+        if (inst->hasEditor())
+        {
+            if (auto* ed = inst->createEditorIfNeeded())
+            {
+                win = std::make_unique<EditorWindow> (ed);
+                say (leg, "the copy's own editor is open ("
+                        + juce::String (ed->getWidth()) + "x" + juce::String (ed->getHeight()) + ")");
+            }
+            else say (leg, "hasEditor() is true but createEditorIfNeeded returned nothing");
+        }
+        else say (leg, "this instance reports no editor");
+    }
+    else say (leg, "no editor, by design");
+
+    const int channels = juce::jmax (2, inst->getTotalNumInputChannels(),
+                                        inst->getTotalNumOutputChannels());
+
+    std::vector<echojay::ShadowChannelCopy> plan;
+    if (leg.startsWith ("selfkey"))
+    {
+        plan = echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*inst));
+        juce::String says;
+        for (const auto& c : plan)
+            says << (says.isEmpty() ? "" : ", ") << "ch" << c.destChannel << " <- ch" << c.srcChannel;
+        say (leg, "the self-key plan is " + juce::String ((int) plan.size()) + " copy(ies)"
+                + (says.isEmpty() ? juce::String (" - this plugin has no key bus") : ": " + says));
+        if (echojay::highestPlannedChannel (plan) >= channels)
+        { say (leg, "REFUSED: the plan does not fit a " + juce::String (channels) + "-channel buffer"); return 3; }
+    }
+
+    const bool bigLeg = (leg == "bigblock" || leg == "selfkey_big");
+    Renderer r (*inst, leg, channels, kBlock, bigLeg ? 100 : 0, ph.get(), plan);
+    r.startThread (juce::Thread::Priority::highest);
+    say (leg, "rendering " + juce::String (channels) + " channel(s) at real time");
+
+    // The message thread does what it does in the product: runs the loop, so the editor's own timers
+    // and the plugin's interface are alive while the render thread is inside the plugin.
+    const auto tRun = juce::Time::getMillisecondCounterHiRes();
+    int lastSaid = -1;
+    while (juce::Time::getMillisecondCounterHiRes() - tRun < seconds * 1000.0)
+    {
+        juce::Timer::callPendingTimersSynchronously();
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+        const int s = (int) ((juce::Time::getMillisecondCounterHiRes() - tRun) / 1000.0);
+        if (s != lastSaid)
+        {
+            lastSaid = s;
+            say (leg, "t=" + juce::String (s) + "s blocks=" + juce::String (r.blocks.load())
+                    + " frames=" + juce::String (r.framesDone.load()));
+        }
+    }
+
+    r.stopThread (2000);
+    win.reset();
+    inst->releaseResources();
+    say (leg, "SURVIVED " + juce::String (seconds) + " s, " + juce::String (r.blocks.load()) + " blocks");
+    inst.reset();
+    return 0;
+}

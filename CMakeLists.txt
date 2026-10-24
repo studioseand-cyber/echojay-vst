@@ -840,6 +840,38 @@ if(APPLE)
 endif()
 
 # ============================================================================
+# EchoJayShadowRepro (24 Oct 2026): the supervised bench repro for his 12:14
+# live-view crash. A SEPARATE binary, not a mode of EchoJayProbe, for two
+# reasons: the probe is copied into every shipped bundle and must not change for
+# a diagnosis, and the probe's linked Info.plist says LSBackgroundOnly, so it can
+# never show the editor one leg needs. Arm64 only - the host that crashed is
+# arm64, and a universal build of this would prove nothing extra. It is signed by
+# tools/shadow_live_repro/run_legs.sh (Developer ID + the probe's entitlements),
+# because only a signed host may load a PACE-wrapped plugin (EJPaceCheck.h).
+# Never shipped, never loaded in a DAW.
+# ============================================================================
+juce_add_console_app(EchoJayShadowRepro PRODUCT_NAME "EchoJayShadowRepro")
+target_sources(EchoJayShadowRepro PRIVATE tools/shadow_live_repro/shadow_live_repro.cpp)
+juce_generate_juce_header(EchoJayShadowRepro)
+target_include_directories(EchoJayShadowRepro PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+target_compile_definitions(EchoJayShadowRepro PRIVATE
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LADSPA=0
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayShadowRepro PRIVATE
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_gui_basics
+    juce::juce_recommended_config_flags)
+set_target_properties(EchoJayShadowRepro PROPERTIES OSX_ARCHITECTURES "arm64")
+if(APPLE)
+    target_link_libraries(EchoJayShadowRepro PRIVATE "-framework CoreAudioKit")
+endif()
+
+# ============================================================================
 # ejextract: the auto-parameter-mapping harness (worker + --bootstrap driver).
 # Universal2 so the driver can relaunch itself under Rosetta for Intel-only
 # plugins. Bundled by build-installer.sh into the opt-in background-mapping
