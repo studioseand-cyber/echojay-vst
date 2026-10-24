@@ -1826,6 +1826,13 @@ public:
     /** Takes the calibration loop's closing line for `plugin` into the run's card when a run owns
         that dial, and returns TRUE when it did. FALSE means no run owns it and the line is an
         ordinary chat line, as it always was for a hand-driven dial. */
+    /** Record the agent's APPENDED adds on a Link as one undo entry, so "Undo all" has something to
+        walk for a run that only touched a Link (his 21:04: it had nothing and reported that as a
+        failure). `slotsAfter` is the rack's size from the Link's own ack - the adds are its last
+        `names.size()` slots, and the entry removes them top-first, each checked by name. */
+    void recordRemoteAddsForUndo (const juce::String& linkUid, const juce::StringArray& names,
+                                  int slotsAfter);
+
     bool routeDialClosingToAgentCard (const juce::String& plugin, const juce::String& sentence);
 
     /** LINK MIXER per-strip rack SCROLL offset in pixels, keyed the same way

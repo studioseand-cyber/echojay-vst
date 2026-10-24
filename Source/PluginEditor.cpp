@@ -29802,6 +29802,7 @@ void EchoJayEditor::onAskChipTapped(int i)
                         + juce::String (intent == "supersede_start" ? "start" : "cancel")
                         + ", his message is " + juce::String (held.length()) + " chars and is "
                         + (intent == "supersede_start" ? "sent now" : "back in the box")).toRawUTF8());
+        supersedeAskedFor_.clear();              // answered: the question is no longer up for it
         if (intent == "supersede_start" && held.isNotEmpty())
         {
             supersedeConsent_ = held;            // the road reads this and stops the old run once
@@ -40098,8 +40099,25 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     if (auto* ag = agentClient(); ag != nullptr && ag->isActive()
         && runsChat.isNotEmpty() && currentChatId.isNotEmpty() && runsChat != currentChatId)
     {
-        if (! ag->isWorking())
         {
+            // ---- ...AND IT COVERS A RUN THAT IS WORKING TOO (his test 6 at 21:06, 23 Oct 2026) --
+            //
+            // *"Instead of 'This will stop the run on Aitch_4_01. Start anyway?' it posted a
+            //  refusal into the Kick chat: 'The agent is working on "build a vocal chain" in another
+            //  chat. Stop it there, or wait for it to finish.' My text stayed in the box, and a
+            //  second Enter posted the same refusal again. Replace the refusal with the ask."*
+            //
+            // The ask was gated on `! ag->isWorking()` - the 20 Oct split, where a WAITING run could
+            // be superseded and a WORKING one could only be refused. His ruling of 21:06 removes the
+            // split: either way it is his account's one run, either way he is told what will stop,
+            // and either way he decides. So the question comes first for both, and what differs is
+            // only what Start anyway has to do to the old run (stop a working one, or close a
+            // waiting one), which is decided below where the consent is spent.
+            //
+            // NEVER TWICE. The refusal was appended on every Enter, so a second Enter posted the
+            // same line again; the ask is a CARD with his text on its chips, so a second Enter while
+            // it is up finds the consent unspent and the question already asked, and says nothing
+            // more.
             // ---- NEVER CANCEL A RUN SILENTLY (B's one-run rule + Sean, 23 Oct 2026) ---------
             //
             // *"The server allows one agent run per account. Before a new run supersedes a live
@@ -40118,6 +40136,20 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
             // run's own chat's channel, not the one on screen.
             if (! supersedeConsent_.isNotEmpty() || supersedeConsent_ != msg)
             {
+                // NEVER THE SAME LINE TWICE (his 21:06: "a second Enter posted the same refusal
+                // again"). presentReplaceAsk replaces a pending twin rather than stacking one, so a
+                // second Enter cannot produce two cards - but it would still re-announce a question
+                // that is already on screen with his text on its chips. If it is up for this exact
+                // message, there is nothing to add.
+                if (supersedeAskedFor_ == msg)
+                {
+                    EchoJay_NSLog ("EJAgent: [supersede-ask] already up for this message - saying "
+                                   "nothing more (his 21:06: never repeat the line). His text is on "
+                                   "the chips: Start anyway sends it, Cancel puts it back.");
+                    chatInput.setText ({}, false);
+                    return;
+                }
+                supersedeAskedFor_ = msg;
                 const auto runsWhere = channelNameForChat (ag->runChatId());
                 auto* start  = new juce::DynamicObject();
                 start->setProperty ("label",  "Start anyway");
@@ -40141,35 +40173,20 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                 chatInput.setText ({}, false);   // it is on the chips now, not lost
                 return;
             }
-            supersedeConsent_.clear();           // spent: this message is the one he said Start to
+            // SPENT: this message is the one he pressed "Start anyway" for. The old run is stopped
+            // whatever it was doing - a working run and a waiting one are both his account's one
+            // run, and he has just said which one he wants (his 21:06 ruling).
+            supersedeConsent_.clear();
+            supersedeAskedFor_.clear();
             const auto where = chatTargetChannelName();
-            EchoJay_NSLog (("EJAgent: a message typed in chat " + currentChatId + " is not for the run "
-                            "waiting in chat " + ag->runChatId() + " - that run is WAITING, not working ("
-                            + juce::String (EJAgentClient::stateName (ag->state())) + "), so it is "
-                            "stopped and this message starts its own run here (his ruling of 20 Oct; "
-                            "the old gate asked askPending() and his run was on the LOUDNESS ask)").toRawUTF8());
+            EchoJay_NSLog (("EJAgent: he pressed \"Start anyway\" - the run in chat " + ag->runChatId()
+                            + " (" + juce::String (EJAgentClient::stateName (ag->state()))
+                            + ", goal \"" + ag->goal() + "\") is STOPPED and this message starts its own "
+                              "run in chat " + currentChatId + ". Its card says so in its own chat; "
+                              "nothing is cancelled silently and nothing is refused (his 21:06: the ask "
+                              "replaces the refusal for a working run too)").toRawUTF8());
             ag->stopWithReason (where.isNotEmpty() ? "you moved on to " + where
                                                    : juce::String ("you moved on to another channel"));
-        }
-        else
-        {
-            // RULING 2 and 3: it really is working, so the notice goes HERE - in the chat he typed
-            // in - and his text is NOT consumed. appendLocalResultBubble writes into the open chat,
-            // which is the whole point: the old line appeared in the run's chat, where he was not
-            // looking, and the typed text was thrown away.
-            EchoJay_NSLog (("EJAgent: refusing a message typed in chat " + currentChatId
-                            + " while the run in chat " + ag->runChatId() + " is WORKING ("
-                            + juce::String (EJAgentClient::stateName (ag->state()))
-                            + ") - the notice goes in THIS chat and his text stays in the box "
-                              "(his ruling of 20 Oct, items 2 and 3)").toRawUTF8());
-            appendLocalResultBubble ("The agent is working on \"" + ag->goal() + "\" in another chat. "
-                                     "Stop it there, or wait for it to finish.");
-            // RULING 3: HIS TEXT GOES BACK IN THE BOX. sendChatMessage clears the composer at its
-            // first line, deliberately and for a good reason (a message still in the box is
-            // indistinguishable from one that was not sent) - so a branch that REFUSES the message
-            // has to put it back. Returning without this is the silent drop his ruling forbids.
-            chatInput.setText (msg, false);
-            return;
         }
     }
     else if (agentClient() != nullptr && agentClient()->interceptTyped (msg)) return;

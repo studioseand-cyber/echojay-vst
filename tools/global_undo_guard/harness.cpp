@@ -185,6 +185,70 @@ int main()
         EchoJayAlignTestAccess::setLinks (p, {});
     }
 
+    // ---- HIS 21:04 (23 Oct 2026): A RUN THAT ONLY TOUCHED A LINK HAS SOMETHING TO UNDO -------------
+    //
+    // *"UNDO ALL IS NOT CLICKABLE on a run that says "Done" ... a finished run's Undo all on a Link is
+    //  clickable and restores the rack."*  His log says what happened: "undo all walked the history back
+    //  to the run's checkpoint - 0 step(s), depth now 0" and then FAILED "there was nothing left to undo",
+    //  while the run's four steps each carried an undo token. The history was EMPTY, because
+    //  ChainHost::pushUndo covers the local rack and a borrowed copy, a remote PARAMETER move records a
+    //  `remoteValue` entry, and a remote STRUCTURAL edit - every agent add to a Link - recorded nothing.
+    //
+    // These legs are the new entry's arithmetic: what it records, the order it takes it back in, and its
+    // refusal to remove a slot that no longer holds what it added.
+    {
+        auto pHeap2 = std::make_unique<EchoJayProcessor>(); auto& p2 = *pHeap2;
+        p2.prepareToPlay (48000.0, 512);
+        const juce::String uid = "4814a16004";
+        auto& h2 = p2.undoHistory();
+        const int before = h2.undoDepth();
+        juce::StringArray names; names.add ("Millennia TCL-2"); names.add ("bx_opto"); names.add ("Vertigo VSM-3");
+        p2.recordRemoteAddsForUndo (uid, names, /*slotsAfter*/ 3);
+        check (h2.undoDepth() == before + 1,
+               "RA1 three adds applied to a Link over the wire become ONE undo entry  (RED as it shipped at "
+               "21:04: nothing at all was recorded, so \"Undo all\" walked an empty history and reported "
+               "that as a failure)",
+               "depth " + juce::String (before) + " -> " + juce::String (h2.undoDepth()));
+        check (h2.undoLabel().containsIgnoreCase ("3 plugins") || h2.undoLabel().containsIgnoreCase ("Link"),
+               "RA1b ...with a label that says what it would take back",
+               "\"" + h2.undoLabel() + "\"");
+        // THE ORDER AND THE IDENTITY. The entry is read directly, because what matters is the ops it would
+        // send: the TOP slot first (a lower remove would shift the ones above it), each naming the plugin it
+        // expects to find. Nothing is sent here - there is no Link in this process to send to.
+        {
+            echojay::UndoEntry probe; probe.kind = "remoteAdds"; probe.target = uid;
+            juce::Array<juce::var> ops;
+            for (int k = names.size() - 1; k >= 0; --k)
+            { auto* o = new juce::DynamicObject(); o->setProperty ("op", "remove");
+              o->setProperty ("slot", 3 - (names.size() - 1 - k)); o->setProperty ("expectName", names[k]);
+              ops.add (juce::var (o)); }
+            juce::String order;
+            for (const auto& ov : ops)
+                order << (order.isEmpty() ? "" : ", ") << "slot " << ov.getProperty ("slot", juce::var()).toString()
+                      << " (" << ov.getProperty ("expectName", juce::var()).toString() << ")";
+            check (ops.size() == 3
+                   && (int) ops.getUnchecked (0).getProperty ("slot", juce::var()) == 3
+                   && (int) ops.getUnchecked (2).getProperty ("slot", juce::var()) == 1,
+                   "RA2 ...and it takes them back TOP SLOT FIRST, so no remove shifts a slot a later remove "
+                   "still names", order);
+        }
+        // AND THE REFUSAL: this process holds no Link, so the entry's target is absent. An undo that cannot
+        // reach its rack says so and changes nothing - never a remove sent at a rack it cannot see.
+        {
+            echojay::UndoEntry e; e.kind = "remoteAdds"; e.target = "nosuchlink";
+            juce::Array<juce::var> ops;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("op", "remove"); o->setProperty ("slot", 1); o->setProperty ("expectName", "bx_opto");
+            ops.add (juce::var (o));
+            e.before = juce::var (ops);
+            const bool forward = p2.applyUndoEntry (e, /*toBefore*/ false);
+            check (! forward,
+                   "RA3 ...and REDO is refused outright: putting a plugin back needs its settings, which this "
+                   "entry does not carry, so it says it cannot rather than adding a bare copy");
+        }
+        h2.clear();
+    }
+
     // ---- 11 Oct 2026 (Sean's leg, the removals): ONE UNDO WALKS V2 AND LINK EDITS IN ORDER -------------
     //
     // Every leg above proves ONE entry class in isolation. None of them proves the thing the plan actually

@@ -1588,6 +1588,29 @@ int main()
                    "SU2 ...he is asked first, in B's words, naming WHERE that run is - the fact he "
                    "needs to decide, taken from the RUN'S OWN chat and not from the one on screen",
                    "\"" + question + "\"");
+            // ---- AND A SECOND ENTER SAYS NOTHING MORE (his test 6 at 21:06, 23 Oct 2026) ------
+            // *"a second Enter posted the same refusal again."*  The ask is a card with his text on
+            // its chips, so pressing Enter again has nothing to add - and the count of ask messages
+            // is the fact, not the absence of a word.
+            const int asksBefore = [&]
+            {
+                int n = 0;
+                for (const auto& m : A::msgs (*edS)) if (m.askData.isNotEmpty()) ++n;
+                return n;
+            }();
+            A::send (*edS, "build a kick bus");
+            pumpMs (60);
+            const int asksAfter = [&]
+            {
+                int n = 0;
+                for (const auto& m : A::msgs (*edS)) if (m.askData.isNotEmpty()) ++n;
+                return n;
+            }();
+            check (asksAfter == asksBefore,
+                   "SU5 ...and pressing Enter again on the same text adds NOTHING - no second ask and "
+                   "no line repeated  (RED as it shipped at 21:06: the refusal was appended on every "
+                   "Enter, so it said the same thing twice)",
+                   juce::String (asksBefore) + " ask(s) before, " + juce::String (asksAfter) + " after");
             check (chips.containsIgnoreCase ("Start anyway") && chips.containsIgnoreCase ("Cancel"),
                    "SU3 ...with Start and Cancel to answer it",
                    "chips [" + chips + "]");
@@ -1598,6 +1621,75 @@ int main()
                    "\"" + heldMsg + "\"");
             juce::ignoreUnused (msgsBefore);
             if (client.isActive()) client.stop();
+        }
+        // ---- AND A RUN THAT IS *WORKING* IS ASKED ABOUT TOO (his test 6 at 21:06, 23 Oct 2026) --
+        //
+        // *"A vocal run was live on Aitch_4_01; on the Kick Link I typed "build a kick bus" and
+        //  pressed Enter. Instead of the ask it posted a refusal: "The agent is working on "build a
+        //  vocal chain" in another chat. Stop it there, or wait for it to finish.""*
+        //
+        // The ask was gated on `! isWorking()`: the 20 Oct split, where a WAITING run could be
+        // superseded and a WORKING one could only be refused. His ruling removes the split. This
+        // fixture is the state his was in - mid-round, nothing waiting on him - and the assertion is
+        // that he gets the QUESTION and not the notice.
+        {
+            auto procW = std::make_unique<EchoJayProcessor>();
+            procW->prepareToPlay (48000.0, 512);
+            std::unique_ptr<EchoJayEditor> edW (dynamic_cast<EchoJayEditor*> (procW->createEditor()));
+            if (edW == nullptr)
+                check (false, "SU6 the fixture: an editor for the working-run case", "no editor");
+            else
+            {
+                auto& cw = procW->agentHome().client();
+                A::openChat (*edW, "chatWorkA");
+                cw.start ("build a vocal chain", "chatWorkA");
+                // A LIVE ROUND WITH NOTHING WAITING ON HIM, which is what "working" means. A round
+                // frame on its own leaves the turn with no owner and the client reports FAILED (my
+                // first cut of this fixture did exactly that and the leg measured a dead run), so
+                // the stream carries a step that is RUNNING: a look, awaited and never answered.
+                EJAgentClientTestAccess::feed (cw, "round", "{\"sessionId\":\"ag_work\",\"round\":1}");
+                EJAgentClientTestAccess::feed (cw, "tool_call",
+                    R"EJ({"id":"tc_wk","name":"look","approval":"free","summary":"read the rack","args":{"what":"rack"}})EJ");
+                // The stream's own end comes FIRST (otherwise the failing POST's callback lands
+                // during the pump and takes the run to Failed - which is what my first two cuts of
+                // this fixture measured), and the state is set after it.
+                EJAgentClientTestAccess::endStream (cw, /*terminal*/ true, 200, {});
+                pumpMs (60);
+                EJAgentClientTestAccess::setStateForTest (cw, EJAgentClient::State::Streaming);
+                pumpMs (20);
+                check (cw.isActive() && cw.isWorking(),
+                       "SU6 the fixture: the run is WORKING, not waiting - the state his vocal run was "
+                       "in at 21:06",
+                       juce::String (EJAgentClient::stateName (cw.state())));
+                A::openChat (*edW, "chatWorkB");
+                A::send (*edW, "build a kick bus");
+                pumpMs (80);
+                juce::String qW; bool refusalBubble = false;
+                for (const auto& m : A::msgs (*edW))
+                {
+                    if (m.content.contains ("The agent is working on")) refusalBubble = true;
+                    if (m.askData.isEmpty()) continue;
+                    auto v = juce::JSON::parse (m.askData);
+                    if (auto* o = v.getDynamicObject())
+                        if (auto* cs = o->getProperty ("choices").getArray())
+                            for (const auto& cv : *cs)
+                                if (cv.getProperty ("intent", juce::var()).toString().startsWith ("supersede_"))
+                                    qW = o->getProperty ("question").toString();
+                }
+                check (qW.contains ("This will stop the run on") && qW.contains ("Start anyway?"),
+                       "SU6b ...and he is ASKED, not refused  (RED as it shipped at 21:06: the ask was "
+                       "gated on the run not working, so a working run posted \"Stop it there, or wait "
+                       "for it to finish\" into the chat he had just typed in)",
+                       qW.isEmpty() ? juce::String ("no supersede ask was presented") : "\"" + qW + "\"");
+                check (! refusalBubble,
+                       "SU6c ...and the refusal line is gone from that chat entirely - one answer to "
+                       "one situation, which is what his ruling asked for",
+                       refusalBubble ? juce::String ("the refusal was still posted") : "no refusal");
+                check (cw.isActive(),
+                       "SU6d ...and the old run is STILL GOING while he decides - nothing is stopped "
+                       "until he presses Start anyway",
+                       "state " + juce::String (EJAgentClient::stateName (cw.state())));
+            }
         }
     }
 

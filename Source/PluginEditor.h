@@ -2796,6 +2796,11 @@ private:
     /** B's one-run rule: the message he said "Start anyway" to. The send road reads it once, so the
         ask is asked once per message and the consent cannot be reused by the next one. */
     juce::String supersedeConsent_;
+    /** ...and the message the ask is CURRENTLY UP FOR. His 21:06: the old refusal was appended on
+        every Enter, so pressing it twice said the same thing twice. The ask is a card with his text
+        on its chips, and a second Enter for the same text has nothing to add. Cleared when the
+        consent is spent, and by the Cancel road with the text. */
+    juce::String supersedeAskedFor_;
 
     // ---- THE SHADOW VIEW'S DRIVER (stage B, 23 Oct 2026) -----------------------------------
     //

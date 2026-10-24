@@ -62,8 +62,20 @@ namespace echojay
 
     ONE SWITCH, READ IN ONE PLACE (the editor's follow road), so turning it on is one line and
     nothing else changes. Everything else in the feature - the tap, the ring, the refusals, the
-    stale-index fix, the frame count - stays in and stays guarded. */
-constexpr bool kShadowViewEnabled = false;
+    stale-index fix, the frame count - stays in and stays guarded.
+
+    ---- AND IT IS BACK ON, BY HIS RULING OF 20:57 (23 Oct 2026) --------------------------------
+
+    *"The shadow view: switch it back ON in the next build (you fixed the crash cause). I'll test it
+     myself with the UnFairchild and the Waves SSL that crashed, since the rig can't load them. If
+     either crashes again it goes back off."*
+
+    That is the one test neither the guard nor the rig can run, and he is offering to run it. The fix
+    is at the cause and proven by the arithmetic the null came from (SH8/SH8b); what it is not is
+    proven against those two plugins, and this switch is how it gets proven. If either crashes again,
+    this goes back to false in the same build it is found - and the crash report will say whether it
+    is the same defect or a second one, because the two frames that identify it are fixed. */
+constexpr bool kShadowViewEnabled = true;
 
 
 /** The V2's side of the shadow: one hosted copy, one ring, and three readings.
