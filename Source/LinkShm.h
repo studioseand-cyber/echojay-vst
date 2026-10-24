@@ -1659,12 +1659,45 @@ inline int nextCtrlSeq()
     return next;
 }
 
+// ---- AND THE HOLE IN THAT RULE, CLOSED (his 22:08 lost settings, 24 Oct 2026) ---------------
+//
+// The paragraph above is right and was not obeyed, because `withheld` was computed as
+// "we HAD a state and did not seed it" - and a slot whose state NEVER ARRIVED is not that. His log:
+//
+//     22:09:05  EJApply: slot 1 "Tube-Tech CL 1B" hadState=N seeded=N -> withheld=N edited=Y
+//                        action=COMMIT
+//
+// hadState=N, so the mirror held DEFAULTS; `edited` is "current != baseline" and the baseline was
+// EMPTY, so differing from nothing read as a change he had made. The commit then wrote those
+// defaults onto the Link, over the Threshold he had just heard move. The same hole fired at
+// 21:30:43. The one healthy decision in the whole log is the contrast that proves it: at 21:32:58,
+// hadState=Y seeded=Y edited=N -> LEAVE-UNEDITED, and the Link was left alone.
+//
+// HIS RULE, 24 Oct: *"nothing may ever write a plugin's state onto the Link unless that state is
+// known to be newer than the Link's own ... commit only if seeded from the Link's state, or born in
+// this V2 session with a known identity. Never commit a copy that is neither."*
+//
+// That is what `seeded` already means - borrowSlotSeededWithState's own words are "withheld means
+// exactly 'we did not seed this slot with the Link's state', nothing else". So the test drops the
+// hadState qualifier, and the two reasons keep DIFFERENT verdict names, because "we refused a state
+// that arrived" and "no state ever arrived" need different next moves from him and from us.
+//
+// A SLOT BORN HERE IS UNAFFECTED, and must be: a picker add, or an agent's placement, has no Link
+// state to be seeded from and is legitimately newer. That road is a separate arm in
+// borrowSlotVerdicts (origin < 0 -> "CREATED here ... edited by definition") which never reaches
+// this test, and the guard holds both halves.
 struct BorrowCommit
 {
-    enum class Action { Commit, LeaveWithheld, LeaveUnedited };
-    static Action classify (bool withheld, bool edited)
+    enum class Action { Commit, LeaveWithheld, LeaveUnedited, LeaveUnseeded };
+    /** `seededFromLink` is the RECORDED fact that this slot was seeded with the Link's own state;
+        `bornHere` is a slot this V2 session placed itself, which has a known identity and no Link
+        state to be seeded from. A copy that is neither is never written back. */
+    static Action classify (bool withheld, bool edited, bool seededFromLink = true,
+                            bool bornHere = false)
     {
         if (withheld) return Action::LeaveWithheld;   // beats edited, always
+        if (! seededFromLink && ! bornHere)
+            return Action::LeaveUnseeded;             // beats edited too, and for the same reason
         return edited ? Action::Commit : Action::LeaveUnedited;
     }
     struct Plan
@@ -1674,18 +1707,34 @@ struct BorrowCommit
         int committing = 0;       // what Apply will actually write
         int withheldEdited = 0;   // edited but never written (the asymmetry)
         int untouched = 0;        // unedited, left alone
+        int unseeded = 0;         // 24 Oct 2026: no claim to be newer, so never written
     };
+    /** The pair form, kept so every existing caller and leg reads unchanged: a {withheld, edited}
+        pair carries no seeding fact, and the only safe reading of a missing fact is the one that
+        writes nothing - so these are treated as seeded ONLY when they are not withheld, which is
+        exactly what they meant before this rule existed. Callers that know the facts use the
+        four-argument plan below, and borrowSlotVerdicts does. */
     static Plan plan (const std::vector<std::pair<bool, bool>>& slots) // {withheld, edited}
     {
-        Plan p;
+        std::vector<Slot> full;
+        full.reserve (slots.size());
         for (const auto& [withheld, edited] : slots)
+            full.push_back ({ withheld, edited, /*seededFromLink*/ true, /*bornHere*/ false });
+        return plan (full);
+    }
+    struct Slot { bool withheld = false, edited = false, seededFromLink = true, bornHere = false; };
+    static Plan plan (const std::vector<Slot>& slots)
+    {
+        Plan p;
+        for (const auto& s : slots)
         {
-            const auto a = classify (withheld, edited);
+            const auto a = classify (s.withheld, s.edited, s.seededFromLink, s.bornHere);
             p.actions.push_back (a);
-            if (edited) ++p.changed;
+            if (s.edited) ++p.changed;
             if (a == Action::Commit) ++p.committing;
-            else if (withheld && edited) ++p.withheldEdited;
-            if (! edited) ++p.untouched;
+            else if (a == Action::LeaveUnseeded) ++p.unseeded;
+            else if (s.withheld && s.edited) ++p.withheldEdited;
+            if (! s.edited) ++p.untouched;
         }
         return p;
     }

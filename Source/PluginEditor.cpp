@@ -42901,6 +42901,11 @@ void EchoJayEditor::showChainPluginPicker()
                     // the user's name for it, not the substitute's.
                     EchoJayProcessor::BorrowSlotRecord cr;
                     cr.name = picked.name;
+                    // BORN HERE (24 Oct 2026): he picked it, so there is no Link state it could
+                    // have been seeded from and this copy IS the newer one. Recorded at the add,
+                    // because at the commit it is indistinguishable from a Link slot whose state
+                    // never arrived - and those two must be treated oppositely (his 22:08).
+                    cr.bornHere = true;
                     p3.borrowSlotRecords_.push_back(std::move(cr));
                     safeThis->chainSelectedSlot_ = newSlot;
                     safeThis->chainListPanel.statusText = {};
@@ -43136,6 +43141,9 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                     { bh2->getSlotInfo(i).name, {}, {} });
                 EchoJayProcessor::BorrowSlotRecord cr;
                 cr.name = bh2->getSlotInfo(i).name;
+                // BORN HERE: this arm re-bases slots THIS session placed (its plan is
+                // removes-of-the-original plus these creates), so their edits still commit.
+                cr.bornHere = true;
                 p4.borrowSlotRecords_.push_back(std::move(cr));
             }
             // 10 Sep 2026 OBSERVABILITY: this path used to attach settings, dial

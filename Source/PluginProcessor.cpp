@@ -2904,7 +2904,18 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
             if (mb.getSize() > 0) nowB64 = LinkShm::stateToB64(mb);
         }
         const bool edited = nowB64 != r.baselineB64;
-        const auto action = LinkShm::BorrowCommit::classify(withheld, edited);
+        // ---- A COPY WITH NO CLAIM TO BE NEWER IS NEVER WRITTEN BACK (his 22:08, 24 Oct 2026) ---
+        //
+        // This slot came FROM the Link (origin >= 0), so the only thing that makes our state newer
+        // than the Link's is having started as the Link's. `seeded` is the recorded fact that it
+        // did. Not seeded means the mirror is running defaults, and `edited` then only says
+        // "defaults differ from the empty baseline" - which is how his Threshold got overwritten
+        // with factory settings at 22:09:05. His rule: commit only if seeded from the Link's state,
+        // or born in this V2 session. This arm is the first case; a slot born here never reaches
+        // here at all (the origin < 0 arm above returns before this).
+        const auto action = LinkShm::BorrowCommit::classify(withheld, edited,
+                                                            /*seededFromLink*/ seeded,
+                                                            /*bornHere*/ r.bornHere);
         EchoJay_NSLog(("EJApply: slot " + juce::String(i + 1) + " \"" + r.name
             + "\" hadState=" + (r.hadState ? "Y" : "N")
             + " seeded=" + (seeded ? "Y" : "N")
@@ -2912,7 +2923,17 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
             + " edited=" + (edited ? "Y" : "N")
             + " action=" + (action == LinkShm::BorrowCommit::Action::Commit ? "COMMIT"
                             : action == LinkShm::BorrowCommit::Action::LeaveWithheld
-                                ? "LEAVE-WITHHELD" : "LEAVE-UNEDITED")).toRawUTF8());
+                                ? "LEAVE-WITHHELD"
+                            : action == LinkShm::BorrowCommit::Action::LeaveUnseeded
+                                ? "LEAVE-UNSEEDED (this copy was never seeded with the Link's own "
+                                  "state, so it has no claim to be newer - the Link keeps what it "
+                                  "has, which is his rule of 24 Oct)"
+                                : "LEAVE-UNEDITED")).toRawUTF8());
+        // THE VERDICT PAIR CARRIES THE REFUSAL, so every downstream reader of {withheld, edited}
+        // obeys it without each one having to learn the new rule: an unseeded slot is handed on as
+        // withheld, which every road here already treats as "never written back".
+        if (action == LinkShm::BorrowCommit::Action::LeaveUnseeded)
+        { out.emplace_back(true, edited); continue; }
         out.emplace_back(withheld, edited);
     }
     return out;
@@ -3620,7 +3641,16 @@ void EchoJayProcessor::borrowRebaseAfterPush()
             newBase.push_back(i < (int) borrowCreatedIdentity_.size() && borrowCreatedIdentity_[(size_t) i].name.isNotEmpty()
                                   ? borrowCreatedIdentity_[(size_t) i]
                                   : LinkShm::StructureEdit::SlotIdentity{ bh->getSlotInfo(i).name, {}, {} });
-            BorrowSlotRecord r; r.name = bh->getSlotInfo(i).name; r.hadState = false; newRecs.push_back(std::move(r));
+            // BORN HERE ONLY WITH THE EVIDENCE (24 Oct 2026). This arm's own comment said "created
+            // here (OR UNKNOWN)", and that conflation is the hole his settings fell through: a slot
+            // we placed may commit its edits, and a slot whose origin we merely lost may not,
+            // because it could be the Link's own with a state we never seeded. The created identity
+            // IS the evidence - "born in this V2 session with a known identity", his words - so it
+            // decides, and an unknown origin is treated as the Link's and left alone.
+            BorrowSlotRecord r; r.name = bh->getSlotInfo(i).name; r.hadState = false;
+            r.bornHere = i < (int) borrowCreatedIdentity_.size()
+                      && borrowCreatedIdentity_[(size_t) i].name.isNotEmpty();
+            newRecs.push_back(std::move(r));
         }
     }
     borrowBaseIdentity_ = std::move(newBase);

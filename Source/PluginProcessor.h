@@ -1346,6 +1346,14 @@ public:
     struct BorrowSlotRecord {
         juce::String name, savedFormat, savedVersion, savedUid, baselineB64;
         bool hadState = false;   // a state was pulled for this slot
+        // ---- WAS THIS SLOT BORN IN THIS SESSION? (his 22:08 lost settings, 24 Oct 2026) -------
+        // A slot THIS V2 placed - a picker add, or an agent's placement - has no Link state to be
+        // seeded from and is legitimately newer than the Link, so its edits must still commit. A
+        // slot that came FROM the Link and was never seeded is the opposite case and must never be
+        // written back. Both look identical on `hadState` (false) and on the baseline (empty),
+        // which is exactly why his Threshold was overwritten with defaults - so the difference is
+        // RECORDED here at the moment of the add rather than guessed at the commit.
+        bool bornHere = false;
     };
     std::vector<BorrowSlotRecord> borrowSlotRecords_;
     // Uncommitted edits captured at a keep-release; re-borrowing the same
