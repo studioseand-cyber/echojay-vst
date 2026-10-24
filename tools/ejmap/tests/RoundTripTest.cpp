@@ -14022,6 +14022,33 @@ int main (int, char**)
                "wizard WZ-V11-2: measure_started_at - a Phase B child's own start (" + sNew.started + "), else at less seconds (" + juce::String (oldSecs, 0) + " s); measured nothing: its finish; on every result ("
                  + at (0, "measure_started_at") + " / " + at (1, "measure_started_at") + ")");
     }
+    // WZ-V11-3 THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile result carries {run_id, result_id, nonce,
+    // measure_started_at, measured_at} - the result's own; one 32-hex nonce per result, never shared between results; map.json and every
+    // other kind carry none
+    {
+        using namespace ejmap;
+        const auto bundle = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_v113_" + juce::String (juce::Random::getSystemRandom().nextInt (1 << 30)));
+        bundle.getChildFile ("profiles").createDirectory(); bundle.getChildFile ("maps").createDirectory();
+        bundle.getChildFile ("profiles/a.json").replaceWithText (R"({"schema": "ej_comp_profile/1", "plugin": {"plugin_id": "AudioUnit|11130001|1.0"}})");
+        bundle.getChildFile ("profiles/a.tonecheck.json").replaceWithText (R"({"g_db": 2.0})");
+        bundle.getChildFile ("profiles/b.json").replaceWithText (R"({"schema": "ej_comp_profile/1", "plugin": {"plugin_id": "AudioUnit|11130002|1.0"}})");
+        bundle.getChildFile ("maps/m.json").replaceWithText (R"({"schema": "2.4", "controls": {"0": {}}})");
+        const auto man = juce::JSON::parse (R"({"profiles": [{"product": "A", "kind": "compressor", "plugin_id": "AudioUnit|11130001|1.0", "profile": "profiles/a.json", "tone_check": "profiles/a.tonecheck.json", "map_file": "maps/m.json"},
+                                                             {"product": "B", "kind": "compressor", "plugin_id": "AudioUnit|11130002|1.0", "profile": "profiles/b.json"}],
+                                               "skipped": [{"product": "C", "plugin_id": "AudioUnit|11130003|1.0", "state": "demo", "why": "w"}]})");
+        const auto docs = wizresults::fromPack (man, bundle, "run_0000000000000abe", true, {}, {}, { { "AudioUnit|11130001|1.0", "2026-10-24T12:00:00Z" } }, {}, {}, { { "AudioUnit|11130001|1.0", "2026-10-24T11:58:00Z" } });
+        bundle.deleteRecursively();
+        auto mOf = [&] (int i, const char* file) { return docs[(size_t) i].body.getProperty ("files", {}).getProperty (file, {}).getProperty ("measurement", {}); };
+        const auto a = mOf (0, "a.json"), at = mOf (0, "a.tonecheck.json"), b = mOf (1, "b.json");
+        const auto nonceA = a.getProperty ("nonce", "").toString();
+        check (docs.size() == 3 && a.getProperty ("run_id", "") == juce::var ("run_0000000000000abe") && a.getProperty ("result_id", "") == juce::var (docs[0].resultId)
+               && a.getProperty ("measure_started_at", "") == juce::var ("2026-10-24T11:58:00Z") && a.getProperty ("measured_at", "") == juce::var ("2026-10-24T12:00:00Z")
+               && nonceA.length() == 32 && nonceA.containsOnly ("0123456789abcdef") && at.getProperty ("nonce", "") == juce::var (nonceA)
+               && b.getProperty ("result_id", "") == juce::var (docs[1].resultId) && b.getProperty ("nonce", "").toString().length() == 32 && b.getProperty ("nonce", "") != juce::var (nonceA)
+               && ! docs[0].body.getProperty ("files", {}).getProperty ("map.json", {}).hasProperty ("measurement") && docs[0].body.getProperty ("files", {}).getProperty ("map.json", {}).isObject()
+               && docs[2].kind == "outcome" && docs[2].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 0,
+               "wizard WZ-V11-3: the measurement identity in every measured file of a profile (" + nonceA + "), one nonce per result, none on map.json or an outcome");
+    }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
     // cert's writers set is in the mock's list, and the list names nothing else
@@ -14321,7 +14348,9 @@ int main (int, char**)
             // synthetic profiles get a 100 s span ending at their measured_at (the engine's span comes from the Phase B row: WZ-V11-2)
             auto spanned = [] (std::vector<ejmap::wizresults::Doc> docs)
             {   for (auto& d : docs) if (d.kind == "profile") if (auto* o = d.body.getDynamicObject())
-                    o->setProperty ("measure_started_at", (juce::Time::fromISO8601 (o->getProperty ("measured_at").toString()) - juce::RelativeTime::seconds (100)).toISO8601 (true));
+                {   o->setProperty ("measure_started_at", (juce::Time::fromISO8601 (o->getProperty ("measured_at").toString()) - juce::RelativeTime::seconds (100)).toISO8601 (true));
+                    if (const auto* fs = o->getProperty ("files").getDynamicObject())   // the measurement identity says the same start
+                        for (const auto& [n, f] : fs->getProperties()) if (auto* m = f.getProperty ("measurement", {}).getDynamicObject()) m->setProperty ("measure_started_at", o->getProperty ("measure_started_at")); }
                 return docs; };
             auto coverNeeds = [&] (Session& ss, Outbox& b, const RunInfo& ri, const juce::StringArray& needs)
             {   std::map<juce::String, ejmap::wizresults::Identity> ids;   // the engine knows every plugin's name; so does this
@@ -14672,6 +14701,43 @@ int main (int, char**)
                        "contract WZ-CONTRACT-16: measure_started_at - four compressor profiles measured at once all accepted (" + juce::String (stM1.sent) + "); a fifth at once, 30 s for a compressor, "
                          "a start after its finish and a missing start refused (" + whyM.joinIntoString (", ") + "); an outcome that measured nothing accepted (" + juce::String (stM2.sent) + ") [spans " + juce::String (spansM.size()) + "]");
             }
+            // 8d3. THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile carries its run_id, result_id and a random nonce.
+            // THE FIXTURE: an honest profile, accepted. The controls, each wrong in one way: a file copied from another run's result (its
+            // identity is that run's), a result_id that is not this result's, a nonce another result already used (all "identity",
+            // tampering) and a file with no measurement block ("shape"). Its own run, so the tampering costs no other scenario its month
+            scenario ("13e_measurement_identity");
+            {
+                const juce::String runN = "run_" + juce::String::toHexString (0x0000000000000e13LL).paddedLeft ('0', 16), runOther = "run_" + juce::String::toHexString (0x0000000000000e14LL).paddedLeft ('0', 16);
+                const auto ccN = catalogueCheck (*s4, req1 ({ "ee130001", "ee130002", "ee130003", "ee130004", "ee130005", "ee130006" }), runN);
+                std::map<juce::String, ejmap::wizresults::Identity> idsN; juce::StringArray colN;
+                for (const char* id : { "ee130001", "ee130002", "ee130003", "ee130004", "ee130005", "ee130006" }) { idsN["AudioUnit|" + juce::String (id) + "|1.0"] = { "V", "Plug " + juce::String (id) }; colN.add ("AudioUnit|" + juce::String (id) + "|1.0"); }
+                const auto tN = juce::Time::getCurrentTime(); const auto startN = (tN - juce::RelativeTime::minutes (30)).toISO8601 (true);
+                const RunInfo riN { runN, startN, 6, colN, startN };
+                auto profN = [&] (const char* id) { return "{\"product\": \"Plug " + juce::String (id) + "\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|" + juce::String (id) + "|1.0\", \"profile\": \"" + profileFile (id, "ej_comp_profile/1") + "\"}"; };
+                // spaced 3 min apart, so the "4 at once" rule never decides here
+                std::map<juce::String, juce::String> endN, startMN;
+                for (int i = 0; i < 6; ++i) { const auto pid = colN[i]; endN[pid] = (tN - juce::RelativeTime::seconds (60 + 180 * i)).toISO8601 (true); startMN[pid] = (tN - juce::RelativeTime::seconds (160 + 180 * i)).toISO8601 (true); }
+                const auto honest = ejmap::wizresults::fromPack (manifestWith (juce::String (profN ("ee130001")), {}), bundle, runN, false, idsN, {}, endN, {}, {}, startMN);
+                auto ctlN = ejmap::wizresults::fromPack (manifestWith (profN ("ee130002") + "," + profN ("ee130003") + "," + profN ("ee130004") + "," + profN ("ee130005") + "," + profN ("ee130006"), {}), bundle, runN, false, idsN, {}, endN, {}, {}, startMN);
+                auto eachFile = [] (ejmap::wizresults::Doc& d, const std::function<void (juce::DynamicObject&)>& f)
+                {   if (const auto* fs = d.body.getProperty ("files", {}).getDynamicObject()) for (const auto& [n, fv] : fs->getProperties()) if (auto* m = fv.getProperty ("measurement", {}).getDynamicObject()) f (*m); };
+                const auto honestNonce = honest[0].body.getProperty ("files", {}).getProperty ("AudioUnit_ee130001_1.0.comp_profile.json", {}).getProperty ("measurement", {}).getProperty ("nonce", "").toString();
+                for (auto& d : ctlN)
+                {   if (d.pluginId.contains ("ee130002")) eachFile (d, [&] (juce::DynamicObject& m) { m.setProperty ("run_id", runOther); m.setProperty ("result_id", resultIdFor (runOther, "profile", d.pluginId)); });   // copied from another run
+                    if (d.pluginId.contains ("ee130003")) eachFile (d, [&] (juce::DynamicObject& m) { m.setProperty ("result_id", resultIdFor (runN, "profile", "AudioUnit|ee130001|1.0")); });                   // another result's id
+                    if (d.pluginId.contains ("ee130004")) eachFile (d, [&] (juce::DynamicObject& m) { m.setProperty ("nonce", honestNonce); });                                                                  // a nonce already used
+                    if (d.pluginId.contains ("ee130006")) eachFile (d, [&] (juce::DynamicObject& m) { m.setProperty ("run_id", runOther); });                                                                    // only the run edited
+                    if (d.pluginId.contains ("ee130005"))                                                                                                                                                       // no measurement block
+                        if (const auto* fs = d.body.getProperty ("files", {}).getDynamicObject()) for (const auto& [n, fv] : fs->getProperties()) if (auto* fo = fv.getDynamicObject()) fo->removeProperty ("measurement"); }
+                Outbox boxN { work.getChildFile ("outbox_n") };
+                ejmap::wizresults::emit (honest, boxN, {}); const auto stN1 = drain (*s4, boxN, riN);
+                ejmap::wizresults::emit (ctlN, boxN, {}); const auto stN2 = drain (*s4, boxN, riN);
+                auto whyN = reasonsIn (boxN); whyN.sort (false);
+                check (ccN.ok && stN1.sent == 1 && stN1.rejected == 0 && stN2.sent == 0 && stN2.rejected == 5 && honestNonce.length() == 32 && honestNonce.containsOnly ("0123456789abcdef")
+                       && whyN.joinIntoString (",") == "identity,identity,identity,identity,shape",
+                       "contract WZ-CONTRACT-18: the measurement identity - an honest profile accepted; another run's identity, only its run edited, another result's id and a reused nonce refused as identity, no block as shape ("
+                         + whyN.joinIntoString (", ") + ")");
+            }
             // 8e. THE PROMO'S REFUSAL ORDER (ruling 6): account already claimed > setup already claimed > not finished > failed checks > below
             // minimum - each pair where both hold, the higher one wins
             scenario ("13c_promo_refusal_order");
@@ -14702,7 +14768,7 @@ int main (int, char**)
                     return (bool) replyOf (tx (rq)).json.getProperty ("agree", false); };
                 auto with = [&] (double g, const std::function<void (juce::var&)>& f) { auto v = P (g); f (v); return v; };
                 const auto base = P (0.0);
-                const bool near = agreeOf (base, P (0.3)), far = agreeOf (base, P (0.6));
+                const bool near = agreeOf (base, P (0.3)), far = agreeOf (base, P (0.6)), identical = agreeOf (base, P (0.0));   // 24 Oct (Kathy): identical data agrees
                 const bool otherRatio = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("ratio", {}).getProperty ("curve", {})[0].getDynamicObject()->setProperty ("set", "8:1"); }));
                 const bool otherLevel = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("measured", {}).getDynamicObject()->setProperty ("level_ref", "sine_peak_dbfs"); }));
                 const bool otherAmount = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("amount", {}).getDynamicObject()->setProperty ("control", "Input"); }));
@@ -14710,7 +14776,7 @@ int main (int, char**)
                 const bool twoPoints = agreeOf (base, with (0.1, [] (juce::var& v) {   // one position, two GR steps: two shared points
                     auto* c = v.getProperty ("amount", {}).getProperty ("curve", {}).getArray(); c->removeRange (1, c->size() - 1);
                     if (auto* in = (*c)[0].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) { int kept = 0; for (const auto& [k, x] : in->getProperties()) if (! x.isVoid() && ++kept > 2) in->setProperty (k, juce::var()); } }));
-                check (near && ! far && ! otherRatio && ! otherLevel && ! otherAmount && ! otherVersion && ! twoPoints,
+                check (near && identical && ! far && ! otherRatio && ! otherLevel && ! otherAmount && ! otherVersion && ! twoPoints,
                        "contract WZ-CONTRACT-17: compressor agreement - 0.3 dB agrees, 0.6 does not; a different ratio setting, level convention, amount control or version, or only 2 shared points, never agree");
             }
             // 8g. REAL RESULTS (Kathy's ruling 2, 22 Oct; only with EJ_REAL_FIXTURES=<pack> from scripts/make_real_fixture_pack.py): the 20 Oct

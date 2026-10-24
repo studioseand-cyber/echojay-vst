@@ -60,6 +60,18 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
             d->setProperty ("measure_started_at", known && s0 != startedAtOf.end() && s0->second.isNotEmpty() ? s0->second : d->getProperty ("measured_at").toString()); }
         d->setProperty ("payload", payload != nullptr ? juce::var (payload) : juce::var (new juce::DynamicObject()));
         d->setProperty ("files", files != nullptr ? juce::var (files) : juce::var (new juce::DynamicObject()));
+        // THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile carries the run and result it was measured for and a
+        // random nonce - a file copied from another tester's result carries the wrong run's identity (refused as "identity"). map.json is the
+        // plugin's controls, not a measurement: it carries none
+        if (kind == "profile" && files != nullptr)
+        {
+            const auto nonce = juce::Uuid().toString();   // 128 random bits, one per result (the same result is never emitted twice)
+            for (const auto& [name, f] : files->getProperties())
+                if (auto* fo = f.getDynamicObject(); fo != nullptr && name.toString() != "map.json")
+                {   auto* m = new juce::DynamicObject(); m->setProperty ("run_id", runId); m->setProperty ("result_id", rid); m->setProperty ("nonce", nonce);
+                    m->setProperty ("measure_started_at", d->getProperty ("measure_started_at")); m->setProperty ("measured_at", d->getProperty ("measured_at"));
+                    fo->setProperty ("measurement", juce::var (m)); }
+        }
         out.push_back ({ rid, kind, pid, dv });
     };
     auto each = [&] (const char* list, const std::function<void (const juce::var&)>& fn) { if (const auto* a = manifest.getProperty (list, {}).getArray()) for (const auto& e : *a) fn (e); };

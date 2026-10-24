@@ -12,7 +12,7 @@ HOLDING area - nothing is "served"), the run's end (the server's eligibility, on
 The /__mock/* endpoints are TEST HOOKS ONLY (approve a sign-in, expire tokens, set the config, read the state) - never part of the
 contract.
 """
-import argparse, gzip, hashlib, json, os, secrets, sys, threading, time
+import argparse, gzip, hashlib, json, os, re, secrets, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -132,6 +132,7 @@ STATE = {
     "runs": {},           # run_id -> {account_id, consent, results: {result_id: sha}, completed: bool}
     "holding": {},        # account_id -> {result_id: body}    (NEVER served)
     "rejected": [],
+    "nonces": {},         # 24 Oct: a measurement's nonce -> the result_id it was first accepted under (a nonce is never reused)
     "promos": {},         # account_id -> code
     "served": {},         # plugin_id -> {level: mapped_unverified | certified, account, run, files, category, disagreed: n}   (contract v1 §4b)
     "requests": [],       # (method, path, status) - for the tests; never a body or a token
@@ -497,14 +498,14 @@ class Handler(BaseHTTPRequestHandler):
         bad = validate(doc, rid, result_id, run, acct)
         if bad == "held":   # v1.1 §4 (ruling 3): a schema no validator knows yet - kept, never promoted or served, not counted as accepted
             with LOCK:
-                run["results"][result_id] = sha; run["received"].add(result_id); run["covered"].add(doc["plugin"]["plugin_id"]); add_span(run, doc)
+                run["results"][result_id] = sha; run["received"].add(result_id); run["covered"].add(doc["plugin"]["plugin_id"]); add_span(run, doc); keep_nonce(doc, result_id)
                 STATE["holding"].setdefault(acct, {})[result_id] = dict(doc, _held=True)
             return self._send(201, {"status": "held", "result_id": result_id, "stored": "holding",
                                     "message": "EchoJay can't check %s's measurements yet, so they're kept but not used for now." % name})
         if bad:
             return self._reject(run, result_id, bad, name)
         with LOCK:
-            run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc)
+            run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc); keep_nonce(doc, result_id)
             pid = doc["plugin"]["plugin_id"]; run["covered"].add(pid)
             if doc["kind"] == "profile" and pid in STATE["needs"].get((acct, rid), set()):
                 run["new"].add(result_id)
@@ -633,6 +634,13 @@ OUTCOME_STATES = {"needs_licence", "needs_hardware", "demo", "silent", "crashed"
                   "not_reached", "waves_skipped", "measured", "ready_from_version"}
 
 
+def keep_nonce(doc, result_id):
+    for f in (doc.get("files") or {}).values():
+        m = f.get("measurement") if isinstance(f, dict) else None
+        if isinstance(m, dict) and m.get("nonce"):
+            STATE["nonces"].setdefault(m["nonce"], result_id)
+
+
 def add_span(run, doc):
     s, e = parse_time(doc.get("measure_started_at")), parse_time(doc.get("measured_at"))
     if s is not None and e is not None and e > s:
@@ -685,6 +693,20 @@ def validate(doc, rid, result_id, run=None, acct=None):
         return "shape"
     if kind == "profile" and not files:
         return "shape"
+    # THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile says which run and result it was measured for, with a
+    # random nonce. Missing -> shape; another run's or result's identity, or a nonce another result already used -> identity (tampering)
+    if kind == "profile":
+        for name, f in files.items():
+            if name == "map.json" or not isinstance(f, dict):
+                continue
+            m = f.get("measurement")
+            if not isinstance(m, dict) or not re.fullmatch(r"[0-9a-f]{32}", str(m.get("nonce", ""))):
+                return "shape"
+            if m.get("run_id") != rid or m.get("result_id") != result_id:
+                return "identity"
+            first = STATE["nonces"].get(m["nonce"])
+            if first is not None and first != result_id:
+                return "identity"
     fp = plugin.get("fingerprint")
     held = False
     for name, f in files.items():

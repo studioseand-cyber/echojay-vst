@@ -66,6 +66,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 13_failed_cheat_check | a tampered upload (wrong SHA-256), then no code (`failed_checks`) |
 | 13b_offline_before_run | v1.1: the tester was offline from before POST /runs; on reconnect the run is created with the wizard's own `started_at` and **every result is accepted**. Two controls that hold at any replay time: a missing `measured_at` (`shape`) and one ten years ahead (`timestamp`) |
 | 13d_four_at_once | v1.1 (24 Oct): `measure_started_at` - four compressor profiles measured at once, **all accepted**; then a fifth at once, a compressor measured in 30 s, a start after its end (`timestamp` each) and a missing start (`shape`); an outcome whose start is its end, accepted. Every time is relative, so either replay keeps each verdict |
+| 13e_measurement_identity | v1.1 (24 Oct): every measured file of a profile carries `measurement` {run_id, result_id, nonce, measure_started_at, measured_at}. One honest profile, accepted; then another run's identity, only its run edited, another result's id and a reused nonce (`identity`, tampering), and no block (`shape`) |
 | 13c_promo_refusal_order | v1.1: two refusals at once answer with the first in the agreed order: account > collection > not finished > failed checks > below minimum |
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |
