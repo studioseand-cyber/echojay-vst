@@ -44,7 +44,7 @@ def map_problem(m, pid):
     return None
 
 ALLOW_S = 300   # v1.1 §4: the timestamp allowance, 5 minutes either way
-# v1.1 (Sean / B, 24 Oct): measure_started_at is REQUIRED. A profile's measuring took at least its category's minimum (half the shortest
+# v1.1 (24 Oct, agreed with B): measure_started_at is REQUIRED. A profile's measuring took at least its category's minimum (half the shortest
 # real measuring time per category, 19-23 Oct, rounded down: MEASURE_TIMES_FOR_B.md); every other kind measured nothing for the profile and
 # carries measure_started_at == measured_at - no minimum. No more than MAX_OVERLAP measurements of one run overlap in time (the wizard
 # measures 4 at a time); a span of no length overlaps nothing
@@ -433,7 +433,7 @@ class Handler(BaseHTTPRequestHandler):
                     if c.get(k) is not None:
                         e[k] = c[k]
                 out.append(e)
-        # B's category_source (24 Oct, v1.1): known | guessed, omitted when the category is null. The mock's seeded categories are Sean's
+        # B's category_source (24 Oct, v1.1): known | guessed, omitted when the category is null. The mock's seeded categories are EchoJay's
         # database (known) unless a seed says "guessed"; a category from a tester's served result is known (it was measured)
         for e in out:
             if e.get("category") is not None and "category_source" not in e:
