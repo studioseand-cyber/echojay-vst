@@ -1,0 +1,11 @@
+scenario E13-live
+captured 2026-10-24T02:19:16.366+01:00
+  [user] What is the loudness of this rack?
+  [assistant] Still only getting about 1 second of playback, not enough for a reliable loudness reading - the integrated and loudest-3s LUFS aren't coming through. The only thing the meter caught was a true peak of -17.1 dBTP. If you play the loudest chorus section for a longer stretch I can get you a proper integrated LUFS figure, otherwise I'll leave it here.
+  run row: status=Done changes=0 steps=4 zones=[11:4 steps]
+  opening: Still only getting about 1 second of playback, not enough for a reliable loudness reading - the integrated and loudest-3s LUFS aren't coming through. The only thing the meter caught was a true peak of -17.1 dBTP. If you play the loudest chorus section for a longer stretch I can get you a proper integrated LUFS figure, otherwise I'll leave it here.
+  closing: Still only getting about 1 second of playback, not enough for a reliable loudness reading - the integrated and loudest-3s LUFS aren't coming through. The only thing the meter caught was a true peak of -17.1 dBTP. If you play the loudest chorus section for a longer stretch I can get you a proper integrated LUFS figure, otherwise I'll leave it here.
+    step "Want to play the loudest section so I can measure it?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "Keep playing?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]

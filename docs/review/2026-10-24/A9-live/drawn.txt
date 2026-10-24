@@ -1,0 +1,10 @@
+scenario A9-live
+captured 2026-10-24T02:37:17.669+01:00
+  [user] Add Pro-C 3 to this rack
+  [assistant] 
+  run row: status=Waiting for your answer changes=1 steps=2 zones=[12,4:Sounds good,4:Run a check,7:Stop]
+  opening: 
+  closing: 
+    step "add Pro-C 3 after slot 4 - Pro-C 3 will need setting by hand (no map to dial it with)" [done] right="applied" detail="Added Pro-C 3 in slot 5." chips=[]
+    step "I've added another Pro-C 3 to the rack as slot 5. It's not mapped in EchoJay, so you'll need to dial in its settings by hand.
+How's it sounding?" [running] right="your answer?" detail="" chips=[Sounds good, Run a check]

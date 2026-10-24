@@ -1,0 +1,12 @@
+scenario A10
+captured 2026-10-24T03:24:48.685+01:00
+  [user] rig-nomap-marker: add that compressor
+  [assistant] Added Vertigo VSM-3. Settings not confirmed.
+  [user] rig-proc3-marker: add Pro-C 3 with a threshold
+  [assistant] Added Pro-C 3.
+  [user] rig-noload-marker: add that shaper
+  [assistant] That one would not load.
+  run row: status=Done changes=0 steps=1 zones=[3,11:1 step]
+  opening: That one would not load.
+  closing: That one would not load.
+    step "add a plugin that will not load" [failed] right="not applied" detail="kHs Transient Shaper is not one this rack can load here" chips=[]

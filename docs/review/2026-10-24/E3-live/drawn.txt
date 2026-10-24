@@ -1,0 +1,16 @@
+scenario E3-live
+captured 2026-10-24T02:47:23.443+01:00
+  [user] How much gain reduction is Renaissance Axx (s) doing?
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=8 zones=[7:Stop]
+  opening: 
+  closing: 
+    step "Want me to check the gain reduction on that one instead?" [done] right="" detail="" chips=[]
+    step "Can you play the loudest section now so I can get a reading?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr on slot 1" [done] right="" detail="I have not heard anything through this compressor yet, so I cannot say how much it is doing." chips=[]
+    step "Can you keep playing the loudest part for a few more seconds?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr on slot 1" [done] right="" detail="I have not heard anything through this compressor yet, so I cannot say how much it is doing." chips=[]
+    step "I still can't get a reading - playback is only registering about 1.2 seconds each time, not enough for the compressor to show any gain reduction.
+Can you make sure the loudest section is actually playing continuously (not just a quick preview), and let me know once it's rolling?" [running] right="your answer?" detail="" chips=[]
