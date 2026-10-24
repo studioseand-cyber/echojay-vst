@@ -22,6 +22,7 @@
 //  that half is checked by hand on the installed build and the check is named in the round's notes
 //  rather than implied.
 #include <JuceHeader.h>
+#include "EJLiveControl.h"   // the refusal's words live with CONTROL, not in a second copy here
 
 namespace echojay
 {
@@ -29,6 +30,27 @@ namespace echojay
     V2's copy travelling to the real plugin on the Link, and the view following changes made there.
     Designed (docs/LIVE_VIEW_CONTROL_2026-10-24.md), not built, so this is false and the view is
     read-only. When it goes true the shield goes with it, and this is the one line to change. */
+// ---- AND NOW IT IS BUILT (24 Oct 2026, after FOLLOW layer 2 passed at 21:31) ----------------
+//
+// *"turning a knob in the V2's live view changes the real plugin on the Link at once (I hear it,
+// the Link keeps it), and the "View only" lock comes off for parameters."*
+//
+// The flag stays, and it stays the ONE place the shield's decision is read from, because the lock
+// coming off is not the end of the subject: the shield goes straight back up, with a different
+// sentence, whenever a gesture cannot actually travel (an agent run holding the rack, or a view
+// that is not following). One switch, two reasons, one function.
+// ---- AND BACK OFF, BY HIS RULING OF 22:1x (24 Oct 2026) -------------------------------------
+//
+// *"Until then, put the "View only" lock back on in any build you ship."*
+//
+// CONTROL WORKED - his gestures reached the real plugin and the Link held them (the log says
+// `slot 1 "Threshold" set to 0.3650 ("-11.7") ... this Link now holds it`). What went wrong was
+// downstream and older: the borrow session's close-apply committed its UNSEEDED mirror's default
+// state over the Link when the view came down, so the setting he had just heard was wiped. Until
+// that road cannot write a state it has no claim to, a gesture through the view is a change that
+// may be silently undone - which is the same fault as a change that never arrives.
+//
+// ONE LINE, AND IT IS THE ONLY LINE NEEDED, because the shield's decision has one owner.
 constexpr bool kLiveViewControlBuilt = false;
 
 /** What the view says while it is read-only. His words, kept verbatim. */
@@ -49,15 +71,26 @@ struct LiveViewInputPolicy
     disagreeing with the thing it is a picture of). So:
 
       - a live view, with control not built  -> blocked, and it says so;
-      - a live view, with control built       -> open, and it says nothing;
+      - a live view, with control built, but an agent run holding that rack, or the view not
+        following the plugin -> blocked, with THAT reason, because a gesture that cannot land is
+        the same silent loss whatever is stopping it (24 Oct 2026);
+      - a live view, with control built and able to travel -> open, and it says nothing;
       - anything that is NOT a live view      -> untouched. The main rack's own slots, a borrowed
         mirror and an edit session all host the instance whose settings a gesture really changes,
         and none of them has ever needed a shield. */
 inline LiveViewInputPolicy liveViewInputPolicy (bool editorIsALiveViewCopy,
-                                                bool controlBuilt = kLiveViewControlBuilt)
+                                                bool controlBuilt = kLiveViewControlBuilt,
+                                                bool following = true,
+                                                bool runHoldsRack = false)
 {
     if (! editorIsALiveViewCopy) return { false, {} };
-    if (controlBuilt)            return { false, {} };
-    return { true, juce::String (liveViewOnlyLine()) };
+    if (! controlBuilt)          return { true, juce::String (liveViewOnlyLine()) };
+    // ---- CONTROL IS BUILT, SO THE QUESTION IS WHETHER IT MAY TRAVEL NOW (24 Oct 2026) ---------
+    // The shield is the right surface for both refusals, and it already does exactly the right
+    // thing: it swallows the gesture and draws the reason over the plugin's own view. What it must
+    // NOT do is invent a second rule - so the decision is liveControlPolicy's, and this renders it.
+    const auto control = liveControlPolicy (following, runHoldsRack);
+    if (! control.allow) return { true, control.line };
+    return { false, {} };
 }
 } // namespace echojay

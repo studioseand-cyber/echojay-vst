@@ -2814,6 +2814,7 @@ private:
     // and the ring; the panel needs no change at all, because the copy's editor comes back through
     // createSlotEditorForView like every other slot's.
     juce::String shadowFollowNoteShown_;   // FOLLOW layer 2: the last line put on the card
+    juce::String shadowControlRefusalShown_;  // CONTROL: the last refusal put on the card
     juce::String shadowWantUid_;        // what is on screen now (empty = nothing wanted)
     int          shadowWantSlot_ = -1;
     bool         shadowAsking_   = false;   // a request is in flight; one at a time
@@ -3720,6 +3721,10 @@ private:
         // copy of a fact the processor owns is the two-sources-of-truth family this week was made
         // of. Unset on the Link's own panel, which has no live view.
         std::function<bool(int)>        isLiveViewSlot;
+        // CONTROL (24 Oct 2026): the two facts that decide whether a gesture can travel. Same rule
+        // as above - asked of the processor, never cached here.
+        std::function<bool()>           liveViewFollowing;
+        std::function<bool()>           liveViewRunHoldsRack;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
         std::function<void(int, int)>   onMoveSlot;
@@ -4113,8 +4118,17 @@ private:
                 // Here, because attach is the one place that reparents the plugin's view, and a
                 // shield that is not the last subview blocks nothing. The decision is
                 // echojay::liveViewInputPolicy's; this only carries out what it says.
+                // ---- AND SINCE CONTROL EXISTS, IT ASKS WHETHER A GESTURE CAN TRAVEL NOW ----
+                // Two facts the panel does not own, so both are asked of the PROCESSOR and never
+                // cached: is the view FOLLOWING that plugin (which is what proves the two parameter
+                // lists agree), and does an agent run hold that rack. Either one false puts the
+                // shield back up with THAT reason.
                 const bool liveCopy = inlineSlot >= 0 && isLiveViewSlot && isLiveViewSlot(inlineSlot);
-                const auto policy = echojay::liveViewInputPolicy(liveCopy);
+                const bool following = liveCopy && liveViewFollowing && liveViewFollowing();
+                const bool runHolds  = liveCopy && liveViewRunHoldsRack && liveViewRunHoldsRack();
+                const auto policy = echojay::liveViewInputPolicy(liveCopy,
+                                                                 echojay::kLiveViewControlBuilt,
+                                                                 following, runHolds);
                 NativeClip::setShield(this, policy.blockInput, policy.line);
             }
         }
@@ -4409,7 +4423,11 @@ private:
             // "silent lost changes are a fault" was the whole of his finding.
             if (isLiveViewSlot && isLiveViewSlot(i))
             {
-                const auto policy = echojay::liveViewInputPolicy(true);
+                const bool following = liveViewFollowing && liveViewFollowing();
+                const bool runHolds  = liveViewRunHoldsRack && liveViewRunHoldsRack();
+                const auto policy = echojay::liveViewInputPolicy(true,
+                                                                 echojay::kLiveViewControlBuilt,
+                                                                 following, runHolds);
                 if (policy.blockInput)
                 {
                     statusText = policy.line + " - and it stays in the card until then, because a "

@@ -4300,6 +4300,21 @@ void EchoJayProcessor::rackLockTick()
     }
 }
 
+/** The listener on the live copy. One object, owned by the processor, attached to the copy while the
+    view is up and removed under the view's own lock before the instance ever leaves. */
+struct EchoJayLiveControlListener final : public juce::AudioProcessorListener
+{
+    explicit EchoJayLiveControlListener (EchoJayProcessor& o) : owner (o) {}
+    void audioProcessorParameterChanged (juce::AudioProcessor*, int index, float newValue) override
+    { owner.liveControlParamChanged (index, newValue); }
+    void audioProcessorParameterChangeGestureBegin (juce::AudioProcessor*, int index) override
+    { owner.liveControlGesture (index, true); }
+    void audioProcessorParameterChangeGestureEnd (juce::AudioProcessor*, int index) override
+    { owner.liveControlGesture (index, false); }
+    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override {}
+    EchoJayProcessor& owner;
+};
+
 /** ---- THE SHADOW VIEW: THE V2'S SIDE (stage B, 23 Oct 2026) --------------------------------
     *"I see that plugin's real editor live in the V2 (moving meters and gain reduction) without
      opening the Link's window... it must never take the rack, stop a run or change ownership."*
@@ -4472,6 +4487,16 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
     // THE COPY'S SCHEMA, ONCE. It cannot change while this copy is installed, and walking every
     // parameter's name at the editor's rate would be the dearest thing in the follow road.
     shadowCopyDigest_ = shadowView_.copySchemaDigest();
+    // ---- CONTROL (C2): LISTEN TO THE COPY'S OWN KNOBS ----------------------------------------
+    // Attached here, after the view owns the instance, and removed inside ShadowView::stop under
+    // the same lock the instance moves under. The gesture map starts empty: a gesture belongs to
+    // one view of one slot and may never outlive it.
+    liveGestures_.clear();
+    liveControlRefusal_.clear();
+    liveControlSent_ = 0; saidControlSent_ = false;
+    if (liveControlListener_ == nullptr)
+        liveControlListener_ = std::make_unique<EchoJayLiveControlListener> (*this);
+    shadowView_.attachControlListener (liveControlListener_.get());
     EchoJay_NSLog (("EJShadow: the V2 is now running its own copy of \"" + pluginName + "\" on slot "
                     + juce::String (slot0 + 1) + " of " + uid + ", fed from " + file
                     + " - output DISCARDED, no lease, no borrow, nothing owned (stage B)").toRawUTF8());
@@ -4536,7 +4561,12 @@ void EchoJayProcessor::shadowFollowTick()
 
     shadowValSeqSeen_ = h.seq;
     ++shadowFollowFrames_;
+    // THE MIRROR'S OWN WRITES ARE NOT HIS GESTURES. The listener drops anything that arrives while
+    // this is up; the value test in liveControlParamChanged catches the stragglers that some
+    // plugins report a moment later.
+    ++liveControlApplying_;
     const int moved = shadowView_.followApply (shadowValRead_.data(), count);
+    --liveControlApplying_;
     if (moved > 0) shadowFollowWrites_ += moved;
     shadowFollowNote_.clear();
 
@@ -4548,6 +4578,185 @@ void EchoJayProcessor::shadowFollowTick()
                         "(every one of them, by definition), the Link's sweep costing "
                         + juce::String ((double) h.sweepMicros / 1000.0, 3) + " ms. From here only "
                         "what moves is written").toRawUTF8());
+}
+
+int EchoJayProcessor::linkStructureRevisionFor (const juce::String& uid) const
+{
+    auto it = linkRackCache.find (uid);
+    if (it == linkRackCache.end() || ! it->second.valid) return 0;
+    return juce::jmax (0, it->second.rack.revision);
+}
+
+bool EchoJayProcessor::agentRunHoldsRack (const juce::String& uid) const
+{
+    if (uid.isEmpty() || agentHome_ == nullptr) return false;
+    return agentHome_->runNeedsItsRack() && agentHome_->runTargetUid() == uid;
+}
+
+/** ---- CONTROL, STAGE C2: A KNOB ON THE COPY REACHES THE REAL PLUGIN (24 Oct 2026) ---------
+    *"turning a knob in the V2's live view changes the real plugin on the Link at once (I hear it,
+     the Link keeps it) ... gestures framed so a drag is one change."*
+
+    THE LISTENER IS THE ONLY NEW ROAD. Everything downstream has existed since stage 5 on 10 Oct:
+    ringBeginGesture / ringStreamValue / ringEndGestureWithUndo, the coalescer that keeps the
+    newest frame per control while never discarding a boundary, and the plugin-wide undo history
+    that makes one drag one step. What was missing was anything to tell them a knob had moved.
+
+    THREE THINGS IT REFUSES TO DO, each one a fault family already paid for:
+
+      * IT NEVER SENDS ITS OWN ECHO. FOLLOW writes the Link's values into this copy; on some
+        plugins that write comes back through this listener. Sending it on would be a round trip
+        per frame and an undo step for a move he never made, so a value equal to what FOLLOW last
+        applied to that parameter is dropped.
+      * IT NEVER SENDS WHILE A RUN HOLDS THE RACK, and it says so rather than dropping it
+        silently - his words this morning were "silent lost changes are a fault".
+      * IT NEVER SENDS WHEN THE VIEW IS NOT FOLLOWING, because following is what proves the two
+        parameter lists agree, and a value by index without that is a value on the wrong knob.  */
+void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
+{
+    if (! juce::MessageManager::existsAndIsCurrentThread())
+    {
+        // AUTOMATION CAN REACH HERE ON THE AUDIO THREAD. The producer side of the ring and the undo
+        // history are both the message thread's, so the notification is bounced rather than served.
+        juce::WeakReference<EchoJayProcessor> safe (this);
+        const float v = newValue;
+        juce::MessageManager::callAsync ([safe, index, v]
+        { if (auto* p = safe.get()) p->liveControlParamChanged (index, v); });
+        return;
+    }
+    if (liveControlApplying_ > 0) return;              // our own mirror writing: not his gesture
+    if (! shadowView_.running() || index < 0) return;
+
+    // THE ECHO TEST, before anything else is decided: equal to what FOLLOW applied means this is
+    // the plugin telling us what we just told it.
+    const float fromLink = shadowView_.lastAppliedFromLink (index);
+    if (fromLink >= 0.0f && std::abs (fromLink - newValue) <= echojay::kShadowValEps) return;
+
+    const auto policy = echojay::liveControlPolicy (shadowFollowing(), agentRunHoldsRack (shadowView_.uid()));
+    if (! policy.allow)
+    {
+        if (liveControlRefusal_ != policy.line)
+        {
+            liveControlRefusal_ = policy.line;
+            EchoJay_NSLog (("EJControl: a move on the live view was NOT sent - " + policy.line
+                            + ". It is refused with a reason rather than dropped, which is the "
+                              "fault he reported this morning").toRawUTF8());
+        }
+        return;
+    }
+    liveControlRefusal_.clear();
+
+    const auto uid  = shadowView_.uid();
+    const int  slot = shadowView_.slot();
+    if (uid.isEmpty() || slot < 0) return;
+    const auto rev = (uint32_t) juce::jmax (0, linkStructureRevisionFor (uid));
+    const auto nowMs = juce::Time::getMillisecondCounterHiRes();
+
+    auto& g = liveGestures_[index];
+    if (g.id == 0)
+    {
+        // THE BEFORE VALUE IS WHAT THE LINK HAD, not what the copy had: the undo step must put the
+        // REAL plugin back, and the copy may have been moved by a gesture we dropped as an echo.
+        g.before = fromLink >= 0.0f ? (double) fromLink : (double) newValue;
+        g.id = ringBeginGesture (uid, (int) echojay::cmdring::Kind::kSetParam, slot, index,
+                                 (double) newValue, rev);
+        if (g.id == 0)
+        {
+            // No ring on that rack yet. The file channel is the correct fallback for a DECISION and
+            // the wrong one for a drag (it has no "next one supersedes this one"), so this says so
+            // and sends nothing rather than queueing a stream of files.
+            liveGestures_.erase (index);
+            if (liveControlRefusal_.isEmpty())
+            {
+                liveControlRefusal_ = "this rack has no value channel open yet - give it a moment, "
+                                      "or change it on the Link";
+                EchoJay_NSLog ("EJControl: a move on the live view could not be sent - no value ring "
+                               "for that rack yet. Nothing is queued: a drag has no meaning on the "
+                               "file channel, whose whole premise is that a command is not superseded");
+            }
+            return;
+        }
+    }
+    else
+        ringStreamValue (uid, g.id, (int) echojay::cmdring::Kind::kSetParam, slot, index,
+                         (double) newValue, rev);
+
+    g.latest     = (double) newValue;
+    g.lastMoveMs = nowMs;
+    ++liveControlSent_;
+
+    if (! saidControlSent_)
+    {
+        saidControlSent_ = true;
+        EchoJay_NSLog (("EJControl: the first move from this live view has been sent to " + uid
+                        + " slot " + juce::String (slot + 1) + " parameter " + juce::String (index)
+                        + " - over the value ring, as a framed gesture, with the undo step owed at "
+                          "the release (CONTROL stage C2)").toRawUTF8());
+    }
+}
+
+/** The plugin's OWN gesture boundaries, when it reports them. A plugin that frames its gestures is
+    believed: its end closes the gesture at once, and the inferred quiet-period close never runs for
+    it. Most plugins report neither, which is what shadowControlTick is for. */
+void EchoJayProcessor::liveControlGesture (int index, bool starting)
+{
+    if (! juce::MessageManager::existsAndIsCurrentThread())
+    {
+        juce::WeakReference<EchoJayProcessor> safe (this);
+        juce::MessageManager::callAsync ([safe, index, starting]
+        { if (auto* p = safe.get()) p->liveControlGesture (index, starting); });
+        return;
+    }
+    if (liveControlApplying_ > 0 || ! shadowView_.running()) return;
+    if (starting)
+    {
+        auto& g = liveGestures_[index];
+        g.framedByPlugin = true;
+        g.lastMoveMs = juce::Time::getMillisecondCounterHiRes();
+    }
+    else
+        liveControlEndGesture (index, "the plugin said the gesture ended");
+}
+
+/** ONE UNDO STEP PER GESTURE, pushed here and nowhere else, through the same road the wet knob and
+    the slot gains have used since stage 5 - so one Undo button walks local and remote edits in one
+    order rather than two histories answering one question differently. */
+void EchoJayProcessor::liveControlEndGesture (int index, const char* why)
+{
+    auto it = liveGestures_.find (index);
+    if (it == liveGestures_.end()) return;
+    const auto g = it->second;
+    liveGestures_.erase (it);
+    if (g.id == 0) return;
+
+    const auto uid  = shadowView_.uid();
+    const int  slot = shadowView_.slot();
+    if (uid.isEmpty() || slot < 0) return;
+    const auto rev = (uint32_t) juce::jmax (0, linkStructureRevisionFor (uid));
+    ringEndGestureWithUndo (uid, g.id, (int) echojay::cmdring::Kind::kSetParam, slot, index,
+                            g.before, g.latest, rev, shadowView_.pluginName());
+    EchoJay_NSLog (("EJControl: gesture " + juce::String ((int) g.id) + " on parameter "
+                    + juce::String (index) + " of slot " + juce::String (slot + 1) + " ENDED ("
+                    + juce::String (why) + ") - " + juce::String (g.before, 4) + " -> "
+                    + juce::String (g.latest, 4) + ", one undo step for the whole move")
+                   .toRawUTF8());
+}
+
+/** A plugin that never frames a gesture still has to produce ONE change per drag, so a gesture
+    with no movement for kLiveControlQuietMs is closed here. The figure and the reasoning behind it
+    are in EJLiveControl.h, stated rather than buried. */
+void EchoJayProcessor::shadowControlTick()
+{
+    if (liveGestures_.empty()) return;
+    const auto nowMs = juce::Time::getMillisecondCounterHiRes();
+    // Collected first: ending a gesture erases from the map we would be walking.
+    std::vector<int> quiet;
+    for (const auto& kv : liveGestures_)
+        if (! kv.second.framedByPlugin && kv.second.id != 0
+            && nowMs - kv.second.lastMoveMs > (double) echojay::kLiveControlQuietMs)
+            quiet.push_back (kv.first);
+    for (int index : quiet)
+        liveControlEndGesture (index, "it went quiet, and this plugin does not frame its gestures");
 }
 
 void EchoJayProcessor::shadowEnd()
@@ -4562,6 +4771,14 @@ void EchoJayProcessor::shadowEnd()
                               shadowValPath_, /*unlink*/ false);
         shadowValMap_ = nullptr; shadowValFd_ = -1; shadowValPath_.clear();
     }
+    // A GESTURE NEVER OUTLIVES ITS VIEW. Anything still open is ended now, with its undo step, so a
+    // knob he was holding when he closed the window is one recorded change and not a dangling one.
+    {
+        std::vector<int> open;
+        for (const auto& kv : liveGestures_) open.push_back (kv.first);
+        for (int i : open) liveControlEndGesture (i, "the live view came down");
+    }
+    liveGestures_.clear(); liveControlRefusal_.clear();
     shadowValSeqSeen_ = 0; shadowCopyDigest_ = 0; shadowFollowNote_.clear();
     shadowFollowSaid_ = false; shadowFollowFrames_ = 0; shadowFollowWrites_ = 0;
     const auto frames = shadowView_.framesPumped();

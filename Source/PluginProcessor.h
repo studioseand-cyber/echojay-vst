@@ -19,6 +19,7 @@
 #include "DashPoll.h"
 #include "LinkShm.h"
 #include "EJShadowView.h"   // stage B of the muted shadow: the V2's own copy of the slot in view
+#include "EJLiveControl.h"  // CONTROL stages C1-C3: a gesture on the view reaches the Link
 #include "EchoJayUndoHistory.h"   // 21n item 3
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EJChainRole.h"    // 21t-m item 5: the chain's role, from its three sources
@@ -678,6 +679,30 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     juce::String shadowFollowNote_;        // what he reads when the knobs are NOT being followed
     bool         shadowFollowSaid_ = false;
     int          shadowFollowFrames_ = 0, shadowFollowWrites_ = 0;
+    // ---- CONTROL: one open gesture per parameter of the live copy -----------------------------
+    struct LiveGesture
+    {
+        juce::uint32 id = 0;          // the ring's gesture id, 0 = nothing open
+        double before = 0.0;          // the value before it opened, for the one undo step
+        double latest = 0.0;
+        double lastMoveMs = 0.0;      // getMillisecondCounterHiRes
+        bool   framedByPlugin = false;  // the plugin told us it began; we must not close it early
+    };
+    std::map<int, LiveGesture> liveGestures_;
+    int  liveControlApplying_ = 0;    // >0 while FOLLOW is writing: the listener ignores its own echo
+    int  liveControlSent_ = 0;
+    bool saidControlSent_ = false;
+    juce::String liveControlRefusal_;
+    std::unique_ptr<juce::AudioProcessorListener> liveControlListener_;
+    void liveControlEndGesture (int index, const char* why);
+    /** The structure revision of a Link's rack, from the sidecar this V2 already caches, so every
+        frame carries it and a V2 holding a stale picture cannot apply a value to the wrong
+        parameter - the Link discards the mismatch with a count. */
+    int  linkStructureRevisionFor (const juce::String& uid) const;
+    /** Does an agent run hold that rack right now? The SAME pair the panel already asks
+        (runTargetUid + runNeedsItsRack), so the view's refusal and the panel's lock cannot
+        disagree about who holds what. A finished run still counts while its Undo all is live. */
+    bool agentRunHoldsRack (const juce::String& uid) const;
     /** Install a prepared copy and start consuming that Link's shadow ring. The caller has already
         asked the Link to tap the slot (the control channel's `shadowSlot`) and seen its ack. FALSE
         with `whyNot` set changes nothing - the view falls back to the static picture, which is the
@@ -699,6 +724,24 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** Empty while the knobs are following; otherwise the one plain line saying they are not. */
     juce::String shadowFollowNote() const { return shadowFollowNote_; }
     int shadowFollowWrites() const noexcept { return shadowFollowWrites_; }
+    /** TRUE when FOLLOW layer 2 is actually applying this slot's values, which is what proves the
+        two processes hold the same parameter list - and therefore what CONTROL is gated on
+        (EJLiveControl.h says why one fact owns both). */
+    bool shadowFollowing() const noexcept { return shadowFollowFrames_ > 0 && shadowFollowNote_.isEmpty(); }
+
+    // ---- CONTROL through the live view (stage C2, 24 Oct 2026) --------------------------------
+    /** Called by the listener on the live copy when one of ITS parameters moves - which is what a
+        knob he turns on the copy's own interface does. Message thread; a notification that arrives
+        on any other thread is bounced to it, because every road out of here (the ring's producer
+        side, the undo history) belongs to the message thread. */
+    void liveControlParamChanged (int index, float newValue);
+    void liveControlGesture (int index, bool starting);
+    /** Closes any gesture the plugin never closed, so a drag is ONE change even on a plugin that
+        reports no boundaries at all. Called from the editor's timer beside shadowFollowTick. */
+    void shadowControlTick();
+    /** Empty when a gesture may travel; otherwise the one line saying why it may not. */
+    juce::String liveControlRefusal() const { return liveControlRefusal_; }
+    int liveControlSent() const noexcept { return liveControlSent_; }
     /** Stop consuming and release the copy. The ring is unmapped AFTER the view has let go. */
     void shadowEnd();
     bool shadowRunning() const noexcept { return shadowView_.running(); }
@@ -2579,5 +2622,10 @@ private:
     double hostSampleRate_    = 44100.0;
     int    hostSamplesPerBlock_ = 512;
 
+    // CONTROL (24 Oct 2026): a parameter notification can arrive on the audio thread during
+    // automation, and the road out of it (the ring's producer, the undo history) is the message
+    // thread's. The bounce to it must not outlive this processor - Logic can close a track while a
+    // notification is in flight - so the lambda holds a weak reference and not `this`.
+    JUCE_DECLARE_WEAK_REFERENCEABLE (EchoJayProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EchoJayProcessor)
 };

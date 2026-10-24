@@ -188,6 +188,11 @@ public:
         std::unique_ptr<juce::AudioProcessor> leaving;
         {
             const juce::SpinLock::ScopedLockType sl (lock_);
+            // THE LISTENER COMES OFF FIRST, under the lock the instance moves under: one still
+            // registered on a processor that is leaving is the shape of this week's crashes.
+            if (inst_ != nullptr && controlListener_ != nullptr)
+                inst_->removeListener (controlListener_);
+            controlListener_ = nullptr;
             leaving = std::move (inst_);
             ring_ = nullptr;
             keyPlan_.clear();   // the plan belongs to the copy and dies with it
@@ -367,6 +372,35 @@ public:
         return echojay::shadowApplyChangedValues (*inst_, values, count, lastApplied_);
     }
 
+    /** ---- CONTROL (stage C2): LISTEN TO THE COPY'S OWN PARAMETERS ------------------------
+
+        The copy's editor is the plugin's own interface, so a knob he turns moves the COPY and
+        nothing else - which is the fault he reported this morning ("the copy accepts knob changes,
+        and they go nowhere"). This is where we hear about it: one AudioProcessorListener on the
+        copy, attached while the view is up and removed BEFORE the instance ever leaves.
+
+        Removed under the same lock the instance moves under, because a listener still registered
+        on a processor that is going away is the shape of this week's crashes. */
+    void attachControlListener (juce::AudioProcessorListener* l)
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        if (inst_ == nullptr || l == nullptr) return;
+        if (controlListener_ != nullptr) inst_->removeListener (controlListener_);
+        inst_->addListener (l);
+        controlListener_ = l;
+    }
+
+    /** What FOLLOW last wrote into this parameter, or -1 when it has written none. CONTROL reads it
+        to ignore its own echo: a value the mirror just applied comes back through the listener on
+        some plugins, and sending it to the Link would be a round trip per frame and a spurious undo
+        step for a move he never made. */
+    float lastAppliedFromLink (int index)
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        if (index < 0 || index >= (int) lastApplied_.size()) return -1.0f;
+        return lastApplied_[(size_t) index];
+    }
+
     /** The copy's own schema digest, for the mismatch refusal, and its parameter count. Asked once
         per view, so computed rather than cached - a cache here would be a second fact. */
     juce::uint32 copySchemaDigest()
@@ -421,6 +455,7 @@ public:
 private:
     juce::SpinLock                           lock_;
     std::vector<float>                       lastApplied_;      // FOLLOW layer 2, under lock_
+    juce::AudioProcessorListener*            controlListener_ = nullptr;   // CONTROL, under lock_
     std::unique_ptr<juce::AudioProcessor>    inst_;      // under lock_
     void*                                    ring_ = nullptr;   // under lock_; owned by the caller
     juce::AudioBuffer<float>                 buf_;      // allocated at prepare, audio thread's own

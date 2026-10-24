@@ -431,6 +431,10 @@ void LinkProcessor::timerCallback()
     // ---- FOLLOW layer 2: the tapped slot's parameter values, on the tick that already exists ---
     // One branch per tick when no live view is on this Link, which is the normal state. The cost of
     // the feature when it is not on screen is zero, not "small" - the same bar stage A set.
+    // CONTROL (C1) BEFORE THE PUBLISH, so a value that lands on this tick is published on the same
+    // one: the V2's mirror is the acknowledgement, and an acknowledgement a tick late is a knob
+    // that springs back for 33 ms.
+    applyStagedSetParams();
     publishShadowValuesTick();
     // SEAN'S #1 (16 Oct 2026): has the V2 answered the maps this rack asked for? On the heartbeat
     // divider below rather than every 30 Hz tick: it is a file stat, and the answer is not urgent to
@@ -2987,11 +2991,29 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
                 case K::kPreGain:   chainHost.applyRingValueRT (RF::PreGain,   -1,     (float) f.value); break;
                 case K::kLinkGain:  gainDb_.store ((float) f.value, std::memory_order_relaxed); break;
                 case K::kSetParam:
+                {
                     // NOT APPLIED HERE, BY RULING. A device parameter is a plugin call and can never be made
                     // real-time safe, so it is staged for the message thread and the contract says so. Counted
                     // so a frame cannot vanish silently.
+                    //
+                    // ---- AND NOW IT IS REALLY STAGED (CONTROL stage C1, 24 Oct 2026) -------------
+                    // The ruling is unchanged; what changed is that the frame is KEPT. It used to be
+                    // counted and dropped, so "staged for the message thread" was true of the count
+                    // and of nothing else. One copy into a single-producer ring, no allocation, no
+                    // lock, no plugin call - applyStagedSetParams does the applying on the tick.
+                    const uint32_t w = stagedParamW_.load (std::memory_order_relaxed);
+                    const uint32_t r = stagedParamR_.load (std::memory_order_acquire);
+                    if (w - r < (uint32_t) kStagedParamCap)
+                    {
+                        stagedParams_[w & (uint32_t) (kStagedParamCap - 1)]
+                            = echojay::stagedFromFrame (f.slot, f.paramId, f.value, f.phase, f.gesture);
+                        stagedParamW_.store (w + 1, std::memory_order_release);
+                    }
+                    else
+                        stagedParamLost_.fetch_add (1, std::memory_order_relaxed);
                     ringSetParamPending_.fetch_add (1, std::memory_order_relaxed);
                     break;
+                }
                 default: break;
             }
         }
@@ -4918,6 +4940,91 @@ void LinkProcessor::setSourceTypeFromUser (const juce::String& wire, const juce:
 //  already measures this signal (ChainHost's SlotPreTrim, and its own 28 Sep comment is the
 //  argument for the tap point). Nothing is inserted, nothing is reordered, and what is heard cannot
 //  change - which is the first line of his design and the only one that is not negotiable.
+/** ---- CONTROL, STAGE C1: APPLY WHAT THE V2'S VIEW SENT (24 Oct 2026) ----------------------
+    *"turning a knob in the V2's live view changes the real plugin on the Link at once (I hear it,
+     the Link keeps it)."*
+
+    THE MESSAGE THREAD, on the 30 Hz tick. The audio thread staged the frames; this is the half the
+    10 Oct ruling promised and nobody wrote.
+
+    COALESCED BY PARAMETER, NEVER BY FRAME, and the gesture boundaries are never dropped - a drag
+    is one gesture however many frames it arrived as. The undo step is the V2's, pushed once at the
+    release through ringEndGestureWithUndo, which is the same road the slot gains and the wet knob
+    have used since stage 5: one Undo button walks local and remote edits in one order, and a
+    second history over here would be a second answer to one question.
+
+    EVERY REFUSAL IS COUNTED AND NAMED. A paramId past the plugin's list, a slot with no plugin, a
+    ring that lapped: each is logged with what it was. A value that cannot be applied must never
+    look like one that was.                                                                      */
+void LinkProcessor::applyStagedSetParams()
+{
+    const uint32_t r = stagedParamR_.load (std::memory_order_relaxed);
+    const uint32_t w = stagedParamW_.load (std::memory_order_acquire);
+    if (w == r)
+    {
+        if (const int lost = stagedParamLost_.exchange (0, std::memory_order_relaxed); lost > 0)
+            EchoJay_NSLog (("EJControl: " + juce::String (lost) + " staged parameter frame(s) were "
+                            "LOST because the staging ring lapped - the view moved faster than this "
+                            "tick could apply. Counted rather than silent; the last value of each "
+                            "control still lands, because the V2 sends an END frame at the "
+                            "release").toRawUTF8());
+        return;
+    }
+
+    // Copied out first, so the producer is never waited on and the ring is freed at once.
+    echojay::StagedParam local[kStagedParamCap];
+    int n = 0;
+    for (uint32_t i = r; i != w && n < kStagedParamCap; ++i)
+        local[n++] = stagedParams_[i & (uint32_t) (kStagedParamCap - 1)];
+    stagedParamR_.store (r + (uint32_t) n, std::memory_order_release);
+
+    const auto moves = echojay::coalesceStagedParams (local, n);
+    for (const auto& m : moves)
+    {
+        auto* proc = m.slot >= 0 ? chainHost.getSlotProcessor (m.slot) : nullptr;
+        if (proc == nullptr)
+        {
+            EchoJay_NSLog (("EJControl: a value for slot " + juce::String (m.slot + 1)
+                            + " could not be applied - that slot has no plugin on this Link")
+                           .toRawUTF8());
+            continue;
+        }
+        const auto& params = proc->getParameters();
+        if ((int) m.paramId >= params.size())
+        {
+            EchoJay_NSLog (("EJControl: a value for parameter " + juce::String ((int) m.paramId)
+                            + " of slot " + juce::String (m.slot + 1) + " could not be applied - "
+                            "that plugin has " + juce::String (params.size()) + ". The V2 and this "
+                            "Link disagree about the parameter list, which FOLLOW's digest is "
+                            "supposed to catch before a frame is ever sent").toRawUTF8());
+            continue;
+        }
+        auto* prm = params[(int) m.paramId];
+        if (prm == nullptr) continue;
+        const float want = (float) juce::jlimit (0.0, 1.0, m.value);
+        prm->setValueNotifyingHost (want);
+        ++stagedParamApplied_;
+
+        // ONE LINE PER GESTURE, not per frame: the end is the fact worth a log line, and a drag
+        // would otherwise write thirty lines a second into his session's log.
+        if (m.sawEnd)
+            EchoJay_NSLog (("EJControl: slot " + juce::String (m.slot + 1) + " \"" + prm->getName (48)
+                            + "\" set to " + juce::String (want, 4) + " (\""
+                            + prm->getCurrentValueAsText() + "\") from the V2's live view, gesture "
+                            + juce::String ((int) m.gesture) + " - this Link now holds it")
+                           .toRawUTF8());
+    }
+
+    if (! saidControlLive_ && ! moves.empty())
+    {
+        saidControlLive_ = true;
+        EchoJay_NSLog ("EJControl: the first value from a V2's live view has been applied to a real "
+                       "plugin on this Link. The ring carried it, the audio thread staged it and "
+                       "this message thread applied it - the 10 Oct ruling's other half, finally "
+                       "written (CONTROL stage C1)");
+    }
+}
+
 /** ---- FOLLOW LAYER 2, THE LINK'S HALF (24 Oct 2026) ----------------------------------------
     *"the Link publishes the tapped slot's parameter values, the V2 writes only the changed ones
      into the copy ... change a knob on the Link's own window with the V2's view open, and the view

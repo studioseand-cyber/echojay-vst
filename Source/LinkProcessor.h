@@ -3,6 +3,7 @@
 #include "EJRemoteControl.h"   // stage 1: the lease is control only - no bypass, no mute, no detour
 #include "EJCmdRing.h"        // stage 3: the value ring
 #include "EJShadowValues.h"   // FOLLOW layer 2: the tapped slot's parameter values, at 30 Hz
+#include "EJLiveControl.h"   // CONTROL stage C1: the staged set_param frames, applied here
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "LoudnessLoop.h"   // LEVELLING V2 (10 Oct 2026): every Link levels its OWN rack
@@ -461,6 +462,22 @@ private:
     bool shadowValSaidTruncated_ = false;      // the "more than we can carry" line, said once
     bool shadowValSaidCost_ = false;           // the measured sweep cost, said once per tap
     void publishShadowValuesTick();
+    // ---- CONTROL (stage C1): the staged set_param frames ---------------------------------------
+    // The audio thread COPIES a drained kSetParam frame in here and applies nothing; the message
+    // thread applies it. LinkProcessor's own ruling of 10 Oct stands word for word - "a device
+    // parameter is a plugin call and can never be made real-time safe, so it is staged for the
+    // message thread" - and until now nothing on the message thread ever read what was staged.
+    //
+    // A PROPER SINGLE-PRODUCER RING, not a count the consumer resets: a count-and-zero loses any
+    // frame the producer appends between the read and the zeroing, which is the one way a knob
+    // could stick. Two indices, one written by each side.
+    static constexpr int kStagedParamCap = 128;                 // power of two, masked
+    echojay::StagedParam  stagedParams_[kStagedParamCap];
+    std::atomic<uint32_t> stagedParamW_ { 0 }, stagedParamR_ { 0 };
+    std::atomic<int>      stagedParamLost_ { 0 };               // the ring lapped: counted, never silent
+    int  stagedParamApplied_ = 0;
+    bool saidControlLive_ = false;
+    void applyStagedSetParams();
     void nameTheMatchTarget (const std::vector<ChainHost::ChainEditOp>& ops);
     void armLoudnessAfterBuild (const juce::String& via);
     /** The slot whose OUT trim the level match writes, or -1 when the rack has no slots (19 Oct

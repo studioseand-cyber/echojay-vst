@@ -2238,6 +2238,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // The processor is asked, every time, because it owns the fact. Same three-part identity the
     // editor road uses (createSlotEditorForView): this rack, this slot, and a view actually
     // running - never "a view is running somewhere".
+    // CONTROL (24 Oct 2026): the two facts the shield and the pop-out road ask for, both owned by
+    // the processor so the panel never holds a second copy of either.
+    chainListPanel.liveViewFollowing    = [this] { return processorRef.shadowFollowing(); };
+    chainListPanel.liveViewRunHoldsRack = [this]
+    { return processorRef.agentRunHoldsRack (processorRef.shadowUid()); };
     chainListPanel.isLiveViewSlot = [this](int i)
     {
         return processorRef.shadowRunning()
@@ -27739,6 +27744,22 @@ void EchoJayEditor::timerCallback()
     // cost is one atomic load and a seq comparison.
     {
         processorRef.shadowFollowTick();
+        // CONTROL (C2): close any gesture the plugin never closed, so a drag is ONE change even on
+        // a plugin that reports no boundaries at all. The quiet period, and why it is 150 ms, are
+        // stated in EJLiveControl.h rather than buried here.
+        processorRef.shadowControlTick();
+        // AND A REFUSAL REACHES THE CARD. A gesture that could not travel is never dropped in
+        // silence - "silent lost changes are a fault" was the whole of his finding this morning.
+        const auto refusal = processorRef.liveControlRefusal();
+        if (refusal != shadowControlRefusalShown_)
+        {
+            shadowControlRefusalShown_ = refusal;
+            if (refusal.isNotEmpty())
+            {
+                chainListPanel.statusText = "That didn't reach the Link: " + refusal + ".";
+                chainListPanel.repaint();
+            }
+        }
         const auto note = processorRef.shadowFollowNote();
         if (note != shadowFollowNoteShown_)
         {
@@ -36950,6 +36971,13 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                 // there is a single sentence either way and the card is never silently wrong.
                 const auto seedNote = seedLine.isNotEmpty() ? seedLine
                                                             : safeThis->processorRef.shadowSeedNote();
+                // ---- WHAT CONTROL COVERS, SAID WHEN THE VIEW OPENS (CONTROL C3, 24 Oct) -------
+                // Not a detection of anything: this build cannot yet notice a preset recall or a
+                // graph drag - that is layer 3. It states what travels and where the rest is done,
+                // which is the design note's §4 ruling (say so rather than lose it silently). A
+                // seed note supersedes it, because that one is about THIS view right now.
+                if (seedNote.isEmpty() && echojay::kLiveViewControlBuilt)
+                    safeThis->chainListPanel.statusText = echojay::liveControlCoversLine();
                 if (seedNote.isNotEmpty())
                 {
                     safeThis->chainListPanel.statusText = pName + ": " + seedNote + ".";
