@@ -14281,14 +14281,36 @@ int main (int, char**)
             const RunInfo run { runId, "2026-10-21T19:00:02Z", 3, kathyCollection };
             const auto r1 = ensureRun (s, run), r1b = ensureRun (s, run);
             const auto bundle = work.getChildFile ("bundle"); bundle.getChildFile ("profiles").createDirectory();
-            // a compressor profile in the REAL shape (v1.1 ruling 10 reads it): the level convention, the ratio setting, the amount control and
-            // its curve - each position's input level per GR step - shifted by g dB (two testers g apart disagree by g)
-            auto realProfile = [] (const juce::String& id, const juce::String& schema, double g)
-            {   juce::String curve; int n = 0;
-                for (double norm : { 0.0, 0.5, 1.0 }) { curve << (n++ ? "," : "") << "{\"norm\": " << norm << ", \"display\": \"" << norm << "\", \"in_at_gr_dbfs\": {\"1\": " << (-20.0 + 10.0 * norm + g)
-                                                         << ", \"2\": " << (-18.5 + 10.0 * norm + g) << ", \"3\": " << (-17.0 + 10.0 * norm + g) << ", \"4\": null}}"; }
-                return "{\"schema\": \"" + schema + "\", \"plugin\": {\"plugin_id\": \"AudioUnit|" + id + "|1.0\"}, \"measured\": {\"level_ref\": \"sine_rms_dbfs\"}, \"topology\": \"threshold\", \"engage\": [],"
-                       " \"ratio\": {\"control\": \"Ratio\", \"curve\": [{\"norm\": 0.5, \"set\": \"4:1\", \"value\": 4.0}], \"fixed\": null}, \"amount\": {\"control\": \"Thresh\", \"curve\": [" + curve + "]}}"; };
+            // A REAL compressor profile (24 Oct, B: real validators judge real shapes): API-2500 (m) from the 20 Oct run, unchanged but for its
+            // identity - the scenario's plugin_id, name, vendor and version, no map_fp (the manifest entry carries the fingerprint) - and, for two
+            // testers g dB apart, every curve point shifted by g. Its tone check travels beside it (realToneCheck)
+            const auto realDir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/real_shape_24oct");
+            auto realProfile = [realDir] (const juce::String& id, const juce::String& schema, double g)
+            {   auto v = juce::JSON::parse (realDir.getChildFile ("api2500_m.comp_profile.json").loadFileAsString());
+                v.getDynamicObject()->setProperty ("schema", schema);
+                if (auto* pl = v.getProperty ("plugin", {}).getDynamicObject())
+                { pl->setProperty ("plugin_id", "AudioUnit|" + id + "|1.0"); pl->setProperty ("name", "Plug " + id); pl->setProperty ("manufacturer", "V"); pl->setProperty ("version", "1.0"); pl->removeProperty ("map_fp"); }
+                if (auto* tc = v.getProperty ("tone_check", {}).getDynamicObject()) { tc->setProperty ("product", "Plug " + id); tc->removeProperty ("map_fp"); }
+                if (const auto* c = v.getProperty ("amount", {}).getProperty ("curve", {}).getArray())
+                    for (const auto& pt : *c)
+                    {   if (auto* in = pt.getProperty ("in_at_gr_dbfs", {}).getDynamicObject())
+                            for (const auto& [k, x] : in->getProperties()) if (x.isDouble() || x.isInt()) in->setProperty (k, (double) x + g);
+                        if (auto* po = pt.getDynamicObject(); po != nullptr && (pt.getProperty ("eff_threshold_dbfs", {}).isDouble() || pt.getProperty ("eff_threshold_dbfs", {}).isInt()))
+                            po->setProperty ("eff_threshold_dbfs", (double) pt.getProperty ("eff_threshold_dbfs", 0.0) + g); }
+                return juce::JSON::toString (v); };
+            auto realToneCheck = [realDir] (const juce::String& id)
+            {   auto v = juce::JSON::parse (realDir.getChildFile ("api2500_m.tonecheck.json").loadFileAsString());
+                v.getDynamicObject()->setProperty ("product", "Plug " + id); v.getDynamicObject()->removeProperty ("map_fp"); return juce::JSON::toString (v); };
+            // a profile entry gets its tone check, as the engine packs it (the manifest's "tone_check" beside "profile")
+            auto withToneChecks = [&] (juce::var manifest, const juce::File& b)
+            {   if (const auto* a = manifest.getProperty ("profiles", {}).getArray())
+                    for (const auto& e : *a)
+                    {   const auto rel = e.getProperty ("profile", "").toString(); if (! rel.endsWith (".comp_profile.json")) continue;
+                        if (juce::JSON::parse (b.getChildFile (rel).loadFileAsString()).getProperty ("schema", "").toString() != "ej_comp_profile/1") continue;   // an unknown schema: no tone check (scenario 04's hold)
+                        const auto tcRel = rel.replace (".comp_profile.json", ".tonecheck.json");
+                        b.getChildFile (tcRel).replaceWithText (realToneCheck (e.getProperty ("plugin_id", "").toString().fromFirstOccurrenceOf ("|", false, false).upToFirstOccurrenceOf ("|", false, false)));
+                        e.getDynamicObject()->setProperty ("tone_check", tcRel); }
+                return manifest; };
             auto profileFile = [&] (const juce::String& id, const juce::String& schema)
             { const auto rel = "profiles/AudioUnit_" + id + "_1.0.comp_profile.json"; bundle.getChildFile (rel).replaceWithText (realProfile (id, schema, 0.0)); return rel; };
             // v1.1 (ruling 5): the server's queue - a run's last pack gives every plugin the check answered "need" for a result; this does it
@@ -14306,7 +14328,7 @@ int main (int, char**)
                 for (const auto& n : needs) ids[n] = { "V", "Plug " + juce::StringArray::fromTokens (n, "|", "")[1] };
                 ejmap::wizresults::emit (ejmap::wizresults::fromPack (juce::JSON::parse ("{}"), bundle, ri.runId, true, ids, {}, {}, needs), b, {}); return drain (ss, b, ri); };
             auto manifestWith = [&] (const juce::String& profilesJson, const juce::String& skippedJson)
-            { return juce::JSON::parse ("{\"profiles\": [" + profilesJson + "], \"skipped\": [" + skippedJson + "]}"); };
+            { return withToneChecks (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "], \"skipped\": [" + skippedJson + "]}"), bundle); };
             const auto m1 = manifestWith ("{\"product\": \"Plug aaaa0002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"map_fp\": \"fp2\", \"profile\": \"" + profileFile ("aaaa0002", "ej_comp_profile/1") + "\"},"
                                           "{\"product\": \"Plug aaaa0004\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0004|1.0\", \"map_fp\": \"fp4\", \"profile\": \"" + profileFile ("aaaa0004", "ej_comp_profile/1") + "\"}",
                                           "{\"product\": \"Plug aaaa0005\", \"plugin_id\": \"AudioUnit|aaaa0005|1.0\", \"state\": \"needs_licence\", \"why\": \"a licence window\"},"
@@ -14323,7 +14345,10 @@ int main (int, char**)
             check (r1.status == 201 && r1b.status == 200 && docsCp.size() == 3 && docsFin.size() == 5 && e1.added == 3 && e2.already == 3 && personalRefused.refused == 1 && personalRefused.added == 1
                    && st1.sent == 4 && ! st1.offline && box.pendingFiles().isEmpty() && box.count (box.sent()) == 4
                    && docsCp[0].resultId == resultIdFor (runId, "profile", "AudioUnit|aaaa0002|1.0") && docsCp[0].body.getProperty ("plugin", {}).getProperty ("vendor", "") == juce::var ("V")
-                   && docsCp[0].body.getProperty ("plugin", {}).getProperty ("fingerprint", "") == juce::var ("fp2") && docsCp[0].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 1,
+                   && docsCp[0].body.getProperty ("plugin", {}).getProperty ("fingerprint", "") == juce::var ("fp2") && docsCp[0].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 2   // 24 Oct: the real profile and its tone check
+                   && docsCp[0].body.getProperty ("files", {}).getProperty ("AudioUnit_aaaa0002_1.0.tonecheck.json", {}).hasProperty ("g_db")
+                   && docsCp[0].body.getProperty ("files", {}).getProperty ("AudioUnit_aaaa0002_1.0.comp_profile.json", {}).getProperty ("amount", {}).getProperty ("curve", {}).size() == 17   // the real API-2500 (m) shape
+                   && docsCp[0].body.getProperty ("files", {}).getProperty ("AudioUnit_aaaa0002_1.0.comp_profile.json", {}).getProperty ("plugin", {}).getProperty ("plugin_id", "") == juce::var ("AudioUnit|aaaa0002|1.0"),
                    "contract WZ-CONTRACT-3: one result per plugin - a checkpoint sends 3 of 5 (not 'measuring', not a draft-less not_measurable), the finish the rest, each once; sent " + juce::String (st1.sent));
 
             scenario ("02_offline_then_retry");
@@ -14376,7 +14401,11 @@ int main (int, char**)
                 bundle.getChildFile ("maps/fp_aaaa000d.json").replaceWithText (juce::JSON::toString (ejmap::wizard::paramMap ("Plug aaaa000d", "V", "aaaa000d", "1.0", "fp_aaaa000d", { { 0, "Cutoff" } }, "eq")));
                 bundle.getChildFile ("maps/fp_aaaa000f.json").replaceWithText (juce::JSON::toString (fullFor ("aaaa00ff")));   // another plugin's map
                 const auto filterRel = juce::String ("profiles/AudioUnit_aaaa000e_1.0.filter_profile.draft.json");
-                bundle.getChildFile (filterRel).replaceWithText ("{\"schema\": \"ej_filter_profile/1\", \"category\": \"filter\", \"plugin\": {\"plugin_id\": \"AudioUnit|aaaa000e|1.0\"}, \"filters\": [{\"verdict\": \"certified\"}]}");
+                {   // 24 Oct: the REAL filter draft (bx_cleansweep V2, 22 Oct), its identity rewritten to the scenario's plugin
+                    auto fv = juce::JSON::parse (realDir.getChildFile ("cleansweep_v2.filter_profile.draft.json").loadFileAsString());
+                    if (auto* pl = fv.getProperty ("plugin", {}).getDynamicObject())
+                    { pl->setProperty ("plugin_id", "AudioUnit|aaaa000e|1.0"); pl->setProperty ("name", "Plug aaaa000e"); pl->setProperty ("manufacturer", "V"); pl->setProperty ("version", "1.0"); pl->removeProperty ("map_fp"); }
+                    bundle.getChildFile (filterRel).replaceWithText (juce::JSON::toString (fv)); }
                 const auto mF = manifestWith ("{\"product\": \"Plug aaaa000c\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000c|1.0\", \"map_fp\": \"fp_aaaa000c\", \"map_file\": \"maps/fp_aaaa000c.json\", \"profile\": \"" + profileFile ("aaaa000c", "ej_comp_profile/1") + "\"},"
                                               "{\"product\": \"Plug aaaa000d\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000d|1.0\", \"map_fp\": \"fp_aaaa000d\", \"map_file\": \"maps/fp_aaaa000d.json\", \"profile\": \"" + profileFile ("aaaa000d", "ej_comp_profile/1") + "\"},"
                                               "{\"product\": \"Plug aaaa000f\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000f|1.0\", \"map_fp\": \"fp_aaaa000f\", \"map_file\": \"maps/fp_aaaa000f.json\", \"profile\": \"" + profileFile ("aaaa000f", "ej_comp_profile/1") + "\"},"
@@ -14449,7 +14478,7 @@ int main (int, char**)
                 ensureRun (s2, RunInfo { rid, "2026-10-21T19:00:02Z", 1, collection });
                 Outbox b2 { work.getChildFile (boxName) };
                 std::map<juce::String, ejmap::wizresults::Identity> ids; for (const auto& n : needs) ids[n] = { "V", "Plug " + juce::StringArray::fromTokens (n, "|", "")[1] };
-                ejmap::wizresults::emit (spanned (ejmap::wizresults::fromPack (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "]}"), bundle2, rid, true, ids, {}, {}, needs)), b2, {});
+                ejmap::wizresults::emit (spanned (ejmap::wizresults::fromPack (withToneChecks (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "]}"), bundle2), bundle2, rid, true, ids, {}, {}, needs)), b2, {});
                 drain (s2, b2, RunInfo { rid, "2026-10-21T19:00:02Z", 1, collection });
                 juce::Array<juce::var> q, o; juce::StringArray sids;
                 for (const auto& f : b2.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) sids.add (Outbox::resultIdOf (f));
@@ -14675,8 +14704,9 @@ int main (int, char**)
                 const bool otherLevel = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("measured", {}).getDynamicObject()->setProperty ("level_ref", "sine_peak_dbfs"); }));
                 const bool otherAmount = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("amount", {}).getDynamicObject()->setProperty ("control", "Input"); }));
                 const bool otherVersion = agreeOf (base, with (0.1, [] (juce::var& v) { v.getProperty ("plugin", {}).getDynamicObject()->setProperty ("plugin_id", "AudioUnit|aaaa7777|1.1"); }));
-                const bool twoPoints = agreeOf (base, with (0.1, [] (juce::var& v) { auto* c = v.getProperty ("amount", {}).getProperty ("curve", {}).getArray(); c->removeRange (1, 2);
-                                                                                     (*c)[0].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("3", juce::var()); }));
+                const bool twoPoints = agreeOf (base, with (0.1, [] (juce::var& v) {   // one position, two GR steps: two shared points
+                    auto* c = v.getProperty ("amount", {}).getProperty ("curve", {}).getArray(); c->removeRange (1, c->size() - 1);
+                    if (auto* in = (*c)[0].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) { int kept = 0; for (const auto& [k, x] : in->getProperties()) if (! x.isVoid() && ++kept > 2) in->setProperty (k, juce::var()); } }));
                 check (near && ! far && ! otherRatio && ! otherLevel && ! otherAmount && ! otherVersion && ! twoPoints,
                        "contract WZ-CONTRACT-17: compressor agreement - 0.3 dB agrees, 0.6 does not; a different ratio setting, level convention, amount control or version, or only 2 shared points, never agree");
             }
