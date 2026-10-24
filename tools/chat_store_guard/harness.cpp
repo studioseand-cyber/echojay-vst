@@ -1340,7 +1340,7 @@ int main()
 
         // A BEGIN WITH NO COPY REFUSES, AND SAYS WHY IN WORDS HE COULD READ.
         juce::String whyNot;
-        check (! pv.shadowBegin (uid, 0, "Tube-Tech CL 1B", nullptr, whyNot)
+        check (! pv.shadowBegin (uid, 0, "Tube-Tech CL 1B", nullptr, juce::MemoryBlock(), whyNot)
                && whyNot.isNotEmpty(),
                "SH1 a view with no copy of the plugin REFUSES and says why - the static picture "
                "stays, which is the plan's designed failure (§4) and not an error",
@@ -1976,6 +1976,108 @@ int main()
             check (! echojay::kLiveViewControlBuilt,
                    "SH13c ...which is still false in this build, so the block is on",
                    "control not built yet");
+        }
+
+        // ---- SH14: THE VIEW OPENS ON THE REAL PLUGIN'S SETTINGS, OR SAYS IT DID NOT ----------
+        //
+        // *"Today the copy keeps its starting settings, so its view and meters drift from the real
+        // one."*  FOLLOW layer 1 pulls them from the Link in the same request that asks for the
+        // tap. The decision about what arrived is a pure function so this can hold every road - a
+        // good chunk, an older Link that cannot send one, a plugin that refused, one over the cap -
+        // without a Link, a plugin or a window anywhere near it.
+        {
+            const auto good = echojay::shadowSeedDecision (true, 4096, {});
+            check (good.what == echojay::ShadowSeed::Apply && good.line.isEmpty(),
+                   "SH14 settings that arrived are APPLIED to the copy, and nothing is said",
+                   "4096 bytes -> apply");
+
+            const auto older = echojay::shadowSeedDecision (false, 0, {});
+            check (older.what == echojay::ShadowSeed::None
+                   && older.line.contains ("older build")
+                   && older.line.contains ("defaults"),
+                   "SH14a an older Link carries NEITHER settings nor a reason, and that is said as "
+                   "the Link's age - not as the plugin's fault and never silently",
+                   "\"" + older.line + "\"");
+
+            const auto refused = echojay::shadowSeedDecision (false, 0,
+                                     "this plugin refused to hand over its settings");
+            check (refused.what == echojay::ShadowSeed::None
+                   && refused.line.contains ("refused to hand over"),
+                   "SH14b the Link's OWN reason travels word for word, so the two processes cannot "
+                   "word one fact differently",
+                   "\"" + refused.line + "\"");
+
+            const auto tooBig = echojay::shadowSeedDecision (true,
+                                     LinkShm::kLinkTransferMaxSlotBytes + 1, {});
+            check (tooBig.what == echojay::ShadowSeed::None && tooBig.line.contains ("too large"),
+                   "SH14c the V2 refuses an over-cap chunk TOO, although the Link already refused "
+                   "before encoding - the refusal is before the apply, on both sides of the wire",
+                   "\"" + tooBig.line + "\"");
+
+            const auto empty = echojay::shadowSeedDecision (true, 0, {});
+            check (empty.what == echojay::ShadowSeed::None && empty.line.contains ("no settings"),
+                   "SH14d a state key carrying nothing is not an apply of nothing",
+                   "\"" + empty.line + "\"");
+        }
+
+        // ---- SH15: A PLUGIN THAT TOOK THE SESSION DOWN GETS NO SECOND LIVE VIEW --------------
+        //
+        // His ruling of 24 Oct: *"Approved, with the repeat-crash marker."*  A crash in the copy
+        // cannot be contained by a process boundary, so what is contained is the SECOND one. BOTH
+        // DIRECTIONS, because a one-way test ships either an unfalsifiable guard or an unpassable
+        // one: a clean call leaves nothing behind, and a marker left by a dead process refuses.
+        {
+            juce::PluginDescription d;
+            d.name             = "Tube-Tech CL 1B";
+            d.pluginFormatName = "AudioUnit";
+            d.fileOrIdentifier = "/Library/Audio/Plug-Ins/Components/FakeCL1B.component";
+
+            echojay::shadowAllowAgain (d);                 // a clean slate for this leg
+            juce::String why;
+
+            // KNOWN-GOOD: marked, returned, cleared. Nothing to consume, nothing refused.
+            const int mark = echojay::shadowMarkRisky (d, echojay::kShadowPhaseSeed());
+            check (mark != 0 && echojay::shadowMarkerFile().existsAsFile(),
+                   "SH15 the marker is on disk WHILE the risky call is in flight - a crash inside it "
+                   "leaves the name behind, which is the whole mechanism",
+                   "id=" + juce::String (mark));
+            echojay::shadowClearRisky (mark);
+            check (! echojay::shadowMarkerFile().existsAsFile(),
+                   "SH15a ...and it is gone the moment the call returns",
+                   "marker removed");
+            echojay::shadowConsumeDeadMarkers();
+            check (! echojay::shadowRefusedBecause (d, why),
+                   "SH15b a plugin that behaved is NOT refused (the known-good direction, without "
+                   "which this guard could never fail honestly)",
+                   "not refused");
+
+            // KNOWN-BAD: a marker file left by a process that is no longer running. 999999 is past
+            // this OS's pid ceiling, so kill(2) answers ESRCH and the file is unambiguously a dead
+            // process's - no sleeping, no racing a real pid.
+            echojay::shadowMarkerFile (999999)
+                .replaceWithText (juce::String (echojay::kShadowPhaseSeed()) + "\t"
+                                  + d.fileOrIdentifier + "\t" + d.name + "\n");
+            const int rows = echojay::shadowConsumeDeadMarkers();
+            check (rows == 1 && ! echojay::shadowMarkerFile (999999).existsAsFile(),
+                   "SH15c a marker whose process is dead becomes exactly one refusal row, and the "
+                   "marker file is consumed rather than read for ever",
+                   "rows=" + juce::String (rows));
+            why.clear();
+            check (echojay::shadowRefusedBecause (d, why)
+                   && why.contains ("Tube-Tech CL 1B")
+                   && why.contains (echojay::kShadowPhaseSeed())
+                   && why.contains ("Open it on the Link"),
+                   "SH15d ...and the live view is refused BY NAME, saying what it was doing and "
+                   "where to go instead",
+                   "\"" + why + "\"");
+
+            // IT REFUSES THE VIEW, NOT THE PLUGIN, and it is reversible from the card.
+            echojay::shadowAllowAgain (d);
+            why.clear();
+            check (! echojay::shadowRefusedBecause (d, why),
+                   "SH15e \"try again\" clears the row, so one bad night is not a permanent "
+                   "refusal of a plugin he uses in his rack",
+                   "cleared");
         }
 
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------
