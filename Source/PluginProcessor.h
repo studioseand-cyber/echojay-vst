@@ -1830,8 +1830,9 @@ public:
         walk for a run that only touched a Link (his 21:04: it had nothing and reported that as a
         failure). `slotsAfter` is the rack's size from the Link's own ack - the adds are its last
         `names.size()` slots, and the entry removes them top-first, each checked by name. */
-    void recordRemoteAddsForUndo (const juce::String& linkUid, const juce::StringArray& names,
-                                  int slotsAfter);
+    /** Record this run's remote adds so "Undo all" can take them back. BY NAME ONLY, no slot
+        numbers: the slot each one sits on is resolved at undo time (his 09:15 rule, 24 Oct 2026). */
+    void recordRemoteAddsForUndo (const juce::String& linkUid, const juce::StringArray& names);
 
     bool routeDialClosingToAgentCard (const juce::String& plugin, const juce::String& sentence);
 

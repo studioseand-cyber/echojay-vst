@@ -211,17 +211,24 @@ sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce:
     // The `chain` kind cannot serve: it restores a snapshot through rackFor(uid), and an unleased
     // Link has no host here to restore into.
     //
-    // So the inverse goes out the way the edit did: as ops. The reverse of an append is a remove of
-    // the slot it landed on, and the ack says how many slots the rack has afterwards, so the adds
-    // are the last K - removed in DESCENDING order, since removing a lower slot would shift the
-    // ones above it. Each remove carries the name it expects, and applyUndoEntry drops any whose
-    // slot no longer holds that plugin: an entry that would delete something else is worse than no
-    // entry at all (the history's own "found by identity, skipped when absent" rule).
+    // So the inverse goes out the way the edit did: as ops - a remove of the plugin this run put in.
     //
-    // ONLY FOR APPENDS, and said out loud otherwise: a positioned add does not land on the end, so
-    // the arithmetic below would name the wrong slot. That case is owed rather than guessed.
-    juce::StringArray appendedNames;
-    bool everyAddAppends = true, anyAdd = false;
+    // ---- AND IT IS RECORDED BY NAME, NOT BY POSITION (his 09:15 fault, 24 Oct 2026) ------------
+    //
+    // *"Undo all removed the WRONG plugin ... undo removes exactly the plugin instance the run
+    //  added, found by its identity, never by position."*
+    //
+    // What stood here recorded "the last K slots of the rack" and therefore recorded ONLY appends -
+    // a positioned add ("after slot 1") does not land on the end, so it was left out of the history
+    // altogether and said so in the log. That omission is the other half of his fault: a run with
+    // nothing of its own in the history sent "Undo all" walking back into earlier runs (the floor in
+    // EchoJayUndoHistory::undoNotBelow is what stops that now).
+    //
+    // With the slot arithmetic gone from the record there is nothing left to get wrong, so EVERY
+    // remote add is recorded, positioned or not, and the slot is resolved against the live rack when
+    // the undo runs - where "cannot be identified" means nothing is removed and he is told.
+    juce::StringArray addedNamesForUndo;
+    bool anyAdd = false;
     if (auto* oa = ops.getArray())
         for (const auto& ov : *oa)
             if (auto* oo = ov.getDynamicObject())
@@ -229,27 +236,24 @@ sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce:
                 const auto w = oo->getProperty ("op").toString().trim().toLowerCase();
                 if (w != "add") continue;
                 anyAdd = true;
-                if (oo->hasProperty ("slot")) { everyAddAppends = false; continue; }
-                appendedNames.add (oo->getProperty ("name").toString().trim());
+                addedNamesForUndo.add (oo->getProperty ("name").toString().trim());
             }
     const int seq = proc_.writeChainEditCommand (uid, ops, juce::var(), "agent", {}, intent);
     if (seq < 0) { if (cb) cb (false, "that rack would not take the change", {}); return; }
-    proc_.awaitChainAck (uid, seq, [this, uid, cb, appendedNames, everyAddAppends, anyAdd]
+    proc_.awaitChainAck (uid, seq, [this, uid, cb, addedNamesForUndo, anyAdd]
                          (bool ok, juce::String sentence, juce::String technical, int slotsAfter)
     {
+        juce::ignoreUnused (slotsAfter);   // the undo record carries no slot number any more
         if (ok && anyAdd)
         {
-            if (everyAddAppends && ! appendedNames.isEmpty() && slotsAfter >= appendedNames.size())
-                proc_.recordRemoteAddsForUndo (uid, appendedNames, slotsAfter);
+            if (! addedNamesForUndo.isEmpty())
+                proc_.recordRemoteAddsForUndo (uid, addedNamesForUndo);
             else
-                EchoJay_NSLog (("EJAgentHome: this change on " + uid + " is NOT recorded for undo - "
-                                + (everyAddAppends ? "the rack reported " + juce::String (slotsAfter)
-                                                     + " slot(s), fewer than the " + juce::String (appendedNames.size())
-                                                     + " added"
-                                                   : juce::String ("one of its adds names a position, so the "
-                                                                   "added plugins are not the last slots"))
-                                + ". \"Undo all\" will say it cannot take this one back rather than "
-                                  "remove the wrong slot (his 21:04)").toRawUTF8());
+                EchoJay_NSLog (("EJAgentHome: this change on " + uid + " put a plugin in but none of "
+                                "its adds carried a name, so there is nothing to identify later and "
+                                "nothing is recorded for undo. \"Undo all\" will say it cannot take "
+                                "this one back rather than remove a slot by number (his 09:15)")
+                               .toRawUTF8());
         }
         // ---- SEAN'S #3 (16 Oct 2026): TELL THE WINDOW THE RACK MOVED ---------------------------
         // The 14 Oct refresh sits on the BUILD path; an `add` takes this one, so nothing told the
@@ -411,11 +415,20 @@ sinks.undoOne = [this] (const juce::String& token, std::function<void (bool, juc
         auto& h = proc_.undoHistory();
         int steps = 0;
         juce::StringArray labels;
+        // ---- THE WALK CANNOT LEAVE THE RUN (his 09:15 fault, 24 Oct 2026) ---------------------
+        //
+        // *"Undo all removed the WRONG plugin."*  It removed an EchoJay EQ added before this run
+        // existed. The loop below was already bounded by the checkpoint, and that was not enough:
+        // a single h.undo() walks past entries it cannot apply and keeps going, so it crossed the
+        // checkpoint INSIDE one call and applied an entry from an earlier run. undoNotBelow gives
+        // the walker the floor, which is the only place that can hold it. A walk that cannot
+        // identify this run's own change now stops and says so, and removes nothing.
         while (h.undoDepth() > checkpointDepth_ && steps < 32)
         {
             const auto label = h.undoLabel();
-            if (! h.undo()) break;
-            if (h.lastApplyOk()) labels.add (label.isNotEmpty() ? label : juce::String ("a change"));
+            if (! h.undoNotBelow (checkpointDepth_)) break;
+            if (! h.lastApplyOk()) break;      // it refused rather than reach further back
+            labels.add (label.isNotEmpty() ? label : juce::String ("a change"));
             ++steps;
         }
         EchoJay_NSLog (("EJAgent: undo all walked the history back to the run's checkpoint - "

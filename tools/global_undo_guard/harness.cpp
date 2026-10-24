@@ -203,7 +203,7 @@ int main()
         auto& h2 = p2.undoHistory();
         const int before = h2.undoDepth();
         juce::StringArray names; names.add ("Millennia TCL-2"); names.add ("bx_opto"); names.add ("Vertigo VSM-3");
-        p2.recordRemoteAddsForUndo (uid, names, /*slotsAfter*/ 3);
+        p2.recordRemoteAddsForUndo (uid, names);
         check (h2.undoDepth() == before + 1,
                "RA1 three adds applied to a Link over the wire become ONE undo entry  (RED as it shipped at "
                "21:04: nothing at all was recorded, so \"Undo all\" walked an empty history and reported "
@@ -212,41 +212,194 @@ int main()
         check (h2.undoLabel().containsIgnoreCase ("3 plugins") || h2.undoLabel().containsIgnoreCase ("Link"),
                "RA1b ...with a label that says what it would take back",
                "\"" + h2.undoLabel() + "\"");
-        // THE ORDER AND THE IDENTITY. The entry is read directly, because what matters is the ops it would
-        // send: the TOP slot first (a lower remove would shift the ones above it), each naming the plugin it
-        // expects to find. Nothing is sent here - there is no Link in this process to send to.
+        // ---- NO SLOT NUMBER IS RECORDED AT ALL (his 09:15 fault, 24 Oct 2026) ------------------
+        //
+        // *"Undo all removed the WRONG plugin ... never by position."*  The entry used to carry the
+        // slots it assumed the adds had landed on. This asserts the record is NAMES, because a
+        // number that was right when it was written and wrong when it is read is the whole fault.
         {
-            echojay::UndoEntry probe; probe.kind = "remoteAdds"; probe.target = uid;
-            juce::Array<juce::var> ops;
-            for (int k = names.size() - 1; k >= 0; --k)
-            { auto* o = new juce::DynamicObject(); o->setProperty ("op", "remove");
-              o->setProperty ("slot", 3 - (names.size() - 1 - k)); o->setProperty ("expectName", names[k]);
-              ops.add (juce::var (o)); }
-            juce::String order;
-            for (const auto& ov : ops)
-                order << (order.isEmpty() ? "" : ", ") << "slot " << ov.getProperty ("slot", juce::var()).toString()
-                      << " (" << ov.getProperty ("expectName", juce::var()).toString() << ")";
-            check (ops.size() == 3
-                   && (int) ops.getUnchecked (0).getProperty ("slot", juce::var()) == 3
-                   && (int) ops.getUnchecked (2).getProperty ("slot", juce::var()) == 1,
-                   "RA2 ...and it takes them back TOP SLOT FIRST, so no remove shifts a slot a later remove "
-                   "still names", order);
+            const auto* top = h2.top();
+            bool anySlotNumber = false, allNames = top != nullptr;
+            if (top != nullptr)
+                if (auto* a = top->before.getArray())
+                {
+                    allNames = ! a->isEmpty();
+                    for (const auto& ov : *a)
+                    {
+                        if (auto* oo = ov.getDynamicObject(); oo != nullptr && oo->hasProperty ("slot"))
+                            anySlotNumber = true;
+                        if (ov.toString().trim().isEmpty()) allNames = false;
+                    }
+                }
+            check (! anySlotNumber && allNames,
+                   "RA2 the recorded entry carries the NAMES it added and no slot number at all  "
+                   "(RED as it shipped at 09:15: it recorded \"the last K slots\", so a positioned "
+                   "add named somebody else's plugin and \"Undo all\" removed his EchoJay EQ)",
+                   anySlotNumber ? juce::String ("a slot number is still in the record")
+                                 : (allNames ? "names only" : "the record is not a list of names"));
         }
+
         // AND THE REFUSAL: this process holds no Link, so the entry's target is absent. An undo that cannot
         // reach its rack says so and changes nothing - never a remove sent at a rack it cannot see.
         {
             echojay::UndoEntry e; e.kind = "remoteAdds"; e.target = "nosuchlink";
-            juce::Array<juce::var> ops;
-            auto* o = new juce::DynamicObject();
-            o->setProperty ("op", "remove"); o->setProperty ("slot", 1); o->setProperty ("expectName", "bx_opto");
-            ops.add (juce::var (o));
-            e.before = juce::var (ops);
+            juce::Array<juce::var> added; added.add (juce::var ("bx_opto"));
+            e.before = juce::var (added);
             const bool forward = p2.applyUndoEntry (e, /*toBefore*/ false);
             check (! forward,
                    "RA3 ...and REDO is refused outright: putting a plugin back needs its settings, which this "
                    "entry does not carry, so it says it cannot rather than adding a bare copy");
+            const bool backWithNoRack = p2.applyUndoEntry (e, /*toBefore*/ true);
+            check (! backWithNoRack,
+                   "RA3b ...and an UNDO against a rack this instance cannot read removes nothing: with no "
+                   "rack there is no identity to check, and the old arm fell through to removing by the "
+                   "number it had written down");
         }
         h2.clear();
+    }
+
+    // ---- HIS 09:15 FAULT (24 Oct 2026): UNDO ALL REMOVED THE WRONG PLUGIN -------------------------
+    //
+    // *"On the Link Aitch_4_01 (rack: EchoJay EQ, UnFairchild, Mixland Vac Attack, SSL Native X-Saturator),
+    //  "add bx_opto for about 2 dB" added bx_opto "after slot 1" (slot 2). I pressed Undo all on that card:
+    //  it removed the EchoJay EQ from slot 1 and left the bx_opto."*
+    //
+    // His rule: *"undo removes exactly the plugin instance the run added, found by its identity ... never
+    // by position. If it can't identify the instance for certain, it removes nothing and says so plainly."*
+    //
+    // THE DECISION IS A FUNCTION NOW, so these legs are his racks, constructed and asked directly -
+    // positioned, moved, gone and duplicated. The old road had none of this reachable from a test, which is
+    // how a remove-by-number survived to delete something of his.
+    {
+        using echojay::planRemoteUndoRemoves;
+        using O = echojay::RemoteUndoPlan::Outcome;
+        const auto rack = [] (std::initializer_list<const char*> names)
+        { juce::StringArray a; for (auto* n : names) a.add (n); return a; };
+        const auto added = [] (std::initializer_list<const char*> names)
+        { juce::StringArray a; for (auto* n : names) a.add (n); return a; };
+
+        // HIS EXACT RACK AND HIS EXACT ADD: bx_opto went in at slot 2 by position, so the slot a
+        // top-of-rack record would have named (5) holds the X-Saturator. By identity it is slot 2.
+        {
+            const auto plan = planRemoteUndoRemoves (
+                rack ({ "EchoJay EQ", "bx_opto", "UnFairchild", "Mixland Vac Attack", "SSL Native X-Saturator" }),
+                true, added ({ "bx_opto" }));
+            check (plan.outcome == O::Ok && plan.slots1Based.size() == 1 && plan.slots1Based[0] == 2,
+                   "RU1 a POSITIONED add is taken back from the slot it actually landed on  (RED as it "
+                   "shipped at 09:15: a positioned add was recorded as the top slot or not at all, and "
+                   "\"Undo all\" removed his EchoJay EQ from slot 1 instead)",
+                   plan.outcome == O::Ok ? "slot " + juce::String (plan.slots1Based.isEmpty() ? -1 : plan.slots1Based[0])
+                                         : "outcome was not Ok");
+        }
+        // THE RACK CHANGED IN BETWEEN, which is the case he asked for by name: the EQ was removed after
+        // the add, so bx_opto now sits at slot 1. Identity follows it; a number would now point at it
+        // only by luck and at its neighbour the next time.
+        {
+            const auto plan = planRemoteUndoRemoves (
+                rack ({ "bx_opto", "UnFairchild", "Mixland Vac Attack", "SSL Native X-Saturator" }),
+                true, added ({ "bx_opto" }));
+            check (plan.outcome == O::Ok && plan.slots1Based.size() == 1 && plan.slots1Based[0] == 1,
+                   "RU2 ...and when the rack has MOVED since the add, the plugin is still found - at its "
+                   "new slot, not the one it was added at",
+                   plan.outcome == O::Ok ? "slot " + juce::String (plan.slots1Based.isEmpty() ? -1 : plan.slots1Based[0])
+                                         : "outcome was not Ok");
+        }
+        // TWO COPIES: the wire carries no instance id, so this cannot tell them apart. His rule says
+        // remove nothing - and the WHOLE entry, not just the ambiguous name.
+        {
+            const auto plan = planRemoteUndoRemoves (
+                rack ({ "bx_opto", "UnFairchild", "bx_opto", "Mixland Vac Attack" }),
+                true, added ({ "bx_opto", "Mixland Vac Attack" }));
+            check (plan.outcome == O::Ambiguous && plan.slots1Based.isEmpty(),
+                   "RU3 ...and with the same plugin on the rack TWICE nothing at all is removed - not even "
+                   "the names it could identify, because a half-undo nobody asked for is worse than none  "
+                   "(his rule: if it cannot be identified for certain, it removes nothing and says so)",
+                   "outcome " + juce::String ((int) plan.outcome) + ", "
+                   + juce::String (plan.slots1Based.size()) + " slot(s) would have been removed");
+            check (plan.ambiguous.size() == 1 && plan.ambiguous[0].containsIgnoreCase ("slot 1")
+                   && plan.ambiguous[0].containsIgnoreCase ("slot 3"),
+                   "RU3b ...and it says WHERE the copies are, so the line he reads names the ambiguity",
+                   plan.ambiguous.joinIntoString ("; "));
+        }
+        // ALREADY GONE: he removed it himself. Nothing to do, and nothing taken in its place.
+        {
+            const auto plan = planRemoteUndoRemoves (
+                rack ({ "EchoJay EQ", "UnFairchild" }), true, added ({ "bx_opto" }));
+            check (plan.outcome == O::NothingLeft && plan.slots1Based.isEmpty()
+                   && plan.gone.size() == 1,
+                   "RU4 ...and a plugin he has already removed himself leaves NOTHING to remove - never "
+                   "the slot that number used to mean", "outcome " + juce::String ((int) plan.outcome));
+        }
+        // AND THE ORDER, for a multi-add: descending, so no remove shifts a slot a later one names.
+        {
+            const auto plan = planRemoteUndoRemoves (
+                rack ({ "EchoJay EQ", "Millennia TCL-2", "UnFairchild", "Vertigo VSM-3" }),
+                true, added ({ "Millennia TCL-2", "Vertigo VSM-3" }));
+            check (plan.outcome == O::Ok && plan.slots1Based.size() == 2
+                   && plan.slots1Based[0] == 4 && plan.slots1Based[1] == 2,
+                   "RU5 ...and several adds come back TOP SLOT FIRST, so no remove shifts a slot a later "
+                   "remove still names",
+                   plan.slots1Based.size() == 2 ? "slots " + juce::String (plan.slots1Based[0]) + " then "
+                                                  + juce::String (plan.slots1Based[1])
+                                                : "resolved " + juce::String (plan.slots1Based.size()) + " slot(s)");
+        }
+    }
+
+    // ---- AND THE WALK STOPS AT THE RUN'S OWN BOUNDARY (his 09:15 fault, the destructive half) -----
+    //
+    // *"it removed the EchoJay EQ from slot 1 and left the bx_opto."*  His log: "undo all walked the
+    // history back to the run's checkpoint - 1 step(s), depth now 0 (the run started at 4)". FOUR entries
+    // from earlier runs were popped and one was applied. step() walks past entries it cannot apply - right
+    // for a single press, catastrophic for "undo this run" - so the floor now lives in the walker.
+    //
+    // THE SAME WALKER SERVES THE MAIN RACK AND A LINK, which is why this leg is built from plain entries
+    // rather than from either road: what is asserted is the boundary, and the boundary is shared.
+    {
+        echojay::UndoHistory h;
+        juce::StringArray applied;
+        juce::String saidToTheUser;
+        // Entries 1-2 are "earlier runs" and CAN be applied; 3 is this run's and CANNOT (its target has
+        // moved, which is exactly the state his positioned add left behind).
+        h.apply = [&applied] (const echojay::UndoEntry& e, bool) -> bool
+        {
+            if (e.label == "this run's own change") return false;   // unidentifiable
+            applied.add (e.label);
+            return true;
+        };
+        h.status = [&saidToTheUser] (const juce::String& line) { saidToTheUser = line; };
+        for (auto* label : { "an earlier run's add", "another earlier add", "this run's own change" })
+        {
+            echojay::UndoEntry e; e.kind = "alias"; e.target = "x"; e.label = label; e.before = "a"; e.after = "b";
+            h.push (std::move (e));
+        }
+        const int checkpointDepth = 2;          // the run started with two entries already there
+        const bool moved = h.undoNotBelow (checkpointDepth);
+        check (moved && applied.isEmpty() && ! h.lastApplyOk(),
+               "UF1 a walk that cannot identify THIS RUN's change stops at the run's boundary and applies "
+               "NOTHING  (RED as it shipped at 09:15: it walked past its own dead entry into the history "
+               "from before the run and removed an EchoJay EQ nobody had asked about)",
+               applied.isEmpty() ? "nothing applied" : "applied: " + applied.joinIntoString (", "));
+        check (h.undoDepth() == 3,
+               "UF1b ...and it spends nothing: the run's entry and the earlier ones are all still there, so "
+               "a press that could do nothing has not emptied his history",
+               "depth " + juce::String (h.undoDepth()));
+        check (saidToTheUser.containsIgnoreCase ("could not undo")
+               && saidToTheUser.containsIgnoreCase ("will not remove anything else"),
+               "UF1c ...and it SAYS SO plainly, which is the half of his rule that is not about removing",
+               "\"" + saidToTheUser + "\"");
+        // THE OTHER DIRECTION, so this is a floor and not an off switch: an entry inside the run that CAN
+        // be applied still is, and the walk still stops there.
+        {
+            echojay::UndoEntry e; e.kind = "alias"; e.target = "x"; e.label = "a change this run can undo";
+            e.before = "a"; e.after = "b";
+            h.push (std::move (e));
+            const bool ok = h.undoNotBelow (checkpointDepth);
+            check (ok && h.lastApplyOk() && applied.size() == 1
+                   && applied[0] == "a change this run can undo",
+                   "UF2 ...and an entry of this run's that CAN be identified is undone exactly as before - "
+                   "the floor stops the walk leaving the run, it does not stop the run being undone",
+                   applied.joinIntoString (", "));
+        }
     }
 
     // ---- 11 Oct 2026 (Sean's leg, the removals): ONE UNDO WALKS V2 AND LINK EDITS IN ORDER -------------

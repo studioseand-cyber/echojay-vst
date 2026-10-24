@@ -7472,36 +7472,54 @@ void EchoJayProcessor::appendChatEntry (ChatEntry e, const juce::String& chatId,
     the dial, so a plugin in it is a dial this run owns and a plugin outside it is somebody's hand on
     a knob. A hand-driven dial keeps the chat line it has always had - the rule is about the run's
     dials, and taking every dial's sentence into a card that may not exist would lose it.           */
+/** ---- WHAT AN UNDO OF A REMOTE ADD REMEMBERS (his 09:15 fault, 24 Oct 2026) ------------------
+
+    *"Undo all removed the WRONG plugin ... Rule: undo removes exactly the plugin instance the run
+     added, found by its identity (the slot's instance id or uid recorded at the add), never by
+     position. If it can't identify the instance for certain, it removes nothing and says so."*
+
+    THIS ENTRY NO LONGER CARRIES A POSITION AT ALL. It used to record the slot the add was assumed
+    to have landed on - the last K slots of the rack - which was wrong twice over: a POSITIONED add
+    ("after slot 1") does not land on the end, so the recorded number named somebody else's plugin;
+    and even an append's number stops being true the moment anything below it is removed. A number
+    that was right when it was written and wrong when it is read is the shape this house calls a row
+    that outlives the fact it was drawn from.
+
+    THE IDENTITY THE WIRE ACTUALLY CARRIES is the plugin at a slot: the sidecar publishes each
+    slot's name (and its fp, uid and version, which are the PLUGIN's identity, not the instance's -
+    two bx_optos in one rack share all three). So the strongest honest claim is "the slot that holds
+    this name", resolved at UNDO time against the rack as it is then. When exactly one slot holds it,
+    that is the instance; when none does, it has already gone; when two do, this cannot tell them
+    apart and must not guess. The last two cases remove nothing and say so, which is his rule's
+    second half and the reason this is safe without a per-instance id on the wire.
+
+    AND A POSITIONED ADD IS RECORDED NOW. It was deliberately left out (the note that stood here said
+    "that case is owed rather than guessed") because the old arithmetic could not place it. With no
+    arithmetic left there is nothing to get wrong, so every remote add this run makes is recorded.  */
 void EchoJayProcessor::recordRemoteAddsForUndo (const juce::String& linkUid,
-                                                const juce::StringArray& names, int slotsAfter)
+                                                const juce::StringArray& names)
 {
-    if (linkUid.isEmpty() || names.isEmpty() || slotsAfter < names.size()) return;
-    // DESCENDING, so a remove never shifts a slot a later remove still names. The adds are the last
-    // `names.size()` slots: the last name is the top slot.
-    juce::Array<juce::var> undoOps;
-    for (int k = names.size() - 1; k >= 0; --k)
-    {
-        auto* o = new juce::DynamicObject();
-        o->setProperty ("op",   "remove");
-        o->setProperty ("slot", slotsAfter - (names.size() - 1 - k));   // 1-based, top first
-        o->setProperty ("expectName", names[k]);    // read by applyUndoEntry, never sent to the Link
-        undoOps.add (juce::var (o));
-    }
+    if (linkUid.isEmpty() || names.isEmpty()) return;
+    juce::StringArray clean;
+    for (const auto& n : names) if (n.trim().isNotEmpty()) clean.addIfNotAlreadyThere (n.trim());
+    if (clean.isEmpty()) return;
     echojay::UndoEntry e;
     e.kind   = "remoteAdds";
     e.target = linkUid;
-    e.label  = names.size() == 1 ? "add " + names[0]
-                                 : "add " + juce::String (names.size()) + " plugins on a Link";
-    e.before = juce::var (undoOps);     // going back: remove what was added
+    e.label  = clean.size() == 1 ? "add " + clean[0]
+                                 : "add " + juce::String (clean.size()) + " plugins on a Link";
+    // THE NAMES, and nothing else. The slots are resolved when the undo runs.
+    juce::Array<juce::var> added;
+    for (const auto& n : clean) added.add (juce::var (n));
+    e.before = juce::var (added);       // going back: remove the plugins these name
     e.after  = juce::var();             // forward again is not offered: a re-add would need the settings
     undoHistory_.push (std::move (e));
-    EchoJay_NSLog (("EJUndo: recorded " + juce::String (names.size()) + " remote add(s) on " + linkUid
-                    + " as ONE undo entry - the rack now holds " + juce::String (slotsAfter)
-                    + " slot(s), so going back removes slot(s) " + juce::String (slotsAfter)
-                    + " down to " + juce::String (slotsAfter - names.size() + 1)
-                    + ", each checked against the name it should hold. \"Undo all\" walks the same "
-                      "history, so a run that only touched a Link now has something to walk (his "
-                      "21:04: it had nothing, and said so as a failure)").toRawUTF8());
+    EchoJay_NSLog (("EJUndo: recorded " + juce::String (clean.size()) + " remote add(s) on " + linkUid
+                    + " as ONE undo entry, BY NAME and with no slot number in it ("
+                    + clean.joinIntoString (", ") + ") - the slot each one sits on is found when the "
+                      "undo runs, so a rack that has moved since cannot make this remove the wrong "
+                      "plugin (his 09:15). \"Undo all\" walks the same history, so a run that only "
+                      "touched a Link has something to walk (his 21:04)").toRawUTF8());
 }
 
 bool EchoJayProcessor::routeDialClosingToAgentCard (const juce::String& plugin,
@@ -7666,39 +7684,71 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
         if (! toBefore) { lastUndoStatus_ = "that add cannot be put back from here"; return false; }
         auto* arr = v.getArray();
         if (arr == nullptr || arr->isEmpty()) return false;
-        // IDENTITY BEFORE REMOVAL. The slot a remove names must still hold the plugin this entry
-        // added; if the rack has moved under it, that op is DROPPED with a line rather than deleting
-        // whatever is there now - the same rule the `chain` kind follows when its target has gone.
-        juce::Array<juce::var> send;
-        juce::StringArray skipped;
-        const auto it = linkRackCache.find (e.target);
+        // ---- FOUND BY IDENTITY, AT THE MOMENT OF THE UNDO (his 09:15 rule, 24 Oct 2026) --------
+        //
+        // *"undo removes exactly the plugin instance the run added, found by its identity ... never
+        //  by position. If it can't identify the instance for certain, it removes nothing and says
+        //  so plainly."*
+        //
+        // The entry carries NAMES (recordRemoteAddsForUndo). The decision itself is
+        // echojay::planRemoteUndoRemoves, a pure function the guard drives with racks that have
+        // moved, shrunk and gained a duplicate - because this fault was an ordering decision in a
+        // road no test could reach, which is the third time that has cost something here.
+        juce::StringArray addedNames;
         for (const auto& ov : *arr)
+            if (ov.toString().trim().isNotEmpty()) addedNames.add (ov.toString().trim());
+
+        const auto it = linkRackCache.find (e.target);
+        const bool readable = it != linkRackCache.end() && it->second.valid;
+        juce::StringArray rackNames;
+        if (readable)
+            for (const auto& sl : it->second.rack.slots) rackNames.add (sl.name);
+
+        const auto plan = echojay::planRemoteUndoRemoves (rackNames, readable, addedNames);
+        using O = echojay::RemoteUndoPlan::Outcome;
+
+        if (plan.outcome == O::RackUnreadable)
         {
-            auto* oo = ov.getDynamicObject(); if (oo == nullptr) continue;
-            const int slot1 = (int) oo->getProperty ("slot");
-            const auto want = oo->getProperty ("expectName").toString().trim();
-            if (want.isNotEmpty() && it != linkRackCache.end() && it->second.valid)
-            {
-                const auto& sl = it->second.rack.slots;
-                const bool holds = slot1 >= 1 && slot1 <= (int) sl.size()
-                                && sl[(size_t) (slot1 - 1)].name.trim().equalsIgnoreCase (want);
-                if (! holds) { skipped.add (want + " (slot " + juce::String (slot1) + ")"); continue; }
-            }
-            auto* clean = new juce::DynamicObject();      // the wire never sees expectName
+            EchoJay_NSLog (("EJUndo: remote undo on " + e.target + " REFUSED - that rack is not "
+                            "readable from here, so nothing can be identified and nothing is removed "
+                            "(his 09:15 rule)").toRawUTF8());
+            lastUndoStatus_ = "I cannot read that rack right now, so I left it alone";
+            return false;
+        }
+        if (plan.outcome == O::Ambiguous)
+        {
+            EchoJay_NSLog (("EJUndo: remote undo on " + e.target + " REMOVES NOTHING - "
+                            + juce::String (plan.ambiguous.size()) + " of the plugin(s) this run "
+                              "added now appears more than once on that rack ("
+                            + plan.ambiguous.joinIntoString ("; ") + "), and the wire carries no "
+                              "instance id to tell the copies apart. Removing either would be a "
+                              "guess, and a guess is what took his EchoJay EQ").toRawUTF8());
+            lastUndoStatus_ = plan.ambiguous.size() == 1
+                ? "there is more than one of that plugin on the rack now, so I cannot tell which one "
+                  "I added - I have left them all alone"
+                : "some of those plugins appear more than once on that rack now, so I cannot tell "
+                  "which ones I added - I have left them all alone";
+            return false;
+        }
+        if (! plan.gone.isEmpty())
+            EchoJay_NSLog (("EJUndo: remote undo on " + e.target + " - "
+                            + juce::String (plan.gone.size()) + " of the plugin(s) this run added is "
+                              "no longer on that rack (" + plan.gone.joinIntoString (", ")
+                            + "); nothing is removed in its place").toRawUTF8());
+        if (plan.outcome == O::NothingLeft)
+        {
+            lastUndoStatus_ = plan.gone.isEmpty() ? "there was nothing to remove"
+                                                  : "what this run added is no longer on that rack, "
+                                                    "so I left it alone";
+            return false;
+        }
+        juce::Array<juce::var> send;
+        for (auto slot1 : plan.slots1Based)   // already descending
+        {
+            auto* clean = new juce::DynamicObject();      // the wire sees a plain remove
             clean->setProperty ("op", "remove");
             clean->setProperty ("slot", slot1);
             send.add (juce::var (clean));
-        }
-        if (! skipped.isEmpty())
-            EchoJay_NSLog (("EJUndo: remote undo on " + e.target + " DROPPED "
-                            + juce::String (skipped.size()) + " remove(s) - the slot no longer holds what "
-                              "this entry added: " + skipped.joinIntoString ("; ")
-                            + ". Nothing else is removed in their place").toRawUTF8());
-        if (send.isEmpty())
-        {
-            lastUndoStatus_ = skipped.isEmpty() ? "there was nothing to remove"
-                                                : "that rack has changed since, so I left it alone";
-            return false;
         }
         const int seq = writeChainEditCommand (e.target, juce::var (send), juce::var(),
                                                "undo (the agent's adds on this Link)", {});
