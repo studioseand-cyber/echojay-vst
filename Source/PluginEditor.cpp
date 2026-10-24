@@ -36830,9 +36830,16 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
             // THE COPY, through the ONE instantiate site, on the message thread, with the plan's
             // bound: a creation that never calls back leaves `shadowAsking_` set and nothing else,
             // and the next selection clears it.
-            safeThis->processorRef.getChainHost().asyncCreatePlugin (desc,
-                [safeThis, uid, slot0, pName] (std::unique_ptr<juce::AudioPluginInstance> inst,
-                                               const juce::String& loadErr)
+            // ---- A PARKED COPY COMES BACK RATHER THAN A NEW ONE (his 14:27 crash, 24 Oct) ---
+            //
+            // The live view no longer disposes its copies (EJShadowKeep.h, Sean's 6 Oct ruling), so
+            // a close-and-reopen of the same slot would otherwise instantiate a second copy of a
+            // plugin whose first copy is still alive and must stay alive. Reuse is what makes that
+            // bounded: one spare per plugin, handed back here. It is also the faster road - no
+            // instantiation, so the picture comes up at once.
+            auto startCopy = [safeThis, uid, slot0, pName]
+                             (std::unique_ptr<juce::AudioPluginInstance> inst,
+                              const juce::String& loadErr)
             {
                 if (safeThis == nullptr) return;
                 safeThis->shadowAsking_ = false;
@@ -36877,7 +36884,19 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                                     "(nothing playing, or the slot is not in the Link's graph)")
                                    .toRawUTF8());
                 });
-            });
+            };
+
+            if (auto reused = echojay::shadowTakeParked (desc))
+            {
+                EchoJay_NSLog (("EJShadow: reusing the copy of \"" + pName + "\" this V2 already "
+                                "owns - it was parked when the last view came down rather than "
+                                "disposed, so there is no second instance of it in this process "
+                                "and nothing to instantiate").toRawUTF8());
+                safeThis->shadowAsking_ = false;
+                startCopy (std::move (reused), {});
+                return;
+            }
+            safeThis->processorRef.getChainHost().asyncCreatePlugin (desc, startCopy);
         });
     };
     (*poll) (25);                                   // 25 x 120 ms = 3 s, then it gives up and says so
@@ -36888,6 +36907,26 @@ void EchoJayEditor::shadowStopIfRunning (const juce::String& why)
     const bool wasRunning = processorRef.shadowRunning();
     const auto uid = wasRunning ? processorRef.shadowUid() : shadowWantUid_;
     shadowWantUid_.clear(); shadowWantSlot_ = -1; shadowAsking_ = false;
+    // ---- THE EDITOR GOES BEFORE ITS PROCESSOR (his 14:27 crash, 24 Oct 2026) ------------------
+    //
+    // This was the second half of that crash and it is a use-after-free however the first half is
+    // settled. The copy's editor is owned by the PANEL, and both roads here used to free the copy
+    // first: the window-closing road runs this from the top of ~EchoJayEditor, while chainListPanel
+    // is still a live member destroyed afterwards, and the slot-switch road runs it from
+    // onSelectSlot, which selectSlot calls BEFORE showInline does its close-before-open. Either
+    // way ~AudioProcessorEditor then called editorBeingDeleted on freed memory - and on his
+    // machine that editor was a Softube Cocoa view being torn down against a dead AU.
+    //
+    // Closed here, where the one road that takes a live view down is, rather than at each caller:
+    // a rule that has to be remembered three times is a rule that will be missed once. The close
+    // itself raises a PluginCallWindow (closeInline's own note), so nothing renders during it.
+    if (wasRunning && chainListPanel.anyEditorOpen())
+    {
+        EchoJay_NSLog ("EJShadow: closing the copy's editor BEFORE its instance goes - an editor "
+                       "outliving its processor is a use-after-free, and on a Softube view it is "
+                       "his 14:27 crash (24 Oct 2026)");
+        chainListPanel.closeAllEditors();
+    }
     processorRef.shadowEnd();
     // ...AND THE LINK STOPS WRITING. Without this the tap keeps copying a block per block for a
     // view nobody is looking at - "the cost of the feature when it is not on screen is zero, not

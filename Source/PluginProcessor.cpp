@@ -4378,6 +4378,10 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
 
     // PREPARED BEFORE IT IS INSTALLED: the audio thread must never meet a plugin that has not seen
     // prepareToPlay (the audition's rule, and the same words are in ShadowView::start's contract).
+    // UN-SUSPENDED FIRST, because this copy may be a PARKED one coming back (EJShadowKeep.h): the
+    // keeper suspends and releases every copy it takes in, so a reused one arrives inert, and a
+    // fresh one is unaffected by asking.
+    inst->suspendProcessing (false);
     inst->prepareToPlay (hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
                          hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
     if (! shadowView_.start (std::move (inst), shadowRingMap_, uid, slot0, pluginName, whyNot))

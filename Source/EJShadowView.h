@@ -39,6 +39,7 @@
 #include "EJShadowTap.h"
 #include "EJPluginCallWindow.h"   // his 08:58 crash, 24 Oct: no render while we are inside a plugin
 #include "EJShadowChannels.h"  // his 12:14 crash, 24 Oct: an unfed key bus is a null pointer
+#include "EJShadowKeep.h"      // his 14:27 crash, 24 Oct: a hosted AU is never disposed mid-session
 
 namespace echojay
 {
@@ -176,20 +177,37 @@ public:
     }
 
     /** Take it down. The audio thread may be inside pump(), so the flag goes first and the
-        instance is released under the lock the audio thread only tries - never while it holds it.
+        instance is let go of under the lock the audio thread only tries - never while it holds it.
         The RING is not unmapped here: its owner (the processor, which mapped the file) does that,
         and only after this has returned. */
     void stop()
     {
         on_.store (false, std::memory_order_release);
-        std::unique_ptr<juce::AudioProcessor> dying;
+        std::unique_ptr<juce::AudioProcessor> leaving;
         {
             const juce::SpinLock::ScopedLockType sl (lock_);
-            dying = std::move (inst_);
+            leaving = std::move (inst_);
             ring_ = nullptr;
             keyPlan_.clear();   // the plan belongs to the copy and dies with it
         }
-        dying.reset();                      // destroyed on THIS thread, outside the lock
+        // ---- IT IS NEVER DESTROYED HERE (his 14:27 crash, 24 Oct 2026) -------------------------
+        //
+        // This line was `dying.reset()`. Sean's ruling of 6 Oct says a hosted third-party AU is
+        // never disposed mid-session, because a disposed Softube CL 1B left an NSWindow observer
+        // registered and a notification 44 s later went into it; the borrow pool has obeyed that
+        // since, and his log of 24 Oct shows this road disposing one in the line above the pool
+        // parking one. Two minutes later his Logic died inside that plugin's own code, on the main
+        // thread, under CoreFoundation's notification callout. The whole account is in
+        // EJShadowKeep.h, including the part where the bench could NOT reproduce it.
+        juce::String whereItWent;
+        const auto was = name_;
+        if (echojay::shadowKeepCopy (std::move (leaving), whereItWent))
+            EchoJay_NSLog (("EJShadow: the copy of \"" + was + "\" is NOT disposed - "
+                            + whereItWent + ". A hosted third-party AU is never disposed "
+                            "mid-session (his 14:27 crash, and Sean's ruling of 6 Oct)")
+                           .toRawUTF8());
+        else
+            leaving.reset();        // ours, and ours tear down safely - the only disposal left here
         uid_.clear(); slot0_ = -1; name_.clear();
         grDb_.store (0.0f, std::memory_order_relaxed);
         inDb_.store (-200.0f, std::memory_order_relaxed);
