@@ -44,6 +44,21 @@
 //   selfkey_big  the fix, then ONE block larger than the prepared block, so the maximum-frames
 //              question is asked again without the crashing layout confusing the answer.
 //
+// ---- HIS 14:27 CRASH, 24 Oct: THE TEARDOWN, NOT THE RENDER ---------------------------------------
+// The fourth live-view crash died on the MAIN thread with no EchoJay frame on it at all: Softube's
+// own code, under CoreFoundation's notification callout, reading null+0x17. The condition was laid
+// 108 s earlier, when the V2's window closed: the live copy was DISPOSED (ShadowView::stop ended in
+// dying.reset()) while its Cocoa view was still parented in the panel, so the AU was freed first
+// and its editor torn down afterwards against freed memory. Sean's ruling of 6 Oct already forbids
+// the first half of that - *"a hosted third-party AU is never disposed mid-session (the 18:32
+// Softube observer crash)"* - and the borrow pool has obeyed it since; the live view never did.
+//
+//   teardown       the product's ordering: a copy rendering with its editor open, then the INSTANCE
+//                  freed while the editor still lives, then the editor, then a SECOND instance with
+//                  its own view while window notifications fly. This is the leg that has to crash.
+//   teardown_safe  the fix's ordering: the EDITOR first, then the instance KEPT (never disposed),
+//                  then the same second instance and the same notifications. Has to survive.
+//
 // Exit 0 = it survived the whole duration. Any signal = the leg reproduced a crash, and the runner
 // reports which leg and how many seconds in.
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
@@ -160,6 +175,17 @@ struct Renderer final : public juce::Thread
     std::atomic<juce::int64> framesDone { 0 };
 };
 
+/** A never-freed store, the same discipline ChainHost::keepHostedNodeForever uses and for the same
+    reason: a function-local static VECTOR would be destroyed during process exit and would dispose
+    the plugin there instead, which is the UAD-2-shaped crash under __cxa_finalize_ranges already on
+    file. A static POINTER has a trivial destructor, so what it holds outlives the process. */
+void keepForeverOnTheBench (std::unique_ptr<juce::AudioPluginInstance> inst)
+{
+    static std::vector<std::unique_ptr<juce::AudioPluginInstance>>* const store
+        = new std::vector<std::unique_ptr<juce::AudioPluginInstance>>();
+    store->push_back (std::move (inst));
+}
+
 struct EditorWindow final : public juce::DocumentWindow
 {
     EditorWindow (juce::AudioProcessorEditor* ed)
@@ -172,6 +198,150 @@ struct EditorWindow final : public juce::DocumentWindow
     }
     void closeButtonPressed() override {}
 };
+/** Instantiate one, synchronously, with the same bound and the same refusals as main's. */
+std::unique_ptr<juce::AudioPluginInstance> makeOne (juce::AudioPluginFormatManager& fm,
+                                                   const juce::PluginDescription& d,
+                                                   const juce::String& leg,
+                                                   const juce::String& which)
+{
+    std::unique_ptr<juce::AudioPluginInstance> inst;
+    juce::String err;
+    bool done = false;
+    fm.createPluginInstanceAsync (d, kRate, kBlock,
+        [&] (std::unique_ptr<juce::AudioPluginInstance> p, const juce::String& e)
+        { inst = std::move (p); err = e; done = true; });
+
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    while (! done && juce::Time::getMillisecondCounterHiRes() - t0 < 120000.0)
+    {
+        juce::Timer::callPendingTimersSynchronously();
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+    }
+    if (! done)          { say (leg, "REFUSED: no callback in 120 s for " + which + " (a licence prompt?)"); return {}; }
+    if (inst == nullptr) { say (leg, "REFUSED: " + which + ": " + err.replace ("\n", " ")); return {}; }
+    say (leg, which + " instantiated: " + juce::String (inst->getTotalNumInputChannels()) + " in / "
+            + juce::String (inst->getTotalNumOutputChannels()) + " out");
+    return inst;
+}
+
+/** Run the message loop for `ms`, and MOVE AND RESIZE the window while doing it.
+
+    This is the 14:27:44 trigger, and it is not decoration: the 18:32 crash on file was posted by
+    *"the NLS Buss popout's window frame change"*, and this one came in through ViewBridge and
+    AppKit while a window was being laid out. A stale observer is only a crash when something
+    posts to it, so the leg has to post. */
+void churnWindows (const juce::String& leg, juce::DocumentWindow* w, int ms)
+{
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    int n = 0;
+    while (juce::Time::getMillisecondCounterHiRes() - t0 < (double) ms)
+    {
+        juce::Timer::callPendingTimersSynchronously();
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+        if (w != nullptr && (n % 5) == 0)
+        {
+            const auto b = w->getBounds();
+            w->setBounds (b.translated ((n % 10) == 0 ? 7 : -7, (n % 10) == 0 ? 5 : -5));
+        }
+        // A window of our own, opened and closed, so NSWindow notifications fly even when the
+        // plugin's own view is quiet.
+        if ((n % 25) == 0)
+        {
+            juce::DocumentWindow extra ("churn", juce::Colours::darkgrey, 0);
+            extra.centreWithSize (220, 120);
+            extra.setVisible (true);
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+            extra.setVisible (false);
+        }
+        ++n;
+    }
+}
+
+/** HIS 14:27 CRASH: the ordering of a teardown, with the real plugin.
+
+    One leg, two orderings, chosen by name. Everything else is held identical: the same layout (the
+    12:14 fix's, so a render crash cannot be mistaken for this one), the same render, the same
+    editor, the same second instance, the same window churn. */
+int runTeardownLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
+                    const juce::PluginDescription& d, int seconds)
+{
+    const bool fixed = (leg == "teardown_safe");
+    say (leg, fixed ? "THE FIX'S ORDERING: the editor goes first, then the instance is KEPT"
+                    : "THE PRODUCT'S ORDERING: the instance is freed while its editor still lives");
+
+    auto a = makeOne (fm, d, leg, "copy A");
+    if (a == nullptr) return 3;
+
+    const auto plan = echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*a));
+    const int channels = juce::jmax (2, a->getTotalNumInputChannels(), a->getTotalNumOutputChannels());
+    a->prepareToPlay (kRate, kBlock);
+
+    std::unique_ptr<EditorWindow> winA;
+    if (a->hasEditor())
+        if (auto* ed = a->createEditorIfNeeded())
+        {
+            winA = std::make_unique<EditorWindow> (ed);
+            say (leg, "copy A's own editor is open (" + juce::String (ed->getWidth()) + "x"
+                    + juce::String (ed->getHeight()) + ") - this is what was on his screen at 14:24:35");
+        }
+
+    {
+        Renderer r (*a, leg, channels, kBlock, 0, nullptr, plan);
+        r.startThread (juce::Thread::Priority::highest);
+        say (leg, "copy A is rendering; running for 4 s, as the live view was");
+        churnWindows (leg, winA.get(), 4000);
+        r.stopThread (2000);
+        say (leg, "copy A has stopped rendering after " + juce::String (r.blocks.load()) + " blocks");
+    }
+    a->releaseResources();
+
+    // ---- THE ONE THING THIS LEG VARIES ---------------------------------------------------------
+    if (fixed)
+    {
+        winA.reset();                       // THE EDITOR FIRST, while its processor is still alive
+        say (leg, "copy A's editor is destroyed, and its processor was alive the whole time");
+        keepForeverOnTheBench (std::move (a));
+        say (leg, "copy A's INSTANCE IS KEPT - never disposed, which is Sean's ruling of 6 Oct");
+    }
+    else
+    {
+        a.reset();                          // the AU is freed with its editor still parented
+        say (leg, "copy A's INSTANCE IS FREED, with its editor still alive - what stop() does today");
+        winA.reset();                       // ...and now the editor is torn down against freed memory
+        say (leg, "copy A's editor is destroyed, after its processor - the inversion");
+    }
+
+    // ---- 14:26:00 ONWARDS: ANOTHER INSTANCE OF THE SAME PLUGIN, WITH ITS OWN VIEW ---------------
+    auto b = makeOne (fm, d, leg, "copy B (the Link's own, in his session)");
+    if (b == nullptr) return 3;
+    b->prepareToPlay (kRate, kBlock);
+    std::unique_ptr<EditorWindow> winB;
+    if (b->hasEditor())
+        if (auto* ed = b->createEditorIfNeeded())
+        {
+            winB = std::make_unique<EditorWindow> (ed);
+            say (leg, "copy B's editor is open - as the Link's own was at 14:26:00");
+        }
+
+    const int channelsB = juce::jmax (2, b->getTotalNumInputChannels(), b->getTotalNumOutputChannels());
+    Renderer rb (*b, leg, channelsB, kBlock, 0,
+                 nullptr, echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*b)));
+    rb.startThread (juce::Thread::Priority::highest);
+
+    const int left = juce::jmax (4, seconds - 10);
+    say (leg, "copy B is rendering with its view open; posting window notifications for "
+            + juce::String (left) + " s");
+    churnWindows (leg, winB.get(), left * 1000);
+
+    rb.stopThread (2000);
+    winB.reset();
+    b->releaseResources();
+    say (leg, "SURVIVED " + juce::String (seconds) + " s, " + juce::String (rb.blocks.load())
+            + " blocks on copy B");
+    keepForeverOnTheBench (std::move (b));   // the bench obeys the rule too, on the way out
+    return 0;
+}
+
 } // namespace
 
 int main (int argc, char** argv)
@@ -194,6 +364,9 @@ int main (int argc, char** argv)
     if (argc >= 6) d.uniqueId = d.deprecatedUid = (int) (juce::int64) juce::String (argv[5]).getHexValue64();
 
     say (leg, "\"" + d.name + "\" | " + d.fileOrIdentifier + " | " + juce::String (seconds) + " s");
+
+    // HIS 14:27 CRASH is about an ORDERING, not a render, so its legs own the whole run.
+    if (leg == "teardown" || leg == "teardown_safe") return runTeardownLeg (leg, fm, d, seconds);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;
