@@ -17,6 +17,11 @@ extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH
 extern "C" bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
                                                  char* desc, int descLen);
 extern "C" void NativeClip2_detach(void* peerHandle);
+// The READ-ONLY SHIELD (24 Oct 2026): a transparent NSView of ours, kept topmost inside the clip
+// container, that swallows every gesture aimed at the hosted plugin's own view and draws one line
+// along its top edge. JUCE's setInterceptsMouseClicks cannot do this - a guest AU's NSView is never
+// under JUCE's mouse handling - which is why it is here. See Source/EJLiveViewInput.h for WHEN.
+extern "C" bool NativeClip2_setShield(void* peerHandle, bool on, const char* caption);
 
 // Unified-log bridge (NSLog) so C++ diagnostics show up in Console.app
 extern "C" void EchoJay_NSLog(const char* msg);
@@ -71,6 +76,15 @@ namespace NativeClip
             && NativeClip2_getPluginSizeVerbose(handle, &w, &h, buf, (int) sizeof(buf));
         desc = juce::String::fromUTF8(buf);
         return ok;
+    }
+
+    // Put the read-only shield up (or take it down). Call after every attach: attach reparents the
+    // plugin's view, and the shield only blocks what it is drawn above.
+    inline bool setShield(juce::Component* comp, bool on, const juce::String& caption = {})
+    {
+        auto* handle = windowHandleFor(comp);
+        return handle != nullptr
+            && NativeClip2_setShield(handle, on, caption.toRawUTF8());
     }
 
     // Remove the container (call AFTER the hosted editor is destroyed).

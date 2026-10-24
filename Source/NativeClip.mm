@@ -27,6 +27,9 @@
 #ifndef ECHOJAY_CLIP_CLASS
 #define ECHOJAY_CLIP_CLASS EchoJayClipContainer
 #endif
+#ifndef ECHOJAY_SHIELD_CLASS
+#define ECHOJAY_SHIELD_CLASS EchoJayViewShield
+#endif
 #ifndef NATIVECLIP_LOG_TAG
 #define NATIVECLIP_LOG_TAG "NativeClip2"
 #endif
@@ -46,6 +49,75 @@
 // so there is no coordinate-space war between the two.
 - (BOOL)isFlipped { return YES; }
 @end
+
+// ---- THE READ-ONLY SHIELD (his ruling of 24 Oct 2026) ------------------------------------------
+//
+// *"until control exists, the view blocks input and says so on the view."*
+//
+// It has to be an NSView, and that is the whole reason this lives here. The live view's own code
+// already called setInterceptsMouseClicks (false, false) on the editor component, and its note said
+// what that does not reach: a guest AU draws its own NSView, which is a sibling in the window and
+// is never under JUCE's mouse handling at all. The Tube-Tech is one of those
+// (CSoftubeAUInterfaceCocoaView), so his knobs moved. A transparent view of ours, ABOVE the
+// plugin's inside the same container, is the only thing that actually swallows those events.
+//
+// It also carries the sentence, drawn here rather than in JUCE, for the same reason: anything JUCE
+// paints inside the display area is behind the container and would be covered by the plugin.
+@interface ECHOJAY_SHIELD_CLASS : NSView
+@property (nonatomic, copy) NSString* caption;
+@end
+@implementation ECHOJAY_SHIELD_CLASS
+- (BOOL)isFlipped { return YES; }
+// EVERY point inside is ours, so no event reaches the plugin view beneath.
+- (NSView*)hitTest:(NSPoint)where
+{
+    const NSPoint local = [self convertPoint:where fromView:[self superview]];
+    return NSPointInRect(local, [self bounds]) ? self : nil;
+}
+- (BOOL)acceptsFirstMouse:(NSEvent*)e        { (void)e; return YES; }
+- (void)mouseDown:(NSEvent*)e                { (void)e; }
+- (void)mouseUp:(NSEvent*)e                  { (void)e; }
+- (void)mouseDragged:(NSEvent*)e             { (void)e; }
+- (void)rightMouseDown:(NSEvent*)e           { (void)e; }
+- (void)rightMouseUp:(NSEvent*)e             { (void)e; }
+- (void)otherMouseDown:(NSEvent*)e           { (void)e; }
+- (void)otherMouseUp:(NSEvent*)e             { (void)e; }
+- (void)scrollWheel:(NSEvent*)e              { (void)e; }
+- (void)magnifyWithEvent:(NSEvent*)e         { (void)e; }
+- (void)rotateWithEvent:(NSEvent*)e          { (void)e; }
+- (void)keyDown:(NSEvent*)e                  { (void)e; }
+- (void)drawRect:(NSRect)dirty
+{
+    (void)dirty;
+    if ([self.caption length] == 0) return;
+    // One bar along the TOP of the plugin's own rect, dark enough to read against any interface and
+    // short enough to cover nothing that matters.
+    const CGFloat barH = 20.0;
+    NSRect bar = NSMakeRect(0, 0, [self bounds].size.width, barH);
+    [[NSColor colorWithSRGBRed:0.03 green:0.04 blue:0.07 alpha:0.92] setFill];
+    NSRectFillUsingOperation(bar, NSCompositingOperationSourceOver);
+    [[NSColor colorWithSRGBRed:0.13 green:0.83 blue:0.93 alpha:0.55] setFill];
+    NSRectFillUsingOperation(NSMakeRect(0, barH - 1.0, bar.size.width, 1.0),
+                             NSCompositingOperationSourceOver);
+
+    NSMutableParagraphStyle* ps = [[NSMutableParagraphStyle alloc] init];
+    [ps setAlignment:NSTextAlignmentCenter];
+    NSDictionary* attrs = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:11.5 weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName: [NSColor colorWithSRGBRed:0.13 green:0.83 blue:0.93 alpha:1.0],
+        NSParagraphStyleAttributeName: ps
+    };
+    [self.caption drawInRect:NSMakeRect(6, 3, bar.size.width - 12, barH - 5) withAttributes:attrs];
+}
+@end
+
+static ECHOJAY_SHIELD_CLASS* NativeClip2_findShield(NSView* container)
+{
+    for (NSView* sv in [container subviews])
+        if ([sv isKindOfClass:[ECHOJAY_SHIELD_CLASS class]])
+            return (ECHOJAY_SHIELD_CLASS*)sv;
+    return nil;
+}
 
 extern "C"
 {
@@ -357,6 +429,56 @@ bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH)
 // orphan (its processor is gone) — remove it from the hierarchy entirely.
 // Do NOT hand leftovers back to the peer: an unclipped orphan at peer level
 // renders over the UI (the "EchoJay V2" placeholder-strip bug).
+// ---- PUT THE SHIELD UP, OR TAKE IT DOWN (his ruling of 24 Oct 2026) ---------------------------
+//
+// Called after every attach, because attach reparents the plugin view and the shield has to stay
+// the LAST subview to stay on top. Sized to the plugin's own view when there is one, so the
+// sentence sits on the interface rather than floating in the card's margin; the container's whole
+// bounds otherwise, which is what a plugin that has not drawn yet needs.
+//
+// Returns true when a shield is up afterwards.
+bool NativeClip2_setShield(void* peerHandle, bool on, const char* caption)
+{
+    if (!peerHandle) return false;
+    NSView* peer = (__bridge NSView*)peerHandle;
+    ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
+    if (!container) return false;
+
+    ECHOJAY_SHIELD_CLASS* shield = NativeClip2_findShield(container);
+    if (!on)
+    {
+        if (shield) [shield removeFromSuperview];
+        return false;
+    }
+
+    // WHICH RECT? The plugin's own view, when it is in the container.
+    NSRect want = [container bounds];
+    for (NSView* sv in [container subviews])
+    {
+        if ([sv isKindOfClass:[ECHOJAY_SHIELD_CLASS class]]) continue;
+        const NSRect f = [sv frame];
+        if (f.size.width > 40.0 && f.size.height > 30.0) { want = f; break; }
+    }
+
+    if (!shield)
+    {
+        shield = [[ECHOJAY_SHIELD_CLASS alloc] initWithFrame:want];
+        [shield setAutoresizingMask:NSViewNotSizable];
+        [container addSubview:shield];
+        NSLog(@NATIVECLIP_LOG_TAG ": the read-only shield is UP over %@ - the live view takes no "
+              @"gestures until control through it is built", NSStringFromRect(want));
+    }
+    else if (!NSEqualRects([shield frame], want))
+        [shield setFrame:want];
+
+    [shield setCaption:(caption != NULL ? [NSString stringWithUTF8String:caption] : @"")];
+    // LAST means TOPMOST: a re-attach may have added the plugin's view after ours.
+    [shield removeFromSuperview];
+    [container addSubview:shield positioned:NSWindowAbove relativeTo:nil];
+    [shield setNeedsDisplay:YES];
+    return true;
+}
+
 void NativeClip2_detach(void* peerHandle)
 {
     if (!peerHandle) return;

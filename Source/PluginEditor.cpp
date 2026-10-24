@@ -2234,6 +2234,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     // "Add to Chain" — appends the selected list entry as a new slot
 
+    // ---- WHICH SLOT IS A LIVE-VIEW COPY (his ruling of 24 Oct 2026) --------------------------
+    // The processor is asked, every time, because it owns the fact. Same three-part identity the
+    // editor road uses (createSlotEditorForView): this rack, this slot, and a view actually
+    // running - never "a view is running somewhere".
+    chainListPanel.isLiveViewSlot = [this](int i)
+    {
+        return processorRef.shadowRunning()
+            && processorRef.shadowUid() == chainViewUid()
+            && processorRef.shadowSlot() == i;
+    };
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
         // ONE AUTHOR, on the processor and FUNCTIONALLY GATED there (twice
         // regressed: 22 Aug guard order, 26 Aug the engage that never

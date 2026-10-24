@@ -756,6 +756,9 @@ target_compile_definitions(EchoJayLink PUBLIC
     # NativeClip per-target identity — unique ObjC class + log tag so both
     # plugins can host inline in the same process without colliding
     ECHOJAY_CLIP_CLASS=EchoJayClipContainerLink
+    # ...and the read-only shield's class with it: a duplicate ObjC class name across two dylibs in
+    # one hosting process makes isKindOfClass unreliable, which is the comment above this one.
+    ECHOJAY_SHIELD_CLASS=EchoJayViewShieldLink
     NATIVECLIP_LOG_TAG="NativeClipLink"
     # The Link consumes no spectrum: LinkEditor never touches meterEngine_
     # and LinkMeterFrame carries no bins, so MeterEngine's 4096-point

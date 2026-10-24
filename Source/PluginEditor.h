@@ -21,6 +21,7 @@
 #include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
 #include "NativeClip.h"
+#include "EJLiveViewInput.h"   // his ruling of 24 Oct: a view that cannot pass a gesture on takes none
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"
@@ -3713,6 +3714,11 @@ private:
         bool         editBlocked = false;     // overlay up; every edit path refuses
         juce::String editGateText;            // "Connecting to rack…" etc.; empty when editable
         std::function<void(int)>        onSelectSlot;
+        // ---- IS THIS SLOT'S EDITOR A LIVE-VIEW COPY? (his ruling of 24 Oct 2026) --------------
+        // Asked of the PROCESSOR every time it matters rather than cached here, because a cached
+        // copy of a fact the processor owns is the two-sources-of-truth family this week was made
+        // of. Unset on the Link's own panel, which has no live view.
+        std::function<bool(int)>        isLiveViewSlot;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
         std::function<void(int, int)>   onMoveSlot;
@@ -4099,8 +4105,17 @@ private:
         {
             if (inlineIsBuiltin) return;   // no foreign view to clip
             if (inlineEditor)
+            {
                 NativeClip::attach(this, displayArea(), log,
                                    inlineEditor->getWidth(), inlineEditor->getHeight());
+                // ---- AND THE READ-ONLY SHIELD GOES BACK ON TOP (his ruling of 24 Oct 2026) ----
+                // Here, because attach is the one place that reparents the plugin's view, and a
+                // shield that is not the last subview blocks nothing. The decision is
+                // echojay::liveViewInputPolicy's; this only carries out what it says.
+                const bool liveCopy = inlineSlot >= 0 && isLiveViewSlot && isLiveViewSlot(inlineSlot);
+                const auto policy = echojay::liveViewInputPolicy(liveCopy);
+                NativeClip::setShield(this, policy.blockInput, policy.line);
+            }
         }
 
         void timerCallback() override
@@ -4386,6 +4401,26 @@ private:
             // is a press, and showInline's Float branch passes its own answer through.
             if (deliberate && onEditorNeedsChainTab) onEditorNeedsChainTab();
             int i = selectedIdx;
+            // ---- A LIVE VIEW DOES NOT POP OUT WHILE IT IS READ-ONLY (24 Oct 2026) ------------
+            // The shield is a view inside the CLIP CONTAINER, and a floating window has no
+            // container - so a popped-out live view would be the one road where his knobs still
+            // move and still change nothing. Refused with the same sentence rather than left open:
+            // "silent lost changes are a fault" was the whole of his finding.
+            if (isLiveViewSlot && isLiveViewSlot(i))
+            {
+                const auto policy = echojay::liveViewInputPolicy(true);
+                if (policy.blockInput)
+                {
+                    statusText = policy.line + " - and it stays in the card until then, because a "
+                                 "floating window cannot be held read-only.";
+                    EchoJay_NSLog("EJPane(main): popout REFUSED for a live view - it cannot be held "
+                                  "read-only outside the card, and control through the view is not "
+                                  "built yet (his ruling of 24 Oct 2026)");
+                    resized();
+                    repaint();
+                    return;
+                }
+            }
             closeAllEditors();
             juce::AudioProcessorEditor* ed = nullptr;
             try { ed = onCreateEditor(i); } catch (...) {}
