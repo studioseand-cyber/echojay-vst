@@ -693,7 +693,7 @@ def validate(doc, rid, result_id, run=None, acct=None):
         return "shape"
     if kind == "profile" and not files:
         return "shape"
-    # THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile says which run and result it was measured for, with a
+    # THE MEASUREMENT IDENTITY (24 Oct, the copy-check ruling): every measured file of a profile says which run and result it was measured for, with a
     # random nonce. Missing -> shape; another run's or result's identity, or a nonce another result already used -> identity (tampering)
     if kind == "profile":
         for name, f in files.items():
