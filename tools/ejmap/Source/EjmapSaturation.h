@@ -30,6 +30,14 @@ inline constexpr double kOnset1pctDb  = -40.0;   // THD 1 %
 inline constexpr double kOnset01pctDb = -60.0;   // THD 0.1 %
 inline constexpr double kInertGainDb  = 0.05;    // a fundamental that moved less than this at every position...
 inline constexpr double kInertHarmDb  = -90.0;   // ...with no harmonic above this = inert
+// THE ENGAGE SEARCH (25 Oct): how many switches are tried before the stage is called off for good, and the one write added to a call
+inline constexpr int kEngageTries = 6;
+inline juce::StringArray withEngage (juce::StringArray extra, const juce::String& engageItem)
+{
+    if (engageItem.isEmpty()) return extra;
+    for (auto& a : extra) if (a.startsWith ("set=")) { a << "," << engageItem; return extra; }   // a call that already writes: one set= list
+    extra.add ("set=" + engageItem); return extra;
+}
 inline constexpr double kNoEffectGainDb = 0.1;   // a control whose level span and THD span stay under these at every level did nothing to the tone
 inline constexpr double kNoEffectThdDb  = 0.5;
 inline constexpr double kSilentDb     = -150.0;  // a fundamental below this at the output while the input carried it = silent (no output at all)

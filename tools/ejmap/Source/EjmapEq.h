@@ -246,7 +246,10 @@ inline std::vector<EngageCandidate> shapeCandidates (const juce::String& bandKey
 }
 // A pool control the MEASURED fallback may read as a band's gain: not one whose name already says frequency or Q (REQ 2's
 // "Band1 Frq" moves the tone's level by 92 dB as a low-cut's corner crosses it - a frequency, never a gain; 6 Oct)
-inline bool measuredGainCandidate (const juce::String& name) { const auto r = bandRole (name); return r != BandRole::freq && r != BandRole::q; }
+// 25 Oct (the graphic EQs: API-560's "Band 16kHz" .. "Band 31Hz", unit dB): a control whose UNIT is dB is a gain, even when its name
+// carries a fixed frequency - a frequency or Q control is never in dB
+inline bool measuredGainCandidate (const juce::String& name, const juce::String& unit = {})
+{ if (unit.trim().equalsIgnoreCase ("dB")) return true; const auto r = bandRole (name); return r != BandRole::freq && r != BandRole::q; }
 struct BandControls { juce::String key; std::vector<int> gains, freqs, qs; std::vector<juce::String> gainNames, freqNames, qNames; };
 inline std::vector<BandControls> bandsFrom (const std::vector<std::pair<int, juce::String>>& controls)
 {

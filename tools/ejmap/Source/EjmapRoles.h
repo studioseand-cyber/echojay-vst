@@ -65,7 +65,7 @@ using TermTable = std::vector<std::pair<juce::String, juce::StringArray>>;
 inline const TermTable& compressorLexicon()
 {
     static const TermTable t {
-        { "threshold", { "threshold", "thresh", "thr", "peak reduction", "peak reduct" } },
+        { "threshold", { "threshold", "thresh", "thr", "threshld", "thrshld", "peak reduction", "peak reduct" } },   // threshld (25 Oct): UAD elysia mpressor's "Threshld"
         { "ratio",     { "ratio", "rat" } },
         { "attack",    { "attack", "atk", "att" } },
         { "release",   { "release", "recovery", "recover", "rel", "rec", "rcvr", "rcv" } },
