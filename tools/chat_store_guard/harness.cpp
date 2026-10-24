@@ -1475,6 +1475,128 @@ int main()
             sv.stop();
         }
 
+        // ---- NOTHING RENDERS WHILE THE MESSAGE THREAD IS INSIDE A PLUGIN (his 08:58, 24 Oct) ---
+        //
+        // The third live-view crash, and the first that was not the channel count. His report, in
+        // one picture: the MAIN thread eighteen seconds deep in the Tube-Tech CL 1B's own interface
+        //
+        //     AudioUnitPluginWindowCocoa  <-  AudioUnitPluginInstance::createEditor
+        //                                 <-  ChainHost::createEditorForSlot
+        //                                 <-  ChainListPanel::showInline
+        //                                 <-  shadowFollowSelection's lambda
+        //
+        // ...while the RENDER thread was inside that plugin's own render, on OUR copy of it, and
+        // died there at 0x0. Two instances, so no per-instance lock could have seen it.
+        //
+        // THE LEGS ARE THE PATH, not the plugin: a stand-in that records whether its processBlock
+        // was entered, pumped once with the window up and once with it down. Nothing licence-bound
+        // is loaded here, by the standing rule - what is asserted is the exact window the two
+        // stacks overlapped in.
+        {
+            struct Counting : public juce::AudioProcessor
+            {
+                Counting() : juce::AudioProcessor (BusesProperties()
+                                 .withInput  ("In",  juce::AudioChannelSet::stereo(), true)
+                                 .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+                const juce::String getName() const override { return "Counting"; }
+                void prepareToPlay (double, int) override {}
+                void releaseResources() override {}
+                void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override { ++rendered; }
+                double getTailLengthSeconds() const override { return 0.0; }
+                bool acceptsMidi() const override { return false; }
+                bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+                bool hasEditor() const override { return false; }
+                int getNumPrograms() override { return 1; }
+                int getCurrentProgram() override { return 0; }
+                void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; }
+                void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {}
+                void setStateInformation (const void*, int) override {}
+                int rendered = 0;
+            };
+            echojay::ShadowView sv;
+            sv.prepare (48000.0, 512);
+            auto c = std::make_unique<Counting>();
+            auto* cPtr = c.get();
+            c->prepareToPlay (48000.0, 512);
+            juce::MemoryBlock ring3 ((size_t) kLinkShmSize, true);
+            auto* h3 = LinkShm::ringHeader (ring3.getData());
+            h3->magic = kLinkMagic; h3->version = kLinkVersion; h3->sampleRate = 48000.0f;
+            h3->numChannels = 2; h3->capacityFrames = kLinkRingFrames;
+            juce::String why3;
+            const bool up3 = sv.start (std::move (c), ring3.getData(), "uidcall", 0, "Counting", why3);
+            check (up3, "SH9 the live copy starts (the window's legs need a running one to mean "
+                        "anything)", up3 ? juce::String ("up") : "refused: " + why3);
+
+            // WITH THE WINDOW UP: not one block reaches the plugin, and the skip is COUNTED, so a
+            // still picture has a reading behind it rather than a guess.
+            const int skippedBefore = sv.blocksSkipped();
+            {
+                const echojay::PluginCallWindow weAreInsideAPluginRightNow;
+                sv.pump (256);
+                sv.pump (256);
+            }
+            check (cPtr->rendered == 0 && sv.blocksSkipped() == skippedBefore + 2,
+                   "SH9b ...and while the message thread is inside a hosted plugin, NO block is "
+                   "rendered and every skip is counted  (RED as it shipped at 08:58: the copy "
+                   "rendered straight through his editor's eighteen-second construction, and the "
+                   "plugin died at 0x0 in its own render)",
+                   "rendered " + juce::String (cPtr->rendered) + " block(s), skipped "
+                   + juce::String (sv.blocksSkipped() - skippedBefore));
+
+            // AND IT IS NOT MERELY OFF. The other direction, which is the half that makes the leg
+            // falsifiable: with no call in flight the same pump DOES render.
+            sv.pump (256);
+            check (cPtr->rendered == 1,
+                   "SH9c ...and with nothing in flight the very same pump renders, so the window is "
+                   "a window and not an off switch",
+                   "rendered " + juce::String (cPtr->rendered) + " block(s) after the window closed");
+            sv.stop();
+            check (echojay::pluginCallsInFlight().load() == 0,
+                   "SH9d ...and the count is back to nothing once the scopes have gone - an unpaired "
+                   "raise would leave the live view frozen for the rest of the session",
+                   "in flight " + juce::String (echojay::pluginCallsInFlight().load()));
+        }
+
+        // ---- WHOSE COPY IS ON SCREEN? (the other half of his 08:58 crash) ----------------------
+        //
+        // The crash's own stack named ChainHost::createEditorForSlot - the BORROWED mirror - while
+        // the audio was going to the live view's copy. So he was shown one instance of the plugin
+        // and we were feeding another, which is also, on this evidence, what his 16:35 report was:
+        // *"the view comes up, but NOTHING moves."*  The decision is one function with no state in
+        // it precisely so these four states can be constructed and it can be ASKED.
+        {
+            using echojay::SlotEditorSource;
+            // The state his crash was in: a Link in view, a lease held, the live view running on
+            // THIS slot. RED as it shipped: the borrowed arm was tested first, so it won.
+            check (echojay::slotEditorSource (/*remote*/ true, /*liveHere*/ true,
+                                              /*borrow*/ true, /*edit*/ false)
+                       == SlotEditorSource::LiveView,
+                   "SH10 with a lease held AND the live view running on this slot, the editor is the "
+                   "LIVE COPY's  (RED as it shipped at 08:58: the borrowed mirror answered first, so "
+                   "the picture was an instance with no audio in it, and opening it while the other "
+                   "one rendered took the host down)",
+                   "source = borrowed");
+            // Every other slot of that same leased rack is still the mirror's: this must not have
+            // become "the live view always wins", which would have broken every other editor.
+            check (echojay::slotEditorSource (true, /*liveHere*/ false, true, false)
+                       == SlotEditorSource::Borrowed,
+                   "SH10b ...and ANY OTHER slot of that leased rack is still the borrowed mirror's, "
+                   "so the fix is one slot wide and the arm that was dead code in Aug 2026 is still "
+                   "reachable", "source = not borrowed");
+            check (echojay::slotEditorSource (true, false, false, /*edit*/ true)
+                       == SlotEditorSource::EditSession,
+                   "SH10c ...an edit session's own slot is still its editing copy's", "source = other");
+            check (echojay::slotEditorSource (/*remote*/ false, false, false, false)
+                       == SlotEditorSource::LocalRack,
+                   "SH10d ...and the V2's own rack is untouched by all of it", "source = other");
+            check (echojay::slotEditorSource (true, false, false, false) == SlotEditorSource::None,
+                   "SH10e ...and a remote slot with nothing of ours behind it still answers with "
+                   "nothing, which is the static picture and its one line", "source = other");
+        }
+
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------
         //
         // ShadowTap's own header promised this count to the V2 ("to tell the shadow is running and

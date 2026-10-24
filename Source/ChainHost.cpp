@@ -1,5 +1,6 @@
 #include "EJDialWrites.h"
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
+#include "EJPluginCallWindow.h"   // 24 Oct: the live copy never renders while we are inside a plugin
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
 #include "EJRigHook.h"   // ask A: the rig may never trigger a plugin scan
@@ -366,6 +367,13 @@ int pushDeathMark(const juce::String& phase, const juce::PluginDescription& d)
     const int id = nextId++;
     deathMarks().push_back({ id, phase, d.fileOrIdentifier, d.name });
     writeDeathMarksLocked();
+    // ---- AND THE LIVE COPY STOPS RENDERING FOR THE LENGTH OF THIS CALL (his 08:58, 24 Oct) ----
+    //
+    // These marks already bracket precisely the windows the crash happened in - instantiate (held
+    // through the caller's callback) and editor creation - so the window and the mark are one fact
+    // with two readers rather than a second bracket that could drift from this one. The reasoning,
+    // and the stack that demanded it, are in EJPluginCallWindow.h.
+    echojay::pluginCallsInFlight().fetch_add (1, std::memory_order_release);
     return id;
 }
 void popDeathMark(int id)
@@ -373,8 +381,14 @@ void popDeathMark(int id)
     if (id == 0) return;
     std::lock_guard<std::mutex> lk(deathMarkMutex());
     auto& v = deathMarks();
+    const auto before = v.size();
     v.erase(std::remove_if(v.begin(), v.end(), [id](const DeathMark& m) { return m.id == id; }), v.end());
     writeDeathMarksLocked();
+    // PAIRED WITH THE PUSH, and only when this id was really holding one: a double pop would drop
+    // the count below the calls actually in flight and re-open the window under a live call, which
+    // is the one way this guard could lie.
+    if (v.size() != before)
+        echojay::pluginCallsInFlight().fetch_sub (1, std::memory_order_release);
 }
 bool processAlive(int pid)
 {

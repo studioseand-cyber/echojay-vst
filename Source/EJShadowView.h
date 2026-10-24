@@ -37,6 +37,7 @@
 #include <atomic>
 #include "LinkShm.h"
 #include "EJShadowTap.h"
+#include "EJPluginCallWindow.h"   // his 08:58 crash, 24 Oct: no render while we are inside a plugin
 
 namespace echojay
 {
@@ -194,6 +195,23 @@ public:
     int pump (int numSamples)
     {
         if (! on_.load (std::memory_order_acquire) || numSamples <= 0) return 0;
+        // ---- NOT WHILE THE MESSAGE THREAD IS INSIDE A PLUGIN (his 08:58 crash, 24 Oct 2026) ----
+        //
+        // The third live-view crash, and the first that was not the channel count: the main thread
+        // was eighteen seconds deep in the Tube-Tech's own interface (createEditor -> its Metal
+        // pipelines) while this line rendered a copy of that same plugin, and the plugin died at
+        // 0x0 in its own render. The two instances were DIFFERENT objects, so lock_ below could
+        // never have seen it - what they shared was the plugin's per-process machinery.
+        //
+        // Skipped rather than queued: there is nothing to catch up on, because a copy whose picture
+        // is still being built has no meters to move, and every block here is discarded anyway.
+        // COUNTED, so "it froze for a moment" has an answer that is not a guess. The whole rule,
+        // and the stack it came from, is in EJPluginCallWindow.h.
+        if (insidePluginCall())
+        {
+            blocksSkipped_.fetch_add (1, std::memory_order_relaxed);
+            return 0;
+        }
         if (! lock_.tryEnter()) return 0;              // never block the audio thread
         int consumed = 0;
         if (inst_ != nullptr && ring_ != nullptr)
@@ -286,6 +304,11 @@ public:
     {
         if (! running() || inst_ == nullptr) return nullptr;
         if (! inst_->hasEditor()) return nullptr;
+        // THE WINDOW IS RAISED FOR THIS CALL, and it has to be raised HERE: the death marks cover
+        // every road through ChainHost, and this one does not go through ChainHost - it is the copy
+        // asking its own instance. Without it, the one instance that is certainly being rendered
+        // would have its interface built underneath the render (his 08:58 crash, 24 Oct 2026).
+        const PluginCallWindow noRenderWhileWeAreInHere;
         auto* ed = inst_->createEditorIfNeeded();
         if (ed != nullptr)
         {

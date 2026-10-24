@@ -3895,6 +3895,12 @@ private:
             stopTimer();
             if (inlineEditor)
             {
+                // ---- TEARING AN EDITOR DOWN IS A CALL INTO THE PLUGIN TOO (24 Oct 2026) -------
+                // The live copy stops rendering for the length of it, by the same rule his 08:58
+                // crash set for CREATING one (EJPluginCallWindow.h). Raised here rather than by a
+                // death mark because the deadman deliberately does not mark a destruction: a death
+                // in here must not blacklist the plugin (ChainHost's own note says why).
+                const echojay::PluginCallWindow noRenderWhileWeAreInHere;
                 inlineHolder.removeChildComponent(inlineEditor.get());
                 inlineEditor.reset();
                 // Only detach a container we actually attached: a built-in
@@ -3910,7 +3916,12 @@ private:
 
         void closePopout()
         {
-            if (popout) { popout->setVisible(false); popout.reset(); }
+            if (popout)
+            {
+                // The same window as closeInline's, for the same reason (his 08:58 crash).
+                const echojay::PluginCallWindow noRenderWhileWeAreInHere;
+                popout->setVisible(false); popout.reset();
+            }
             popoutSlot = -1;
         }
 

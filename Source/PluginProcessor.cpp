@@ -23,6 +23,7 @@
 #include "EedKeyFeed.h"         // publish the resolved key for EchoJay Pitch (spec §6)
 #include "EedKeyDetectorProcessor.h"   // the local-chain source of the key walk
 #include <cmath>
+#include <algorithm>   // 24 Oct: the remote-undo removes are sorted descending
 
 // ---------------------------------------------------------------------------
 // Memory diagnostics (compile flag, OFF by default). Set ECHOJAY_MEMDIAG=1 to
@@ -3921,7 +3922,32 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
     // is an asynchronous read and this function must return an editor or nothing, right now. So it
     // returns nothing and says why, which the panel already renders as one line on the card, and the
     // rebase runs on the selection tick as it does for every other drift.
-    if (auto* bh = borrowHostIfActiveFor(viewUid))
+    // ---- WHICH COPY IS HE LOOKING AT? ASKED ONCE, WHERE A TEST CAN ASK IT (24 Oct 2026) -------
+    //
+    // His 08:58 crash put the answer on a stack: the editor came from the BORROWED mirror while the
+    // audio was being fed to the LIVE VIEW'S copy - two instances of one plugin, and the picture was
+    // the one with no audio in it. The ordering that did that is now one function with no state in
+    // it (echojay::slotEditorSource, EJPluginCallWindow.h), for the reason this function's own note
+    // gives: the last time an ordering decision lived inline here, one arm was unreachable for a
+    // fortnight and only a test that could CALL the decision would have caught it.
+    auto* bh = borrowHostIfActiveFor (viewUid);
+    const bool liveViewHere = shadowView_.running() && shadowView_.uid() == viewUid
+                           && shadowView_.slot() == slot;
+    const bool editHere     = editActive() && editSession_.uid == viewUid
+                           && editSession_.slot0 == slot;
+    const auto from = echojay::slotEditorSource (viewUid.isNotEmpty(), liveViewHere,
+                                                 bh != nullptr, editHere);
+
+    if (from == echojay::SlotEditorSource::LocalRack) return getChainHost().createEditorForSlot (slot);
+    if (from == echojay::SlotEditorSource::None)      return nullptr;
+    // THE COPY THAT IS BEING FED. No identity check is owed here and none is skipped: the live
+    // copy was built from the SIDECAR's own slot (shadowFollowSelection reads it by name), never
+    // from the mirror, so the drift the check below exists to catch cannot reach it.
+    if (from == echojay::SlotEditorSource::LiveView)   return shadowCreateEditor();
+    if (from == echojay::SlotEditorSource::EditSession) return editCreateEditor();
+
+    jassert (from == echojay::SlotEditorSource::Borrowed && bh != nullptr);
+    if (bh != nullptr)
     {
         if (viewUid.isNotEmpty())
         {
@@ -3957,30 +3983,17 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
         }
         return bh->createEditorForSlot(slot);
     }
-    // A remote rack cannot render the LINK'S instance here (it lives in
-    // that process) — but a live stage-1 edit session's slot has a LOCAL
-    // editing copy, and its editor is the whole point of stage 1.
-    if (viewUid.isNotEmpty())
-    {
-        if (editActive() && editSession_.uid == viewUid
-            && editSession_.slot0 == slot)
-            return editCreateEditor();
-        // ---- THE SHADOW VIEW (his ruling of 23 Oct 2026) -----------------------------------
-        // *"when I select a Link's plugin in the V2, I see that plugin's real editor live in the
-        //  V2 (moving meters and gain reduction) without opening the Link's window."*
-        //
-        // THE SAME SEAM every other slot editor comes through, which is why the panel needs no
-        // layout change and the floating road works too: this function is the one author for "give
-        // me this slot's editor", and for a Link slot the answer is now the V2's own copy - fed
-        // from that Link's shadow ring, output discarded, nothing owned. Only for the uid and slot
-        // the shadow is actually running on; anything else still returns nothing, which is the
-        // static picture and its one plain line.
-        if (shadowView_.running() && shadowView_.uid() == viewUid && shadowView_.slot() == slot)
-            return shadowCreateEditor();
-        return nullptr;
-    }
-    return getChainHost().createEditorForSlot(slot);
+    return nullptr;
 }
+//  THE OTHER ARMS, in the words they were written in. A remote rack cannot render the LINK'S own
+//  instance here (it lives in that process); a stage-1 edit session's slot has a LOCAL editing copy
+//  and its editor is the whole point of stage 1; and a Link slot in view now answers with the LIVE
+//  VIEW'S copy - fed from that Link's shadow ring, output discarded, nothing owned - which is his
+//  ruling of 23 Oct: *"when I select a Link's plugin in the V2, I see that plugin's real editor live
+//  in the V2 (moving meters and gain reduction) without opening the Link's window."*  This function
+//  is the one author for "give me this slot's editor", which is why the panel needed no layout
+//  change and the floating road works too. Only for the uid and slot the live view is actually
+//  running on; anything else is the static picture and its one plain line.
 
 
 // ============================================================================
