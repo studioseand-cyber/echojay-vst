@@ -2927,13 +2927,21 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
                             : action == LinkShm::BorrowCommit::Action::LeaveUnseeded
                                 ? "LEAVE-UNSEEDED (this copy was never seeded with the Link's own "
                                   "state, so it has no claim to be newer - the Link keeps what it "
-                                  "has, which is his rule of 24 Oct)"
+                                  "has, which is his rule of 24 Oct. The edited=Y above is "
+                                  "\"differs from an EMPTY baseline\" and is not evidence that "
+                                  "anybody changed anything, which is why it is not passed on)"
                                 : "LEAVE-UNEDITED")).toRawUTF8());
         // THE VERDICT PAIR CARRIES THE REFUSAL, so every downstream reader of {withheld, edited}
         // obeys it without each one having to learn the new rule: an unseeded slot is handed on as
         // withheld, which every road here already treats as "never written back".
+        //
+        // AND `edited` IS HANDED ON AS FALSE, which is the honest value rather than the convenient
+        // one. With no baseline, "edited" is computed as "the current state differs from nothing",
+        // so it is TRUE for a copy nobody has touched - and passing that on would put "1 slot
+        // changed, not written" in front of him about a slot he never touched. With no baseline the
+        // edit state is UNKNOWABLE, and a count he could read is worse than no count.
         if (action == LinkShm::BorrowCommit::Action::LeaveUnseeded)
-        { out.emplace_back(true, edited); continue; }
+        { out.emplace_back(true, false); continue; }
         out.emplace_back(withheld, edited);
     }
     return out;

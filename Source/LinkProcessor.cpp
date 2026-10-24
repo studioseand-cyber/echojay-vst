@@ -796,6 +796,9 @@ void LinkProcessor::publishRackSidecar()
         if (!settled && !stale) return;
     }
     lastPublishedUid_ = instanceUid_; lastPublishedRackRev_ = rev;
+    // WITH THE OTHER STAMPS, and not next to the field it describes: these are all taken in the one
+    // place that knows this publish is really going out, which is this function's own rule.
+    lastPublishedDialFp_ = dialFp;
     lastPublishedMuteEngaged_ = muteNow;
     lastPublishedMuteUser_ = muteUserOn_.load(std::memory_order_relaxed);
     lastPublishedSoloOn_   = soloOn_.load(std::memory_order_relaxed);
@@ -827,7 +830,6 @@ void LinkProcessor::publishRackSidecar()
     rc.muteSoloCapable = true;   // this binary composes and scans
     rc.name      = effectiveDisplayName();
     rc.revision  = rev;
-    lastPublishedDialFp_ = dialFp;      // taken here, where the publish really happens
     rc.masterWet = chainHost.getMasterWet();
     // ---- WHAT THIS CHANNEL IS (Sean's round (b), 20 Oct 2026) ------------------------------
     // Guessed from this Link's own display name unless he has set it, and published with its

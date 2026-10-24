@@ -2401,6 +2401,58 @@ int main()
                    "commit=" + juce::String (p.committing) + " unseeded=" + juce::String (p.unseeded)
                    + " untouched=" + juce::String (p.untouched));
 
+            // ---- AND THE WHOLE ROAD, NOT ONLY THE GATE ----------------------------------------
+            // classify is one function; what actually writes to the Link is the structure plan. So
+            // the same slot is put through computePlan, because a gate that refuses and a plan that
+            // commits anyway would be two answers to one question - and the plan is the one that
+            // reaches his rack.
+            {
+                namespace SE = LinkShm::StructureEdit;
+                std::vector<SE::SlotIdentity> base { SE::SlotIdentity { "Tube-Tech CL 1B", {}, {} } };
+                std::vector<SE::CurrentSlot> cur;
+                SE::CurrentSlot c;
+                c.identity = base[0];
+                c.originIndex = 0;
+                c.edited = true;
+                c.withheld = true;              // what an UNSEEDED slot is now handed on as
+                c.stateB64 = "AAAAdGhpcyBpcyBkZWZhdWx0cw==";
+                cur.push_back (c);
+                const auto plan = SE::computePlan ("4814a16004", base, cur);
+                int commits = 0;
+                for (const auto& op : plan.ops)
+                    if (op.type == SE::OpType::Commit) ++commits;
+                check (commits == 0 && plan.committing == 0 && plan.withheldEdited == 1,
+                       "SH18h and the PLAN writes nothing for it either: no Commit op reaches the "
+                       "Link for a slot with no claim to be newer. The gate and the plan agree, "
+                       "which is the only way this fix is real",
+                       "commits=" + juce::String (commits) + " withheldEdited="
+                       + juce::String (plan.withheldEdited));
+
+                cur[0].withheld = false;        // a seeded slot he really edited
+                const auto plan2 = SE::computePlan ("4814a16004", base, cur);
+                int commits2 = 0;
+                for (const auto& op : plan2.ops)
+                    if (op.type == SE::OpType::Commit) ++commits2;
+                check (commits2 == 1,
+                       "SH18i ...and the same slot WITH a claim to be newer does produce its Commit, "
+                       "so this guard cannot pass by refusing everything",
+                       "commits=" + juce::String (commits2));
+            }
+
+            // ---- AND NOTHING FALSE IS COUNTED FOR HIM EITHER ----------------------------------
+            // With no baseline, "edited" is "differs from nothing", which is true of a copy nobody
+            // has touched. Passing that on would put "1 slot changed, not written" in front of him
+            // about a slot he never touched, so the unseeded verdict hands on edited=FALSE and the
+            // reason goes in the log instead. This holds the count he can read.
+            {
+                const auto p0 = BC::plan (std::vector<BC::Slot> {
+                    { /*withheld*/ true, /*edited*/ false, /*seeded*/ false, /*bornHere*/ false } });
+                check (p0.committing == 0 && p0.changed == 0 && p0.withheldEdited == 0,
+                       "SH18j an unseeded slot is counted as nothing - not written, and not reported "
+                       "as a change he made, because with no baseline the edit state is unknowable",
+                       "commit=0 changed=0");
+            }
+
             // AND THE PAIR FORM STILL READS AS IT ALWAYS DID, so no existing caller changed
             // behaviour when the rule arrived: a {withheld, edited} pair carries no seeding fact.
             const auto pairPlan = BC::plan (std::vector<std::pair<bool, bool>> { { false, true } });
