@@ -4348,34 +4348,33 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
         return false;
     }
 
-    // ---- A STEREO COPY WHERE THE PLUGIN ALLOWS ONE (his 16:33 crash, 23 Oct 2026) -------------
+    // ---- THE COPY KEEPS ITS OWN BUSES, AND EVERY KEY BUS IS FED (his 12:14 crash, 24 Oct 2026) --
     //
-    // The tap carries ONE STEREO PAIR. A WaveShell plugin brings more than that - a key/sidechain
-    // input leg - and when his SSLComp copy pulled a channel the scratch buffer did not have, JUCE's
-    // input callback copied from a null pointer and took the AU hosting process down on the render
-    // thread. Two things stop that, and both are here because one of them can fail:
-    //   1. ASK for a plain 2-in/2-out and disable every other bus, which is the shape the ring can
-    //      actually feed. A plugin that refuses keeps its own layout - that is its right.
-    //   2. ShadowView::start then sizes its buffer to whatever the copy ENDED UP with, so even a
-    //      refusal leaves every channel it can pull one we own.
-    // Said in the log either way: this is the kind of thing that is worth knowing per plugin.
-    {
-        auto want = inst->getBusesLayout();
-        for (int i = 0; i < want.inputBuses.size(); ++i)
-            want.inputBuses.getReference (i) = (i == 0 ? juce::AudioChannelSet::stereo()
-                                                       : juce::AudioChannelSet::disabled());
-        for (int i = 0; i < want.outputBuses.size(); ++i)
-            want.outputBuses.getReference (i) = (i == 0 ? juce::AudioChannelSet::stereo()
-                                                        : juce::AudioChannelSet::disabled());
-        const bool took = inst->setBusesLayout (want);
-        EchoJay_NSLog (("EJShadow: the copy of \"" + pluginName + "\" is "
-                        + (took ? juce::String ("a plain stereo pair (every other bus disabled)")
-                                : "keeping its own bus layout - it refused plain stereo")
-                        + ", " + juce::String (inst->getTotalNumInputChannels()) + " in / "
-                        + juce::String (inst->getTotalNumOutputChannels())
-                        + " out; the scratch buffer is sized to that, so no block can pull a channel "
-                          "this instance does not own (his 16:33 crash)").toRawUTF8());
-    }
+    // THIS ASKED FOR A PLAIN 2-IN/2-OUT AND DISABLED EVERY OTHER BUS, and that request is what took
+    // Logic down on the Tube-Tech CL 1B. The reasoning behind it was sound as far as it went - the
+    // tap carries one stereo pair, so a bus the ring cannot feed looked like a bus to switch off -
+    // and it was written to close his 16:33 WaveShell crash, where the copy pulled a channel the
+    // scratch buffer did not have and JUCE's input callback copied from null.
+    //
+    // What it missed is in ChainHost's own note of 4 Oct: *"JUCE's AU host installs a render
+    // callback for every DECLARED input bus (prepareToPlay loops `i < getBusCount(isInput)`, no skip
+    // for a disabled one), so even a disabled bus has a live callback handing it a 0-channel
+    // buffer."*  Disabling the CL 1B's key did not stop the plugin pulling it; it only guaranteed
+    // there was nothing behind it. His 12:14 crash died inside the plugin at 0x0, and a supervised
+    // bench run reproduced it frame for frame in one second - then survived sixty seconds, 5,620
+    // blocks, with the layout left alone and the key fed.
+    //
+    // SO THE COPY IS SHAPED LIKE A RACK SLOT: its own buses, and ShadowView::start builds
+    // ChainHost's self-keying plan (EJShadowChannels.h) so pump() feeds every enabled non-main input
+    // bus from the main pair before each render. The buffer is still sized to the copy's own channel
+    // counts, which is what closed 16:33 and still closes it.
+    EchoJay_NSLog (("EJShadow: the copy of \"" + pluginName + "\" keeps its own bus layout: "
+                    + juce::String (inst->getBusCount (true)) + " input bus(es), "
+                    + juce::String (inst->getTotalNumInputChannels()) + " in / "
+                    + juce::String (inst->getTotalNumOutputChannels())
+                    + " out. Every enabled non-main input bus is self-keyed from the main pair, the "
+                      "same way ChainHost feeds the rack's own slot - a disabled bus would still be "
+                      "pulled and would still be empty (his 12:14 crash)").toRawUTF8());
 
     // PREPARED BEFORE IT IS INSTALLED: the audio thread must never meet a plugin that has not seen
     // prepareToPlay (the audition's rule, and the same words are in ShadowView::start's contract).

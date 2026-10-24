@@ -38,6 +38,7 @@
 #include "LinkShm.h"
 #include "EJShadowTap.h"
 #include "EJPluginCallWindow.h"   // his 08:58 crash, 24 Oct: no render while we are inside a plugin
+#include "EJShadowChannels.h"  // his 12:14 crash, 24 Oct: an unfed key bus is a null pointer
 
 namespace echojay
 {
@@ -133,6 +134,20 @@ public:
         if (buf_.getNumChannels() != wantCh || buf_.getNumSamples() < kBufFrames)
             buf_.setSize (wantCh, kBufFrames, false, true, false);
         buf_.clear();
+        // ---- AND EVERY KEY BUS IS FED, NOT MERELY OWNED (his 12:14 crash, 24 Oct 2026) --------
+        //
+        // Sizing the buffer to the copy stopped US copying from a null pointer. It did not stop the
+        // PLUGIN reading one: a declared input bus handed nothing is exactly what the Tube-Tech
+        // read at 0x0, in his Logic and again on the bench. The plan is ChainHost's own self-keying
+        // rule (EJShadowChannels.h), computed once here, applied by pump() before every render.
+        const auto plan = echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*inst));
+        if (echojay::highestPlannedChannel (plan) >= wantCh)
+        {
+            // A plan this buffer cannot hold is a refusal, never a partial feed: half a key bus is
+            // the same null read one channel further along.
+            whyNot = "that plugin's key inputs do not fit the copy's buffer";
+            return false;
+        }
         auto* hdr = LinkShm::ringHeader (ringMap);
         if (hdr == nullptr || hdr->magic != kLinkMagic)
         { whyNot = "the shadow ring has no header yet"; return false; }
@@ -151,6 +166,7 @@ public:
             const juce::SpinLock::ScopedLockType sl (lock_);
             inst_ = std::move (inst);
             ring_ = ringMap;
+            keyPlan_ = plan;     // the copy's shape, fixed for as long as the copy is installed
         }
         uid_ = uid; slot0_ = slot0; name_ = pluginName;
         framesPumped_.store (0, std::memory_order_relaxed);
@@ -171,6 +187,7 @@ public:
             const juce::SpinLock::ScopedLockType sl (lock_);
             dying = std::move (inst_);
             ring_ = nullptr;
+            keyPlan_.clear();   // the plan belongs to the copy and dies with it
         }
         dying.reset();                      // destroyed on THIS thread, outside the lock
         uid_.clear(); slot0_ = -1; name_.clear();
@@ -237,12 +254,20 @@ public:
                 if ((int) n < numSamples)
                     for (int ch = 0; ch < 2; ++ch)
                         buf_.clear (ch, (int) n, numSamples - (int) n);
-                // ...AND EVERY CHANNEL BEYOND THE PAIR IS SILENCE, NOT LEFTOVERS. A sidechain or a
-                // surround leg the ring knows nothing about is fed zeroes: the tap carries one
-                // stereo pair, and handing a plugin last block's samples on a channel we cannot
+                // ...AND EVERY CHANNEL BEYOND THE PAIR IS SILENCE, NOT LEFTOVERS. A surround leg
+                // or a metering input the ring knows nothing about is fed zeroes: the tap carries
+                // one stereo pair, and handing a plugin last block's samples on a channel we cannot
                 // fill would be a reading of something that was never played.
                 for (int ch = 2; ch < buf_.getNumChannels(); ++ch)
                     buf_.clear (ch, 0, numSamples);
+                // ...EXCEPT A KEY BUS, WHICH IS SELF-KEYED (his 12:14 crash, 24 Oct 2026). Silence
+                // on a key is not neutral - it is the 4 Oct defect Kathy measured (a compressor
+                // doing nothing, silently) and, on the Tube-Tech, a null read inside the plugin.
+                // The same arithmetic ChainHost gives the rack's own slot, so the copy hears what
+                // the rack's plugin hears. The plan is fixed while the copy is installed, so this
+                // is a copy, never a decision.
+                for (const auto& c : keyPlan_)
+                    buf_.copyFrom (c.destChannel, 0, buf_, c.srcChannel, 0, numSamples);
                 const float inPk = juce::jmax (buf_.getMagnitude (0, 0, numSamples),
                                                buf_.getMagnitude (1, 0, numSamples));
                 juce::MidiBuffer noMidi;
@@ -334,6 +359,10 @@ private:
     std::unique_ptr<juce::AudioProcessor>    inst_;      // under lock_
     void*                                    ring_ = nullptr;   // under lock_; owned by the caller
     juce::AudioBuffer<float>                 buf_;      // allocated at prepare, audio thread's own
+    // THE KEY-BUS PLAN, computed on the message thread in start() and read on the audio thread
+    // under lock_ with it. Never built in pump(): it is the copy's shape, which cannot change
+    // while the copy is installed, and the audio thread allocates nothing.
+    std::vector<echojay::ShadowChannelCopy> keyPlan_;   // under lock_
     std::atomic<bool>                        on_ { false };
     std::atomic<float>                       inDb_ { -200.0f }, outDb_ { -200.0f }, grDb_ { 0.0f };
     std::atomic<juce::int64>                 framesPumped_ { 0 };
