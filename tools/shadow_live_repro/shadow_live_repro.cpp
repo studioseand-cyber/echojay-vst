@@ -56,6 +56,8 @@
 //   teardown       the product's ordering: a copy rendering with its editor open, then the INSTANCE
 //                  freed while the editor still lives, then the editor, then a SECOND instance with
 //                  its own view while window notifications fly. This is the leg that has to crash.
+//   persist        the mechanism his 22:08 settings were lost to: an older state applied over a
+//                  newer change destroys it. No licence needed, so it runs unsupervised.
 //   followparams   FOLLOW layer 2's three open questions, on the real plugin: does the guest view
 //                  REDRAW when the host writes a parameter (his eye answers that one), what a full
 //                  getValue() sweep costs, and whether writing while the copy renders is safe.
@@ -259,6 +261,116 @@ void churnWindows (const juce::String& leg, juce::DocumentWindow* w, int ms)
         }
         ++n;
     }
+}
+
+/** ---- THE MECHANISM HIS SETTINGS WERE LOST TO, ON A REAL PLUGIN (25 Oct 2026) --------------
+
+    His 22:08 loss: the borrow session's close-apply committed its UNSEEDED mirror's state - plain
+    defaults - onto the Link, over a Threshold he had just heard move. The fix is a rule about when
+    a state may be written (seeded from the Link, or born in this V2 session; never neither), and
+    its guards are pure-function legs.
+
+    What a guard CANNOT show is that the premise is real: that applying an older state over a newer
+    change actually destroys the change on a real hosted plugin, rather than being merged, ignored
+    or partially applied. That is a claim about somebody else's code, and this leg asks it.
+
+    NO PACE, NO iLOK, so it runs unsupervised overnight: the default here is Apple's AUDelay, which
+    is the one Apple-made effect in this machine's scanned list. The CL 1B's own proof waits for
+    Sean in the morning, under the supervised exception.
+
+    No editor is needed or asked for, so a plugin with no custom view is a valid subject.
+
+      1. read state A                      - what the plugin says it is
+      2. move a parameter, read it back     - a change we know landed
+      3. read state B, assert B != A        - the plugin really serialises the change
+      4. re-apply A, assert the knob WENT BACK   <- the loss, reproduced
+      5. re-apply B, assert the knob returns     <- and it is a true round trip, not a reset        */
+int runPersistLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
+                   const juce::PluginDescription& d, int seconds)
+{
+    auto inst = makeOne (fm, d, leg, "the subject");
+    if (inst == nullptr) return 3;
+
+    const auto plan = echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*inst));
+    inst->prepareToPlay (kRate, kBlock);
+
+    auto& params = inst->getParameters();
+    if (params.isEmpty()) { say (leg, "REFUSED: this plugin reports no parameters"); return 3; }
+
+    // A parameter that is not already at an end, so a move in either direction is visible.
+    int which = -1;
+    for (int i = 0; i < params.size(); ++i)
+        if (params[i]->getName (64).isNotEmpty()) { which = i; break; }
+    auto* prm = params[which];
+    say (leg, juce::String (params.size()) + " parameter(s); driving " + juce::String (which)
+            + " \"" + prm->getName (64) + "\", now " + juce::String (prm->getValue(), 4));
+
+    const int channels = juce::jmax (2, inst->getTotalNumInputChannels(),
+                                        inst->getTotalNumOutputChannels());
+    Renderer r (*inst, leg, channels, kBlock, 0, nullptr, plan);
+    r.startThread (juce::Thread::Priority::highest);
+    say (leg, "rendering " + juce::String (channels) + " channel(s) - every state call below happens "
+              "with the plugin live, which is the product's condition");
+
+    auto settle = [&] (int ms)
+    {
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        while (juce::Time::getMillisecondCounterHiRes() - t0 < (double) ms)
+        {
+            juce::Timer::callPendingTimersSynchronously();
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+        }
+    };
+
+    juce::MemoryBlock A, B;
+    const float v0 = prm->getValue();
+    inst->getStateInformation (A);
+    settle (200);
+    say (leg, "state A is " + juce::String ((juce::int64) A.getSize()) + " bytes at value "
+            + juce::String (v0, 4));
+
+    const float v1 = v0 < 0.5f ? 0.80f : 0.20f;
+    prm->setValueNotifyingHost (v1);
+    settle (300);
+    const float back1 = prm->getValue();
+    const bool moved = std::abs (back1 - v0) > 0.05f;
+    say (leg, juce::String (moved ? "PASS" : "FAIL") + ": the parameter MOVED to "
+            + juce::String (back1, 4) + " (asked " + juce::String (v1, 2) + ")");
+
+    inst->getStateInformation (B);
+    settle (200);
+    const bool differs = B.getSize() != A.getSize()
+                      || std::memcmp (A.getData(), B.getData(), A.getSize()) != 0;
+    say (leg, juce::String (differs ? "PASS" : "FAIL")
+            + ": state B (" + juce::String ((juce::int64) B.getSize()) + " bytes) DIFFERS from A, so "
+              "this plugin really serialises the change - without that, a stale commit could not "
+              "destroy anything and the rule would be guarding nothing");
+
+    // ---- THE LOSS, REPRODUCED -------------------------------------------------------------
+    inst->setStateInformation (A.getData(), (int) A.getSize());
+    settle (400);
+    const float afterStale = prm->getValue();
+    const bool lost = std::abs (afterStale - v0) < 0.05f && std::abs (afterStale - back1) > 0.05f;
+    say (leg, juce::String (lost ? "PASS" : "FAIL")
+            + ": applying the OLDER state A put the parameter back to " + juce::String (afterStale, 4)
+            + " - the change was DESTROYED, which is exactly what the borrow commit did to his "
+              "Threshold at 22:09:05. The premise of the rule is real on a live plugin");
+
+    inst->setStateInformation (B.getData(), (int) B.getSize());
+    settle (400);
+    const float afterNewer = prm->getValue();
+    const bool restored = std::abs (afterNewer - back1) < 0.05f;
+    say (leg, juce::String (restored ? "PASS" : "FAIL")
+            + ": and re-applying the NEWER state B brought it back to " + juce::String (afterNewer, 4)
+            + " - a true round trip, so the loss above was the stale WRITE and not a reset");
+
+    if (seconds > 4) settle ((seconds - 4) * 1000);
+    r.stopThread (2000);
+    inst->releaseResources();
+    say (leg, "SURVIVED, " + juce::String (r.blocks.load()) + " blocks rendered under "
+            + juce::String (4) + " state calls");
+    keepForeverOnTheBench (std::move (inst));
+    return (moved && differs && lost && restored) ? 0 : 4;
 }
 
 /** ---- FOLLOW LAYER 2'S THREE OPEN QUESTIONS, ASKED ON THE REAL PLUGIN (24 Oct 2026) ---------
@@ -548,6 +660,8 @@ int main (int argc, char** argv)
     // before a render starts competing for the thread, and the sweep he WATCHES has to be the only
     // thing moving on the panel.
     if (leg == "followparams") return runFollowParamsLeg (leg, fm, d, seconds);
+    // 25 Oct: the stale-state loss, on a plugin with no licence, so it runs unsupervised.
+    if (leg == "persist") return runPersistLeg (leg, fm, d, seconds);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;

@@ -29,6 +29,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "EJAgentClientTestAccess.h"   // B's one-run rule: feed the client frames with no server
+#include "EJRackSidecarFill.h"          // SH19: the dial-state fingerprint the publisher compares
+#include "EJAgentProtocol.h"            // SH19: the read-back's look budget
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -1959,23 +1961,56 @@ int main()
         // fault."*  The decision is a function with no window in it so this can ask it; the SHIELD
         // it drives is an NSView and is checked by hand on the installed build.
         {
-            const auto blocked = echojay::liveViewInputPolicy (true);
+            const auto blocked = echojay::liveViewInputPolicy (true, /*controlBuilt*/ false);
             check (blocked.blockInput && blocked.line == "View only - change settings on the Link for now",
-                   "SH13 a live-view copy is blocked, and says his sentence word for word",
+                   "SH13 a live-view copy with no control built is blocked, and says his sentence "
+                   "word for word",
                    "\"" + blocked.line + "\"");
             const auto notALiveView = echojay::liveViewInputPolicy (false);
             check (! notALiveView.blockInput && notALiveView.line.isEmpty(),
                    "SH13a ...and nothing else is touched: the main rack's own slots, a borrowed "
                    "mirror and an edit session all host the instance a gesture really changes",
                    "open, nothing said");
-            const auto whenBuilt = echojay::liveViewInputPolicy (true, /*controlBuilt*/ true);
-            check (! whenBuilt.blockInput && whenBuilt.line.isEmpty(),
-                   "SH13b ...and when control through the view IS built the block lifts with it, "
-                   "from the one flag (kLiveViewControlBuilt), not from a second edit here",
-                   "open once stage C lands");
+            // ---- CONTROL IS BUILT NOW (24 Oct 2026), so SH13b and SH13c changed sides ---------
+            // This is the guard following the build rather than contradicting it: the flag is the
+            // ONE place the block is decided, and what it now has to prove is that the lock comes
+            // off for a gesture that can travel and goes straight back on for one that cannot.
+            const auto open = echojay::liveViewInputPolicy (true, /*controlBuilt*/ true,
+                                                            /*following*/ true, /*runHolds*/ false);
+            check (! open.blockInput && open.line.isEmpty(),
+                   "SH13b with control built, a FOLLOWING view on a free rack takes his gestures - "
+                   "the lock is off, from the one flag and not from a second edit",
+                   "open");
+            // THE FLAG FOLLOWS WHAT IS SHIPPED, and tonight it ships OFF: his ruling of 22:1x,
+            // after the borrow commit wrote defaults over a Threshold he had just heard move.
+            // CONTROL itself is built and proven on the wire (SH17); what is not yet safe is the
+            // persistence road underneath it, so the lock goes back on until SH18 and a bench
+            // proof say otherwise. A guard that asserted the flag's VALUE either way would be a
+            // guard about a decision; this one is about the two of them agreeing.
             check (! echojay::kLiveViewControlBuilt,
-                   "SH13c ...which is still false in this build, so the block is on",
-                   "control not built yet");
+                   "SH13c ...and that flag is FALSE in this build, so the \"View only\" lock is back "
+                   "on - his ruling until the persistence road cannot overwrite the Link",
+                   "control off tonight");
+            const auto shippedNow = echojay::liveViewInputPolicy (true);
+            check (shippedNow.blockInput
+                   && shippedNow.line == juce::String (echojay::liveViewOnlyLine()),
+                   "SH13c2 ...and the DEFAULT call - the one the shield actually makes - blocks with "
+                   "his sentence, so what ships is what the flag says and not what a test passed",
+                   "\"" + shippedNow.line + "\"");
+            const auto heldByRun = echojay::liveViewInputPolicy (true, true, true, /*runHolds*/ true);
+            check (heldByRun.blockInput && heldByRun.line.contains ("an agent is working on this rack"),
+                   "SH13d an agent run holding the rack puts the shield BACK UP with that reason - a "
+                   "gesture that cannot land is the same silent loss whatever is stopping it",
+                   "\"" + heldByRun.line + "\"");
+            const auto notFollowing = echojay::liveViewInputPolicy (true, true, /*following*/ false, false);
+            check (notFollowing.blockInput && notFollowing.line.contains ("not following"),
+                   "SH13e ...and so does a view that is not following, because a value by index "
+                   "with nothing proving the parameter lists agree is a value on the wrong knob",
+                   "\"" + notFollowing.line + "\"");
+            check (heldByRun.line != notFollowing.line,
+                   "SH13f ...and the two reasons are DIFFERENT sentences, because they need "
+                   "different next moves from him",
+                   "two reasons");
         }
 
         // ---- SH14: THE VIEW OPENS ON THE REAL PLUGIN'S SETTINGS, OR SAYS IT DID NOT ----------
@@ -2203,6 +2238,236 @@ int main()
             check (std::abs (a.getParameters()[3]->getValue() - 0.40f) < 1.0e-3f,
                    "SH16k ...the one that moved, with the value that was published",
                    juce::String (a.getParameters()[3]->getValue(), 4));
+        }
+
+        // ---- SH17: CONTROL - THE POLICY AND THE COALESCER (stages C1-C3, 24 Oct 2026) --------
+        //
+        // *"turning a knob in the V2's live view changes the real plugin on the Link at once ...
+        // control refused with the reason while an agent run holds the rack; gestures framed so a
+        // drag is one change."*  Both halves are pure functions so this can hold them without a
+        // Link, a plugin, a run or a window.
+        {
+            const auto ok = echojay::liveControlPolicy (/*following*/ true, /*runHoldsRack*/ false);
+            check (ok.allow && ok.line.isEmpty(),
+                   "SH17 a following view on a free rack may send a gesture, and nothing is said",
+                   "allowed");
+
+            const auto run = echojay::liveControlPolicy (true, true);
+            check (! run.allow && run.line.contains ("an agent is working on this rack")
+                   && run.line.contains ("stop it, or wait"),
+                   "SH17a a run holding the rack REFUSES with the reason and the two things he can "
+                   "do about it - never a silent drop, which was his finding this morning",
+                   "\"" + run.line + "\"");
+
+            const auto notFollowing = echojay::liveControlPolicy (false, false);
+            check (! notFollowing.allow && notFollowing.line.contains ("open it on the Link"),
+                   "SH17b a view that is not following refuses and sends him somewhere that works",
+                   "\"" + notFollowing.line + "\"");
+
+            const auto both = echojay::liveControlPolicy (false, true);
+            check (! both.allow && both.line.contains ("an agent is working on this rack"),
+                   "SH17c when BOTH are wrong the RUN is named, because that is the one he needs to "
+                   "know about - the ordering in the function is deliberate and this holds it",
+                   "\"" + both.line + "\"");
+
+            // THE COALESCER: by parameter, never by frame, and a boundary is never dropped.
+            using SP = echojay::StagedParam;
+            const SP drag[] = {
+                { 0, 2, 0.10, true,  false, 7 },     // begin
+                { 0, 2, 0.20, false, false, 7 },
+                { 0, 2, 0.30, false, false, 7 },
+                { 0, 2, 0.40, false, true,  7 },     // end
+            };
+            const auto one = echojay::coalesceStagedParams (drag, 4);
+            check (one.size() == 1 && std::abs (one[0].value - 0.40) < 1.0e-9
+                   && one[0].sawBegin && one[0].sawEnd && one[0].gesture == 7,
+                   "SH17d a four-frame drag of one control coalesces to ONE move at the LATEST "
+                   "value, keeping both boundaries - which is what makes it one undo step",
+                   "n=" + juce::String ((int) one.size()) + " v="
+                   + juce::String (one.empty() ? -1.0 : one[0].value, 3));
+
+            const SP two[] = {
+                { 0, 2, 0.10, true,  false, 7 },
+                { 0, 5, 0.90, true,  false, 8 },
+                { 0, 2, 0.50, false, true,  7 },
+                { 1, 2, 0.25, true,  true,  9 },     // another SLOT, same paramId
+            };
+            const auto three = echojay::coalesceStagedParams (two, 4);
+            check (three.size() == 3,
+                   "SH17e two controls moving at once stay two moves, and the same paramId on "
+                   "another SLOT is a third - the key is the pair, never the index alone",
+                   "n=" + juce::String ((int) three.size()));
+            check (! three.empty() && three[0].paramId == 2 && three[0].slot == 0
+                   && std::abs (three[0].value - 0.50) < 1.0e-9 && three[0].sawEnd,
+                   "SH17f ...and first appearance keeps its place, so a log reads in the order he "
+                   "moved things",
+                   "first=" + juce::String ((int) three[0].paramId));
+            const auto none = echojay::coalesceStagedParams (nullptr, 0);
+            check (none.empty(),
+                   "SH17g nothing staged coalesces to nothing, rather than to one move of zero",
+                   "empty");
+
+            // THE PHASE, FROM THE WIRE'S OWN ENUM, so the two sides cannot disagree about it.
+            const auto b = echojay::stagedFromFrame (0, 1, 0.5, echojay::cmdring::kBegin, 3);
+            const auto m = echojay::stagedFromFrame (0, 1, 0.5, echojay::cmdring::kStream, 3);
+            const auto e = echojay::stagedFromFrame (0, 1, 0.5, echojay::cmdring::kEnd, 3);
+            check (b.sawBegin && ! b.sawEnd && ! m.sawBegin && ! m.sawEnd && e.sawEnd && ! e.sawBegin,
+                   "SH17h a frame's phase becomes the two boundary flags and nothing else - read "
+                   "from cmdring's own enum, not from a second spelling of it here",
+                   "begin/stream/end");
+        }
+
+        // ---- SH18: NOTHING WRITES A PLUGIN'S STATE ONTO THE LINK WITHOUT A CLAIM TO BE NEWER --
+        //
+        // His 22:08 lost settings, 24 Oct 2026. The borrow close-apply committed its UNSEEDED
+        // mirror's default state over the Link the moment the live view came down:
+        //
+        //     22:09:05  EJApply: slot 1 "Tube-Tech CL 1B" hadState=N seeded=N -> withheld=N
+        //                        edited=Y action=COMMIT
+        //
+        // His rule: *"commit only if the slot was seeded from the Link's state, or born in this V2
+        // session with a known identity. Never commit a copy that is neither."*
+        //
+        // THE KNOWN-BAD DIRECTION IS IN THE LEG, not in a one-off manual revert: the old rule is
+        // reconstructed here as a lambda and asserted to COMMIT on the very inputs that cost him
+        // his settings. That is what makes these legs falsifiable for ever rather than on the one
+        // evening somebody remembered to check.
+        {
+            using BC = LinkShm::BorrowCommit;
+            using A  = BC::Action;
+            // The rule as it shipped: withheld = hadState && !seeded, then edited decides.
+            auto classifyOldWay = [] (bool hadState, bool seeded, bool edited)
+            {
+                const bool withheld = hadState && ! seeded;
+                if (withheld) return A::LeaveWithheld;
+                return edited ? A::Commit : A::LeaveUnedited;
+            };
+
+            // GUARD 2 (the one that cost him the settings), BOTH DIRECTIONS.
+            check (classifyOldWay (/*hadState*/ false, /*seeded*/ false, /*edited*/ true) == A::Commit,
+                   "SH18 the OLD rule COMMITS an unseeded copy - the known-bad direction, kept in "
+                   "the leg so this guard can always be shown to discriminate (his 22:09:05 line)",
+                   "old -> COMMIT");
+            check (BC::classify (/*withheld*/ false, /*edited*/ true, /*seededFromLink*/ false,
+                                 /*bornHere*/ false) == A::LeaveUnseeded,
+                   "SH18a ...and the rule now LEAVES it: a copy that was never seeded with the "
+                   "Link's own state has no claim to be newer, so the Link keeps what it has",
+                   "new -> LEAVE-UNSEEDED");
+            check (A::LeaveUnseeded != A::LeaveWithheld && A::LeaveUnseeded != A::LeaveUnedited,
+                   "SH18b ...under its OWN verdict name, because \"we refused a state that arrived\" "
+                   "and \"no state ever arrived\" need different next moves",
+                   "a fourth verdict");
+
+            // GUARD 1: a control change lands on the REAL plugin, and the close must not undo it.
+            // The mirror is seeded and the user edited nothing in it, so there is nothing to write:
+            // whatever CONTROL put on the Link survives the close and the reopen.
+            check (BC::classify (false, /*edited*/ false, /*seededFromLink*/ true, false) == A::LeaveUnedited,
+                   "SH18c a seeded mirror with no edits of its own writes NOTHING, so a change made "
+                   "through the live view (which goes to the real plugin, not to the mirror) "
+                   "survives the close and the reopen",
+                   "LEAVE-UNEDITED");
+
+            // GUARD 3: a picker add, then a knob change, must still land.
+            check (BC::classify (false, /*edited*/ true, /*seededFromLink*/ false,
+                                 /*bornHere*/ true) == A::Commit,
+                   "SH18d a slot BORN in this V2 session commits its edits although it was never "
+                   "seeded - a picker add has no Link state to be seeded from and is legitimately "
+                   "the newer copy. Without this the fix would silently break adding a plugin",
+                   "COMMIT");
+            check (BC::classify (/*withheld*/ true, true, false, /*bornHere*/ true) == A::LeaveWithheld,
+                   "SH18e ...but born-here never outranks WITHHELD, which is the older rule and "
+                   "still the strongest one",
+                   "LEAVE-WITHHELD");
+
+            // GUARD 4: a whole rack at once, which is what an agent build leaves behind - its
+            // placements are born here, the slots it did not touch are the Link's. The agent's
+            // VALUE steps do not come through this road at all (chain-cmd v2 editOps go straight
+            // to the Link, source="agent" in his 21:32 log), so what this holds is that its
+            // PLACEMENTS commit and that nothing else is dragged along with them.
+            std::vector<BC::Slot> rack {
+                { false, false, /*seeded*/ true,  false },   // the Link's, untouched
+                { false, true,  /*seeded*/ true,  false },   // the Link's, edited here -> commit
+                { false, true,  /*seeded*/ false, false },   // the Link's, never seeded -> LEAVE
+                { false, true,  /*seeded*/ false, true  },   // placed here -> commit
+            };
+            const auto p = BC::plan (rack);
+            check (p.committing == 2 && p.unseeded == 1 && p.untouched == 1
+                   && p.actions.size() == 4
+                   && p.actions[0] == A::LeaveUnedited && p.actions[1] == A::Commit
+                   && p.actions[2] == A::LeaveUnseeded && p.actions[3] == A::Commit,
+                   "SH18f a mixed rack: the Link's edited slot and the one placed here commit, the "
+                   "untouched one and the never-seeded one do not - four slots, four different "
+                   "answers, counted",
+                   "commit=" + juce::String (p.committing) + " unseeded=" + juce::String (p.unseeded)
+                   + " untouched=" + juce::String (p.untouched));
+
+            // AND THE PAIR FORM STILL READS AS IT ALWAYS DID, so no existing caller changed
+            // behaviour when the rule arrived: a {withheld, edited} pair carries no seeding fact.
+            const auto pairPlan = BC::plan (std::vector<std::pair<bool, bool>> { { false, true } });
+            check (pairPlan.committing == 1 && pairPlan.unseeded == 0,
+                   "SH18g the two-argument form is unchanged for every caller that has no seeding "
+                   "fact to give - the rule narrowed one road and left the rest alone",
+                   "pair -> COMMIT");
+        }
+
+        // ---- SH19: THE DIAL'S STATE GOES OUT AT ONCE, AND THE READ-BACK WAITS FOR IT ---------
+        //
+        // His 21:32 read-back, 24 Oct 2026: the agent set the CL 1B's Threshold to -20, the write
+        // landed, the step said "I could not read these values back to confirm them (Threshold)" -
+        // and ONE SECOND LATER the dial ran and confirmed it at -19.8.
+        //
+        // Two halves, and both are held here: the publisher must notice that the dial's state has
+        // moved (it only bumped the hosted epoch, whose road is the settle), and the read-back must
+        // actually wait when it is told the dial is running (its budget is ONE look unless pending
+        // raises it).
+        {
+            using PC = std::pair<bool, bool>;          // {pending, confirmed}
+            const auto quiet   = echojay::dialStateFingerprint ({ PC{false,false}, PC{false,false} });
+            const auto pending = echojay::dialStateFingerprint ({ PC{true, false}, PC{false,false} });
+            const auto done1   = echojay::dialStateFingerprint ({ PC{false,true },  PC{false,false} });
+
+            check (pending != quiet,
+                   "SH19 a slot's dial going PENDING changes the rack's dial fingerprint, so the "
+                   "publisher has something to notice - his 21:32 figure was lost because this fact "
+                   "went out on the settle",
+                   "\"" + quiet + "\" -> \"" + pending + "\"");
+            check (done1 != quiet && done1 != pending,
+                   "SH19a ...and so does the CONFIRMATION arriving, which is the other fact the "
+                   "read-back is waiting for",
+                   "\"" + done1 + "\"");
+            check (echojay::dialStateFingerprint ({ PC{false,false}, PC{false,false} }) == quiet,
+                   "SH19b an unchanged rack gives an IDENTICAL fingerprint, so this triggers no "
+                   "publish storm - the known-good direction",
+                   "stable");
+            const auto swapped = echojay::dialStateFingerprint ({ PC{false,false}, PC{true, false} });
+            check (swapped != pending,
+                   "SH19c two slots SWAPPING pending states is a different fingerprint although the "
+                   "count is identical - a count is how a publisher convinces itself nothing moved",
+                   "\"" + pending + "\" vs \"" + swapped + "\"");
+
+            // THE WAITING HALF. 25 is kPendingLooks at the call site; the leg states it rather than
+            // reading a private constant, so a change there has to be made deliberately twice.
+            const auto noPending = echojay::agent::readBackLookBudget (/*triesLeft*/ 1,
+                                       /*pendingBudget*/ false, /*anyDialPending*/ false, 25);
+            check (noPending.looksLeft == 1 && ! noPending.inPending,
+                   "SH19d with no pending reported, the confirm road keeps its budget of ONE - which "
+                   "is why a late pending flag meant NO second look at all (the known-bad shape)",
+                   "looks=" + juce::String (noPending.looksLeft));
+            const auto withPending = echojay::agent::readBackLookBudget (1, false, true, 25);
+            check (withPending.looksLeft == 25 && withPending.inPending,
+                   "SH19e ...and a slot reporting its dial STILL RUNNING raises it to twenty-five "
+                   "looks: the read-back waits for the dial rather than reporting that a figure it "
+                   "has not waited for cannot be read",
+                   "looks=" + juce::String (withPending.looksLeft));
+            const auto already = echojay::agent::readBackLookBudget (7, /*pendingBudget*/ true, true, 25);
+            check (already.looksLeft == 7 && already.inPending,
+                   "SH19f ...raised ONCE: a recursion already inside the pending budget counts its "
+                   "own looks down, or the read-back would never end",
+                   "looks=" + juce::String (already.looksLeft));
+            check (echojay::agent::readBackShouldLookAgain (1, false, false, /*unreadable*/ true),
+                   "SH19g and an unreadable value is a reason to look again in the first place - the "
+                   "two halves have to agree or the budget is never spent",
+                   "look again");
         }
 
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------

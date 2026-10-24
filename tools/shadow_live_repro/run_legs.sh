@@ -28,6 +28,7 @@ ID="Developer ID Application: Sean Donoghue (8BT5F9B887)"
 ENTS="tools/au_instantiate_probe/EchoJayProbe.entitlements"
 OUT="${EJ_REPRO_OUT:-${TMPDIR:-/tmp}/ej_shadow_repro}"
 
+echo "subject: ${EJ_REPRO_PLUGIN_NAME:-Tube-Tech CL 1B}"
 if pgrep -x "Logic Pro" > /dev/null || pgrep -x "Pro Tools" > /dev/null; then
     echo "REFUSED: a host is open. Close Logic and Pro Tools first - this loads the same licence."
     exit 1
@@ -51,7 +52,11 @@ for LEG in "${LEGS[@]}"; do
     T0=$(date +%s)
     echo
     echo "---- $LEG ----"
-    "$BIN" "$LEG" "$SECS" > "$LOG" 2>&1
+    # 25 Oct: a leg may name its own subject, so a non-PACE plugin can be run unsupervised
+    # overnight. EJ_REPRO_PLUGIN_NAME / _ID default to the crash's own plugin when unset, which is
+    # what every supervised leg wants and is the behaviour this script has always had.
+    "$BIN" "$LEG" "$SECS" "${EJ_REPRO_PLUGIN_NAME:-Tube-Tech CL 1B}" \
+           "${EJ_REPRO_PLUGIN_ID:-AudioUnit:Effects/aufx,clST,SfTb}" > "$LOG" 2>&1
     RC=$?
     T=$(( $(date +%s) - T0 ))
     LAST=$(grep -E "^\[$LEG\] (t=|SURVIVED|REFUSED)" "$LOG" | tail -1)
