@@ -105,6 +105,24 @@ install_one() {
         return 0
     fi
 
+    # 24 Oct: a chain script called this with no BUILD_DIR, so the default
+    # (build-release) installed three-week-old bundles over the build under
+    # test. The bundles are produced in build-guards; build-release carries
+    # only the archives the guards link. A binary older than the source it is
+    # supposed to contain is never what the caller meant, so it is refused
+    # here rather than written to the host's search path.
+    local stale
+    stale="$(find "$ROOT/Source" -type f -newer "$src_bin" -print -quit 2>/dev/null)"
+    if [[ -n "$stale" ]]; then
+        note "REFUSED: this bundle is older than the source tree"
+        note "         bundle: $(date -r "$src_bin" '+%d %b %H:%M')  (from $BUILD_DIR)"
+        note "         newer:  $(basename "$stale")  $(date -r "$stale" '+%d %b %H:%M')"
+        note "         build this tree first, or name the build dir that holds"
+        note "         the bundles: tools/install_local.sh build-guards"
+        fail=1
+        return 0
+    fi
+
     local want
     want="$(uuid_of "$src_bin")"
 
