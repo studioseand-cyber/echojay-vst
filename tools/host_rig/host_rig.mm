@@ -8891,7 +8891,20 @@ int main (int argc, char* argv[])
         };
         // The ORDER, read off what the window draws: the index of his own row against the index of
         // the run's card. Returns -1 for either when it is not drawn at all.
-        auto orderOf = [] (const juce::var& st, const juce::String& text, int& userAt, int& cardAt)
+        // ---- AND IT IS *THIS RUN'S* CARD, BY ITS KEY (24 Oct 2026) --------------------------
+        //
+        // This took "the first card on screen", which is a proxy for "the card this message started".
+        // With the row's target finally resolving (the fix above), the chat it lands in is a chat
+        // that already holds earlier runs' cards - the gate's own log reads "rows 5 card(s) on
+        // screen" - so the first card was an OLDER one, sitting above his message exactly as it
+        // should, and the row reported his 15:09 fault about it. Second proxy in the same row in one
+        // day: the first time it was the uid, this time the card.
+        //
+        // `cardRunKey` is published on every card row and `agentRunKey` on the state, so the card
+        // this run drew can be named rather than guessed. With no key available the row says so
+        // instead of falling back to a comparison it cannot make.
+        auto orderOf = [] (const juce::var& st, const juce::String& text, const juce::String& runKey,
+                           int& userAt, int& cardAt)
         {
             userAt = cardAt = -1;
             int i = 0;
@@ -8901,7 +8914,9 @@ int main (int argc, char* argv[])
                     if (userAt < 0 && r.getProperty ("role", juce::var()).toString() == "user"
                         && r.getProperty ("text", juce::var()).toString().contains (text))
                         userAt = i;
-                    if (cardAt < 0 && (bool) r.getProperty ("card", false))
+                    if (cardAt < 0 && (bool) r.getProperty ("card", false)
+                        && runKey.isNotEmpty()
+                        && r.getProperty ("cardRunKey", juce::var()).toString() == runKey)
                         cardAt = i;
                     ++i;
                 }
@@ -8938,7 +8953,8 @@ int main (int argc, char* argv[])
             Rig::pump (1500);
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             int u1 = -1, c1 = -1;
-            orderOf (Rig::state(), "build a vocal chain", u1, c1);
+            const auto key1 = pstB5().getProperty ("agentRunKey", juce::var()).toString();
+            orderOf (Rig::state(), "build a vocal chain", key1, u1, c1);
             check (live && u1 >= 0 && c1 >= 0 && u1 < c1,
                    "B5: back in that Link's chat with the run STILL LIVE, his message is drawn ABOVE "
                    "the run's card  (RED as it shipped at 15:09: the card reached the store on the "
@@ -8959,7 +8975,9 @@ int main (int argc, char* argv[])
             Rig::pump (1500);
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
             int u2 = -1, c2 = -1;
-            orderOf (Rig::state(), "build a vocal chain", u2, c2);
+            const auto key2 = key1.isNotEmpty() ? key1
+                                                : pstB5().getProperty ("agentRunKey", juce::var()).toString();
+            orderOf (Rig::state(), "build a vocal chain", key2, u2, c2);
             check (u2 >= 0 && c2 >= 0 && u2 < c2,
                    "...and after the run FINISHED, through another switch away and back, his message "
                    "is still above the card - the order is a place taken once, not a thing recomputed "
@@ -9013,6 +9031,27 @@ int main (int argc, char* argv[])
         Rig::pump (900);
         rig.send (echojay::rig::cmd::sendChat,
                   args1 ("text", "rig-auto-marker: build a mix bus (in a brand new chat)"), 15000);
+        Rig::pump (900);
+        // ---- AND THE SUPERSEDE ASK IS ANSWERED, BECAUSE THAT IS WHAT HE DOES (24 Oct 2026) -----
+        //
+        // His ruling of 21:06 put a question in front of exactly this move: a message typed while a
+        // run is live anywhere asks "This will stop the run on <name>. Start anyway?" and HOLDS his
+        // text on the chips until he answers. So the typed line no longer reaches the new chat by
+        // itself, and this row read "his row at -1" - his message was not missing, it was waiting
+        // for an answer nobody gave.
+        //
+        // The row now answers it the way he would, and only when it is actually up: the first chip
+        // is "Start anyway". A press that finds no chips is harmless and says nothing, so a build
+        // where the ask does not appear (the run already finished, say) still measures the order.
+        // Pressed unconditionally and its ack IGNORED on purpose: the state does not publish the
+        // editor's replace-ask chips, and inventing a field to read would be a second idea of what
+        // is on screen. A press that finds no chips is refused by the rig with a note and changes
+        // nothing, so this is safe whether the ask is up or not - and the checks below still have to
+        // find his message either way.
+        const auto chipAck = rig.send (echojay::rig::cmd::press, args1 ("button", "chip0"), 12000);
+        Rig::pump (1200);
+        std::printf ("        (B6 new chat) \"Start anyway\" press -> %s\n",
+                     chipAck.getProperty ("note", juce::var()).toString().toRawUTF8());
         // ---- THE NEW CHAT HAS TO BE DRAWING SOMETHING BEFORE EITHER HALF MEANS ANYTHING --------
         //
         // The first run of this row read `his row at -1, first card at -1`: the window was drawing
@@ -9353,13 +9392,38 @@ int main (int argc, char* argv[])
             // marker plan, so no third party and no licence is ever touched here.
             const auto built = askAgent (rig, "rig-linkadd-marker: add a compressor on that Link", 90000);
             juce::ignoreUnused (built);
+            // ---- OPEN THE SLOT THE ADD LANDED ON, NOT SLOT 1 (24 Oct 2026) -------------------
+            //
+            // The row opened slot 1 and then - correctly - refused to report, because slot 1 of that
+            // Link held "Renaissance Axx (s)" from an earlier row and this row promises an EchoJay
+            // plugin only. A loud skip is better than a verdict about a plugin it did not choose, but
+            // the row still proved nothing. So the slot is FOUND: the Link's published slot names,
+            // searched for the EchoJay compressor this row just added, and its 1-based position is
+            // what gets opened. A rack that does not show one leaves slotToOpen at 0 and the skip
+            // below says exactly that.
+            int slotToOpen = 0;
+            rig.until ([&] (const juce::var& st)
+            {
+                if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                        if (l.getProperty ("uid", juce::var()).toString() == shadowLink)
+                        {
+                            const auto names = juce::StringArray::fromTokens (
+                                                   l.getProperty ("slots", juce::var()).toString(), "|", "");
+                            for (int k = 0; k < names.size(); ++k)
+                                if (names[k].containsIgnoreCase ("EchoJay")) { slotToOpen = k + 1; return true; }
+                        }
+                return false;
+            }, 20000);
+            std::printf ("        (B9) the EchoJay plugin this row added is slot %d on %s\n",
+                         slotToOpen, shadowLink.toRawUTF8());
             // THE BORROW AS IT STOOD BEFORE THE LOOK, and WHOSE it was. Read here, because the
             // claim below is about what the VIEW did and not about what the suite was already
             // holding.
             const auto b4     = rig.freshState();
             const bool borrowBefore9 = (bool) b4.getProperty ("borrowActive", false);
             const auto borrowUidBefore9 = b4.getProperty ("borrowUid", juce::var()).toString();
-            rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1), 10000);
+            rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen > 0 ? slotToOpen : 1), 10000);
             // The view has to come up AND consume audio; 12 s, then it says what it got.
             bool running = false; double frames = 0.0; juce::String plug;
             rig.until ([&] (const juce::var& st)
@@ -9386,9 +9450,14 @@ int main (int argc, char* argv[])
                       + "\"), so this row would be measuring a rack it never selected.");
             else if (running && ! ejPlug)
                 skip ("B9: a Link slot's plugin is shown LIVE in the V2",
-                      "slot 1 of " + shadowLink + " holds \"" + plug + "\", which is not the EchoJay "
-                      "plugin this row adds - the rig never loads a PACE or iLok plugin, so it will "
-                      "not report a verdict on a third party it did not choose.");
+                      "slot " + juce::String (slotToOpen > 0 ? slotToOpen : 1) + " of " + shadowLink
+                      + " holds \"" + plug + "\", which is not the EchoJay plugin this row adds"
+                      + (slotToOpen > 0 ? juce::String (" (the add's own slot, found from the Link's "
+                                                        "published names)")
+                                        : juce::String (" - and no EchoJay plugin appeared on that rack "
+                                                        "within 20 s, so the add itself is what failed"))
+                      + ". The rig never loads a PACE or iLok plugin, so it will not report a verdict "
+                        "on a third party it did not choose.");
             else if (! running)
                 skip ("B9: a Link slot's plugin is shown LIVE in the V2",
                       juce::String ("the live view did not come up within 12 s (shadowRunning=0, "
