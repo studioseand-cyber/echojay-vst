@@ -1864,6 +1864,62 @@ void LinkProcessor::pollControlCommand()
         // header promised this count to the V2 and nothing had ever carried it.
         if (shadowWhyNot_.isNotEmpty()) r->setProperty ("why", shadowWhyNot_);
         if (tap != nullptr) r->setProperty ("frames", (double) tap->framesProduced());
+        // ---- AND THE SLOT'S OWN SETTINGS, WHEN THE VIEW ASKS FOR THEM (FOLLOW layer 1, 24 Oct) --
+        //
+        // *"the V2's copy mirrors the real plugin ... Today the copy keeps its starting settings, so
+        // its view and meters drift from the real one."*  The copy was created from a description
+        // and seeded with nothing, so the picture was of a plugin set up as it left the factory.
+        //
+        // IT RIDES THIS SAME COMMAND, not a second one. The tap request and the settings are one
+        // question - "show me that slot" - and one answer, which is this handler's own rule ("one
+        // answer per command"). A second command would be a second seq to keep in step and a window
+        // in which the view is up on the wrong settings.
+        //
+        // NO LEASE, NO BORROW, NOTHING TAKEN: this is getStateInformation on the slot's plugin and
+        // nothing else, which is the same read pullSlotState has done for the edit session for
+        // weeks - with that road's OWN cap, not a second one. A plugin that throws, or one whose
+        // chunk is over the cap, is REFUSED WITH ITS REASON, because a view showing the wrong
+        // settings silently is the fault this layer exists to close.
+        if (obj->hasProperty ("shadowState") && (bool) obj->getProperty ("shadowState"))
+        {
+            juce::String stateWhy;
+            if (now < 0)
+                stateWhy = "nothing is streaming on this Link";
+            else if (auto* proc = chainHost.getSlotProcessor (now))
+            {
+                juce::MemoryBlock mb;
+                bool threw = false;
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                try { proc->getStateInformation (mb); } catch (...) { threw = true; }
+                const auto tookMs = juce::Time::getMillisecondCounterHiRes() - t0;
+                if (threw)
+                    stateWhy = "this plugin refused to hand over its settings";
+                else if ((int) mb.getSize() > LinkShm::kLinkTransferMaxSlotBytes)
+                    stateWhy = "its settings are "
+                             + juce::File::descriptionOfSizeInBytes ((juce::int64) mb.getSize())
+                             + ", over the "
+                             + juce::File::descriptionOfSizeInBytes ((juce::int64) LinkShm::kLinkTransferMaxSlotBytes)
+                             + " limit, too large to carry";
+                else if (mb.getSize() == 0)
+                    stateWhy = "this plugin keeps no settings to send";
+                else
+                {
+                    r->setProperty ("state", LinkShm::stateToB64 (mb));
+                    r->setProperty ("stateBytes", (double) mb.getSize());
+                }
+                // THE TIMING IS LOGGED EVERY TIME, because FOLLOW layer 3 will want to do this once
+                // a second and nobody has ever measured what it costs on a real plugin. A number in
+                // the log beats an assumption in a design note.
+                EchoJay_NSLog (("EJShadow: pulled slot " + juce::String (now + 1) + "'s settings for "
+                                "the live view: " + juce::String ((juce::int64) mb.getSize())
+                                + " bytes in " + juce::String (tookMs, 1) + " ms"
+                                + (stateWhy.isNotEmpty() ? " - REFUSED: " + stateWhy
+                                                         : juce::String())).toRawUTF8());
+            }
+            else
+                stateWhy = "slot " + juce::String (now + 1) + " has no plugin";
+            if (stateWhy.isNotEmpty()) r->setProperty ("stateWhy", stateWhy);
+        }
         juce::File (resolvedDir + "ctrl-ack-" + id + ".json")
             .replaceWithText (juce::JSON::toString (juce::var (r), true));
         EchoJay_NSLog (("EJCtrl: shadowSlot " + juce::String (slot1) + " seq=" + juce::String (seq)

@@ -4314,6 +4314,7 @@ void EchoJayProcessor::rackLockTick()
 bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
                                     const juce::String& pluginName,
                                     std::unique_ptr<juce::AudioProcessor> inst,
+                                    const juce::MemoryBlock& seedState,
                                     juce::String& whyNot)
 {
     if (inst == nullptr) { whyNot = "no copy of that plugin could be created here"; return false; }
@@ -4382,6 +4383,58 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
     // keeper suspends and releases every copy it takes in, so a reused one arrives inert, and a
     // fresh one is unaffected by asking.
     inst->suspendProcessing (false);
+
+    // ---- FOLLOW LAYER 1: THE REAL PLUGIN'S SETTINGS, BEFORE PREPARE (24 Oct 2026) -------------
+    //
+    // *"the V2's copy mirrors the real plugin on the Link ... Today the copy keeps its starting
+    // settings, so its view and meters drift from the real one."*  This is the initial sync, and it
+    // carries EVERYTHING the plugin keeps - its parameters and the opaque state behind them - which
+    // is the half of his ask no parameter mirror can reach.
+    //
+    // THE ORDER IS A CRASH FIX, NOT A PREFERENCE. ChainHost's note of 16 Sep 2026 on the pre-image
+    // reseed: *"the pre-image reseed rides the reattach so it lands WHILE DETACHED and before the
+    // node's prepare - no separate post-prepare setStateInformation on a live node."*  Here that
+    // means: un-suspended, SEEDED, prepared, and only then handed to the view - so no block and no
+    // interface has ever met this instance when its chunk goes in. It is also why this layer never
+    // meets the question layer 3 will have to answer, which is reseeding a copy whose Cocoa view is
+    // already attached.
+    //
+    // A REUSED PARKED COPY IS SEEDED TOO, and it is the one that most needs it: it comes back
+    // holding whatever the LAST view left on it, which would be a confident picture of the wrong
+    // settings.
+    shadowSeedNote_.clear();
+    if (seedState.getSize() > 0)
+    {
+        int mark = 0;
+        if (auto* hosted = dynamic_cast<juce::AudioPluginInstance*> (inst.get()))
+            mark = echojay::shadowMarkRisky (hosted->getPluginDescription(),
+                                             echojay::kShadowPhaseSeed());
+        bool threw = false;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        try { inst->setStateInformation (seedState.getData(), (int) seedState.getSize()); }
+        catch (...) { threw = true; }
+        const auto tookMs = juce::Time::getMillisecondCounterHiRes() - t0;
+        echojay::shadowClearRisky (mark);
+        if (threw)
+        {
+            // THE VIEW STILL COMES UP. A picture of the plugin with a line saying the settings
+            // could not be read is worth more than no picture, and it is not silent - which is the
+            // whole of the fault this layer closes.
+            shadowSeedNote_ = "showing this plugin's defaults - it refused the settings the Link "
+                              "sent for it";
+            EchoJay_NSLog (("EJShadow: the copy of \"" + pluginName + "\" REFUSED the "
+                            + juce::String ((juce::int64) seedState.getSize())
+                            + " bytes of settings the Link sent - the view opens on its defaults "
+                              "and says so").toRawUTF8());
+        }
+        else
+            EchoJay_NSLog (("EJShadow: the copy of \"" + pluginName + "\" is seeded with the REAL "
+                            "plugin's settings from the Link: "
+                            + juce::String ((juce::int64) seedState.getSize()) + " bytes in "
+                            + juce::String (tookMs, 1) + " ms, applied BEFORE prepareToPlay and "
+                            "before any interface exists (FOLLOW layer 1)").toRawUTF8());
+    }
+
     inst->prepareToPlay (hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
                          hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
     if (! shadowView_.start (std::move (inst), shadowRingMap_, uid, slot0, pluginName, whyNot))

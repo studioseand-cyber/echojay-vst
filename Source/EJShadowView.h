@@ -39,7 +39,8 @@
 #include "EJShadowTap.h"
 #include "EJPluginCallWindow.h"   // his 08:58 crash, 24 Oct: no render while we are inside a plugin
 #include "EJShadowChannels.h"  // his 12:14 crash, 24 Oct: an unfed key bus is a null pointer
-#include "EJShadowKeep.h"      // his 14:27 crash, 24 Oct: a hosted AU is never disposed mid-session
+#include "EJShadowKeep.h"
+#include "EJShadowState.h"  // FOLLOW layer 1, and the repeat-crash marker his ruling asked for      // his 14:27 crash, 24 Oct: a hosted AU is never disposed mid-session
 
 namespace echojay
 {
@@ -352,7 +353,16 @@ public:
         // asking its own instance. Without it, the one instance that is certainly being rendered
         // would have its interface built underneath the render (his 08:58 crash, 24 Oct 2026).
         const PluginCallWindow noRenderWhileWeAreInHere;
+        // ---- AND IT IS MARKED, SO A PLUGIN THAT DIES IN HERE DOES NOT GET A SECOND GO --------
+        // Building a guest interface is one of the two calls the live view makes into a third
+        // party with exact attribution (the other is the seed), which is why these two are marked
+        // and rendering is not - EJShadowState.h says why at length.
+        int mark = 0;
+        if (auto* hosted = dynamic_cast<juce::AudioPluginInstance*> (inst_.get()))
+            mark = echojay::shadowMarkRisky (hosted->getPluginDescription(),
+                                             "building its interface for the live view");
         auto* ed = inst_->createEditorIfNeeded();
+        echojay::shadowClearRisky (mark);
         if (ed != nullptr)
         {
             // ---- CLICKS DO NOTHING, THIS ROUND (his ruling of 23 Oct 2026) -----------------

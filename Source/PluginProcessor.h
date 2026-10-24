@@ -667,12 +667,21 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     void*        shadowRingMap_ = nullptr;
     int          shadowRingFd_  = -1;
     juce::String shadowRingPath_;
+    juce::String shadowSeedNote_;      // FOLLOW layer 1: why this view is on defaults, if it is
     /** Install a prepared copy and start consuming that Link's shadow ring. The caller has already
         asked the Link to tap the slot (the control channel's `shadowSlot`) and seen its ack. FALSE
         with `whyNot` set changes nothing - the view falls back to the static picture, which is the
         designed failure and not an error. */
+    /** `seedState` is the REAL plugin's settings, pulled from the Link in the same request that
+        asked for the tap (FOLLOW layer 1, 24 Oct 2026). Empty means "open on the defaults", and
+        shadowSeedNote() then carries the one line he reads about why. */
     bool shadowBegin (const juce::String& uid, int slot0, const juce::String& pluginName,
-                      std::unique_ptr<juce::AudioProcessor> inst, juce::String& whyNot);
+                      std::unique_ptr<juce::AudioProcessor> inst,
+                      const juce::MemoryBlock& seedState, juce::String& whyNot);
+    /** What happened to the settings this view opened on: empty when they were applied, otherwise
+        the plain line the card shows. ONE PLACE, so the ack's refusal and the plugin's refusal
+        cannot be worded differently by two call sites. */
+    juce::String shadowSeedNote() const { return shadowSeedNote_; }
     /** Stop consuming and release the copy. The ring is unmapped AFTER the view has let go. */
     void shadowEnd();
     bool shadowRunning() const noexcept { return shadowView_.running(); }

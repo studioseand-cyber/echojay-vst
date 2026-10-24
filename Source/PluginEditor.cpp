@@ -36736,6 +36736,14 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
         shadowStopIfRunning ("the live view is switched off in this build");
         return;
     }
+    // ---- WHAT DID THE LAST SESSION DIE DOING? (the repeat-crash marker, his ruling of 24 Oct) --
+    // Once per process, before any plugin is named: a marker file left by a process that is no
+    // longer running becomes a refusal row, and the check below reads it.
+    if (const int rows = echojay::shadowConsumeDeadMarkersOnce(); rows > 0)
+        EchoJay_NSLog (("EJShadow: " + juce::String (rows) + " plugin(s) took a previous session "
+                        "down inside a live-view call and will not be offered one again until you "
+                        "ask - see shadow_refuse.txt").toRawUTF8());
+
     if (uid.isEmpty() || slot0 < 0) { shadowStopIfRunning ("nothing is selected"); return; }
     if (processorRef.shadowRunning() && processorRef.shadowUid() == uid
         && processorRef.shadowSlot() == slot0)
@@ -36773,6 +36781,29 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
         return;
     }
 
+    // ---- A PLUGIN THAT TOOK THE SESSION DOWN LAST TIME IS REFUSED (his ruling, 24 Oct) -------
+    //
+    // *"Approved, with the repeat-crash marker."*  A crash in the copy cannot be contained by a
+    // process boundary - the V2 and the Link are two audio units in one AUHostingService process -
+    // so what is contained here is the SECOND one. A marker is written before the risky call and
+    // removed when it returns (EJShadowState.h); a marker left behind by a process that died names
+    // the plugin, and this is where that name is read, BEFORE anything is asked of the Link and
+    // before any copy exists.
+    //
+    // IT REFUSES THE LIVE VIEW, NOT THE PLUGIN. The Tube-Tech lives in his rack and must keep
+    // working there; the deadman's blacklist would have withheld it everywhere, which is the right
+    // answer for a plugin that cannot load at all and far too much for this.
+    {
+        juce::String refusedWhy;
+        if (echojay::shadowRefusedBecause (desc, refusedWhy))
+        {
+            EchoJay_NSLog (("EJShadow: " + refusedWhy).toRawUTF8());
+            chainListPanel.statusText = refusedWhy;
+            chainListPanel.repaint();
+            return;
+        }
+    }
+
     // ---- STEP 1: ASK THAT LINK TO TAP THE SLOT ------------------------------------------------
     int err = 0;
     const auto dir = LinkShm::resolveDir (err);
@@ -36782,6 +36813,11 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
     cmd->setProperty ("v", 1);
     cmd->setProperty ("seq", seq);
     cmd->setProperty ("shadowSlot", slot0 + 1);     // 1-based on the wire, 0 = stop
+    // AND THE SLOT'S OWN SETTINGS, IN THE SAME QUESTION (FOLLOW layer 1). An older Link ignores
+    // this field and answers exactly as it always did, which is how the V2 tells "it cannot" from
+    // "it refused": neither `state` nor `stateWhy` comes back. The safe fallback is the defaults
+    // WITH A LINE SAYING SO, never a silent wrong picture.
+    cmd->setProperty ("shadowState", true);
     juce::File (dir + "ctrl-ack-" + uid + ".json").deleteFile();
     juce::File (dir + "ctrl-cmd-" + uid + ".json")
         .replaceWithText (juce::JSON::toString (juce::var (cmd), true));
@@ -36804,6 +36840,8 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
             juce::File ack (dir + "ctrl-ack-" + uid + ".json");
             bool streaming = false;
             juce::String why;
+            juce::MemoryBlock seedState;          // FOLLOW layer 1: the REAL plugin's settings
+            juce::String seedLine;                // what he reads when they could not be carried
             if (ack.existsAsFile())
             {
                 const auto v = juce::JSON::parse (ack.loadFileAsString());
@@ -36811,6 +36849,18 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                 {
                     streaming = (bool) o->getProperty ("streaming");
                     why       = o->getProperty ("why").toString();
+                    // ---- THE SETTINGS, AND THE ONE DECISION ABOUT THEM --------------------------
+                    // Decoded here and judged by one pure function (EJShadowState.h) so the gate can
+                    // hold every road - an older Link, a plugin that refused, a chunk over the cap,
+                    // a good one - without a Link, a plugin or a window.
+                    const bool hadStateKey = o->hasProperty ("state");
+                    if (hadStateKey)
+                        LinkShm::stateFromB64 (o->getProperty ("state").toString(), seedState);
+                    const auto seed = echojay::shadowSeedDecision (hadStateKey,
+                                                                   (int) seedState.getSize(),
+                                                                   o->getProperty ("stateWhy").toString());
+                    if (seed.what != echojay::ShadowSeed::Apply)
+                    { seedState.reset(); seedLine = seed.line; }
                 }
                 else if (left > 0) { (*poll) (left - 1); return; }
             }
@@ -36847,7 +36897,7 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
             // plugin whose first copy is still alive and must stay alive. Reuse is what makes that
             // bounded: one spare per plugin, handed back here. It is also the faster road - no
             // instantiation, so the picture comes up at once.
-            auto startCopy = [safeThis, uid, slot0, pName]
+            auto startCopy = [safeThis, uid, slot0, pName, seedState, seedLine]
                              (std::unique_ptr<juce::AudioPluginInstance> inst,
                               const juce::String& loadErr)
             {
@@ -36861,7 +36911,8 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                     return;
                 }
                 juce::String whyNot;
-                if (! safeThis->processorRef.shadowBegin (uid, slot0, pName, std::move (inst), whyNot))
+                if (! safeThis->processorRef.shadowBegin (uid, slot0, pName, std::move (inst),
+                                                          seedState, whyNot))
                 {
                     EchoJay_NSLog (("EJShadow: the live view of \"" + pName + "\" did not start: "
                                     + whyNot).toRawUTF8());
@@ -36869,6 +36920,20 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                                                           "available: " + whyNot + ".";
                     safeThis->chainListPanel.repaint();
                     return;
+                }
+                // ---- AND IF IT IS NOT SHOWING THE REAL SETTINGS, IT SAYS SO (layer 1) --------
+                // Two roads can leave the copy on its defaults - the Link could not send the
+                // settings, or the plugin refused them - and he must be able to tell a live view of
+                // the real thing from a live view of a factory preset. The ack's line comes from the
+                // one decision function; the plugin's own refusal comes back on the processor, so
+                // there is a single sentence either way and the card is never silently wrong.
+                const auto seedNote = seedLine.isNotEmpty() ? seedLine
+                                                            : safeThis->processorRef.shadowSeedNote();
+                if (seedNote.isNotEmpty())
+                {
+                    safeThis->chainListPanel.statusText = pName + ": " + seedNote + ".";
+                    EchoJay_NSLog (("EJShadow: the live view of \"" + pName + "\" is NOT on the "
+                                    "Link's settings - " + seedNote).toRawUTF8());
                 }
                 // The panel asks for the editor through createSlotEditorForView, which now answers
                 // with the copy's own. Ask it to redraw the selected slot.
