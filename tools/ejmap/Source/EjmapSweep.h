@@ -574,8 +574,31 @@ inline Plan planFromFixture (const juce::var& fixture)
                 amountRoles.push_back (r);
             }
         if (pumper && amountRoles.empty()) { p.why = "not swept: a rhythmic ducker (Pump / Rate), not a level-dependent compressor - not profiled"; return p; }
+        // A ONE-KNOB PRODUCT (25 Oct; OneKnob Louder's only control is "Louder"): no control holds the threshold or amount role, and the
+        // product has exactly ONE continuous control (not stepped, not word-valued, not a mix / output / bypass) - that knob is the amount,
+        // swept like one. Decided by the control count, never by the name
+        if (amountRoles.empty() && ! pumper)
+        {
+            std::vector<juce::var> knobs;
+            if (const auto* cs = fixture.getProperty ("controls", {}).getArray())
+                for (const auto& c : *cs)
+                {
+                    const auto name = c.getProperty ("name", "").toString();
+                    if (wordValued (c) || isSteppedControl (c) || ! c.getProperty ("range", {}).hasProperty ("min") || neverTouchName (name)) continue;
+                    if (nametokens::controlAnswersTerm (name, "mix") || nametokens::controlAnswersTerm (name, "output") || nametokens::controlAnswersTerm (name, "out")
+                        || nametokens::controlAnswersTerm (name, "bypass")) continue;
+                    knobs.push_back (c);
+                }
+            if (knobs.size() == 1)
+            {
+                roles::ControlRole r; r.index = (int) knobs[0].getProperty ("index", -1); r.name = knobs[0].getProperty ("name", "").toString(); r.role = "threshold";
+                r.flags.add ("amount_as_threshold"); r.flags.add ("single_knob"); amountRoles.push_back (r);
+            }
+        }
         for (auto& r : amountRoles) thr.push_back (&r);
-        if (! amountRoles.empty()) p.pickNote = "amount_as_threshold: no control holds the threshold role; the amount control is swept like one (input_drive, level_coupling)";
+        if (! amountRoles.empty()) p.pickNote = amountRoles[0].flags.contains ("single_knob")
+            ? "single_knob: the product's only continuous control is its amount, swept like a threshold (input_drive, level_coupling)"
+            : "amount_as_threshold: no control holds the threshold role; the amount control is swept like one (input_drive, level_coupling)";
     }
     // SEVERAL INPUT-AS-THRESHOLD CANDIDATES (ruled 29 Sep), decided from RECORDED DATA, never from the name:
     //   - exactly one CONTINUOUS candidate and the rest STEPPED: the continuous one (a pad is stepped, a gain is

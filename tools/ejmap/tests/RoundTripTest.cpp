@@ -7184,6 +7184,45 @@ void testProfileSweepPlan()
             {"index": 0, "name": "Pump", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.7, "display": "7.0"}},
             {"index": 2, "name": "Rate", "numSteps": 10, "displayAt": {"0.000": "1/1", "0.500": "3/16", "1.000": "1/32"}, "defaultOnInstantiate": {"normalised": 0.3, "display": "1/4"}}]})json");
         check (! planFromFixture (pump).ok && planFromFixture (pump).why.contains ("rhythmic ducker"), "amount A3 (OneKnob Pumper): a Pump / Rate unit is not a level-dependent compressor - refused by name, said");
+        // NIGHT-1 (25 Oct) A ONE-KNOB PRODUCT: its only continuous control is the amount (OneKnob Louder's "Louder"); a mix or output beside
+        // it does not count; two continuous controls (C-Max's Gain and Ceiling) are not one knob; decided by the count, never the name
+        auto knob = [] (const char* name, int idx) { return juce::String (R"({"index": )") + juce::String (idx) + R"(, "name": ")" + name + R"(", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}})"; };
+        const auto louder = planFromFixture (juce::JSON::parse ("{\"product\": \"OneKnob Louder (m)\", \"controls\": [" + knob ("Louder", 0) + "]}"));
+        const auto louderMix = planFromFixture (juce::JSON::parse ("{\"product\": \"K\", \"controls\": [" + knob ("Squash", 0) + "," + knob ("Mix", 1) + "," + knob ("Output", 2) + "]}"));
+        const auto twoKnobs = planFromFixture (juce::JSON::parse ("{\"product\": \"C-Max\", \"controls\": [" + knob ("Gain", 0) + "," + knob ("Ceiling", 1) + "]}"));
+        const auto none = planFromFixture (juce::JSON::parse ("{\"product\": \"N\", \"controls\": [" + knob ("Mix", 0) + "]}"));
+        check (louder.ok && louder.thr == 0 && louder.thrFlags.contains ("single_knob") && louder.pickNote.startsWith ("single_knob")
+               && louderMix.ok && louderMix.thr == 0 && louderMix.thrName == "Squash" && ! twoKnobs.ok && twoKnobs.why.contains ("class") && ! none.ok,
+               "NIGHT-1: a one-knob product's knob is the amount (" + louder.pickNote + "); a mix / output beside it does not count; two knobs or none are not one knob (" + twoKnobs.why + ")");
+        // NIGHT-2 (25 Oct) ABBREVIATED THRESHOLDS: "Threshld" (UAD elysia mpressor) and "Thrshld" hold the threshold role
+        const auto mp = planFromFixture (juce::JSON::parse ("{\"product\": \"M\", \"controls\": [" + knob ("Threshld", 0) + "," + knob ("Attack", 1) + "," + knob ("Release", 2) + "," + knob ("Gain", 3) + "]}"));
+        const auto mp2b = planFromFixture (juce::JSON::parse ("{\"product\": \"M\", \"controls\": [" + knob ("Thrshld", 0) + "," + knob ("Attack", 1) + "]}"));
+        check (mp.ok && mp.thr == 0 && mp.thrName == "Threshld" && ! mp.thrFlags.contains ("single_knob") && mp2b.ok && mp2b.thr == 0,
+               "NIGHT-2: 'Threshld' / 'Thrshld' hold the threshold role (" + mp.why + ")");
+        // NIGHT-3 (25 Oct) A GRAPHIC EQ's SLIDERS: a control in dB is a band's gain even when its name carries a fixed frequency
+        // (API-560's "Band 16kHz"); a frequency or Q control is not
+        check (ejmap::eq::measuredGainCandidate ("Band 16kHz", "dB") && ejmap::eq::measuredGainCandidate ("31Hz", "dB") && ! ejmap::eq::measuredGainCandidate ("Band 16kHz")
+               && ! ejmap::eq::measuredGainCandidate ("Band1 Frq", "Hz") && ! ejmap::eq::measuredGainCandidate ("Band1 Q", "")
+               && juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString().contains ("if (! eq::measuredGainCandidate (pc.name, sweep::findControl (base, pc.index).getProperty (\"unit\", \"\").toString()))"),
+               "NIGHT-3: a graphic EQ's dB sliders are band gains, whatever frequency their names carry; the EQ pass reads the unit");
+        // NIGHT-4 (25 Oct) THE SATURATION ENGAGE SEARCH: a drive that moves nothing (none nominated, or every nominee inert / no effect) gets
+        // the compressor's engage candidates in turn (at most 6); the first switch that makes the drive's THD rise rides on every later call,
+        // into the record's engage and neutral setting (the draft's neutral: the server sets it)
+        {
+            using ejmap::saturation::withEngage;
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (withEngage ({ "--response", "ctl=3" }, "2:1.000000").joinIntoString (" ") == "--response ctl=3 set=2:1.000000"
+                   && withEngage ({ "--sweep", "set=4:0.5" }, "2:1.000000").joinIntoString (" ") == "--sweep set=4:0.5,2:1.000000"
+                   && withEngage ({ "--response" }, {}).joinIntoString (" ") == "--response" && ejmap::saturation::kEngageTries == 6
+                   && drv.contains ("args.addArray (saturation::withEngage (extra, engageItem));")
+                   && drv.contains ("if (const auto t = engageSearch (pool)) { targets.push_back (*t); measuredNominees.insert (t->index); } }")
+                   && drv.contains ("if (engageItem.isEmpty() && ! targets.empty() && inertN + noEffectN == (int) targets.size())")
+                   && drv.contains ("if (engageSearch (targets)) { say (\"SAT: measuring again with the engage write\"); if (const int stop = measureTargets(); stop != 0) return stop; }")
+                   && drv.contains ("{ o->setProperty (\"engage\", engageVar); juce::Array<juce::var> nl; nl.add (engageVar); o->setProperty (\"neutral\", nl); }")
+                   && drv.contains ("if (engageVar.isObject() && (int) engageVar.getProperty (\"index\", -2) == ci) { neutral.add (engageVar); continue; }")   // engaged, never its instantiate Off
+                   && drv.contains ("for (const auto& w : sweep::engageCandidates (base, {}))") && drv.contains ("if (const auto sig = roleevidence::signatureHolds (\"drive\", a, b); sig.holds)"),
+                   "NIGHT-4: the saturation pass searches the engage switches when its drive moves nothing, and keeps the one that works on every call and in the neutral setting");
+        }
         const auto vac = juce::JSON::parse (R"json({"product": "Mixland Vac Attack", "controls": [
             {"index": 6, "name": "Left Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
             {"index": 13, "name": "Right Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},

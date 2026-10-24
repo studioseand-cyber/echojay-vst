@@ -5177,7 +5177,7 @@ inline int runEq (const SweepOptions& opt)
                     for (const auto& c : *cs) { const int i2 = (int) c.getProperty ("index", -1); if ((int) c.getProperty ("numSteps", 0) != 2 && ! sweep::wordValued (c)) continue; std::map<juce::String, float> texts; if (const auto at = c.getProperty ("displayAt", {}); at.isObject()) for (const auto& kv : at.getDynamicObject()->getProperties()) texts[kv.value.toString()] = (float) kv.name.toString().getDoubleValue(); sw0.push_back ({ i2, c.getProperty ("name", "").toString(), true, texts }); }
                 for (const auto& pc : pool)
                 {
-                    if (! eq::measuredGainCandidate (pc.name)) { say ("  [" + juce::String (pc.index) + "] " + pc.name + ": named a frequency or Q: not read as a band's gain"); continue; }
+                    if (! eq::measuredGainCandidate (pc.name, sweep::findControl (base, pc.index).getProperty ("unit", "").toString())) { say ("  [" + juce::String (pc.index) + "] " + pc.name + ": named a frequency or Q: not read as a band's gain"); continue; }
                     auto fig = [] (const std::vector<std::pair<double, double>>& dev) { roleevidence::Figure f; f.ok = true; const auto b = eq::deriveBand (dev); f.bandGainDb = (b.result == "measured" || b.result == "shelf") ? b.gainDb : 0.0;
                                      std::vector<double> ds; for (const auto& [hz, d] : dev) ds.push_back (d); if (! ds.empty()) { std::sort (ds.begin(), ds.end()); f.levelShiftDb = ds[ds.size() / 2]; } return f; };
                     auto [ur, r] = response ("u" + juce::String (pc.index), pc.index, { "0.000000", "1.000000" }, {}); ++probed;
@@ -5543,7 +5543,9 @@ inline int runSaturation (const SweepOptions& opt)
     { say ("SAT: " + opt.product + " - " + gate.stop); return kToneLicenceKnownExit; }
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("saturation"); outDir.createDirectory();
     const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = fmtTag (desc) + "_" + uidHex + "_" + desc.version;
-    auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+    // THE ENGAGE WRITE (25 Oct): once the engage search finds the switch that turns the stage on, it rides on every later call
+    juce::String engageItem; juce::var engageVar;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (saturation::withEngage (extra, engageItem));
         const auto r = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".saturation." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
     struct Target { int index; juce::String name; };
@@ -5569,6 +5571,39 @@ inline int runSaturation (const SweepOptions& opt)
     // at its two ends on the drive probe; one whose THD rises >= 3 dB (the drive signature, modulation excluded) is the nominee,
     // recorded "unnamed". A product where nothing moves the measure gets a record saying so, never an empty row to redo forever.
     std::set<int> measuredNominees;
+    auto endsOf = [&] (const ChildResult& r, roleevidence::Figure& a, roleevidence::Figure& b)
+    {   const auto L = saturation::deriveLevel (saturation::parseHarmonics (r.cleanExit() ? r.out : juce::String()), -12.0);
+        for (const auto& rd : L.readings) { roleevidence::Figure* f = rd.norm < 0.01f ? &a : rd.norm > 0.99f ? &b : nullptr; if (f && (rd.valid || rd.silent)) { f->ok = true; f->thdDb = rd.valid && rd.thdDb > -200.0 ? rd.thdDb : -200.0; f->sidebandDb = rd.valid ? rd.sidebandDb : -200.0; f->outputDb = rd.valid ? rd.outDb : -200.0; } } };
+    // THE ENGAGE SEARCH (25 Oct; the 19 Oct plan's item D, as the compressor sweep and the EQ bands already do): a saturator whose drive
+    // moves nothing - none nominated, or every nominee inert / no effect - often has its stage switched off at instantiate (Power, Status,
+    // Saturation In, XL On, a Bypass). Each engage candidate (sweep::engageCandidates: two-step switches and on / enable / engage / active /
+    // in names, flipped from their default, at most kEngageTries) is written, and the drive candidates are probed at their ends again; the
+    // first whose THD then rises (the drive signature) keeps its switch on every later call, in the record's neutral setting and its notes
+    int engageTried = 0;
+    auto engageSearch = [&] (const std::vector<Target>& probeOn) -> std::optional<Target>
+    {
+        for (const auto& w : sweep::engageCandidates (base, {}))
+        {
+            if (engageTried >= saturation::kEngageTries) break;
+            ++engageTried; engageItem = juce::String (w.index) + ":" + juce::String (w.norm, 6);
+            for (const auto& t : probeOn)
+            {
+                if (t.index == w.index) continue;
+                const auto r = run ("eng" + juce::String (w.index) + ".u" + juce::String (t.index), { "--response", "ctl=" + juce::String (t.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" });
+                if (r.kind == ChildResult::Kind::uiShown) { engageItem.clear(); return std::nullopt; }
+                roleevidence::Figure a, b; endsOf (r, a, b);
+                if (const auto sig = roleevidence::signatureHolds ("drive", a, b); sig.holds)
+                {
+                    auto* e = new juce::DynamicObject(); e->setProperty ("control", w.name); e->setProperty ("index", w.index); e->setProperty ("norm", (double) w.norm);
+                    e->setProperty ("set", juce::String (w.norm, 2)); e->setProperty ("from", w.fromDisplay); e->setProperty ("source", "engage search: " + t.name + " moves the THD only with it (" + sig.why + ")");
+                    engageVar = juce::var (e);
+                    say ("SAT: engage search: [" + juce::String (w.index) + "] " + w.name + " -> " + juce::String (w.norm, 1) + " (from '" + w.fromDisplay + "'): [" + juce::String (t.index) + "] " + t.name + " now moves the THD");
+                    return t;
+                }
+            }
+        }
+        engageItem.clear(); return std::nullopt;
+    };
     if (targets.empty())
     {
         int probed = 0;
@@ -5582,9 +5617,12 @@ inline int runSaturation (const SweepOptions& opt)
         }
         say ("SAT: the lexicon nominated nothing; measurement probed " + juce::String (probed) + " control(s) at their ends and nominated " + juce::String ((int) targets.size()));
         if (targets.empty())
+        {   std::vector<Target> pool; for (const auto& pc : unnamedPool (base, {}, &fx.sampled)) pool.push_back ({ pc.index, pc.name });
+            if (const auto t = engageSearch (pool)) { targets.push_back (*t); measuredNominees.insert (t->index); } }
+        if (targets.empty())
         {
             juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", "));
-            auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends moved no THD");
+            auto* o = new juce::DynamicObject(); o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - nothing moves the measure: the lexicon nominated nothing and " + juce::String (probed) + " control(s) probed at their ends moved no THD" + (engageTried > 0 ? ", with or without any of " + juce::String (engageTried) + " engage switch(es)" : juce::String()));
             o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version); o->setProperty ("controls", juce::Array<juce::var>()); o->setProperty ("nominated_by", "nothing: measured"); o->setProperty ("measuredAt", nowStamp());
             outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
             return 4;
@@ -5595,6 +5633,9 @@ inline int runSaturation (const SweepOptions& opt)
     // Goertzel bins (probe --response tones=1 harmonics=5), one process per level; EjmapSaturation.h derives the rest
     juce::StringArray norms; for (int k = 0; k < 11; ++k) norms.add (juce::String (k / 10.0f, 6));
     juce::Array<juce::var> controls; int measured = 0, inertN = 0, noEffectN = 0;
+    auto measureTargets = [&]
+    {
+    controls.clear(); measured = inertN = noEffectN = 0;
     for (const auto& t : targets)
     {
         std::vector<saturation::LevelResult> levels;
@@ -5617,6 +5658,12 @@ inline int runSaturation (const SweepOptions& opt)
                  + (rd.character.isNotEmpty() ? "  " + rd.character + (rd.evenOddKnown ? " (even/odd " + juce::String (rd.evenOddDb, 1) + " dB)" : juce::String()) : juce::String()));
         controls.add (saturation::toVar (c));
     }
+    return 0;
+    };
+    if (const int stop = measureTargets(); stop != 0) return stop;
+    // the nominees were all inert / no effect: the stage may be switched off - the engage search, then the measurement again with it
+    if (engageItem.isEmpty() && ! targets.empty() && inertN + noEffectN == (int) targets.size())
+        if (engageSearch (targets)) { say ("SAT: measuring again with the engage write"); if (const int stop = measureTargets(); stop != 0) return stop; }
     // ROLES BY MEASUREMENT (5 Oct evening): a drive nominee keeps its role when THD moves >= 3 dB between its ends at -12 dBFS
     // (reaching -60 at least); every other numeric control is probed at its two ends with one process and reported if it shows it
     std::vector<roleevidence::RoleVerdict> roles; std::vector<int> nominated;
@@ -5650,6 +5697,9 @@ inline int runSaturation (const SweepOptions& opt)
     o->setProperty ("controls", controls); o->setProperty ("inert_or_silent_controls", inertN); o->setProperty ("no_effect_controls", noEffectN); o->setProperty ("measuredAt", nowStamp());
     o->setProperty ("nominated_by", measuredNominees.empty() ? "names" : "measurement (unnamed: the lexicon nominated nothing; " + juce::String ((int) measuredNominees.size()) + " control(s) whose THD rises at their ends)");
     o->setProperty ("spec_fields", "7 Oct: verdict, acceptance, output_control, cabinet_response");
+    if (engageVar.isObject())   // 25 Oct: the engage write the search found - the server sets it before any drive (the draft's neutral setting)
+    { o->setProperty ("engage", engageVar); juce::Array<juce::var> nl; nl.add (engageVar); o->setProperty ("neutral", nl); }
+    o->setProperty ("engage_tried", engageTried);
     // THE OUTPUT CONTROL (spec section 6.3, 7 Oct): the gain draft's first writable output / makeup / trim when the cert folder holds one
     // (phaseb/gainall/drafts, the gaincal drafts, or the older gain-cal/ path), else an INLINE curve - the first control named output /
     // out / level / volume / trim / makeup that is not a drive or a mix, 21 norms at -40 dBFS in one process (the gain spec's judging
@@ -5772,7 +5822,11 @@ inline int runSaturation (const SweepOptions& opt)
         }
         else o->setProperty ("ledger_category", category.isNotEmpty() ? juce::var (category) : juce::var());
     }
-    { juce::Array<juce::var> neutral; std::set<int> used; for (const auto& t : targets) used.insert (t.index); if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const int ci = (int) c.getProperty ("index", -1); if (used.count (ci)) continue; const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); } o->setProperty ("neutral", neutral); }
+    { juce::Array<juce::var> neutral; std::set<int> used; for (const auto& t : targets) used.insert (t.index); if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) { const int ci = (int) c.getProperty ("index", -1); if (used.count (ci)) continue;
+          // 25 Oct: the engage switch the search found stands at its ENGAGED value in the neutral setting, never its instantiate one (the
+          // server writes the neutral setting: an "Off" here switches the stage off again)
+          if (engageVar.isObject() && (int) engageVar.getProperty ("index", -2) == ci) { neutral.add (engageVar); continue; }
+          const auto doi = c.getProperty ("defaultOnInstantiate", {}); if (! doi.isObject()) continue; auto* n = new juce::DynamicObject(); n->setProperty ("control", c.getProperty ("name", "")); n->setProperty ("set", doi.getProperty ("display", "")); n->setProperty ("norm", doi.getProperty ("normalised", juce::var())); neutral.add (juce::var (n)); } o->setProperty ("neutral", neutral); }
     const juce::var rec (o);   // one var owns the record
     outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n");
     say ("SAT: -> " + outDir.getChildFile (stem + ".saturation.json").getFullPathName());
