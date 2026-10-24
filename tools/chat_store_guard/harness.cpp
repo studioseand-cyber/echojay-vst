@@ -1727,6 +1727,257 @@ int main()
             sv.stop();
         }
 
+        // ---- SH12: A LIVE COPY IS NEVER DISPOSED, AND ITS EDITOR GOES FIRST (his 14:27 crash) -
+        //
+        // The fourth live-view crash, 24 Oct 2026. His Logic died on the MAIN thread inside
+        // Softube's own code, under CoreFoundation's notification callout, reading null+0x17, with
+        // no EchoJay frame on the thread - 108 s after the V2's window closed and took the live
+        // copy down. Two faults in one ordering, and both were ours:
+        //
+        //   (a) ShadowView::stop() ended in `dying.reset()`. Sean's ruling of 6 Oct says a hosted
+        //       third-party AU is never disposed mid-session, because a disposed CL 1B left a
+        //       Softube NSWindow observer registered and a notification 44 s later went into it.
+        //       The borrow pool has obeyed that since; this road never did.
+        //   (b) the copy's editor is owned by the PANEL and was destroyed AFTER its processor on
+        //       both roads (the window-closing one, and selectSlot calling onSelectSlot before
+        //       showInline's close-before-open). That is a use-after-free whatever (a) does.
+        //
+        // The bench could not reproduce his crash with the real plugin (tools/shadow_live_repro's
+        // `teardown` leg survived 40 s), so these legs are the proof that exists: both halves, red
+        // to green, with no plugin and no window in them.
+        {
+            static bool g_instDestroyed = false;
+            g_instDestroyed = false;
+
+            // Its editor records, in its OWN destructor, whether the processor had already gone.
+            // Read off a global flag of ours, never off the processor, so the leg that is RED on
+            // the old code reads a bool rather than freed memory.
+            static bool* g_edSaw = nullptr;
+            struct FakeEd final : public juce::AudioProcessorEditor
+            {
+                FakeEd (juce::AudioProcessor& p) : juce::AudioProcessorEditor (p) { setSize (320, 120); }
+                ~FakeEd() override { if (g_edSaw != nullptr) *g_edSaw = g_instDestroyed; }
+                void paint (juce::Graphics&) override {}
+            };
+
+            // A stub that IS an AudioPluginInstance, because that is the only thing the keeper
+            // keeps: the dynamic_cast in shadowKeepCopy is the whole decision, and a guard that
+            // used a plain AudioProcessor would be testing the other branch.
+            struct FakeHosted : public juce::AudioPluginInstance
+            {
+                FakeHosted() : juce::AudioPluginInstance (BusesProperties()
+                                   .withInput  ("In",  juce::AudioChannelSet::stereo(), true)
+                                   .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+                ~FakeHosted() override { g_instDestroyed = true; }
+                const juce::String getName() const override { return "FakeHosted"; }
+                void fillInPluginDescription (juce::PluginDescription& d) const override
+                {
+                    d.name = "FakeHosted"; d.pluginFormatName = "AudioUnit";
+                    d.uniqueId = 0x5ADF00D; d.deprecatedUid = d.uniqueId;
+                }
+                void prepareToPlay (double, int) override {}
+                void releaseResources() override {}
+                bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
+                void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override { ++rendered; }
+                double getTailLengthSeconds() const override { return 0.0; }
+                bool acceptsMidi() const override { return false; }
+                bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return new FakeEd (*this); }
+                bool hasEditor() const override { return wantsEditor; }
+                int getNumPrograms() override { return 1; }
+                int getCurrentProgram() override { return 0; }
+                void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; }
+                void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {}
+                void setStateInformation (const void*, int) override {}
+                int  rendered = 0;
+                bool wantsEditor = false;
+            };
+            auto makeRing = [] (juce::MemoryBlock& mb)
+            {
+                mb.setSize ((size_t) kLinkShmSize, true);
+                auto* h = LinkShm::ringHeader (mb.getData());
+                h->magic = kLinkMagic; h->version = kLinkVersion; h->sampleRate = 48000.0f;
+                h->numChannels = 2; h->capacityFrames = kLinkRingFrames;
+                std::vector<float> l ((size_t) 1024, 0.3f), r ((size_t) 1024, -0.3f);
+                const float* p2[2] { l.data(), r.data() };
+                LinkShm::ringProduce (mb.getData(), p2, 2, (int) l.size());
+            };
+
+            juce::PluginDescription fakeDesc;
+            { FakeHosted probe; probe.fillInPluginDescription (fakeDesc); }
+
+            // ---- SH12 the copy is NOT destroyed by stop() --------------------------------------
+            {
+                // The probe above was a FakeHosted too, and its destructor set the flag - so the
+                // flag is zeroed HERE, inside the leg that reads it, rather than once at the top
+                // where anything constructed in between can spend it.
+                g_instDestroyed = false;
+                const int parkedBefore = echojay::shadowParkedCount();
+                juce::MemoryBlock ring; makeRing (ring);
+                echojay::ShadowView sv;
+                sv.prepare (48000.0, 512);
+                auto fh = std::make_unique<FakeHosted>();
+                fh->prepareToPlay (48000.0, 512);
+                juce::String why;
+                const bool up = sv.start (std::move (fh), ring.getData(), "uidkeep", 0, "FakeHosted", why);
+                check (up, "SH12 a hosted copy starts (the keeper's leg needs a running view)",
+                       up ? juce::String ("started") : "refused: " + why);
+                sv.pump (256);
+                sv.stop();
+                check (! g_instDestroyed,
+                       "SH12 ...and stop() does NOT destroy it  (RED as it shipped: stop() ended in "
+                       "dying.reset(), and Sean's ruling of 6 Oct is that a hosted third-party AU is "
+                       "never disposed mid-session - the 18:32 Softube observer crash, and his 14:27 "
+                       "one)",
+                       g_instDestroyed ? "it was destroyed" : "it is alive, and the keeper holds it");
+                check (echojay::shadowParkedCount() == parkedBefore + 1,
+                       "SH12a ...it is PARKED for reuse, bounded one per plugin, not merely leaked",
+                       "parked " + juce::String (parkedBefore) + " -> "
+                     + juce::String (echojay::shadowParkedCount()));
+            }
+
+            // ---- SH12b the editor outlives the stop, and its processor is still alive ----------
+            {
+                juce::MemoryBlock ring; makeRing (ring);
+                echojay::ShadowView sv;
+                sv.prepare (48000.0, 512);
+                auto fh = std::make_unique<FakeHosted>();
+                fh->wantsEditor = true;
+                fh->prepareToPlay (48000.0, 512);
+                auto* raw = fh.get();
+                g_instDestroyed = false;
+                bool edSawDestroyedProcessor = false;
+                g_edSaw = &edSawDestroyedProcessor;
+                // The panel's ownership, modelled exactly: the editor is created BY the instance
+                // (createEditorIfNeeded, the same call the panel's road makes) and held by somebody
+                // ELSE, who deletes it after the view has been taken down.
+                std::unique_ptr<juce::AudioProcessorEditor> panelsEditor;
+                juce::String why;
+                const bool up = sv.start (std::move (fh), ring.getData(), "uidkeep2", 0, "FakeHosted", why);
+                check (up, "SH12b a hosted copy with an editor starts", up ? "started" : "refused: " + why);
+                panelsEditor.reset (raw->createEditorIfNeeded());
+                check (raw->getActiveEditor() != nullptr,
+                       "SH12b ...and the instance knows its editor is attached", "attached");
+                sv.stop();                       // the view goes down with the editor still held
+                panelsEditor.reset();            // ...and only now does the panel let the editor go
+                check (! edSawDestroyedProcessor,
+                       "SH12c ...so the editor is destroyed while its processor is STILL ALIVE  (RED "
+                       "as it shipped: stop() freed the instance first and ~AudioProcessorEditor then "
+                       "called editorBeingDeleted on freed memory - on his machine that was a Softube "
+                       "Cocoa view torn down against a dead AU, his 14:27 crash)",
+                       edSawDestroyedProcessor ? "the processor was already gone"
+                                               : "the processor was alive");
+                check (! g_instDestroyed,
+                       "SH12d ...and it STILL was not disposed, editor or no editor",
+                       g_instDestroyed ? "disposed" : "kept");
+                g_edSaw = nullptr;
+            }
+
+            // ---- SH12e one of OURS is still disposed, because ours tear down safely ------------
+            {
+                juce::MemoryBlock ring; makeRing (ring);
+                struct OursOwn final : public juce::AudioProcessor
+                {
+                    OursOwn (bool& f) : juce::AudioProcessor (BusesProperties()
+                                   .withInput  ("In",  juce::AudioChannelSet::stereo(), true)
+                                   .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
+                          gone (f) {}
+                    ~OursOwn() override { gone = true; }
+                    const juce::String getName() const override { return "OursOwn"; }
+                    void prepareToPlay (double, int) override {}
+                    void releaseResources() override {}
+                    bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
+                    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+                    double getTailLengthSeconds() const override { return 0.0; }
+                    bool acceptsMidi() const override { return false; }
+                    bool producesMidi() const override { return false; }
+                    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+                    bool hasEditor() const override { return false; }
+                    int getNumPrograms() override { return 1; }
+                    int getCurrentProgram() override { return 0; }
+                    void setCurrentProgram (int) override {}
+                    const juce::String getProgramName (int) override { return {}; }
+                    void changeProgramName (int, const juce::String&) override {}
+                    void getStateInformation (juce::MemoryBlock&) override {}
+                    void setStateInformation (const void*, int) override {}
+                    bool& gone;
+                };
+                bool oursGone = false;
+                echojay::ShadowView sv;
+                sv.prepare (48000.0, 512);
+                auto mine = std::make_unique<OursOwn> (oursGone);
+                mine->prepareToPlay (48000.0, 512);
+                juce::String why;
+                sv.start (std::move (mine), ring.getData(), "uidours", 0, "OursOwn", why);
+                sv.stop();
+                check (oursGone,
+                       "SH12e ...while one of OUR OWN processors IS disposed - the keeper keeps "
+                       "somebody else's code, not everything (ChainHost's own distinction)",
+                       oursGone ? "disposed, as before" : "it was kept, which it should not be");
+            }
+
+            // ---- SH12h THE DETECTOR IS NOT VACUOUS --------------------------------------------
+            // SH12 and SH12c both rest on one flag, so the flag is proven to MOVE here, in the
+            // gate, rather than in a session note. Without this leg those two could be green
+            // because nothing can ever set it - which is the unfalsifiable-guard fault on file
+            // ("a guard must fail on known-bad AND pass on known-good"). It fired for real during
+            // this round's first run, when a throwaway probe spent the flag and SH12 went red.
+            {
+                g_instDestroyed = false;
+                { FakeHosted doomed; (void) doomed.rendered; }     // destroyed right here, by us
+                check (g_instDestroyed,
+                       "SH12h ...and the flag SH12/SH12c read does move when an instance really is "
+                       "destroyed, so neither of them can be green by being blind",
+                       g_instDestroyed ? "the detector works" : "the detector is blind");
+                g_instDestroyed = false;
+            }
+
+            // ---- SH12f the parked copy comes back, and only once -------------------------------
+            {
+                auto first = echojay::shadowTakeParked (fakeDesc);
+                check (first != nullptr,
+                       "SH12f the parked copy is handed back for the next live view, so a "
+                       "close-and-reopen does not instantiate a second copy of a plugin whose "
+                       "first copy must stay alive",
+                       first != nullptr ? "reused" : "nothing was parked");
+                auto second = echojay::shadowTakeParked (fakeDesc);
+                check (second == nullptr,
+                       "SH12g ...and there is exactly ONE spare per plugin, which is what bounds "
+                       "a store nothing is ever allowed to free",
+                       second == nullptr ? "one only" : "a second came back");
+                juce::String went;
+                if (first != nullptr) echojay::shadowKeepCopy (std::move (first), went);
+                if (second != nullptr) echojay::shadowKeepCopy (std::move (second), went);
+            }
+        }
+
+        // ---- SH13: A VIEW THAT CANNOT PASS A GESTURE ON TAKES NONE (his ruling of 24 Oct) ------
+        //
+        // *"the copy accepts knob changes, and they go nowhere ... Silent lost changes are a
+        // fault."*  The decision is a function with no window in it so this can ask it; the SHIELD
+        // it drives is an NSView and is checked by hand on the installed build.
+        {
+            const auto blocked = echojay::liveViewInputPolicy (true);
+            check (blocked.blockInput && blocked.line == "View only - change settings on the Link for now",
+                   "SH13 a live-view copy is blocked, and says his sentence word for word",
+                   "\"" + blocked.line + "\"");
+            const auto notALiveView = echojay::liveViewInputPolicy (false);
+            check (! notALiveView.blockInput && notALiveView.line.isEmpty(),
+                   "SH13a ...and nothing else is touched: the main rack's own slots, a borrowed "
+                   "mirror and an edit session all host the instance a gesture really changes",
+                   "open, nothing said");
+            const auto whenBuilt = echojay::liveViewInputPolicy (true, /*controlBuilt*/ true);
+            check (! whenBuilt.blockInput && whenBuilt.line.isEmpty(),
+                   "SH13b ...and when control through the view IS built the block lifts with it, "
+                   "from the one flag (kLiveViewControlBuilt), not from a second edit here",
+                   "open once stage C lands");
+            check (! echojay::kLiveViewControlBuilt,
+                   "SH13c ...which is still false in this build, so the block is on",
+                   "control not built yet");
+        }
+
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------
         //
         // ShadowTap's own header promised this count to the V2 ("to tell the shadow is running and
