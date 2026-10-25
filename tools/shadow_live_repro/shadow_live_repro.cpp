@@ -58,6 +58,12 @@
 //                  its own view while window notifications fly. This is the leg that has to crash.
 //   persist        the mechanism his 22:08 settings were lost to: an older state applied over a
 //                  newer change destroys it. No licence needed, so it runs unsupervised.
+//   control        the whole of his 25 Oct instruction, on two LIVE instances: a knob moved in the
+//                  live view goes to the plugin on the LINK, the V2's copy never sees it, and the
+//                  close-apply is then asked - through the product's own BorrowCommit::classify -
+//                  whether to write that copy back. Run twice, for a picker-added slot and for a
+//                  slot from the Link's own rack. The old rule wipes the change; the new one keeps
+//                  it. No licence needed, so it runs unsupervised on AUDelay.
 //   followparams   FOLLOW layer 2's three open questions, on the real plugin: does the guest view
 //                  REDRAW when the host writes a parameter (his eye answers that one), what a full
 //                  getValue() sweep costs, and whether writing while the copy renders is safe.
@@ -69,6 +75,7 @@
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
 #include "EJShadowChannels.h"   // the FIX's own rule, so the leg and the product share one author
+#include "LinkShm.h"            // the control leg asks the PRODUCT's own commit rule, not a copy of it
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -546,6 +553,149 @@ int runFollowParamsLeg (const juce::String& leg, juce::AudioPluginFormatManager&
     return landed ? 0 : 4;
 }
 
+/** HIS 25 OCT INSTRUCTION, ON TWO LIVE INSTANCES OF A REAL PLUGIN.
+
+        *"move a knob in the live view, close the V2, reopen the Link, the change is there; the same
+        for a picker-added slot and for a slot from the Link's own rack."*
+
+    Two instances, because that is what the product has and it is the whole of the fault:
+
+      * L stands for the plugin on the LINK - the one he hears, the one control reaches.
+      * V stands for the V2's BORROWED MIRROR of that slot - the instance whose state the
+        close-apply commits. It is NOT the live view's copy: the live view has a third instance,
+        seeded from the Link, and control never writes to either of them. That is why committing V
+        wiped a Threshold he had just heard move.
+
+    The commit decision is not modelled here: the leg calls the product's own
+    LinkShm::BorrowCommit::classify, so a leg that passes while the shipped rule changes is not
+    possible. The old rule is called with its own old arguments, which is the known-bad direction. */
+int runControlLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
+                   const juce::PluginDescription& d, int seconds)
+{
+    using BC = LinkShm::BorrowCommit;
+    using A  = BC::Action;
+
+    auto L = makeOne (fm, d, leg, "L: the plugin on the Link (the one he hears)");
+    if (L == nullptr) return 3;
+    auto V = makeOne (fm, d, leg, "V: the V2's borrowed mirror of that slot");
+    if (V == nullptr) return 3;
+
+    L->prepareToPlay (kRate, kBlock);
+    V->prepareToPlay (kRate, kBlock);
+
+    auto& pL = L->getParameters();
+    auto& pV = V->getParameters();
+    if (pL.isEmpty() || pV.isEmpty()) { say (leg, "REFUSED: this plugin reports no parameters"); return 3; }
+
+    int which = -1;
+    for (int i = 0; i < pL.size(); ++i)
+        if (pL[i]->getName (64).isNotEmpty()) { which = i; break; }
+    say (leg, juce::String (pL.size()) + " parameter(s); driving " + juce::String (which) + " \""
+            + pL[which]->getName (64) + "\"");
+
+    const int chL = juce::jmax (2, L->getTotalNumInputChannels(), L->getTotalNumOutputChannels());
+    const int chV = juce::jmax (2, V->getTotalNumInputChannels(), V->getTotalNumOutputChannels());
+    Renderer rL (*L, leg, chL, kBlock, 0, nullptr,
+                 echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*L)));
+    Renderer rV (*V, leg, chV, kBlock, 0, nullptr,
+                 echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*V)));
+    rL.startThread (juce::Thread::Priority::highest);
+    rV.startThread (juce::Thread::Priority::highest);
+    say (leg, "both instances are RENDERING - every state call below happens on a live plugin, "
+              "which is the product's condition and the only one worth a verdict");
+
+    auto settle = [&] (int ms)
+    {
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        while (juce::Time::getMillisecondCounterHiRes() - t0 < (double) ms)
+        {
+            juce::Timer::callPendingTimersSynchronously();
+            CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false);
+        }
+    };
+
+    int passes = 0, legs = 0;
+    auto one = [&] (const char* what, bool seeded, bool bornHere)
+    {
+        ++legs;
+        say (leg, juce::String ("---- ") + what + " ----");
+
+        // THE SLOT'S STARTING POINT. A born-here slot reached the Link as a Create seeded from the
+        // copy, so both sides start equal; a slot from the Link's own rack starts from the LINK's
+        // state, and the mirror is seeded with it. Either way the two agree before he touches it.
+        juce::MemoryBlock seed;
+        if (bornHere) { V->getStateInformation (seed); L->setStateInformation (seed.getData(), (int) seed.getSize()); }
+        else          { L->getStateInformation (seed); V->setStateInformation (seed.getData(), (int) seed.getSize()); }
+        settle (300);
+        const float v0 = pL[which]->getValue();
+        say (leg, juce::String (bornHere ? "a picker ADD: L was created from the copy's state ("
+                                         : "from the LINK's own rack: the mirror was seeded from L (")
+                + juce::String ((juce::int64) seed.getSize()) + " bytes), both at "
+                + juce::String (v0, 4) + ")");
+
+        // HIS GESTURE, through the live view: it goes to the plugin on the LINK and nowhere else.
+        const float v1 = v0 < 0.5f ? 0.80f : 0.20f;
+        pL[which]->setValueNotifyingHost (v1);
+        settle (300);
+        const float onLink = pL[which]->getValue();
+        const float onCopy = pV[which]->getValue();
+        const bool landed = std::abs (onLink - v0) > 0.05f;
+        const bool copyBlind = std::abs (onCopy - v0) < 0.05f;
+        say (leg, juce::String (landed && copyBlind ? "PASS" : "FAIL")
+                + ": his knob reached the LINK (now " + juce::String (onLink, 4)
+                + ") and the borrowed mirror never saw it (still " + juce::String (onCopy, 4)
+                + ") - which is the design, and the whole reason committing the mirror is a loss");
+
+        // ---- THE CLOSE, THE OLD WAY: the known-bad direction, on a live plugin ----------------
+        juce::MemoryBlock copyState;
+        V->getStateInformation (copyState);
+        const auto oldAction = BC::classify (/*withheld*/ false, /*edited*/ true, seeded, bornHere);
+        bool wiped = false;
+        if (oldAction == A::Commit)
+        {
+            L->setStateInformation (copyState.getData(), (int) copyState.getSize());
+            settle (400);
+            wiped = std::abs (pL[which]->getValue() - v0) < 0.05f;
+        }
+        say (leg, juce::String (oldAction == A::Commit && wiped ? "PASS" : "FAIL")
+                + ": yesterday's rule said COMMIT and writing the mirror over the Link put it back "
+                  "to " + juce::String (pL[which]->getValue(), 4) + " - the change he made and heard "
+                  "DESTROYED, which is his 22:08 loss reproduced on a live plugin");
+
+        // ---- AND THE CLOSE, THE RULE THAT SHIPS ----------------------------------------------
+        pL[which]->setValueNotifyingHost (v1);          // he makes it again
+        settle (300);
+        const auto nowAction = BC::classify (/*withheld*/ false, /*edited*/ true, seeded, bornHere,
+                                             /*linkNewer*/ true);
+        if (nowAction == A::Commit)
+            L->setStateInformation (copyState.getData(), (int) copyState.getSize());
+        settle (400);
+        const float kept = pL[which]->getValue();
+        const bool ok = nowAction == A::LeaveLinkNewer && std::abs (kept - v1) < 0.05f;
+        say (leg, juce::String (ok ? "PASS" : "FAIL")
+                + ": the shipped rule LEAVES it (LEAVE-LINK-NEWER) and the Link still reads "
+                + juce::String (kept, 4) + " after the close - the change survives leaving the rack, "
+                  "which is what he asked for");
+        if (ok && landed && copyBlind && wiped) ++passes;
+    };
+
+    // His two guards, in his order.
+    one ("(a) a PICKER-ADDED slot - what his lost CL 1B was at 22:08:49", /*seeded*/ false, /*bornHere*/ true);
+    one ("(b) a slot from the LINK'S OWN rack", /*seeded*/ true, /*bornHere*/ false);
+
+    if (seconds > 8) settle ((seconds - 8) * 1000);
+    rL.stopThread (2000);
+    rV.stopThread (2000);
+    L->releaseResources();
+    V->releaseResources();
+    say (leg, "SURVIVED, " + juce::String (rL.blocks.load()) + "+" + juce::String (rV.blocks.load())
+            + " blocks rendered, " + juce::String (passes) + "/" + juce::String (legs)
+            + " leg(s) green");
+    keepForeverOnTheBench (std::move (L));
+    keepForeverOnTheBench (std::move (V));
+    return passes == legs ? 0 : 4;
+}
+
 /** HIS 14:27 CRASH: the ordering of a teardown, with the real plugin.
 
     One leg, two orderings, chosen by name. Everything else is held identical: the same layout (the
@@ -662,6 +812,8 @@ int main (int argc, char** argv)
     if (leg == "followparams") return runFollowParamsLeg (leg, fm, d, seconds);
     // 25 Oct: the stale-state loss, on a plugin with no licence, so it runs unsupervised.
     if (leg == "persist") return runPersistLeg (leg, fm, d, seconds);
+    // 25 Oct: control, end to end, through the product's own commit rule. Unsupervised too.
+    if (leg == "control") return runControlLeg (leg, fm, d, seconds);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;

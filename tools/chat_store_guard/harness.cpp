@@ -31,6 +31,7 @@
 #include "EJAgentClientTestAccess.h"   // B's one-run rule: feed the client frames with no server
 #include "EJRackSidecarFill.h"          // SH19: the dial-state fingerprint the publisher compares
 #include "EJAgentProtocol.h"            // SH19: the read-back's look budget
+#include "EJEngageDemand.h"             // SH21: a window open on a Link's rack connects to it
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -2520,6 +2521,183 @@ int main()
                    "SH19g and an unreadable value is a reason to look again in the first place - the "
                    "two halves have to agree or the budget is never spent",
                    "look again");
+        }
+
+        // ---- SH20: ONCE CONTROL HAS REACHED THE LINK, THE LINK IS THE NEWER SIDE --------------
+        //
+        // His 25 Oct instruction, written before the control build shipped rather than after a
+        // second loss:
+        //
+        //     *"A picker-added slot counts as born-here and its close-apply still commits the V2's
+        //     copy. Control changes go to the real plugin on the Link, not to that copy, so the
+        //     commit would wipe them. Rule: once a control change has reached the Link for a slot,
+        //     the Link is the newer side; the copy re-bases from the Link or the commit is skipped,
+        //     never written over it."*
+        //
+        // THE KNOWN-BAD DIRECTION IS LAST NIGHT'S OWN RULE, called with last night's own inputs -
+        // not a reverted copy of today's. His CL 1B at 22:08:49 was a picker add, so bornHere is
+        // TRUE for it and yesterday's four-argument rule commits it. Both of his guards are here:
+        // (a) the picker-added slot, (b) a slot that came from the Link's own rack.
+        {
+            using BC = LinkShm::BorrowCommit;
+            using A  = BC::Action;
+
+            // (a) THE PICKER ADD, which is what his lost CL 1B was.
+            check (BC::classify (/*withheld*/ false, /*edited*/ true, /*seeded*/ false,
+                                 /*bornHere*/ true, /*linkNewer*/ false) == A::Commit,
+                   "SH20 yesterday's rule COMMITS a picker-added slot - the known-bad direction, and "
+                   "the exception that makes a picker add and an agent placement reach the Link at "
+                   "all, so it cannot simply be taken away",
+                   "born-here -> COMMIT");
+            check (BC::classify (false, true, /*seeded*/ false, /*bornHere*/ true,
+                                 /*linkNewer*/ true) == A::LeaveLinkNewer,
+                   "SH20a ...and the SAME slot, once a control change has reached the Link for it, is "
+                   "LEFT ALONE - which is his rule, and the difference between hearing a change and "
+                   "keeping it",
+                   "control landed -> LEAVE-LINK-NEWER");
+
+            // (b) A SLOT FROM THE LINK'S OWN RACK: seeded, edited, and still not written over.
+            check (BC::classify (false, true, /*seeded*/ true, /*bornHere*/ false,
+                                 /*linkNewer*/ false) == A::Commit,
+                   "SH20b a seeded slot he edited in the mirror still commits, so this rule narrowed "
+                   "one road and left the one the whole borrow session rests on alone",
+                   "seeded+edited -> COMMIT");
+            check (BC::classify (false, true, /*seeded*/ true, /*bornHere*/ false,
+                                 /*linkNewer*/ true) == A::LeaveLinkNewer,
+                   "SH20c ...but once control has landed on THAT slot the Link is newer for it too - "
+                   "the rule is about where the newer state lives, not about where the slot came from",
+                   "seeded + control landed -> LEAVE-LINK-NEWER");
+
+            // AND IT DOES NOT OUTRANK HIS OWN REFUSAL, which is the older rule and the stronger one.
+            check (BC::classify (/*withheld*/ true, true, true, false, /*linkNewer*/ true)
+                       == A::LeaveWithheld,
+                   "SH20d withheld still beats everything, including this: a state he refused is "
+                   "refused for the reason it was refused, and never renamed by a later rule",
+                   "withheld wins");
+
+            // ---- AND THE WHOLE ROAD, NOT ONLY THE GATE ---------------------------------------
+            // The gate is one function; what reaches his rack is the structure plan. The verdict
+            // road hands a link-newer slot on as {withheld, NOT edited} - the same shape the
+            // unseeded verdict uses - so every downstream reader obeys it without learning the new
+            // rule. These legs prove the plan writes NOTHING for that slot: no Commit, and no
+            // Values op either, because a wet or bypass write would reach the Link just the same.
+            {
+                namespace SE = LinkShm::StructureEdit;
+                std::vector<SE::SlotIdentity> base { SE::SlotIdentity { "Tube-Tech CL 1B", {}, {} } };
+                std::vector<SE::CurrentSlot> cur;
+                SE::CurrentSlot c;
+                c.identity = base[0];
+                c.originIndex = 0;              // re-based after the add was acked, as his was
+                c.edited = false;               // handed on as unknowable, not as a change he made
+                c.withheld = true;              // what a link-newer slot is handed on as
+                c.stateB64 = "AAAAdGhpcyBpcyBkZWZhdWx0cw==";   // the copy's defaults: the wipe
+                cur.push_back (c);
+                const auto plan = SE::computePlan ("4814a16004", base, cur);
+                int commits = 0, values = 0;
+                for (const auto& op : plan.ops)
+                {
+                    if (op.type == SE::OpType::Commit) ++commits;
+                    if (op.type == SE::OpType::Values) ++values;
+                }
+                check (commits == 0 && values == 0 && plan.committing == 0,
+                       "SH20e and the PLAN writes nothing at all for that slot - no Commit carrying "
+                       "the copy's state, and no Values op either, so nothing of this V2 reaches a "
+                       "slot the Link is newer for",
+                       "commits=" + juce::String (commits) + " values=" + juce::String (values));
+
+                cur[0].withheld = false; cur[0].edited = true;   // the same slot, no control landed
+                const auto plan2 = SE::computePlan ("4814a16004", base, cur);
+                int commits2 = 0;
+                for (const auto& op : plan2.ops)
+                    if (op.type == SE::OpType::Commit) ++commits2;
+                check (commits2 == 1,
+                       "SH20f ...and the same slot with NO control change does produce its Commit, so "
+                       "this guard cannot pass by refusing everything, which is the only way a "
+                       "refusal is worth anything",
+                       "commits=" + juce::String (commits2));
+            }
+
+            // AND THE COUNT HE CAN READ says nothing false: not written, and not reported as a
+            // change he made in the mirror, because he did not make it there.
+            const auto p0 = BC::plan (std::vector<BC::Slot> {
+                { /*withheld*/ true, /*edited*/ false, /*seeded*/ false, /*bornHere*/ true,
+                  /*linkNewer*/ true } });
+            check (p0.committing == 0 && p0.changed == 0 && p0.withheldEdited == 0,
+                   "SH20g a link-newer slot is counted as nothing written and nothing changed in the "
+                   "mirror - the change is real, and it is on the Link, where he made it",
+                   "commit=0 changed=0");
+        }
+
+        // ---- SH21: OPENING THE V2 ON A LINK'S RACK IS WHAT CONNECTS TO IT ---------------------
+        //
+        // His 06:55 fault, 25 Oct 2026:
+        //
+        //     *"after closing the Link's window and opening the V2, the rack strip stayed greyed
+        //     with "Not connected to this rack." ... It only reconnected after I selected another
+        //     Link's rack and came back. It must reconnect by itself."*
+        //
+        // The engage was armed only by a selection that CHANGES, which happens once per processor
+        // while an editor is built many times - so the first window on a rack connected and every
+        // later one inherited the view with no session. The known-bad direction is that exact
+        // state: a window open on an editable rack with nothing pending, which produced no ask.
+        {
+            // THE FAULT'S OWN INPUTS: his reopened window at 06:55:15.
+            const auto reopened = echojay::windowOpenEngageAsk (/*viewIsALinkRack*/ true,
+                                                                /*sessionActive*/ false,
+                                                                /*somethingPending*/ false,
+                                                                /*readInFlight*/ false,
+                                                                /*applyInFlight*/ false,
+                                                                /*editable*/ true,
+                                                                /*alreadyAsked*/ false);
+            check (reopened.ask,
+                   "SH21 a window open on a Link's editable rack with no session ASKS to engage - "
+                   "which is his 06:55 fault, and the state that used to sit on \"Not connected to "
+                   "this rack.\" until he switched racks and came back",
+                   juce::String (reopened.why).substring (0, 60));
+
+            // ONCE. The ask stands as the pending engage and the tick waits on the lock, so a Link
+            // holding its own rack is not asked once a second for ever.
+            const auto again = echojay::windowOpenEngageAsk (true, false, false, false, false, true,
+                                                             /*alreadyAsked*/ true);
+            check (! again.ask && juce::String (again.why).contains ("already asked"),
+                   "SH21a ...and it asks ONCE for that rack: the ask stands as the pending engage, "
+                   "and a Link still holding its own window is not asked again every second",
+                   juce::String (again.why));
+
+            // EVERY REFUSAL IS A DIFFERENT STATE, and each one says which.
+            const auto engaged = echojay::windowOpenEngageAsk (true, /*sessionActive*/ true, false,
+                                                               false, false, true, false);
+            check (! engaged.ask,
+                   "SH21b an already-engaged rack is not asked for again - the session IS the "
+                   "connection, and asking would start a second read over a live one",
+                   juce::String (engaged.why));
+            const auto pending = echojay::windowOpenEngageAsk (true, false, /*pending*/ true, false,
+                                                               false, true, false);
+            check (! pending.ask,
+                   "SH21c ...nor is one whose engage is already pending, which is what keeps the "
+                   "agent's own reclaim (his 08:44 ruling) and this from both asking",
+                   juce::String (pending.why));
+            const auto reading = echojay::windowOpenEngageAsk (true, false, false, /*read*/ true,
+                                                               false, true, false);
+            const auto applying = echojay::windowOpenEngageAsk (true, false, false, false,
+                                                                /*apply*/ true, true, false);
+            check (! reading.ask && ! applying.ask,
+                   "SH21d ...nor one with a read or an apply in flight: one read at a time is defect "
+                   "R's rule, and an apply is the close of the last session, not the start of one",
+                   "read and apply both refused");
+            const auto notCapable = echojay::windowOpenEngageAsk (true, false, false, false, false,
+                                                                  /*editable*/ false, false);
+            check (! notCapable.ask
+                   && juce::String (notCapable.why).contains ("has not published a rack"),
+                   "SH21e ...and a Link that has not published an editable rack is not asked at all, "
+                   "which is the read-only view and not a fault - the tick retries as the cache fills",
+                   juce::String (notCapable.why));
+            const auto noRack = echojay::windowOpenEngageAsk (/*viewIsALinkRack*/ false, false, false,
+                                                              false, false, true, false);
+            check (! noRack.ask,
+                   "SH21f ...and his own chain is never a Link's rack, so nothing is asked for it: "
+                   "this rule cannot reach the page he spends most of his time on",
+                   juce::String (noRack.why));
         }
 
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------

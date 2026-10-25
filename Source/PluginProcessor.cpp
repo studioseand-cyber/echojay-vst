@@ -2606,6 +2606,26 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     // `if (! borrowActive()) return;`, so something set this true again during a reopen - and the log carried no
     // engage line to say what. A flag that guards a teardown has to say who set it.
     EchoJay_NSLog(("EJBorrow: session ACTIVE <- true (engage begin, uid=" + borrowSession_.uid + ")").toRawUTF8());
+    // ---- AND THE COPY RE-BASES HERE, WHICH IS THE OTHER HALF OF HIS RULE (25 Oct 2026) ----------
+    //
+    // *"the copy re-bases from the Link or the commit is skipped, never written over it."*
+    //
+    // The skip is recorded per slot the moment a control change reaches the Link, and it has to be
+    // SPENT or it would outlive its reason: a slot controlled an hour ago would refuse a dial he
+    // makes in the mirror tomorrow, and a silently dropped change is the same fault as a lost one.
+    // Engaging is exactly the re-base - every slot of this session is seeded from the Link's own
+    // state as it loads, and that state INCLUDES the control changes - so the record is cleared
+    // here, at the one moment the copy becomes the newer side again by honest means.
+    if (auto it = controlReachedLink_.find (borrowSession_.uid); it != controlReachedLink_.end())
+    {
+        const int n = (int) it->second.size();
+        controlReachedLink_.erase (it);
+        EchoJay_NSLog(("EJControl: the \"the Link is newer\" record for " + borrowSession_.uid
+            + " is CLEARED on engage - " + juce::String (n) + " slot(s) had taken a control change, "
+              "and this session's mirror is seeded from the Link's own state, which now contains "
+              "them. The skip is spent, not permanent: a dial he makes in the mirror from here still "
+              "reaches his rack (his rule's other arm, 25 Oct)").toRawUTF8());
+    }
 
     // ---- ITEM 6 (Sean, 14 Oct 2026): A RELEASE NOTICE MUST NOT OUTLIVE THE RELEASE ---------------------
     //
@@ -2885,9 +2905,18 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
         const int origin = origins[(size_t) i];
         if (origin < 0)
         {
+            // A SLOT STILL BEING CREATED CANNOT HAVE BEEN CONTROLLED on the Link - control needs the
+            // Link to hold the plugin and tap it - so this arm says so loudly if it ever happens,
+            // rather than quietly seeding a Create from a copy that is the older side.
+            const bool newerOnLink = linkIsNewerForSlot (borrowUid(), i);
             EchoJay_NSLog(("EJApply: slot " + juce::String(i + 1) + " \""
                 + bh->getSlotInfo(i).name + "\" CREATED here - no pulled "
-                  "state, never withheld, edited by definition -> CREATE")
+                  "state, never withheld, edited by definition -> CREATE"
+                + (newerOnLink ? juce::String (" !! and a control change has already reached the "
+                                               "Link for this slot, which should be impossible for a "
+                                               "slot the Link does not hold yet - the Create still "
+                                               "carries the structure, and this line is the evidence")
+                               : juce::String()))
                 .toRawUTF8());
             out.emplace_back(false, true);
             continue;
@@ -2913,17 +2942,32 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
         // with factory settings at 22:09:05. His rule: commit only if seeded from the Link's state,
         // or born in this V2 session. This arm is the first case; a slot born here never reaches
         // here at all (the origin < 0 arm above returns before this).
+        // ---- AND THE LINK'S OWN NEWER STATE BEATS EVERY REASON TO WRITE (his 25 Oct rule) ----
+        // A control change from the live view went to the real plugin on the Link and never to this
+        // mirror, so for that slot the Link holds the newer state by construction. Skipped, not
+        // re-based: the structure is already there, so there is nothing else for a commit to carry.
+        const bool newerOnLink = linkIsNewerForSlot (borrowUid(), i);
         const auto action = LinkShm::BorrowCommit::classify(withheld, edited,
                                                             /*seededFromLink*/ seeded,
-                                                            /*bornHere*/ r.bornHere);
+                                                            /*bornHere*/ r.bornHere,
+                                                            /*linkNewer*/ newerOnLink);
         EchoJay_NSLog(("EJApply: slot " + juce::String(i + 1) + " \"" + r.name
             + "\" hadState=" + (r.hadState ? "Y" : "N")
             + " seeded=" + (seeded ? "Y" : "N")
+            + " bornHere=" + (r.bornHere ? "Y" : "N")
+            + " controlLanded=" + (newerOnLink ? "Y" : "N")
             + " -> withheld=" + (withheld ? "Y" : "N")
             + " edited=" + (edited ? "Y" : "N")
             + " action=" + (action == LinkShm::BorrowCommit::Action::Commit ? "COMMIT"
                             : action == LinkShm::BorrowCommit::Action::LeaveWithheld
                                 ? "LEAVE-WITHHELD"
+                            : action == LinkShm::BorrowCommit::Action::LeaveLinkNewer
+                                ? "LEAVE-LINK-NEWER (a control change from the live view has already "
+                                  "reached this slot on the Link, so the Link holds the newer state "
+                                  "for it by construction and this copy is never written over it - "
+                                  "his rule of 25 Oct. The slot's structure is already on the Link, "
+                                  "which is how control reached it at all, so nothing is lost by "
+                                  "skipping the write)"
                             : action == LinkShm::BorrowCommit::Action::LeaveUnseeded
                                 ? "LEAVE-UNSEEDED (this copy was never seeded with the Link's own "
                                   "state, so it has no claim to be newer - the Link keeps what it "
@@ -2940,7 +2984,8 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
         // so it is TRUE for a copy nobody has touched - and passing that on would put "1 slot
         // changed, not written" in front of him about a slot he never touched. With no baseline the
         // edit state is UNKNOWABLE, and a count he could read is worse than no count.
-        if (action == LinkShm::BorrowCommit::Action::LeaveUnseeded)
+        if (action == LinkShm::BorrowCommit::Action::LeaveUnseeded
+            || action == LinkShm::BorrowCommit::Action::LeaveLinkNewer)
         { out.emplace_back(true, false); continue; }
         out.emplace_back(withheld, edited);
     }
@@ -4650,6 +4695,27 @@ bool EchoJayProcessor::agentRunHoldsRack (const juce::String& uid) const
         silently - his words this morning were "silent lost changes are a fault".
       * IT NEVER SENDS WHEN THE VIEW IS NOT FOLLOWING, because following is what proves the two
         parameter lists agree, and a value by index without that is a value on the wrong knob.  */
+/** THE RECORD, both halves. Message thread only (the listener bounces to it), so a map of sets is
+    the right shape: this is asked once per slot at the close of a session, not per block. */
+void EchoJayProcessor::noteControlReachedLink (const juce::String& uid, int slot)
+{
+    if (uid.isEmpty() || slot < 0) return;
+    auto& slots = controlReachedLink_[uid];
+    if (! slots.insert (slot).second) return;        // said once per slot, not per frame
+    EchoJay_NSLog (("EJControl: a change from this live view has REACHED " + uid + " slot "
+                    + juce::String (slot + 1) + " - from here the LINK is the newer side for that "
+                      "slot, so leaving this rack will not write this V2's copy over it (his 25 Oct "
+                      "rule; the copy never receives a control change, which is what made the "
+                      "born-here commit a loss)").toRawUTF8());
+}
+
+bool EchoJayProcessor::linkIsNewerForSlot (const juce::String& uid, int slot) const
+{
+    if (uid.isEmpty() || slot < 0) return false;
+    const auto it = controlReachedLink_.find (uid);
+    return it != controlReachedLink_.end() && it->second.count (slot) > 0;
+}
+
 void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
 {
     if (! juce::MessageManager::existsAndIsCurrentThread())
@@ -4722,6 +4788,11 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
     g.latest     = (double) newValue;
     g.lastMoveMs = nowMs;
     ++liveControlSent_;
+    // IT HAS REACHED THE LINK, so the Link is now the newer side for this slot and the close-apply
+    // may not write this V2's copy over it (his 25 Oct rule). Recorded HERE and nowhere earlier:
+    // a knob that was refused, dropped as an echo or lost for want of a ring never got this far,
+    // and a fact recorded on a touch rather than on a send would refuse commits for nothing.
+    noteControlReachedLink (uid, slot);
 
     if (! saidControlSent_)
     {

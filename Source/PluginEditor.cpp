@@ -14016,6 +14016,40 @@ void EchoJayEditor::borrowSelectionTick()
         // ...and the flag follows the VIEW here; the session coming back clears it at the early
         // return above, which is the only place borrowActive() can still be true.
         if (! runReclaimArmedFor_.isEmpty() && view != runReclaimArmedFor_) runReclaimArmedFor_.clear();
+        // ---- AND THIS WINDOW BEING OPEN ON A LINK'S RACK IS ITSELF A DEMAND (his 06:55 fault) --
+        //
+        // *"after closing the Link's window and opening the V2, the rack strip stayed greyed with
+        //  "Not connected to this rack." ... It only reconnected after I selected another Link's
+        //  rack and came back. It must reconnect by itself."*
+        //
+        // The whole reasoning is in EJEngageDemand.h, and the short version is that the engage was
+        // armed only by a selection that CHANGES, which happens once per processor while an editor
+        // is built many times - so the first window on a rack connected and every later one did
+        // not. ONE ask per window per rack; the ask then waits on the lock like any other, which is
+        // what hands the rack back when the Link's own window closes.
+        {
+            bool capable = false;
+            if (auto it = p.linkRackCache.find (view); it != p.linkRackCache.end())
+                capable = it->second.rack.borrowCapable;
+            const auto d = echojay::windowOpenEngageAsk (view.isNotEmpty(),
+                                                         p.borrowActive(),
+                                                         p.pendingAutoEngage_.isNotEmpty(),
+                                                         borrowReadInFlightUid_.isNotEmpty(),
+                                                         p.borrowApplyInFlight_,
+                                                         capable,
+                                                         windowEngageAskedFor_ == view);
+            if (d.ask)
+            {
+                windowEngageAskedFor_ = view;
+                p.pendingAutoEngage_ = view;
+                p.setRackLockWant (view);
+                EchoJay_NSLog (("EJBorrow: " + view + " - " + juce::String (d.why)).toRawUTF8());
+            }
+            // The fact follows the VIEW, so moving away and coming back may ask again - and that
+            // path already works today, which is how he got his rack back at 06:56:12.
+            if (windowEngageAskedFor_.isNotEmpty() && view != windowEngageAskedFor_)
+                windowEngageAskedFor_.clear();
+        }
         // ---- AND THE HELD-BUT-NEVER-ENGAGED RACK (19 Oct 2026, Sean, 08:52) -------------------
         //
         // *"Why is the Kick's Link rack 'Connecting' at all when the Link has been live the whole

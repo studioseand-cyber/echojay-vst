@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <map>
+#include <set>
 #include <thread>
 #include <atomic>
 #include "MeterEngine.h"
@@ -695,6 +696,17 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     juce::String liveControlRefusal_;
     std::unique_ptr<juce::AudioProcessorListener> liveControlListener_;
     void liveControlEndGesture (int index, const char* why);
+    // ---- WHERE THE NEWER STATE LIVES, RECORDED AS A FACT (his 25 Oct rule) --------------------
+    // A control change goes to the real plugin on the Link and NOWHERE ELSE - not to the borrowed
+    // mirror whose state the close-apply commits. So the moment one lands, that slot's state on the
+    // Link is newer than anything this V2 holds for it, and the commit must not write over it.
+    // Recorded per rack per slot, when the gesture actually reaches the ring (a touched knob that
+    // was refused or dropped as an echo changes nothing on the Link and is not recorded here).
+    std::map<juce::String, std::set<int>> controlReachedLink_;
+    void noteControlReachedLink (const juce::String& uid, int slot);
+    /** Has a control change from this V2 already reached the Link for that slot? The close-apply
+        asks this, and a true answer means the Link keeps what it has. */
+    bool linkIsNewerForSlot (const juce::String& uid, int slot) const;
     /** The structure revision of a Link's rack, from the sidecar this V2 already caches, so every
         frame carries it and a V2 holding a stale picture cannot apply a value to the wrong
         parameter - the Link discards the mismatch with a count. */

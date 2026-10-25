@@ -1686,16 +1686,37 @@ inline int nextCtrlSeq()
 // state to be seeded from and is legitimately newer. That road is a separate arm in
 // borrowSlotVerdicts (origin < 0 -> "CREATED here ... edited by definition") which never reaches
 // this test, and the guard holds both halves.
+// ---- AND THE BORN-HERE EXCEPTION HAS ITS OWN HOLE, WHICH CONTROL WALKS STRAIGHT INTO ---------
+// (his 25 Oct ruling, written before the control build shipped rather than after another loss)
+//
+// Last night's rule let a slot this V2 placed itself commit, because it has a known identity and
+// there was no Link state it could have been seeded from - correct, and the picker add and the
+// agent's placements both depend on it. But a CONTROL change does not go to the copy. It goes over
+// the value ring to the real plugin on the Link, by design ("a change on the V2's view goes to the
+// real plugin at once"), and the copy never sees it. So the moment control lands on a born-here
+// slot, the two sides swap places: the LINK is the newer one, and committing the copy over it wipes
+// the very change he just made and heard - his 22:08 loss again, by a different door.
+//
+//     *"Rule: once a control change has reached the Link for a slot, the Link is the newer side;
+//      the copy re-bases from the Link or the commit is skipped, never written over it."*
+//
+// `linkNewer` is that RECORDED fact - set when a gesture actually reaches the ring, not when a knob
+// is touched - and it beats every reason to write. Skipping is the arm taken here: the slot's
+// STRUCTURE is already on the Link (control cannot reach a slot the Link does not have), so there
+// is nothing left for the commit to carry that the Link does not already hold more recently.
 struct BorrowCommit
 {
-    enum class Action { Commit, LeaveWithheld, LeaveUnedited, LeaveUnseeded };
+    enum class Action { Commit, LeaveWithheld, LeaveUnedited, LeaveUnseeded, LeaveLinkNewer };
     /** `seededFromLink` is the RECORDED fact that this slot was seeded with the Link's own state;
         `bornHere` is a slot this V2 session placed itself, which has a known identity and no Link
-        state to be seeded from. A copy that is neither is never written back. */
+        state to be seeded from. A copy that is neither is never written back. `linkNewer` is the
+        recorded fact that a control change has already reached the Link for this slot, which makes
+        the Link the newer side whatever the copy's provenance. */
     static Action classify (bool withheld, bool edited, bool seededFromLink = true,
-                            bool bornHere = false)
+                            bool bornHere = false, bool linkNewer = false)
     {
         if (withheld) return Action::LeaveWithheld;   // beats edited, always
+        if (linkNewer) return Action::LeaveLinkNewer; // and the Link's own newer state beats both
         if (! seededFromLink && ! bornHere)
             return Action::LeaveUnseeded;             // beats edited too, and for the same reason
         return edited ? Action::Commit : Action::LeaveUnedited;
@@ -1708,6 +1729,7 @@ struct BorrowCommit
         int withheldEdited = 0;   // edited but never written (the asymmetry)
         int untouched = 0;        // unedited, left alone
         int unseeded = 0;         // 24 Oct 2026: no claim to be newer, so never written
+        int linkNewer = 0;        // 25 Oct 2026: control already landed on the Link, so it is newer
     };
     /** The pair form, kept so every existing caller and leg reads unchanged: a {withheld, edited}
         pair carries no seeding fact, and the only safe reading of a missing fact is the one that
@@ -1719,19 +1741,22 @@ struct BorrowCommit
         std::vector<Slot> full;
         full.reserve (slots.size());
         for (const auto& [withheld, edited] : slots)
-            full.push_back ({ withheld, edited, /*seededFromLink*/ true, /*bornHere*/ false });
+            full.push_back ({ withheld, edited, /*seededFromLink*/ true, /*bornHere*/ false,
+                              /*linkNewer*/ false });
         return plan (full);
     }
-    struct Slot { bool withheld = false, edited = false, seededFromLink = true, bornHere = false; };
+    struct Slot { bool withheld = false, edited = false, seededFromLink = true, bornHere = false,
+                       linkNewer = false; };
     static Plan plan (const std::vector<Slot>& slots)
     {
         Plan p;
         for (const auto& s : slots)
         {
-            const auto a = classify (s.withheld, s.edited, s.seededFromLink, s.bornHere);
+            const auto a = classify (s.withheld, s.edited, s.seededFromLink, s.bornHere, s.linkNewer);
             p.actions.push_back (a);
             if (s.edited) ++p.changed;
             if (a == Action::Commit) ++p.committing;
+            else if (a == Action::LeaveLinkNewer) ++p.linkNewer;
             else if (a == Action::LeaveUnseeded) ++p.unseeded;
             else if (s.withheld && s.edited) ++p.withheldEdited;
             if (! s.edited) ++p.untouched;

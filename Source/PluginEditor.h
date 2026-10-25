@@ -22,6 +22,7 @@
 #include "ChainWetKnob.h"
 #include "NativeClip.h"
 #include "EJLiveViewInput.h"   // his ruling of 24 Oct: a view that cannot pass a gesture on takes none
+#include "EJEngageDemand.h"    // his 06:55 fault, 25 Oct: a window open on a Link's rack connects to it
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"
@@ -2827,6 +2828,10 @@ private:
         re-arm per second against a Link that is still holding its own rack would be a spin that
         looks like progress (the 19 Oct lesson on the held-but-never-engaged lock). */
     juce::String runReclaimArmedFor_;
+    // ONE ASK PER WINDOW PER RACK (his 06:55 fault, 25 Oct 2026): a new editor starts not having
+    // asked, which is the whole point - the old behaviour was that only the FIRST editor over a
+    // processor's life ever armed the engage, because only a selection that changes armed it.
+    juce::String windowEngageAskedFor_;
     int agentRunZoneMsg_ = -1;                    // the last card painted (the live row's ticker)
 
     /** The run's model for this message: the LIVE client when the message is this session's
