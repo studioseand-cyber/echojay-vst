@@ -1982,22 +1982,20 @@ int main()
                    "SH13b with control built, a FOLLOWING view on a free rack takes his gestures - "
                    "the lock is off, from the one flag and not from a second edit",
                    "open");
-            // THE FLAG FOLLOWS WHAT IS SHIPPED, and tonight it ships OFF: his ruling of 22:1x,
-            // after the borrow commit wrote defaults over a Threshold he had just heard move.
-            // CONTROL itself is built and proven on the wire (SH17); what is not yet safe is the
-            // persistence road underneath it, so the lock goes back on until SH18 and a bench
-            // proof say otherwise. A guard that asserted the flag's VALUE either way would be a
-            // guard about a decision; this one is about the two of them agreeing.
-            check (! echojay::kLiveViewControlBuilt,
-                   "SH13c ...and that flag is FALSE in this build, so the \"View only\" lock is back "
-                   "on - his ruling until the persistence road cannot overwrite the Link",
-                   "control off tonight");
+            // THE FLAG FOLLOWS WHAT IS SHIPPED, and from 25 Oct it ships ON: the born-here hole
+            // underneath it is closed at the cause (SH20), which was his condition. What this pair
+            // asserts is not the flag's VALUE for its own sake - that is his decision, not a
+            // guard's - but that the flag and the DEFAULT call agree, so what the shield does is
+            // what the shipped flag says and not what a test passed with an argument of its own.
+            check (echojay::kLiveViewControlBuilt,
+                   "SH13c ...and that flag is TRUE in this build, so the \"View only\" lock is off "
+                   "for parameters - his instruction of 25 Oct, after the born-here hole was closed",
+                   "control on");
             const auto shippedNow = echojay::liveViewInputPolicy (true);
-            check (shippedNow.blockInput
-                   && shippedNow.line == juce::String (echojay::liveViewOnlyLine()),
-                   "SH13c2 ...and the DEFAULT call - the one the shield actually makes - blocks with "
-                   "his sentence, so what ships is what the flag says and not what a test passed",
-                   "\"" + shippedNow.line + "\"");
+            check (! shippedNow.blockInput && shippedNow.line.isEmpty(),
+                   "SH13c2 ...and the DEFAULT call - the one the shield actually makes - takes his "
+                   "gestures, so what ships is what the flag says and not what a test passed",
+                   "open by default");
             const auto heldByRun = echojay::liveViewInputPolicy (true, true, true, /*runHolds*/ true);
             check (heldByRun.blockInput && heldByRun.line.contains ("an agent is working on this rack"),
                    "SH13d an agent run holding the rack puts the shield BACK UP with that reason - a "

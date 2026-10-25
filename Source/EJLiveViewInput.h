@@ -51,7 +51,18 @@ namespace echojay
 // may be silently undone - which is the same fault as a change that never arrives.
 //
 // ONE LINE, AND IT IS THE ONLY LINE NEEDED, because the shield's decision has one owner.
-constexpr bool kLiveViewControlBuilt = false;
+// ---- AND ON, 25 Oct 2026, WITH THE HOLE THAT UNDID IT CLOSED AT THE CAUSE -------------------
+//
+// *"Turn control ON."*  ...and before that, in the same message: *"Close the born-here hole
+// first. ... Rule: once a control change has reached the Link for a slot, the Link is the newer
+// side; the copy re-bases from the Link or the commit is skipped, never written over it."*
+//
+// That rule is now recorded as a FACT at the one place a gesture reaches the ring
+// (EchoJayProcessor::noteControlReachedLink) and read by the one road that writes a slot's state
+// back (borrowSlotVerdicts -> BorrowCommit::classify -> Action::LeaveLinkNewer), so the commit that
+// wiped his Threshold at 22:09:05 now says LEAVE-LINK-NEWER and writes nothing. Both halves of the
+// morning's instruction, in that order, and this line last.
+constexpr bool kLiveViewControlBuilt = true;
 
 /** What the view says while it is read-only. His words, kept verbatim. */
 inline const char* liveViewOnlyLine() noexcept
