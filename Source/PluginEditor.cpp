@@ -39540,6 +39540,40 @@ void EchoJayEditor::serviceRigHook()
         // answered - which is why the composer stayed hidden and the hint check kept failing with a
         // reason that was telling me the truth. A button that does not touch the agent must not be
         // gated on the agent existing.
+        // ---- THE ASK SHELF'S OWN CHIPS HAVE THEIR OWN NAME (S6 B6, 25 Oct 2026) --------------
+        //
+        // `ask_chip0`, `ask_chip1`, ... press the SHELF's pills - the supersede ask's "Start anyway",
+        // a model brief's options, the classify short-circuit's chips. `chip0` keeps its only
+        // meaning, the agent RUN ROW's chip, because twenty rows already send it that way and
+        // quietly widening it is how one word starts proving two things.
+        //
+        // It goes through onAskChipTapped, which is what the drawn pill's own onClick calls, so a row
+        // that presses this proves the action and not just the label. And it is HERE, before the
+        // agent-client gate, for the reason the onboarding press is: a brief's chips can be up with
+        // no run in the world, and a button that does not touch the agent must not be gated on the
+        // agent existing.
+        if (const int askIdx = echojay::rig::askChipPressIndex (b); askIdx >= 0)
+        {
+            const int upCount = (askShelfVisible_ && ! askShelfIsCard_) ? activeAskChips : 0;
+            if (upCount <= 0)
+            { ok = false; note = "the ask shelf has no chips up"; }
+            else if (askIdx >= upCount)
+            { ok = false; note = "the ask shelf has " + juce::String (upCount) + " chip(s), so there "
+                                 "is no chip " + juce::String (askIdx); }
+            else if (askChipBtns[(size_t) askIdx] == nullptr
+                     || ! askChipBtns[(size_t) askIdx]->isVisible())
+            { ok = false; note = "chip " + juce::String (askIdx) + " is not on screen to be pressed"; }
+            else
+            {
+                const auto label = askChipLabels[(size_t) askIdx];
+                onAskChipTapped (askIdx);
+                note = "pressed the ask shelf's chip " + juce::String (askIdx) + " (\"" + label + "\")";
+            }
+            publishRigState();
+            echojay::rig::ack (c.seq, c.name, ok, note);
+            EchoJay_NSLog (("EJRig: press " + b + " seq=" + juce::String (c.seq) + " -> " + note).toRawUTF8());
+            return;
+        }
         if (b == "onboarding" || b == "tab_chat" || b == "tab_chain")
         {
             if (b == "onboarding")
@@ -39799,6 +39833,34 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("forSeq", processorRef.rigLastSeq());
     o->setProperty ("atMs", (double) juce::Time::currentTimeMillis());
     o->setProperty ("editorId", (double) (juce::int64) (juce::pointer_sized_int) this);
+    // ---- THE ASK SHELF, PUBLISHED, SO A ROW CAN WAIT FOR IT INSTEAD OF PRESSING BLIND --------
+    //
+    // The S6 B6 fault (25 Oct 2026). That row answers the supersede ask - "This will stop the run on
+    // <name>. Start anyway?" - by sending `press: chip0`, and chip0 in this vocabulary is the AGENT
+    // RUN ROW's chip (rigPressAgentRow routes anything starting "chip" to RunHit::Chip). The ask's
+    // own chips are the SHELF's (askChipBtns), a different surface, and they had no rig name at all
+    // and nothing published to say they were up. So the press went to the wrong surface, found no
+    // zone, and the plugin answered "unknown button \"chip0\"" - correctly.
+    //
+    // The row's own comment said a press that finds no chips is "harmless". It is not harmless to
+    // the verdict: the ask STAYS UP HOLDING HIS TYPED TEXT, so the message never reaches the new
+    // chat, and the row then reads "his row at -1, first card at -1" about an interaction it never
+    // performed. Two names for two surfaces, and a field so a row can wait for the one it means.
+    {
+        juce::StringArray up;
+        if (askShelfVisible_ && ! askShelfIsCard_)
+            for (int ci = 0; ci < activeAskChips && ci < (int) askChipBtns.size(); ++ci)
+                if (askChipBtns[(size_t) ci] != nullptr && askChipBtns[(size_t) ci]->isVisible())
+                    up.add (askChipLabels[(size_t) ci]);
+        // PRESSABLE, not merely laid out: the count is of chips whose button is VISIBLE, which is
+        // the same test the layout applies before showing one (B's six-chip capture, 20 Oct). A row
+        // that waited on a count including an unreachable pill would wait for something it could
+        // never press.
+        o->setProperty ("askChipsUp", up.size());
+        o->setProperty ("askChips", up.joinIntoString (", "));
+        o->setProperty ("askQuestion", askShelfVisible_ && ! askShelfIsCard_ ? askChipQuestion_
+                                                                             : juce::String());
+    }
 
     // ---- the transcript, as the PROCESSOR holds it (the thing a reopen restores)
     {

@@ -9040,18 +9040,49 @@ int main (int argc, char* argv[])
         // itself, and this row read "his row at -1" - his message was not missing, it was waiting
         // for an answer nobody gave.
         //
-        // The row now answers it the way he would, and only when it is actually up: the first chip
-        // is "Start anyway". A press that finds no chips is harmless and says nothing, so a build
-        // where the ask does not appear (the run already finished, say) still measures the order.
-        // Pressed unconditionally and its ack IGNORED on purpose: the state does not publish the
-        // editor's replace-ask chips, and inventing a field to read would be a second idea of what
-        // is on screen. A press that finds no chips is refused by the rig with a note and changes
-        // nothing, so this is safe whether the ask is up or not - and the checks below still have to
-        // find his message either way.
-        const auto chipAck = rig.send (echojay::rig::cmd::press, args1 ("button", "chip0"), 12000);
-        Rig::pump (1200);
-        std::printf ("        (B6 new chat) \"Start anyway\" press -> %s\n",
-                     chipAck.getProperty ("note", juce::var()).toString().toRawUTF8());
+        // ---- AND IT IS ANSWERED ON THE RIGHT SURFACE, AFTER WAITING FOR IT (25 Oct 2026) -------
+        //
+        // THIS WAS THE S6 B6 FAIL. What stood here sent `press: chip0` and ignored the ack on the
+        // grounds that "the state does not publish the editor's replace-ask chips, and inventing a
+        // field to read would be a second idea of what is on screen". Both halves were wrong:
+        //
+        //   * `chip0` is the AGENT RUN ROW's chip (EchoJayEditor::rigPressAgentRow routes anything
+        //     starting "chip" to RunHit::Chip). The supersede ask's "Start anyway" is on the ASK
+        //     SHELF - a different surface - so the press was routed away from the thing it meant,
+        //     found no zone, and the plugin answered `unknown button "chip0"`. Correctly.
+        //   * A press that finds no chips is NOT harmless to this row. The ask stays up holding his
+        //     typed text, so the message never reaches the new chat - and the row then reported
+        //     "his row at -1, first card at -1" about an interaction it had never performed. That is
+        //     the vacuous-pass rule's twin: a vacuous FAIL.
+        //
+        // So the plugin now has a name for that surface (`ask_chip<N>`) and publishes `askChipsUp`,
+        // and this row WAITS for the chips with a bound before pressing. If they never come the row
+        // says so and skips rather than measuring an order it did not create.
+        const bool askUp = rig.until ([] (const juce::var& s)
+        { return (int) s.getProperty ("askChipsUp", juce::var (0)) > 0; }, 15000);
+        if (! askUp)
+        {
+            rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+            std::printf ("        (B6 new chat) the supersede ask never came up (askChipsUp=%s) - "
+                         "his text was not held, so the order below is measured without it\n",
+                         Rig::state().getProperty ("askChipsUp", juce::var()).toString().toRawUTF8());
+        }
+        else
+        {
+            const auto chipAck = rig.send (echojay::rig::cmd::press, args1 ("button", "ask_chip0"), 12000);
+            Rig::pump (1200);
+            const bool pressed = (bool) chipAck.getProperty ("ok", juce::var (false));
+            std::printf ("        (B6 new chat) \"Start anyway\" press -> %s%s\n",
+                         chipAck.getProperty ("note", juce::var()).toString().toRawUTF8(),
+                         pressed ? "" : "   << THE PRESS WAS REFUSED, so his message is still held");
+            // THE PRESS IS PART OF THE SUBJECT NOW, not a courtesy before it: this row cannot say
+            // anything about where his message was drawn if the thing that releases it was refused.
+            check (pressed,
+                   "B6 (new chat): the supersede ask's \"Start anyway\" is PRESSABLE from its own "
+                   "surface - the fault this replaced sent chip0, which is the agent run row's chip, "
+                   "so the ask was never answered and the row measured an order it had not created",
+                   chipAck.getProperty ("note", juce::var()).toString());
+        }
         // ---- THE NEW CHAT HAS TO BE DRAWING SOMETHING BEFORE EITHER HALF MEANS ANYTHING --------
         //
         // The first run of this row read `his row at -1, first card at -1`: the window was drawing
@@ -9068,6 +9099,23 @@ int main (int argc, char* argv[])
             return false;
         }, 20000);
         rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
+        // ---- THE GROUND IS RE-TAKEN ON THE SNAPSHOT THE CHECKS ACTUALLY READ (25 Oct 2026) -----
+        //
+        // The row's own rule, two paragraphs up, is that "an absence asserted against an empty list
+        // is a claim that passes whatever the product does" - and it was applied to the WAIT and not
+        // to the snapshot the checks read. Those are two different moments: `until` polls until the
+        // message appears, then this reportState takes a FRESH state, and the 25 Oct run failed with
+        // `his row at -1, first card at -1` after the wait had SUCCEEDED. So the message was drawn
+        // and then gone, and the row reported that as an ordering fault - which it is not.
+        //
+        // One snapshot, one verdict. If his message is not in the state the checks read, this row
+        // says THAT, with the row count, instead of concluding anything about order.
+        bool stillDrawn = false;
+        if (auto* rows = Rig::state().getProperty ("onScreen", juce::var()).getArray())
+            for (const auto& r : *rows)
+                if (r.getProperty ("role", juce::var()).toString() == "user"
+                    && r.getProperty ("text", juce::var()).toString().contains ("brand new chat"))
+                    stillDrawn = true;
         // Is the OLD run's card being drawn in this new chat?
         bool oldCardHere = false; int cards = 0, userRows = 0, firstCardAt = -1, firstUserAt = -1, i = 0;
         if (auto* rows = Rig::state().getProperty ("onScreen", juce::var()).getArray())
@@ -9099,6 +9147,13 @@ int main (int argc, char* argv[])
                   "the new chat drew nothing within 20 s (onScreen rows: " + juce::String (i)
                   + "), and an absence asserted against an empty list is not evidence. The run that "
                     "was superseded is proven elsewhere; this row needs the new chat on screen.");
+        else if (! stillDrawn)
+            skip ("B6: a superseded run's card does not follow him into a new chat",
+                  "his message WAS drawn in the new chat and was gone again by the snapshot these "
+                  "checks read (onScreen rows now: " + juce::String (i) + ", user rows "
+                  + juce::String (userRows) + ", cards " + juce::String (cards) + "). That is a "
+                    "disappearing-row fault and not an ordering one, and this row will not report it "
+                    "as the second. It is the next thing to chase on this road.");
         else
         {
             check (! oldCardHere,

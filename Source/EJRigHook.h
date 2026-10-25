@@ -72,6 +72,20 @@ inline juce::File stateFile() { return dir().getChildFile ("rig-state.json"); }
 
 /** The command names the rig may send. Kept as one list in one place so the rig
     and the plugin cannot drift: tools/host_rig/host_rig.mm sends these strings. */
+/** `ask_chip3` -> 3, `ask_chip` -> 0, anything else -> -1. PURE, so the guard holds the vocabulary
+    without an editor: the whole fault this closes was a name routed to the wrong surface, and a name
+    is exactly the kind of thing a guard can hold for ever. `chip0` deliberately returns -1 here - it
+    is the agent run row's, and that is the point. */
+inline int askChipPressIndex (const juce::String& button)
+{
+    const auto b = button.trim().toLowerCase();
+    if (! b.startsWith ("ask_chip")) return -1;
+    const auto tail = b.substring (8);
+    if (tail.isEmpty()) return 0;
+    if (! tail.containsOnly ("0123456789")) return -1;
+    return tail.getIntValue();
+}
+
 namespace cmd
 {
     inline constexpr const char* sendChat     = "send_chat";       // { text }
@@ -91,7 +105,13 @@ namespace cmd
     // `tab_chat` / `tab_chain` press the TAB BUTTONS (16 Oct 2026). Row H1's subject is the mode hint,
     // which is gated on the composer being on screen - *"CHAT tab, composer visible"*, Sean's own words -
     // so a row about it has to be able to get there the way he does.
-    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|got_it|retry|chat_retry|tab_chat|tab_chain }
+    // `ask_chip<N>` (S6 B6, 25 Oct 2026) presses the ASK SHELF's pills - the supersede ask's "Start
+    // anyway", a model brief's options, the classify chips. `chip<N>` keeps its ONE meaning, the
+    // agent run row's chip. The B6 row sent chip0 at the supersede ask, it was routed to the run row,
+    // found no zone, and the plugin answered "unknown button" - which was correct, and the row then
+    // measured an interaction it had never performed. Two surfaces, two names, and `askChipsUp` on
+    // the state so a row can WAIT for the chips instead of pressing blind.
+    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|ask_chip|got_it|retry|chat_retry|tab_chat|tab_chain }
     inline constexpr const char* selectLink   = "select_link";     // { uid }  ("" = the own rack)
     inline constexpr const char* reportState  = "report_state";    // {}
     inline constexpr const char* setRackOut   = "set_rack_out";    // { db }   - the user's own knob, not the agent op

@@ -33,6 +33,7 @@
 #include "EJAgentProtocol.h"            // SH19: the read-back's look budget
 #include "EJEngageDemand.h"             // SH21: a window open on a Link's rack connects to it
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
+#include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -2705,6 +2706,41 @@ int main()
                    "SH21f ...and his own chain is never a Link's rack, so nothing is asked for it: "
                    "this rule cannot reach the page he spends most of his time on",
                    juce::String (noRack.why));
+        }
+
+        // ---- SH23: TWO SURFACES, TWO NAMES (the S6 B6 fail, 25 Oct 2026) ---------------------
+        //
+        // B6's second half sent `press: chip0` to answer the supersede ask. `chip0` in this
+        // vocabulary is the AGENT RUN ROW's chip; the ask's "Start anyway" is the ASK SHELF's, a
+        // different surface with no name at all. So the press was routed away from what it meant,
+        // the plugin answered "unknown button" - correctly - and the ask stayed up HOLDING HIS TYPED
+        // TEXT, which is why the row then reported "his row at -1" about an interaction it had never
+        // performed.
+        //
+        // The name is the fault, so the name is what this holds.
+        {
+            check (echojay::rig::askChipPressIndex ("ask_chip0") == 0
+                   && echojay::rig::askChipPressIndex ("ask_chip3") == 3
+                   && echojay::rig::askChipPressIndex ("ask_chip") == 0,
+                   "SH23 ask_chip<N> names the ASK SHELF's Nth pill, and bare ask_chip means the "
+                   "first - which is the supersede ask's \"Start anyway\"",
+                   "0, 3, 0");
+            check (echojay::rig::askChipPressIndex ("chip0") < 0
+                   && echojay::rig::askChipPressIndex ("chip") < 0,
+                   "SH23a ...and chip0 is NOT one of them: it keeps its one meaning, the agent run "
+                   "row's chip, because twenty rig rows already send it that way. Two controls on two "
+                   "surfaces with one name is how a row proves the wrong button",
+                   "chip0 is not an ask chip");
+            check (echojay::rig::askChipPressIndex ("ask_chipx") < 0
+                   && echojay::rig::askChipPressIndex ("apply") < 0
+                   && echojay::rig::askChipPressIndex ("") < 0,
+                   "SH23b ...and a name that is not one of either is refused rather than guessed at - "
+                   "an index parsed out of \"ask_chipx\" would press whatever chip 0 happens to be",
+                   "refused");
+            check (echojay::rig::askChipPressIndex ("ASK_CHIP2") == 2,
+                   "SH23c ...and the press handler lowercases before it routes, so the guard reads the "
+                   "same name the rig sends whatever case it is in",
+                   "2");
         }
 
         // ---- SH22: THE SLOT METERS - SILENCE, STALENESS, AND BLANK RATHER THAN ZERO ----------
