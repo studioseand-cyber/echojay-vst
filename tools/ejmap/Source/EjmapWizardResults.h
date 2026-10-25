@@ -85,6 +85,7 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
         for (const auto& rel : rels) if (rel.isNotEmpty()) files->setProperty (rel == e.getProperty ("map_file", "").toString() ? juce::String ("map.json") : juce::File::createLegalFileName (juce::File (rel).getFileName()), fileJson (bundle, rel));
         auto* pl = new juce::DynamicObject(); pl->setProperty ("category", e.getProperty ("kind", {})); pl->setProperty ("state", "measured");
         if (e.hasProperty ("acceptance")) pl->setProperty ("acceptance", e.getProperty ("acceptance", {}));
+        if (e.hasProperty ("also_categories")) pl->setProperty ("also_categories", e.getProperty ("also_categories", {}));   // 27 Oct: a second space role (reverb + delay)
         add ("profile", e.getProperty ("plugin_id", "").toString(), e.getProperty ("product", "").toString(), e.getProperty ("map_fp", {}), pl, files);
     });
     each ("confirmations", [&] (const juce::var& e)

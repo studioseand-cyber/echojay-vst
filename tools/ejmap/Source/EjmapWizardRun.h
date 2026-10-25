@@ -1157,7 +1157,8 @@ inline int runWizard (const WizardOptions& wo)
         // 21 Oct (Kathy, decision 3): the raised drive goes with the plugin into its measuring passes (the probe's instance only)
         if (d.route == wizroute::Route::measure) if (const auto nw = wizroute::neutralWritesOf (sig); ! nw.empty()) { neutralByStem[phaseBStem (ir.desc)] = nw; p.row->setProperty ("neutral_raised", sig.getProperty ("neutral_writes", {})); }
         if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty ("also_categories", {}).getArray())   // 20 Oct: a tail with both roles -> both passes
-            for (const auto& c : *al) { enqueue (ir.desc.name, c.toString()); p.row->setProperty ("also_categories", sig.getProperty ("also_categories", {})); }
+            for (const auto& c : *al) { enqueue (ir.desc.name, c.toString()); p.row->setProperty ("also_categories", sig.getProperty ("also_categories", {}));
+                                        if ((bool) sig.getProperty ("tail_either", false)) p.row->setProperty ("tail_either", true); }   // 27 Oct: the roles decided by acceptance
         say ("  " + ir.desc.name.paddedRight (' ', 30) + " -> " + wizroute::routeName (d.route) + (d.category.isNotEmpty() ? " (" + d.category + ")" : juce::String()) + ": " + d.why);
     }
     }   // the signature reads' warm probe closes here
@@ -1225,6 +1226,30 @@ inline int runWizard (const WizardOptions& wo)
                     else if (oc == "ok" && ! usable) why = "measured, but its " + pbs[0] + " draft carries nothing the server can use (e.g. no drive control)";
                 }
                 for (int k = 1; k < pbs.size(); ++k) { const auto r2 = landedRow (pbs[k], row->getProperty ("product").toString()); row->setProperty ("also_" + pbs[k], r2.isObject() ? r2.getProperty ("outcome", "") : juce::var ("not run")); }
+                // BOTH SPACE ROLES (27 Oct, Kathy): a plugin measured as reverb AND delay sends each pass's draft under its own role (both before
+                // went under the first pass's name, one draft lost); a tail no control names keeps only the roles whose acceptance passed
+                if (pbs.contains ("reverb") && pbs.contains ("delay") && r.isObject() && r.getProperty ("outcome", "").toString() == "ok")
+                {
+                    const bool either = row->hasProperty ("tail_either") && (bool) row->getProperty ("tail_either");
+                    juce::StringArray kept, keptRoles, failed;
+                    for (const auto& pb : { juce::String ("reverb"), juce::String ("delay") })
+                    {
+                        const auto rp = landedRow (pb, row->getProperty ("product").toString()); if (! rp.isObject() || rp.getProperty ("outcome", "").toString() != "ok") continue;
+                        for (const auto& f : out.getChildFile ("phaseb").getChildFile (pb).getChildFile ("drafts").findChildFiles (juce::File::findFiles, false, rp.getProperty ("_stem", "").toString() + "*.draft.json"))
+                        {   const bool passes = wizroute::spaceRolePasses (pb, juce::JSON::parse (f.loadFileAsString()));
+                            if (either && ! passes) { failed.addIfNotAlreadyThere (pb); continue; }
+                            kept.add (pb + "/drafts/" + f.getFileName()); keptRoles.addIfNotAlreadyThere (pb); }
+                    }
+                    draftsL = kept;
+                    if (keptRoles.isEmpty()) { st = "not_measurable"; why = "measured as reverb and as delay: neither passed its acceptance (a reverb's decay, a delay's time / feedback)"; }
+                    else
+                    {   st = "measured"; row->setProperty ("category", keptRoles[0]);
+                        juce::Array<juce::var> also; for (int k = 1; k < keptRoles.size(); ++k) also.add (keptRoles[k]); row->setProperty ("space_roles_also", also);
+                        if (either) why = "measured as reverb and as delay: kept " + keptRoles.joinIntoString (" and ") + (failed.isEmpty() ? juce::String() : " (" + failed.joinIntoString (", ") + " did not pass its acceptance)"); }
+                }
+                const bool compressorAlone = r.isObject() && pbs.contains ("limitercomp")
+                    && wizroute::limiterWithoutCeiling (pbs[0], r.getProperty ("outcome", "").toString(), (bool) r.getProperty ("nothing_measured", false), ! draftsL.isEmpty());
+                if (compressorAlone) { st = "measured"; why = wizroute::kNoCeilingWhy; }   // 25 Oct (Kathy): decided below by the profile itself
                 if (pbs.contains ("limitercomp") && st == "measured")
                 {   // the limiter's compressor pass: its exported profile + tone check travel with the limiter draft (sent like any compressor)
                     const auto r2 = landedRow ("limitercomp", row->getProperty ("product").toString()); const auto stem2 = r2.getProperty ("_stem", "").toString();
@@ -1237,9 +1262,11 @@ inline int runWizard (const WizardOptions& wo)
                         const auto tc = f.getSiblingFile (f.getFileNameWithoutExtension() + ".tonecheck.json");
                         const bool pass = (bool) juce::JSON::parse (tc.loadFileAsString()).getProperty ("pass_within_0_5_db", false);
                         row->setProperty ("compressor_pass", cs + (pass ? ", tone check passed" : ", tone check did not pass"));
+                        if (compressorAlone && wizroute::claimsCeiling (juce::JSON::parse (f.loadFileAsString()))) continue;   // never a ceiling on this path
                         if (wizroute::sendCompressorPass (cs, pass)) draftsL.add ("limitercomp/profiles/" + f.getFileName()), draftsL.add ("limitercomp/profiles/" + tc.getFileName());
                     }
                     row->setProperty ("drafts", draftsL.joinIntoString (","));
+                    if (compressorAlone && draftsL.isEmpty()) { st = "not_measurable"; why = "measured, but no limiter draft could be derived from the record, and its compressor half sent no profile"; }
                 }
                 if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty ("outcome", "").toString());   // 15 Oct: never the routing reason
                 row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (","));
@@ -1311,10 +1338,13 @@ inline int runWizard (const WizardOptions& wo)
             {   // ALL CATEGORIES: the category's draft(s), as the certification derives them
                 juce::Array<juce::var> files;
                 for (const auto& rel : juce::StringArray::fromTokens (rv.getProperty ("drafts", "").toString(), ",", ""))
-                { const auto f = out.getChildFile ("phaseb").getChildFile (rel); f.copyFileTo (B.getChildFile ("profiles").getChildFile (f.getFileName())); files.add ("profiles/" + f.getFileName()); }
+                { const auto f = out.getChildFile ("phaseb").getChildFile (rel); const auto name = wizroute::bundleDraftName (rel);   // 27 Oct: a space draft named after its pass
+                  f.copyFileTo (B.getChildFile ("profiles").getChildFile (name)); files.add ("profiles/" + name); }
                 auto* it = new juce::DynamicObject(); it->setProperty ("product", product); it->setProperty ("kind", files.size() > 0 && files[0].toString().contains (".filter_profile.") ? juce::String ("filter")   // v1.1: the filter category
                                              : wizserver::toServer (rv.getProperty ("category", "").toString(), (bool) rv.getProperty ("cabinet_read", false)));
-                it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); attachMap (it, rv.getProperty ("map_fp", "").toString(), files); items.add (juce::var (it));   // measured_by (EJ Map's internal names) stays local
+                it->setProperty ("plugin_id", rv.getProperty ("plugin_id", {})); it->setProperty ("map_fp", rv.getProperty ("map_fp", {})); it->setProperty ("drafts", files); attachMap (it, rv.getProperty ("map_fp", "").toString(), files);
+                if (rv.getProperty ("space_roles_also", {}).size() > 0) it->setProperty ("also_categories", rv.getProperty ("space_roles_also", {}));   // 27 Oct: both space roles
+                items.add (juce::var (it));   // measured_by (EJ Map's internal names) stays local
             }
             else if (st == "measured" && isEq)
             {

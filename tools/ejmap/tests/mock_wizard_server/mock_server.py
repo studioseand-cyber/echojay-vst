@@ -28,7 +28,13 @@ PROFILE_SCHEMAS = {"ej_comp_profile/1", "ej_eq_profile/1", "ej_saturation_profil
                    "ej_transient_profile/1", "ej_gate_profile/1", "ej_tuner_profile/1", "ej_filter_profile/1", "ej_pitch_profile/1",
                    "ej_limiter_profile/1", "ej_deesser_profile/1"}   # 24 Oct: ids, were sentences; known, and HELD (HELD_SCHEMAS) until B's validators exist
 # B's answers (24 Oct): schemas B's server HOLDS by design until B has their validators - any result kind, never refused for them
-HELD_SCHEMAS = {"ej_readback_sweep/1", "ej_limiter_profile/1", "ej_deesser_profile/1"}
+HELD_SCHEMAS = {"ej_readback_sweep/1"}   # 27 Oct (B): only the bridge read's record stays held until B's validator exists
+# 27 Oct (B): the two drafts B now VALIDATES - accepted (201) and kept as held_draft (never promoted or served yet); a draft missing its
+# own block is refused as validator
+DRAFT_SCHEMAS = {
+    "ej_limiter_profile/1": lambda f: None if isinstance(f.get("ceiling"), dict) and (f["ceiling"].get("control") or f["ceiling"].get("by")) else "no ceiling block",
+    "ej_deesser_profile/1": lambda f: None if isinstance(f.get("deesser"), dict) else "no deesser block",
+}
 MAP_SCHEMAS = {"2.4", "2.3"}   # 22 Oct (decision 0): a result's map.json is a FULL map in the map store's format
 
 
@@ -502,6 +508,12 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["holding"].setdefault(acct, {})[result_id] = dict(doc, _held=True)
             return self._send(201, {"status": "held", "result_id": result_id, "stored": "holding",
                                     "message": "EchoJay can't check %s's measurements yet, so they're kept but not used for now." % name})
+        if bad == "held_draft":   # 27 Oct (B): a validated limiter / de-esser draft - accepted and counted, kept as held_draft, never promoted
+            with LOCK:
+                run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc); keep_nonce(doc, result_id)
+                run["covered"].add(doc["plugin"]["plugin_id"])
+                STATE["holding"].setdefault(acct, {})[result_id] = dict(doc, _held_draft=True)
+            return self._send(201, {"status": "accepted", "result_id": result_id, "stored": "held_draft"})
         if bad:
             return self._reject(run, result_id, bad, name)
         with LOCK:
@@ -708,7 +720,7 @@ def validate(doc, rid, result_id, run=None, acct=None):
             if first is not None and first != result_id:
                 return "identity"
     fp = plugin.get("fingerprint")
-    held = False
+    held = draft = False
     for name, f in files.items():
         if not isinstance(f, dict):
             return "shape"
@@ -734,6 +746,11 @@ def validate(doc, rid, result_id, run=None, acct=None):
         if f.get("schema") in HELD_SCHEMAS:
             held = True   # B's answers (24 Oct): held by design until B's validator exists
             continue
+        if f.get("schema") in DRAFT_SCHEMAS:
+            if DRAFT_SCHEMAS[f["schema"]](f):
+                return "validator"
+            draft = True
+            continue
         if kind == "profile" and f.get("schema") not in PROFILE_SCHEMAS:
             held = True   # ruling 3: accepted and HELD
             continue
@@ -744,7 +761,7 @@ def validate(doc, rid, result_id, run=None, acct=None):
         for name, f in files.items():   # the stand-in validator: a compressor profile carries its curve
             if isinstance(f, dict) and f.get("schema") == "ej_comp_profile/1" and not isinstance(f.get("amount"), dict):
                 return "validator"
-    return "held" if held else None
+    return "held" if held else "held_draft" if draft else None
 
 
 def main():

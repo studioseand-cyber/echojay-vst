@@ -30,6 +30,7 @@
 #include <juce_core/juce_core.h>
 #include "EjmapSidechainCheck.h"
 #include "EjmapSweep.h"
+#include "EjmapCandidateRules.h"   // 27 Oct: the onset rule's reason
 #include <optional>
 #include <cstring>
 
@@ -165,7 +166,16 @@ inline Outcome outcomeForRecord (const juce::var& record)
         o.state = "needs_review";
         if (record.getProperty ("strip_section", "").toString() == "compressor")   // Kathy, 7 Oct: each is a compressor threshold by the section word - ordinary candidates, a review pick decides
         { o.reason = juce::String (cands.size()) + " candidates in the strip's compressor section (each a compressor threshold by the section word): no measured rule decided them; a review pick is needed"; return o; }
-        o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): no rule decides it, nobody picks";
+        {   // 27 Oct (Kathy): THE ONSET RULE decides by measurement - each candidate's own sweep says how far moving it shifts where gain
+            // reduction begins (thresholdEffective1dB); exactly one decides at sweep time (ruleDecided "onset"), none or several are unsure
+            std::vector<std::pair<juce::String, std::optional<double>>> shifts; std::vector<int> idx;
+            for (int i = 0; i < cands.size(); ++i)
+            {   std::map<double, double> on; int k = 0;
+                if (const auto* e = cands[i].getProperty ("thresholdSweep", {}).getProperty ("thresholdEffective1dB", {}).getArray())
+                    for (const auto& x : *e) { if (x.isDouble() || x.isInt()) on[(double) k] = (double) x; ++k; }
+                shifts.push_back ({ cands[i].getProperty ("name", "").toString(), candidaterules::onsetShiftDb (on) }); idx.push_back ((int) cands[i].getProperty ("index", -1)); }
+            o.reason = juce::String (cands.size()) + " threshold candidates: " + candidaterules::onsetRule (shifts, idx).text;
+        }
         return o;
     }
     const auto sw = record.getProperty ("thresholdSweep", {});

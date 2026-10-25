@@ -115,14 +115,15 @@ inline void readPitch (Signatures& s, const pitch::PitchMeasured& m, double detu
     s.pitchMoveCents = std::abs (r.residualCents - r.inputCents); s.pitchRead = true;
 }
 
-struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; bool byName = false; };
+struct Decision { juce::String category, why; bool settled = false; juce::StringArray also; bool byName = false;
+                  bool tailEither = false; };   // tailEither (27 Oct): a tail no control names - measured as both, the role whose acceptance passes is kept
 // FLAT AT DEFAULT (Kathy, 20 Oct - group 2): a unit whose drive sits at zero shows no signature at all (Lindell 80 / 50 / 69 Bus with THD
 // down, Denise Bass XL's Drive, Orange Clip's Input Level). Its DRIVE / INPUT control is found by name, raised to kDriveRaiseNorm, written
 // as part of the neutral setting, and the reads are taken again. Every read is RELATIVE - the gain move between two levels at the same
 // setting, the spread across the tones, the harmonics against the fundamental - so the louder output a raised drive gives is never the
 // effect itself; the decision says how far the level moved and that it is not the signature
 inline constexpr double kDriveRaiseNorm = 0.75, kResonantSpanDb = 10.0;
-inline constexpr const char* kRulesVersion = "2026-10-24";   // 24 Oct: the strip rule (stripRule)   // the wizard re-reads a cached signature taken under other rules
+inline constexpr const char* kRulesVersion = "2026-10-27";   // 27 Oct: a reverb-or-delay tail is measured as both   // 24 Oct: the strip rule (stripRule)   // the wizard re-reads a cached signature taken under other rules
 // RAISED FROM ITS DEFAULT (21 Oct, the first real run: StandardCLIP opens its Input Gain above 0.75, and 0.75 took it DOWN 12 dB): the
 // drive goes three quarters of the way from its default to the top - 0.75 from 0, never below where it opened; none when it opens at the top
 inline std::optional<double> raisedNorm (double defNorm)
@@ -196,8 +197,11 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
         // kResonantSpanDb and a short tail with no repeats is the filter's resonance ringing, not a reverb or a delay
         if (proposed.contains ("eq") && s.responseRead && s.freqSpanDb >= kResonantSpanDb && *s.rt60s < kReverbS && s.repeats == 0)
             return settle ("eq", tl + "; the name says filter and the gain spans " + juce::String (s.freqSpanDb, 1) + " dB across the tones: the tail is the filter's resonance ringing");
-        if (*s.rt60s >= kReverbS && s.repeats == 0 && proposed.isEmpty()) { d.category = "reverb"; d.why = tl + " and no word: leaning reverb (a feedback delay reads the same): review"; return d; }
-        d.category = proposed.contains ("delay") ? "delay" : "reverb"; d.why = tl + "; reverb or delay: review"; return d;
+        // REVERB OR DELAY, UNDECIDED (Kathy, 25 Oct): no control names either role - measured as BOTH (reverb first, delay with it); the
+        // wizard keeps the role whose measurement passes its acceptance, both when both pass (wizroute::spaceRolePasses)
+        d.category = "reverb"; d.also = { "delay" }; d.settled = true; d.tailEither = true;
+        d.why = tl + (*s.rt60s >= kReverbS && s.repeats == 0 && proposed.isEmpty() ? " and no word" : juce::String()) + "; no control names a reverb or a delay: measured as both, the role whose acceptance passes is kept";
+        return d;
     }
     if (s.pitchRead && s.pitchMoveCents >= kPitchCents) return settle ("pitch", "the output's pitch moved " + juce::String (s.pitchMoveCents, 1) + " cents from the input's");
     if (s.harmRead && s.sidebandDb && s.harmDb && *s.sidebandDb > kSidebandDb && *s.sidebandDb > *s.harmDb) return settle ("modulation", "energy beside the fundamental (" + juce::String (*s.sidebandDb, 1) + " dB) over the harmonics (" + juce::String (*s.harmDb, 1) + ")");
@@ -218,7 +222,8 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
 
 struct NeutralWrite { int index = -1; double norm = 0.0; juce::String control, text, why; };
 struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed, also; bool settled = false, measured = false; Signatures sig; double seconds = 0.0;
-             std::vector<NeutralWrite> neutralWrites, categoryWrites; bool byName = false; std::optional<double> levelMoveDb; std::optional<Signatures> sigAtDefault; };
+             std::vector<NeutralWrite> neutralWrites, categoryWrites; bool byName = false; std::optional<double> levelMoveDb; std::optional<Signatures> sigAtDefault;
+             bool tailEither = false; };
 // the broadband LEVEL of a response at its first position: the median gain (out - in) over the readable tones, 60 Hz .. 16 kHz
 inline std::optional<double> levelOf (const eq::Response& r)
 {
@@ -334,6 +339,7 @@ inline juce::var rowVar (const Row& r)
     if (r.outOfScope.isNotEmpty()) { o->setProperty ("out_of_scope", r.outOfScope); o->setProperty ("category", r.outOfScope); o->setProperty ("settled", true); return juce::var (o); }
     o->setProperty ("proposed_by_words", r.proposed.joinIntoString (", ")); o->setProperty ("category", r.category.isNotEmpty() ? juce::var (r.category) : juce::var()); o->setProperty ("settled", r.settled); o->setProperty ("why", r.why); o->setProperty ("measured", r.measured);
     if (! r.also.isEmpty()) o->setProperty ("also_categories", juce::Array<juce::var> (r.also.begin(), r.also.size()));   // 20 Oct: measured as both
+    if (r.tailEither) o->setProperty ("tail_either", true);   // 27 Oct: the role is decided by the measurements' acceptance
     if (! r.neutralWrites.empty())   // 20 Oct (group 2): the drive raised for the reads, part of the plugin's neutral setting
     {   juce::Array<juce::var> nw;
         for (const auto& w : r.neutralWrites) { auto* x = new juce::DynamicObject(); x->setProperty ("index", w.index); x->setProperty ("control", w.control); x->setProperty ("norm", w.norm);

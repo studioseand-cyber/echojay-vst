@@ -225,19 +225,26 @@ inline juce::var paramMap (const juce::String& name, const juce::String& vendor,
     return juce::var (m);
 }
 // an EQ profile is ready to send when at least one band is measured and every acceptance write that ran passed
+// PART BY PART (Kathy, 25 Oct): an EQ is sent when at least ONE measured band passed every acceptance write it ran - the server certifies
+// the passing bands and the rest stay mapped (EjmapCertV1.h already certifies per part: a band with a failed part is never offered).
+// Before, a single failed write anywhere (H-EQ's 18 of 20) kept the whole EQ from being sent
 inline bool eqAccepted (const juce::var& eqProfile, juce::String& why)
 {
-    int measured = 0, ran = 0, failed = 0, notRun = 0; juce::String notRunWhy;
+    int measured = 0, ran = 0, failed = 0, notRun = 0, passingBands = 0, judgedBands = 0; juce::String notRunWhy;
     if (const auto* bands = eqProfile.getProperty ("bands", {}).getArray())
         for (const auto& b : *bands)
         {
-            if (eq::measuredBand (b.getProperty ("verdict", "").toString())) ++measured;   // 19 Oct: an engaged band counts (REQ)
+            const bool isMeasured = eq::measuredBand (b.getProperty ("verdict", "").toString());   // 19 Oct: an engaged band counts (REQ)
+            if (isMeasured) ++measured;
+            int bandRan = 0, bandFailed = 0;
             if (const auto* acc = b.getProperty ("acceptance", {}).getArray()) for (const auto& a : *acc)
-            { if ((bool) a.getProperty ("ran", false)) { ++ran; if (! (bool) a.getProperty ("pass", false)) ++failed; } else { ++notRun; if (notRunWhy.isEmpty()) notRunWhy = a.getProperty ("why", "").toString(); } }
+            { if ((bool) a.getProperty ("ran", false)) { ++ran; ++bandRan; if (! (bool) a.getProperty ("pass", false)) { ++failed; ++bandFailed; } } else { ++notRun; if (notRunWhy.isEmpty()) notRunWhy = a.getProperty ("why", "").toString(); } }
+            if (isMeasured && bandRan > 0) { ++judgedBands; if (bandFailed == 0) ++passingBands; }
         }
     why = juce::String (measured) + " band(s) measured, " + juce::String (ran - failed) + " of " + juce::String (ran) + " acceptance write(s) passed"
+        + (failed > 0 && passingBands > 0 ? "; sent part by part: " + juce::String (passingBands) + " of " + juce::String (judgedBands) + " band(s) passed every write (the rest stay mapped)" : juce::String())
         + (notRun > 0 ? "; " + juce::String (notRun) + " could not run (" + notRunWhy + ")" : juce::String());
-    return measured > 0 && ran > 0 && failed == 0;
+    return measured > 0 && passingBands > 0;
 }
 
 // ---------------------------------------------------------------- 3. the bundle

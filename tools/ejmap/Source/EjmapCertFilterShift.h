@@ -261,7 +261,7 @@ inline int runPitchShift (const SweepOptions& opt)
     say ("SHIFT: " + juce::String (measured) + " of " + juce::String ((int) shiftCtls.size()) + " control(s) measured, " + juce::String (agreed) + " agree with their labels -> " + outDir.getChildFile (stem + ".pitchshift.json").getFullPathName());
     if (measured > 0)
     {
-        auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_pitch_profile/1"); d->setProperty ("category", "pitch"); d->setProperty ("measurement", "shift"); d->setProperty ("spec", drafts::specTag ("PITCHSHIFT_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("PITCHSHIFT_PROFILE_SPEC"));   // v1.1: a measurement within pitch
+        auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_pitch_profile/1"); d->setProperty ("category", "pitch"); d->setProperty ("pitch_measurement", "shift");   /* 27 Oct (B): was "measurement", which the result's measurement identity block shares */ d->setProperty ("spec", drafts::specTag ("PITCHSHIFT_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("PITCHSHIFT_PROFILE_SPEC"));   // v1.1: a measurement within pitch
         d->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, fx.base.getProperty ("map_fp", juce::var())));
         d->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-wizard), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, "220 Hz sine, -18 dBFS"));
         juce::Array<juce::var> cs; for (const auto& r : rows) if (r.getProperty ("verdict", "").toString() != "not_measured") cs.add (r);

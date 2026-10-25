@@ -6921,7 +6921,7 @@ void testLoopOutcomes()
     // several candidates: needs_review unless Rule 1 decided (pickedCandidate + ruleDecided, the pick certified profile-grade)
     juce::Array<juce::var> cs; cs.add (obj ({})); cs.add (obj ({}));
     o = outcomeForRecord (obj ({ { "thresholdCandidates", cs } }));
-    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("nobody picks"), "loop L3: several candidates end as needs_review, never a pick, when no rule decides");
+    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("the onset rule: no candidate shifts"), "loop L3: several candidates end as needs_review, never a pick, when no rule decides");
     {
         juce::Array<juce::var> grid; for (int L = -60; L <= 0; L += 2) grid.add ((double) L);
         juce::Array<juce::var> cc; cc.add (obj ({ { "index", 1 }, { "name", "Gate Thresh" }, { "thresholdSweep", obj ({ { "result", "certified" }, { "hold_s", 2.5 }, { "tone", obj ({ { "levels_dbfs", grid } }) } }) } }));
@@ -8065,8 +8065,8 @@ void testCategorise()
            "categorise CT3: a gain moving with level and inaudible THD is dynamics; audible rising THD is saturation, and a gain move beside it is said");
     Signatures tail; tail.tailRead = true; tail.rt60s = 2.85; tail.repeats = 0; tail.responseRead = true; tail.freqSpanDb = 5.0;
     Signatures echoes = tail; echoes.repeats = 3; echoes.rt60s = 0.6;
-    check (! decide (tail, {}).settled && decide (tail, {}).category == "reverb" && decide (tail, { "delay" }).settled && decide (tail, { "delay" }).category == "delay" && decide (tail, { "reverb" }).category == "reverb" && decide (echoes, {}).category == "delay" && decide (echoes, {}).settled,
-           "categorise CT4: a tail with no repeats and no word leans reverb unsettled; the words break the tie; discrete repeats settle delay");
+    check (decide (tail, {}).settled && decide (tail, {}).tailEither && decide (tail, {}).also.contains ("delay") && decide (tail, {}).category == "reverb" && decide (tail, { "delay" }).settled && decide (tail, { "delay" }).category == "delay" && decide (tail, { "reverb" }).category == "reverb" && decide (echoes, {}).category == "delay" && decide (echoes, {}).settled,
+           "categorise CT4: a tail with no repeats and no word is measured as both reverb and delay (27 Oct); the words break the tie; discrete repeats settle delay");
     Signatures pit; pit.pitchRead = true; pit.pitchMoveCents = 32.1; pit.harmRead = true; pit.sidebandDb = 35.6; pit.harmDb = -30.0;
     Signatures mod; mod.harmRead = true; mod.sidebandDb = -16.5; mod.harmDb = -82.0; Signatures floorSide = mod; floorSide.sidebandDb = -41.6;
     check (decide (pit, {}).category == "pitch" && decide (mod, {}).category == "modulation" && ! decide (floorSide, {}).settled, "categorise CT5: a 32-cent move is pitch before its sidebands; -16.5 dB sidebands are modulation; the analysis floor (-41.6) is not");
@@ -11306,7 +11306,9 @@ void testWizardCategories()
         // contract's exactly, and the readback sweep, limiter and de-esser drafts are HELD until B's validators exist
         const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
         check (mock.contains ("\"reason\": \"not_finished\", \"message\": \"The free month needs a finished run - this one stopped early.\"")
-               && mock.contains ("HELD_SCHEMAS = {\"ej_readback_sweep/1\", \"ej_limiter_profile/1\", \"ej_deesser_profile/1\"}")
+               && mock.contains ("HELD_SCHEMAS = {\"ej_readback_sweep/1\"}")   // 27 Oct (B): the limiter and de-esser drafts are validated now
+               && mock.contains ("\"ej_limiter_profile/1\": lambda f: None if isinstance(f.get(\"ceiling\"), dict)") && mock.contains ("\"ej_deesser_profile/1\": lambda f: None if isinstance(f.get(\"deesser\"), dict)")
+               && mock.contains ("return self._send(201, {\"status\": \"accepted\", \"result_id\": result_id, \"stored\": \"held_draft\"})")
                && mock.contains ("        if f.get(\"schema\") in HELD_SCHEMAS:\n            held = True")
                && mock.contains ("                return \"shape\"   # B's answers (24 Oct): another plugin's map.json is a malformed result"),
                "contract WZ-BANSWERS-2: the mock holds the readback sweep, limiter and de-esser drafts, refuses another plugin's map as shape, and says not_finished in the contract's words");
@@ -12125,6 +12127,90 @@ void testWizardRoute()
                && run.contains ("wizroute::rememberLicenceWindow (licF, twinPid); }   // 25 Oct (Kathy): the twin's window counts for its AU too"),
                "wizard WZ-SOUND-1: a known-category plugin plays one short tone before measuring (" + win.state + " / " + crash.state + " / " + slow.state + " / played), once per Mac; the twin's window counts for its AU");
     }
+    // WZ-28OCT-1 THE EQ PART BY PART (Kathy, 25 Oct): an EQ is sent when at least one measured band passed every acceptance write it ran;
+    // the server certifies the passing bands and the rest stay mapped (EjmapCertV1.h's per-part rule). One failing band no longer stops it
+    {
+        auto band = [] (const char* verdict, std::initializer_list<bool> passes) { auto* b = new juce::DynamicObject(); b->setProperty ("verdict", verdict); juce::Array<juce::var> acc;
+            for (bool p : passes) { auto* a = new juce::DynamicObject(); a->setProperty ("ran", true); a->setProperty ("pass", p); acc.add (juce::var (a)); } b->setProperty ("acceptance", acc); return juce::var (b); };
+        auto prof = [] (juce::Array<juce::var> bands) { auto* o = new juce::DynamicObject(); o->setProperty ("bands", bands); return juce::var (o); };
+        juce::String w1, w2, w3, w4;
+        const bool partial = ejmap::wizard::eqAccepted (prof ({ band ("measured", { true, true }), band ("measured", { true, false }) }), w1);
+        const bool allBad = ejmap::wizard::eqAccepted (prof ({ band ("measured", { false }), band ("measured", { true, false }) }), w2);
+        const bool allGood = ejmap::wizard::eqAccepted (prof ({ band ("measured", { true, true }) }), w3);
+        const bool noneRan = ejmap::wizard::eqAccepted (prof ({ band ("measured", {}) }), w4);
+        check (partial && w1.contains ("sent part by part: 1 of 2 band(s) passed every write") && ! allBad && allGood && ! w3.contains ("part by part") && ! noneRan,
+               "wizard WZ-28OCT-1: an EQ goes part by part ('" + w1 + "'); with no passing band it is not sent");
+    }
+    // WZ-28OCT-2 A LIMITER WITH NO CEILING CONTROL (Kathy, 25 Oct): the ceiling pass measured nothing and derived no draft, the compressor
+    // half exported - the compressor profile is sent alone, and nothing on that path may claim a ceiling
+    {
+        using namespace ejmap::wizroute;
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (limiterWithoutCeiling ("limiter", "ok", true, false) && ! limiterWithoutCeiling ("limiter", "ok", true, true) && ! limiterWithoutCeiling ("limiter", "crashed", true, false)
+               && ! limiterWithoutCeiling ("limiter", "ok", false, false) && ! limiterWithoutCeiling ("saturation", "ok", true, false)
+               && claimsCeiling (juce::JSON::parse (R"({"schema": "ej_comp_profile/1", "ceiling": {"control": "Out Ceiling"}})")) && ! claimsCeiling (juce::JSON::parse (R"({"schema": "ej_comp_profile/1", "amount": {}})"))
+               && run.contains ("&& wizroute::limiterWithoutCeiling (pbs[0], r.getProperty (\"outcome\", \"\").toString(), (bool) r.getProperty (\"nothing_measured\", false), ! draftsL.isEmpty());")
+               && run.contains ("if (compressorAlone) { st = \"measured\"; why = wizroute::kNoCeilingWhy; }")
+               && run.contains ("if (compressorAlone && wizroute::claimsCeiling (juce::JSON::parse (f.loadFileAsString()))) continue;")
+               && run.contains ("if (compressorAlone && draftsL.isEmpty()) { st = \"not_measurable\";"),
+               "wizard WZ-28OCT-2: a limiter with no ceiling control sends its compressor profile alone, never a ceiling ('" + juce::String (kNoCeilingWhy) + "')");
+    }
+    // WZ-28OCT-3 THE PITCH DRAFT'S KEY (B, 27 Oct): "measurement" is the result's identity block, so the pitch draft says "pitch_measurement";
+    // the count still reads drafts on disk from before (the old key)
+    {
+        const auto cfs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString();
+        const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (cfs.contains ("d->setProperty (\"pitch_measurement\", \"shift\");") && ! cfs.contains ("d->setProperty (\"measurement\", \"shift\")")
+               && tr.contains ("(rec.getProperty (\"pitch_measurement\", \"\").toString() == \"shift\" || rec.getProperty (\"measurement\", \"\").toString() == \"shift\")"),
+               "wizard WZ-28OCT-3: the pitch draft writes pitch_measurement; the count reads both keys");
+    }
+    // WZ-28OCT-5 THE ONSET RULE (Kathy, 25 Oct): several threshold candidates and no named rule decided - the one candidate whose move shifts
+    // where gain reduction begins (3 dB or more over its positions) is the threshold; none or several -> unsure, each candidate's shift said.
+    // The 24 Oct run's four (SPL IRON L / R 20.5 dB each, AMEK 1 / 2 34.8 each, bx_clipper 16.0 each, MAGNUM-K six) are all "several"
+    {
+        namespace CR = ejmap::candidaterules;
+        auto fact = [] (int idx, const char* name, double shift) { CR::CandidateFacts f; f.index = idx; f.name = name; f.certified = true;
+            for (int k = 0; k < 5; ++k) f.onset1[k / 4.0] = -30.0 + shift * k / 4.0; return f; };
+        const auto one = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 0.5) });
+        const auto both = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 11.0) });
+        const auto none = CR::decide ({ fact (3, "Alpha", 1.0), fact (9, "Beta", 0.5) });
+        const auto iron = CR::onsetRule ({ { "Threshold L", 20.5 }, { "Threshold R", 20.5 } }, { 22, 34 });
+        std::map<double, double> two { { 0.0, -30.0 }, { 1.0, -10.0 } };
+        const auto loop = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapLoop.h").loadFileAsString();
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (one.decided && one.rule == "onset" && one.pick == 3 && one.pickName == "Alpha" && one.others.contains ("Beta")
+               && ! both.decided && both.whyNot.contains ("2 candidates each shift where gain reduction begins") && ! none.decided && none.whyNot.contains ("no candidate shifts")
+               && iron.pick < 0 && iron.text.contains ("unsure, no single threshold") && iron.text.contains ("'Threshold L' 20.5 dB") && ! CR::onsetShiftDb (two)
+               && loop.contains ("o.reason = juce::String (cands.size()) + \" threshold candidates: \" + candidaterules::onsetRule (shifts, idx).text;")
+               && drv.contains ("f.onset1[(double) one.d.norms[i]] = (double) it1->second; }   // 27 Oct: the onset rule")
+               && drv.contains ("ruleDecided = decideByMeasurement (cands, opt.out.getChildFile (stem + \".processes.json\"), opt.out.getChildFile (\"raw\"));")   // the file the sweep writes
+               && drv.contains ("const auto stem = fixtureFileName (base).upToLastOccurrenceOf (\".json\", false, false) + \".sweep\" + armTag;")
+               && drv.contains ("opt.out.getChildFile (stem + \".processes.json\").replaceWithText (juce::JSON::toString (juce::var (processes))"),
+               "wizard WZ-28OCT-5: the onset rule picks the one candidate that shifts the onset (" + one.note + "); several -> unsure (" + iron.text + ")");
+    }
+    // WZ-28OCT-6 REVERB OR DELAY (Kathy, 25 Oct): a tail no control names is measured as both; the roles whose acceptance passes are kept
+    // (a reverb's decay, a delay's time / sync / feedback), both when both pass; each space draft travels under its pass's name
+    {
+        namespace C = ejmap::categorise;
+        C::Signatures t; t.tailRead = true; t.rt60s = 1.2; t.repeats = 0; t.responseRead = true; t.harmRead = true;
+        const auto d = C::decide (t, {});
+        auto draft = [] (std::initializer_list<std::pair<const char*, bool>> maps) { juce::Array<juce::var> acc;
+            for (const auto& [m, p] : maps) { auto* a = new juce::DynamicObject(); a->setProperty ("map", m); a->setProperty ("ran", true); a->setProperty ("pass", p); acc.add (juce::var (a)); }
+            auto* o = new juce::DynamicObject(); o->setProperty ("acceptance", acc); return juce::var (o); };
+        using namespace ejmap::wizroute;
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (d.settled && d.category == "reverb" && d.also.contains ("delay") && d.tailEither && d.why.contains ("measured as both")
+               && spaceRolePasses ("reverb", draft ({ { "mix", true }, { "decay", true } })) && ! spaceRolePasses ("reverb", draft ({ { "mix", true }, { "decay", false } }))
+               && spaceRolePasses ("delay", draft ({ { "time", true } })) && spaceRolePasses ("delay", draft ({ { "feedback", true } })) && ! spaceRolePasses ("delay", draft ({ { "mix", true } }))
+               && bundleDraftName ("reverb/drafts/AudioUnit_1_1.0.space_profile.draft.json") == "AudioUnit_1_1.0.reverb.space_profile.draft.json"
+               && bundleDraftName ("delay/drafts/AudioUnit_1_1.0.space_profile.draft.json") == "AudioUnit_1_1.0.delay.space_profile.draft.json"
+               && bundleDraftName ("filters/drafts/AudioUnit_1_1.0.filter_profile.draft.json") == "AudioUnit_1_1.0.filter_profile.draft.json"
+               && run.contains ("if (either && ! passes) { failed.addIfNotAlreadyThere (pb); continue; }")
+               && run.contains ("if (keptRoles.isEmpty()) { st = \"not_measurable\";") && run.contains ("const auto name = wizroute::bundleDraftName (rel);")
+               && run.contains ("it->setProperty (\"also_categories\", rv.getProperty (\"space_roles_also\", {}));")
+               && juce::String (C::kRulesVersion) == "2026-10-27",
+               "wizard WZ-28OCT-6: a tail no control names is measured as reverb and delay; the passing roles are kept and travel under their own names ('" + d.why + "')");
+    }
     // WZ-STRIP-RULE-1 SEVERAL SECTIONS -> CHANNEL STRIP (Kathy, 24 Oct): the reads find dynamics and another behaviour AND the controls name a
     // compressor and two of EQ / gate / tail, no drive control; one side alone, or a drive control (a distortion), leaves the reads' category
     {
@@ -12791,10 +12877,10 @@ void testCategoriseRelease()
     const auto pl = categoriesFromWords ("Lindell 254E", "Plugin Alliance", {}), px = categoriesFromWords ("Acme Opticom XLA-3", "Plugin Alliance", {}), pf = categoriesFromWords ("FilterFreak2", "Soundtoys", {});
     const auto lNew = decide (l, pl), lOld = decide (l, pl, false), xNew = decide (x, px), xOld = decide (x, px, false), fNew = decide (f, pf);
     check (l.tailRead && l.rt60s && *l.rt60s > 0.3 && *l.rt60s < 0.5 && l.levelDepDb > 3.0 && l.freqSpanDb < 0.5
-           && lNew.category == "dynamics" && lNew.settled && lOld.category == "reverb" && ! lOld.settled
-           && xNew.category == "dynamics" && xNew.settled && ! xOld.settled
+           && lNew.category == "dynamics" && lNew.settled && lOld.category == "reverb" && lOld.tailEither
+           && xNew.category == "dynamics" && xNew.settled && xOld.tailEither
            && fNew.category == "eq" && fNew.settled && fNew.why.contains ("resonance ringing") && f.freqSpanDb > 10.0 && f.levelDepDb >= 1.0   // 21 Oct (Kathy): the resonant filter rule
-           && [&] { const auto un = decide (f, {}); return un.category == "reverb" && ! un.settled; }(),   // the same reads with no filter name stay a tail for review
+           && [&] { const auto un = decide (f, {}); return un.category == "reverb" && un.tailEither; }(),   // the same reads with no filter name stay a tail (27 Oct: measured as both)
            "categorise CAT-RELEASE: Lindell 254E (RT60 " + juce::String (l.rt60s ? *l.rt60s : -1.0, 2) + " s, " + juce::String (l.levelDepDb, 2) + " dB, span " + juce::String (l.freqSpanDb, 2)
            + ") and XLA-3 -> dynamics (were reverb, unsettled); FilterFreak2 (span " + juce::String (f.freqSpanDb, 1) + " dB, a filter name, a short ring) -> eq (21 Oct, the resonant filter rule)");
 }
@@ -13696,7 +13782,7 @@ int main (int, char**)
                && has (epRev, "PlateLevel", 0.0) && ! [&] { for (const auto& w : epRev) if (w.control == "PlateMute") return false; else if (w.control == "PlateLevel") return true; return false; }()   // mutes before levels
                && has (epRev, "PlateMute", 1.0) && has (epRev, "RoomMute", 1.0) && has (epRev, "HallMute", 1.0) && has (epRev, "SpaceMute", 1.0) && has (epDel, "SlapMute", 1.0) && has (epDel, "TapeMute", 1.0) && ! names_ (epDel).contains ("PlateMute")
                && both.settled && both.category == "reverb" && both.also == juce::StringArray { "delay" } && both.why.contains ("both measured, section by section")
-               && ! none.settled && none.why.contains ("review") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && ! old.settled
+               && none.settled && none.tailEither && none.why.contains ("measured as both") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && old.tailEither
                && run.contains ("if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty (\"also_categories\", {}).getArray())")
                && run.contains ("for (const auto& c : *al) { enqueue (ir.desc.name, c.toString());")
                && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("if (isolate && tailroles::place (n).role == otherRole) continue;   // 20 Oct (CLA Epic)") && drv.contains ("if (si >= 0) args.set (si, \"set=\" + isoSets + \",\" + args[si].substring (4)); else args.add (\"set=\" + isoSets); }")
@@ -13810,7 +13896,7 @@ int main (int, char**)
                && cutoffMove (0.0) == 0.5 && cutoffMove (1.0) == 0.5 && cutoffMove (0.5) == 0.75 && std::abs (cutoffMove (0.7) - 0.45) < 1e-9
                && decideCutoff (cutEq, cw).settled && decideCutoff (cutEq, cw).category == "eq" && ! decideCutoff (flat, cw).settled && decideCutoff (flat, cw).why.contains ("not part of the neutral setting")
                && clipAfterRaise (dyn, true).category == "limiter" && clipAfterRaise (sat, true).category == "saturation" && clipAfterRaise (dyn, false).category == "dynamics"
-               && decide (ring, { "eq" }).category == "eq" && decide (ring, { "eq" }).settled && ! decide (longRing, { "eq" }).settled && ! decide (ring, {}).settled
+               && decide (ring, { "eq" }).category == "eq" && decide (ring, { "eq" }).settled && decide (longRing, { "eq" }).tailEither && decide (ring, {}).tailEither
                && effectSection ("Pitch") == "pitch" && effectSection ("Distortion Color") == "distortion" && effectSection ("Reverb").isEmpty() && effectSection ("Short Delay").isEmpty() && effectSection ("Output").isEmpty()
                && fxN.contains ("Pitch") && fxN.contains ("Distortion") && fxN.contains ("EQ") && ! fxN.contains ("Reverb") && ! fxN.contains ("Pitch Color") && ! fxN.contains ("Short Delay")
                && silencesEffects (rolesOf (claFx), claFx) && ! silencesEffects (rolesOf (echo), echo)
@@ -14070,9 +14156,9 @@ int main (int, char**)
                && fin[0].body.getProperty ("measured_at", "") == juce::var ("2026-10-22T08:00:00+01:00") && fin[1].body.getProperty ("measured_at", "") == fin[1].body.getProperty ("created", "x")
                && fin[2].body.getProperty ("plugin", {}).getProperty ("name", "") == juce::var ("P3") && cp.size() == 2   // a checkpoint never adds not_reached
                && cfs.contains ("d->setProperty (\"schema\", \"ej_filter_profile/1\"); d->setProperty (\"category\", \"filter\");")
-               && cfs.contains ("d->setProperty (\"schema\", \"ej_pitch_profile/1\"); d->setProperty (\"category\", \"pitch\"); d->setProperty (\"measurement\", \"shift\");")
+               && cfs.contains ("d->setProperty (\"schema\", \"ej_pitch_profile/1\"); d->setProperty (\"category\", \"pitch\"); d->setProperty (\"pitch_measurement\", \"shift\");")
                && cfs.contains ("d->setProperty (\"category\", \"filter\"); d->setProperty (\"spec\", drafts::specTag (\"FILTER_PROFILE_SPEC\")); d->setProperty (\"status\", drafts::statusLine (\"FILTER_PROFILE_SPEC\"));")
-               && cfs.contains ("d->setProperty (\"measurement\", \"shift\"); d->setProperty (\"spec\", drafts::specTag (\"PITCHSHIFT_PROFILE_SPEC\")); d->setProperty (\"status\", drafts::statusLine (\"PITCHSHIFT_PROFILE_SPEC\"));")
+               && cfs.contains ("d->setProperty (\"pitch_measurement\", \"shift\");   /* 27 Oct (B): was \"measurement\", which the result's measurement identity block shares */ d->setProperty (\"spec\", drafts::specTag (\"PITCHSHIFT_PROFILE_SPEC\")); d->setProperty (\"status\", drafts::statusLine (\"PITCHSHIFT_PROFILE_SPEC\"));")
                && run.contains ("files[0].toString().contains (\".filter_profile.\") ? juce::String (\"filter\")")
                && run.contains ("if (r.isObject() && st != \"measuring\") stampFinal (row, spanOf (r));")
                && run.contains ("finishedAt = spanOf (r);")
@@ -14325,7 +14411,7 @@ int main (int, char**)
                && mainCpp.contains ("else if (k == \"--neutral-sets\") setenv (\"EJ_PROBE_NEUTRAL_SETS\", v.toRawUTF8(), 1);")
                && run.contains ("neutralByStem[phaseBStem (ir.desc)] = nw;") && run.contains ("optW.neutralByStem = neutralByStem;")
                && run.contains ("cache[juce::Identifier (pid)].getProperty (\"rules\", \"\").toString() == categorise::kRulesVersion")
-               && run.contains ("sig.getDynamicObject()->setProperty (\"rules\", categorise::kRulesVersion);") && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-24",   // 24 Oct: the strip rule
+               && run.contains ("sig.getDynamicObject()->setProperty (\"rules\", categorise::kRulesVersion);") && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-27",   // 27 Oct: reverb-or-delay tails (24 Oct: the strip rule)
                "wizard WZ-NEUTRAL-1: the raised drive rides at the front of every set= list of the measuring child (" + resp.joinIntoString (" ").fromFirstOccurrenceOf ("--response", true, false) + "), every neutral list says it, an old cached signature is read again");
     }
     // WZ-CONTRACT-1..9 THE SERVER CONTRACT v1 (Kathy, 21 Oct): the wizard's own client (EjmapWizardContract.h, over juce::URL) against the
@@ -14409,13 +14495,25 @@ int main (int, char**)
                 if (const auto* c = v.getProperty ("amount", {}).getProperty ("curve", {}).getArray())
                     for (const auto& pt : *c)
                     {   if (auto* in = pt.getProperty ("in_at_gr_dbfs", {}).getDynamicObject())
-                            for (const auto& [k, x] : in->getProperties()) if (x.isDouble() || x.isInt()) in->setProperty (k, (double) x + g);
+                            for (const auto& [k, x] : in->getProperties()) if (x.isDouble() || x.isInt()) in->setProperty (k, (double) x - g);   // 27 Oct (B): shifted DOWN - never above the sweep's -3.01 dBFS ceiling
                         if (auto* po = pt.getDynamicObject(); po != nullptr && (pt.getProperty ("eff_threshold_dbfs", {}).isDouble() || pt.getProperty ("eff_threshold_dbfs", {}).isInt()))
-                            po->setProperty ("eff_threshold_dbfs", (double) pt.getProperty ("eff_threshold_dbfs", 0.0) + g); }
+                            po->setProperty ("eff_threshold_dbfs", (double) pt.getProperty ("eff_threshold_dbfs", 0.0) - g); }
                 return juce::JSON::toString (v); };
             auto realToneCheck = [realDir] (const juce::String& id)
             {   auto v = juce::JSON::parse (realDir.getChildFile ("api2500_m.tonecheck.json").loadFileAsString());
                 v.getDynamicObject()->setProperty ("product", "Plug " + id); v.getDynamicObject()->removeProperty ("map_fp"); return juce::JSON::toString (v); };
+            {   // WZ-28OCT-4 THE STAND-IN DATA (B, 27 Oct): every shifted stand-in curve stays below the sweep's -3.01 dBFS ceiling, and every
+                // stand-in fingerprint is 64 hex characters (fixtures 00021 and 00045 broke both)
+                double top = -1000.0;
+                for (double g : { 0.0, 0.2, 0.3, 0.6, 3.0 })
+                {   const auto pv = juce::JSON::parse (realProfile ("aaaa0004", "ej_comp_profile/1", g)); const auto curve = pv.getProperty ("amount", {}).getProperty ("curve", {});   // held: a pointer into a temporary dangles
+                    if (const auto* c = curve.getArray())
+                        for (const auto& pt : *c) if (const auto* in = pt.getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) for (const auto& [k, x] : in->getProperties()) if (x.isDouble() || x.isInt()) top = juce::jmax (top, (double) x); }
+                const auto me = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/RoundTripTest.cpp").loadFileAsString();
+                const auto contractPart = me.fromFirstOccurrenceOf ("auto realProfile = [realDir]", false, false).upToFirstOccurrenceOf (juce::String ("8g. REAL") + " RESULTS", false, false);   // built: this pin must not end its own search
+                check (top <= -3.01 && top > -100.0 && ! contractPart.contains ("\\\"map_fp\\\": \\\"fp") && ! contractPart.contains (juce::String ("fp_") + "aaaa0") && contractPart.contains ("juce::String::repeatedString (id, 8)"),
+                       "contract WZ-28OCT-4: stand-in curves stay below -3.01 dBFS (top " + juce::String (top, 2) + "); stand-in fingerprints are 64 hex");
+            }
             // a profile entry gets its tone check, as the engine packs it (the manifest's "tone_check" beside "profile")
             auto withToneChecks = [&] (juce::var manifest, const juce::File& b)
             {   if (const auto* a = manifest.getProperty ("profiles", {}).getArray())
@@ -14446,8 +14544,8 @@ int main (int, char**)
                 ejmap::wizresults::emit (ejmap::wizresults::fromPack (juce::JSON::parse ("{}"), bundle, ri.runId, true, ids, {}, {}, needs), b, {}); return drain (ss, b, ri); };
             auto manifestWith = [&] (const juce::String& profilesJson, const juce::String& skippedJson)
             { return withToneChecks (juce::JSON::parse ("{\"profiles\": [" + profilesJson + "], \"skipped\": [" + skippedJson + "]}"), bundle); };
-            const auto m1 = manifestWith ("{\"product\": \"Plug aaaa0002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"map_fp\": \"fp2\", \"profile\": \"" + profileFile ("aaaa0002", "ej_comp_profile/1") + "\"},"
-                                          "{\"product\": \"Plug aaaa0004\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0004|1.0\", \"map_fp\": \"fp4\", \"profile\": \"" + profileFile ("aaaa0004", "ej_comp_profile/1") + "\"}",
+            const auto m1 = manifestWith ("{\"product\": \"Plug aaaa0002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0002|1.0\", \"map_fp\": \"aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002\", \"profile\": \"" + profileFile ("aaaa0002", "ej_comp_profile/1") + "\"},"
+                                          "{\"product\": \"Plug aaaa0004\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa0004|1.0\", \"map_fp\": \"aaaa0004aaaa0004aaaa0004aaaa0004aaaa0004aaaa0004aaaa0004aaaa0004\", \"profile\": \"" + profileFile ("aaaa0004", "ej_comp_profile/1") + "\"}",
                                           "{\"product\": \"Plug aaaa0005\", \"plugin_id\": \"AudioUnit|aaaa0005|1.0\", \"state\": \"needs_licence\", \"why\": \"a licence window\"},"
                                           "{\"product\": \"Plug aaaa0007\", \"plugin_id\": \"AudioUnit|aaaa0007|1.0\", \"state\": \"measuring\"},"
                                           "{\"product\": \"Plug aaaa0008\", \"plugin_id\": \"AudioUnit|aaaa0008|1.0\", \"state\": \"not_measurable\", \"why\": \"no draft yet\"}");
@@ -14462,7 +14560,7 @@ int main (int, char**)
             check (r1.status == 201 && r1b.status == 200 && docsCp.size() == 3 && docsFin.size() == 5 && e1.added == 3 && e2.already == 3 && personalRefused.refused == 1 && personalRefused.added == 1
                    && st1.sent == 4 && ! st1.offline && box.pendingFiles().isEmpty() && box.count (box.sent()) == 4
                    && docsCp[0].resultId == resultIdFor (runId, "profile", "AudioUnit|aaaa0002|1.0") && docsCp[0].body.getProperty ("plugin", {}).getProperty ("vendor", "") == juce::var ("V")
-                   && docsCp[0].body.getProperty ("plugin", {}).getProperty ("fingerprint", "") == juce::var ("fp2") && docsCp[0].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 2   // 24 Oct: the real profile and its tone check
+                   && docsCp[0].body.getProperty ("plugin", {}).getProperty ("fingerprint", "") == juce::var ("aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002aaaa0002") && docsCp[0].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 2   // 24 Oct: the real profile and its tone check
                    && docsCp[0].body.getProperty ("files", {}).getProperty ("AudioUnit_aaaa0002_1.0.tonecheck.json", {}).hasProperty ("g_db")
                    && docsCp[0].body.getProperty ("files", {}).getProperty ("AudioUnit_aaaa0002_1.0.comp_profile.json", {}).getProperty ("amount", {}).getProperty ("curve", {}).size() == 17   // the real API-2500 (m) shape
                    && docsCp[0].body.getProperty ("files", {}).getProperty ("AudioUnit_aaaa0002_1.0.comp_profile.json", {}).getProperty ("plugin", {}).getProperty ("plugin_id", "") == juce::var ("AudioUnit|aaaa0002|1.0"),
@@ -14515,20 +14613,20 @@ int main (int, char**)
                 auto fullFor = [&] (const juce::String& id)
                 {   const auto x = ejmap::fullmap::parseExtract ("0\tCutoff\tHz\t2147483647\t0\t1\t0\nxparam\t0\tmethod\tgettext\tpoints\t3\tdef\t0.5\tdeftext\t632 Hz\n"
                                                                  "xpt\t0\t0.000000\t20.0 Hz\nxpt\t0\t0.500000\t632 Hz\nxpt\t0\t1.000000\t20.0 kHz\nextract\tdone\tparams\t1\tsetread\t0\tms\t5\n");
-                    return ejmap::fullmap::buildMap ("fp_" + id, "AudioUnit", id, "Plug " + id, "V", "1.0", "eq", x, ejmap::fullmap::buildControls (x), "test"); };
+                    return ejmap::fullmap::buildMap (juce::String::repeatedString (id, 8), "AudioUnit", id, "Plug " + id, "V", "1.0", "eq", x, ejmap::fullmap::buildControls (x), "test"); };
                 bundle.getChildFile ("maps").createDirectory();
-                bundle.getChildFile ("maps/fp_aaaa000c.json").replaceWithText (juce::JSON::toString (fullFor ("aaaa000c")));
-                bundle.getChildFile ("maps/fp_aaaa000d.json").replaceWithText (juce::JSON::toString (ejmap::wizard::paramMap ("Plug aaaa000d", "V", "aaaa000d", "1.0", "fp_aaaa000d", { { 0, "Cutoff" } }, "eq")));
-                bundle.getChildFile ("maps/fp_aaaa000f.json").replaceWithText (juce::JSON::toString (fullFor ("aaaa00ff")));   // another plugin's map
+                bundle.getChildFile ("maps/aaaa000caaaa000caaaa000caaaa000caaaa000caaaa000caaaa000caaaa000c.json").replaceWithText (juce::JSON::toString (fullFor ("aaaa000c")));
+                bundle.getChildFile ("maps/aaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000d.json").replaceWithText (juce::JSON::toString (ejmap::wizard::paramMap ("Plug aaaa000d", "V", "aaaa000d", "1.0", "aaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000d", { { 0, "Cutoff" } }, "eq")));
+                bundle.getChildFile ("maps/aaaa000faaaa000faaaa000faaaa000faaaa000faaaa000faaaa000faaaa000f.json").replaceWithText (juce::JSON::toString (fullFor ("aaaa00ff")));   // another plugin's map
                 const auto filterRel = juce::String ("profiles/AudioUnit_aaaa000e_1.0.filter_profile.draft.json");
                 {   // 24 Oct: the REAL filter draft (bx_cleansweep V2, 22 Oct), its identity rewritten to the scenario's plugin
                     auto fv = juce::JSON::parse (realDir.getChildFile ("cleansweep_v2.filter_profile.draft.json").loadFileAsString());
                     if (auto* pl = fv.getProperty ("plugin", {}).getDynamicObject())
                     { pl->setProperty ("plugin_id", "AudioUnit|aaaa000e|1.0"); pl->setProperty ("name", "Plug aaaa000e"); pl->setProperty ("manufacturer", "V"); pl->setProperty ("version", "1.0"); pl->removeProperty ("map_fp"); }
                     bundle.getChildFile (filterRel).replaceWithText (juce::JSON::toString (fv)); }
-                const auto mF = manifestWith ("{\"product\": \"Plug aaaa000c\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000c|1.0\", \"map_fp\": \"fp_aaaa000c\", \"map_file\": \"maps/fp_aaaa000c.json\", \"profile\": \"" + profileFile ("aaaa000c", "ej_comp_profile/1") + "\"},"
-                                              "{\"product\": \"Plug aaaa000d\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000d|1.0\", \"map_fp\": \"fp_aaaa000d\", \"map_file\": \"maps/fp_aaaa000d.json\", \"profile\": \"" + profileFile ("aaaa000d", "ej_comp_profile/1") + "\"},"
-                                              "{\"product\": \"Plug aaaa000f\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000f|1.0\", \"map_fp\": \"fp_aaaa000f\", \"map_file\": \"maps/fp_aaaa000f.json\", \"profile\": \"" + profileFile ("aaaa000f", "ej_comp_profile/1") + "\"},"
+                const auto mF = manifestWith ("{\"product\": \"Plug aaaa000c\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000c|1.0\", \"map_fp\": \"aaaa000caaaa000caaaa000caaaa000caaaa000caaaa000caaaa000caaaa000c\", \"map_file\": \"maps/aaaa000caaaa000caaaa000caaaa000caaaa000caaaa000caaaa000caaaa000c.json\", \"profile\": \"" + profileFile ("aaaa000c", "ej_comp_profile/1") + "\"},"
+                                              "{\"product\": \"Plug aaaa000d\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000d|1.0\", \"map_fp\": \"aaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000d\", \"map_file\": \"maps/aaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000daaaa000d.json\", \"profile\": \"" + profileFile ("aaaa000d", "ej_comp_profile/1") + "\"},"
+                                              "{\"product\": \"Plug aaaa000f\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|aaaa000f|1.0\", \"map_fp\": \"aaaa000faaaa000faaaa000faaaa000faaaa000faaaa000faaaa000faaaa000f\", \"map_file\": \"maps/aaaa000faaaa000faaaa000faaaa000faaaa000faaaa000faaaa000faaaa000f.json\", \"profile\": \"" + profileFile ("aaaa000f", "ej_comp_profile/1") + "\"},"
                                               "{\"product\": \"Plug aaaa000e\", \"kind\": \"filter\", \"plugin_id\": \"AudioUnit|aaaa000e|1.0\", \"drafts\": [\"" + filterRel + "\"]}", {});
                 const juce::String run6b = "run_" + juce::String::toHexString (0x6b6b6b6b6b6b6b6bLL);   // its own run: an identity refusal costs a run its free month
                 const RunInfo runF { run6b, "2026-10-21T19:00:02Z", 4 };
@@ -14902,8 +15000,12 @@ int main (int, char**)
                 // 24 Oct (B's answers): the de-esser draft (ej_deesser_profile/1) and the bridge read (ej_readback_sweep/1) are HELD until B's
                 // validators exist; the two "need" plugins whose only results were a vote / a bridge read now carry their outcome too (32, was 30)
                 int outcomes = 0; for (const auto& d : docsR) if (d.kind == "outcome") ++outcomes;
-                check (emR.refused == 0 && stR.rejected == 0 && stR.held == 2 && stR.sent == (int) docsR.size() - 2 && (int) docsR.size() == 32 && outcomes >= 2
-                       && cR.done && cR.accepted == (int) docsR.size() - 2 && cR.received == (int) docsR.size() && cR.eligible,
+                // 27 Oct (B): the de-esser draft and the REAL limiter ceiling draft (L2 (m), measured 25 Oct) are validated now - accepted and
+                // kept as held_draft; only the bridge read stays held. 33 results (+ the limiter)
+                const auto heldDraftsR = [&] { int n = 0; for (const auto& d : docsR) if (const auto* fs = d.body.getProperty ("files", {}).getDynamicObject())
+                    for (const auto& [k, f] : fs->getProperties()) { const auto sc = f.getProperty ("schema", "").toString(); if (sc == "ej_limiter_profile/1" || sc == "ej_deesser_profile/1") { ++n; break; } } return n; }();
+                check (emR.refused == 0 && stR.rejected == 0 && stR.held == 1 && stR.sent == (int) docsR.size() - 1 && (int) docsR.size() == 33 && outcomes >= 2 && heldDraftsR == 2
+                       && cR.done && cR.accepted == (int) docsR.size() - 1 && cR.received == (int) docsR.size() && cR.eligible,
                        "contract WZ-REAL-1: " + juce::String ((int) docsR.size()) + " real results sent, " + juce::String (stR.sent) + " accepted, " + juce::String (stR.rejected) + " refused, "
                          + juce::String (stR.held) + " held" + (whyR.isEmpty() ? juce::String() : " (" + whyR.joinIntoString ("; ").substring (0, 600) + ")") + "; promo " + cR.reason);
             }

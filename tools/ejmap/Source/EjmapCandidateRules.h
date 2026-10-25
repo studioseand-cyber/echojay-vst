@@ -41,6 +41,7 @@ struct CandidateFacts
     juce::String name;
     bool certified = false;
     std::map<double, double> curve2;             // norm -> in_at_gr["2"] (peak dBFS, the record's convention), numeric points only
+    std::map<double, double> onset1;             // norm -> in_at_gr["1"]: where gain reduction begins (1 dB) at that position (27 Oct)
     std::optional<double> channelWorstDb;        // from this candidate's OWN raw sweep: worst |ch0 - ch1| over every reading (readings above silence)
     int channelReadings = 0;
     int pairWritten = -1; juce::String pairWrittenName;   // this candidate's sweep wrote a twin WITH it at every position (a pair re-sweep, ruled 6 Oct)
@@ -101,7 +102,45 @@ inline bool isMasterOf (const juce::String& master, const juce::String& trim)
 
 inline juce::String dbs (double v) { return juce::String (v, 2); }
 
+// THE ONSET RULE (Kathy, 25 Oct): several threshold candidates and no rule above decided - move each and see which shifts the ONSET of gain
+// reduction (the input where 1 dB of reduction begins) at its positions: exactly one shifts it by kOnsetShiftDb or more -> that is the
+// threshold; none or several -> unsure, the reason naming each candidate's shift
+inline constexpr double kOnsetShiftDb = 3.0;
+inline std::optional<double> onsetShiftDb (const std::map<double, double>& onset)
+{
+    if (onset.size() < 3) return std::nullopt;
+    double lo = 1e9, hi = -1e9; for (const auto& [n, v] : onset) { lo = juce::jmin (lo, v); hi = juce::jmax (hi, v); }
+    return hi - lo;
+}
+struct OnsetVerdict { int pick = -1; juce::String pickName, text; };
+inline OnsetVerdict onsetRule (const std::vector<std::pair<juce::String, std::optional<double>>>& shifts, const std::vector<int>& indexes)
+{
+    OnsetVerdict v; juce::StringArray movers, parts;
+    for (size_t i = 0; i < shifts.size(); ++i)
+    {
+        const auto& [n, sh] = shifts[i];
+        parts.add ("'" + n + "' " + (sh ? juce::String (*sh, 1) + " dB" : juce::String ("not read")));
+        if (sh && *sh >= kOnsetShiftDb) { movers.add (n); if (movers.size() == 1) { v.pick = i < indexes.size() ? indexes[i] : -1; v.pickName = n; } }
+    }
+    if (movers.size() == 1) { v.text = "the onset rule: only '" + v.pickName + "' shifts where gain reduction begins (" + parts.joinIntoString (", ") + "): it is the threshold"; return v; }
+    v.pick = -1; v.pickName = {};
+    v.text = movers.isEmpty() ? "the onset rule: no candidate shifts where gain reduction begins by " + juce::String (kOnsetShiftDb, 0) + " dB or more (" + parts.joinIntoString (", ") + "): unsure"
+                              : "the onset rule: " + juce::String (movers.size()) + " candidates each shift where gain reduction begins (" + parts.joinIntoString (", ") + "): unsure, no single threshold";
+    return v;
+}
+inline Decision decideNamed (const std::vector<CandidateFacts>& c);
 inline Decision decide (const std::vector<CandidateFacts>& c)
+{
+    auto d = decideNamed (c);
+    if (d.decided || c.size() < 2) return d;
+    std::vector<std::pair<juce::String, std::optional<double>>> shifts; std::vector<int> idx;
+    for (const auto& x : c) { shifts.push_back ({ x.name, onsetShiftDb (x.onset1) }); idx.push_back (x.index); }
+    const auto v = onsetRule (shifts, idx);
+    if (v.pick >= 0) { Decision o; o.decided = true; o.rule = "onset"; o.pick = v.pick; o.pickName = v.pickName; o.note = v.text; for (const auto& x : c) if (x.index != v.pick) o.others.add (x.name); return o; }
+    d.whyNot = v.text + (d.whyNot.isNotEmpty() ? "; " + d.whyNot : juce::String());
+    return d;
+}
+inline Decision decideNamed (const std::vector<CandidateFacts>& c)
 {
     Decision d;
     if (c.size() < 2) { d.whyNot = "fewer than two candidates"; return d; }

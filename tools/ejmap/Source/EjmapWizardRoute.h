@@ -266,6 +266,37 @@ inline void rememberLicenceWindow (const juce::File& f, const juce::String& plug
     auto s = loadLicenceMemory (f); if (! s.insert (pluginId.toLowerCase()).second) return;
     juce::Array<juce::var> a; for (const auto& x : s) a.add (x); f.replaceWithText (juce::JSON::toString (juce::var (a)));
 }
+// A REVERB OR DELAY ROLE PASSES (Kathy, 25 Oct): the measurement's own acceptance, by the map that defines the role - a reverb's decay,
+// a delay's time / sync / feedback - at least one ran and passed. A tail no control names (tail_either) keeps the roles that pass, both
+// when both do; a mix-only pass is not the role
+inline bool spaceRolePasses (const juce::String& pass, const juce::var& draft)
+{
+    if (const auto* acc = draft.getProperty ("acceptance", {}).getArray())
+        for (const auto& a : *acc)
+        {
+            if (! (bool) a.getProperty ("ran", false) || ! (bool) a.getProperty ("pass", false)) continue;
+            const auto m = a.getProperty ("map", "").toString();
+            if (pass == "reverb" && m == "decay") return true;
+            if (pass == "delay" && (m == "time" || m == "sync" || m == "feedback")) return true;
+        }
+    return false;
+}
+// two space drafts share a file name (one per pass): the bundle names each after its pass
+inline juce::String bundleDraftName (const juce::String& rel)
+{
+    const auto fn = rel.fromLastOccurrenceOf ("/", false, false), pass = rel.upToFirstOccurrenceOf ("/", false, false);
+    return fn.contains (".space_profile.") && (pass == "reverb" || pass == "delay") ? fn.replace (".space_profile.", "." + pass + ".space_profile.") : fn;
+}
+
+// A LIMITER WITH NO CEILING CONTROL (Kathy, 25 Oct; OneKnob Louder): the ceiling pass measured nothing (no ceiling control by name or
+// measurement) and derived no limiter draft, but the compressor half exported a profile - the compressor profile is sent ALONE, with no
+// ceiling block, and nothing it sends may claim a ceiling (a profile carrying one is not sent on this path)
+inline bool limiterWithoutCeiling (const juce::String& pass, const juce::String& outcome, bool nothingMeasured, bool limiterDraft)
+{ return pass == "limiter" && outcome == "ok" && nothingMeasured && ! limiterDraft; }
+inline bool claimsCeiling (const juce::var& profile)
+{ return profile.hasProperty ("ceiling") || profile.hasProperty ("ceiling_db") || profile.getProperty ("roles", {}).toString().contains ("ceiling"); }
+inline constexpr const char* kNoCeilingWhy = "a limiter with no ceiling control: its compressor profile is sent alone, with no ceiling block";
+
 // THE FIRST-SOUND CHECK (Kathy, 25 Oct; the 24 Oct run). A plugin routed on a KNOWN category skips the signature reads, and those reads
 // were where a licence window first showed: the UAD strips loaded silently for their maps, then crashed or showed a window once audio ran
 // in the measuring pass. So before measuring such a plugin this Mac has never checked, ONE short tone runs through it (load, ~1 s of 997 Hz,
