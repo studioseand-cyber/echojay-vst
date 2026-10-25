@@ -2287,6 +2287,7 @@ inline juce::var decideByMeasurement (const std::vector<std::pair<sweep::Plan, D
     for (const auto& [q, one] : cands)
     {
         candidaterules::CandidateFacts f; f.index = q.thr; f.name = q.thrName; f.certified = one.written && one.d.result == "certified"; f.pairWritten = q.pairIndex; f.pairWrittenName = q.pairName;
+        for (size_t i = 0; i < one.d.inAtGr.size() && i < one.d.norms.size(); ++i) { const auto it1 = one.d.inAtGr[i].at.find (1); if (it1 != one.d.inAtGr[i].at.end() && (it1->second.isDouble() || it1->second.isInt())) f.onset1[(double) one.d.norms[i]] = (double) it1->second; }   // 27 Oct: the onset rule
         for (size_t i = 0; i < one.d.inAtGr.size() && i < one.d.norms.size(); ++i) { const auto it = one.d.inAtGr[i].at.find (2); if (it != one.d.inAtGr[i].at.end() && (it->second.isDouble() || it->second.isInt())) f.curve2[std::round ((double) one.d.norms[i] * 1e4) / 1e4] = (double) it->second; }
         if (processesJson.existsAsFile()) if (const auto ch = channelAgreementFromTraces (processesJson, rawDir, "c" + juce::String (q.thr) + ".")) { f.channelWorstDb = ch->first; f.channelReadings = ch->second; }
         facts.push_back (f);
@@ -3020,7 +3021,9 @@ inline int runCertSweep (const SweepOptions& opt)
                                  + "; per stage, from each stage's engage switch at instantiate, never from a stage reading flat");
         ruleDecided = juce::var (rd);
     }
-    if (! ruleDecided.isObject()) ruleDecided = decideByMeasurement (cands, opt.out.getChildFile (stem + ".sweep.processes.json"), opt.out.getChildFile ("raw"));
+    // 27 Oct: stem already ends ".sweep" (+ the arm tag), so the processes file is stem + ".processes.json" - the old ".sweep.processes.json"
+    // named a file that never exists, and no measured pair rule ever had its per-channel readings (SPL IRON, AMEK, bx_clipper: "no rule")
+    if (! ruleDecided.isObject()) ruleDecided = decideByMeasurement (cands, opt.out.getChildFile (stem + ".processes.json"), opt.out.getChildFile ("raw"));
     composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), ruleDecided);
     return 0;
 }

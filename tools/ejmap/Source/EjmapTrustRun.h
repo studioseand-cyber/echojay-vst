@@ -118,7 +118,7 @@ inline void loadRecords (const juce::File& root, const juce::String& tag, std::m
                 if (! j.identified.isEmpty()) pd.filterAt[fmt] = std::max (pd.filterAt[fmt], trust::metaOfRecord (rec, f.getFileName()).atMs);
                 if (j.certified) pd.filterCert.insert (fmt);
             }
-            if (schema == "ej_pitch_profile/1" && rec.getProperty ("measurement", "").toString() == "shift")
+            if (schema == "ej_pitch_profile/1" && (rec.getProperty ("pitch_measurement", "").toString() == "shift" || rec.getProperty ("measurement", "").toString() == "shift"))   // 27 Oct: the renamed key, and drafts on disk from before
             {
                 const auto j = trust::judgeShiftDraft (rec); const auto fmt = trust::formatOfRecord (rec, f.getFileName());
                 pd.measured.pitchShift = true;

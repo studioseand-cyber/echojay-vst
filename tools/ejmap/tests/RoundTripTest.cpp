@@ -4707,7 +4707,7 @@ void testSweepQuietReference()
                && has (epRev, "PlateLevel", 0.0) && ! [&] { for (const auto& w : epRev) if (w.control == "PlateMute") return false; else if (w.control == "PlateLevel") return true; return false; }()   // mutes before levels
                    && has (epRev, "PlateMute", 1.0) && has (epRev, "RoomMute", 1.0) && has (epRev, "HallMute", 1.0) && has (epRev, "SpaceMute", 1.0) && has (epDel, "SlapMute", 1.0) && has (epDel, "TapeMute", 1.0) && ! names_ (epDel).contains ("PlateMute")
                    && both.settled && both.category == "reverb" && both.also == juce::StringArray { "delay" } && both.why.contains ("both measured, section by section")
-                   && ! none.settled && none.why.contains ("review") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && ! old.settled
+                   && none.settled && none.tailEither && none.why.contains ("measured as both") && oneDelay.settled && oneDelay.category == "delay" && oneDelay.also.isEmpty() && old.tailEither
                    && drv.contains ("if (isolate && tailroles::place (k.name).role == otherRole) continue;") && drv.contains ("if (isolate && tailroles::place (n).role == otherRole) continue;   // 20 Oct (CLA Epic)") && drv.contains ("if (si >= 0) args.set (si, \"set=\" + isoSets + \",\" + args[si].substring (4)); else args.add (\"set=\" + isoSets); }")
                    && drv.contains ("isolationUnlanded = tailroles::unlanded (isolationWrites, r.out);") && ! drv.contains ("tailroles::presetOf (isolationWrites));\n        setenv")
                    && [] { std::map<juce::String, float> t; keepEndmost (t, "Off", 0.0f); keepEndmost (t, "Off", 0.5f); keepEndmost (t, "On", 1.0f); return t["Off"] == 0.0f && t["On"] == 1.0f; }()   // GW VoiceCentric: "Off" at 0 and 0.5
@@ -5197,7 +5197,7 @@ void testSweepQuietReference()
         const int stripAt = drv.indexOf ("            d = categorise::stripRule (d, row.sig, names); }"), byNameAt = drv.indexOf (stripAt, "row.byName = d.byName;");
         check (a.category == "channel_strip" && a.settled && a.why.contains ("dynamics + tail") && c1.category == "reverb" && c2.category == "reverb" && c3.category == "reverb" && c4.category == "reverb"
                && rt.responseRead && std::abs (rt.levelDepDb - 3.0) < 0.01 && rt.rt60s && std::abs (*rt.rt60s - 0.9) < 0.01
-               && stripAt > 0 && byNameAt > stripAt && byNameAt - stripAt < 400 && juce::String (C::kRulesVersion) == "2026-10-24"
+               && stripAt > 0 && byNameAt > stripAt && byNameAt - stripAt < 400 && juce::String (C::kRulesVersion) == "2026-10-27"
                && drv.contains ("row->setProperty (\"started_at\", res.startedAt.toISO8601 (true)); row->setProperty (\"ended_at\", (res.startedAt + juce::RelativeTime::seconds (seconds)).toISO8601 (true));"),
                "cert CERT-25: the strip rule ('" + a.why + "'; a drive control, no compressor control, one section or one read leave it a reverb), in the categorise step; Phase B rows carry their child's start and end");
     }
@@ -5358,7 +5358,7 @@ void testSweepQuietReference()
                && cutoffMove (0.0) == 0.5 && cutoffMove (1.0) == 0.5 && cutoffMove (0.5) == 0.75 && std::abs (cutoffMove (0.7) - 0.45) < 1e-9
                && decideCutoff (cutEq, cw).settled && decideCutoff (cutEq, cw).category == "eq" && ! decideCutoff (flat, cw).settled && decideCutoff (flat, cw).why.contains ("not part of the neutral setting")
                && clipAfterRaise (dyn, true).category == "limiter" && clipAfterRaise (sat, true).category == "saturation" && clipAfterRaise (dyn, false).category == "dynamics"
-               && decide (ring, { "eq" }).category == "eq" && decide (ring, { "eq" }).settled && ! decide (longRing, { "eq" }).settled && ! decide (ring, {}).settled
+               && decide (ring, { "eq" }).category == "eq" && decide (ring, { "eq" }).settled && decide (longRing, { "eq" }).tailEither && decide (ring, {}).tailEither
                && effectSection ("Pitch") == "pitch" && effectSection ("Distortion Color") == "distortion" && effectSection ("Reverb").isEmpty() && effectSection ("Short Delay").isEmpty() && effectSection ("Output").isEmpty()
                && fxN.contains ("Pitch") && fxN.contains ("Distortion") && fxN.contains ("EQ") && ! fxN.contains ("Reverb") && ! fxN.contains ("Pitch Color") && ! fxN.contains ("Short Delay")
                && silencesEffects (rolesOf (claFx), claFx) && ! silencesEffects (rolesOf (echo), echo)
@@ -5400,7 +5400,7 @@ void testSweepQuietReference()
                && drv.contains ("{ args.add (\"--neutral-sets\"); args.add (neutralsets::setsOf (nw->second));")
                && drv.contains ("neutralsets::patch (rec, nw->second); ro->setProperty (\"neutral_raised\", neutralsets::raisedVar (nw->second));")
                && mainCpp.contains ("else if (k == \"--neutral-sets\") setenv (\"EJ_PROBE_NEUTRAL_SETS\", v.toRawUTF8(), 1);")
-               && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-24",
+               && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-27",
                "cert WZ-NEUTRAL-1 (the wizard fills it): the raised drive rides at the front of every set= list of the measuring child (" + resp.joinIntoString (" ").fromFirstOccurrenceOf ("--response", true, false) + "), every neutral list says it, an old cached signature is read again");
     }
 }
@@ -7223,6 +7223,49 @@ void testProfileSweepPlan()
                    && drv.contains ("for (const auto& w : sweep::engageCandidates (base, {}))") && drv.contains ("if (const auto sig = roleevidence::signatureHolds (\"drive\", a, b); sig.holds)"),
                    "NIGHT-4: the saturation pass searches the engage switches when its drive moves nothing, and keeps the one that works on every call and in the neutral setting");
         }
+        // CERT-28OCT-3 THE PITCH DRAFT'S KEY (B, 27 Oct): "measurement" is the result's identity block, so the pitch draft says "pitch_measurement";
+        // the count still reads drafts on disk from before (the old key)
+        {
+            const auto cfs = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString();
+            const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+            check (cfs.contains ("d->setProperty (\"pitch_measurement\", \"shift\");") && ! cfs.contains ("d->setProperty (\"measurement\", \"shift\")")
+                   && tr.contains ("(rec.getProperty (\"pitch_measurement\", \"\").toString() == \"shift\" || rec.getProperty (\"measurement\", \"\").toString() == \"shift\")"),
+                   "CERT-28OCT-3: the pitch draft writes pitch_measurement; the count reads both keys");
+        }
+        // CERT-28OCT-5 THE ONSET RULE (Kathy, 25 Oct): several threshold candidates and no named rule decided - the one candidate whose move shifts
+        // where gain reduction begins (3 dB or more over its positions) is the threshold; none or several -> unsure, each candidate's shift said.
+        // The 24 Oct run's four (SPL IRON L / R 20.5 dB each, AMEK 1 / 2 34.8 each, bx_clipper 16.0 each, MAGNUM-K six) are all "several"
+        {
+            namespace CR = ejmap::candidaterules;
+            auto fact = [] (int idx, const char* name, double shift) { CR::CandidateFacts f; f.index = idx; f.name = name; f.certified = true;
+                for (int k = 0; k < 5; ++k) f.onset1[k / 4.0] = -30.0 + shift * k / 4.0; return f; };
+            const auto one = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 0.5) });
+            const auto both = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 11.0) });
+            const auto none = CR::decide ({ fact (3, "Alpha", 1.0), fact (9, "Beta", 0.5) });
+            const auto iron = CR::onsetRule ({ { "Threshold L", 20.5 }, { "Threshold R", 20.5 } }, { 22, 34 });
+            std::map<double, double> two { { 0.0, -30.0 }, { 1.0, -10.0 } };
+            const auto loop = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapLoop.h").loadFileAsString();
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (one.decided && one.rule == "onset" && one.pick == 3 && one.pickName == "Alpha" && one.others.contains ("Beta")
+                   && ! both.decided && both.whyNot.contains ("2 candidates each shift where gain reduction begins") && ! none.decided && none.whyNot.contains ("no candidate shifts")
+                   && iron.pick < 0 && iron.text.contains ("unsure, no single threshold") && iron.text.contains ("'Threshold L' 20.5 dB") && ! CR::onsetShiftDb (two)
+                   && loop.contains ("o.reason = juce::String (cands.size()) + \" threshold candidates: \" + candidaterules::onsetRule (shifts, idx).text;")
+                   && drv.contains ("f.onset1[(double) one.d.norms[i]] = (double) it1->second; }   // 27 Oct: the onset rule")
+                   && drv.contains ("ruleDecided = decideByMeasurement (cands, opt.out.getChildFile (stem + \".processes.json\"), opt.out.getChildFile (\"raw\"));")   // the file the sweep writes
+                   && drv.contains ("const auto stem = fixtureFileName (base).upToLastOccurrenceOf (\".json\", false, false) + \".sweep\" + armTag;")
+                   && drv.contains ("opt.out.getChildFile (stem + \".processes.json\").replaceWithText (juce::JSON::toString (juce::var (processes))"),
+                   "CERT-28OCT-5: the onset rule picks the one candidate that shifts the onset (" + one.note + "); several -> unsure (" + iron.text + ")");
+        }
+        // CERT-28OCT-6 REVERB OR DELAY (Kathy, 25 Oct): a tail no control names is measured as both (the wizard keeps the roles whose
+        // acceptance passes; here the categorise half: settled, both roles, flagged)
+        {
+            namespace C = ejmap::categorise;
+            C::Signatures t; t.tailRead = true; t.rt60s = 1.2; t.repeats = 0; t.responseRead = true; t.harmRead = true;
+            const auto d = C::decide (t, {});
+            check (d.settled && d.category == "reverb" && d.also.contains ("delay") && d.tailEither && d.why.contains ("measured as both")
+                   && juce::String (C::kRulesVersion) == "2026-10-27",
+                   "CERT-28OCT-6: a tail no control names is measured as reverb and delay ('" + d.why + "')");
+        }
         const auto vac = juce::JSON::parse (R"json({"product": "Mixland Vac Attack", "controls": [
             {"index": 6, "name": "Left Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
             {"index": 13, "name": "Right Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
@@ -7390,7 +7433,7 @@ void testLoopOutcomes()
     // several candidates: needs_review unless Rule 1 decided (pickedCandidate + ruleDecided, the pick certified profile-grade)
     juce::Array<juce::var> cs; cs.add (obj ({})); cs.add (obj ({}));
     o = outcomeForRecord (obj ({ { "thresholdCandidates", cs } }));
-    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("nobody picks"), "loop L3: several candidates end as needs_review, never a pick, when no rule decides");
+    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("the onset rule: no candidate shifts"), "loop L3: several candidates end as needs_review, never a pick, when no rule decides");
     {
         juce::Array<juce::var> grid; for (int L = -60; L <= 0; L += 2) grid.add ((double) L);
         juce::Array<juce::var> cc; cc.add (obj ({ { "index", 1 }, { "name", "Gate Thresh" }, { "thresholdSweep", obj ({ { "result", "certified" }, { "hold_s", 2.5 }, { "tone", obj ({ { "levels_dbfs", grid } }) } }) } }));
@@ -8534,8 +8577,8 @@ void testCategorise()
            "categorise CT3: a gain moving with level and inaudible THD is dynamics; audible rising THD is saturation, and a gain move beside it is said");
     Signatures tail; tail.tailRead = true; tail.rt60s = 2.85; tail.repeats = 0; tail.responseRead = true; tail.freqSpanDb = 5.0;
     Signatures echoes = tail; echoes.repeats = 3; echoes.rt60s = 0.6;
-    check (! decide (tail, {}).settled && decide (tail, {}).category == "reverb" && decide (tail, { "delay" }).settled && decide (tail, { "delay" }).category == "delay" && decide (tail, { "reverb" }).category == "reverb" && decide (echoes, {}).category == "delay" && decide (echoes, {}).settled,
-           "categorise CT4: a tail with no repeats and no word leans reverb unsettled; the words break the tie; discrete repeats settle delay");
+    check (decide (tail, {}).settled && decide (tail, {}).tailEither && decide (tail, {}).also.contains ("delay") && decide (tail, {}).category == "reverb" && decide (tail, { "delay" }).settled && decide (tail, { "delay" }).category == "delay" && decide (tail, { "reverb" }).category == "reverb" && decide (echoes, {}).category == "delay" && decide (echoes, {}).settled,
+           "categorise CT4: a tail with no repeats and no word is measured as both reverb and delay (27 Oct); the words break the tie; discrete repeats settle delay");
     Signatures pit; pit.pitchRead = true; pit.pitchMoveCents = 32.1; pit.harmRead = true; pit.sidebandDb = 35.6; pit.harmDb = -30.0;
     Signatures mod; mod.harmRead = true; mod.sidebandDb = -16.5; mod.harmDb = -82.0; Signatures floorSide = mod; floorSide.sidebandDb = -41.6;
     check (decide (pit, {}).category == "pitch" && decide (mod, {}).category == "modulation" && ! decide (floorSide, {}).settled, "categorise CT5: a 32-cent move is pitch before its sidebands; -16.5 dB sidebands are modulation; the analysis floor (-41.6) is not");
@@ -10707,10 +10750,10 @@ void testCategoriseRelease()
     const auto pl = categoriesFromWords ("Lindell 254E", "Plugin Alliance", {}), px = categoriesFromWords ("Acme Opticom XLA-3", "Plugin Alliance", {}), pf = categoriesFromWords ("FilterFreak2", "Soundtoys", {});
     const auto lNew = decide (l, pl), lOld = decide (l, pl, false), xNew = decide (x, px), xOld = decide (x, px, false), fNew = decide (f, pf);
     check (l.tailRead && l.rt60s && *l.rt60s > 0.3 && *l.rt60s < 0.5 && l.levelDepDb > 3.0 && l.freqSpanDb < 0.5
-           && lNew.category == "dynamics" && lNew.settled && lOld.category == "reverb" && ! lOld.settled
-           && xNew.category == "dynamics" && xNew.settled && ! xOld.settled
+           && lNew.category == "dynamics" && lNew.settled && lOld.category == "reverb" && lOld.tailEither
+           && xNew.category == "dynamics" && xNew.settled && xOld.tailEither
            && fNew.category == "eq" && fNew.settled && fNew.why.contains ("resonance ringing") && f.freqSpanDb > 10.0 && f.levelDepDb >= 1.0   // 21 Oct (Kathy): the resonant filter rule
-           && [&] { const auto un = decide (f, {}); return un.category == "reverb" && ! un.settled; }(),   // the same reads with no filter name stay a tail for review
+           && [&] { const auto un = decide (f, {}); return un.category == "reverb" && un.tailEither; }(),   // the same reads with no filter name stay a tail (27 Oct: measured as both)
            "categorise CAT-RELEASE: Lindell 254E (RT60 " + juce::String (l.rt60s ? *l.rt60s : -1.0, 2) + " s, " + juce::String (l.levelDepDb, 2) + " dB, span " + juce::String (l.freqSpanDb, 2)
            + ") and XLA-3 -> dynamics (were reverb, unsettled); FilterFreak2 (span " + juce::String (f.freqSpanDb, 1) + " dB, a filter name, a short ring) -> eq (21 Oct, the resonant filter rule)");
 }
