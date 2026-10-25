@@ -2,9 +2,15 @@
 
 This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its top lists every change since v1). Everything in it was produced on our side against our own mock; nothing came from a real server.
 
-**What is new since the 22 Oct package (24 Oct: your answers on v1.1; the contract's changelog, "24 Oct"):**
+**What is new since the 24 Oct package (27 Oct: your notes; the contract's changelog, "27 Oct"):**
+- **Limiter and de-esser drafts are validated,** as your server does: accepted, 201 `stored: "held_draft"`, counted in `results_accepted`. A limiter draft with no `ceiling` block, or a de-esser draft with no `deesser` block, is 422 `validator`. `ej_readback_sweep/1` stays held.
+- **A REAL limiter ceiling draft:** L2 (m), measured on this Mac (its ceiling holds true peak). `18_real_results` now sends **33** results: 32 accepted (the de-esser and limiter drafts as held drafts), 1 held (the bridge read).
+- **The pitch draft's key** is `pitch_measurement` (was `measurement`, which every measured file's identity block uses).
+- **The stand-in data:** every stand-in fingerprint is 64 hex characters, and every stand-in curve stays below the sweep's -3.01 dBFS ceiling.
+
+**What was new in the 24 Oct package (your answers on v1.1; the contract's changelog, "24 Oct"):**
 - **The two draft ids:** `ej_limiter_profile/1` and `ej_deesser_profile/1` (were sentences). The one real de-esser draft in `18_real_results` carries its new id; nothing else in it changed.
-- **Held, as your server holds them** until you have their validators: `ej_limiter_profile/1`, `ej_deesser_profile/1`, `ej_readback_sweep/1` (any result kind).
+- **Held, as your server held them then** until you had their validators: `ej_limiter_profile/1`, `ej_deesser_profile/1`, `ej_readback_sweep/1` (any result kind). (27 Oct: only `ej_readback_sweep/1` is still held.)
 - **Another plugin's `map.json`** is 422 `shape` (was `identity` in our mock).
 - **A "need" plugin whose only results are a reference vote or a bridge read** now gets its outcome too: `18_real_results` sends **32** results (was 30).
 
@@ -71,7 +77,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |
 | 16_sign_in_denied | the user denies the sign-in: `access_denied` |
-| 18_real_results | the real results (above), 32 with the two outcomes: 30 accepted, 2 HELD by design (the de-esser draft and the bridge read), none refused |
+| 18_real_results | the real results (above), 33 with the two outcomes and the L2 limiter draft: 32 accepted (the de-esser and limiter drafts as held drafts), 1 HELD by design (the bridge read), none refused |
 
 ## 3. Replay against any base URL
 
