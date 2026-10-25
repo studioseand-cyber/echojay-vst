@@ -75,8 +75,16 @@ else
 fi
 case "$GUARDS" in *ui_guard*) say "note: ui_guard was named - it links the whole editor, so only for UI layout changes";; esac
 
-if pgrep -x "Logic Pro" > /dev/null; then
-  say "Logic Pro is OPEN: this run will build and guard but NOT install."
+# ---- A LIVE HOST IS NOT ONLY LOGIC (25 Oct 2026) -------------------------------------------
+# This read `pgrep -x "Logic Pro"` and nothing else, so on the evening of 25 Oct - Logic closed,
+# PRO TOOLS OPEN with his session and EchoJay in it, heartbeating his real Links - every install
+# road on this machine considered itself clear to copy over bundles a live host held open. That is
+# the hazard the Logic check exists for, and the one that cost hours of hunting a "fix that did not
+# work" when the host had the old binary open. The test is now what it always meant.
+EJ_LIVE_HOSTS="Pro Tools|Logic Pro|Ableton Live|Cubase|REAPER|AUHostingService|AAXHostService|AAEHostService"
+live_host_pids () { pgrep -f "$EJ_LIVE_HOSTS" 2>/dev/null | tr '\n' ' '; }
+if [ -n "$(live_host_pids)" ]; then
+  say "A LIVE PLUGIN HOST IS OPEN (pid(s) $(live_host_pids)): this run will build and guard but NOT install."
   LOGIC_OPEN=1
 else
   LOGIC_OPEN=0
@@ -110,12 +118,12 @@ say "built in $(mins $(( $(date +%s) - B0 )))"
 # trade he asked for in words, and the alternative he rejected was waiting ten minutes to type a
 # sentence into Logic. The red is REPORTED, loudly, and the revert road is one line below.
 say ""; say "---- 2. install ----"
-if pgrep -x "Logic Pro" > /dev/null; then LOGIC_OPEN=1; fi
+if [ -n "$(live_host_pids)" ]; then LOGIC_OPEN=1; fi
 if [ "${NO_INSTALL:-0}" = "1" ]; then
   say "NOT INSTALLED: NO_INSTALL=1 was asked for. The bundles are in $TREE; install with"
-  say "  bash tools/install_local.sh $TREE   (Logic closed)"
+  say "  bash tools/install_local.sh $TREE   (with every plugin host closed)"
 elif [ "$LOGIC_OPEN" = "1" ]; then
-  say "NOT INSTALLED: Logic Pro is open. Close it and run tools/quick.sh again."
+  say "NOT INSTALLED: a live plugin host is open (pid(s) $(live_host_pids)). Close it and run tools/quick.sh again."
 else
   bash tools/install_local.sh "$TREE" >> "$LOG" 2>&1 && say "installed AU + VST3 from $TREE" \
     || say "INSTALL FAILED - see $LOG"

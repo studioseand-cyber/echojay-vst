@@ -67,6 +67,29 @@ struct LiveControlPolicy
     what he needs to know, even if the mirror also happens to be down - telling him about a
     parameter list while an agent is dialling the thing would be the less useful of two true
     answers. */
+/** Does a run still block the user's own knobs? (his 17:25 fault, 25 Oct 2026)
+
+    *"After the run said "Stopped.", the shield never cleared: the rack still says an agent is
+     working on it and the plugin can't be used."*  And his ruling: *"a stopped run must always
+     release the rack."*
+
+    THE SHIELD WAS READING THE WRONG FACT, and the fact itself was right. `runNeedsItsRack()` is
+    `isActive() || canUndoAll()`, and the second half is deliberate: a FINISHED run still needs the
+    rack HELD while its "Undo all" is live, because that button walks the rack back to the run's
+    checkpoint, and "Undo all showed but could not be pressed" was his fault of 23 Oct. But the
+    live-view shield read that same pair, so after a stop it went on refusing his knobs with the
+    words "an agent is working on this rack - stop it, or wait" - a sentence that was untrue in
+    every part: nothing was working, he had already stopped it, and there was nothing to wait for.
+
+    TWO QUESTIONS, TWO ANSWERS. "Who must hold this rack" keeps the undo-all half; "whose gesture
+    may move this plugin" is only ever about a run that is RUNNING. A rack held so that Undo all
+    stays pressable is not a rack in use, and it takes no gestures away from him. */
+inline bool runBlocksUsersKnobs (bool runIsActive, bool undoAllStillLive)
+{
+    juce::ignoreUnused (undoAllStillLive);
+    return runIsActive;
+}
+
 inline LiveControlPolicy liveControlPolicy (bool following, bool runHoldsRack)
 {
     if (runHoldsRack)

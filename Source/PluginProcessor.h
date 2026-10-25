@@ -745,6 +745,12 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         (runTargetUid + runNeedsItsRack), so the view's refusal and the panel's lock cannot
         disagree about who holds what. A finished run still counts while its Undo all is live. */
     bool agentRunHoldsRack (const juce::String& uid) const;
+    /** Is a run WORKING on that rack right now? The shield and the live view's gate ask THIS one;
+        agentRunHoldsRack above still answers the engage, because a finished run's Undo all needs
+        the rack held. His 17:25 fault of 25 Oct was the two questions sharing one answer: after
+        "Stopped." the shield went on saying "an agent is working on this rack - stop it, or wait"
+        with nothing working and nothing to wait for. See echojay::runBlocksUsersKnobs. */
+    bool agentRunIsWorkingOnRack (const juce::String& uid) const;
     /** Install a prepared copy and start consuming that Link's shadow ring. The caller has already
         asked the Link to tap the slot (the control channel's `shadowSlot`) and seen its ack. FALSE
         with `whyNot` set changes nothing - the view falls back to the static picture, which is the

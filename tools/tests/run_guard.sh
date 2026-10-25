@@ -41,9 +41,26 @@ mkdir -p "$ISO/Library/Application Support" "$ISO/Documents"
 #     host rewrites racklock-*.json, lease-*.json and the rolling log every few seconds, so while a host is live a
 #     difference is not evidence about this guard (observed 26 Sep 2026, Pro Tools open, every guard "guilty").
 #     So a difference is a FAILURE when no EchoJay host is running, and a named, printed inconclusive otherwise.
+# WHAT COUNTS AS "SOMETHING ELSE IS WRITING THE LIVE FOLDERS". Pro Tools and Logic host the
+# plugin; AUHostingService hosts it out of process; ejmap and the host rig are our own programs
+# that read the real registry and write the real rolling log. The pattern missed the last two, and
+# a host that starts or stops DURING a guard was missed as well, because the test was taken once,
+# afterwards. It is now taken before and after, and either one counts.
+EJ_LIVE_WRITERS="Pro Tools|Logic Pro|Ableton|Cubase|REAPER|AUHostingService|AAXHostService|AAEHostService|EchoJay|ejmap|host_rig"
+live_writers () { /usr/bin/pgrep -f "$EJ_LIVE_WRITERS" 2>/dev/null | tr '\n' ' '; }
 REAL_HOME="$(/usr/bin/id -P "$(/usr/bin/id -un)" 2>/dev/null | /usr/bin/cut -d: -f9)"
 [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ] || REAL_HOME="/Users/$(/usr/bin/id -un)"
 SEAL_TARGETS=("$REAL_HOME/Documents/EchoJay" "$REAL_HOME/Library/EchoJay" "$REAL_HOME/Library/Application Support/EchoJay" "$REAL_HOME/Library/Logs/EchoJay" "$REAL_HOME/.echojay")
+# ---- AND THE ROLLING LOGS ARE NOT STATE (25 Oct 2026) ---------------------------------------
+# These stay DENIED under the sandbox - a guard that writes them still gets EPERM in its own
+# process, which is the leg that attributes. They are dropped from the FINGERPRINT only, because
+# the fingerprint cannot attribute and these are the one thing in the live folders that something
+# else rewrites continuously: 2 MB every eight minutes, five rotations in half an hour on 25 Oct.
+# On that evening ui_guard exited 0 with every assertion green and was marked RED anyway, because
+# the fingerprint moved on echojay-1.log and echojay-4.log and the host test a few seconds later
+# found nothing running to blame. The comment above already says a difference while a host is live
+# is not evidence; a rolling log is never evidence about a sealed guard at all.
+FINGERPRINT_SKIP=("$REAL_HOME/Library/EchoJay/logs" "$REAL_HOME/Library/Logs/EchoJay")
 seal () {  # one line per file/dir: <size> <mtime> <path>
   local d
   for d in "${SEAL_TARGETS[@]}"; do
@@ -53,13 +70,16 @@ seal () {  # one line per file/dir: <size> <mtime> <path>
       # rack-*.json left by force-quits. Measured: 12.1 s per seal, two seals per guard, so ~24 s of
       # overhead on EVERY guard and about half of the suite's wall clock. `+` batches the arguments
       # into as few stat calls as the arg list allows. The output is identical: it is sorted either way.
-      /usr/bin/find "$d" -maxdepth 2 \( -type f -o -type d \) -exec /usr/bin/stat -f '%z %m %N' {} + 2>/dev/null | LC_ALL=C sort
+      local prune=() t
+      for t in "${FINGERPRINT_SKIP[@]}"; do prune+=( -path "$t" -prune -o ); done
+      /usr/bin/find "$d" -maxdepth 2 "${prune[@]}" \( -type f -o -type d \) -exec /usr/bin/stat -f '%z %m %N' {} + 2>/dev/null | LC_ALL=C sort
     else
       echo "ABSENT $d"
     fi
   done
 }
 SEAL_BEFORE="$ISO/.live_seal_before"; SEAL_AFTER="$ISO/.live_seal_after"
+HOSTPIDS_BEFORE="$(live_writers)"
 seal > "$SEAL_BEFORE" 2>/dev/null
 
 # The sandbox profile: allow everything, deny writes into the three live folders.
@@ -91,7 +111,7 @@ echo "exit code: $RC  (0 == GREEN, nonzero == RED)"
 
 seal > "$SEAL_AFTER" 2>/dev/null
 if ! /usr/bin/cmp -s "$SEAL_BEFORE" "$SEAL_AFTER"; then
-  HOSTPIDS="$(/usr/bin/pgrep -f "Pro Tools|Logic Pro|AUHostingService|AAXHostService|AAEHostService|EchoJay" 2>/dev/null | tr '\n' ' ')"
+  HOSTPIDS="$HOSTPIDS_BEFORE$(live_writers)"
   echo "LIVE-STATE FINGERPRINT CHANGED in $REAL_HOME (Documents/EchoJay, Library/EchoJay, Library/Application Support/EchoJay):"
   /usr/bin/diff "$SEAL_BEFORE" "$SEAL_AFTER" | /usr/bin/head -20 | /usr/bin/sed 's/^/  /'
   if [ -n "$HOSTPIDS" ]; then

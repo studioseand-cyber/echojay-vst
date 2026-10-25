@@ -1,4 +1,5 @@
 #include "EJAgentExecutorDo.h"
+#include "EJReadBackWait.h"   // readBackShouldWaitAgain: "not yet" is not "never" (his 17:25)
 #include "EJRefusalLine.h"   // the one refusal composer (20 Oct)
 #include "ChainHost.h"   // check 5 part 2: the plugins that did not load here
 #include "EJParamPlainNames.h"   // Sean, 15 Oct: a line a person reads names parameters in words
@@ -870,7 +871,7 @@ static bool isASwitchNotWorthConfessing (const juce::var& asked)
 }
 
 void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyTo,
-                                const juce::var& edits, juce::String sentence, Done done, int attempt)
+                                const juce::var& edits, juce::String sentence, Done done, int attempt, int readAttempt)
 {
     const auto ss = argVar (call, "settings_structured");
     auto* root = ss.getDynamicObject();
@@ -1035,6 +1036,51 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     }
     if (matched.isEmpty())
     {
+        // ---- NOT YET IS NOT THE SAME AS NEVER (his 17:25 fault, 25 Oct 2026) ------------------
+        //
+        // *"The change to slot 1: Left Reduction 3, Right Reduction 3 was sent but not confirmed
+        //  by the plugin's read-back (left reduction, right reduction) - check it on the plugin."*
+        //
+        // His log says the write was PERFECT, and two seconds too late to be read here:
+        //
+        //   17:23:59  EJLink: applied set@1 ... applied=1/1
+        //   17:23:59  EJParamMaps(Link): asked the V2 for 1 map(s), 1 outstanding
+        //   17:24:00  step ... DONE "... I could not read these values back to confirm them"
+        //   17:24:02  EJParamMaps(Link): the V2 answered with 1 map(s)
+        //   17:24:02  EJParamApply: Left Reduction: APPLIED 0.300 ... landed "3.0"
+        //   17:24:02  EJParamApply: Right Reduction: APPLIED 0.300 ... landed "3.0"
+        //
+        // The Link had never met this plugin, so it had no parameter map; the op's ack comes back
+        // when the payload is STORED, and the map-gated apply runs when the map lands. ChainHost's
+        // own comment on the `set` op has said so since 5 Sep: *"a first-encounter plugin with no
+        // cached map has always reported dialled having written nothing ... it needs the op's
+        // result deferred until the dial settles."*
+        //
+        // THE READ IS WHAT WAITS, not the write. Nothing readable AND nothing wrong is exactly what
+        // a pending apply looks like from this side, and the one thing that tells it apart from a
+        // plugin that will never answer is TIME: a pending apply becomes readable in a second or
+        // two, an unreadable one stays unreadable however long we wait. So the read is taken again,
+        // on a bound, and the sentence that follows is honest either way - which is the rule for a
+        // decision on uncontrolled timing: wait with a bound, or say it is provisional.
+        static constexpr int kReadRetries = 6;      // ~2.4 s, and his map landed in 3 ticks
+        static constexpr int kReadRetryMs = 400;
+        if (echojay::readBackShouldWaitAgain (/*anyMatched*/ false, ! missed.isEmpty(),
+                                              ! unreadable.isEmpty(), readAttempt, kReadRetries))
+        {
+            const auto aliveR = this->alive();
+            if (readAttempt == 0)
+                EchoJay_NSLog (("EJAgent: set read-back has NO reading yet for " + unreadable.joinIntoString ("; ")
+                                + " - re-reading up to " + juce::String (kReadRetries) + " times over "
+                                + juce::String (kReadRetries * kReadRetryMs) + " ms, because a slot whose map "
+                                  "is still being fetched is not a slot that cannot be read (his 17:25)").toRawUTF8());
+            juce::Timer::callAfterDelay (kReadRetryMs,
+                [this, aliveR, call, applyTo, edits, sentence, done, attempt, readAttempt]
+                {
+                    if (aliveR.expired()) return;
+                    confirmValues (call, applyTo, edits, sentence, done, attempt, readAttempt + 1);
+                });
+            return;
+        }
         r->setProperty ("confirmed", false);
         done (ToolOutcome::success (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
                                     sentence + " I could not read these values back to confirm them"

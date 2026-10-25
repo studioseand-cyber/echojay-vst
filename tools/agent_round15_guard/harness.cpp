@@ -106,10 +106,28 @@ struct Fixture
     int  buildCalls = 0;
 };
 
+/** ---- THE HOST RUNS A MESSAGE LOOP, AND SO MUST THIS (25 Oct 2026) -------------------------
+    This ran doOp and declared "the executor never called done" if the completion had not fired by
+    the time the call returned - which modelled a host with no message loop, and there is no such
+    host. His 17:25 fault made the difference visible: a read-back with NOTHING readable and nothing
+    wrong is what a pending apply looks like (the Link had no map for a plugin it had never hosted,
+    and the values landed two seconds after the step had already given up on them), so the read is
+    now taken again on a bound. In the plugin the timer that does it fires on the message thread; in
+    here nothing was turning that handle, so four legs about the genuinely-unreadable case failed
+    with no_completion - the harness's gap, not the product's.
+
+    The bound is longer than the read-back's own ladder on purpose: if the executor really never
+    answers, this still says so rather than hanging, and the leg still reads no_completion. */
 ToolOutcome runDo (ToolExecutor& ex, const ToolCall& c)
 {
     ToolOutcome got; bool fired = false;
     ex.doOp (c, [&] (ToolOutcome o) { got = std::move (o); fired = true; });
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    while (! fired && juce::Time::getMillisecondCounterHiRes() - t0 < 6000.0)
+    {
+        juce::Timer::callPendingTimersSynchronously();
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false);
+    }
     if (! fired) got = ToolOutcome::failure ("no_completion", "the executor never called done");
     return got;
 }
@@ -118,6 +136,10 @@ ToolOutcome runDo (ToolExecutor& ex, const ToolCall& c)
 int main()
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
+    // A MESSAGE MANAGER, because the executor now has a timer in it (25 Oct 2026): the read-back's
+    // bounded wait is a juce::Timer, and a Timer with no MessageManager never fires at all. runDo
+    // pumps; this is what it pumps.
+    juce::ScopedJuceInitialiser_GUI juceInit;
     std::printf ("==== agent_round15_guard (ship 1: Sean's seven fixes) ====\n");
 
     // ------------------------------------------------- NOT READY FOR THE FIRST WRITE (19 Oct 2026)

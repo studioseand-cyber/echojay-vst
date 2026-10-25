@@ -117,6 +117,10 @@ public:
         the rack from a live run, and that closing it hands control straight back. */
     juce::String runTargetUid() const;
     bool runNeedsItsRack() const;
+    /** Is a run WORKING on its rack right now - as opposed to finished with its Undo all still
+        live? The shield and the panel's lock ask this one; the engage asks runNeedsItsRack.
+        See echojay::runBlocksUsersKnobs for the ruling behind the split (his 17:25, 25 Oct). */
+    bool runIsWorking() const;
     /** THE KEY, MINTED HERE IF IT DOES NOT EXIST YET (Sean's #11, 16 Oct 2026). This object is the
         one author of the run's RECORD, and the editor's row is a mirror of it - but a run started in
         a LIVE window had the editor mint a key of its own first and push a second chat-history entry,

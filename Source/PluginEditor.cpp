@@ -2249,7 +2249,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // the processor so the panel never holds a second copy of either.
     chainListPanel.liveViewFollowing    = [this] { return processorRef.shadowFollowing(); };
     chainListPanel.liveViewRunHoldsRack = [this]
-    { return processorRef.agentRunHoldsRack (processorRef.shadowUid()); };
+    { return processorRef.agentRunIsWorkingOnRack (processorRef.shadowUid()); };
     chainListPanel.isLiveViewSlot = [this](int i)
     {
         return processorRef.shadowRunning()

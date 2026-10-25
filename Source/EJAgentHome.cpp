@@ -20,6 +20,7 @@
 #include "ChainHost.h"
 #include "EJStateRoot.h"
 #include "NativeClip.h"
+#include "EJLiveControl.h"   // runBlocksUsersKnobs: the fact a gesture asks (his 17:25, 25 Oct)
 
 // =============================================================================================
 EJAgentHome::EJAgentHome (EchoJayProcessor& proc) : proc_ (proc)
@@ -626,6 +627,20 @@ bool EJAgentHome::runNeedsItsRack() const
 {
     if (client_ == nullptr) return false;
     return client_->isActive() || client_->canUndoAll();
+}
+
+/** ---- AND WHO IS WORKING, WHICH IS A DIFFERENT QUESTION (his 17:25 fault, 25 Oct 2026) -------
+    *"After the run said "Stopped.", the shield never cleared: the rack still says an agent is
+     working on it and the plugin can't be used."*
+
+    The shield read runNeedsItsRack above, whose second half - canUndoAll - is true for a FINISHED
+    run and is meant to be: Undo all walks the rack back to the run's checkpoint and needs the rack
+    held to do it (his 23 Oct fault, "Undo all showed but could not be pressed"). So the hold was
+    right and the sentence was wrong. This is the narrower fact, and it is the one a gesture asks. */
+bool EJAgentHome::runIsWorking() const
+{
+    if (client_ == nullptr) return false;
+    return echojay::runBlocksUsersKnobs (client_->isActive(), client_->canUndoAll());
 }
 
 void EJAgentHome::agentChanged()

@@ -32,6 +32,8 @@
 #include "EJRackSidecarFill.h"          // SH19: the dial-state fingerprint the publisher compares
 #include "EJAgentProtocol.h"            // SH19: the read-back's look budget
 #include "EJEngageDemand.h"             // SH21: a window open on a Link's rack connects to it
+#include "EJShieldWork.h"               // SH25: the shield does only what is wrong (his 17:25 glitch)
+#include "EJReadBackWait.h"             // SH26: "not yet" is not "never" (his 17:25 read-back)
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
@@ -2278,6 +2280,118 @@ int main()
                    "SH17c when BOTH are wrong the RUN is named, because that is the one he needs to "
                    "know about - the ordering in the function is deliberate and this holds it",
                    "\"" + both.line + "\"");
+
+            // ---- SH24: A STOPPED RUN TAKES NO KNOBS AWAY (his 17:25 fault, 25 Oct 2026) ------
+            //
+            // *"After the run said "Stopped.", the shield never cleared: the rack still says an
+            //  agent is working on it and the plugin can't be used."*  And: *"a stopped run must
+            //  always release the rack."*
+            //
+            // The shield read `runNeedsItsRack()` = isActive() || canUndoAll(), and the second half
+            // is true for a FINISHED run deliberately - Undo all walks the rack back to the run's
+            // checkpoint and needs it held (his 23 Oct fault, "Undo all showed but could not be
+            // pressed"). So the hold was right and the words were wrong: "an agent is working on
+            // this rack - stop it, or wait" with nothing working and nothing to wait for.
+            check (echojay::runBlocksUsersKnobs (/*active*/ true, /*undoAll*/ false),
+                   "SH24 a RUNNING run blocks his knobs, which is the whole point of the shield",
+                   "active -> blocked");
+            check (! echojay::runBlocksUsersKnobs (/*active*/ false, /*undoAll*/ true),
+                   "SH24a ...and a STOPPED run whose Undo all is still live does NOT - the rack is "
+                   "held so that button works, and a held rack is not a rack in use (his 17:25, and "
+                   "the known-bad: this is exactly what the shield used to read)",
+                   "stopped + undo all live -> free");
+            check (! echojay::runBlocksUsersKnobs (false, false),
+                   "SH24b ...and no run at all blocks nothing", "idle -> free");
+            // AND THE SENTENCE HE READS COMES FROM THE SAME DECISION, so the two cannot drift.
+            const auto afterStop = echojay::liveControlPolicy (
+                /*following*/ true, echojay::runBlocksUsersKnobs (false, true));
+            check (afterStop.allow && afterStop.line.isEmpty(),
+                   "SH24c ...so after \"Stopped.\" the live view takes his gestures again and says "
+                   "nothing about an agent, which is the fault he reported",
+                   "allowed, no line");
+
+            // ---- SH25: THE SHIELD DOES ONLY WHAT IS WRONG (his 17:25 glitch) -----------------
+            //
+            // *"As soon as the shield came up, the slot meters glitched and the plugin's window in
+            //  the V2 glitched."*
+            //
+            // setShield is called from attachNative, which the panel's timer calls every 100 ms. It
+            // used to set the caption, remove the shield from its superview, add it back on top and
+            // force a redraw on EVERY call - so a sibling view over a hosted AU's NSView left and
+            // rejoined the view tree ten times a second, recompositing that whole region. The
+            // KNOWN-BAD is the steady tick: it must be a no-op.
+            {
+                using echojay::shieldWorkFor;
+                const auto steady = shieldWorkFor (/*on*/ true, /*exists*/ true, /*frame*/ true,
+                                                   /*caption*/ true, /*topmost*/ true);
+                check (steady.nothingToDo(),
+                       "SH25 a shield that already exists, fits, says the right thing and is topmost "
+                       "needs NOTHING done - the old code removed and re-added it 10x a second, "
+                       "which is what he saw glitching",
+                       "no work");
+                const auto first = shieldWorkFor (true, /*exists*/ false, false, false, false);
+                check (first.create && first.setCaption && first.redraw && ! first.reorder,
+                       "SH25a ...a shield that does not exist yet is created with its words, and "
+                       "needs no reorder because a new subview is already on top",
+                       "create");
+                const auto afterAttach = shieldWorkFor (true, true, true, true, /*topmost*/ false);
+                check (afterAttach.reorder && ! afterAttach.create && ! afterAttach.setCaption,
+                       "SH25b ...and the case the old comment named is still handled: a re-attach put "
+                       "the plugin's view above ours, so the shield goes back on top - detected now, "
+                       "not assumed every tick",
+                       "reorder only");
+                const auto newWords = shieldWorkFor (true, true, true, /*caption*/ false, true);
+                check (newWords.setCaption && newWords.redraw && ! newWords.reorder,
+                       "SH25c ...new words redraw the shield and nothing else moves",
+                       "caption + redraw");
+                const auto moved = shieldWorkFor (true, true, /*frame*/ false, true, true);
+                check (moved.setFrame && ! moved.redraw && ! moved.reorder,
+                       "SH25d ...a frame change needs no forced redraw: AppKit invalidates on "
+                       "setFrame, and a second redraw is the flicker",
+                       "setFrame only");
+                const auto off = shieldWorkFor (/*on*/ false, true, true, true, true);
+                check (off.remove && ! off.create && ! off.reorder,
+                       "SH25e ...and when the view may be used again the shield comes DOWN",
+                       "remove");
+                const auto offAlready = shieldWorkFor (false, /*exists*/ false, false, false, false);
+                check (offAlready.nothingToDo(),
+                       "SH25f ...with nothing to do when it was never up", "no work");
+            }
+
+            // ---- SH26: "NOT YET" IS NOT "NEVER" (his 17:25 read-back, 25 Oct 2026) ----------
+            //
+            // *"...was sent but not confirmed by the plugin's read-back (left reduction, right
+            //  reduction) - check it on the plugin."*  The write was right and the sentence was two
+            //  seconds early: the Link had no map for a plugin it had never hosted, the op's ack
+            //  comes back when the payload is STORED, and the apply ran when the map arrived -
+            //  17:24:02, "Left Reduction: APPLIED 0.300 ... landed 3.0", after the step had already
+            //  said it could not be read. From the reading side a pending apply and an unreadable
+            //  plugin look identical, so the clock is the only thing that tells them apart.
+            {
+                using echojay::readBackShouldWaitAgain;
+                check (readBackShouldWaitAgain (/*matched*/ false, /*missed*/ false,
+                                                /*unreadable*/ true, /*attempt*/ 0, /*max*/ 6),
+                       "SH26 nothing readable and nothing wrong is what a PENDING apply looks like, "
+                       "so the read is taken again - his Vac Attack's values were already on their "
+                       "way when the step gave up on them",
+                       "waits");
+                check (! readBackShouldWaitAgain (false, /*missed*/ true, true, 0, 6),
+                       "SH26a ...but a value that read back WRONG is a real miss and is reported at "
+                       "once: waiting would delay bad news, which is the opposite of the rule",
+                       "does not wait");
+                check (! readBackShouldWaitAgain (/*matched*/ true, false, true, 0, 6),
+                       "SH26b ...and once something HAS read back there is something to say",
+                       "does not wait");
+                check (! readBackShouldWaitAgain (false, false, /*unreadable*/ false, 0, 6),
+                       "SH26c ...nothing to read at all is not a wait either", "does not wait");
+                check (! readBackShouldWaitAgain (false, false, true, /*attempt*/ 6, /*max*/ 6),
+                       "SH26d ...and the wait is BOUNDED: at the bound the honest sentence he had "
+                       "before is what he gets, which is right for a plugin that will not report",
+                       "bound reached");
+                check (readBackShouldWaitAgain (false, false, true, 5, 6)
+                       && ! readBackShouldWaitAgain (false, false, true, 6, 6),
+                       "SH26e ...the bound is the LAST attempt, not one past it", "5 waits, 6 does not");
+            }
 
             // THE COALESCER: by parameter, never by frame, and a boundary is never dropped.
             using SP = echojay::StagedParam;

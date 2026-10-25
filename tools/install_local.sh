@@ -34,6 +34,27 @@ set -uo pipefail
 
 ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 BUILD_DIR="${1:-build-release}"
+
+# ---- IT REFUSES UNDER A LIVE HOST, AND IT NEVER HAS (25 Oct 2026) ---------------------------
+# quick.sh checked `pgrep -x "Logic Pro"` before calling this; THIS script, which is what every
+# other road and every hand-typed install uses, checked nothing at all. On the evening of 25 Oct
+# Logic was closed and PRO TOOLS was open with his session and EchoJay in it, so an install would
+# have copied new bundles straight over binaries a live host held open - the exact state behind the
+# "fix that did not work" hunt this file's own header describes. One test, in the one place every
+# road passes through. EJ_INSTALL_ANYWAY=1 is for a deliberate override and says so in the log.
+EJ_LIVE_HOSTS="Pro Tools|Logic Pro|Ableton Live|Cubase|REAPER|AUHostingService|AAXHostService|AAEHostService"
+LIVE_PIDS="$(pgrep -f "$EJ_LIVE_HOSTS" 2>/dev/null | tr '\n' ' ')"
+if [[ -n "$LIVE_PIDS" && "${EJ_INSTALL_ANYWAY:-0}" != "1" ]]; then
+    echo "REFUSED: a live plugin host is running (pid(s) $LIVE_PIDS)."
+    echo "         Installing now would overwrite bundles it holds open, and the host would keep"
+    echo "         the old binary - which is the stale-binary hunt this script's header is about."
+    echo "         Close the host and run it again, or EJ_INSTALL_ANYWAY=1 to override deliberately."
+    exit 2
+fi
+if [[ -n "$LIVE_PIDS" ]]; then
+    echo "NOTE: a live plugin host is running (pid(s) $LIVE_PIDS) and EJ_INSTALL_ANYWAY=1 was set -"
+    echo "      installing anyway, deliberately. Verify the running binary by its UUID afterwards."
+fi
 [[ "$BUILD_DIR" = /* ]] || BUILD_DIR="$ROOT/$BUILD_DIR"
 
 AU_DEST="$HOME/Library/Audio/Plug-Ins/Components"

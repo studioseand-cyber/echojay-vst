@@ -196,7 +196,7 @@ private:
         that, and `attempt` bounds it: one retry, then the honest failure, which is what the card
         showed him before and must still show if the second write is lost too. */
     void confirmValues (const ToolCall& call, const juce::String& applyTo, const juce::var& edits,
-                        juce::String sentence, Done done, int attempt = 0);
+                        juce::String sentence, Done done, int attempt = 0, int readAttempt = 0);
     /** ---- SEAN'S CHECK 5, 15 OCT 2026: SETTINGS CARRIED ON add / replace / build ------------------
         Last night's fix made `set` read its values back. Everything ELSE that carries settings was
         still confirmed by SLOT COUNT alone - so "add MTransient with attack +6 dB" counted one slot,

@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cmath>
 #include "EchoJayFileLog.h"   // 21p item 4: every log line also lands in the plugin's own rolling file
+#include "EJShieldWork.h"   // shieldWorkFor: re-assert only what is wrong (his 17:25 glitch)
 
 // Per-target identity: both plugins compile this file into their own dylib
 // and can coexist in one hosting process. The ObjC class name MUST be unique
@@ -460,7 +461,24 @@ bool NativeClip2_setShield(void* peerHandle, bool on, const char* caption)
         if (f.size.width > 40.0 && f.size.height > 30.0) { want = f; break; }
     }
 
-    if (!shield)
+    // ---- ONLY WHAT IS ACTUALLY WRONG (his 17:25 glitch, 25 Oct 2026) ---------------------
+    //
+    // This block used to set the caption, remove the shield from its superview, add it back on
+    // top and force a redraw on EVERY call - and the panel's timer calls this ten times a second
+    // through attachNative. A sibling view over a hosted AU's NSView leaving and rejoining the
+    // hierarchy at 10 Hz recomposites that whole region, which is what he saw glitching on the
+    // plugin's window and on the slot meters drawn in the same card.
+    //
+    // The decision is echojay::shieldWorkFor, pure and guarded; this only carries it out.
+    NSString* wantCap = (caption != NULL ? [NSString stringWithUTF8String:caption] : @"");
+    const bool isTopmost = ([[container subviews] lastObject] == shield);
+    const echojay::ShieldWork work =
+        echojay::shieldWorkFor (/*on*/ true,
+                                /*exists*/ shield != nil,
+                                /*frameMatches*/ shield != nil && NSEqualRects ([shield frame], want),
+                                /*captionMatches*/ shield != nil && [[shield caption] isEqualToString: wantCap],
+                                isTopmost);
+    if (work.create)
     {
         shield = [[ECHOJAY_SHIELD_CLASS alloc] initWithFrame:want];
         [shield setAutoresizingMask:NSViewNotSizable];
@@ -468,14 +486,17 @@ bool NativeClip2_setShield(void* peerHandle, bool on, const char* caption)
         NSLog(@NATIVECLIP_LOG_TAG ": the read-only shield is UP over %@ - the live view takes no "
               @"gestures until control through it is built", NSStringFromRect(want));
     }
-    else if (!NSEqualRects([shield frame], want))
-        [shield setFrame:want];
-
-    [shield setCaption:(caption != NULL ? [NSString stringWithUTF8String:caption] : @"")];
-    // LAST means TOPMOST: a re-attach may have added the plugin's view after ours.
-    [shield removeFromSuperview];
-    [container addSubview:shield positioned:NSWindowAbove relativeTo:nil];
-    [shield setNeedsDisplay:YES];
+    if (work.setFrame)   [shield setFrame:want];
+    if (work.setCaption) [shield setCaption:wantCap];
+    if (work.reorder)
+    {
+        // The case the old comment named, now DETECTED rather than assumed every tick: a re-attach
+        // added the plugin's view after ours, so the shield is no longer last and blocks nothing.
+        [shield removeFromSuperview];
+        [container addSubview:shield positioned:NSWindowAbove relativeTo:nil];
+        NSLog(@NATIVECLIP_LOG_TAG ": the shield was no longer topmost (a re-attach) - put back on top");
+    }
+    if (work.redraw) [shield setNeedsDisplay:YES];
     return true;
 }
 

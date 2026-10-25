@@ -4682,6 +4682,12 @@ bool EchoJayProcessor::agentRunHoldsRack (const juce::String& uid) const
     return agentHome_->runNeedsItsRack() && agentHome_->runTargetUid() == uid;
 }
 
+bool EchoJayProcessor::agentRunIsWorkingOnRack (const juce::String& uid) const
+{
+    if (uid.isEmpty() || agentHome_ == nullptr) return false;
+    return agentHome_->runIsWorking() && agentHome_->runTargetUid() == uid;
+}
+
 /** ---- CONTROL, STAGE C2: A KNOB ON THE COPY REACHES THE REAL PLUGIN (24 Oct 2026) ---------
     *"turning a knob in the V2's live view changes the real plugin on the Link at once (I hear it,
      the Link keeps it) ... gestures framed so a drag is one change."*
@@ -4850,7 +4856,11 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
     const float fromLink = shadowView_.lastAppliedFromLink (index);
     if (fromLink >= 0.0f && std::abs (fromLink - newValue) <= echojay::kShadowValEps) return;
 
-    const auto policy = echojay::liveControlPolicy (shadowFollowing(), agentRunHoldsRack (shadowView_.uid()));
+    // A STOPPED RUN TAKES NO KNOBS AWAY (his 17:25, 25 Oct 2026): the gate asks whether a run is
+    // WORKING, not whether one may still undo. The hold for Undo all is a different question and
+    // agentRunHoldsRack still answers it.
+    const auto policy = echojay::liveControlPolicy (shadowFollowing(),
+                                                    agentRunIsWorkingOnRack (shadowView_.uid()));
     if (! policy.allow)
     {
         if (liveControlRefusal_ != policy.line)

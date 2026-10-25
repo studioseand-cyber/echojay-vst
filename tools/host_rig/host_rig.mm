@@ -9089,13 +9089,16 @@ int main (int argc, char* argv[])
         // NO rows at that moment, so "the old card is not here" was true of an empty list - a claim
         // that passes whatever the product does. The second check caught it, which is what it is
         // for; the cure is a GROUND, waited for with a bound, before anything is concluded.
-        const bool newChatDrawn = rig.until ([] (const juce::var& s)
+        // The state the WAIT was satisfied by is kept, so the checks can say whether they are
+        // reading the same window's snapshot (see below) rather than assuming it.
+        juce::var drawnState;
+        const bool newChatDrawn = rig.until ([&drawnState] (const juce::var& s)
         {
             if (auto* rows = s.getProperty ("onScreen", juce::var()).getArray())
                 for (const auto& r : *rows)
                     if (r.getProperty ("role", juce::var()).toString() == "user"
                         && r.getProperty ("text", juce::var()).toString().contains ("brand new chat"))
-                        return true;
+                    { drawnState = s; return true; }
             return false;
         }, 20000);
         rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
@@ -9116,6 +9119,22 @@ int main (int argc, char* argv[])
                 if (r.getProperty ("role", juce::var()).toString() == "user"
                     && r.getProperty ("text", juce::var()).toString().contains ("brand new chat"))
                     stillDrawn = true;
+        // ---- AND WHICH WINDOW EACH SNAPSHOT CAME FROM (25 Oct 2026) -------------------------
+        //
+        // The 25 Oct run read "his message WAS drawn ... and was gone again by the snapshot these
+        // checks read (onScreen rows now: 0, user rows 0, cards 0)" - and the product's log carries
+        // NO clear-site line for that window (every chatMessages.clear() has been instrumented
+        // since 11 Aug) and no editor was built or destroyed around it. Two editors WERE alive in
+        // that run (window #1 and window #11), the published state has carried `editorId` all
+        // along, and nothing has ever compared it between two reads.
+        //
+        // So before anything is concluded about a disappearing row: say whether the two snapshots
+        // came from the SAME window. If they did not, "drawn then gone" is two windows taking turns
+        // at one state file and the product never lost anything - and that is a different fault
+        // with a different fix. A row that cannot tell those apart should not name either.
+        const auto drawnEditor = juce::String ((juce::int64) (double) drawnState.getProperty ("editorId", 0.0));
+        const auto checkEditor = juce::String ((juce::int64) (double) Rig::state().getProperty ("editorId", 0.0));
+        const bool sameWindow  = (drawnEditor == checkEditor);
         // Is the OLD run's card being drawn in this new chat?
         bool oldCardHere = false; int cards = 0, userRows = 0, firstCardAt = -1, firstUserAt = -1, i = 0;
         if (auto* rows = Rig::state().getProperty ("onScreen", juce::var()).getArray())
@@ -9151,9 +9170,18 @@ int main (int argc, char* argv[])
             skip ("B6: a superseded run's card does not follow him into a new chat",
                   "his message WAS drawn in the new chat and was gone again by the snapshot these "
                   "checks read (onScreen rows now: " + juce::String (i) + ", user rows "
-                  + juce::String (userRows) + ", cards " + juce::String (cards) + "). That is a "
-                    "disappearing-row fault and not an ordering one, and this row will not report it "
-                    "as the second. It is the next thing to chase on this road.");
+                  + juce::String (userRows) + ", cards " + juce::String (cards) + "). The window "
+                    "that drew it published as editor " + drawnEditor + "; the snapshot these checks "
+                    "read came from editor " + checkEditor + " - "
+                  + (sameWindow ? juce::String ("the SAME window, so the row really did leave that "
+                                                "window's list: a disappearing-row fault, and the "
+                                                "product's own clear-site instrumentation should name "
+                                                "the site that emptied it.")
+                                : juce::String ("a DIFFERENT window, so nothing disappeared: two "
+                                                "editors are taking turns at one state file and this "
+                                                "row read one window's list against another's. The "
+                                                "fault is the state's ownership, not the chat."))
+                  + " Either way this row will not report it as an ordering fault.");
         else
         {
             check (! oldCardHere,
