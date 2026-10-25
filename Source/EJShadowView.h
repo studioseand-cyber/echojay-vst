@@ -364,12 +364,13 @@ public:
         which is exactly what a new view should do.
 
         Returns how many parameters moved, or -1 when there is no copy to write to. */
-    int followApply (const float* values, int count)
+    int followApply (const float* values, int count,
+                     const std::function<bool(int)>& heldByGesture = {})
     {
         const juce::SpinLock::ScopedLockType sl (lock_);
         if (inst_ == nullptr) return -1;
         const PluginCallWindow noRenderWhileWeAreInHere;
-        return echojay::shadowApplyChangedValues (*inst_, values, count, lastApplied_);
+        return echojay::shadowApplyChangedValues (*inst_, values, count, lastApplied_, heldByGesture);
     }
 
     /** ---- CONTROL (stage C2): LISTEN TO THE COPY'S OWN PARAMETERS ------------------------

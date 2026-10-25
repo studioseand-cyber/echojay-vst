@@ -20167,12 +20167,29 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
             // A row that names its own chat has a home; it goes there, and only then is the list
             // cleared. The store ignores a card it already holds (matched by the run's id), so this
             // cannot double anything.
-            int homed = 0;
+            // ---- AND A PLAIN MESSAGE HAS A HOME TOO (his item 3, 26 Oct 2026) ----------
+            //
+            // The 22 Oct fix above is right and its sentence is the rule: "a row that names its own
+            // chat has a home; it goes there, and only then is the list cleared". It was only ever
+            // applied to a row with agentJson. A row WITHOUT one - his own typed words, or an
+            // assistant line, in a chat the store had not caught up with - was counted in "dropped
+            // N unsynced row(s)" and deleted. That is the shape of the message he has watched
+            // disappear twice, and the asymmetry had no reason behind it: the same test, the same
+            // home, the same refusal to invent a chat.
+            int homed = 0, homedProse = 0;
             for (const auto& m : processorRef.chatHistory)
-                if (m.agentJson.isNotEmpty() && m.chatId.isNotEmpty() && m.chatId != chatId)
+                switch (echojay::rowHomeFor (m.chatId.isNotEmpty(), m.chatId == chatId,
+                                             m.agentJson.isNotEmpty(), m.content.isNotEmpty()))
                 {
-                    processorRef.storeAgentCard (m.chatId, m.entryId, m.agentJson, m.content);
-                    ++homed;
+                    case echojay::RowHome::card:
+                        processorRef.storeAgentCard (m.chatId, m.entryId, m.agentJson, m.content);
+                        ++homed; break;
+                    case echojay::RowHome::message:
+                        processorRef.storeChatMessage (m.chatId, m.role, m.content);
+                        ++homedProse; break;
+                    case echojay::RowHome::keep:
+                    case echojay::RowHome::nowhere:
+                    default: break;
                 }
             EchoJay_NSLog (("EJStores: dropped " + juce::String ((int) processorRef.chatHistory.size())
                             + " unsynced row(s) that belong to chat "
@@ -20182,6 +20199,10 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                             + (homed > 0 ? juce::String ("; ") + juce::String (homed)
                                              + " run card(s) were written to their OWN chat's stored "
                                                "log first, so nothing is lost (his 09:24 fault)"
+                                         : juce::String())
+                            + (homedProse > 0 ? juce::String ("; ") + juce::String (homedProse)
+                                             + " plain message(s) likewise, which until tonight were "
+                                               "dropped with no home at all (his item 3, 26 Oct)"
                                          : juce::String())).toRawUTF8());
         }
 

@@ -2859,6 +2859,12 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
     auto st = std::static_pointer_cast<EditSeqState>(stateErased);
     if (st->idx >= st->ops.size())
     {
+        // THE SHAPE IS SETTLED HERE AND NOWHERE EARLIER (his item 4, 26 Oct 2026): every add, move
+        // and remove in this batch has run, so "the last slot in the chain" finally means what the
+        // ruling means by it.
+        if (const int put = reconcileFinalLimiterCeiling(); put > 0)
+            EchoJay_NSLog (("EJDial: " + juce::String (put) + " limiter ceiling(s) reconciled now the "
+                            "chain's shape is final").toRawUTF8());
         if (st->onDone) st->onDone(st->results, st->applied, false);
         return;
     }
@@ -3627,6 +3633,43 @@ bool ChainHost::slotControlConfirmedBySemantic (int slotIndex, const juce::Strin
     const auto label = echojay::semanticLabel (semantic);
     if (label.isEmpty()) return false;
     return slots_[(size_t) slotIndex].dialApplied.contains (label);
+}
+
+/** ---- THE FINAL-LIMITER CEILING, RECONCILED ON A SETTLED CHAIN (his item 4, 26 Oct 2026) ----
+    B's note of 25 Oct: *"input_db and true_peak landed, but ceiling_db read back -0.1, the device
+    default"* on a chain with two limiters, the EchoJay Limiter being the first of them.
+
+    The hold itself is right and Sean's ruling stands - the chain's LAST limiter sits at -0.1 dBTP.
+    What was wrong is WHEN it was decided: per add, against the chain as it stood, so a limiter that
+    was last only until the next add was treated as the final one for ever. B's note says this could
+    not show before the two-limiter shape of 24 Oct, because every add until then asked for -0.1
+    anyway - which is exactly the signature of a rule that was never about the asked value. */
+int ChainHost::reconcileFinalLimiterCeiling()
+{
+    const int n = (int) slots_.size();
+    int fixed = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        auto& sl = slots_[(size_t) i];
+        const bool limiterLike = isLimiterLikeName (sl.desc.name);
+        const float want = ceilingForLimiterSlot (limiterLike, i == n - 1, sl.askedCeilingDb);
+        if (want != want) continue;                       // nothing to assert for this slot
+        auto* dev = dynamic_cast<EedDeviceProcessor*> (getSlotProcessor (i));
+        if (dev == nullptr || ! dev->knowsParam (EedLimiterProcessor::kCeilingDb)) continue;
+        const float has = (float) dev->getParamValue (EedLimiterProcessor::kCeilingDb);
+        if (std::abs (has - want) <= 1.0e-4f) continue;
+        dev->setParamValue (EedLimiterProcessor::kCeilingDb, (double) want);
+        ++fixed;
+        EchoJay_NSLog (("EJDial: the chain has settled, so slot " + juce::String (i + 1) + " (\""
+                        + sl.desc.name + "\") takes ceiling " + juce::String (want, 2) + " dBTP"
+                        + (i == n - 1 ? " - it IS the last slot, so the ruling is held"
+                                      : " - it is NO LONGER the last slot, so the ceiling the block "
+                                        "asked for is given back (his item 4, 26 Oct: it was held at "
+                                        + juce::String (kFinalCeilingDb, 1) + " while it was "
+                                        "momentarily last during the build)")
+                        + ". It was reading " + juce::String (has, 2) + ".").toRawUTF8());
+    }
+    return fixed;
 }
 
 bool ChainHost::slotParamValue (int slotIndex, const juce::String& paramId, double& out) const
@@ -5985,6 +6028,13 @@ juce::String ChainHost::applyStructuredToBuiltinSlot(int slotIndex, const juce::
                         auto* newRoot = new juce::DynamicObject (*root);
                         newRoot->setProperty("params", juce::var (newParams));
                         toApply = juce::var (newRoot);
+                        // ...AND THE ASKED FIGURE IS REMEMBERED, not only logged (his item 4, 26 Oct
+                        // 2026). "Last in the chain" was read against the chain AS IT STOOD, so the
+                        // FIRST of two limiters - last for the moment it was added - had its ceiling
+                        // taken from -1 to -0.1 and nothing ever put it back when the second arrived.
+                        // reconcileFinalLimiterCeiling() below is what puts it back, and it needs the
+                        // number.
+                        slots_[(size_t) slotIndex].askedCeilingDb = (float) asked;
                         EchoJay_NSLog(("EJDial: FINAL LIMITER CEILING HELD at "
                                        + juce::String(kFinalCeilingDb, 1) + " dBTP on \""
                                        + slots_[(size_t) slotIndex].desc.name + "\" (slot "

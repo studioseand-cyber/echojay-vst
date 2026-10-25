@@ -1,0 +1,8 @@
+scenario RP3
+captured 2026-10-25T01:30:12.957+01:00
+  [user] Add a compressor  [rig-replay:rp_cp_3]
+  [assistant] replay complete
+  run row: status=Done changes=0 steps=1 zones=[11:1 step]
+  opening: replay complete
+  closing: replay complete
+    step "Which compressor do you want on the kick?" [done] right="" detail="" chips=[]

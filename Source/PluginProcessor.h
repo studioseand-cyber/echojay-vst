@@ -691,10 +691,26 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         bool   framedByPlugin = false;  // the plugin told us it began; we must not close it early
     };
     std::map<int, LiveGesture> liveGestures_;
+    // ---- WHAT HIS HAND HAS JUST LEFT (his overnight item 1a, 26 Oct 2026) ------------------
+    // parameter index -> the clock when its gesture ended. FOLLOW holds off that one parameter
+    // until kFollowSettleMs has passed, because frames composed before his last value left are
+    // still arriving and applying one of them writes the knob backwards. The reasoning is in
+    // EJLiveControl.h beside the decision (echojay::followMayWriteParam).
+    std::map<int, double> liveGestureEndedMs_;
+    /** TRUE while FOLLOW must not write this parameter into the copy. Message thread only. */
+    bool followHeldForParam (int index) const;
     int  liveControlApplying_ = 0;    // >0 while FOLLOW is writing: the listener ignores its own echo
     int  liveControlSent_ = 0;
     bool saidControlSent_ = false;
     juce::String liveControlRefusal_;
+    // ---- HOW MANY MOVES A STANDING REFUSAL HAS SWALLOWED (his item 2, 26 Oct 2026) ----------
+    // The refusal is said ONCE per distinct reason, which is right - it must not spam - but it
+    // meant that after the first line every further gesture was refused in silence. On 25 Oct he
+    // turned two knobs to settle the Vac Attack's index question, both were refused by a shield
+    // that should already have cleared, and the log held nothing about either: the test could not
+    // run and left no trace that it had been tried.
+    int  liveControlRefusedCount_ = 0;
+    void sayLiveControlRefusalEnded();
     std::unique_ptr<juce::AudioProcessorListener> liveControlListener_;
     void liveControlEndGesture (int index, const char* why);
     // ---- WHERE THE NEWER STATE LIVES, RECORDED AS A FACT (his 25 Oct rule) --------------------
@@ -1698,6 +1714,15 @@ public:
     juce::String storedAgentCardJson (const juce::String& chatId, const juce::String& entryId) const;
     void storeAgentCard (const juce::String& chatId, const juce::String& entryId,
                          const juce::String& agentJson, const juce::String& content);
+    /** ---- AND A PLAIN MESSAGE HAS A HOME TOO (his item 3, 26 Oct 2026) --------------------
+        The 22 Oct fix gave a dropped run CARD a home before the replay list is cleared on a chat
+        switch - "a row that names its own chat has a home; it goes there, and only then is the list
+        cleared". A row with no agentJson got no such thing: it was counted in "dropped N unsynced
+        row(s)" and gone. That is a user's own words, written in a chat that had not synced yet,
+        deleted by a switch - the shape of "the agent's message disappeared" he has reported twice.
+        Same rules as the card road: never invents a chat, and does nothing without an id. */
+    void storeChatMessage (const juce::String& chatId, const juce::String& role,
+                           const juce::String& content);
     void stampChatEntry (ChatEntry& e, const juce::String& chatId, const juce::String& runKey = {});
     /** ---- STAGE B: ONE DOOR INTO THE PROCESSOR'S LIST (his chat-log ruling) ----------------
         Every write to chatHistory goes through one of these two, so an entry cannot reach the list

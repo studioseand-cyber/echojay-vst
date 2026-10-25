@@ -54,6 +54,7 @@
 //  exists the honest statement is that this mirror follows PARAMETERS. It is not a claim to follow
 //  everything.
 #include <JuceHeader.h>
+#include <functional>
 #include "LinkShm.h"
 #include <cstring>
 #include <cmath>
@@ -227,8 +228,17 @@ inline ShadowMirrorDecision shadowMirrorDecision (bool frameRead,
 inline constexpr float kShadowValNever = -1.0f;      // "nothing has been applied here yet"
 inline constexpr float kShadowValEps   = 1.0e-4f;    // below a knob's own resolution
 
+/** `heldByGesture` - asked per parameter: TRUE means his hand is on that knob (or has just left
+    it) and FOLLOW must not write it. Null means nothing is held, which is every caller that has no
+    gesture to speak of. The decision itself is echojay::followMayWriteParam; this only obeys it.
+
+    A HELD PARAMETER IS SKIPPED, AND ITS `lastApplied` IS LEFT ALONE. Those two go together: if the
+    hold wrote the frame's value into lastApplied without applying it, the first frame after the
+    settle would see "no change" and the knob would stay where his hand left it even after the Link
+    had moved on. Skipping both keeps the Link the authority the moment the hold lifts. */
 inline int shadowApplyChangedValues (juce::AudioProcessor& copy, const float* values, int count,
-                                     std::vector<float>& lastApplied)
+                                     std::vector<float>& lastApplied,
+                                     const std::function<bool(int)>& heldByGesture = {})
 {
     const auto& params = copy.getParameters();
     const int n = juce::jmin (count, params.size());
@@ -238,6 +248,7 @@ inline int shadowApplyChangedValues (juce::AudioProcessor& copy, const float* va
     int moved = 0;
     for (int i = 0; i < n; ++i)
     {
+        if (heldByGesture && heldByGesture (i)) continue;
         const float want = juce::jlimit (0.0f, 1.0f, values[i]);
         const float had  = lastApplied[(size_t) i];
         // AGAINST WHAT WE LAST APPLIED, never against the copy's current value: a plugin that

@@ -508,6 +508,21 @@ bool EchoJayWorkspace::updateAgentCardById (const juce::String& chatId, const ju
     return false;
 }
 
+bool EchoJayWorkspace::chatHoldsMessage (const juce::String& chatId, const juce::String& role,
+                                        const juce::String& content) const
+{
+    if (chatId.isEmpty() || content.isEmpty()) return false;
+    for (const auto& c : chats)
+    {
+        if (c.id != chatId) continue;
+        for (const auto& m : c.messages)
+            if (m.role == role && m.content == content)
+                return true;
+        return false;                   // the chat was found and does not hold it
+    }
+    return false;                       // no such chat here
+}
+
 void EchoJayWorkspace::updateAssistantAgentJson (const juce::String& chatId,
                                                  const juce::String& matchContent,
                                                  const juce::String& agentJson)

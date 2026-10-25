@@ -75,6 +75,7 @@
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
 #include "EJShadowChannels.h"   // the FIX's own rule, so the leg and the product share one author
+#include "EJShadowValues.h"     // the drag leg: shadowApplyChangedValues, the product's own apply loop
 #include "LinkShm.h"            // the control leg asks the PRODUCT's own commit rule, not a copy of it
 #include <atomic>
 #include <cstdio>
@@ -569,6 +570,127 @@ int runFollowParamsLeg (const juce::String& leg, juce::AudioPluginFormatManager&
     The commit decision is not modelled here: the leg calls the product's own
     LinkShm::BorrowCommit::classify, so a leg that passes while the shipped rule changes is not
     possible. The old rule is called with its own old arguments, which is the known-bad direction. */
+// ---- THE DRAG: A SMOOTH, ONE-DIRECTION SEQUENCE IN THE COPY (his item 1a, 26 Oct 2026) -----
+//
+//  *"turning a knob by hand isn't smooth, it jumps."*  And his own reading: the gesture goes to the
+//  Link, the Link republishes at 30 Hz, and the 20 Hz follow tick writes the Link's slightly older
+//  value back into the copy mid-drag.
+//
+//  This drives that exact race on two LIVE, RENDERING instances of a non-PACE AU. V is the copy his
+//  hand is on; L is the plugin on the Link. Each step of the drag moves V and sends the value to L,
+//  as the ring does; between steps a FOLLOW tick applies L's value AS PUBLISHED TWO FRAMES AGO back
+//  into V, which is what the real 30 Hz publish against a 20 Hz read amounts to.
+//
+//  Run twice on the same inputs: once with the product's hold (echojay::followMayWriteParam through
+//  shadowApplyChangedValues' heldByGesture) and once without it. The verdict is the SHAPE of the
+//  copy's value sequence - monotonic with the hold, and stepping backwards without it. The second
+//  half is the known-bad, so this leg cannot pass by accident.
+int runDragLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
+                const juce::PluginDescription& d, int seconds)
+{
+    juce::ignoreUnused (seconds);
+    auto L = makeOne (fm, d, leg, "L: the plugin on the Link (the one he hears)");
+    if (L == nullptr) return 3;
+    auto V = makeOne (fm, d, leg, "V: the V2's live-view copy (the one his hand is on)");
+    if (V == nullptr) return 3;
+    L->prepareToPlay (kRate, kBlock);
+    V->prepareToPlay (kRate, kBlock);
+    auto& pL = L->getParameters();
+    auto& pV = V->getParameters();
+    if (pL.isEmpty() || pV.isEmpty()) { say (leg, "REFUSED: this plugin reports no parameters"); return 3; }
+    int which = -1;
+    for (int i = 0; i < pV.size(); ++i)
+        if (pV[i]->getName (64).isNotEmpty()) { which = i; break; }
+    say (leg, juce::String (pV.size()) + " parameter(s); dragging " + juce::String (which) + " \""
+            + pV[which]->getName (64) + "\"");
+
+    const int chL = juce::jmax (2, L->getTotalNumInputChannels(), L->getTotalNumOutputChannels());
+    const int chV = juce::jmax (2, V->getTotalNumInputChannels(), V->getTotalNumOutputChannels());
+    Renderer rL (*L, leg, chL, kBlock, 0, nullptr,
+                 echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*L)));
+    Renderer rV (*V, leg, chV, kBlock, 0, nullptr,
+                 echojay::selfKeyCopyPlan (echojay::shadowInputBusesOf (*V)));
+    rL.startThread (juce::Thread::Priority::highest);
+    rV.startThread (juce::Thread::Priority::highest);
+    say (leg, "both instances are RENDERING - the drag below happens on live plugins");
+
+    auto settle = [&] (int ms)
+    {
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        while (juce::Time::getMillisecondCounterHiRes() - t0 < (double) ms)
+        { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }
+    };
+
+    // ONE DRAG, MODELLED ONCE AND RUN TWICE. 40 steps from 0.05 to 0.95, a follow tick after every
+    // step, and the frame it carries is the Link's value from two publishes ago.
+    auto oneRun = [&] (bool withHold, std::vector<float>& seen) -> void
+    {
+        pV[which]->setValueNotifyingHost (0.05f);
+        pL[which]->setValueNotifyingHost (0.05f);
+        settle (120);
+        std::vector<float> lastApplied;
+        std::vector<float> lag;                       // the Link's published history
+        seen.clear();
+        for (int step = 0; step < 40; ++step)
+        {
+            const float hand = 0.05f + 0.90f * ((float) step / 39.0f);
+            pV[which]->setValueNotifyingHost (hand);              // his hand, on the copy
+            pL[which]->setValueNotifyingHost (hand);              // ...over the ring, to the Link
+            settle (12);
+            lag.push_back (pL[which]->getValue());                // the Link publishes
+            // THE FOLLOW TICK, carrying a frame composed two publishes ago.
+            const int from = juce::jmax (0, (int) lag.size() - 3);
+            std::vector<float> frame ((size_t) pV.size(), 0.0f);
+            for (int i = 0; i < pV.size(); ++i) frame[(size_t) i] = pV[i]->getValue();
+            frame[(size_t) which] = lag[(size_t) from];
+            if (withHold)
+                echojay::shadowApplyChangedValues (*V, frame.data(), (int) frame.size(), lastApplied,
+                                                   [which] (int i) { return i == which; });
+            else
+                echojay::shadowApplyChangedValues (*V, frame.data(), (int) frame.size(), lastApplied);
+            settle (6);
+            seen.push_back (pV[which]->getValue());
+        }
+    };
+
+    std::vector<float> withHold, without;
+    say (leg, "---- the drag WITH the product's hold ----");
+    oneRun (true, withHold);
+    say (leg, "---- the same drag WITHOUT it (the known-bad) ----");
+    oneRun (false, without);
+
+    auto backsteps = [] (const std::vector<float>& v)
+    {
+        int n = 0;
+        for (size_t i = 1; i < v.size(); ++i) if (v[i] < v[i - 1] - 1.0e-4f) ++n;
+        return n;
+    };
+    auto span = [] (const std::vector<float>& v)
+    { return v.empty() ? 0.0f : v.back() - v.front(); };
+
+    const int backHold = backsteps (withHold), backNone = backsteps (without);
+    int passes = 0, legs = 0;
+    auto one = [&] (bool ok, const juce::String& what, const juce::String& detail)
+    { ++legs; if (ok) ++passes; say (leg, juce::String (ok ? "PASS" : "FAIL") + ": " + what + "  [" + detail + "]"); };
+
+    one (backHold == 0,
+         "with the hold, the copy's value sequence NEVER steps backwards during the drag - which is "
+         "what \"smooth\" is, measured rather than felt",
+         juce::String (backHold) + " backward step(s) in " + juce::String ((int) withHold.size()));
+    one (span (withHold) > 0.5f,
+         "...and it actually travelled, so the hold is not just freezing the knob",
+         "span " + juce::String (span (withHold), 3));
+    one (backNone > 0,
+         "WITHOUT the hold the same drag DOES step backwards - the known-bad, so this leg cannot "
+         "pass by accident and his \"it jumps\" is reproduced here rather than argued about",
+         juce::String (backNone) + " backward step(s) in " + juce::String ((int) without.size()));
+
+    rL.signalThreadShouldExit(); rV.signalThreadShouldExit();
+    rL.waitForThreadToExit (4000); rV.waitForThreadToExit (4000);
+    say (leg, "==== " + juce::String (passes) + "/" + juce::String (legs) + " ====");
+    return passes == legs ? 0 : 1;
+}
+
 int runControlLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
                    const juce::PluginDescription& d, int seconds)
 {
@@ -814,6 +936,7 @@ int main (int argc, char** argv)
     if (leg == "persist") return runPersistLeg (leg, fm, d, seconds);
     // 25 Oct: control, end to end, through the product's own commit rule. Unsupervised too.
     if (leg == "control") return runControlLeg (leg, fm, d, seconds);
+    if (leg == "drag")    return runDragLeg (leg, fm, d, seconds);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;

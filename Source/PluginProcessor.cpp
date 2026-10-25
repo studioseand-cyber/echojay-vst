@@ -4654,7 +4654,10 @@ void EchoJayProcessor::shadowFollowTick()
     // this is up; the value test in liveControlParamChanged catches the stragglers that some
     // plugins report a moment later.
     ++liveControlApplying_;
-    const int moved = shadowView_.followApply (shadowValRead_.data(), count);
+    // FOLLOW NEVER FIGHTS A GESTURE (his item 1a): the parameter his hand is on - or has just left
+    // - is skipped, and every other one still follows the Link on this very frame.
+    const int moved = shadowView_.followApply (shadowValRead_.data(), count,
+                                               [this] (int i) { return followHeldForParam (i); });
     --liveControlApplying_;
     if (moved > 0) shadowFollowWrites_ += moved;
     shadowFollowNote_.clear();
@@ -4865,13 +4868,25 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
     {
         if (liveControlRefusal_ != policy.line)
         {
+            sayLiveControlRefusalEnded();        // the previous reason's tally, if there was one
             liveControlRefusal_ = policy.line;
+            liveControlRefusedCount_ = 0;
             EchoJay_NSLog (("EJControl: a move on the live view was NOT sent - " + policy.line
                             + ". It is refused with a reason rather than dropped, which is the "
                               "fault he reported this morning").toRawUTF8());
         }
+        ++liveControlRefusedCount_;
+        // A STANDING REFUSAL SAYS HOW MANY IT HAS SWALLOWED (his item 2). Not every one - that is
+        // the spam the once-per-reason rule exists to stop - but at the powers of ten, so a log
+        // read afterwards can tell "he tried once" from "he sat there turning it".
+        if (liveControlRefusedCount_ == 10 || liveControlRefusedCount_ == 100
+            || liveControlRefusedCount_ == 1000)
+            EchoJay_NSLog (("EJControl: " + juce::String (liveControlRefusedCount_)
+                            + " moves on the live view have now been refused for the same reason - "
+                            + liveControlRefusal_).toRawUTF8());
         return;
     }
+    sayLiveControlRefusalEnded();
     liveControlRefusal_.clear();
 
     const auto uid  = shadowView_.uid();
@@ -4931,6 +4946,30 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
 /** The plugin's OWN gesture boundaries, when it reports them. A plugin that frames its gestures is
     believed: its end closes the gesture at once, and the inferred quiet-period close never runs for
     it. Most plugins report neither, which is what shadowControlTick is for. */
+/** The tally, said when the refusal lifts or changes - which is the moment it becomes a fact about
+    something that is over, and the moment it is most useful to read. Says nothing when nothing was
+    refused, so an ordinary view never mentions it. */
+void EchoJayProcessor::sayLiveControlRefusalEnded()
+{
+    if (liveControlRefusal_.isEmpty() || liveControlRefusedCount_ <= 0) return;
+    EchoJay_NSLog (("EJControl: that refusal is over - " + juce::String (liveControlRefusedCount_)
+                    + " move(s) on the live view were refused while it stood (\""
+                    + liveControlRefusal_ + "\"). His item 2 of 26 Oct: a standing refusal says how "
+                      "many it swallowed, because on 25 Oct two gestures vanished without a trace "
+                      "and the test he was running could not be told apart from one never tried.")
+                   .toRawUTF8());
+    liveControlRefusedCount_ = 0;
+}
+
+bool EchoJayProcessor::followHeldForParam (int index) const
+{
+    const bool inProgress = liveGestures_.find (index) != liveGestures_.end();
+    double sinceEnded = -1.0;
+    if (const auto it = liveGestureEndedMs_.find (index); it != liveGestureEndedMs_.end())
+        sinceEnded = juce::Time::getMillisecondCounterHiRes() - it->second;
+    return ! echojay::followMayWriteParam (inProgress, sinceEnded);
+}
+
 void EchoJayProcessor::liveControlGesture (int index, bool starting)
 {
     if (! juce::MessageManager::existsAndIsCurrentThread())
@@ -4960,6 +4999,9 @@ void EchoJayProcessor::liveControlEndGesture (int index, const char* why)
     if (it == liveGestures_.end()) return;
     const auto g = it->second;
     liveGestures_.erase (it);
+    // THE HOLD OUTLIVES THE GESTURE, and it is stamped whether or not the gesture ever sent
+    // anything: frames composed before his last value left are still in flight either way.
+    liveGestureEndedMs_[index] = juce::Time::getMillisecondCounterHiRes();
     if (g.id == 0) return;
 
     const auto uid  = shadowView_.uid();
@@ -8195,6 +8237,25 @@ void EchoJayProcessor::storeAgentCard (const juce::String& chatId, const juce::S
     EchoJay_NSLog (("EJChatLog: the run's card was appended to the STORED log of chat " + chatId
                     + " at the stamp, with no window involved (his 09:24 fault, 22 Oct) - id "
                     + (entryId.isNotEmpty() ? entryId : juce::String ("(none)"))).toRawUTF8());
+}
+
+void EchoJayProcessor::storeChatMessage (const juce::String& chatId, const juce::String& role,
+                                        const juce::String& content)
+{
+    if (chatId.isEmpty() || content.isEmpty()) return;
+    // NEVER CREATE A CHAT HERE, for the reason the card road gives: appendMessageToChat invents one
+    // for an id it does not know, and an invented chat has no project and no channel.
+    if (workspace.findChatById (chatId) == nullptr) return;
+    // AND NEVER DOUBLE ONE. The store is the authority and may already hold this row - the send
+    // syncs the user's words as they are taken (item 5, 14 Oct) - so an identical last message in
+    // that chat means this row is already home.
+    if (workspace.chatHoldsMessage (chatId, role, content)) return;
+    workspace.appendMessageToChat (chatId, role, content);
+    EchoJay_NSLog (("EJChatLog: a " + role + " row was written to the STORED log of its OWN chat "
+                    + chatId + " before the replay list was cleared - his item 3 of 26 Oct: a card "
+                      "has had a home since 22 Oct and a plain message had none, so a switch "
+                      "deleted words he had typed into a chat the store had not caught up with")
+                   .toRawUTF8());
 }
 
 bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)

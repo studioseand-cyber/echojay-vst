@@ -100,6 +100,43 @@ inline LiveControlPolicy liveControlPolicy (bool following, bool runHoldsRack)
     return { true, {} };
 }
 
+// ---- FOLLOW NEVER FIGHTS A GESTURE (his overnight item 1a, 26 Oct 2026) --------------------
+//
+//  Sean: *"the live view is still glitchy: the plugin's window wobbles, and turning a knob by hand
+//  isn't smooth, it jumps."*  And his own reading of it, which is right:
+//
+//      *"follow fighting control: my gesture goes to the Link, the Link republishes at 30 Hz, and
+//       the 20 Hz follow tick writes the Link's slightly older value back into the copy mid-drag.
+//       Rule: while a gesture is in progress on a parameter (begin to end, plus a short settle),
+//       follow never writes that parameter into the copy, and echoes of my own writes are ignored."*
+//
+//  It was true by construction: shadowApplyChangedValues walked every parameter the frame carried
+//  and had no notion of a gesture at all. So a drag went copy -> ring -> Link -> publish -> copy,
+//  and the value that came back was whatever the Link held one or two frames ago. At 20 Hz against
+//  a hand moving continuously that is a write BACKWARDS into the knob he is holding, ten times a
+//  second: the jump he feels, and on some plugins a redraw storm with it.
+//
+//  THE SETTLE IS PART OF THE RULE, not a safety margin. When the gesture ends, frames composed
+//  before the last value left are still in flight; applying one of those is the same backward
+//  write with better timing. The hold therefore outlives the gesture by kFollowSettleMs, after
+//  which the Link is the authority again - which is the design's first rule ("the copy is never the
+//  authority") kept intact, because the hold is per PARAMETER and never stops the other knobs
+//  following.
+static constexpr double kFollowSettleMs = 250.0;
+
+/** May FOLLOW write this parameter into the copy right now?
+
+    `gestureInProgress`      - a gesture on this parameter has begun and not ended.
+    `msSinceGestureEnded`    - how long ago the last one ended; <0 when none ever has.
+    `settleMs`               - kFollowSettleMs, passed so a guard can state it. */
+inline bool followMayWriteParam (bool gestureInProgress, double msSinceGestureEnded,
+                                 double settleMs = kFollowSettleMs)
+{
+    if (gestureInProgress) return false;
+    if (msSinceGestureEnded >= 0.0 && msSinceGestureEnded < settleMs) return false;
+    return true;
+}
+
 /** The standing line for a live view that CAN control. Not a detection of anything: it states what
     travels and where the rest is done. Layer 3 is what turns the second half into a notice. */
 inline const char* liveControlCoversLine() noexcept

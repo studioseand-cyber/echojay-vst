@@ -1,5 +1,6 @@
 #include "EJAgentExecutorDo.h"
 #include "EJReadBackWait.h"   // readBackShouldWaitAgain: "not yet" is not "never" (his 17:25)
+#include "EJMapSuspect.h"     // his item 6: a reduction control that reduces nothing
 #include "EJRefusalLine.h"   // the one refusal composer (20 Oct)
 #include "ChainHost.h"   // check 5 part 2: the plugins that did not load here
 #include "EJParamPlainNames.h"   // Sean, 15 Oct: a line a person reads names parameters in words
@@ -791,11 +792,32 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         }
     }
     const int wantSlots = structuralWantSlots (call, opName);
+    // ---- WHAT THIS SLOT WAS DOING BEFORE THE WRITE (his item 6, approved 25 Oct 2026) --------
+    //
+    // *"a set on a control the map calls reduction or threshold that doesn't change the slot's
+    //  IN/OUT difference means the map or the request is wrong, and the card says so instead of a
+    //  confident success."*
+    //
+    // Taken HERE because "before" has to mean before: once the ops are sent there is no way back to
+    // it. NaN when the slot reports no reading or nothing is playing, and the check then says
+    // nothing at all rather than guessing (echojay::mapVerdictForSet's notChecked).
+    float diffBeforeDb = std::numeric_limits<float>::quiet_NaN();
+    if (opName == "set")
+    {
+        const int slot1 = (int) call.args.getProperty ("slot", -1);
+        const auto rack = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                               : (src_.ownRack  ? src_.ownRack()          : RackRead());
+        if (rack.valid)
+            for (const auto& sl : rack.slots)
+                if (sl.n == slot1 && sl.pictureValid && sl.inLufs > -190.0f && sl.outLufs > -190.0f)
+                    diffBeforeDb = sl.inLufs - sl.outLufs;
+    }
     const auto aliveW   = this->alive();
     // `call` BY VALUE (fix 1(b)): this callback is asynchronous - the ack can arrive after doOp has
     // returned - and `call` is a reference parameter, so capturing it by reference would read a dead
     // ToolCall. A copy is cheap (ids, a name and a var) and cannot dangle.
-    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call, edits]
+    sinks_.applyChainOps (applyTo, edits, [this, aliveW, done, opName, applyTo, wantSlots, call, edits,
+                                           diffBeforeDb]
                           (bool ok, juce::String sentence, juce::String technical)
     {
         if (! ok)
@@ -836,7 +858,7 @@ void ExecutorDo::doOp (const ToolCall& call, Done done)
         //
         // A structural read-back cannot answer a value question. So a `set` is confirmed against the VALUES.
         if (opName == "set")
-        { confirmValues (call, applyTo, edits, sentence, done); return; }
+        { confirmValues (call, applyTo, edits, sentence, done, 0, 0, diffBeforeDb); return; }
         confirmLanded (applyTo, wantSlots, opName, sentence, done, 0, &call);
     });
 }
@@ -871,7 +893,8 @@ static bool isASwitchNotWorthConfessing (const juce::var& asked)
 }
 
 void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyTo,
-                                const juce::var& edits, juce::String sentence, Done done, int attempt, int readAttempt)
+                                const juce::var& edits, juce::String sentence, Done done, int attempt, int readAttempt,
+                                float diffBeforeDb)
 {
     const auto ss = argVar (call, "settings_structured");
     auto* root = ss.getDynamicObject();
@@ -1011,12 +1034,12 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
                             + ") - sending it ONCE more, because a write that lands while the plugin "
                               "is still loading is lost rather than slow (his 11:03 drum bus)").toRawUTF8());
             sinks_.applyChainOps (applyTo, edits,
-                                  [this, aliveR, call, applyTo, edits, sentence, done]
+                                  [this, aliveR, call, applyTo, edits, sentence, done, diffBeforeDb]
                                   (bool ok2, juce::String, juce::String)
             {
                 if (aliveR.expired()) return;
-                if (! ok2) { confirmValues (call, applyTo, edits, sentence, done, 1); return; }
-                confirmValues (call, applyTo, edits, sentence, done, 1);
+                if (! ok2) { confirmValues (call, applyTo, edits, sentence, done, 1, 0, diffBeforeDb); return; }
+                confirmValues (call, applyTo, edits, sentence, done, 1, 0, diffBeforeDb);
             });
             return;
         }
@@ -1074,10 +1097,10 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
                                 + juce::String (kReadRetries * kReadRetryMs) + " ms, because a slot whose map "
                                   "is still being fetched is not a slot that cannot be read (his 17:25)").toRawUTF8());
             juce::Timer::callAfterDelay (kReadRetryMs,
-                [this, aliveR, call, applyTo, edits, sentence, done, attempt, readAttempt]
+                [this, aliveR, call, applyTo, edits, sentence, done, attempt, readAttempt, diffBeforeDb]
                 {
                     if (aliveR.expired()) return;
-                    confirmValues (call, applyTo, edits, sentence, done, attempt, readAttempt + 1);
+                    confirmValues (call, applyTo, edits, sentence, done, attempt, readAttempt + 1, diffBeforeDb);
                 });
             return;
         }
@@ -1089,10 +1112,53 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         return;
     }
     r->setProperty ("confirmed", true);
+    // ---- A READ-BACK IS NOT A RESULT (his item 6, approved 25 Oct 2026) --------------------
+    //
+    // Every layer can be telling the truth about what it DID and nobody be checking whether it was
+    // what was ASKED: on 25 Oct both Reduction controls read back 3.0 and the knobs that moved were
+    // the GAIN knobs. So where the control claims to set compression, the slot's own in-to-out
+    // difference is compared across the write, and a difference that did not move is said out loud.
+    juce::String suspectLine;
+    {
+        float diffAfterDb = std::numeric_limits<float>::quiet_NaN();
+        bool  heard = false;
+        const auto rack2 = applyTo.isNotEmpty() ? (src_.linkRack ? src_.linkRack (applyTo) : RackRead())
+                                                : (src_.ownRack  ? src_.ownRack()          : RackRead());
+        if (rack2.valid)
+            for (const auto& sl : rack2.slots)
+                if (sl.n == slot1 && sl.pictureValid && sl.inLufs > -190.0f && sl.outLufs > -190.0f)
+                { diffAfterDb = sl.inLufs - sl.outLufs; heard = true; }
+        juce::String claimer;
+        for (const auto& id : matchedPlain)
+            if (echojay::controlClaimsReduction (id)) { claimer = id; break; }
+        if (claimer.isEmpty())
+            for (const auto& id : matched)
+                if (echojay::controlClaimsReduction (id)) { claimer = id; break; }
+        const auto verdict = echojay::mapVerdictForSet (claimer.isNotEmpty(), heard,
+                                                        diffBeforeDb == diffBeforeDb,
+                                                        diffAfterDb == diffAfterDb,
+                                                        diffBeforeDb, diffAfterDb);
+        r->setProperty ("map_check", verdict == echojay::MapVerdict::suspect   ? "suspect"
+                                   : verdict == echojay::MapVerdict::consistent ? "consistent"
+                                                                                : "not_checked");
+        if (verdict == echojay::MapVerdict::suspect)
+        {
+            suspectLine = " " + echojay::mapSuspectLine (slotName.isNotEmpty() ? slotName
+                                                                               : juce::String ("that plugin"),
+                                                         claimer, diffBeforeDb, diffAfterDb);
+            EchoJay_NSLog (("EJAgent: MAP OR REQUEST SUSPECT - \"" + claimer + "\" on \"" + slotName
+                            + "\" read back as asked and the slot's in-to-out difference did not move ("
+                            + juce::String (diffBeforeDb, 2) + " -> " + juce::String (diffAfterDb, 2)
+                            + " dB). His item 6 of 26 Oct: that means the map names the wrong knob or "
+                              "the request named the wrong control, and the card says so rather than "
+                              "reporting a confident success.").toRawUTF8());
+        }
+    }
     done (ToolOutcome::successFor (juce::var (r), "set:" + juce::String (juce::Time::currentTimeMillis()),
-                                   "read back: " + matched.joinIntoString (", "),
+                                   "read back: " + matched.joinIntoString (", ") + suspectLine,
                                    "read back "
-                                     + echojay::params::plainReadBackList (matchedPlain)));   // Sean's #6
+                                     + echojay::params::plainReadBackList (matchedPlain)
+                                     + suspectLine));   // Sean's #6
 }
 
 

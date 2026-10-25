@@ -121,6 +121,11 @@ struct CalibLoop
     float  value       = 0.0f;         // the ACTUATOR's current value in dB (the threshold, or the drive)
     float  minDb       = -60.0f;       // the profile's range for the threshold control
     float  maxDb       = 12.0f;
+    // B's `bounds` (25 Oct 2026): true when minDb/maxDb above are the CONTROL'S OWN range in its
+    // own units rather than the dB default. It rides the sidecar so a handover cannot put the
+    // default back, and it is what stops a 0-10 knob being walked in -60..+12 dB.
+    bool         boundsStated = false;
+    juce::String boundsUnit;
     int    slot        = -1;
     // 21t-m item 6c, REPLACED 30 Sep 2026 by letter (n): THE SLOT'S OWN IDENTITY, not the rack revision.
     // chainRevision was the wrong witness. It moves on add, remove AND move - but Sean's 19:03:33 log shows a
@@ -544,6 +549,10 @@ struct CalibLoop
         float  expectedLevelDb = std::numeric_limits<float>::quiet_NaN();
         bool   fromProfile = false;
         float  minDb = -60.0f, maxDb = 12.0f;
+        // B's `bounds` (25 Oct 2026): true when minDb/maxDb above are the CONTROL'S OWN range in
+        // its own units rather than the dB default, so nothing downstream reads them as dB.
+        bool         boundsStated = false;
+        juce::String boundsUnit;
         float  stepDb = kStepDb;          // the block's "step"; 1 dB unless it says otherwise
         // 21t-i re-cut (27 Sep 2026 ruling): WHAT THE SENTENCE QUOTES COMES FROM THE BLOCK.
         //   heardS  the block's own "heard_s" - how much of THIS TRACK the server's figures describe. NaN = absent.
@@ -750,6 +759,76 @@ struct CalibLoop
         Returns a void var when there is nothing to start - no object, no control, no numeric target, or
         no resolved slot - with the reason in `whyOut`, because a dial that does not happen is a thing
         the log has to be able to say. */
+    /** What B's `bounds` says about the controls this dial will actually move.
+
+        One value is written to every named control, so two entries collapse to the INTERSECTION -
+        the range both sides can take. `stated` is false when no named control has an entry, which
+        is the contract's "leave it out when it isn't known" and must keep today's behaviour. */
+    struct DialBounds
+    {
+        bool stated = false;
+        float min = 0.0f, max = 0.0f;
+        juce::String unit;
+        bool fromPair = false;      // one side's range came from its twin
+    };
+
+    /** The twin of a paired control name ("Left Reduction" <-> "Right Reduction"), or empty. The
+        contract's rule 3: *"Else, for one side of a pair (Left / Right, 1 / 2, L / R), its twin's
+        range."*  Only the forms the contract names, and never a guess beyond them. */
+    static juce::String twinControlName (const juce::String& n)
+    {
+        struct P { const char* a; const char* b; };
+        static const P pairs[] = { { "Left", "Right" }, { "left", "right" },
+                                   { "L ", "R " }, { " L", " R" },
+                                   { "1", "2" } };
+        for (const auto& p : pairs)
+        {
+            if (n.contains (p.a)) return n.replaceFirstOccurrenceOf (p.a, p.b);
+            if (n.contains (p.b)) return n.replaceFirstOccurrenceOf (p.b, p.a);
+        }
+        return {};
+    }
+
+    static DialBounds boundsForParams (const juce::var& boundsVar, const juce::StringArray& params)
+    {
+        DialBounds out;
+        auto* bo = boundsVar.getDynamicObject();
+        if (bo == nullptr || params.isEmpty()) return out;
+        auto entryFor = [bo] (const juce::String& name) -> juce::DynamicObject*
+        {
+            if (bo->hasProperty (juce::Identifier (name)))
+                return bo->getProperty (juce::Identifier (name)).getDynamicObject();
+            return nullptr;
+        };
+        for (const auto& raw : params)
+        {
+            const auto name = raw.trim();
+            if (name.isEmpty()) continue;
+            bool viaTwin = false;
+            auto* e = entryFor (name);
+            if (e == nullptr)
+            {
+                const auto twin = twinControlName (name);
+                if (twin.isNotEmpty()) { e = entryFor (twin); viaTwin = (e != nullptr); }
+            }
+            if (e == nullptr) continue;
+            if (! e->hasProperty ("min") || ! e->hasProperty ("max")) continue;
+            const float mn = (float) (double) e->getProperty ("min");
+            const float mx = (float) (double) e->getProperty ("max");
+            const float lo = juce::jmin (mn, mx), hi = juce::jmax (mn, mx);
+            if (! out.stated) { out.stated = true; out.min = lo; out.max = hi; }
+            else { out.min = juce::jmax (out.min, lo); out.max = juce::jmin (out.max, hi); }
+            if (viaTwin) out.fromPair = true;
+            const auto u = e->getProperty ("unit").toString().trim();
+            if (u.isNotEmpty() && out.unit.isEmpty()) out.unit = u;
+        }
+        // AN EMPTY INTERSECTION IS NOT A RANGE. Two controls whose stated ranges do not overlap
+        // cannot both take one value, and clamping into an inverted span would write nonsense -
+        // so the field is treated as unknown, which is the contract's own "never a guessed range".
+        if (out.stated && out.max < out.min) out = DialBounds();
+        return out;
+    }
+
     static juce::var blockFromDialOnPlayback (const juce::var& dial, int addedSlot0, juce::String& whyOut)
     {
         auto* dp = dial.getDynamicObject();
@@ -851,6 +930,10 @@ struct CalibLoop
             blk->setProperty ("controls", cv);
         if (const auto sv = dp->getProperty ("say"); sv.getDynamicObject() != nullptr)
             blk->setProperty ("say", sv);
+        // ...and each control's own range (B's contract of 25 Oct), verbatim: this function
+        // translates, and a field that needs no translation is passed and not re-decided.
+        if (const auto bv = dp->getProperty ("bounds"); bv.getDynamicObject() != nullptr)
+            blk->setProperty ("bounds", bv);
         if (senseStated) blk->setProperty ("sense", senseWire);
         blk->setProperty ("makeup_cap_db", juce::var (target));
         // AND THE LINE SAYS WHAT WILL MOVE, because "only one side moved" is a thing the log should
@@ -1090,12 +1173,42 @@ struct CalibLoop
                    << "\" and start_db " << juce::String ((float) (double) startV, 2)
                    << " is IGNORED; the drive opens at the staging already on the slot. ";
         }
+        // ---- `bounds`: EACH CONTROL'S OWN RANGE, IN ITS OWN UNITS (B's contract, 25 Oct 2026) ------------
+        //
+        // *"A found that dial_on_playback carried no bounds, so the plugin held every dial control to
+        //  -60..+12 dB. That is the likely reason the Mixland Vac Attack's Reduction dial ended at +0.0:
+        //  Reduction is a 0.0-10.0 knob with no unit. Sean's call (25 Oct): send each control's own range, in
+        //  its own units, and leave it out when it isn't known."*
+        //
+        // THE LOOP MOVES ONE VALUE, so a pair's two entries collapse to the range both can take: the
+        // INTERSECTION. The Vac Attack's two sides are each 0..10, so the dial walks 0..10 and the dB default
+        // never touches it. A control with no entry keeps today's behaviour, and no `bounds` at all changes
+        // nothing - which is the contract's own last line, and what lets an older build ignore the field.
+        {
+            const auto bv = o->getProperty ("bounds");
+            const auto b = boundsForParams (bv, out.params);
+            if (b.stated)
+            {
+                out.minDb = b.min; out.maxDb = b.max; out.boundsStated = true; out.boundsUnit = b.unit;
+                whyOut << "B states this control's own range as " << juce::String (b.min, 2) << " to "
+                       << juce::String (b.max, 2) << (b.unit.isEmpty() ? " (no unit - a plain knob)"
+                                                                       : " " + b.unit)
+                       << ", so it is dialled in THAT space and the -60..+12 dB default does not apply"
+                       << (b.fromPair ? " (one side's range taken from its twin, as the contract allows). "
+                                      : ". ");
+            }
+        }
+
         // ---- min_db / max_db, and what NULL means (21t-j, 28 Sep 2026, B's contract note) -------------------
         // B now sends min_db null for a control whose low end prints "-inf" (the MC 77's Input reads "-inf dB" at
         // normalised 0). TODAY'S PARSER WOULD READ THAT AS 0.0: juce::var(null) converts to 0.0, so the range
         // became [0, max] and every target below zero clamped to zero - on a control whose useful travel is all
         // below zero. Null now means UNBOUNDED BELOW, and the practical floor is stated rather than infinite: a
         // write has to land somewhere, and -96 dB is below anything a compressor control is set to.
+        // AND `bounds` WINS over min_db/max_db when both arrive: it is the control's own range in its own
+        // units, which is the newer and narrower statement. B's contract does not send both, and a build that
+        // silently preferred the dB pair would put the Vac Attack back in -60..+12.
+        if (! out.boundsStated)
         {
             const auto mn = o->getProperty ("min_db");
             if (o->hasProperty ("min_db"))
@@ -1261,6 +1374,7 @@ struct CalibLoop
         sayReached_ = c.sayReached; sayShort_ = c.sayShort; sayOver_ = c.sayOver;
         endHardest_ = c.endHardest; endLightest_ = c.endLightest; askAfterDial_ = c.askAfterDial;
         minDb = juce::jmin (c.minDb, c.maxDb); maxDb = juce::jmax (c.minDb, c.maxDb);
+        boundsStated = c.boundsStated; boundsUnit = c.boundsUnit;
         stepDb = (c.stepDb > 0.0f) ? c.stepDb : kStepDb;
         judged = 0; asked = false; noSignalSaid = false; pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0;
         askOwed.clear();
@@ -2909,6 +3023,10 @@ struct CalibLoop
         o->setProperty ("value", (double) value);
         o->setProperty ("minDb", (double) minDb);
         o->setProperty ("maxDb", (double) maxDb);
+        // ...and WHOSE SPACE those two are in (B's bounds contract, 25 Oct 2026): a handover that
+        // lost this would read a 0..10 knob's range as dB and put the default back on the next tick.
+        o->setProperty ("boundsStated", boundsStated);
+        o->setProperty ("boundsUnit", boundsUnit);
         // 21t-i: the measure-and-ask state. A handover that lost pendingStep would drop the user's comparative on
         // the floor; one that lost askOwed would swallow the only line the loop ever says.
         o->setProperty ("stepDb", (double) stepDb);
@@ -3045,6 +3163,8 @@ struct CalibLoop
         c.value = o->hasProperty ("value") ? (float) (double) o->getProperty ("value") : c.preDb;
         c.minDb = o->hasProperty ("minDb") ? (float) (double) o->getProperty ("minDb") : -60.0f;
         c.maxDb = o->hasProperty ("maxDb") ? (float) (double) o->getProperty ("maxDb") : 12.0f;
+        c.boundsStated = (bool) o->getProperty ("boundsStated");
+        c.boundsUnit   = o->getProperty ("boundsUnit").toString();
         // 21t-i. An older sidecar has none of these; the defaults are a loop that has measured nothing and owes
         // nothing, which is what a loop written before this round was.
         c.stepDb = o->hasProperty ("stepDb") ? (float) (double) o->getProperty ("stepDb") : kStepDb;

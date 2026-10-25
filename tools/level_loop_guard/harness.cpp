@@ -3555,6 +3555,111 @@ void guardMain()
                    juce::String (why.length()) + " / " + juce::String (why1.length()) + " chars");
         }
 
+        // ---- (17j) EACH CONTROL'S OWN RANGE, IN ITS OWN UNITS (B's contract of 25 Oct 2026) ----
+        //
+        // *"A found that dial_on_playback carried no bounds, so the plugin held every dial control
+        //  to -60..+12 dB. That is the likely reason the Mixland Vac Attack's Reduction dial ended
+        //  at +0.0: Reduction is a 0.0-10.0 knob with no unit."*
+        //
+        // The loop writes ONE value to every named control, so two entries collapse to the range
+        // both can take. The known-bad is the last leg: no `bounds` at all must leave today's
+        // -60..+12 exactly as it was, which is what lets an older server keep working.
+        {
+            using CL = echojay::CalibLoop;
+            auto entry = [] (double mn, double mx, const char* unit) -> juce::var
+            {
+                auto* e = new juce::DynamicObject();
+                e->setProperty ("min", mn); e->setProperty ("max", mx);
+                if (unit != nullptr) e->setProperty ("unit", unit);
+                return juce::var (e);
+            };
+            juce::StringArray both; both.add ("Left Reduction"); both.add ("Right Reduction");
+
+            auto* bo = new juce::DynamicObject();
+            bo->setProperty ("Left Reduction",  entry (0, 10, nullptr));
+            bo->setProperty ("Right Reduction", entry (0, 10, nullptr));
+            const auto b = CL::boundsForParams (juce::var (bo), both);
+            check (b.stated && std::abs (b.min - 0.0f) < 1.0e-6f && std::abs (b.max - 10.0f) < 1.0e-6f
+                   && b.unit.isEmpty(),
+                   "(17j) the Vac Attack's two sides come out 0 to 10 with NO unit, so the dial walks "
+                   "the knob's own space and the -60..+12 dB default never touches it",
+                   juce::String (b.min, 1) + " to " + juce::String (b.max, 1));
+
+            auto* bu = new juce::DynamicObject();
+            bu->setProperty ("Input Gain", entry (-12, 24, "dB"));
+            juce::StringArray one; one.add ("Input Gain");
+            const auto bdb = CL::boundsForParams (juce::var (bu), one);
+            check (bdb.stated && bdb.unit == "dB" && std::abs (bdb.max - 24.0f) < 1.0e-6f,
+                   "(17j2) ...and a control with a unit carries it, so a dB range is known to BE dB "
+                   "rather than assumed",
+                   bdb.unit + " " + juce::String (bdb.min, 1) + ".." + juce::String (bdb.max, 1));
+
+            // ONE SIDE STATED, ITS TWIN TAKEN FROM IT - the contract's rule 3, and only the forms
+            // it names.
+            auto* bp = new juce::DynamicObject();
+            bp->setProperty ("Left Reduction", entry (0, 10, nullptr));
+            const auto bpair = CL::boundsForParams (juce::var (bp), both);
+            check (bpair.stated && bpair.fromPair && std::abs (bpair.max - 10.0f) < 1.0e-6f,
+                   "(17j3) ...one side's range serves its twin (Left <-> Right), which is the "
+                   "contract's own rule 3 and not a guess beyond it",
+                   "from the pair");
+
+            // TWO RANGES THAT DO NOT OVERLAP ARE NOT A RANGE: one value cannot satisfy both, and
+            // clamping into an inverted span would write nonsense.
+            auto* bx = new juce::DynamicObject();
+            bx->setProperty ("Left Reduction",  entry (0, 2, nullptr));
+            bx->setProperty ("Right Reduction", entry (8, 10, nullptr));
+            const auto bbad = CL::boundsForParams (juce::var (bx), both);
+            check (! bbad.stated,
+                   "(17j4) ...and an EMPTY intersection is treated as unknown rather than inverted - "
+                   "the contract's \"never a guessed range\", applied to our own arithmetic",
+                   "not stated");
+
+            // AND THE KNOWN-GOOD THAT MUST NOT MOVE: no bounds at all is today's behaviour.
+            const auto bnone = CL::boundsForParams (juce::var(), both);
+            check (! bnone.stated,
+                   "(17j5) no `bounds` at all leaves the dial exactly as it is today, which is what "
+                   "lets a server that does not send the field keep working",
+                   "not stated");
+
+            // THE WHOLE ROAD: a dial carrying bounds composes a block carrying them, and the parser
+            // puts the control's own range into the loop instead of the dB default.
+            auto* dp = new juce::DynamicObject();
+            dp->setProperty ("control", "Left Reduction");
+            juce::Array<juce::var> cs; cs.add ("Left Reduction"); cs.add ("Right Reduction");
+            dp->setProperty ("controls", juce::var (cs));
+            dp->setProperty ("target_gr_db", 3);
+            dp->setProperty ("sense", "higher_is_harder");
+            dp->setProperty ("actuator", "amount");
+            auto* bo2 = new juce::DynamicObject();
+            bo2->setProperty ("Left Reduction",  entry (0, 10, nullptr));
+            bo2->setProperty ("Right Reduction", entry (0, 10, nullptr));
+            dp->setProperty ("bounds", juce::var (bo2));
+            juce::String whyB;
+            const auto blkB = CL::blockFromDialOnPlayback (juce::var (dp), 1, whyB);
+            check (blkB.getProperty ("bounds", juce::var()).getDynamicObject() != nullptr,
+                   "(17j6) the translator passes `bounds` through verbatim, the way it now passes "
+                   "`controls` and `say` - the 25 Oct fault was this function dropping fields",
+                   "carried");
+            echojay::CalibLoop::Config cB; juce::String pwhyB;
+            check (parse (blkB, cB, pwhyB) && cB.boundsStated
+                   && std::abs (cB.minDb - 0.0f) < 1.0e-6f && std::abs (cB.maxDb - 10.0f) < 1.0e-6f,
+                   "(17j7) ...and the parser walks that control in 0..10 rather than -60..+12 dB, "
+                   "which is the fault behind the Vac Attack's \"+0.0\"",
+                   juce::String (cB.minDb, 1) + ".." + juce::String (cB.maxDb, 1)
+                   + (cB.boundsStated ? " (its own units)" : " (dB)"));
+            // THE SENTENCE IS THE PARSER'S, not the translator's: the translator passes `bounds`
+            // on untouched (17j6) and configFromBlock is where the range becomes the loop's, so
+            // that is where the line about it belongs. The first cut of this leg read the wrong
+            // string and went red for it - which is the leg doing its job on itself.
+            check (pwhyB.contains ("own range"),
+                   "(17j8) ...and the log says whose space the dial is working in, so a figure in the "
+                   "report can be read against the right scale",
+                   pwhyB.contains ("own range")
+                       ? pwhyB.substring (pwhyB.indexOf ("own range"), pwhyB.indexOf ("own range") + 60)
+                       : "not said: \"" + pwhyB.substring (0, 70) + "\"");
+        }
+
         // (d) EchoJay's OWN compressor: the contract says `threshold_db` on it, and that is a threshold.
         {
             juce::String why;

@@ -34,6 +34,8 @@
 #include "EJEngageDemand.h"             // SH21: a window open on a Link's rack connects to it
 #include "EJShieldWork.h"               // SH25: the shield does only what is wrong (his 17:25 glitch)
 #include "EJReadBackWait.h"             // SH26: "not yet" is not "never" (his 17:25 read-back)
+#include "EJChatHome.h"                 // SH29: a dropped row that has a home goes to it
+#include "EJMapSuspect.h"               // SH31: a reduction control that reduces nothing
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
@@ -2388,6 +2390,196 @@ int main()
                        "SH26d ...and the wait is BOUNDED: at the bound the honest sentence he had "
                        "before is what he gets, which is right for a plugin that will not report",
                        "bound reached");
+
+            // ---- SH27: FOLLOW NEVER FIGHTS A GESTURE (his overnight item 1a, 26 Oct 2026) ----
+            //
+            // *"turning a knob by hand isn't smooth, it jumps ... my gesture goes to the Link, the
+            //  Link republishes at 30 Hz, and the 20 Hz follow tick writes the Link's slightly
+            //  older value back into the copy mid-drag."*
+            //
+            // True by construction: the apply loop walked every parameter the frame carried and had
+            // no notion of a gesture. The KNOWN-BAD is the first leg below - without the hold, the
+            // same inputs say "write it", which is the backward write he feels.
+            {
+                using echojay::followMayWriteParam;
+                check (! followMayWriteParam (/*inProgress*/ true, /*sinceEnded*/ -1.0),
+                       "SH27 while his hand is on a knob, FOLLOW does not write that parameter - the "
+                       "Link's value is one or two frames behind the hand and writing it is a jump "
+                       "backwards ten times a second",
+                       "gesture in progress -> held");
+                check (! followMayWriteParam (/*inProgress*/ false, /*sinceEnded*/ 50.0),
+                       "SH27a ...and the hold OUTLIVES the gesture, because frames composed before "
+                       "his last value left are still arriving",
+                       "50 ms after the end -> still held");
+                check (followMayWriteParam (false, /*sinceEnded*/ 251.0),
+                       "SH27b ...and then the Link is the authority again, which is the design's "
+                       "first rule kept intact (the copy is never the authority)",
+                       "251 ms after the end -> follows");
+                check (followMayWriteParam (false, /*sinceEnded*/ -1.0),
+                       "SH27c a parameter he has never touched follows on every frame - the hold is "
+                       "per PARAMETER and never stops the other knobs",
+                       "untouched -> follows");
+                check (followMayWriteParam (false, 249.0, /*settleMs*/ 100.0)
+                       && ! followMayWriteParam (false, 99.0, /*settleMs*/ 100.0),
+                       "SH27d ...and the settle is the stated figure, not a feeling", "100 ms honoured");
+            }
+
+            // ---- SH28: A STEADY TICK CHANGES NOTHING (his overnight item 1b) ----------------
+            //
+            // *"the wobble: something still re-sets the hosted view's frame or order on the 100 ms
+            //  timer; a steady tick must change nothing."*
+            //
+            // NativeClip2_attach runs from the panel's timer every 100 ms. Its two frame writes were
+            // guarded; the bounds origin, wantsLayer, masksToBounds and the four layer-style
+            // properties were not - seven CALayer touches a tick on the layer holding the hosted
+            // AU's view, each one marking it for display. The KNOWN-BAD is the steady tick itself.
+            {
+                using echojay::clipWorkFor;
+                const auto steady = clipWorkFor (/*frame*/ true, /*boundsOrigin*/ true,
+                                                 /*hasLayer*/ true, /*masks*/ true, /*style*/ true,
+                                                 /*havePlugin*/ true, /*pluginFrame*/ true);
+                check (steady.nothingToDo(),
+                       "SH28 everything already as we want it means NOTHING is written - this is the "
+                       "100 ms tick, and it used to write seven layer properties every time",
+                       "no work");
+                const auto fresh = clipWorkFor (false, false, /*hasLayer*/ false, false, false,
+                                                true, false);
+                check (fresh.setContainerFrame && fresh.setBoundsOrigin && fresh.setWantsLayer
+                       && fresh.setMasksToBounds && fresh.setStyle && fresh.setPluginFrame,
+                       "SH28a ...and a container that has just been made gets all of it, so the "
+                       "card still looks like the card",
+                       "all six");
+                const auto moved = clipWorkFor (/*frame*/ false, true, true, true, true, true, true);
+                check (moved.setContainerFrame && ! moved.setStyle && ! moved.setWantsLayer,
+                       "SH28b ...a container whose frame something else moved is put back, and only "
+                       "that - which is what \"reassert in case anything touched it\" meant",
+                       "frame only");
+                const auto restyled = clipWorkFor (true, true, true, true, /*style*/ false, true, true);
+                check (restyled.setStyle && ! restyled.setContainerFrame,
+                       "SH28c ...and a layer whose style is not ours is restyled, and only that",
+                       "style only");
+                const auto noPlugin = clipWorkFor (true, true, true, true, true,
+                                                   /*havePlugin*/ false, /*pluginFrame*/ false);
+                check (noPlugin.nothingToDo(),
+                       "SH28d ...and with no plugin view there is no plugin frame to write, however "
+                       "wrong a frame we do not have would be",
+                       "no work");
+            }
+
+            // ---- SH29: A DROPPED ROW THAT HAS A HOME GOES TO IT (his item 3, 26 Oct 2026) ----
+            //
+            // A chat switch clears the replay list, as rule 2 of 18 Oct requires. His 09:24 fault
+            // of 22 Oct added that a row belonging elsewhere must not be DELETED either, and that
+            // fix's own sentence is the rule: "a row that names its own chat has a home; it goes
+            // there, and only then is the list cleared". It was implemented for a row carrying a
+            // run's agentJson and for nothing else - so his own typed words, in a chat the store
+            // had not caught up with, were counted in "dropped N unsynced row(s)" and deleted.
+            // SH29b is the known-bad: before tonight it was `nowhere`.
+            {
+                using echojay::rowHomeFor; using RH = echojay::RowHome;
+                check (rowHomeFor (/*ownChatId*/ true, /*isThisChat*/ false,
+                                   /*hasCard*/ true, /*hasContent*/ true) == RH::card,
+                       "SH29 another chat's RUN CARD still goes to that chat's stored log, which is "
+                       "the 22 Oct fix and must not move",
+                       "card");
+                check (rowHomeFor (true, false, /*hasCard*/ false, /*hasContent*/ true) == RH::message,
+                       "SH29b ...and another chat's PLAIN MESSAGE now goes there too - until tonight "
+                       "it was dropped with no home at all, which is a user's own words deleted by a "
+                       "switch (his item 3, and the known-bad this leg exists for)",
+                       "message");
+                check (rowHomeFor (true, /*isThisChat*/ true, false, true) == RH::keep,
+                       "SH29c a row belonging to the chat being OPENED is kept on the list and not "
+                       "written anywhere - a switch never appends (rule 2, 18 Oct)",
+                       "keep");
+                check (rowHomeFor (/*ownChatId*/ false, false, true, true) == RH::nowhere,
+                       "SH29d an UNSTAMPED row has nowhere to go, and no chat is invented for it - "
+                       "an invented chat has no project and no channel (rule 1's failure)",
+                       "nowhere");
+                check (rowHomeFor (true, false, false, /*hasContent*/ false) == RH::nowhere,
+                       "SH29e ...and an empty row is not a loss", "nowhere");
+            }
+
+            // ---- SH30: THE FINAL LIMITER'S CEILING (his item 4, 26 Oct 2026; B's note of 25) ----
+            //
+            // B: *"input_db and true_peak landed, but ceiling_db read back -0.1, the device
+            //  default"* - on a chain with TWO limiters, the EchoJay Limiter being the first. Sean's
+            // ruling holds the chain's LAST limiter at -0.1 dBTP and stays; what was wrong is that
+            // "last" was read against the chain AS IT STOOD during the build, so the first of two
+            // was last for one moment and held there for ever. SH30b is the known-bad.
+            {
+                using CH = ChainHost;
+                const float ruled = CH::kFinalCeilingDb;
+                const float lastOne = CH::ceilingForLimiterSlot (/*limiterLike*/ true, /*isLast*/ true,
+                                                                 /*asked*/ -1.0f);
+                check (std::abs (lastOne - ruled) < 1.0e-6f,
+                       "SH30 the limiter that IS last takes the ruled ceiling, whatever the block "
+                       "asked for - Sean's ruling, in both directions, unchanged",
+                       juce::String (lastOne, 2) + " dBTP");
+                const float notLast = CH::ceilingForLimiterSlot (true, /*isLast*/ false, -1.0f);
+                check (std::abs (notLast - (-1.0f)) < 1.0e-6f,
+                       "SH30b ...and one that is NO LONGER last gets back the ceiling its block asked "
+                       "for - B's -1 dBTP on the first of two, which until tonight stayed at the "
+                       "ruled figure because it was last for the moment it was added",
+                       juce::String (notLast, 2) + " dBTP");
+                const float never = CH::ceilingForLimiterSlot (true, false,
+                                                               std::numeric_limits<float>::quiet_NaN());
+                check (never != never,
+                       "SH30c a limiter nobody overrode is left alone: no asked figure, nothing to "
+                       "assert, and its own saved value stands",
+                       "NaN");
+                const float notLimiter = CH::ceilingForLimiterSlot (/*limiterLike*/ false, true, -1.0f);
+                check (notLimiter != notLimiter,
+                       "SH30d ...and a slot that is not a limiter is never given a ceiling at all, "
+                       "however last it is",
+                       "NaN");
+            }
+
+            // ---- SH31: A REDUCTION CONTROL THAT REDUCES NOTHING (his item 6, approved 25 Oct) ----
+            //
+            // On 25 Oct both of the Vac Attack's "Reduction" controls were set to 3, both read back
+            // "3.0", and the card said so with confidence - while the knobs that moved were the two
+            // GAIN knobs. Every layer told the truth about what it HAD DONE and nobody checked
+            // whether it was what was ASKED. We already measure every slot's in and out, so the one
+            // fact that would have caught it was in the building.
+            {
+                using echojay::mapVerdictForSet; using MV = echojay::MapVerdict;
+                check (mapVerdictForSet (/*reductionLike*/ true, /*heard*/ true, true, true,
+                                         /*before*/ 3.0f, /*after*/ 3.1f) == MV::suspect,
+                       "SH31 a control that claims to set compression, read back as asked, with the "
+                       "slot's in-to-out difference unmoved, is SUSPECT - the map names the wrong knob "
+                       "or the request named the wrong control, and the card must say so",
+                       "suspect");
+                check (mapVerdictForSet (true, true, true, true, 3.0f, 6.0f) == MV::consistent,
+                       "SH31a ...and a difference that DID move is consistent: the control does what "
+                       "its name says and nothing is said on the card",
+                       "consistent");
+                check (mapVerdictForSet (true, /*heard*/ false, true, true, 3.0f, 3.0f) == MV::notChecked,
+                       "SH31b with nothing playing there is no difference to measure, so the check is "
+                       "UNAVAILABLE rather than negative - a plugin is never accused on no evidence",
+                       "not checked");
+                check (mapVerdictForSet (true, true, /*haveBefore*/ false, true, 0.0f, 3.0f) == MV::notChecked,
+                       "SH31c ...and the same when the slot reported no reading on one side of the write",
+                       "not checked");
+                check (mapVerdictForSet (/*reductionLike*/ false, true, true, true, 3.0f, 3.0f) == MV::notChecked,
+                       "SH31d a control that claims nothing about compression is not this rule's "
+                       "business - an attack time changes no in-to-out difference and must not be "
+                       "reported as a fault",
+                       "not checked");
+                check (echojay::controlClaimsReduction ("Left Reduction")
+                       && echojay::controlClaimsReduction ("Threshold")
+                       && echojay::controlClaimsReduction ("thresh_db")
+                       && ! echojay::controlClaimsReduction ("Left Gain")
+                       && ! echojay::controlClaimsReduction ("attack_ms"),
+                       "SH31e ...and which controls those are is literal, not clever: a rule that "
+                       "guessed from a name would be the very fault it is here to catch",
+                       "reduction/threshold yes, gain/attack no");
+                check (echojay::mapSuspectLine ("Mixland Vac Attack", "Left Reduction", 3.0f, 3.1f)
+                           .contains ("same work as before")
+                       && echojay::mapSuspectLine ("X", "Y", 1.0f, 1.0f).contains ("either"),
+                       "SH31f ...and the sentence names both possibilities, because the build cannot "
+                       "tell which of the two is wrong and must not pick one",
+                       "both named");
+            }
                 check (readBackShouldWaitAgain (false, false, true, 5, 6)
                        && ! readBackShouldWaitAgain (false, false, true, 6, 6),
                        "SH26e ...the bound is the LAST attempt, not one past it", "5 waits, 6 does not");

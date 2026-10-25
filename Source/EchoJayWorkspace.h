@@ -385,6 +385,11 @@ public:
         yet cannot blank a sentence that is already stored. */
     bool updateAgentCardById (const juce::String& chatId, const juce::String& entryId,
                               const juce::String& agentJson, const juce::String& content);
+    /** Does that chat's stored log already hold this exact row? (his item 3, 26 Oct 2026) The
+        homing road for a plain message asks this before appending, because the send already syncs
+        the user's words as they are taken and a second copy of his sentence is its own fault. */
+    bool chatHoldsMessage (const juce::String& chatId, const juce::String& role,
+                           const juce::String& content) const;
     // Update the persisted gain-proposal block for the assistant message
     // whose visible content matches (the display list can hold transient
     // messages that never reached the store, so content match beats index).

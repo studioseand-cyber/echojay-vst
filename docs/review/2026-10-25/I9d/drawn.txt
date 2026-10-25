@@ -1,0 +1,12 @@
+scenario I9d
+captured 2026-10-25T01:32:20.036+01:00
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it, with the setting you asked for.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it, with the setting you asked for.
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
+  run row: status=Done changes=0 steps=1 zones=[11:1 step]
+  opening: Had a look at that one.
+  closing: Had a look at that one.
+    step "gain reduction on the third-party slot" [done] right="" detail="I measured what reaches Renaissance Axx (s) and what leaves it: in -10.3 loudest, -37.0 typical; out -4.0 loudest, -11.4 typical dBFS RMS. I cannot read its own gain-reduction meter." chips=[]

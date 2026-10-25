@@ -24,6 +24,7 @@
 #include "NativeClip.h"
 #include "EJLiveViewInput.h"   // his ruling of 24 Oct: a view that cannot pass a gesture on takes none
 #include "EJEngageDemand.h"    // his 06:55 fault, 25 Oct: a window open on a Link's rack connects to it
+#include "EJChatHome.h"        // his item 3, 26 Oct: a dropped row that has a home goes to it
 #include "EchoJayAPI.h"
 #include "EchoJayLookAndFeel.h"
 #include "ParticleVisual.h"

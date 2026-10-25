@@ -211,23 +211,43 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
     // (autoresizing, the plugin, JUCE) touched it. The bounds origin mirrors
     // the frame origin so child frames are expressed in peer-absolute
     // coordinates — identical to what JUCE's attachment writes.
-    if (!NSEqualRects([container frame], wanted))
-        [container setFrame:wanted];
-    [container setBoundsOrigin:wanted.origin];
-    [container setWantsLayer:YES];
-    [container layer].masksToBounds = YES;
     // Card styling on the clip layer itself: dark panel background (unused
     // space must not render white), subtle cyan border, rounded corners.
     // masksToBounds + cornerRadius clips native content to the rounded rect.
-    // (statics: created once, this runs on every 400ms maintenance pass)
     static CGColorRef bgColour =
         CGColorCreateSRGB(0x08 / 255.0, 0x0A / 255.0, 0x12 / 255.0, 1.0);
     static CGColorRef borderColour =
         CGColorCreateSRGB(0x22 / 255.0, 0xd3 / 255.0, 0xee / 255.0, 0.3);
-    [container layer].backgroundColor = bgColour;
-    [container layer].borderColor     = borderColour;
-    [container layer].borderWidth     = 1.0;
-    [container layer].cornerRadius    = 8.0;
+    // ---- A STEADY TICK CHANGES NOTHING (his overnight item 1b, 26 Oct 2026) --------------
+    //
+    // These seven lines used to run unconditionally, ten times a second, on the layer that holds
+    // the hosted AU's own view - and every CALayer property assignment marks the layer as needing
+    // display. That continuous recomposite is the wobble. "Reassert every call in case anything
+    // touched it" is kept exactly: re-asserting is putting it back when it is WRONG, which is a
+    // comparison. The decision is echojay::clipWorkFor, pure and guarded.
+    CALayer* clayer = [container layer];
+    const bool styleMatches = clayer != nil
+        && CGColorEqualToColor ([clayer backgroundColor], bgColour)
+        && CGColorEqualToColor ([clayer borderColor], borderColour)
+        && [clayer borderWidth] == 1.0
+        && [clayer cornerRadius] == 8.0;
+    const auto cw0 = echojay::clipWorkFor (NSEqualRects ([container frame], wanted),
+                                           NSEqualPoints ([container bounds].origin, wanted.origin),
+                                           [container wantsLayer] && clayer != nil,
+                                           clayer != nil && [clayer masksToBounds],
+                                           styleMatches,
+                                           /*havePlugin*/ false, /*pluginFrameMatches*/ true);
+    if (cw0.setContainerFrame) [container setFrame:wanted];
+    if (cw0.setBoundsOrigin)   [container setBoundsOrigin:wanted.origin];
+    if (cw0.setWantsLayer)   { [container setWantsLayer:YES]; clayer = [container layer]; }
+    if (cw0.setMasksToBounds)  clayer.masksToBounds = YES;
+    if (cw0.setStyle)
+    {
+        clayer.backgroundColor = bgColour;
+        clayer.borderColor     = borderColour;
+        clayer.borderWidth     = 1.0;
+        clayer.cornerRadius    = 8.0;
+    }
 
     // Collect ALL peer-level stray views. The newest (last-added) is the
     // current editor's view; adopt it into the clip container. Anything older

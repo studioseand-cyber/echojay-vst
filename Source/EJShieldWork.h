@@ -80,4 +80,64 @@ inline ShieldWork shieldWorkFor (bool on, bool exists, bool frameMatches,
     return w;
 }
 
+// =============================================================================================
+//  ...AND THE SAME RULE FOR THE CLIP CONTAINER ITSELF (his overnight item 1b, 26 Oct 2026)
+// =============================================================================================
+//  Sean: *"the wobble: something still re-sets the hosted view's frame or order on the 100 ms
+//  timer; a steady tick must change nothing."*
+//
+//  He is right, and the shield was only half of it. NativeClip2_attach is called from the panel's
+//  timer every 100 ms, and while the two FRAME writes in it were already guarded by NSEqualRects,
+//  six other things were not:
+//
+//      [container setBoundsOrigin:...];            // every tick
+//      [container setWantsLayer:YES];              // every tick
+//      [container layer].masksToBounds = YES;      // every tick
+//      [container layer].backgroundColor = ...;    // every tick
+//      [container layer].borderColor     = ...;    // every tick
+//      [container layer].borderWidth     = 1.0;    // every tick
+//      [container layer].cornerRadius    = 8.0;    // every tick
+//
+//  Every assignment to a CALayer property marks that layer as needing display and commits it on
+//  the next frame. Seven of them, ten times a second, on the layer that CONTAINS the hosted AU's
+//  own view: the region is recomposited continuously whether anything changed or not. That is the
+//  wobble, and it is why it is there whether or not a run is going - the shield fix cured the
+//  flicker he saw appear WITH the shield and could not have touched this.
+//
+//  The comment on the frame write says the intent exactly - *"reassert every call in case anything
+//  (autoresizing, the plugin, JUCE) touched it"* - and that intent is kept. Re-asserting means
+//  putting it back when it is WRONG, which is a comparison; writing it unconditionally is not
+//  re-assertion but continuous mutation.
+struct ClipWork
+{
+    bool setContainerFrame = false;
+    bool setBoundsOrigin   = false;
+    bool setWantsLayer     = false;
+    bool setMasksToBounds  = false;
+    bool setStyle          = false;   // background, border colour/width, corner radius
+    bool setPluginFrame    = false;
+
+    bool nothingToDo() const
+    { return ! setContainerFrame && ! setBoundsOrigin && ! setWantsLayer
+          && ! setMasksToBounds && ! setStyle && ! setPluginFrame; }
+};
+
+/** Every input is "is this already what we want?", so a steady tick answers nothing-to-do.
+
+    `styleMatches` is one flag for the four layer-style properties deliberately: they are written
+    as a set from the same constants, so they are either all ours or the layer is new. */
+inline ClipWork clipWorkFor (bool containerFrameMatches, bool boundsOriginMatches,
+                             bool hasLayer, bool masksToBounds, bool styleMatches,
+                             bool havePlugin, bool pluginFrameMatches)
+{
+    ClipWork w;
+    w.setContainerFrame = ! containerFrameMatches;
+    w.setBoundsOrigin   = ! boundsOriginMatches;
+    w.setWantsLayer     = ! hasLayer;
+    w.setMasksToBounds  = ! masksToBounds;
+    w.setStyle          = ! styleMatches;
+    w.setPluginFrame    = havePlugin && ! pluginFrameMatches;
+    return w;
+}
+
 } // namespace echojay

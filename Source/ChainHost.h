@@ -1906,6 +1906,24 @@ public:
     // cost 0.9 dB of loudness for nothing. The clamp lives in applyStructuredToBuiltinSlot, the one funnel every
     // dialled built-in passes through, and it logs the figure that was asked for.
     static constexpr float kFinalCeilingDb = -0.1f;
+    /** ---- THE RULE IS ABOUT THE FINISHED CHAIN (his item 4, 26 Oct 2026) -------------------
+        Whether a limiter is "last in the chain" was read against the chain AS IT STOOD at the
+        moment of its add, so the FIRST of two limiters - last for that moment, with the second
+        still to be added - was treated as the final one and had its ceiling forced to -0.1 when
+        B had asked for -1. This runs when the edit sequence has FINISHED and the shape is settled:
+        the limiter that is last gets the hold, and any limiter that is no longer last gets back
+        the ceiling its block actually asked for. Returns how many slots it put right. */
+    int reconcileFinalLimiterCeiling();
+    /** The decision, pure, so a guard holds both directions: what ceiling should this slot carry?
+        `asked` is NaN when no block ever asked for one. */
+    static float ceilingForLimiterSlot (bool isLimiterLike, bool isLastSlot, float asked,
+                                        float ruled = kFinalCeilingDb)
+    {
+        if (! isLimiterLike)            return std::numeric_limits<float>::quiet_NaN();
+        if (isLastSlot)                 return ruled;        // the ruling, held, in both directions
+        if (asked != asked)             return std::numeric_limits<float>::quiet_NaN();  // never overridden
+        return asked;                                        // not last any more: give it back
+    }
     // ---- LEVELLING V2 (10 Oct 2026): THE RECORD, AT RACK LEVEL ---------------------------------------
     // The EchoJay Level slot is gone; the loop drives a gain that already exists (the rack's OUT gain, or the
     // final limiter's input_db). So what the levelling DECIDED has no slot to live on, and lives here instead:
@@ -2761,6 +2779,14 @@ private:
     struct ChainSlot {
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
+        // ---- WHAT THE BLOCK ASKED FOR, WHEN WE OVERRODE IT (his item 4, 26 Oct 2026) --------
+        // The final-limiter ceiling hold forces kFinalCeilingDb on the limiter that is LAST in the
+        // chain. It was evaluated per add, against the chain AS IT STOOD, so the first of two
+        // limiters - last for the moment it was added, with the second still to come - was treated
+        // as the final one and had its ceiling taken from -1 to -0.1. B's note of 25 Oct is exactly
+        // that case, and it could not show before the two-limiter shape because every add had asked
+        // for -0.1 anyway. NaN = we never overrode this slot.
+        float askedCeilingDb = std::numeric_limits<float>::quiet_NaN();
         // COMP_PROFILE_SPEC_v1 item 2: WHAT THE SERVER EXPECTS OF THIS SLOT. expected_gr_db and
         // expected_level_db arrive with the chain block (spec section 6.6) and are what the one check in section 7
         // is measured against. NaN is "the block said nothing", which means today's behaviour for this slot.
