@@ -3458,6 +3458,103 @@ void guardMain()
                    old.getProperty ("actuator", {}).toString());
         }
 
+        // (i) EVERY SIDE, AND B'S OWN WORDS - HIS 08:43 VAC ATTACK (25 Oct 2026) ------------------
+        //
+        // *"Only the LEFT Reduction moved ... the add set both sides (0.7 / 0.7), but
+        //  dial_on_playback.control named "Left Reduction" alone."*  and the line he got was the
+        //  build's own, reading as a success about a dial five times short of its target, with a
+        //  question after it.
+        //
+        // configFromBlock had read `controls` and `say` since B's contract of 23 Oct. THIS
+        // translator - the only road a dial_on_playback takes - passed neither on, so the block
+        // reached the loop with one name and no words. The known-bad direction is in the leg: a
+        // block composed from a dial that NAMES both sides must come out carrying both, and the
+        // whole road is re-parsed through configFromBlock, because a field the composer sets and the
+        // parser drops is the same fault one layer down.
+        {
+            juce::String why;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("control", "Left Reduction");
+            juce::Array<juce::var> both; both.add ("Left Reduction"); both.add ("Right Reduction");
+            o->setProperty ("controls", juce::var (both));
+            o->setProperty ("target_gr_db", 1);
+            o->setProperty ("sense", "higher_is_harder");
+            o->setProperty ("actuator", "amount");
+            auto* say = new juce::DynamicObject();
+            say->setProperty ("reached", "The Mixland Vac Attack is set: about {gr} dB on the loud phrases.");
+            say->setProperty ("short",   "The Mixland Vac Attack only reaches {gr} dB here at {end}; it's doing less than planned.");
+            say->setProperty ("over",    "The Mixland Vac Attack still does {gr} dB here at its lightest setting.");
+            auto* ew = new juce::DynamicObject();
+            ew->setProperty ("hardest", "its hardest setting");
+            ew->setProperty ("lightest", "its lightest setting");
+            say->setProperty ("end_words", juce::var (ew));
+            o->setProperty ("say", juce::var (say));
+            const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (juce::var (o), 2, why);
+
+            check (blk.getProperty ("controls", juce::var()).getArray() != nullptr
+                   && blk.getProperty ("controls", juce::var()).getArray()->size() == 2,
+                   "(17i) a dial that names BOTH sides composes a block carrying both - his 08:43 "
+                   "fault was this translator dropping `controls`, so only the left Reduction moved",
+                   juce::String (blk.getProperty ("controls", juce::var()).getArray() != nullptr
+                                     ? blk.getProperty ("controls", juce::var()).getArray()->size() : 0)
+                   + " side(s)");
+            check (blk.getProperty ("say", juce::var()).getDynamicObject() != nullptr,
+                   "(17i2) ...and B's own done line travels with it, so the result is said in B's "
+                   "words rather than in the build's",
+                   "say carried");
+            check (why.contains ("Left Reduction") && why.contains ("Right Reduction"),
+                   "(17i3) ...and the reason names every side that will move, because \"only one side "
+                   "moved\" is a thing the log should answer in one line and could not",
+                   why.substring (0, 80));
+
+            // AND THE WHOLE ROAD: the parser that will actually read this must take both sides and
+            // the words. A composer that sets a field the parser drops is the same fault, lower.
+            echojay::CalibLoop::Config c; juce::String pwhy;
+            check (parse (blk, c, pwhy), "(17i4) ...and the parser takes it", pwhy);
+            check (c.params.size() == 2 && c.params.contains ("Left Reduction")
+                   && c.params.contains ("Right Reduction"),
+                   "(17i5) ...with BOTH sides in params, which is what moves them together to the "
+                   "same value every time",
+                   c.params.joinIntoString (" + "));
+            check (c.sayReached.contains ("Vac Attack") && c.endHardest == "its hardest setting",
+                   "(17i6) ...and B's words and end-words are what the done line will be built from",
+                   c.sayReached.substring (0, 40));
+            check (! c.askAfterDial,
+                   "(17i7) ...and there is no question after it: a dial on playback is a step's "
+                   "result, not a conversation (his 20:51, and B's ask:false)",
+                   "silent");
+
+            // THE KNOWN-BAD, so this leg cannot pass by accident: a dial naming ONE side still
+            // yields one side - the fix widened nothing it was not told to widen.
+            auto* one = new juce::DynamicObject();
+            one->setProperty ("control", "Left Reduction");
+            one->setProperty ("target_gr_db", 1);
+            one->setProperty ("sense", "higher_is_harder");
+            one->setProperty ("actuator", "amount");
+            juce::String why1;
+            const auto blk1 = echojay::CalibLoop::blockFromDialOnPlayback (juce::var (one), 2, why1);
+            echojay::CalibLoop::Config c1; juce::String pwhy1;
+            check (parse (blk1, c1, pwhy1) && c1.params.size() == 1,
+                   "(17i8) a dial that names ONE control still moves one - `controls` absent means "
+                   "`control` as before, which is B's own wording",
+                   c1.params.joinIntoString (" + "));
+            check (why1.contains ("B named no `controls`"),
+                   "(17i9) ...and the log SAYS it is the only side, so a single-sided dial on a "
+                   "two-sided plugin is visible in the log rather than inferred from a result",
+                   why1.substring (0, 70));
+
+            // (17i10) A REASON THAT IS NEVER EMPTY ON A SUCCESS, because the three call sites now
+            // LOG it on the road that runs. Until 25 Oct `why` was printed only when the
+            // translation failed, so the line naming the sides existed in the code and never in a
+            // log - the shape of defect that let "only one side moved" go unanswerable. A composer
+            // that returns a block and no words would put that silence straight back.
+            check (blk.getDynamicObject() != nullptr && why.trim().isNotEmpty()
+                   && blk1.getDynamicObject() != nullptr && why1.trim().isNotEmpty(),
+                   "(17i10) ...and a SUCCESSFUL translation always leaves a reason behind for the "
+                   "call site to log - both roads, two sides and one",
+                   juce::String (why.length()) + " / " + juce::String (why1.length()) + " chars");
+        }
+
         // (d) EchoJay's OWN compressor: the contract says `threshold_db` on it, and that is a threshold.
         {
             juce::String why;

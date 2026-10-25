@@ -2656,7 +2656,7 @@ int main()
                                                                 /*readInFlight*/ false,
                                                                 /*applyInFlight*/ false,
                                                                 /*editable*/ true,
-                                                                /*alreadyAsked*/ false);
+                                                                /*hasAlreadyHadIt*/ false);
             check (reopened.ask,
                    "SH21 a window open on a Link's editable rack with no session ASKS to engage - "
                    "which is his 06:55 fault, and the state that used to sit on \"Not connected to "
@@ -2666,11 +2666,55 @@ int main()
             // ONCE. The ask stands as the pending engage and the tick waits on the lock, so a Link
             // holding its own rack is not asked once a second for ever.
             const auto again = echojay::windowOpenEngageAsk (true, false, false, false, false, true,
-                                                             /*alreadyAsked*/ true);
-            check (! again.ask && juce::String (again.why).contains ("already asked"),
+                                                             /*hasAlreadyHadIt*/ true);
+            check (! again.ask && juce::String (again.why).contains ("already had this rack"),
                    "SH21a ...and it asks ONCE for that rack: the ask stands as the pending engage, "
                    "and a Link still holding its own window is not asked again every second",
                    juce::String (again.why));
+
+            // ---- SH21a2: A RELEASED SESSION IS NOT TAKEN BACK (overlay_liveness_guard b2) -----
+            //
+            // The caller's fact was "this window has already ASKED", and a session that arrived by
+            // another road - the X press, a dial, the agent's run - left the ask unspent. So the
+            // moment that session was RELEASED (a lease loss, or the close-apply handing the rack
+            // back: his "owns its rack again" screen) the next tick asked and re-engaged, which is
+            // the session nobody wanted and the mirror behind his 09:28. The fact is now ONE
+            // CONNECTION PER WINDOW PER RACK, however the connection was made, and the window marks
+            // it the moment a session is live rather than only when it asked for one.
+            //
+            // THE SAME INPUTS AS SH21, one flag apart: that is the known-bad/known-good pair.
+            check (! again.ask && reopened.ask,
+                   "SH21a2 ...and a window that has already HAD this rack does not ask after the "
+                   "session is released, while a window that never had it still connects once - the "
+                   "20 Oct ruling and the 06:55 fault answered by one flag",
+                   "had it -> no ask; never had it -> ask");
+
+            // ---- SH21a3: AND THE FACT ITSELF, WHICH IS A COUNT AND NOT AN OBSERVATION --------
+            //
+            // The first fix set the flag from `borrowActive()` on the tick, and b2 stayed red: it
+            // engages on the X press and releases BEFORE the next tick, so no tick ever saw the
+            // session and the window's ask was still in hand when it had come and gone. A fact that
+            // can only be read while something is alive is not a fact about the past. Every leg
+            // below is the predicate the window actually uses.
+            using echojay::windowHasHadRack;
+            check (windowHasHadRack (/*now*/ 1, /*atOpen*/ 0, false, false),
+                   "SH21a3 a session that STARTED and ENDED between two ticks still counts: the rack's "
+                   "count moved past what this window opened at, which is b2's own case and the one "
+                   "an observation of borrowActive() misses entirely",
+                   "now 1 > at open 0 -> had it");
+            check (! windowHasHadRack (/*now*/ 1, /*atOpen*/ 1, false, false),
+                   "SH21a4 ...and a window that opened AFTER that session does NOT inherit it - the "
+                   "count is the same one it opened at, so it still connects once: his 06:55 fault, "
+                   "which is the known-good this must not break",
+                   "now 1 == at open 1 -> never had it");
+            check (windowHasHadRack (/*now*/ 3, /*atOpen*/ 3, /*liveAtOpen*/ true, false),
+                   "SH21a5 ...and the V2 reopened in the MIDDLE of a live session has had that rack "
+                   "too, though its count was incremented before the window existed",
+                   "live at open -> had it");
+            check (windowHasHadRack (/*now*/ 0, /*atOpen*/ 0, false, /*alreadyAsked*/ true),
+                   "SH21a6 ...and a window whose ask is still waiting on the lock does not ask twice, "
+                   "which is what keeps a Link holding its own rack from being asked every second",
+                   "asked -> had it");
 
             // EVERY REFUSAL IS A DIFFERENT STATE, and each one says which.
             const auto engaged = echojay::windowOpenEngageAsk (true, /*sessionActive*/ true, false,

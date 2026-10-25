@@ -824,6 +824,22 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     bool         borrowActive() const noexcept
     { return borrowSession_.active.load(std::memory_order_relaxed); }
     juce::String borrowUid() const { return borrowSession_.uid; }
+    /** How many borrow sessions have STARTED on this rack in this processor's life (25 Oct 2026).
+
+        A COUNT, not a flag, because the question an editor has to answer is "has a session existed
+        on this rack since MY window opened?" and a flag can only be read while the session is
+        still alive. The window-open engage ask was first spent by observing `borrowActive()` on
+        the tick, which made the answer depend on a tick landing inside the session's life:
+        overlay_liveness_guard's b2 engages and releases between two ticks, so nothing observed it
+        and the ask was still in hand when the session had come and gone. The window now takes this
+        number when it opens and compares; no observation, no timing. */
+    int borrowSessionsStartedFor (const juce::String& uid) const
+    {
+        const auto it = borrowSessionsStarted_.find (uid);
+        return it == borrowSessionsStarted_.end() ? 0 : it->second;
+    }
+    /** The whole table, for a window to keep as its baseline the moment it is constructed. */
+    std::map<juce::String, int> borrowSessionsStartedSnapshot() const { return borrowSessionsStarted_; }
     // Engage half A (message thread): create/prepare the host, bind the ring,
     // start the rack-scoped lease renew. The EDITOR builds the rack (pulls +
     // restore) before calling borrowAudioOn().
@@ -1490,6 +1506,8 @@ public:
         std::atomic<int>  ringSlot { -1 };
     };
     BorrowSession borrowSession_;
+    // uid -> how many sessions have STARTED on that rack (message thread; engage only).
+    std::map<juce::String, int> borrowSessionsStarted_;
     // 4 Oct 2026 (save fix): the Link's own chain revision as it stood when this borrow engaged. -1 = unknown
     // (no sidecar), which makes a saved copy non-authoritative on restore. See getStateInformation's
     // borrowedRacks key and the restore tie-break.

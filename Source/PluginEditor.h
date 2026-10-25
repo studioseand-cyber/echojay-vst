@@ -2833,6 +2833,13 @@ private:
     // asked, which is the whole point - the old behaviour was that only the FIRST editor over a
     // processor's life ever armed the engage, because only a selection that changes armed it.
     juce::String windowEngageAskedFor_;
+    // ---- WHAT THIS WINDOW HAD WHEN IT OPENED (overlay_liveness_guard b2, 25 Oct 2026) --------
+    // The rack's session count per uid as this editor was constructed, and the rack that was live
+    // at that moment. Together with the processor's live count they answer "has a session existed
+    // on this rack since my window opened?" without observing one - see echojay::windowHasHadRack.
+    std::map<juce::String, int> sessionsStartedAtOpen_;
+    juce::String                rackLiveAtOpen_;
+    bool windowHasHadRack (const juce::String& uid) const;
     int agentRunZoneMsg_ = -1;                    // the last card painted (the live row's ticker)
 
     /** The run's model for this message: the LIVE client when the message is this session's

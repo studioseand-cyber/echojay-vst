@@ -4480,6 +4480,12 @@ void LinkProcessor::pollChainCommand()
                                               "calibration block - " + why).toRawUTF8());
                             continue;
                         }
+                        // ...and on the road that SUCCEEDS, the same line (his 08:43): the sides it
+                        // will move, and whether the done line is B's own.
+                        if (why.isNotEmpty())
+                            EchoJay_NSLog (("EJThreshold(Link): slot " + juce::String (at + 1) + " (\""
+                                            + self->chainHost.getSlotInfo (at).name
+                                            + "\") is DIALLED ON PLAYBACK - " + why.trim()).toRawUTF8());
                         echojay::CalibLoop::Config cfg;
                         juce::String whyCfg;
                         if (! echojay::CalibLoop::configFromBlock (blk, self->chainHost.getNumSlots(),

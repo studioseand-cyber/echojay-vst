@@ -450,6 +450,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     editorId_ = processorRef.nextEditorId();
     EchoJay_NSLog (("EJEditor: window #" + juce::String (editorId_) + " built at "
                     + juce::String::toHexString ((juce::pointer_sized_int) this)).toRawUTF8());
+    // ---- AND WHAT THE RACKS HAD BEFORE THIS WINDOW EXISTED (b2, 25 Oct 2026) --------------
+    // Taken HERE, once, because every later moment is a moment a session could have come and gone
+    // in. The window's one engage ask is spent against this baseline, so a rack that has been
+    // connected since this window opened is not taken back by itself (his 20 Oct ruling) while a
+    // rack that has not been is still connected to once (his 06:55 fault).
+    sessionsStartedAtOpen_ = processorRef.borrowSessionsStartedSnapshot();
+    if (processorRef.borrowActive()) rackLiveAtOpen_ = processorRef.borrowUid();
     // F1 (21s-a): the reply layer is added FIRST, so every reply control created below is parented into it rather
     // than into the editor. One parent, one visibility switch, no per-tab filtering.
     addAndMakeVisible (replyLayer);
@@ -13883,6 +13890,16 @@ void EchoJayEditor::withRackLock(const juce::String& uid, std::function<void()> 
     });
 }
 
+bool EchoJayEditor::windowHasHadRack (const juce::String& uid) const
+{
+    if (uid.isEmpty()) return false;
+    const auto it = sessionsStartedAtOpen_.find (uid);
+    return echojay::windowHasHadRack (processorRef.borrowSessionsStartedFor (uid),
+                                      it == sessionsStartedAtOpen_.end() ? 0 : it->second,
+                                      uid == rackLiveAtOpen_,
+                                      windowEngageAskedFor_ == uid);
+}
+
 void EchoJayEditor::borrowSelectionTick()
 {
     auto& p = processorRef;
@@ -13961,6 +13978,21 @@ void EchoJayEditor::borrowSelectionTick()
         if (p.borrowUid() == p.pendingAutoEngage_) p.pendingAutoEngage_.clear();
         // THE RUN'S RECLAIM IS SPENT: it got its rack back, so the next loss may ask again (08:44).
         runReclaimArmedFor_.clear();
+        // ---- AND THIS WINDOW HAS NOW *HAD* THIS RACK (overlay_liveness_guard b2, 25 Oct 2026) --
+        //
+        // The window-open ask below was spent only when this window ASKED, which is narrower than
+        // what it meant: a window whose session arrived by some other road (the X press, a dial,
+        // the agent's run) had never spent its ask, so the moment that session was RELEASED - a
+        // lease loss, or the close-apply handing the rack back - the next tick asked for it again
+        // and re-engaged. That is the thing his 20 Oct ruling forbids ("viewing is not asking"),
+        // and it is a session the user never asked for, carrying the mirror that was the root of
+        // his 09:28. overlay_liveness_guard's b2 caught it on the auto-release leg.
+        //
+        // One connection per window per rack, however that connection was made - and the fact is
+        // kept as a COUNT taken when the window opened rather than set here, because setting it
+        // here only works if a tick lands while the session is alive. b2 engages on the X press and
+        // releases before the next tick, so this line never ran and the ask was still in hand:
+        // echojay::windowHasHadRack and sessionsStartedAtOpen_ need no tick to see it.
         return;
     }
     // COMMIT 2c LIVENESS (17 Sep 2026): while a Link rack is SELECTED and its
@@ -14060,7 +14092,7 @@ void EchoJayEditor::borrowSelectionTick()
                                                          borrowReadInFlightUid_.isNotEmpty(),
                                                          p.borrowApplyInFlight_,
                                                          capable,
-                                                         windowEngageAskedFor_ == view);
+                                                         windowHasHadRack (view));
             if (d.ask)
             {
                 windowEngageAskedFor_ = view;

@@ -774,6 +774,14 @@ void EJAgentHome::armDialsOnPlaybackOnOwnRack (const std::vector<LoudnessLoop::D
                             "nothing claims to have been.").toRawUTF8());
             continue;
         }
+        // THE TRANSLATION SAYS WHAT IT WILL MOVE, AND IT IS SAID OUT LOUD (his 08:43, 25 Oct 2026).
+        // `why` was composed on the way through and then logged only when the translation FAILED, so
+        // on the road that actually ran there was no line naming the sides at all - which is why
+        // "only one side moved" could not be answered from the log.
+        if (why.isNotEmpty())
+            EchoJay_NSLog (("EJThreshold: slot " + juce::String (at + 1) + " (\""
+                            + host.getSlotInfo (at).name + "\") is DIALLED ON PLAYBACK - "
+                            + why.trim()).toRawUTF8());
         echojay::CalibLoop::Config cfg;
         juce::String whyCfg;
         if (! echojay::CalibLoop::configFromBlock (block, host.getNumSlots(), /*bus*/ false,
@@ -880,6 +888,9 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
                         "claims to have been.").toRawUTF8());
         return;
     }
+    if (why.isNotEmpty())
+        EchoJay_NSLog (("EJThreshold: \"" + slotName + "\" slot " + juce::String (added + 1)
+                        + " is DIALLED ON PLAYBACK - " + why.trim()).toRawUTF8());
     echojay::CalibLoop::Config cfg;
     juce::String whyCfg;
     if (! echojay::CalibLoop::configFromBlock (block, host.getNumSlots(), /*bus*/ false, slotName, cfg, whyCfg))

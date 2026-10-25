@@ -830,9 +830,41 @@ struct CalibLoop
                                                                                      : "threshold")
                                                   : (isThreshold ? "threshold" : "amount"));
         blk->setProperty ("param", control);
+        // ---- EVERY SIDE, AND B'S OWN WORDS, CARRIED ACROSS (his 08:43, fixed 25 Oct 2026) ----
+        //
+        // THIS WAS THE VAC ATTACK FAULT, and it was here rather than in the loop. configFromBlock
+        // has read `controls` and `say` since B's contract of 23 Oct - the pair machinery is older
+        // still (the MC 77's "Input L/R") - but THIS translator, which is the only road a
+        // dial_on_playback takes, never passed either of them on. So the block reached the loop
+        // carrying one name and no words:
+        //
+        //   * `params` held "Left Reduction" alone, so ONLY THE LEFT SIDE MOVED - his 08:43 report
+        //     word for word, and his Shadow Hills finding is the same family;
+        //   * `say` was absent, so the done line was the build's own rather than B's - which is how
+        //     "Adjusted the ... Left Reduction to +0.0 dB - it is working 0.2 dB. Does that sit
+        //     better with the rest of the mix?" reached him, a line that reads as a success about a
+        //     dial that fell five times short of its target, with a question after it.
+        //
+        // Both fields are B's and travel verbatim: this function's job is translation, and a field
+        // that needs none is passed and not re-decided.
+        if (const auto cv = dp->getProperty ("controls"); cv.getArray() != nullptr)
+            blk->setProperty ("controls", cv);
+        if (const auto sv = dp->getProperty ("say"); sv.getDynamicObject() != nullptr)
+            blk->setProperty ("say", sv);
         if (senseStated) blk->setProperty ("sense", senseWire);
         blk->setProperty ("makeup_cap_db", juce::var (target));
-        whyOut = senseStated
+        // AND THE LINE SAYS WHAT WILL MOVE, because "only one side moved" is a thing the log should
+        // have been able to answer in one line and could not.
+        juce::String sides;
+        if (auto* ca = dp->getProperty ("controls").getArray())
+            for (const auto& e : *ca)
+            { const auto n = e.toString().trim(); if (n.isNotEmpty()) sides << (sides.isEmpty() ? "" : ", ") << "\"" << n << "\""; }
+        if (sides.isEmpty()) sides = "\"" + control + "\" (B named no `controls`, so this is the only side)";
+        whyOut << "the control(s) that will move: " << sides
+               << (dp->getProperty ("say").getDynamicObject() != nullptr
+                       ? "; the done line is B's own, from `say`. "
+                       : "; B sent no `say`, so the done line is this build's. ");
+        whyOut += senseStated
                    ? "B states the direction of \"" + control + "\" as " + senseWire
                      + " from the profile's measured curve, so it is STEPPED (never guessed from the "
                        "name - the 28 Sep ruling)"

@@ -2605,6 +2605,9 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     borrowSession_.ringSlot.store(ringSlot, std::memory_order_relaxed);
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
+    // ...and THIS rack has now had one more session, which is how a window that opened before it
+    // knows the rack has been connected since (overlay_liveness_guard b2, 25 Oct 2026).
+    ++borrowSessionsStarted_[borrowSession_.uid];
     // 5 Oct 2026: EVERY TRANSITION, NAMED. On 5 Oct borrowRelease ran twice 17 s apart and the second got past
     // `if (! borrowActive()) return;`, so something set this true again during a reopen - and the log carried no
     // engage line to say what. A flag that guards a teardown has to say who set it.
