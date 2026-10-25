@@ -56,8 +56,10 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
             d->setProperty ("measured_at", known ? m->second : created);   // v1.1: when it finished
             // v1.1 (Sean / B, 24 Oct, REQUIRED): when its measuring began - the engine's start for that finish, else measured_at itself
             // (a result that measured nothing, or one the engine has no time for: no minimum applies)
+            // 26 Oct (the staging rehearsal): ONLY a profile carries the measuring span; a reference vote, a bridge read or an outcome of the
+            // same plugin measured nothing itself (contract v1.1: started == measured_at), else it counts as a fifth measurement at once
             const auto s0 = startedAtOf.find (pid);
-            d->setProperty ("measure_started_at", known && s0 != startedAtOf.end() && s0->second.isNotEmpty() ? s0->second : d->getProperty ("measured_at").toString()); }
+            d->setProperty ("measure_started_at", kind == "profile" && known && s0 != startedAtOf.end() && s0->second.isNotEmpty() ? s0->second : d->getProperty ("measured_at").toString()); }
         d->setProperty ("payload", payload != nullptr ? juce::var (payload) : juce::var (new juce::DynamicObject()));
         d->setProperty ("files", files != nullptr ? juce::var (files) : juce::var (new juce::DynamicObject()));
         // THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile carries the run and result it was measured for and a

@@ -14189,7 +14189,7 @@ int main (int, char**)
                && sOld.finished.startsWith ("2026-10-20T13:51:39") && std::abs (oldSecs - 213.0) < 1e-6 && sNone.started.isEmpty() && sNone.finished.isEmpty()
                && r1V.getProperty ("measure_started_at", "") == juce::var ("2026-10-24T11:59:00.250Z") && r1V.getProperty ("measured_at", "") == juce::var ("2026-10-24T12:00:03.750Z")
                && r2V.getProperty ("measure_started_at", "x") == r2V.getProperty ("measured_at", "y") && r3V.getProperty ("measure_started_at", "") == juce::var ("2026-10-24T10:00:00Z")
-               && at (0, "measure_started_at") == "2026-10-24T11:55:00Z" && at (0, "measured_at") == "2026-10-24T12:00:00Z"   // the engine's start
+               && at (0, "measure_started_at") == "2026-10-24T12:00:00Z" && at (0, "measured_at") == "2026-10-24T12:00:00Z"   // 26 Oct: an OUTCOME measured nothing - its finish, never the engine's start (WZ-26OCT-1)
                && at (1, "measure_started_at") == at (1, "measured_at")                                                       // no start: its finish
                && at (2, "measure_started_at") == at (2, "created") && at (2, "measured_at") == at (2, "created")             // no finish: a start is never kept alone
                && cd.contains ("row->setProperty (\"started_at\", res.startedAt.toISO8601 (true)); row->setProperty (\"ended_at\", (res.startedAt + juce::RelativeTime::seconds (seconds)).toISO8601 (true));"),
@@ -14222,6 +14222,42 @@ int main (int, char**)
                && ! docs[0].body.getProperty ("files", {}).getProperty ("map.json", {}).hasProperty ("measurement") && docs[0].body.getProperty ("files", {}).getProperty ("map.json", {}).isObject()
                && docs[2].kind == "outcome" && docs[2].body.getProperty ("files", {}).getDynamicObject()->getProperties().size() == 0,
                "wizard WZ-V11-3: the measurement identity in every measured file of a profile (" + nonceA + "), one nonce per result, none on map.json or an outcome");
+    }
+    // WZ-26OCT-1 ONLY A PROFILE CARRIES A MEASURING SPAN (the staging rehearsal, 26 Oct): StandardCLIP's reference vote and bridge read carried
+    // its profile's 11 s, so with three plugins measuring the mock counted a fifth measurement at once and refused the bridge read ("timestamp").
+    // Contract v1.1: every kind but a profile has measure_started_at == measured_at
+    {
+        const auto bundle = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("wz26oct1_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+        bundle.getChildFile ("profiles").createDirectory(); bundle.getChildFile ("reads").createDirectory();
+        bundle.getChildFile ("profiles/a.json").replaceWithText (R"({"schema": "ej_comp_profile/1", "plugin": {"plugin_id": "AudioUnit|11140001|1.0"}})");
+        bundle.getChildFile ("reads/r.json").replaceWithText (R"({"schema": "ej_readback_sweep/1"})");
+        const auto man = juce::JSON::parse (R"({"profiles": [{"product": "A", "kind": "saturation", "plugin_id": "AudioUnit|11140001|1.0", "profile": "profiles/a.json"}],
+                                               "reference_votes": [{"product": "A", "plugin_id": "AudioUnit|11140001|1.0", "vote": "agree"}],
+                                               "bridge_reads": [{"product": "A", "plugin_id": "AudioUnit|11140001|1.0", "twin_plugin_id": "VST3|99|1.0", "file": "reads/r.json"}]})");
+        const auto docs = ejmap::wizresults::fromPack (man, bundle, "run_0000000000000abf", true, {}, {}, { { "AudioUnit|11140001|1.0", "2026-10-25T22:11:03Z" } }, {}, {},
+                                                { { "AudioUnit|11140001|1.0", "2026-10-25T22:10:53Z" } });
+        bundle.deleteRecursively();
+        juce::StringArray seen; bool ok = docs.size() == 3;
+        for (const auto& d : docs)
+        {
+            const auto s = d.body.getProperty ("measure_started_at", "").toString(), m = d.body.getProperty ("measured_at", "").toString();
+            seen.add (d.kind + " " + s + ".." + m);
+            ok = ok && m == "2026-10-25T22:11:03Z" && (d.kind == "profile" ? s == "2026-10-25T22:10:53Z" : s == m);
+        }
+        check (ok, "wizard WZ-26OCT-1: only the profile carries the measuring span (" + seen.joinIntoString ("; ") + ")");
+    }
+    // WZ-26OCT-2 THE STAGING BUILD'S CHECKS (Kathy, 26 Oct: one command from a staging URL + client id to a signed Beta): its own self-test -
+    // https only (the mock's http://127.0.0.1 only for a dry run), nothing after the host, a public client id (never secret-shaped), and a ref
+    // lacking a required fix refused. The notarise script never takes a password
+    {
+        const auto sc = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/build_beta_for_staging.sh");
+        const auto ns = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/scripts/notarise_and_staple.sh").loadFileAsString();
+        juce::ChildProcess p; juce::String out; bool ran = p.start (juce::StringArray { "/bin/bash", sc.getFullPathName(), "--self-test" });
+        if (ran) { out = p.readAllProcessOutput(); p.waitForProcessToFinish (60000); }
+        const int cases = juce::StringArray::fromLines (out).size() - 1;
+        check (ran && p.getExitCode() == 0 && out.contains ("self-test: all cases as expected") && ! out.contains ("FAIL") && cases >= 22
+               && ns.contains ("--keychain-profile \"$PROFILE\"") && ! ns.contains ("--password") && ! ns.contains ("--apple-id"),
+               "wizard WZ-26OCT-2: the staging build's url / client id / required-fix checks (" + juce::String (cases) + " cases), the notarise script keychain-only");
     }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
@@ -14876,6 +14912,9 @@ int main (int, char**)
                                                          bundle, runM, false, idsM, {}, endM, {}, {}, startM);
                 auto missing = ejmap::wizresults::fromPack (juce::JSON::parse ("{\"out_of_scope\": [{\"product\": \"Plug " + ids[7] + "\", \"plugin_id\": \"" + pidM (7) + "\"}]}"), bundle, runM, false, idsM, {}, endM, {});
                 for (auto& d : missing) d.body.getDynamicObject()->removeProperty ("measure_started_at");
+                // 26 Oct (WZ-26OCT-1): an outcome now always starts at its finish, so the control "a start after its finish" is set by hand,
+                // as the missing start is removed by hand - the same document on the wire as before
+                for (auto& d : ctlM) if (d.kind == "outcome" && d.pluginId == pidM (6)) d.body.getDynamicObject()->setProperty ("measure_started_at", ago (900));
                 const bool zeroOutcome = [&] { for (const auto& d : ctlM) if (d.kind == "outcome" && d.pluginId == pidM (7)) return d.body.getProperty ("measure_started_at", "") == d.body.getProperty ("measured_at", "x"); return false; }();
                 Outbox boxM { work.getChildFile ("outbox_m") };
                 ejmap::wizresults::emit (four, boxM, {}); const auto stM1 = drain (*s4, boxM, riM);
