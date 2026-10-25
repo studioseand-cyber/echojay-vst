@@ -11,6 +11,46 @@ line once that proof is green.
 
 ---
 
+## 0. The build you have, and the one red
+
+**Installed from the FULL tier at 01:35** (LTO, the real ship build, from `build-guards`), commit
+`700f9505` on `feat/08c`, gate `rc=0` in 84m 42s. AudioUnitCache cleared.
+
+| bundle | linked | arm64 UUID |
+|---|---|---|
+| `EchoJay V2.component` | 25 Oct 00:22 | `4F35B25A-E8A0-3BFF-BCEB-F18F096CCF89` |
+| `EchoJay V2.vst3` | 25 Oct 00:24 | `2AFF7E17-D267-33C8-8BC2-43EF22A5D8F4` |
+| `EchoJay Link.component` | 25 Oct 00:26 | `699080BE-FC76-35DD-9372-0071B6F02F10` |
+| `EchoJay Link.vst3` | 25 Oct 00:27 | `590077BB-2183-3B0C-BEBE-27841D4A9082` |
+
+The V2 to check any crash report against is **`4F35B25A`**.
+
+**Green:** S4 `exit=0 count=85 (85 expected)`, 100% passed, 44 minutes of tests — including
+**`link_live_edit_guard`, Passed in 343 s**, which is the two-process guard that builds a slot onto
+a Link's rack through the shipped path and then changes its value. That is the one test that could
+have caught the born-here exception breaking the picker or the agent road, and it passed across a
+real process boundary. S5 GREEN both sides. `chat_store_guard` GREEN, 226 assertions.
+
+**One red, and it is not tonight's:** the host rig (S6) came back **87 ok, 1 FAIL**. The failure is
+row B6's second half on the new-chat road:
+
+```
+(B6 new chat) "Start anyway" press -> unknown button "chip0"
+FAIL  ...and in the new chat his own message is the first thing in it  [his row at -1, first card at -1]
+```
+
+Both indices are **-1**, so neither his row nor a card was found: the rig could not press the
+"Start anyway" chip, so no run was started and there was nothing to put in order. It is a
+precondition that did not happen, not an ordering fault.
+
+Why I say it is not mine: tonight's diff of `PluginEditor.cpp` adds **zero** lines touching chips,
+agent rows or the new-chat road (checked, not assumed), and the build does still handle a `chip…`
+press. What I cannot tell you is whether it ever passed, because **S6 ran for the first time in
+this gate tonight** — I added it — so there is no baseline. It wants its own look in the agent-UI
+area, with the rig's affordance names checked against the build's.
+
+---
+
 ## 1. What last night's loss actually was
 
 Your settings were overwritten by the **borrow session's close-apply**, not by control:
@@ -170,4 +210,46 @@ the **Link's own window** should move it in the V2's view within a moment. The s
 
 ## 6. Build, gate and guards
 
-_(filled in below when the overnight gate finishes.)_
+**The guard whose legs changed:** `==== chat_store_guard: GREEN (0 assertion(s) failed, 226 passed) ====`
+
+**The gate:**
+
+```
+S4 exit=0 count=85 (85 expected) at 60m 47s
+S5 exit=0
+S6 exit=1 - RED, reported but it does NOT gate the install (S4 and S5 do)
+```
+
+**The install:**
+
+```
+INSTALL OK
+EchoJay V2.component           25 Oct 00:22  arm64 4F35B25A-E8A0-3BFF-BCEB-F18F096CCF89
+EchoJay V2.vst3                25 Oct 00:24  arm64 2AFF7E17-D267-33C8-8BC2-43EF22A5D8F4
+EchoJay Link.component         25 Oct 00:26  arm64 699080BE-FC76-35DD-9372-0071B6F02F10
+EchoJay Link.vst3              25 Oct 00:27  arm64 590077BB-2183-3B0C-BEBE-27841D4A9082
+```
+
+If a UUID table is missing above, the gate refused the install and said why in its own line; the
+build you have is still the previous one, and nothing was overwritten.
+
+**Tonight's commits:**
+
+```
+700f9505 the three edits that landed after the patches were cut, and one damaged line
+63248738 the overnight notes: layer 3, slot meters, and the night's own record
+a0f6ce29 tonight's guards: SH17 CONTROL, SH18 the persistence rule, SH19 the dial's state
+4ea81485 "disagree" means opposite sides of the band, or a margin apart
+f5f2df2c the dial's state is its own publish trigger, so the read-back can wait for it
+f394417f nothing writes a plugin's state onto the Link without a claim to be newer
+23c99ed6 CONTROL through the live view: a gesture reaches the real plugin on the Link
+```
+
+**The bench proof (non-PACE, unsupervised):** Apple's AUDelay, 523 blocks rendered under four state
+calls, all four assertions green - the parameter moved, the state really differs, **applying the
+older state destroyed the change**, and re-applying the newer one brought it back. That is the
+premise of the persistence rule, proven on a live hosted plugin rather than argued.
+
+**What is NOT proven, and waits for you:** the same thing on the Tube-Tech CL 1B, which needs you
+at the Mac under the supervised exception. That is test 1 above, and it is what gates turning
+control on.

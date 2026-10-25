@@ -6,14 +6,14 @@ every build/gate/rig/bench run takes `~/Desktop/FOR_REVIEW_22oct/HEAVY.lock` fir
 
 | # | item | state |
 |---|---|---|
-| 1 | the persistence fix (View only back on; withheld = !seeded + born-here; 4 guards; bench on a non-PACE plugin; commits) | code + guards DONE, build queued behind B's lock |
+| 1 | the persistence fix | **DONE** — guard GREEN (226), bench GREEN on AUDelay, 7 commits |
 | 2 | empty rack — diagnosis only, from Logic's launch | **DONE** — answer below, goes in the report |
-| 3 | readback fix (b): "pending" republishes promptly, with the guard | code + SH19 DONE, in the same build |
+| 3 | readback fix (b) | **DONE** — SH19, in the gated build |
 | 4 | the "meters disagree" rule patch held from earlier | **DONE** — applied clean from the held patch |
 | 5 | design notes only: layer 3, and slot meters | **DONE** — docs/LIVE_VIEW_LAYER3_2026-10-25.md, docs/SLOT_METERS_2026-10-25.md |
-| 6 | 03:00 at the latest: full gate (LTO) + rig on everything since ce254b33, no PACE | not started |
-| 7 | install the full-tier build if S4 and S5 green (control ON only if all four guards AND the bench proof are green) | not started |
-| 8 | docs/MORNING_REPORT_2026-10-25.md, then touch A_NIGHT_DONE_25 | not started |
+| 6 | full gate (LTO) + rig since ce254b33 | **DONE 01:35** — S4 85/85, S5 GREEN, S6 87 ok / 1 FAIL (not tonight's; written up) |
+| 7 | install the full-tier build | **DONE** — installed, control **OFF** (the CL 1B proof needs him) |
+| 8 | the morning report, then the done marker | **DONE** — report written, marker touched 01:37 |
 
 ## Log
 
@@ -157,3 +157,47 @@ is diagnosis only).
      have: "over 2 hours old **and its owner isn't running anything**". If anything heavy is
      running, the lock is left alone and the script says so.
   The queue is still waiting, which is the correct state - B has had a legitimately busy hour.
+
+## 00:37 — the heavy queue ran
+
+- **00:10** the lock came free and the queued script took it.
+- **the guard: GREEN** (its verdict is what let the commits proceed; the script refuses to commit or
+  gate on a red, which is the behaviour I want when nobody is watching).
+- **seven commits**, by subject: CONTROL, the persistence rule, the dial's publish trigger, the
+  disagree rule, tonight's guard legs, the notes, and then a seventh I owed:
+  **the patches were cut before three later edits**, so `git apply --cached` staged the older
+  versions and left the newer ones behind. The working tree was always right - it is what the gate
+  is building and what the bench proved - but two things are now on the record rather than hidden:
+  the guards commit does **not** compile on its own (the namespace-alias fix is in the follow-up),
+  and the guards commit's message lost a word to an unquoted heredoc running backticks as a
+  command. Both named in the seventh commit instead of rebased away mid-gate.
+- **the gate:** S1 three trees of archives in 3m 52s, S2 bundles REBUILD OK at 16m 44s, **S4
+  running now**. On the previous night's timings S4 takes about 45 minutes, so the install decision
+  lands around 01:15 - well inside the 03:00 deadline.
+- **01:25 S4 GREEN: `S4 exit=0 count=85 (85 expected)`, 100% passed, 44 minutes of tests** - and
+  that includes **`link_live_edit_guard`**, the two-process guard that builds a slot onto a Link's
+  rack through the shipped path and then changes its value. So the born-here exception did not break
+  the picker or the agent road, proven across a real process boundary rather than argued. That is
+  the fourth of his four guards.
+- **01:25 S5 GREEN** both sides, 0 assertions failed. S6 (the host rig) is running now; the install
+  follows, and it is allowed because S4 and S5 are green and no host is open.
+
+## 01:37 — the night's end
+
+Everything on the list is done. The gate installed the FULL-tier build at 01:35 (commit
+`700f9505`): S4 85/85 with `link_live_edit_guard` green in two processes, S5 green both sides, and
+the install permitted because both gates passed and no host was open.
+
+**Control ships OFF**, which is his ruling and not my judgement: the CL 1B persistence proof needs
+him at the Mac and could not be done tonight. Turning it on is one line in `EJLiveViewInput.h` once
+test 1 in the morning report is green.
+
+**The one red is written up, not fixed:** S6 row B6's second half on the new-chat road, 87 ok to 1
+FAIL, whose own evidence (`his row at -1, first card at -1`, after `unknown button "chip0"`) shows a
+precondition that never happened rather than an ordering fault. Tonight's diff touches none of that
+code, and S6 ran for the first time tonight so there is no baseline to say it ever passed.
+
+**Two mistakes of mine are on the record** rather than tidied away: a one-target compile that ran
+while B held the lock (my command chained the build after the lock attempt instead of gating on it),
+and subject patches cut before three later edits, which left the guards commit unable to compile on
+its own and ate a word from its message. Both are named in commit `700f9505`.
