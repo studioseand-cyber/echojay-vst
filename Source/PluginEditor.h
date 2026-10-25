@@ -4,6 +4,7 @@
 #include <set>
 #include <map>
 #include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the Link editor
+#include "EJSlotMeters.h"    // his 25 Oct ask: per-slot IN / OUT / GR, fed from the Link at 30 Hz
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
@@ -3185,6 +3186,14 @@ private:
             // Build 2: IN and OUT, top right of the title line. Bound by the panel's rebuild to this slot's
             // pre-gain and output gain on whichever host the view is showing.
             GainReadout inReadout, outReadout;
+            // ---- THE LIVE METERS (his 25 Oct ask) --------------------------------------------
+            // IN / OUT on the left of the wet knob, the third figure on its right - the knob's own
+            // flanks are the only free space in a 64 px tile, and the rects come from ONE function
+            // (echojay::slotMeterFlanksFor) so paint, resized and the guard cannot disagree.
+            // These are METERS, measured; inReadout/outReadout above are the TRIM CONTROLS. Two
+            // different things that both say IN, which is why the meters carry a bar and sit
+            // somewhere else entirely.
+            echojay::SlotMeterStrip meterIO, meterThird;
 
             juce::TextButton bypassBtn { "B" };
             juce::TextButton removeBtn { "X" };
@@ -3224,6 +3233,13 @@ private:
                 nextBtn.onClick   = [this] { if (onMove)   onMove(+1); };
                 addAndMakeVisible(wetKnob);
                 wetKnob.onChange = [this](float v) { if (onWet) onWet(v); };
+                meterIO.which    = echojay::SlotMeterStrip::Which::InOut;
+                meterThird.which = echojay::SlotMeterStrip::Which::Third;
+                for (auto* m : { &meterIO, &meterThird })
+                {
+                    m->textColour = EchoJayLookAndFeel::ChainCard::nameOn;
+                    addAndMakeVisible (*m);
+                }
             }
 
             void mouseDown(const juce::MouseEvent& e) override
@@ -3363,6 +3379,10 @@ private:
                 prevBtn.setBounds(getWidth() - m - bw * 2 - 2, by, bw, bh);
                 // Wet/dry knob — centred between name row and button row
                 wetKnob.setBounds((getWidth() - 22) / 2, 17, 22, 22);
+                // ...and the meters in its flanks, from the one function that owns that arithmetic.
+                const auto fl = echojay::slotMeterFlanksFor (getWidth(), getHeight(), 22, 17, 22);
+                meterIO.setBounds (fl.left);
+                meterThird.setBounds (fl.right);
             }
         };
 
@@ -3418,6 +3438,11 @@ private:
         PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (local + remote)
         // Build 2: the panel asks the editor for this slot's live IN/OUT and hands back a write. `isIn` picks
         // the pre-gain (true) or the output gain (false) - one pair of hooks rather than four.
+        /** THE METERS' getter: true with `out` filled, or FALSE meaning draw nothing at all - not a
+            dash where a figure would be, not a zero, and never the last reading (his 25 Oct ask:
+            "blank, not zero"). Assigned by the editor; the strips poll it on their own 20 Hz timer
+            for the reason GainReadout does, which is written out above. */
+        std::function<bool(int slot, echojay::SlotMeterOne& out)> onSlotMeterGet;
         std::function<float(int slot, bool isIn)>              onSlotGainGet;
         std::function<void(int slot, bool isIn, float db)>     onSlotGainSet;
         std::vector<std::unique_ptr<Block>> blocks;
@@ -4586,6 +4611,13 @@ private:
                 else { bl->inReadout.set = nullptr; bl->outReadout.set = nullptr; }
                 bl->addAndMakeVisible (bl->inReadout);
                 bl->addAndMakeVisible (bl->outReadout);
+                // THE METERS, bound to THIS slot on whichever rack the panel is showing. One hook,
+                // and it answers false when there is nothing true to draw.
+                if (onSlotMeterGet)
+                    bl->meterIO.get = bl->meterThird.get =
+                        [this, ci] (echojay::SlotMeterOne& out) { return onSlotMeterGet (ci, out); };
+                else
+                { bl->meterIO.get = nullptr; bl->meterThird.get = nullptr; }
                 bl->trimText    = slotInfos[(size_t)i].trimText;    // 21m ruling 2
                 bl->pictureText = slotInfos[(size_t)i].pictureText; // 21p item 2 (not drawn on the tile)
                 bl->pictureBadge = slotInfos[(size_t)i].pictureBadge; // 15 Oct: what the tile draws

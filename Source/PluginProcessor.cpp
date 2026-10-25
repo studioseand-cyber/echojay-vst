@@ -803,6 +803,9 @@ EchoJayProcessor::~EchoJayProcessor()
     // teardown was in flight. ~EchoJayEditor is deliberately NOT a signal: that window closes constantly
     // mid-session, and mid-session disposal is correct and must keep working.
     ChainHost::noteHostTeardownBegan ("an EchoJayProcessor destructor (AP_Close)");
+    // The per-slot meter mappings, unmapped here: read-only views of files other processes own, so
+    // they are unmapped and never unlinked (25 Oct 2026).
+    closeSlotMeterViews();
     // ITEM 0b: the agent goes FIRST. Its client holds a socket and a timer, and its sinks read
     // chainHost, api and the undo history - all of which are still alive on this line and none of
     // which are by the time the member list destructs. A session still running is stopped here
@@ -4695,6 +4698,114 @@ bool EchoJayProcessor::agentRunHoldsRack (const juce::String& uid) const
         silently - his words this morning were "silent lost changes are a fault".
       * IT NEVER SENDS WHEN THE VIEW IS NOT FOLLOWING, because following is what proves the two
         parameter lists agree, and a value by index without that is a value on the wrong knob.  */
+// ---- PER-SLOT METERS, THE READING SIDE (his 25 Oct ask) --------------------------------------
+//
+// *"They must show silence as silence, never a stale level, and fall back to blank (not zero) if
+//  the Link stops publishing."*
+//
+// All three of those are this function and the decision it calls. Silence is the Link's own decayed
+// RMS walking down to the floor; "never a stale level" is the sequence clock below; blank-not-zero
+// is that a slot with no reading is NOT WRITTEN at all, so slotMeterFor returns false and the card
+// draws nothing where a number would be.
+void EchoJayProcessor::slotMeterTick (const juce::String& uid, int liveRevision)
+{
+    if (uid.isEmpty()) return;
+    auto& v = slotMeterViews_[uid];
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+
+    if (v.map == nullptr)
+    {
+        // BOUNDED, at about 1 Hz. An older Link publishes no file at all and that is a legitimate
+        // permanent state, so this must never become a stat per tick for the life of the session
+        // (ring_leak_guard's leg 5, and the 11 Oct exhaustion behind it).
+        if (nowMs < v.nextTryMs) return;
+        v.nextTryMs = nowMs + 1000.0;
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty()) return;
+        const auto path = dir + echojay::slotMetersFileNameFor (uid);
+        if (! juce::File (path).existsAsFile())
+        {
+            v.drawing = false;
+            v.why = "this Link does not publish slot meters yet - an older build, so the cards show "
+                    "what they always showed";
+            return;
+        }
+        int fd = -1, e2 = 0;
+        auto* map = LinkShm::openFileMapped (path, echojay::kSlotMeterFileSize,
+                                             /*readOnly*/ true, fd, e2);
+        if (map == nullptr)
+        {
+            if (! v.saidOpen)
+            {
+                v.saidOpen = true;
+                EchoJay_NSLog (("EJSlotMeter: " + uid + "'s meter file would not map (errno "
+                                + juce::String (e2) + ") - the cards stay as they are").toRawUTF8());
+            }
+            v.drawing = false;
+            return;
+        }
+        v.map = map; v.fd = fd; v.path = path;
+        v.lastSeq = 0; v.lastSeqMovedMs = nowMs;
+        EchoJay_NSLog (("EJSlotMeter: reading " + uid + "'s per-slot meters at 30 Hz from "
+                        + echojay::slotMetersFileNameFor (uid)).toRawUTF8());
+    }
+
+    echojay::SlotMeterHeader h {};
+    echojay::SlotMeterOne slots[echojay::kSlotMeterMax] {};
+    int n = 0;
+    const bool read = echojay::readSlotMeters (v.map, h, slots, echojay::kSlotMeterMax, n);
+
+    // THE SEQUENCE'S OWN CLOCK, and it is started by a CHANGE and not by a read: a reader that
+    // reset this every time it looked would never time out, however dead the writer is. That is the
+    // whole of "never a stale level" - the figure is only ever as old as the last frame that moved.
+    if (read && h.seq != v.lastSeq) { v.lastSeq = h.seq; v.lastSeqMovedMs = nowMs; }
+
+    const auto d = echojay::slotMeterDecision (read, h.structureRevision, liveRevision,
+                                               nowMs - v.lastSeqMovedMs);
+    const bool nowDrawing = d.what == echojay::SlotMeterUse::Draw;
+    if (nowDrawing != v.drawing)
+        EchoJay_NSLog (("EJSlotMeter: " + uid + (nowDrawing ? " - the cards are LIVE"
+                                                           : juce::String (" - the cards go BLANK: ")
+                                                             + d.why)).toRawUTF8());
+    v.drawing = nowDrawing;
+    v.why     = nowDrawing ? juce::String() : juce::String (d.why);
+    if (! nowDrawing) return;
+    v.hdr = h; v.count = n;
+    for (int i = 0; i < n; ++i) v.slots[i] = slots[i];
+}
+
+bool EchoJayProcessor::slotMeterFor (const juce::String& uid, int slot,
+                                     echojay::SlotMeterOne& out) const
+{
+    const auto it = slotMeterViews_.find (uid);
+    if (it == slotMeterViews_.end() || ! it->second.drawing) return false;
+    if (slot < 0 || slot >= it->second.count) return false;
+    out = it->second.slots[slot];
+    // A SLOT WITH NO FIELDS AT ALL IS NOT A READING. Returning true here would make the card draw
+    // a row of dashes where the Link has simply never measured that slot, which reads as a fault.
+    return out.fields != 0u;
+}
+
+juce::String EchoJayProcessor::slotMeterWhyNot (const juce::String& uid) const
+{
+    const auto it = slotMeterViews_.find (uid);
+    return it == slotMeterViews_.end() ? juce::String() : it->second.why;
+}
+
+void EchoJayProcessor::closeSlotMeterViews()
+{
+    for (auto& [uid, v] : slotMeterViews_)
+        if (v.map != nullptr)
+        {
+            // READ-ONLY and NOT ours: unmapped, never unlinked. The Link owns that file and deletes
+            // it when it goes; a reader that unlinked a writer's file is the fault this names.
+            LinkShm::closeMapped (v.map, echojay::kSlotMeterFileSize, v.fd, {}, /*unlink*/ false);
+            v.map = nullptr; v.fd = -1;
+        }
+    slotMeterViews_.clear();
+}
+
 /** THE RECORD, both halves. Message thread only (the listener bounces to it), so a map of sets is
     the right shape: this is asked once per slot at the close of a session, not per block. */
 void EchoJayProcessor::noteControlReachedLink (const juce::String& uid, int slot)

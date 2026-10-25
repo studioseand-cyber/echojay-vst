@@ -14,6 +14,7 @@
 #include "EedKeyEngine.h"   // detected key -> LinkMeterFrame (KEY_DETECTOR_SPEC §9)
 #include "EedKeyWorker.h"
 #include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
+#include "EJSlotMeters.h"   // per-slot meters on a Link's cards (25 Oct 2026)
 #include <atomic>
 #include <functional>
 #include <vector>
@@ -465,6 +466,20 @@ private:
     bool shadowValSaidTruncated_ = false;      // the "more than we can carry" line, said once
     bool shadowValSaidCost_ = false;           // the measured sweep cost, said once per tap
     void publishShadowValuesTick();
+    // ---- PER-SLOT METERS, published at 30 Hz (his 25 Oct ask; EJSlotMeters.h says why) --------
+    // A THIRD tiny file, and unlike the values file it is NOT tied to a tap: he wants the figures on
+    // every slot card whenever the rack is on screen, so this is mapped lazily the first time there
+    // is a rack to publish and kept for the Link's life. The file is per-uid, so one Link publishes
+    // one file whatever any V2 is doing.
+    void* slotMeterMap_ = nullptr;
+    int   slotMeterFd_  = -1;
+    juce::String slotMeterPath_;
+    std::vector<echojay::SlotMeterOne> slotMeterScratch_;   // reused; never allocated on a tick
+    juce::uint32 slotMeterPublishes_ = 0;
+    double slotMeterNextTryMs_ = 0.0;        // the bounded retry, as ringTick's is
+    bool   slotMeterSaidCost_  = false;      // the measured pass cost, said once
+    bool   slotMeterSaidOpen_  = false;
+    void publishSlotMetersTick();
     // ---- CONTROL (stage C1): the staged set_param frames ---------------------------------------
     // The audio thread COPIES a drained kSetParam frame in here and applies nothing; the message
     // thread applies it. LinkProcessor's own ruling of 10 Oct stands word for word - "a device

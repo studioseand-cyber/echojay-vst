@@ -32,6 +32,7 @@
 #include "EJRackSidecarFill.h"          // SH19: the dial-state fingerprint the publisher compares
 #include "EJAgentProtocol.h"            // SH19: the read-back's look budget
 #include "EJEngageDemand.h"             // SH21: a window open on a Link's rack connects to it
+#include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -74,6 +75,14 @@ struct EchoJayTabStripTestAccess
         is the editor's own presentation and has no business being public just to be read here. */
     static juce::String approvalLine (EchoJayEditor::AgentApproval m)
     { return EchoJayEditor::agentApprovalLine (m); }
+    /** SH22 (25 Oct 2026): the slot tile's own two rows, so the meters' flanks can be asserted
+        against the SAME arithmetic the tile paints and lays out with. ChainListPanel is private, and
+        widening it to let a guard read a rectangle would be the wrong trade - friendship by name is
+        what this struct is for. */
+    static juce::Rectangle<int> tileCaptionRow (int w, int h)
+    { return EchoJayEditor::ChainListPanel::Block::rowsFor (w, h).captionRow; }
+    static juce::Rectangle<int> tileButtonRow (int w, int h)
+    { return EchoJayEditor::ChainListPanel::Block::rowsFor (w, h).buttonRow; }
     static void toChat (EchoJayEditor& e) { e.switchToTab (EchoJayEditor::Tab::Chat, true); }
     static void newChat (EchoJayEditor& e) { e.createNewChat (e.effectiveChannelUid()); }
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
@@ -2696,6 +2705,191 @@ int main()
                    "SH21f ...and his own chain is never a Link's rack, so nothing is asked for it: "
                    "this rule cannot reach the page he spends most of his time on",
                    juce::String (noRack.why));
+        }
+
+        // ---- SH22: THE SLOT METERS - SILENCE, STALENESS, AND BLANK RATHER THAN ZERO ----------
+        //
+        // His 25 Oct ask, in his own three conditions:
+        //
+        //     *"per-slot IN, OUT and gain reduction on the Link slot cards in the V2, fed from the
+        //     Link at 30 Hz. They must show silence as silence, never a stale level, and fall back
+        //     to blank (not zero) if the Link stops publishing."*
+        //
+        // Each of those is a leg here, and so is the GR line his 15 Oct ruling drew: a third party's
+        // reduction is never read and never estimated, so the third figure is only CALLED GR when it
+        // really is one.
+        {
+            using namespace echojay;
+
+            // ---- THE FILE ITSELF: a frame nobody published is NOT a frame of zeros ------------
+            {
+                juce::MemoryBlock blk (kSlotMeterFileSize, true);     // zeroed, as the Link creates it
+                SlotMeterHeader h {}; SlotMeterOne got[kSlotMeterMax] {}; int n = -1;
+                check (! readSlotMeters (blk.getData(), h, got, kSlotMeterMax, n) && n == 0,
+                       "SH22 a file nobody has published reads as NO FRAME, not as a frame of zeros - "
+                       "seq 0 is the whole of blank-not-zero, and it starts here",
+                       "no frame, n=" + juce::String (n));
+
+                // ...and a published frame reads back exactly, through the real publisher.
+                SlotMeterOne put[2] {};
+                put[0] = slotMeterEntry (/*bypassed*/ false, /*measured*/ true,
+                                         /*inKnown*/ true, -18.5f, -9.0f,
+                                         /*outKnown*/ true, -12.5f, -6.0f,
+                                         /*grKnown*/ false, 0.0f, /*heard*/ 4.0f);
+                put[1] = slotMeterEntry (true, true, true, -18.0f, -9.0f, true, -18.0f, -9.0f,
+                                         false, 0.0f, 4.0f);          // bypassed
+                SlotMeterHeader ph {};
+                ph.slotCount = 2; ph.structureRevision = 7;
+                publishSlotMeters (blk.getData(), ph, put, 2);
+                check (readSlotMeters (blk.getData(), h, got, kSlotMeterMax, n)
+                       && n == 2 && h.structureRevision == 7 && (h.seq % 2) == 0,
+                       "SH22a ...and a published frame reads back whole, with an EVEN sequence - the "
+                       "seqlock is the meter frame's own, so a torn read is a retry and never a figure",
+                       "n=" + juce::String (n) + " seq=" + juce::String ((int) h.seq));
+                float db = 0.0f;
+                check (slotMeterFigure (got[0], kSlotMeterIn, db) && std::abs (db + 18.5f) < 0.01f,
+                       "SH22b ...and the figures survive the trip: IN is the number the Link measured, "
+                       "not a rounded or re-derived one",
+                       juce::String (db, 2) + " dB");
+                check ((got[1].fields & kSlotMeterBypassed) != 0u
+                       && ! slotMeterFigure (got[1], kSlotMeterIn, db),
+                       "SH22c a BYPASSED slot carries no figures and says why - \"not in the signal\" is "
+                       "a different statement from \"doing nothing\", and a card that cannot tell them "
+                       "apart is worse than a blank one",
+                       slotMeterNoReadingWhy (got[1]));
+            }
+
+            // ---- SILENCE IS SILENCE, and nothing measured is NOT silence ---------------------
+            {
+                // The Link's own decayed RMS walking down: a real figure, low, and it IS a reading.
+                const auto quiet = slotMeterEntry (false, true, true, -95.0f, -90.0f,
+                                                   true, -95.0f, -90.0f, false, 0.0f, 30.0f);
+                float db = 0.0f;
+                check (slotMeterFigure (quiet, kSlotMeterIn, db) && db < -60.0f,
+                       "SH22d SILENCE IS A READING: a slot that has heard audio and gone quiet carries "
+                       "its real level, low, so the card follows it down instead of holding the last "
+                       "loud figure",
+                       juce::String (db, 1) + " dB");
+                // Nothing heard at all: `known` false, so there is no figure to show.
+                const auto virgin = slotMeterEntry (false, true, /*inKnown*/ false, -200.0f, -200.0f,
+                                                    /*outKnown*/ false, -200.0f, -200.0f,
+                                                    false, 0.0f, 0.0f);
+                check (virgin.fields == 0u && ! slotMeterFigure (virgin, kSlotMeterIn, db),
+                       "SH22e ...and NOTHING MEASURED is not silence: a slot nothing has been played "
+                       "through has no figure at all, which is the GR window's own rule and the "
+                       "distinction the rig's B9 could not make",
+                       juce::String (virgin.heardMs) + " ms heard");
+                // THE FLOOR IS NOT A FIGURE. -200 with known=true would be the trap LinkMeterFrame
+                // names; the composer refuses it rather than publishing a floor as a measurement.
+                const auto floored = slotMeterEntry (false, true, true, -200.0f, -200.0f,
+                                                     true, -200.0f, -200.0f, false, 0.0f, 9.0f);
+                check ((floored.fields & (kSlotMeterIn | kSlotMeterOut)) == 0u,
+                       "SH22f a reading AT THE NO-READING FLOOR is published as absent, not as -200.0 - "
+                       "an ungated dB field reading a floor renders as a measurement, which this house "
+                       "has paid for twice",
+                       "floor refused");
+            }
+
+            // ---- NEVER A STALE LEVEL: the sequence's clock, both directions ------------------
+            {
+                const auto live = slotMeterDecision (/*frameRead*/ true, 5, 5, /*msSinceSeqMoved*/ 40.0);
+                check (live.what == SlotMeterUse::Draw,
+                       "SH22g a frame whose sequence moved 40 ms ago is DRAWN - at 30 Hz that is one "
+                       "tick, so a working Link is never blanked by its own publish rate",
+                       "draw");
+                const auto stale = slotMeterDecision (true, 5, 5, kSlotMeterStaleMs + 1.0);
+                check (stale.what == SlotMeterUse::Blank
+                       && juce::String (stale.why).contains ("stopped publishing"),
+                       "SH22h ...and a sequence that has stood still past the bound BLANKS the cards: "
+                       "a Link that has gone must not leave a level on screen that was true a moment "
+                       "ago, which is his \"never a stale level\" word for word",
+                       juce::String (stale.why).substring (0, 48));
+                const auto noFile = slotMeterDecision (/*frameRead*/ false, 0, 5, 0.0);
+                check (noFile.what == SlotMeterUse::Blank
+                       && juce::String (noFile.why).contains ("older build"),
+                       "SH22i an older Link publishes nothing and the cards say nothing - the correct "
+                       "downgrade, and never a claim that the meters are live when they are not",
+                       juce::String (noFile.why).substring (0, 40));
+                const auto moved = slotMeterDecision (true, /*frameRev*/ 5, /*liveRev*/ 6, 40.0);
+                check (moved.what == SlotMeterUse::Blank
+                       && juce::String (moved.why).contains ("before the rack changed"),
+                       "SH22j a frame taken BEFORE the rack changed shape is discarded, so a figure "
+                       "never lands on a card it does not belong to",
+                       "revision mismatch blanks");
+                const auto unknownRev = slotMeterDecision (true, 5, /*liveRev*/ -1, 40.0);
+                check (unknownRev.what == SlotMeterUse::Draw,
+                       "SH22k ...but a revision the V2 does not know yet is not a reason to refuse: the "
+                       "Link's own is then the only one there is, and refusing would blank every card "
+                       "for the first seconds of every session",
+                       "draw");
+            }
+
+            // ---- THE GR LINE, WHICH THIS DOES NOT CROSS (his 15/18 Oct ruling) --------------
+            {
+                // A third party: no certified map, so the third figure is the DIFFERENCE and is
+                // never called GR.
+                const auto third = slotMeterEntry (false, true, true, -20.0f, -8.0f,
+                                                   true, -14.0f, -4.0f,
+                                                   /*grKnown*/ false, 0.0f, 10.0f);
+                check ((third.fields & kSlotMeterDiff) != 0u && (third.fields & kSlotMeterGr) == 0u
+                       && std::abs (third.thirdDb - 6.0f) < 0.01f,
+                       "SH22l a third party with no certified map shows the DIFFERENCE across the slot "
+                       "(+6.0 here, because this one is making up gain) and never a gain reduction - "
+                       "EchoJay does not read their meter and does not estimate one",
+                       juce::String (third.thirdDb, 1) + " dB");
+                check (juce::String (slotMeterThirdLabel (third)) != "GR",
+                       "SH22m ...and the LABEL says which it is, because the two mean different things "
+                       "and a number with the wrong name on it is worse than no number",
+                       juce::String::fromUTF8 (slotMeterThirdLabel (third)));
+                // An EchoJay device, or a certified map: a real reduction, labelled GR.
+                const auto real = slotMeterEntry (false, true, true, -20.0f, -8.0f,
+                                                  true, -24.0f, -12.0f,
+                                                  /*grKnown*/ true, 4.2f, 10.0f);
+                check ((real.fields & kSlotMeterGr) != 0u && (real.fields & kSlotMeterDiff) == 0u
+                       && std::abs (real.thirdDb - 4.2f) < 0.01f
+                       && juce::String (slotMeterThirdLabel (real)) == "GR",
+                       "SH22n ...and a device that reports its own reduction shows it AS GR, from the "
+                       "same figure its own meter draws - so the card and the meter cannot disagree",
+                       juce::String (real.thirdDb, 1) + " dB GR");
+                // A difference needs BOTH legs. One reading and a floor is arithmetic, not a figure.
+                const auto oneLeg = slotMeterEntry (false, true, true, -20.0f, -8.0f,
+                                                    /*outKnown*/ false, -200.0f, -200.0f,
+                                                    false, 0.0f, 10.0f);
+                check ((oneLeg.fields & kSlotMeterDiff) == 0u,
+                       "SH22o a difference is not computed from ONE reading - a slot whose output leg "
+                       "has no figure shows no difference, rather than its input minus a floor",
+                       "no difference offered");
+            }
+
+            // ---- AND WHERE THEY GO: the 15 Oct overlap lesson, as a property ----------------
+            {
+                // The tile's real size, and the two rects every other author on it uses.
+                const int w = 118, h = 64;
+                const auto fl   = slotMeterFlanksFor (w, h, 22, 17, 22);
+                struct { juce::Rectangle<int> captionRow, buttonRow; } rows
+                    { EchoJayTabStripTestAccess::tileCaptionRow (w, h),
+                      EchoJayTabStripTestAccess::tileButtonRow (w, h) };
+                const int knobX = (w - 22) / 2;
+                check (fl.left.getRight() <= knobX && fl.right.getX() >= knobX + 22
+                       && fl.left.getWidth() > 20 && fl.right.getWidth() > 20,
+                       "SH22p the meters sit in the wet knob's FLANKS and clear of it on both sides - "
+                       "the only free space in a 64 px tile, and wide enough for a bar and a figure",
+                       "left " + juce::String (fl.left.getWidth()) + " px, right "
+                       + juce::String (fl.right.getWidth()) + " px");
+                check (! fl.left.intersects (rows.buttonRow) && ! fl.right.intersects (rows.buttonRow)
+                       && ! fl.left.intersects (rows.captionRow) && ! fl.right.intersects (rows.captionRow),
+                       "SH22q ...and neither one touches the button row or the caption band. This is the "
+                       "15 Oct fault asserted instead of remembered: a caption at y=47 and buttons at "
+                       "y=47 came from two authors who had never been compared",
+                       "no overlap");
+                const auto lay = layOutCardReadouts (w, 16);
+                check (! fl.left.intersects (lay.in) && ! fl.left.intersects (lay.out)
+                       && ! fl.right.intersects (lay.in) && ! fl.right.intersects (lay.out),
+                       "SH22r ...nor the IN / OUT TRIM readouts, which are controls that happen to say "
+                       "IN and OUT too - the meters had to go somewhere they could not be mistaken for "
+                       "them, or read as fighting with them",
+                       "clear of the trims");
+            }
         }
 
         // ---- "RUNNING AND SILENT" IS A STATE WITH A NAME, NOT A GUESS (23 Oct 2026) ------------

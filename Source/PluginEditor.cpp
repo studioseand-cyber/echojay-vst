@@ -2576,6 +2576,29 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             return std::numeric_limits<float>::quiet_NaN();   // NOT 0.0: see GainReadout
         return isIn ? rack.slots[(size_t) i].preTrimDb : rack.slots[(size_t) i].outGainDb;
     };
+    // ---- THE METERS' ONE GETTER (his 25 Oct ask) ---------------------------------------------
+    //
+    // A LINK'S rack answers from the file that Link publishes at 30 Hz, with its own staleness rule
+    // already applied (slotMeterFor returns false when the cards must blank). THIS V2'S OWN rack
+    // answers from its own ChainHost through the SAME composer the Link publishes with
+    // (echojay::slotMeterEntry), so the two surfaces cannot gate a figure differently - the
+    // alternative was a second set of rules for the same three numbers, which is how "in -200.0"
+    // reached a card once already.
+    chainListPanel.onSlotMeterGet = [this](int i, echojay::SlotMeterOne& out) -> bool
+    {
+        const auto uid = chainViewUid();
+        if (uid.isNotEmpty()) return processorRef.slotMeterFor (uid, i, out);
+        auto& h = processorRef.getChainHost();
+        if (i < 0 || i >= h.getNumSlots()) return false;
+        const auto lv  = h.getSlotLevels (i);
+        const auto pic = h.slotPicture (i);
+        out = echojay::slotMeterEntry (h.getSlotInfo (i).bypassed, lv.measured,
+                                       lv.in.known,  lv.in.rmsDb,  lv.in.peakDb,
+                                       lv.out.known, lv.out.rmsDb, lv.out.peakDb,
+                                       pic.grKnown,  pic.grHeldDb,
+                                       lv.in.heardSeconds);
+        return out.fields != 0u;
+    };
     chainListPanel.onSlotGainSet = [this](int i, bool isIn, float db) {
         const auto uid = chainViewUid();
         auto* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
@@ -27771,6 +27794,19 @@ void EchoJayEditor::timerCallback()
         if (! agentRowPaintRect_.isEmpty()) repaint (agentRowPaintRect_);
     }
     serviceRigHook();                    // ask A: inert unless ECHOJAY_STATE_HOME and EJ_RIG_HOOK=1
+    // ---- PER-SLOT METERS: read the rack ON SCREEN, and that one only (his 25 Oct ask) ---------
+    // The Link publishes at 30 Hz and this reads at 20, so a figure on a card is at most 83 ms old
+    // and the staleness clock is the Link's own sequence (EJSlotMeters.h). ONE rack, because a V2
+    // showing one Link has no reason to map sixteen files - and reading somebody else's rack would
+    // be exactly the staleness family his 20 Oct ruling closed.
+    if (const auto meterUid = chainViewUid(); meterUid.isNotEmpty())
+    {
+        int rev = -1;   // -1 = we do not know it, which is not a reason to refuse the Link's own
+        if (auto it = processorRef.linkRackCache.find (meterUid);
+            it != processorRef.linkRackCache.end() && it->second.rack.valid)
+            rev = it->second.rack.revision;
+        processorRef.slotMeterTick (meterUid, rev);
+    }
     // ---- FOLLOW LAYER 2: THE LIVE VIEW FOLLOWS THE LINK'S KNOBS (24 Oct 2026) -----------------
     // *"change a knob on the Link's own window with the V2's view open, and the view should follow
     // within a moment."*  This tick plus the Link's 30 Hz publish is that moment: 35 to 85 ms.

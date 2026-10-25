@@ -4,6 +4,7 @@
 #include <set>
 #include <thread>
 #include <atomic>
+#include "EJSlotMeters.h"   // per-slot meters published by a Link at 30 Hz (25 Oct 2026)
 #include "MeterEngine.h"
 #include "EedLatencyLog.h"
 #include "PluginScanner.h"
@@ -707,6 +708,35 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** Has a control change from this V2 already reached the Link for that slot? The close-apply
         asks this, and a true answer means the Link keeps what it has. */
     bool linkIsNewerForSlot (const juce::String& uid, int slot) const;
+    // ---- PER-SLOT METERS, READ FROM THE LINK AT 30 Hz (his 25 Oct ask) ------------------------
+    // One mapping per Link this V2 has looked at, read-only, opened lazily with a bounded retry (a
+    // Link that publishes none must not be stat'ed thirty times a second - the 11 Oct lesson). The
+    // mapping lives on the PROCESSOR because an editor comes and goes while the rack does not.
+    struct SlotMeterView
+    {
+        void* map = nullptr;
+        int   fd  = -1;
+        juce::String path;
+        echojay::SlotMeterHeader hdr {};
+        echojay::SlotMeterOne    slots[echojay::kSlotMeterMax] {};
+        int    count = 0;
+        juce::uint32 lastSeq = 0;
+        double lastSeqMovedMs = 0.0;      // when the SEQUENCE last changed, not when we last read
+        double nextTryMs = 0.0;
+        bool   drawing = false;
+        bool   saidOpen = false;
+        juce::String why;                 // why the cards are blank, in his words
+    };
+    std::map<juce::String, SlotMeterView> slotMeterViews_;
+    /** Called by the editor's tick for the rack ON SCREEN, and for that one only: a V2 showing one
+        Link does not read sixteen files. Maps lazily, reads, and applies the staleness rule. */
+    void slotMeterTick (const juce::String& uid, int liveRevision);
+    /** The reading for one slot, or FALSE - and false means draw nothing: no dash where a figure
+        would be, no zero, and never the last reading. */
+    bool slotMeterFor (const juce::String& uid, int slot, echojay::SlotMeterOne& out) const;
+    /** Why the cards are blank for that rack, empty when they are not. */
+    juce::String slotMeterWhyNot (const juce::String& uid) const;
+    void closeSlotMeterViews();
     /** The structure revision of a Link's rack, from the sidecar this V2 already caches, so every
         frame carries it and a V2 holding a stale picture cannot apply a value to the wrong
         parameter - the Link discards the mismatch with a count. */

@@ -364,6 +364,15 @@ LinkProcessor::~LinkProcessor()
                                "chain-ack-" + instanceUid_ + ".json" })
             juce::File(resolvedDir + p).deleteFile();
     }
+    // THE SLOT-METER FILE, unmapped AND unlinked here: it is uid-keyed and per-launch like every
+    // file above, so leaving it would litter the shared directory with one file per Link that has
+    // ever run. The ring_leak_guard family is the reason this is not left to a sweep.
+    if (slotMeterMap_ != nullptr)
+    {
+        LinkShm::closeMapped (slotMeterMap_, echojay::kSlotMeterFileSize, slotMeterFd_,
+                              slotMeterPath_, /*unlink*/ true);
+        slotMeterMap_ = nullptr; slotMeterFd_ = -1; slotMeterPath_.clear();
+    }
     const juce::String ringPath = shmOpenedKey;   // full path, set at openRing
     closeRingNow();
     if (ringPath.isNotEmpty())
@@ -436,6 +445,12 @@ void LinkProcessor::timerCallback()
     // that springs back for 33 ms.
     applyStagedSetParams();
     publishShadowValuesTick();
+    // ---- PER-SLOT METERS, on the same tick (his 25 Oct ask) -----------------------------------
+    // Unlike the values file this is not gated on a tap: the figures belong on every slot card of
+    // this rack whenever a V2 is showing it, and the V2 cannot ask for them without engaging - which
+    // is the thing his 20 Oct ruling forbids. So the Link publishes whenever it has a rack, and a
+    // rack with no slots publishes slotCount=0, which is how a V2 tells "no slots" from "no Link".
+    publishSlotMetersTick();
     // SEAN'S #1 (16 Oct 2026): has the V2 answered the maps this rack asked for? On the heartbeat
     // divider below rather than every 30 Hz tick: it is a file stat, and the answer is not urgent to
     // the millisecond - a dial that lands a second after the plugin appeared is still a dial, and a
@@ -5048,6 +5063,90 @@ void LinkProcessor::applyStagedSetParams()
     WHAT IT COSTS IS MEASURED AND SAID, not assumed: the first sweep of each tap logs its own
     duration, and every frame carries it, so the V2 and the log can both see what this is costing
     rather than trusting a figure out of a design note.                                          */
+/** PER-SLOT IN, OUT AND THE THIRD FIGURE, thirty times a second (his 25 Oct ask).
+
+    THIS MEASURES NOTHING. Every number here was already taken on the audio thread for the sidecar;
+    this is a faster road for figures that exist. The pass is one loop over at most fifteen slots
+    copying five floats each, on a tick that already publishes a meter frame.
+
+    THE FILE IS OPENED LAZILY AND KEPT, with the same bounded ~1 Hz retry ringTick uses - because
+    "attempted quietly and once" written as `if (map == nullptr)` on a 30 Hz tick is thirty attempts
+    a second for the life of the session, which is what exhausted the AU hosting process on 11 Oct. */
+void LinkProcessor::publishSlotMetersTick()
+{
+    if (slotMeterMap_ == nullptr)
+    {
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (nowMs < slotMeterNextTryMs_) return;
+        slotMeterNextTryMs_ = nowMs + 1000.0;
+        int err = 0;
+        const juce::String dir = LinkShm::resolveDir (err);
+        if (dir.isEmpty() || instanceUid_.isEmpty()) return;
+        const auto path = dir + echojay::slotMetersFileNameFor (instanceUid_);
+        int fd = -1, e2 = 0;
+        auto* map = LinkShm::openFileMapped (path, echojay::kSlotMeterFileSize,
+                                             /*readOnly*/ false, fd, e2);
+        if (map == nullptr)
+        {
+            if (! slotMeterSaidOpen_)
+            {
+                slotMeterSaidOpen_ = true;
+                EchoJay_NSLog (("EJSlotMeter: the per-slot meter file at " + path + " would not map "
+                                "(errno " + juce::String (e2) + ") - nothing else is affected, and "
+                                "the V2's cards will show what they show today").toRawUTF8());
+            }
+            return;
+        }
+        // ZEROED ON CREATION: seq 0 is "never published", which readSlotMeters treats as no frame
+        // at all rather than as a frame of zeros - the whole blank-not-zero rule starts here.
+        std::memset (map, 0, echojay::kSlotMeterFileSize);
+        slotMeterMap_ = map; slotMeterFd_ = fd; slotMeterPath_ = path;
+        slotMeterPublishes_ = 0; slotMeterSaidCost_ = false;
+        EchoJay_NSLog (("EJSlotMeter: publishing this rack's per-slot meters at 30 Hz to "
+                        + echojay::slotMetersFileNameFor (instanceUid_) + " - IN, OUT and the third "
+                          "figure per slot, from the tallies the audio thread already fills. No new "
+                          "measurement and no audio-thread work (his 25 Oct ask)").toRawUTF8());
+    }
+
+    const int n = juce::jmin (chainHost.getNumSlots(), echojay::kSlotMeterMax);
+    if ((int) slotMeterScratch_.size() < echojay::kSlotMeterMax)
+        slotMeterScratch_.resize ((size_t) echojay::kSlotMeterMax);
+
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < n; ++i)
+    {
+        const auto lv  = chainHost.getSlotLevels (i);
+        const auto pic = chainHost.slotPicture (i);
+        // THE GR GATE IS SLOTPICTURE'S, NOT A SECOND ONE HERE. grKnown is true only for an EchoJay
+        // device (which reports its own) or a third party whose map is CERTIFIED - his ruling of
+        // 15 Oct - and grHeldDb is the same figure the device's own meter draws, so the card and
+        // the meter have one source and cannot disagree.
+        slotMeterScratch_[(size_t) i] =
+            echojay::slotMeterEntry (chainHost.getSlotInfo (i).bypassed, lv.measured,
+                                     lv.in.known,  lv.in.rmsDb,  lv.in.peakDb,
+                                     lv.out.known, lv.out.rmsDb, lv.out.peakDb,
+                                     pic.grKnown,  pic.grHeldDb,
+                                     lv.in.heardSeconds);
+    }
+    const auto passMs = juce::Time::getMillisecondCounterHiRes() - t0;
+
+    echojay::SlotMeterHeader h {};
+    h.slotCount         = (juce::uint32) n;
+    h.structureRevision = (juce::uint32) juce::jmax (0, chainHost.getChainRevision());
+    h.publishCount      = ++slotMeterPublishes_;
+    h.sweepMicros       = (juce::uint32) juce::jlimit (0.0, 4.0e9, passMs * 1000.0);
+    echojay::publishSlotMeters (slotMeterMap_, h, slotMeterScratch_.data(), n);
+
+    if (! slotMeterSaidCost_ && n > 0)
+    {
+        slotMeterSaidCost_ = true;
+        EchoJay_NSLog (("EJSlotMeter: " + juce::String (n) + " slot(s), one pass = "
+                        + juce::String (passMs, 3) + " ms at 30 Hz ("
+                        + juce::String (passMs * 3.0, 2) + "% of this thread) - and ZERO on the audio "
+                          "thread, which is identical with this on or off").toRawUTF8());
+    }
+}
+
 void LinkProcessor::publishShadowValuesTick()
 {
     if (shadowValMap_ == nullptr) return;
@@ -5339,7 +5438,8 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("hostTrackName", getHostTrackName());
     // Full hosted chain: identities, order, bypass flags, wet mixes,
     // per-plugin state
-    obj->setProperty("chain",    chainModelToVar());
+    const auto chainVar = chainModelToVar();
+    obj->setProperty("chain",    chainVar);
     obj->setProperty("chainMasterWet", (double)chainHost.getMasterWet());
     // 4 Oct 2026 (ruled): THE CHAIN REVISION, so V2's saved borrowed copy can be judged against it on reopen.
     // The rule is "apply V2's copy only if the Link has not moved since the borrow started", and a revision is
@@ -5357,9 +5457,24 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     juce::String json = juce::JSON::toString(juce::var(obj), true);
     dest.replaceAll(json.toRawUTF8(), json.getNumBytesAsUTF8());
     // 20 Sep 2026 (the deleted-chain-came-back observation): what the SAVED chunk carries, always logged
+    // ---- AND THE COUNT IN THE CHUNK ITSELF (approved 25 Oct 2026, from the empty-rack diagnosis) ----
+    //
+    // His 22:08 Link came back with an empty rack, and the restore line said it faithfully:
+    // "setState uid=4814a16004 (foreign/seed) chain=0 slot(s) in the chunk". The chunk predated the
+    // add - but the log could not prove that, because the only save-side count was chainModel's.
+    // chainModel is the SOURCE of the chunk and not the chunk: chainModelToVar can write fewer
+    // entries than the model holds, and the difference between those two numbers is exactly the
+    // difference between "he did not save" and "the save dropped the slot". So BOTH are printed,
+    // and the restore side's count can now be compared with the save side's.
+    const int inChunk = chainVar.isArray() ? chainVar.getArray()->size() : 0;
     EchoJay_NSLog(("EJLinkState: getState uid=" + instanceUid_ + " chainModel=" + juce::String((int) chainModel.size())
+                   + " slot(s), IN THE CHUNK=" + juce::String(inChunk)
                    + " slot(s), host=" + juce::String(chainHost.getNumSlots()) + " slot(s), lease=" + juce::String((int) rackLeaseScope_)
-                   + ", " + juce::String((juce::int64) dest.getSize()) + " bytes").toRawUTF8());
+                   + ", " + juce::String((juce::int64) dest.getSize()) + " bytes"
+                   + (inChunk != (int) chainModel.size()
+                          ? juce::String(" !! the chunk carries a DIFFERENT count from the model it was "
+                                         "written from - that difference is the fault, not the save")
+                          : juce::String())).toRawUTF8());
 }
 
 void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
