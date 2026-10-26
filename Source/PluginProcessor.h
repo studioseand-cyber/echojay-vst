@@ -692,13 +692,21 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     };
     std::map<int, LiveGesture> liveGestures_;
     // ---- WHAT HIS HAND HAS JUST LEFT (his overnight item 1a, 26 Oct 2026) ------------------
-    // parameter index -> the clock when its gesture ended. FOLLOW holds off that one parameter
-    // until kFollowSettleMs has passed, because frames composed before his last value left are
-    // still arriving and applying one of them writes the knob backwards. The reasoning is in
-    // EJLiveControl.h beside the decision (echojay::followMayWriteParam).
+    // parameter index -> the clock when its gesture ended. Kept because the undo road reads it.
     std::map<int, double> liveGestureEndedMs_;
-    /** TRUE while FOLLOW must not write this parameter into the copy. Message thread only. */
-    bool followHeldForParam (int index) const;
+    // ---- THE COPY LEADS (his ruling of 26 Oct 2026) -----------------------------------------
+    // Two maps, both the message thread's, and between them the whole of "nothing writes into the
+    // copy from the Link except changes that didn't come from me, and never a parameter I touched
+    // in the last second":
+    //   liveUserTouchedMs_ - parameter index -> when the COPY last reported a change of its own,
+    //                        which is his hand (the mirror's own writes never reach that road).
+    //   liveSentValue_     - parameter index -> the last value this V2 sent to the Link, so a
+    //                        frame carrying it is recognised as ours without an echo rule.
+    std::map<int, double> liveUserTouchedMs_;
+    std::map<int, float>  liveSentValue_;
+    /** May the mirror write this parameter with this value? echojay::mirrorMayWriteParam decides;
+        this binds in his touch and what we sent. Message thread only. */
+    bool mirrorMayWrite (int index, float frameValue) const;
     int  liveControlApplying_ = 0;    // >0 while FOLLOW is writing: the listener ignores its own echo
     int  liveControlSent_ = 0;
     bool saidControlSent_ = false;
@@ -809,6 +817,9 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** Stop consuming and release the copy. The ring is unmapped AFTER the view has let go. */
     void shadowEnd();
     bool shadowRunning() const noexcept { return shadowView_.running(); }
+    /** The live copy's own parameter values, as the rig's state carries them ("i:v|i:v"), which is
+        what its editor draws its knobs from. Empty when no view is up. Message thread. */
+    juce::String shadowCopyValuesLine (int maxN) { return shadowView_.copyValuesLine (maxN); }
     juce::String shadowUid() const { return shadowView_.uid(); }
     int  shadowSlot() const noexcept { return shadowView_.slot(); }
     juce::String shadowPluginName() const { return shadowView_.pluginName(); }

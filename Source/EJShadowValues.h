@@ -228,17 +228,24 @@ inline ShadowMirrorDecision shadowMirrorDecision (bool frameRead,
 inline constexpr float kShadowValNever = -1.0f;      // "nothing has been applied here yet"
 inline constexpr float kShadowValEps   = 1.0e-4f;    // below a knob's own resolution
 
-/** `heldByGesture` - asked per parameter: TRUE means his hand is on that knob (or has just left
-    it) and FOLLOW must not write it. Null means nothing is held, which is every caller that has no
-    gesture to speak of. The decision itself is echojay::followMayWriteParam; this only obeys it.
+/** ---- THE MIRROR, AFTER HIS 26 OCT RULING: ONLY WHAT DID NOT COME FROM HIM ------------------
 
-    A HELD PARAMETER IS SKIPPED, AND ITS `lastApplied` IS LEFT ALONE. Those two go together: if the
-    hold wrote the frame's value into lastApplied without applying it, the first frame after the
-    settle would see "no change" and the knob would stay where his hand left it even after the Link
-    had moved on. Skipping both keeps the Link the authority the moment the hold lifts. */
-inline int shadowApplyChangedValues (juce::AudioProcessor& copy, const float* values, int count,
-                                     std::vector<float>& lastApplied,
-                                     const std::function<bool(int)>& heldByGesture = {})
+    `mayWrite(i, frameValue)` is `echojay::mirrorMayWriteParam` with this V2's own facts bound in:
+    his hand, and what this V2 last sent. This function obeys it and decides nothing itself.
+
+    WHAT WENT AND WHY. The old rule was "write every value that differs from what we last applied",
+    with a gesture hold bolted on. That made the mirror a second author of every knob, and the copy
+    and the mirror then argued: the backward write under his hand, and - once that was stopped - a
+    knob that did not move at all, because the mirror's write had been the only thing moving it.
+    The copy leads now. The mirror writes automation, the agent, and a hand on the Link's own
+    window, and nothing else.
+
+    A SKIPPED PARAMETER'S `lastApplied` IS LEFT ALONE, exactly as before and for the same reason: if
+    a skip wrote the frame's value into lastApplied without applying it, the next frame would see
+    "no change" and the copy would stay wrong for ever. */
+inline int shadowApplyExternalValues (juce::AudioProcessor& copy, const float* values, int count,
+                                      std::vector<float>& lastApplied,
+                                      const std::function<bool(int, float)>& mayWrite)
 {
     const auto& params = copy.getParameters();
     const int n = juce::jmin (count, params.size());
@@ -248,13 +255,13 @@ inline int shadowApplyChangedValues (juce::AudioProcessor& copy, const float* va
     int moved = 0;
     for (int i = 0; i < n; ++i)
     {
-        if (heldByGesture && heldByGesture (i)) continue;
         const float want = juce::jlimit (0.0f, 1.0f, values[i]);
-        const float had  = lastApplied[(size_t) i];
         // AGAINST WHAT WE LAST APPLIED, never against the copy's current value: a plugin that
-        // quantises or ignores a write would otherwise be written to on every single tick for ever,
-        // which is the busy-loop version of a mirror.
+        // quantises or ignores a write would otherwise be written to on every tick for ever, which
+        // is the busy-loop version of a mirror.
+        const float had  = lastApplied[(size_t) i];
         if (had != kShadowValNever && std::abs (want - had) <= kShadowValEps) continue;
+        if (mayWrite && ! mayWrite (i, want)) continue;          // his, or ours: not the mirror's
         lastApplied[(size_t) i] = want;
         if (auto* prm = params[i]) { prm->setValueNotifyingHost (want); ++moved; }
     }

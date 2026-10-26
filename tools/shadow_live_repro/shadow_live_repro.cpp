@@ -75,7 +75,7 @@
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
 #include "EJShadowChannels.h"   // the FIX's own rule, so the leg and the product share one author
-#include "EJShadowValues.h"     // the drag leg: shadowApplyChangedValues, the product's own apply loop
+#include "EJShadowValues.h"     // the drag leg: shadowApplyExternalValues, the product own apply loop
 #include "LinkShm.h"            // the control leg asks the PRODUCT's own commit rule, not a copy of it
 #include <atomic>
 #include <cstdio>
@@ -581,8 +581,8 @@ int runFollowParamsLeg (const juce::String& leg, juce::AudioPluginFormatManager&
 //  as the ring does; between steps a FOLLOW tick applies L's value AS PUBLISHED TWO FRAMES AGO back
 //  into V, which is what the real 30 Hz publish against a 20 Hz read amounts to.
 //
-//  Run twice on the same inputs: once with the product's hold (echojay::followMayWriteParam through
-//  shadowApplyChangedValues' heldByGesture) and once without it. The verdict is the SHAPE of the
+//  Run twice on the same inputs: once with the product's rule (echojay::mirrorMayWriteParam through
+//  shadowApplyExternalValues' mayWrite) and once without it. The verdict is the SHAPE of the
 //  copy's value sequence - monotonic with the hold, and stepping backwards without it. The second
 //  half is the known-bad, so this leg cannot pass by accident.
 int runDragLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
@@ -643,11 +643,14 @@ int runDragLeg (const juce::String& leg, juce::AudioPluginFormatManager& fm,
             std::vector<float> frame ((size_t) pV.size(), 0.0f);
             for (int i = 0; i < pV.size(); ++i) frame[(size_t) i] = pV[i]->getValue();
             frame[(size_t) which] = lag[(size_t) from];
+            // THE COPY LEADS (26 Oct 2026): the parameter his hand is on is HIS, so the mirror
+            // does not write it. The known-bad half passes no decision at all, which is what the
+            // apply loop used to be.
             if (withHold)
-                echojay::shadowApplyChangedValues (*V, frame.data(), (int) frame.size(), lastApplied,
-                                                   [which] (int i) { return i == which; });
+                echojay::shadowApplyExternalValues (*V, frame.data(), (int) frame.size(), lastApplied,
+                                                    [which] (int i, float) { return i != which; });
             else
-                echojay::shadowApplyChangedValues (*V, frame.data(), (int) frame.size(), lastApplied);
+                echojay::shadowApplyExternalValues (*V, frame.data(), (int) frame.size(), lastApplied, {});
             settle (6);
             seen.push_back (pV[which]->getValue());
         }

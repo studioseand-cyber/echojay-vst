@@ -4581,6 +4581,9 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
     // the same lock the instance moves under. The gesture map starts empty: a gesture belongs to
     // one view of one slot and may never outlive it.
     liveGestures_.clear();
+    // AND HIS TOUCHES AND OUR SENDS WITH THEM: both are about THIS slot's parameter indices, and
+    // carrying one over to another plugin would hold off a knob on a plugin he has never touched.
+    liveUserTouchedMs_.clear(); liveSentValue_.clear();
     liveControlRefusal_.clear();
     liveControlSent_ = 0; saidControlSent_ = false;
     if (liveControlListener_ == nullptr)
@@ -4654,10 +4657,12 @@ void EchoJayProcessor::shadowFollowTick()
     // this is up; the value test in liveControlParamChanged catches the stragglers that some
     // plugins report a moment later.
     ++liveControlApplying_;
-    // FOLLOW NEVER FIGHTS A GESTURE (his item 1a): the parameter his hand is on - or has just left
-    // - is skipped, and every other one still follows the Link on this very frame.
+    // THE COPY LEADS (his ruling of 26 Oct 2026): a value is written into the copy only when it is
+    // neither his (his hand on that knob, or off it less than a second) nor ours (a value this V2
+    // sent). What is left is automation, the agent, and a hand on the Link's own window - which is
+    // the whole of what the mirror is for now.
     const int moved = shadowView_.followApply (shadowValRead_.data(), count,
-                                               [this] (int i) { return followHeldForParam (i); });
+                                               [this] (int i, float v) { return mirrorMayWrite (i, v); });
     --liveControlApplying_;
     if (moved > 0) shadowFollowWrites_ += moved;
     shadowFollowNote_.clear();
@@ -4854,10 +4859,14 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
     if (liveControlApplying_ > 0) return;              // our own mirror writing: not his gesture
     if (! shadowView_.running() || index < 0) return;
 
-    // THE ECHO TEST, before anything else is decided: equal to what FOLLOW applied means this is
-    // the plugin telling us what we just told it.
+    // ---- HIS TOUCH, STAMPED HERE AND NOWHERE ELSE (26 Oct 2026) ------------------------------
+    // This function is only ever reached for a change the copy made itself - the mirror's own
+    // writes are inside liveControlApplying_ - so this IS his hand on that knob, whether or not
+    // the plugin frames gestures. The mirror reads the stamp and leaves that knob alone for a
+    // second afterwards. There is no longer an echo test on values: with the copy leading, the
+    // mirror no longer writes values back for the plugin to report to us.
+    liveUserTouchedMs_[index] = juce::Time::getMillisecondCounterHiRes();
     const float fromLink = shadowView_.lastAppliedFromLink (index);
-    if (fromLink >= 0.0f && std::abs (fromLink - newValue) <= echojay::kShadowValEps) return;
 
     // A STOPPED RUN TAKES NO KNOBS AWAY (his 17:25, 25 Oct 2026): the gate asks whether a run is
     // WORKING, not whether one may still undo. The hold for Undo all is a different question and
@@ -4900,7 +4909,14 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
     {
         // THE BEFORE VALUE IS WHAT THE LINK HAD, not what the copy had: the undo step must put the
         // REAL plugin back, and the copy may have been moved by a gesture we dropped as an echo.
-        g.before = fromLink >= 0.0f ? (double) fromLink : (double) newValue;
+        // WHAT THE REAL PLUGIN HELD BEFORE THIS DRAG, in the order we can trust it: the last value
+        // we sent (the Link has it), then the last value the mirror brought in, then this one. The
+        // undo step has to put the LINK back, not the copy.
+        {
+            const auto it = liveSentValue_.find (index);
+            g.before = it != liveSentValue_.end() ? (double) it->second
+                     : (fromLink >= 0.0f ? (double) fromLink : (double) newValue);
+        }
         g.id = ringBeginGesture (uid, (int) echojay::cmdring::Kind::kSetParam, slot, index,
                                  (double) newValue, rev);
         if (g.id == 0)
@@ -4926,6 +4942,9 @@ void EchoJayProcessor::liveControlParamChanged (int index, float newValue)
 
     g.latest     = (double) newValue;
     g.lastMoveMs = nowMs;
+    // WHAT THIS V2 SENT, per parameter: the other half of the copy-leads rule. A frame carrying
+    // this value is the Link telling us what we told it, and the copy is already there.
+    liveSentValue_[index] = newValue;
     ++liveControlSent_;
     // IT HAS REACHED THE LINK, so the Link is now the newer side for this slot and the close-apply
     // may not write this V2's copy over it (his 25 Oct rule). Recorded HERE and nowhere earlier:
@@ -4961,13 +4980,20 @@ void EchoJayProcessor::sayLiveControlRefusalEnded()
     liveControlRefusedCount_ = 0;
 }
 
-bool EchoJayProcessor::followHeldForParam (int index) const
+/** ---- MAY THE MIRROR WRITE THIS PARAMETER? (his ruling of 26 Oct 2026) ---------------------
+    Two facts, both this V2's own: whether his hand owns that knob right now, and whether the value
+    in the frame is one this V2 sent. The decision is echojay::mirrorMayWriteParam's. */
+bool EchoJayProcessor::mirrorMayWrite (int index, float frameValue) const
 {
     const bool inProgress = liveGestures_.find (index) != liveGestures_.end();
-    double sinceEnded = -1.0;
-    if (const auto it = liveGestureEndedMs_.find (index); it != liveGestureEndedMs_.end())
-        sinceEnded = juce::Time::getMillisecondCounterHiRes() - it->second;
-    return ! echojay::followMayWriteParam (inProgress, sinceEnded);
+    double sinceTouched = -1.0;
+    if (const auto it = liveUserTouchedMs_.find (index); it != liveUserTouchedMs_.end())
+        sinceTouched = juce::Time::getMillisecondCounterHiRes() - it->second;
+    float sent = -1.0f;
+    if (const auto it = liveSentValue_.find (index); it != liveSentValue_.end())
+        sent = it->second;
+    return echojay::mirrorMayWriteParam (inProgress, sinceTouched, sent, frameValue,
+                                         echojay::kShadowValEps);
 }
 
 void EchoJayProcessor::liveControlGesture (int index, bool starting)
@@ -5054,6 +5080,7 @@ void EchoJayProcessor::shadowEnd()
         for (int i : open) liveControlEndGesture (i, "the live view came down");
     }
     liveGestures_.clear(); liveControlRefusal_.clear();
+    liveUserTouchedMs_.clear(); liveSentValue_.clear();
     shadowValSeqSeen_ = 0; shadowCopyDigest_ = 0; shadowFollowNote_.clear();
     shadowFollowSaid_ = false; shadowFollowFrames_ = 0; shadowFollowWrites_ = 0;
     const auto frames = shadowView_.framesPumped();

@@ -2233,18 +2233,18 @@ int main()
             // CHANGED-ONLY, which is the whole promise about what this costs the plugin.
             std::vector<float> lastApplied;
             const float first[4] = { 0.25f, 0.50f, 0.75f, 1.00f };
-            const int moved1 = echojay::shadowApplyChangedValues (a, first, 4, lastApplied);
+            const int moved1 = echojay::shadowApplyExternalValues (a, first, 4, lastApplied, {});
             check (moved1 == 4,
                    "SH16h the FIRST frame writes every parameter, because nothing has been applied "
                    "to this copy yet",
                    "moved=" + juce::String (moved1));
-            const int moved2 = echojay::shadowApplyChangedValues (a, first, 4, lastApplied);
+            const int moved2 = echojay::shadowApplyExternalValues (a, first, 4, lastApplied, {});
             check (moved2 == 0,
                    "SH16i the SAME frame again writes NOTHING - steady state costs the plugin no "
                    "calls at all, which is the difference between a mirror and a busy loop",
                    "moved=" + juce::String (moved2));
             const float oneMoved[4] = { 0.25f, 0.50f, 0.75f, 0.40f };
-            const int moved3 = echojay::shadowApplyChangedValues (a, oneMoved, 4, lastApplied);
+            const int moved3 = echojay::shadowApplyExternalValues (a, oneMoved, 4, lastApplied, {});
             check (moved3 == 1,
                    "SH16j ...and one knob moving on the Link writes exactly one parameter here",
                    "moved=" + juce::String (moved3));
@@ -2401,27 +2401,51 @@ int main()
             // no notion of a gesture. The KNOWN-BAD is the first leg below - without the hold, the
             // same inputs say "write it", which is the backward write he feels.
             {
-                using echojay::followMayWriteParam;
-                check (! followMayWriteParam (/*inProgress*/ true, /*sinceEnded*/ -1.0),
-                       "SH27 while his hand is on a knob, FOLLOW does not write that parameter - the "
-                       "Link's value is one or two frames behind the hand and writing it is a jump "
-                       "backwards ten times a second",
-                       "gesture in progress -> held");
-                check (! followMayWriteParam (/*inProgress*/ false, /*sinceEnded*/ 50.0),
-                       "SH27a ...and the hold OUTLIVES the gesture, because frames composed before "
-                       "his last value left are still arriving",
-                       "50 ms after the end -> still held");
-                check (followMayWriteParam (false, /*sinceEnded*/ 251.0),
-                       "SH27b ...and then the Link is the authority again, which is the design's "
-                       "first rule kept intact (the copy is never the authority)",
-                       "251 ms after the end -> follows");
-                check (followMayWriteParam (false, /*sinceEnded*/ -1.0),
-                       "SH27c a parameter he has never touched follows on every frame - the hold is "
-                       "per PARAMETER and never stops the other knobs",
-                       "untouched -> follows");
-                check (followMayWriteParam (false, 249.0, /*settleMs*/ 100.0)
-                       && ! followMayWriteParam (false, 99.0, /*settleMs*/ 100.0),
-                       "SH27d ...and the settle is the stated figure, not a feeling", "100 ms honoured");
+                // ---- AND THE HOLD ALONE WAS NOT THE ANSWER EITHER (his ruling, 26 Oct 2026) ----
+                //
+                // *"While I drag a knob in the live view I hear the change, but the knob on screen
+                //  doesn't move at all."*  With the backward write stopped, the only thing that had
+                //  ever moved that knob on screen was the mirror's own write. Two mechanisms
+                //  arguing over one knob, each half right.
+                //
+                // THE COPY LEADS NOW, and these legs hold the whole of it. The KNOWN-BAD direction
+                // is kept in every one: the same function, with the fact that makes it his or ours
+                // removed, says "write it".
+                using echojay::mirrorMayWriteParam;
+                const float eps = echojay::kShadowValEps;
+                check (! mirrorMayWriteParam (/*inProgress*/ true, /*sinceTouched*/ -1.0,
+                                              /*sent*/ -1.0f, /*frame*/ 0.4f, eps),
+                       "SH27 while his hand is on a knob, nothing is written into the copy - the "
+                       "copy owns its knobs while its view is open",
+                       "gesture in progress -> his");
+                check (! mirrorMayWriteParam (false, /*sinceTouched*/ 500.0, -1.0f, 0.4f, eps),
+                       "SH27a ...and it stays his for a SECOND after he lets go, which is his own "
+                       "figure, not a settle chosen to be just long enough",
+                       "500 ms after the touch -> still his");
+                check (mirrorMayWriteParam (false, /*sinceTouched*/ 1001.0, -1.0f, 0.4f, eps),
+                       "SH27b ...and after that second a change from elsewhere reaches the copy",
+                       "1001 ms -> written");
+                check (! mirrorMayWriteParam (false, -1.0, /*sent*/ 0.4f, /*frame*/ 0.4f, eps),
+                       "SH27c a value this V2 SENT is never written back, however long ago he "
+                       "touched it - the copy is already there, and writing it is the round trip "
+                       "that produced the jump",
+                       "frame == what we sent -> ours");
+                check (mirrorMayWriteParam (false, -1.0, /*sent*/ 0.4f, /*frame*/ 0.75f, eps),
+                       "SH27d ...and a DIFFERENT value on a parameter we once sent IS written: that "
+                       "is automation, the agent, or a hand on the Link's own window",
+                       "frame != what we sent -> written");
+                check (mirrorMayWriteParam (false, -1.0, /*sent*/ -1.0f, /*frame*/ 0.1f, eps),
+                       "SH27e a parameter he has never touched and we have never sent follows on "
+                       "every frame - the hold is per PARAMETER",
+                       "untouched -> written");
+                check (! mirrorMayWriteParam (false, -1.0, 0.4f, 0.4f + eps * 0.5f, eps)
+                       && mirrorMayWriteParam (false, -1.0, 0.4f, 0.4f + eps * 10.0f, eps),
+                       "SH27f ...and 'the same value' is the mirror's own epsilon, so a plugin that "
+                       "reports 0.4000001 is still us and one that quantised to 0.4015 is not",
+                       "epsilon honoured on both sides");
+                check (mirrorMayWriteParam (false, 900.0, -1.0f, 0.4f, eps, /*holdMs*/ 500.0)
+                       && ! mirrorMayWriteParam (false, 400.0, -1.0f, 0.4f, eps, /*holdMs*/ 500.0),
+                       "SH27g the second is the stated figure, not a feeling", "500 ms honoured");
             }
 
             // ---- SH28: A STEADY TICK CHANGES NOTHING (his overnight item 1b) ----------------

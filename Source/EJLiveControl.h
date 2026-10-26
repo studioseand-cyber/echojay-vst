@@ -116,25 +116,63 @@ inline LiveControlPolicy liveControlPolicy (bool following, bool runHoldsRack)
 //  a hand moving continuously that is a write BACKWARDS into the knob he is holding, ten times a
 //  second: the jump he feels, and on some plugins a redraw storm with it.
 //
-//  THE SETTLE IS PART OF THE RULE, not a safety margin. When the gesture ends, frames composed
-//  before the last value left are still in flight; applying one of those is the same backward
-//  write with better timing. The hold therefore outlives the gesture by kFollowSettleMs, after
-//  which the Link is the authority again - which is the design's first rule ("the copy is never the
-//  authority") kept intact, because the hold is per PARAMETER and never stops the other knobs
-//  following.
-static constexpr double kFollowSettleMs = 250.0;
+//  AND THE 250 ms SETTLE THAT FOLLOWED IT WAS NOT ENOUGH EITHER (26 Oct 2026). With the backward
+//  write stopped, the knob stopped moving at all - because the mirror's write was the only thing
+//  that had ever moved it on screen. Two mechanisms, each half right, arguing over one knob. His
+//  ruling ends the argument: THE COPY LEADS while its view is open, and the mirror is for changes
+//  that did not come from him. The decision below is the whole of it.
+/** ---- THE COPY LEADS (his ruling of 26 Oct 2026) --------------------------------------------
 
-/** May FOLLOW write this parameter into the copy right now?
+    *"The copy leads while its view is open. It owns its knobs and its editor moves them natively;
+     my moves go one way to the Link; nothing writes into the copy from the Link except changes that
+     didn't come from me (automation, the agent, the Link's own window), and never a parameter I
+     touched in the last second."*
 
-    `gestureInProgress`      - a gesture on this parameter has begun and not ended.
-    `msSinceGestureEnded`    - how long ago the last one ended; <0 when none ever has.
-    `settleMs`               - kFollowSettleMs, passed so a guard can state it. */
-inline bool followMayWriteParam (bool gestureInProgress, double msSinceGestureEnded,
-                                 double settleMs = kFollowSettleMs)
+    THIS REPLACES TWO THINGS AND IS SMALLER THAN EITHER. What stood here was a 250 ms settle after a
+    framed gesture, and beside it in the V2 was an echo test comparing the Link's frame against what
+    the mirror had last applied. Together they were a two-way sync trying to work out whose value was
+    whose from the values themselves, and they produced four faults in two days: the knob pulled
+    back under his hand, the knob frozen when the pull-back was stopped, a quarter-second jump, and
+    a picture that disagreed with the sound.
+
+    THE NEW RULE NEEDS NOTHING FROM THE OTHER SIDE, because this V2 already knows what it sent:
+
+      * `userOwnsParam`  - his hand is on that knob, or left it less than a second ago. Nothing is
+                           written, whatever the frame says.
+      * `cameFromUs`     - the frame's value is one this V2 sent for that parameter. The copy is
+                           already there, so writing it would be a no-op at best and a fight at
+                           worst. Not written.
+      * anything else    - automation, the agent, or a hand on the Link's own window: WRITTEN, which
+                           is the whole of what the mirror is still for.
+
+    And the one case the pair gets exactly right rather than approximately: a plugin that quantises
+    what we sent (0.37 -> 0.375) reports a value that is not one of ours, so after his hand has been
+    off for a second the copy is corrected to what the real plugin actually accepted - once, and
+    never while he is holding it. */
+static constexpr double kUserTouchHoldMs = 1000.0;
+
+inline bool userOwnsParamNow (bool gestureInProgress, double msSinceTouched,
+                              double holdMs = kUserTouchHoldMs)
 {
-    if (gestureInProgress) return false;
-    if (msSinceGestureEnded >= 0.0 && msSinceGestureEnded < settleMs) return false;
-    return true;
+    if (gestureInProgress) return true;
+    return msSinceTouched >= 0.0 && msSinceTouched < holdMs;
+}
+
+/** `sentValue` < 0 means this V2 has never sent that parameter. The epsilon is the mirror's own, so
+    the two halves of one decision cannot drift apart. */
+inline bool mirrorValueCameFromUs (float sentValue, float frameValue, float eps)
+{
+    return sentValue >= 0.0f && std::abs (sentValue - frameValue) <= eps;
+}
+
+/** The whole decision, in one place, for one parameter. A mirrored value is written into the copy
+    only when it is NOT his and NOT ours. */
+inline bool mirrorMayWriteParam (bool gestureInProgress, double msSinceTouched,
+                                 float sentValue, float frameValue, float eps,
+                                 double holdMs = kUserTouchHoldMs)
+{
+    if (userOwnsParamNow (gestureInProgress, msSinceTouched, holdMs)) return false;
+    return ! mirrorValueCameFromUs (sentValue, frameValue, eps);
 }
 
 /** The standing line for a live view that CAN control. Not a detection of anything: it states what

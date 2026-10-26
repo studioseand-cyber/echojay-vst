@@ -365,12 +365,12 @@ public:
 
         Returns how many parameters moved, or -1 when there is no copy to write to. */
     int followApply (const float* values, int count,
-                     const std::function<bool(int)>& heldByGesture = {})
+                     const std::function<bool(int, float)>& mayWrite = {})
     {
         const juce::SpinLock::ScopedLockType sl (lock_);
         if (inst_ == nullptr) return -1;
         const PluginCallWindow noRenderWhileWeAreInHere;
-        return echojay::shadowApplyChangedValues (*inst_, values, count, lastApplied_, heldByGesture);
+        return echojay::shadowApplyExternalValues (*inst_, values, count, lastApplied_, mayWrite);
     }
 
     /** ---- CONTROL (stage C2): LISTEN TO THE COPY'S OWN PARAMETERS ------------------------
@@ -413,6 +413,22 @@ public:
     {
         const juce::SpinLock::ScopedLockType sl (lock_);
         return inst_ != nullptr ? inst_->getParameters().size() : 0;
+    }
+
+    /** ---- WHAT THE COPY'S OWN EDITOR IS DRAWING (his 26 Oct ruling, the real-host test) -----
+        *"sampling the copy's displayed value ... each tick"*.  The copy's parameters, which is
+        exactly what its editor draws its knobs from, as "i:v|i:v". Read under the same lock as
+        everything else here, bounded, and only ever asked for by the rig's state. */
+    juce::String copyValuesLine (int maxN)
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        if (inst_ == nullptr) return {};
+        const auto& params = inst_->getParameters();
+        const int n = juce::jmin (juce::jmax (0, maxN), params.size());
+        juce::String out;
+        for (int i = 0; i < n; ++i)
+            out << (i > 0 ? "|" : "") << i << ":" << juce::String (params[i]->getValue(), 4);
+        return out;
     }
 
     juce::AudioProcessorEditor* createEditorIfPossible()

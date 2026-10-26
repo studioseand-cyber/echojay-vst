@@ -153,6 +153,12 @@ namespace cmd
     // other command here (EJ_RIG_HOOK and the build-time lock), and it goes through removeSlot - the
     // same door the user's delete uses - so a cleared rack is a rack the product itself produced.
     inline constexpr const char* clearRack   = "clear_rack";       // {} - the own rack, emptied
+    // ---- A NAMED PLUGIN ON THE OWN RACK, WITHOUT THE AGENT (26 Oct 2026) ------------------------
+    // The live-view rows (LV1-LV3) are about a hosted plugin's own VIEW, and they need a known
+    // plugin on a known slot in two seconds, not a 120 s agent turn that depends on a model
+    // answering. It goes through ChainHost::loadByRecommendedName with LoadOrigin::User - the same
+    // road the picker's choice takes - so the rack it produces is one the product itself built.
+    inline constexpr const char* addSlot     = "add_slot";         // { name } - appended to the own rack
     // ---- "+ NEW CHAT", THROUGH THE PRODUCT'S OWN DOOR (17 Oct 2026) ------------------------------
     // Sean's item 1 this round: "New chat" aimed at the Mix Bus brought back the previous Kick-Link
     // run, drew its closing and failed step, appended his answer to it and answered about the old

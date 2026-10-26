@@ -27831,6 +27831,13 @@ int EchoJayEditor::measureChatContentHeight()
 
 void EchoJayEditor::timerCallback()
 {
+    // ---- THE MESSAGE THREAD'S FRAME TIME, MEASURED (his fault 4, 26 Oct 2026) ----------------
+    // *"The whole live view feels laggy and strange... measure the V2's message-thread load and
+    //  frame time with a live view open."*  Nothing here was ever measured, which is why the
+    //  answer was always a guess. This tick is where the live view's work happens, so this is the
+    //  number: the longest and the mean over the last second. Two doubles and a compare - and it
+    //  is the thing the real-host test reads, so it can never drift from what he feels.
+    const double tickT0 = juce::Time::getMillisecondCounterHiRes();
     processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
     pumpPendingLinkApplies();
     pumpPendingChainBuilds();   // 19 Oct: the Build press waits on the same pump            // item 4 (12 Oct 2026): dials queued while the rack was connecting
@@ -27867,6 +27874,10 @@ void EchoJayEditor::timerCallback()
     // cost is one atomic load and a seq comparison.
     {
         processorRef.shadowFollowTick();
+        // RULE 5 (26 Oct 2026): the shield is the one thing about the hosted view that a tick may
+        // still re-assert, and only when its words or its presence have actually changed. The
+        // maintenance timer that used to do this every 400 ms stops once the view has settled.
+        chainListPanel.maintainShieldIfPolicyMoved();
         // CONTROL (C2): close any gesture the plugin never closed, so a drag is ONE change even on
         // a plugin that reports no boundaries at all. The quiet period, and why it is 150 ms, are
         // stated in EJLiveControl.h rather than buried here.
@@ -29245,6 +29256,23 @@ void EchoJayEditor::timerCallback()
     }
 
     repaint();
+
+    // ---- AND THE TICK'S OWN COST, RECORDED (his fault 4) -------------------------------------
+    // The repaint above only MARKS: what it costs is the paint pass, on this same thread, a moment
+    // later. So this figure is the tick's own work, not the window's whole frame - and that is the
+    // honest claim: it is what the live view adds to the message thread every 50 ms.
+    {
+        const double ms = juce::Time::getMillisecondCounterHiRes() - tickT0;
+        tickMaxMs_  = (tickWindowN_ == 0) ? ms : juce::jmax (tickMaxMs_, ms);
+        tickSumMs_ += ms;
+        ++tickWindowN_;
+        if (tickWindowN_ >= 20)                      // one second at 20 Hz
+        {
+            tickMeanMs_  = tickSumMs_ / (double) tickWindowN_;
+            tickSumMs_   = 0.0;
+            tickWindowN_ = 0;
+        }
+    }
 }
 
 void EchoJayEditor::textEditorReturnKeyPressed(juce::TextEditor& ed)
@@ -39815,6 +39843,29 @@ void EchoJayEditor::serviceRigHook()
         note = "cleared " + juce::String (had) + " slot(s) and " + juce::String (histDepth)
              + " undo entr(ies), the rack now has " + juce::String (ch.getNumSlots());
     }
+    else if (c.name == echojay::rig::cmd::addSlot)
+    {
+        // The product's own name-addressed load, with the origin the picker uses. Asynchronous, so
+        // the note says it was ASKED and the row waits for the rack to show it - never a note that
+        // claims a slot exists because a call returned.
+        const auto name = c.args.getProperty ("name", juce::var()).toString();
+        if (name.isEmpty())
+            note = "add_slot needs a name";
+        else
+        {
+            auto& ch = processorRef.getChainHost();
+            const int had = ch.getNumSlots();
+            ch.loadByRecommendedName (name, ChainHost::LoadOrigin::User,
+                                      [name] (const juce::String& err)
+            {
+                EchoJay_NSLog (("EJRig: add_slot \"" + name + "\" -> "
+                                + (err.isEmpty() ? juce::String ("loaded") : "FAILED: " + err))
+                               .toRawUTF8());
+            });
+            note = "asked for \"" + name + "\" (the rack had " + juce::String (had)
+                 + " slot(s); the load is asynchronous, so read ownRack for the answer)";
+        }
+    }
     else if (c.name == echojay::rig::cmd::newChat)
     {
         // The product's own "+ New chat", with the channel the row names bound to it, exactly as the
@@ -40034,6 +40085,16 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("shadowSlot",    processorRef.shadowSlot() + 1);     // 1-based, 0 = none
     o->setProperty ("shadowPlugin",  processorRef.shadowPluginName());
     o->setProperty ("shadowFrames",  (double) processorRef.shadowFramesPumped());
+    // ---- WHAT HIS 26 OCT RULING ASKED THE REAL-HOST TEST TO SAMPLE EACH TICK -----------------
+    // *"sampling the copy's displayed value, frame time and the view's frame and layers each
+    //  tick"*.  The frame and the layers the rig reads from AppKit itself; these two it cannot see
+    //  from outside the plugin, so they are published here. Both are inert without EJ_RIG_HOOK.
+    //   shadowCopyVals - the copy's own parameter values, which is what its editor is drawing.
+    //   tickMaxMs      - the longest this editor's 20 Hz tick has taken in the last second, which
+    //                    is the message thread's frame time and the whole of his fault 4.
+    o->setProperty ("shadowCopyVals", processorRef.shadowCopyValuesLine (16));
+    o->setProperty ("tickMaxMs",      juce::String (tickMaxMs_, 2).getDoubleValue());
+    o->setProperty ("tickMeanMs",     juce::String (tickMeanMs_, 2).getDoubleValue());
     o->setProperty ("borrowActive",  processorRef.borrowActive());
     // WHICH rack is borrowed, not just whether any is (23 Oct 2026). B9 asserted "the view took no
     // borrow" against the bare flag and failed on a borrow that belonged to another rack entirely -

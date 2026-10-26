@@ -38,6 +38,226 @@
 #include <regex>
 #include "viz/EedGrMeter.h"   // E7: the meter's label geometry is a pure function, so a row can hold it   // the standing rule: this rig never loads a licence-bound bundle
 #include "EchoJayParamMaps.h"
+// ---- APPKIT IN AN AU HOST'S TU, THE WAY JUCE ITSELF DOES IT (26 Oct 2026) ------------------
+// The live-view rows read the real view hierarchy, so this TU needs AppKit and the ObjC runtime.
+// Two collisions have to be stepped around, and JUCE's own juce_BasicNativeHeaders.h steps around
+// the same two the same way: Carbon still declares `Point` and `Component`, which are a JUCE
+// template and a JUCE class. Renamed for the duration of the import, then put back.
+#define Point     CarbonDummyPointName
+#define Component CarbonDummyCompName
+#import <AppKit/AppKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
+#undef Point
+#undef Component
+
+
+// ============================================================================
+//  THE LIVE VIEW, SEEN FROM OUTSIDE THE PLUGIN (his 26 Oct ruling, step b)
+// ============================================================================
+/** *"Your bench passed all of these, so it isn't testing what I see... reproduce each fault in a
+     real host ... driving a drag through the real editor and sampling each tick: the copy's
+     displayed value, the Link's value, the hosted view's frame and layer properties, and the
+     message thread's frame time."*
+
+    WHY A DRAW COUNT IS THE INSTRUMENT. His fault 2 is "I hear the change, but the knob on screen
+    doesn't move". The knob is drawn by the PLUGIN'S OWN VIEW, by the plugin's own code - so the
+    only measure that can see it is how many times that view's own `drawRect:` ran. A parameter
+    value cannot see it (the parameter moved: that is what he heard), and a screenshot cannot see it
+    either, because asking for one FORCES a draw and so destroys the thing being measured.
+
+    So this counts the guest view's own draws by swapping the implementation of `drawRect:` on that
+    one class, in THIS process, for one that counts and then calls the original. It lives in the rig
+    and never in the product. It also CATCHES what the original throws, which is what turns his
+    AUDelay crash from a dead process into a row with a verdict.
+
+    THE SAME COUNT ANSWERS FAULT 3. Hands off, nothing may draw at all - *"with hands off nothing in
+    the view changes at all for 10 seconds"* - so the wobble is a draw count that will not stay at
+    zero. One instrument, both faults, opposite directions. */
+static int          gGuestDraws = 0;
+static int          gGuestThrows = 0;
+static juce::String gGuestThrowWhat;
+static IMP          gGuestOrigDraw = nullptr;
+static Method       gGuestDrawMethod = nullptr;
+static juce::String gGuestDrawOwner;
+
+static void ejPumpMsgThread (int ms);   // Rig::pump, declared here and defined below it
+/** HOW THIS ROW KEEPS THE HOST ALIVE WHILE IT WAITS. On the own rack, pumping the message thread
+    is enough. In a LIVE VIEW it is not: the view only takes gestures while it is FOLLOWING the
+    Link, and a view that goes stale puts the read-only shield back up - so a drag would land on
+    our shield and the row would go red for a reason that is not his fault. The Link road passes a
+    pump that also feeds real audio, which is what keeps the tap and the mirror alive. */
+using EJPumpFn = std::function<void (int)>;
+
+static juce::String ejNS (NSString* s) { return s != nil ? juce::String ([s UTF8String]) : juce::String(); }
+
+static void ejGuestDrawRect (id self, SEL sel, NSRect r)
+{
+    ++gGuestDraws;
+    @try { ((void (*) (id, SEL, NSRect)) gGuestOrigDraw) (self, sel, r); }
+    @catch (NSException* e)
+    {
+        ++gGuestThrows;
+        if (gGuestThrowWhat.isEmpty())
+            gGuestThrowWhat = ejNS ([e name]) + ": " + ejNS ([e reason]);
+    }
+}
+
+/** The class that actually implements `drawRect:` for this view, refusing NSView itself: swapping
+    NSView's own implementation would count every view in the process and prove nothing about the
+    guest. Returns nil when only NSView implements it (a view that draws through a layer delegate
+    instead), and the row says so rather than reporting a zero it cannot interpret. */
+static Class ejDrawRectOwner (NSView* v)
+{
+    for (Class c = [v class]; c != nil && c != [NSView class]; c = class_getSuperclass (c))
+    {
+        unsigned int n = 0;
+        Method* list = class_copyMethodList (c, &n);
+        bool found = false;
+        for (unsigned int i = 0; i < n; ++i)
+            if (method_getName (list[i]) == @selector (drawRect:)) { found = true; break; }
+        if (list != nullptr) free (list);
+        if (found) return c;
+    }
+    return nil;
+}
+
+static bool ejCountGuestDraws (NSView* v)
+{
+    if (v == nil || gGuestOrigDraw != nullptr) return false;
+    Class owner = ejDrawRectOwner (v);
+    if (owner == nil) return false;
+    gGuestDrawMethod = class_getInstanceMethod (owner, @selector (drawRect:));
+    if (gGuestDrawMethod == nullptr) return false;
+    gGuestOrigDraw  = method_getImplementation (gGuestDrawMethod);
+    gGuestDrawOwner = ejNS (NSStringFromClass (owner));
+    method_setImplementation (gGuestDrawMethod, (IMP) ejGuestDrawRect);
+    return true;
+}
+
+static void ejStopCountingGuestDraws()
+{
+    if (gGuestDrawMethod != nullptr && gGuestOrigDraw != nullptr)
+        method_setImplementation (gGuestDrawMethod, gGuestOrigDraw);
+    gGuestDrawMethod = nullptr; gGuestOrigDraw = nullptr;
+}
+
+static NSView* ejFindViewOfClass (NSView* root, NSString* name)
+{
+    if (root == nil) return nil;
+    if ([NSStringFromClass ([root class]) isEqualToString: name]) return root;
+    for (NSView* sv in [root subviews])
+        if (NSView* hit = ejFindViewOfClass (sv, name)) return hit;
+    return nil;
+}
+
+/** The clip container, found the way a user's eye finds it: by sweeping this process's windows.
+    Never from a handle the product passed out - the row is about what is actually on screen. */
+static NSView* ejFindClipContainer()
+{
+    for (NSWindow* w in [NSApp windows])
+        if (NSView* hit = ejFindViewOfClass ([w contentView], @"EchoJayClipContainer"))
+            return hit;
+    return nil;
+}
+
+static NSView* ejGuestInside (NSView* container)
+{
+    if (container == nil) return nil;
+    for (NSView* sv in [container subviews])
+        if (! [NSStringFromClass ([sv class]) isEqualToString: @"EchoJayViewShield"])
+            return sv;
+    return nil;
+}
+
+/** One tick's worth of everything he asked to be sampled, on the host's side of the glass. */
+struct EJViewSample
+{
+    double tMs = 0.0;
+    NSRect guest {}, cont {};
+    NSPoint boundsOrigin {};
+    double corner = 0.0, borderW = 0.0;
+    bool masks = false;
+    NSRect contLayerBounds {}, guestLayerBounds {};
+    NSPoint contLayerPos {}, guestLayerPos {};
+    int draws = 0;
+};
+
+static EJViewSample ejSampleView (NSView* cont, NSView* guest)
+{
+    EJViewSample s;
+    s.tMs  = juce::Time::getMillisecondCounterHiRes();
+    s.draws = gGuestDraws;
+    if (cont != nil)
+    {
+        s.cont = [cont frame];
+        s.boundsOrigin = [cont bounds].origin;
+        if (CALayer* l = [cont layer])
+        {
+            s.corner = l.cornerRadius; s.borderW = l.borderWidth; s.masks = l.masksToBounds;
+            s.contLayerBounds = l.bounds; s.contLayerPos = l.position;
+        }
+    }
+    if (guest != nil)
+    {
+        s.guest = [guest frame];
+        if (CALayer* l = [guest layer]) { s.guestLayerBounds = l.bounds; s.guestLayerPos = l.position; }
+    }
+    return s;
+}
+
+static juce::String ejWhatMoved (const EJViewSample& a, const EJViewSample& b)
+{
+    juce::StringArray moved;
+    if (! NSEqualRects (a.guest, b.guest))   moved.add ("the plugin view's frame");
+    if (! NSEqualRects (a.cont, b.cont))     moved.add ("the container's frame");
+    if (! NSEqualPoints (a.boundsOrigin, b.boundsOrigin)) moved.add ("the container's bounds origin");
+    if (a.corner != b.corner || a.borderW != b.borderW || a.masks != b.masks)
+        moved.add ("the container layer's style");
+    if (! NSEqualRects (a.contLayerBounds, b.contLayerBounds)
+        || ! NSEqualPoints (a.contLayerPos, b.contLayerPos))  moved.add ("the container layer's geometry");
+    if (! NSEqualRects (a.guestLayerBounds, b.guestLayerBounds)
+        || ! NSEqualPoints (a.guestLayerPos, b.guestLayerPos)) moved.add ("the plugin layer's geometry");
+    if (b.draws != a.draws) moved.add (juce::String (b.draws - a.draws) + " draw(s) of the plugin's own view");
+    return moved.isEmpty() ? juce::String ("nothing") : moved.joinIntoString (", ");
+}
+
+/** A REAL DRAG, through the real editor: NSEvents posted to the guest view's own window at a point
+    on the guest view, down / moved / up, with the message thread pumped between steps exactly as it
+    is for a hand. Returns the draws the drag produced. */
+static int ejDragOnGuest (NSView* guest, NSPoint inView, double dy, int steps,
+                          const EJPumpFn& pump)
+{
+    if (guest == nil) return 0;
+    NSWindow* w = [guest window];
+    if (w == nil) return 0;
+    const int before = gGuestDraws;
+    const NSPoint start = [guest convertPoint: inView toView: nil];
+    auto post = [&] (NSEventType t, NSPoint p)
+    {
+        NSEvent* e = [NSEvent mouseEventWithType: t
+                                       location: p
+                                  modifierFlags: 0
+                                      timestamp: [[NSProcessInfo processInfo] systemUptime]
+                                   windowNumber: [w windowNumber]
+                                        context: nil
+                                    eventNumber: 0
+                                     clickCount: 1
+                                       pressure: t == NSEventTypeLeftMouseUp ? 0.0f : 1.0f];
+        if (e != nil) [w sendEvent: e];
+    };
+    post (NSEventTypeLeftMouseDown, start);
+    pump (40);
+    for (int i = 1; i <= steps; ++i)
+    {
+        post (NSEventTypeLeftMouseDragged, NSMakePoint (start.x, start.y + dy * (double) i / (double) steps));
+        pump (40);
+    }
+    post (NSEventTypeLeftMouseUp, NSMakePoint (start.x, start.y + dy));
+    pump (120);
+    return gGuestDraws - before;
+}
+
 #include "EchoJayParamApply.h"
 // SEAN'S #7: the interrupted sentences live in ONE predicate (EchoJayAPI::looksInterrupted), and the legs
 // read it rather than copying the wording - the "[interrupted]" tag they used to grep for is gone, and a
@@ -568,6 +788,42 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                     added.add (pick->name);
                 }
             }
+            // ---- AND APPLE'S OWN AUs, WHICH HAVE NO BUNDLE TO POINT AT (26 Oct 2026) ---------
+            //
+            // The live-view rows (LV1-LV6) need a plugin with a real knob panel and no licence of
+            // any kind, and his AUDelay crash was on Apple's. These are not .component bundles in
+            // the Plug-Ins folders: the OS registers them, so they are reached by IDENTIFIER and
+            // enumerated one at a time - never a scan (the standing iLok rule).
+            //
+            // The first run of the LV rows found this out the hard way: add_slot answered
+            // `"AUDelay" not found in recommendable list` three times and all six rows skipped,
+            // because the rig's catalogue held 24 names and not one of them was Apple's.
+            {
+                static const char* kAppleAUs[] = {
+                    "AudioUnit:Effects/aufx,dely,appl",     // AUDelay
+                    "AudioUnit:Effects/aufx,mrev,appl",     // AUMatrixReverb
+                    "AudioUnit:Effects/aufx,mcmp,appl",     // AUMultibandCompressor
+                };
+                juce::StringArray appleAdded, appleRefused;
+                for (const char* ident : kAppleAUs)
+                {
+                    juce::OwnedArray<juce::PluginDescription> types;
+                    for (auto* fmt : fm.getFormats())
+                        if (fmt->getName() == "AudioUnit") fmt->findAllTypesForFile (types, ident);
+                    if (types.isEmpty()) { appleRefused.add (juce::String (ident)); continue; }
+                    for (auto* d : types)
+                    {
+                        if (d == nullptr || d->name == desc.name) continue;
+                        if (auto* child = d->createXml().release()) entries.addChildElement (child);
+                        kl.addType (*d);
+                        appleAdded.add (d->name);
+                    }
+                }
+                std::printf ("  catalogue: Apple's own AUs - added [%s]%s\n",
+                             appleAdded.joinIntoString (", ").toRawUTF8(),
+                             appleRefused.isEmpty() ? ""
+                                 : (", would not enumerate [" + appleRefused.joinIntoString (", ") + "]").toRawUTF8());
+            }
             if (auto xml = kl.createXml()) listFile.replaceWithText (xml->toString());
             std::printf ("  catalogue: the matrix's plugin set - added [%s]%s\n",
                          added.joinIntoString (", ").toRawUTF8(),
@@ -887,6 +1143,167 @@ struct Rig
         return false;
     }
 };
+
+/** The pump, for the live-view helpers declared above Rig. */
+static void ejPumpMsgThread (int ms) { Rig::pump (ms); }
+static bool rowWanted (const juce::String& id);   // EJ_RIG_ONLY; defined with the rows below
+
+/** ---- THE THREE MEASUREMENTS, ON WHATEVER VIEW IS ON SCREEN (his 26 Oct faults 1-3) ---------
+    One function, called for a slot on the V2's own rack and for a slot on a LINK'S rack through the
+    live view, because the container, the reparent and the 400 ms pass are the same object on both
+    roads and a fault that shows on one and not the other is itself the finding. `label` says which
+    road the verdict is about, every time, so no row can be read as covering both. */
+static void ejMeasureHostedView (const juce::String& label, const juce::String& openThrow,
+                                 const char* idCrash, const char* idStill, const char* idDrag,
+                                 const EJPumpFn& pump,
+                                 const std::function<juce::String()>& copyValues = {})
+{
+    NSView* cont  = ejFindClipContainer();
+    NSView* guest = ejGuestInside (cont);
+    if (cont == nil || guest == nil)
+    {
+        // WHAT WAS ON SCREEN INSTEAD, because a skip nobody can diagnose costs a whole run to
+        // repeat - two of them on 26 Oct. Every window in this process, and the classes of its
+        // content view's own subviews, which is where a clip container would be.
+        juce::String seen;
+        for (NSWindow* w in [NSApp windows])
+        {
+            seen << "[" << ejNS ([w title]) << ([w isVisible] ? " visible: " : " hidden: ");
+            for (NSView* sv in [[w contentView] subviews])
+                seen << ejNS (NSStringFromClass ([sv class])) << " ";
+            seen << "] ";
+        }
+        skip (label, juce::String ("no clip container with a plugin view was on screen after the open")
+              + " (container " + (cont == nil ? "absent" : "present")
+              + ", plugin view " + (guest == nil ? "absent" : "present")
+              + (openThrow.isNotEmpty() ? ", and the open threw: " + openThrow : "")
+              + "). Windows now: " + seen);
+        return;
+    }
+    const auto guestClass = ejNS (NSStringFromClass ([guest class]));
+    std::printf ("        (LV) %s: container %s, plugin view %s %s\n", label.toRawUTF8(),
+                 [NSStringFromRect ([cont frame]) UTF8String], guestClass.toRawUTF8(),
+                 [NSStringFromRect ([guest frame]) UTF8String]);
+
+    if (rowWanted (idCrash))
+        check (openThrow.isEmpty(), juce::String (idCrash) + ": " + label + " opens without the "
+               "plugin's own draw throwing (his AUDelay crash)",
+               openThrow.isNotEmpty()
+                   ? "the open threw " + openThrow + " - in Logic that is EXC_BREAKPOINT in "
+                     "-[NSApplication _crashOnException:] and the AU hosting process dies"
+                   : juce::String());
+
+    if (! ejCountGuestDraws (guest))
+    {
+        skip (label + ": its own draws cannot be counted",
+              "no class between " + guestClass + " and NSView implements drawRect:, so this view "
+              "draws through something else and a draw count would be a zero nobody could read.");
+        return;
+    }
+
+    // ---- HANDS OFF, NOTHING MAY CHANGE FOR 10 SECONDS -------------------------------------
+    // *"with hands off nothing in the view changes at all for 10 seconds"* - his acceptance, in his
+    // words. Sampled every 200 ms: both frames, the bounds origin, both layers' geometry and style,
+    // and the plugin's own draw count.
+    if (rowWanted (idStill))
+    {
+        pump (600);
+        gGuestDraws = 0;
+        const auto s0 = ejSampleView (cont, guest);
+        EJViewSample last = s0;
+        juce::String firstMove; double firstMoveAtMs = -1.0;
+        for (int t = 0; t < 50; ++t)
+        {
+            pump (200);
+            const auto sNow = ejSampleView (cont, guest);
+            if (firstMoveAtMs < 0.0)
+            {
+                const auto moved = ejWhatMoved (s0, sNow);
+                if (moved != "nothing") { firstMove = moved; firstMoveAtMs = sNow.tMs - s0.tMs; }
+            }
+            last = sNow;
+        }
+        check (firstMoveAtMs < 0.0,
+               juce::String (idStill) + ": with hands off, nothing in " + label + " changes for 10 s",
+               firstMoveAtMs < 0.0 ? juce::String()
+                   : "after " + juce::String ((int) firstMoveAtMs) + " ms: " + firstMove
+                     + "; over the whole 10 s: " + ejWhatMoved (s0, last));
+    }
+
+    // ---- A REAL DRAG REACHES THE SCREEN ---------------------------------------------------
+    // *"I hear the change, but the knob on screen doesn't move."*  The knob is drawn by the
+    // plugin's own code, so the only thing that can see it is whether that view drew.
+    // AND THE INSTRUMENT IS PROVED FIRST, in the opposite direction: a forced invalidation must
+    // produce a draw, or a zero from the drag would be a dead counter rather than a frozen picture.
+    if (rowWanted (idDrag))
+    {
+        gGuestDraws = 0;
+        [guest setNeedsDisplay: YES];
+        pump (500);
+        const int forced = gGuestDraws;
+        check (forced > 0, juce::String (idDrag) + " (instrument): " + label + " does draw when told to",
+               forced > 0 ? juce::String()
+                          : "a forced setNeedsDisplay produced no draw at all, so nothing below can "
+                            "be read as a verdict about the picture");
+        if (forced > 0)
+        {
+            // ---- AND THE DRAG HAS TO REACH A CONTROL BEFORE THE PICTURE CAN BE JUDGED --------
+            //
+            // The first run of this row went RED on three different plugins, on the own rack as
+            // well as in a live view - and a fault that is everywhere is usually the instrument.
+            // A synthetic drag that lands on a plugin's background moves nothing and draws
+            // nothing, which is indistinguishable from the frozen picture he reported unless the
+            // row checks. So each probe point is judged by whether the PARAMETER moved:
+            //
+            //   parameter moved, no draw   -> his fault 2, and the row says so
+            //   parameter moved, drew      -> the knob follows the hand
+            //   no parameter moved anywhere -> this rig could not find a knob to drag. A SKIP with
+            //                                  that sentence, never a verdict about the product.
+            [NSApp activateIgnoringOtherApps: YES];
+            [[guest window] makeKeyAndOrderFront: nil];
+            pump (200);
+            const NSRect gb = [guest bounds];
+            int drewOnHit = -1; NSPoint hitAt {}; int tried = 0; bool hit = false;
+            for (double fx : { 0.25, 0.5, 0.75 })
+                for (double fy : { 0.3, 0.55, 0.8 })
+                {
+                    if (hit) continue;
+                    ++tried;
+                    const NSPoint at = NSMakePoint (gb.origin.x + gb.size.width * fx,
+                                                    gb.origin.y + gb.size.height * fy);
+                    const juce::String before = copyValues ? copyValues() : juce::String();
+                    const int d = ejDragOnGuest (guest, at, -24.0, 8, pump);
+                    const juce::String after  = copyValues ? copyValues() : juce::String();
+                    const bool moved = copyValues && before.isNotEmpty() && after != before;
+                    if (moved || (! copyValues && d > 0))
+                    { hit = true; drewOnHit = d; hitAt = at; }
+                }
+            if (! hit)
+                skip (juce::String (idDrag) + ": a real drag on " + label,
+                      juce::String (tried) + " synthetic drag(s) over that view moved no parameter at "
+                      "all, so this rig never got hold of one of its knobs - nothing is proven about "
+                      "the picture either way, and his own hand on the plugin answers it.");
+            else
+            {
+                check (drewOnHit > 0, juce::String (idDrag) + ": a real drag on " + label
+                       + " redraws it (the knob follows the hand)",
+                       drewOnHit > 0 ? juce::String()
+                                     : "the drag at (" + juce::String ((int) hitAt.x) + ","
+                                       + juce::String ((int) hitAt.y) + ") MOVED A PARAMETER and the "
+                                       "view drew NOT ONCE, while a forced invalidation produced "
+                                       + juce::String (forced) + " - the hand reaches the plugin and "
+                                       "the picture does not move, which is his fault 2");
+                if (drewOnHit > 0)
+                    std::printf ("        (LV) %s drew %d time(s) for a drag at (%d,%d)\n",
+                                 label.toRawUTF8(), drewOnHit, (int) hitAt.x, (int) hitAt.y);
+            }
+        }
+    }
+    ejStopCountingGuestDraws();
+    if (gGuestThrows > 0)
+        check (false, juce::String (idCrash) + ": " + label + "'s own draw threw nothing while the row ran",
+               juce::String (gGuestThrows) + " throw(s), the first: " + gGuestThrowWhat);
+}
 
 void Track::closeEditor()
 {
@@ -3454,6 +3871,249 @@ int main (int argc, char* argv[])
                      "caller anywhere in the product)",
                "agentTarget=\"" + Rig::state().getProperty ("agentTarget", juce::var()).toString()
                + "\" workingUid=\"" + Rig::state().getProperty ("workingUid", juce::var()).toString() + "\"");
+    }
+
+    // ---- THE LIVE-VIEW ROWS, AS A LAMBDA SO THEY CAN RUN FIRST (26 Oct 2026) -----------------
+    //
+    // These rows are at the end of the suite, and the suite is twenty-five minutes. Two of his
+    // faults were still being measured wrong after two runs, which is fifty minutes to learn one
+    // thing. With EJ_RIG_FAST_LV=1 they run HERE, straight after the editor opens, and the process
+    // stops afterwards - a loop of about three minutes while a live-view fault is being chased.
+    // It is loudly not a gate, and the full suite still runs them in their own place.
+    auto runLiveViewRows = [&] ()
+    {
+        // ---- LV1-LV3: THE LIVE VIEW IN A REAL HOST (his 26 Oct ruling, step b) --------------------
+        //
+        // *"Your bench passed all of these, so it isn't testing what I see. Reproduce each fault in a
+        //  real host ... driving a drag through the real editor ... Show each one red before fixing it."*
+        //
+        // WHY THE OWN RACK AND NOT A LINK. Faults 1, 2 and 3 are all about the hosted plugin's own view
+        // inside our clip container, and that container is the same object on both roads: the pane, the
+        // reparent, the 400 ms maintenance pass and the layers do not know whose rack the slot is on.
+        // What a Link adds is FOLLOW and CONTROL - the Link's values and the gesture hold - and those
+        // get their own rows next, with the copy's and the Link's values sampled per tick. Saying which
+        // half this proves matters more than a row that claims both.
+        if (rowWanted ("LV1") || rowWanted ("LV2") || rowWanted ("LV3"))
+        {
+            leg ("LV: a hosted plugin's own view in the V2, in a real host with a real window");
+            // AUDelay IS HIS CRASH, and Apple's own AU is free of PACE, so the standing rule is kept.
+            // The others are tried and named; one that will not load is said out loud, never silently
+            // dropped, because a row that quietly ran one subject is a row about one subject.
+            const juce::StringArray subjects { "AUDelay", "AUMatrixReverb", "AUMultibandCompressor" };
+            juce::StringArray ran, notRan;
+            // ---- THE VIEW HAS TO BE ON THE RACK THIS ROW IS FILLING (26 Oct 2026) ----------------
+            // The first run of these rows added three plugins to the OWN rack and then pressed slot 1
+            // three times, and the plugin answered "there is no slot 1 to double-click" every time -
+            // correctly: an earlier leg had left the rack VIEW aimed at a Link, so the cards on screen
+            // were that Link's. A row that fills one rack and presses another proves nothing.
+            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);     // "" = the own rack
+            rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
+            Rig::pump (600);
+            for (const auto& subject : subjects)
+            {
+                clearOwnRack (rig);
+                Rig::pump (300);
+                const auto addAck = rig.send (echojay::rig::cmd::addSlot, args1 ("name", subject), 25000);
+                juce::String slot1;
+                rig.until ([&] (const juce::var& stv)
+                {
+                    if (auto* arr = stv.getProperty ("ownRack", juce::var())
+                                       .getProperty ("slots", juce::var()).getArray())
+                        if (! arr->isEmpty())
+                            slot1 = (*arr)[0].getProperty ("name", juce::var()).toString();
+                    return slot1.containsIgnoreCase (subject);
+                }, 15000);
+                if (! slot1.containsIgnoreCase (subject))
+                {
+                    notRan.add (subject + " (" + addAck.getProperty ("note", juce::var()).toString() + ")");
+                    continue;
+                }
+                ran.add (subject);
+                Rig::pump (600);        // the panel rebuilds its cards on its own tick
+
+                // ---- THE OPEN, WITH WHATEVER THE PLUGIN'S OWN DRAW THROWS CAUGHT (fault 1) --------
+                // His crash is an exception out of Apple's own drawRect, 24 ms after our reparent, and
+                // it kills the AU hosting process in Logic. Here it is caught, so the row has a verdict
+                // instead of the suite having a corpse - and the catch is the whole reason this row can
+                // exist at all.
+                gGuestDraws = 0; gGuestThrows = 0; gGuestThrowWhat.clear();
+                juce::String openThrow;
+                @try
+                {
+                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1), 10000);
+                    Rig::pump (3000);          // the pane's 100 ms settle poll, then its first maintenance
+                }
+                @catch (NSException* e) { openThrow = ejNS ([e name]) + ": " + ejNS ([e reason]); }
+                ejMeasureHostedView (subject + " on the V2's own rack", openThrow,
+                                     "LV1", "LV2", "LV3", ejPumpMsgThread);
+            }
+            std::printf ("        (LV) subjects run: %s%s\n",
+                         ran.isEmpty() ? "NONE" : ran.joinIntoString (", ").toRawUTF8(),
+                         notRan.isEmpty() ? "" : ("  |  could not be added: "
+                                                  + notRan.joinIntoString ("; ")).toRawUTF8());
+            if (ran.isEmpty())
+                skip ("LV: the live view in a real host",
+                      "none of the subjects could be put on the rack, so nothing was measured.");
+        }
+
+        // ---- LV4-LV6: THE LIVE VIEW OF A LINK'S PLUGIN, WHICH IS THE ROAD HIS FAULTS ARE ON -------
+        //
+        // The block above proves the container and the drawing on the V2's own rack. This one adds the
+        // two layers that only exist in a live view - the mirror writing into the copy, and CONTROL
+        // carrying his gesture to the Link - and samples, every tick, exactly what he asked for: the
+        // copy's displayed value, the view's frame and layers, and the message thread's frame time.
+        //
+        // AND IT KEEPS THE HOST ALIVE WHILE IT MEASURES. A live view that stops following puts the
+        // read-only shield back up, and a drag would then land on our shield instead of the plugin - so
+        // the pump used here feeds real audio on every turn.
+        if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6"))
+        {
+            leg ("LV: AUDelay in the LIVE VIEW of a Link's rack (the mirror and CONTROL are live)");
+            const EJPumpFn livePump = [&] (int ms)
+            {
+                const double end = juce::Time::getMillisecondCounterHiRes() + (double) ms;
+                while (juce::Time::getMillisecondCounterHiRes() < end)
+                {
+                    for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
+                    Rig::pump (10);
+                }
+            };
+            juce::String uid = usableLinkUid (rig.freshState(), true);
+            if (uid.isEmpty())
+                rig.until ([&uid] (const juce::var& st)
+                {
+                    if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                        for (const auto& l : *arr)
+                        {
+                            const auto u = l.getProperty ("uid", juce::var()).toString();
+                            if (u.isNotEmpty() && (bool) l.getProperty ("connected", false))
+                            { uid = u; return true; }
+                        }
+                    return false;
+                }, 20000);
+            if (uid.isEmpty())
+            {
+                skip ("LV4-LV6: AUDelay in a Link's live view",
+                      "no connected Link was published within 20 s, so there is no remote slot to show.");
+            }
+            else
+            {
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", uid), 10000);
+                rig.send (echojay::rig::cmd::workOn,     args1 ("uid", uid), 10000);
+                // AND THE RACK HAS TO BE ON SCREEN. The live view opens its editor through
+                // showInline(slot, deliberate=false), which returns at once when the panel is not
+                // showing - so on the CHAT tab the copy comes up, the audio flows, and no editor
+                // is ever created. That is what run 2 measured: shadowRunning=1, container absent.
+                rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chain"), 8000);
+                livePump (1000);
+                // AUDelay onto THAT Link's rack, by the agent's own road (the mock plan
+                // rig-linkaudelay-marker): Apple's own AU, so the no-PACE rule is kept.
+                const auto added = askAgent (rig, "rig-linkaudelay-marker: put AUDelay on that Link", 90000);
+                juce::ignoreUnused (added);
+                int slotToOpen = 0;
+                rig.until ([&] (const juce::var& st)
+                {
+                    if (auto* arr = st.getProperty ("links", juce::var()).getArray())
+                        for (const auto& l : *arr)
+                            if (l.getProperty ("uid", juce::var()).toString() == uid)
+                            {
+                                const auto names = juce::StringArray::fromTokens (
+                                    l.getProperty ("slots", juce::var()).toString(), "|", "");
+                                for (int k = 0; k < names.size(); ++k)
+                                    if (names[k].containsIgnoreCase ("AUDelay")) { slotToOpen = k + 1; return true; }
+                            }
+                    return false;
+                }, 25000);
+                if (slotToOpen == 0)
+                {
+                    skip ("LV4-LV6: AUDelay in " + uid + "'s live view",
+                          "AUDelay never appeared on that Link's published slots, so there was nothing "
+                          "to open - the add did not land and this row measured nothing.");
+                }
+                else
+                {
+                    gGuestDraws = 0; gGuestThrows = 0; gGuestThrowWhat.clear();
+                    juce::String openThrow;
+                    @try
+                    {
+                        rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen), 10000);
+                        livePump (4000);
+                    }
+                    @catch (NSException* e) { openThrow = ejNS ([e name]) + ": " + ejNS ([e reason]); }
+
+                    const auto st0 = rig.freshState();
+                    const bool running = (bool) st0.getProperty ("shadowRunning", false);
+                    std::printf ("        (LV) live view: running=%d frames=%.0f plugin=\"%s\" "
+                                 "tickMax=%.2f ms tickMean=%.2f ms\n",
+                                 (int) running, (double) st0.getProperty ("shadowFrames", 0.0),
+                                 st0.getProperty ("shadowPlugin", juce::var()).toString().toRawUTF8(),
+                                 (double) st0.getProperty ("tickMaxMs", 0.0),
+                                 (double) st0.getProperty ("tickMeanMs", 0.0));
+                    if (! running)
+                        skip ("LV4-LV6: the live view did not come up",
+                              "shadowRunning stayed 0 for 4 s on slot " + juce::String (slotToOpen)
+                              + " of " + uid + (openThrow.isNotEmpty() ? ", and the open threw: " + openThrow
+                                                                       : juce::String())
+                              + " - so the three measurements below would be about the own-rack road.");
+                    else
+                    {
+                        // ---- THE THREE FAULTS, ON THE LIVE-VIEW ROAD -----------------------------
+                        ejMeasureHostedView ("AUDelay in " + uid + "'s live view", openThrow,
+                                             "LV4", "LV5", "LV6", livePump);
+
+                        // ---- AND THE TWO THINGS ONLY THIS ROAD CAN SHOW --------------------------
+                        // *"nothing writes into the copy from the Link except changes that didn't come
+                        //  from me, and never a parameter I touched in the last second"* - so with his
+                        //  hands off and nothing else touching that rack, the copy's displayed values
+                        //  must not move at all. A mirror that still writes shows up here as a value
+                        //  that changed while nobody changed anything.
+                        if (rowWanted ("LV5"))
+                        {
+                            const auto before = rig.freshState()
+                                                   .getProperty ("shadowCopyVals", juce::var()).toString();
+                            livePump (4000);
+                            const auto after  = rig.freshState()
+                                                   .getProperty ("shadowCopyVals", juce::var()).toString();
+                            check (before.isNotEmpty() && before == after,
+                                   "LV5b: with his hands off, the copy's own displayed values do not move",
+                                   before.isEmpty() ? "the copy published no values at all"
+                                                    : "before \"" + before + "\" after \"" + after + "\"");
+                        }
+                        // *"Measure the V2's message-thread load and frame time with a live view
+                        //  open."*  The figure is the editor's own 20 Hz tick, and the bound is his
+                        //  acceptance: the live view must not make the message thread miss that tick.
+                        if (rowWanted ("LV6"))
+                        {
+                            livePump (2000);
+                            const auto st = rig.freshState();
+                            const double mx = (double) st.getProperty ("tickMaxMs", 0.0);
+                            const double mn = (double) st.getProperty ("tickMeanMs", 0.0);
+                            check (mx > 0.0 && mx < 50.0,
+                                   "LV6b: the message thread's tick stays inside its own 50 ms period "
+                                   "with a live view open",
+                                   "worst " + juce::String (mx, 2) + " ms, mean "
+                                   + juce::String (mn, 2) + " ms over the last second"
+                                   + (mx <= 0.0 ? " (nothing was measured - the figure is not published)"
+                                                : juce::String()));
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    if (::getenv ("EJ_RIG_FAST_LV") != nullptr)
+    {
+        std::printf ("\n  ######## EJ_RIG_FAST_LV=1: ONLY the live-view rows ran. This is NOT a gate and "
+                     "not a pass\n           for anything else - every other leg in this suite was "
+                     "skipped entirely.\n\n");
+        runLiveViewRows();
+        v2.closeEditor();
+        for (Track* t : { &v2, &lk1, &lk2 }) t->plugin->releaseResources();
+        lk2.plugin.reset(); lk1.plugin.reset(); v2.plugin.reset();
+        std::printf ("==== host_rig (LIVE-VIEW ROWS ONLY): %s (%d failed, %d passed, %d skipped) ====\n",
+                     failures == 0 ? "GREEN" : "RED", failures, passes, skips);
+        return failures == 0 ? 0 : 1;
     }
 
     leg ("R2: the Agent chip takes effect without a reopen (12b item 6)");
@@ -9600,6 +10260,9 @@ int main (int argc, char* argv[])
                                                                 ? ::getenv ("EJ_LIVE_REPEATS") : "5")
                               + " attempt(s) per live id")
                            : juce::String ("mock pass"));
+
+
+    runLiveViewRows();
 
     // ---- teardown in the host's own order ---------------------------------
     v2.closeEditor();

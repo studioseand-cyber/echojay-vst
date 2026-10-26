@@ -371,6 +371,18 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-linkaudelay-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lad", "name": "do", "approval": "free",
+            "summary": "put AUDelay on this rack",
+            "args": { "op": "add", "name": "AUDelay" } },
+          { "event": "await", "ids": ["tc_lad"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added AUDelay." } ]
+      ]
+    },
+    {
       "goalContains": "rig-eqband-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

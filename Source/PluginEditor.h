@@ -2707,6 +2707,11 @@ private:
     // which is the distinction that hid the bug: an executor that was never told anything looked exactly
     // like one that had been told "the own rack".
     juce::String agentTargetLast_ { "(unset)" };
+    // ---- THE MESSAGE THREAD'S FRAME TIME (his fault 4, 26 Oct 2026) -------------------------
+    // The 20 Hz tick's own cost: the longest in the current second and the mean of the last
+    // complete one. Written at the end of timerCallback, read by the rig's state.
+    double tickMaxMs_ = 0.0, tickMeanMs_ = 0.0, tickSumMs_ = 0.0;
+    int    tickWindowN_ = 0;
     void syncAgentTarget();
     // ---- THE HOST RIG (Sean's ask A): see EJRigHook.h. Inert unless an isolated state root AND
     // EJ_RIG_HOOK=1; in a normal session serviceRigHook() returns on its first line.
@@ -3476,6 +3481,29 @@ private:
         int  framePolls  = 0;
         bool settled     = false;   // real native frame captured; timer in maintenance mode
         bool layoutGuard = false;
+        // ---- RULE 5: NO TIMER TOUCHES THE HOSTED VIEW UNLESS SOMETHING IS WRONG (26 Oct 2026) --
+        //
+        // *"No timer touches the hosted view unless something is actually wrong."*  The maintenance
+        // pass used to run every 400 ms for the life of the view, reading AppKit geometry and the
+        // shield's state four hundred times a minute over a plugin that was not moving. It now runs
+        // a BOUNDED window after the view settles - long enough for an out-of-process view that
+        // fills in late - and then stops the timer. After that the pass runs on EVENTS only: our own
+        // layout, the plugin resizing its own editor (a ComponentListener, below), and the shield's
+        // words changing.
+        int  maintPasses = 0;
+        static constexpr int kMaintPassesAfterSettle = 5;    // 5 x 400 ms = 2 s, then silence
+        bool shieldOn_ = false;
+        juce::String shieldLine_;
+        /** The plugin resizing its OWN editor, which is the one late change a stopped timer would
+            otherwise miss. Event-driven and exact, where the poll was neither. */
+        struct EditorResizeWatch final : juce::ComponentListener
+        {
+            explicit EditorResizeWatch (ChainListPanel& o) : owner (o) {}
+            void componentMovedOrResized (juce::Component&, bool, bool wasResized) override
+            { if (wasResized) owner.hostedEditorResizedItself(); }
+            ChainListPanel& owner;
+        };
+        std::unique_ptr<EditorResizeWatch> editorResizeWatch;
         // Inline editor is one of OUR built-in devices: a JUCE component, not
         // a hosted plugin view. Suppresses every NativeClip interaction.
         bool inlineIsBuiltin = false;
@@ -3951,6 +3979,9 @@ private:
                 // death mark because the deadman deliberately does not mark a destruction: a death
                 // in here must not blacklist the plugin (ChainHost's own note says why).
                 const echojay::PluginCallWindow noRenderWhileWeAreInHere;
+                // The resize watcher comes off BEFORE the editor it watches is destroyed.
+                if (editorResizeWatch != nullptr)
+                { inlineEditor->removeComponentListener(editorResizeWatch.get()); }
                 inlineHolder.removeChildComponent(inlineEditor.get());
                 inlineEditor.reset();
                 // Only detach a container we actually attached: a built-in
@@ -3961,6 +3992,8 @@ private:
             inlineSlot = -1;
             realW = realH = 0;
             settled = false;
+            maintPasses = 0;
+            shieldOn_ = false; shieldLine_.clear();
             inlineIsBuiltin = false;
         }
 
@@ -4129,6 +4162,11 @@ private:
             inlineSlot = i;
             inlineHolder.setVisible(true);
             inlineHolder.addAndMakeVisible(*inlineEditor);
+            // RULE 5's event road: the plugin tells us when it resizes its own editor, so the
+            // maintenance timer does not have to keep asking. Attached before the first layout.
+            if (editorResizeWatch == nullptr)
+                editorResizeWatch = std::make_unique<EditorResizeWatch>(*this);
+            inlineEditor->addComponentListener(editorResizeWatch.get());
             layoutInline();
             attachNative(true);   // create container, reparent, clip, centre + log
 
@@ -4167,8 +4205,46 @@ private:
                 const auto policy = echojay::liveViewInputPolicy(liveCopy,
                                                                  echojay::kLiveViewControlBuilt,
                                                                  following, runHolds);
+                shieldOn_ = policy.blockInput; shieldLine_ = policy.line;
                 NativeClip::setShield(this, policy.blockInput, policy.line);
             }
+        }
+
+        /** ---- THE EVENT ROAD, which replaced the clock (his rule 5, 26 Oct 2026) -----------
+            The plugin has resized its own editor. Lay out once and re-assert the container once;
+            no timer is started, because this IS the notification a timer was polling for. */
+        void hostedEditorResizedItself()
+        {
+            if (!inlineEditor || inlineIsBuiltin) return;
+            int w = 0, h = 0;
+            if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60
+                && (w != realW || h != realH))
+            { realW = w; realH = h; }
+            layoutInline();
+            attachNative(false);
+            repaint();
+        }
+
+        /** The ONLY thing allowed to reach the hosted view on the editor's own tick, and only when
+            the answer has moved: three bool reads, a string compare, and an AppKit call only if the
+            shield's words or presence are actually wrong. Everything else about that view is left
+            alone until something happens to it. */
+        void maintainShieldIfPolicyMoved()
+        {
+            if (!inlineEditor || inlineIsBuiltin) return;
+            const bool liveCopy = inlineSlot >= 0 && isLiveViewSlot && isLiveViewSlot(inlineSlot);
+            const bool following = liveCopy && liveViewFollowing && liveViewFollowing();
+            const bool runHolds  = liveCopy && liveViewRunHoldsRack && liveViewRunHoldsRack();
+            const auto policy = echojay::liveViewInputPolicy(liveCopy,
+                                                             echojay::kLiveViewControlBuilt,
+                                                             following, runHolds);
+            if (policy.blockInput == shieldOn_ && policy.line == shieldLine_) return;
+            shieldOn_ = policy.blockInput; shieldLine_ = policy.line;
+            NativeClip::setShield(this, policy.blockInput, policy.line);
+            EchoJay_NSLog(("EJPane(main): the shield changed - "
+                           + juce::String(policy.blockInput ? "UP: " + policy.line
+                                                            : juce::String("DOWN, his knobs travel"))
+                           ).toRawUTF8());
         }
 
         void timerCallback() override
@@ -4234,13 +4310,15 @@ private:
                     layoutInline();
                     attachNative(true);   // log the settled geometry
                     repaint();
-                    startTimer(400);      // switch to maintenance cadence
+                    maintPasses = 0;
+                    startTimer(400);      // a BOUNDED maintenance window, then the timer stops
                 }
                 return;
             }
-            // Maintenance: keep the plugin view parented in the fixed
-            // container and aligned, and pick up LATE size changes —
-            // out-of-process views can fill in many seconds after load.
+            // Maintenance, for a BOUNDED window and then never again on a clock (rule 5): pick up
+            // a LATE size change - an out-of-process view can fill in seconds after load - and keep
+            // the plugin view parented and aligned while that is still settling.
+            ++maintPasses;
             int w = 0, h = 0;
             if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60
                 && (w != realW || h != realH))
@@ -4250,8 +4328,20 @@ private:
                 if (statusText.startsWith("Editor didn't")) statusText.clear();
                 layoutInline();
                 repaint();
+                maintPasses = 0;        // it is still moving: give it another window
             }
             attachNative(false);
+            if (maintPasses >= kMaintPassesAfterSettle)
+            {
+                stopTimer();
+                EchoJay_NSLog(("EJPane(main): the maintenance timer has STOPPED - "
+                    + juce::String(realW) + "x" + juce::String(realH) + " has been steady for "
+                    + juce::String(kMaintPassesAfterSettle * 400) + " ms, so nothing on a clock "
+                      "touches that plugin's view from here. Our own layout, the plugin resizing "
+                      "itself and the shield's words changing each re-assert it once (his rule 5 "
+                      "of 26 Oct 2026; before this the pass ran 150 times a minute over a view "
+                      "that was not moving, and he could see it shimmer)").toRawUTF8());
+            }
         }
 
         bool hasSelection() const

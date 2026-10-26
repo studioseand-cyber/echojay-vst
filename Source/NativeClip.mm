@@ -287,7 +287,26 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
         NSSize keep = [newest frame].size;   // keep the plugin's NATIVE size
         NSLog(@NATIVECLIP_LOG_TAG ": reparenting stray %@ frame=%@ from peer into container",
               NSStringFromClass([newest class]), NSStringFromRect([newest frame]));
-        [newest removeFromSuperview];
+        // ---- THE MOVE MUST NOT TAKE IT OUT OF THE WINDOW (his AUDelay crash, 26 Oct 2026) ----
+        //
+        // `removeFromSuperview` followed by `addSubview:` is two moves, and the gap between them
+        // has the guest view at superview nil - and therefore at WINDOW nil. An AppKit probe says
+        // so plainly: with the remove it gets viewWillMoveToWindow:NIL / viewDidMoveToWindow (nil)
+        // and then the window again; with addSubview: ALONE it is reparented and never once sees a
+        // nil window. AppKit does the removal itself and keeps the window when both superviews are
+        // in the same one, which ours always are.
+        //
+        // WHAT THAT COST. Apple's own AU views give up their parameter connection on the way out of
+        // a window, and the next draw asserts reading a parameter:
+        //
+        //    07:22:31.890  NativeClip2: reparenting stray AUDelayCustomView ... from peer
+        //    07:22:31.914  *** Assertion failure in AUDelayCustomView.mm:176   (in drawRect)
+        //    07:22:31.944  EXC_BREAKPOINT in -[NSApplication _crashOnException:]
+        //
+        // 24 ms, and in Logic the AU's UI lives in a view-service process where an exception out of
+        // drawRect is fatal - so clicking an AUDelay slot card took Logic's whole hosting process
+        // with it. One move instead of two, and the transition never happens. Row LV1 holds it in
+        // the host rig, on the real plugin, and was RED before this line changed.
         [newest setAutoresizingMask:NSViewNotSizable];
         [container addSubview:newest];
         [newest setFrame:NSMakeRect(wanted.origin.x, wanted.origin.y,
