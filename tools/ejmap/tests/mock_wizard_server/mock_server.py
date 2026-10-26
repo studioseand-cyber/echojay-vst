@@ -20,7 +20,8 @@ MAX_COMPRESSED = 4_000_000
 MAX_UNCOMPRESSED = 32 * 1024 * 1024
 CATEGORIES = {"compressor", "limiter", "eq", "de-esser", "delay", "reverb", "saturation", "gate", "transient_shaper", "channel_strip", "amp_sim", "pitch", "filter"}   # v1.1: filter
 FINAL_STATES = {"measured", "not_measurable", "needs_licence", "needs_hardware", "crashed", "demo", "silent", "wont_load", "custom_default",
-                "timed_out", "waves_skipped", "not_reached", "ready_from_version", "needs_category", "other_category", "out_of_scope", "held"}
+                "timed_out", "waves_skipped", "not_reached", "ready_from_version", "needs_category", "other_category", "out_of_scope", "held",
+                "bridged", "bridge_no_match"}   # 26 Oct
 # v1.1: EXACTLY the schemas the wizard's drafts carry (the cert's draft writers; pinned by WZ-SCHEMAS-1) - the hand-written names before
 # (ej_reverb_delay_profile/1, ej_deesser_profile/1, ej_limiter_profile/1) were never sent, so real reverb / delay / strip / de-esser / limiter
 # results would have been refused (v1) or held (v1.1)
@@ -643,7 +644,8 @@ def promote(doc, acct, rid, run):
 
 KINDS = {"profile", "confirmation", "outcome", "needs_category", "other_category", "out_of_scope", "held", "crash", "reference_vote", "bridge_read"}
 OUTCOME_STATES = {"needs_licence", "needs_hardware", "demo", "silent", "crashed", "timed_out", "not_measurable", "wont_load", "custom_default",
-                  "not_reached", "waves_skipped", "measured", "ready_from_version"}
+                  "not_reached", "waves_skipped", "measured", "ready_from_version",
+                  "bridged", "bridge_no_match"}   # 26 Oct (asked of B): a VST3 read against its AU twin; the server decides what it inherits
 
 
 def keep_nonce(doc, result_id):

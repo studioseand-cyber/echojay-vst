@@ -221,6 +221,21 @@ inline Decision decide (const Signatures& s, const juce::StringArray& proposed, 
 }
 
 struct NeutralWrite { int index = -1; double norm = 0.0; juce::String control, text, why; };
+// THE RAISE, ONE RULE (Kathy, 26 Oct): the drive / input control by name (driveControl, over the automatable, non-meta controls that are not
+// 2-4 position switches), raised from where it opens (raisedNorm). The reads take it to see a flat unit's signature; the MEASURING passes take
+// it only when a pass found nothing to measure without it, whichever way the category was decided (reads, catalogue or name), so two testers
+// measure the same way (StandardCLIP, 25 Oct: raised by the reads, +13.7 dB and THD -12.8 dB at drive 0; with the catalogue's category, clean)
+struct RaiseControl { int index = -1; juce::String name; bool automatable = true, meta = false; int numSteps = 0; std::optional<double> opening; };
+inline std::optional<NeutralWrite> raiseFor (const std::vector<RaiseControl>& controls)
+{
+    std::vector<std::pair<int, juce::String>> ctls;
+    for (const auto& c : controls) if (c.automatable && ! c.meta && ! (c.numSteps >= 2 && c.numSteps <= 4)) ctls.push_back ({ c.index, c.name });
+    const auto dc = driveControl (ctls); if (! dc) return std::nullopt;
+    std::optional<double> opened; for (const auto& c : controls) if (c.index == dc->first) opened = c.opening;
+    const auto up = raisedNorm (opened ? *opened : 0.0); if (! up) return std::nullopt;
+    NeutralWrite w; w.index = dc->first; w.control = dc->second; w.norm = *up;
+    w.why = "nothing measured without it: the drive / input control raised from where it opens"; return w;
+}
 struct Row { juce::String product, vendor, typeCode, kind, identity, outOfScope, category, why; juce::StringArray proposed, also; bool settled = false, measured = false; Signatures sig; double seconds = 0.0;
              std::vector<NeutralWrite> neutralWrites, categoryWrites; bool byName = false; std::optional<double> levelMoveDb; std::optional<Signatures> sigAtDefault;
              bool tailEither = false; };

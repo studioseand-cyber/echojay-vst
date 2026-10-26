@@ -13841,8 +13841,8 @@ int main (int, char**)
                && pick ({ "Output Drive" }) == "-" && pick ({ "Input Trim" }) == "-" && pick ({ "MS/LR Input", "Width" }) == "-"   // S1 Imager (21 Oct): a routing is not a drive
                && raisedNorm (0.0) == std::optional<double> (0.75) && std::abs (*raisedNorm (0.875) - 0.96875) < 1e-9 && ! raisedNorm (1.0) && *raisedNorm (0.5) > 0.5   // never below where it opened (StandardCLIP)
                && openingNorm ("param\t3\t0.875000\tInput Gain\t0.00dB\nset\t3\t0.968750\n", 3) == std::optional<double> (0.875) && ! openingNorm ("param\t3\t0.5\tX\t\n", 4)
-               && drv.contains ("if (lr.automatable && ! lr.meta && ! (lr.numSteps >= 2 && lr.numSteps <= 4)) ctls.push_back ({ i, lr.name });")
-               && drv.contains ("const auto opened = dc ? categorise::openingNorm (r30.out, dc->first) : std::nullopt;") && drv.contains ("w.norm = *up0;") && drv.contains ("const auto up0 = categorise::raisedNorm (opened ? *opened : 0.0);")
+               && drv.contains ("for (const auto& [i, lr] : parseListParams (lp.out)) rcs.push_back ({ i, lr.name, lr.automatable, lr.meta, lr.numSteps, categorise::openingNorm (r30.out, i) });")
+               && drv.contains ("const auto rw = categorise::raiseFor (rcs);") && drv.contains ("categorise::NeutralWrite w = *rw;")   // 26 Oct: the one raise rule (WZ-29OCT-2)
                && flatAtDefault (flat) && ! flatAtDefault (sat) && ! flatAtDefault (eqd) && ! flatAtDefault (tailed) && ! [] { Signatures s; return flatAtDefault (s); }()
                && ! stillFlat.settled && stillFlat.why.contains ("moved 6.0 dB (a level change, not counted as the signature)") && stillFlat.why.contains ("still no signature") && stillFlat.why.contains ("'THD' raised to 0.75 ('75 %')")
                && raisedSat.settled && raisedSat.category == "saturation" && raisedSat.why.contains ("as part of the neutral setting") && raisedSat.why.contains ("; then THD rises")
@@ -14259,6 +14259,127 @@ int main (int, char**)
                && ns.contains ("--keychain-profile \"$PROFILE\"") && ! ns.contains ("--password") && ! ns.contains ("--apple-id"),
                "wizard WZ-26OCT-2: the staging build's url / client id / required-fix checks (" + juce::String (cases) + " cases), the notarise script keychain-only");
     }
+    // WZ-29OCT-1 A VST3 TWIN'S OUTCOME (Kathy, 26 Oct; asked of B): "bridged" and "bridge_no_match" are outcome states - the client's list and the
+    // mock's are the same set, and a "need" plugin whose run state is one of them gets it, never not_reached (the 25 Oct rehearsal: 422 shape)
+    {
+        const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
+        const auto lit = mock.fromFirstOccurrenceOf ("OUTCOME_STATES = {", false, false).upToFirstOccurrenceOf ("}", false, false);
+        juce::StringArray mockStates; for (auto s : juce::StringArray::fromTokens (lit, ",", "\"")) { s = s.trim().unquoted(); if (s.isNotEmpty()) mockStates.add (s); }
+        auto clientStates = ejmap::wizresults::outcomeStates(); mockStates.sort (false); clientStates.sort (false);
+        const auto bundle = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("wz29oct1_" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+        bundle.createDirectory();
+        const auto man = juce::JSON::parse (R"({"skipped": [{"product": "T", "plugin_id": "VST3|22220001|1.0", "state": "bridge_no_match", "why": "w"}]})");
+        const auto docs = ejmap::wizresults::fromPack (man, bundle, "run_0000000000000b29", true, {}, {}, {}, juce::StringArray { "VST3|22220002|1.0" },
+                                                       { { "VST3|22220002|1.0", { juce::String ("bridged"), juce::String ("w") } } });
+        bundle.deleteRecursively();
+        juce::StringArray seen; for (const auto& d : docs) seen.add (d.pluginId + "=" + d.body.getProperty ("payload", {}).getProperty ("state", "").toString());
+        check (mockStates == clientStates && clientStates.contains ("bridged") && clientStates.contains ("bridge_no_match") && mock.contains ("\"bridged\", \"bridge_no_match\"}   # 26 Oct")
+               && seen.contains ("VST3|22220001|1.0=bridge_no_match") && seen.contains ("VST3|22220002|1.0=bridged"),
+               "wizard WZ-29OCT-1: the twin's outcome states in the client and the mock alike (" + clientStates.joinIntoString (",") + "); sent as " + seen.joinIntoString ("; "));
+    }
+    // WZ-29OCT-2 THE RAISE, ONE RULE (Kathy, 26 Oct): raised ONLY when nothing measures without it, by the same rule whichever way the
+    // category was decided. raiseFor picks the drive / input by name (no switch, no meta), from where it opens; none at the top. Phase B
+    // runs without it, and once more with it only after "nothing to measure" (exit 4); the map step keeps it for every route
+    {
+        namespace C = ejmap::categorise;
+        const auto clip = C::raiseFor ({ { 0, "Input Gain", true, false, 0, 0.833333 }, { 1, "Output Gain", true, false, 0, 0.833333 }, { 2, "Ceiling On/Off", true, false, 2, 0.0 }, { 3, "Softness", true, false, 0, 0.0 } });
+        const auto top = C::raiseFor ({ { 0, "Drive", true, false, 0, 1.0 } });
+        const auto sw = C::raiseFor ({ { 0, "Drive", true, false, 3, 0.0 } });
+        const auto meta = C::raiseFor ({ { 0, "Drive", true, true, 0, 0.0 } });
+        const auto none = C::raiseFor ({ { 0, "Output", true, false, 0, 0.0 } });
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (clip && clip->index == 0 && std::abs (clip->norm - (0.833333 + 0.75 * (1.0 - 0.833333))) < 1e-6 && ! top && ! sw && ! meta && ! none
+               && ejmap::cert::wantsRaisedRetry (false, 4, true) && ! ejmap::cert::wantsRaisedRetry (true, 4, true) && ! ejmap::cert::wantsRaisedRetry (false, 0, true) && ! ejmap::cert::wantsRaisedRetry (false, 4, false)
+               && drv.contains ("const auto rw = categorise::raiseFor (rcs);")
+               && drv.contains ("if (const auto nw = opt.neutralByStem.find (pp.stem); item.raised && nw != opt.neutralByStem.end() && ! nw->second.empty())")
+               && drv.contains ("if (const auto nw = opt.neutralByStem.find (pp.stem); item.raised && nw != opt.neutralByStem.end() && ! nw->second.empty())   // 21 Oct: the raised drive in the record's own neutral")
+               && drv.contains ("item.raised && nw != opt.neutralByStem.end() && ! nw->second.empty())\n                { args.add (\"--neutral-sets\");")   // the measuring call's own arguments
+               && drv.contains ("auto again = item; again.raised = true; retryRaised.push_back (again);") && drv.contains ("pool (retryRaised, juce::jmax (1, opt.jobs));")
+               && run.contains ("rememberRaise (opt.ledger, fp, categorise::raiseFor (rcs)); }") && run.contains ("enqueue (d.name, p.d.category, p.d.passes, p.d.limiterKnown); raiseInto (d, p.row); }")
+               && run.contains ("if (d.route == wizroute::Route::measure) raiseInto (ir.desc, p.row);") && ! run.contains ("neutralByStem[phaseBStem (ir.desc)] = nw;"),
+               "wizard WZ-29OCT-2: one raise rule for every route ('" + (clip ? clip->control : juce::String ("none")) + "'), taken only on the retry after nothing measured");
+    }
+    // WZ-29OCT-3 A LATER PASSING MEASUREMENT CLEARS AN EARLIER HOLD (Kathy, 26 Oct, SPL IRON): same plugin_id (format + version), a tone check
+    // later than the hold that passes, under the same spec / g / reference level / map, the failed one on record; the hold stays as earlier_hold
+    {
+        const auto hold = juce::JSON::parse (R"({"identity": "AudioUnit|6175631b|1.6.1", "product": "SPL IRON", "state": "needs_review", "reason": "tone check failed: unreadable vs 2.0", "at": "20261012T202902"})");
+        const auto oldT = juce::JSON::parse (R"({"spec": "v1.7", "g_db": 2.0, "L_ref_dbfs": -16.194, "map_fp": "e466", "pass_within_0_5_db": false, "quiet_check_ok": false, "measuredAt": "20261012T202838.278+0100"})");
+        const auto prof = juce::JSON::parse (R"({"plugin": {"plugin_id": "AudioUnit|6175631b|1.6.1"}})");
+        const auto newT = juce::JSON::parse (R"({"spec": "v1.7", "g_db": 2.0, "L_ref_dbfs": -16.194, "map_fp": "e466", "pass_within_0_5_db": true, "quiet_check_ok": true, "gr_measured_db": 1.99, "measuredAt": "20261025T095529.964Z"})");
+        auto with = [] (juce::var v, const char* k, juce::var x) { auto c = juce::JSON::parse (juce::JSON::toString (v)); c.getDynamicObject()->setProperty (k, x); return c; };
+        using ejmap::trustrun::holdCleared;
+        const auto ok = holdCleared (hold, oldT, prof, newT);
+        const auto otherVer = holdCleared (hold, oldT, juce::JSON::parse (R"({"plugin": {"plugin_id": "AudioUnit|6175631b|1.6.2"}})"), newT);
+        const auto otherFmt = holdCleared (hold, oldT, juce::JSON::parse (R"({"plugin": {"plugin_id": "VST3|6175631b|1.6.1"}})"), newT);
+        const auto earlier = holdCleared (hold, oldT, prof, with (newT, "measuredAt", "20261011T100000"));
+        const auto fails = holdCleared (hold, oldT, prof, with (newT, "pass_within_0_5_db", false));
+        const auto quiet = holdCleared (hold, oldT, prof, with (newT, "quiet_check_ok", false));
+        const auto spec = holdCleared (hold, oldT, prof, with (newT, "spec", "v1.8"));
+        const auto g = holdCleared (hold, oldT, prof, with (newT, "g_db", 4.0));
+        const auto lvl = holdCleared (hold, oldT, prof, with (newT, "L_ref_dbfs", -15.9));
+        const auto map = holdCleared (hold, oldT, prof, with (newT, "map_fp", "ffff"));
+        const auto noOld = holdCleared (hold, juce::var(), prof, newT);
+        const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (ok.cleared && ok.why.contains ("same conditions") && ! otherVer.cleared && ! otherFmt.cleared && ! earlier.cleared && ! fails.cleared && ! quiet.cleared
+               && ! spec.cleared && ! g.cleared && ! lvl.cleared && ! map.cleared && ! noOld.cleared && noOld.why.contains ("not on record")
+               && ejmap::trustrun::stampMs ("20261012T202902") > 0 && ejmap::trustrun::stampMs ("20261025T095529.964Z") > ejmap::trustrun::stampMs ("20261012T202838.278+0100")
+               && tr.contains ("const auto cleared = clearedHolds (heldFiles, certDirs);")
+               && tr.contains ("if (hid.size() == 3 && hid[0] == fmt && trust::versionKey (hid[2]) == trust::versionKey (m.getProperty (\"identity\", {}).getProperty (\"version\", \"\").toString()))")
+               && tr.contains ("if (e.m.hasProperty (\"earlier_hold\")) o->setProperty (\"earlier_hold\", e.m.getProperty (\"earlier_hold\", {}));"),
+               "trust WZ-29OCT-3: a later passing tone check under the same conditions clears the hold (" + ok.why + "); version / format / date / pass / spec / g / level / map / no record each keep it");
+    }
+    // WZ-29OCT-4 A READ-BACK ON A JUST-CORRECTED ANCHOR DOES NOT COUNT (Kathy, 26 Oct; CLA MixHub (m) 0.25, H-Reverb (6->6) 0.75): pass or fail,
+    // a reading at a norm the re-sweep corrected or added is set apart (onCorrected); the others count as before
+    {
+        using namespace ejmap::trust;
+        const auto mapJ = juce::JSON::parse (R"({"identity": {"format": "AudioUnit", "version": "1.0"}, "controls": {
+            "A": {"name": "A", "kind": "anchored", "anchors": [[0.0, 0.0], [2.89, 0.25], [8.0, 0.5], [16.0, 1.0]], "anchors_added": {"norms": [0.25]}},
+            "B": {"name": "B", "kind": "anchored", "anchors": [[0.0, 0.0], [5.0, 0.5], [10.0, 1.0]], "anchors_added": {"norms": [0.5]}} }})");
+        Readings rd; rd["A"] = { { 0.25, "2.89" }, { 0.5, "8.0" }, { 1.0, "16.0" } }; rd["B"] = { { 0.5, "5.0" } };
+        const auto rb = creditMap (mapJ, { { "wizard", rd } });
+        const auto ca = rb.count ("A") ? rb.at ("A") : ControlReadback(), cb = rb.count ("B") ? rb.at ("B") : ControlReadback();
+        check (ca.judged == 2 && ca.onCorrected == 1 && ca.proven() && cb.judged == 0 && cb.onCorrected == 1 && ! cb.proven()
+               && landsOnCorrected (mapJ.getProperty ("controls", {}).getProperty ("A", {}), 0.25005) && ! landsOnCorrected (mapJ.getProperty ("controls", {}).getProperty ("A", {}), 0.2502),
+               "trust WZ-29OCT-4: a read-back on a just-corrected anchor never counts (A: " + juce::String (ca.judged) + " judged, " + juce::String (ca.onCorrected) + " set apart; B: none left)");
+    }
+    // WZ-29OCT-5 THE LAGGING DISPLAY (Kathy, 26 Oct; the 9 Aug corpus: 112 of 120 wrong anchors showed the position before, every one read by
+    // set-then-read): with rereadSettled the display is read again after settling until two reads agree, and a stable reading equal to the
+    // previous position's display while the value moved is refused; without the flag the extractor is unchanged
+    {
+        struct Lagging : juce::AudioProcessorParameter
+        {
+            float v = 0.5f, shown = 0.5f; int sinceSet = 0, catchUp = 2; bool stuck = false; double step = 0.0;   // the display one write behind until settled
+            float getValue() const override { return v; }
+            void setValue (float x) override { shown = v; v = x; sinceSet = 0; }
+            float getDefaultValue() const override { return 0.0f; }
+            juce::String getName (int) const override { return "Lag"; }
+            juce::String getLabel() const override { return {}; }
+            float getValueForText (const juce::String& s) const override { return s.getFloatValue(); }
+            juce::String fmt (float x) const { const double q = step > 0 ? std::round (x / step) * step : x; return juce::String (q * 100.0, 1); }
+            juce::String getText (float x, int) const override { return fmt (x); }
+            juce::String getCurrentValueAsText() const override { return fmt (shown); }
+            void settle() { if (! stuck && ++sinceSet >= catchUp) shown = v; }
+        };
+        auto sweep = [] (Lagging& p, bool flag, int& refused)
+        {   echojay::ExtractorConfig cfg; cfg.setReadPoints = 5; cfg.rereadSettled = flag; cfg.settle = [&p] { p.settle(); };
+            bool ok = false; refused = 0; auto pts = echojay::sweepSetRead (p, cfg, ok, &refused);
+            juce::StringArray s; for (const auto& x : pts) s.add (juce::String (x.n, 2) + "=" + x.t); return s.joinIntoString (" "); };
+        Lagging slow; int rSlow = 0; const auto okSlow = sweep (slow, true, rSlow);          // catches up on the 2nd settle: the re-read finds it
+        Lagging slowOff; int rOff = 0; const auto off = sweep (slowOff, false, rOff);         // the old behaviour: the stale text, no refusal
+        Lagging coarse; coarse.catchUp = 1; coarse.step = 0.5; int rC = 0; const auto c = sweep (coarse, true, rC);   // 5 points over 3 displays
+        check (okSlow == "0.00=0.0 0.25=25.0 0.50=50.0 0.75=75.0 1.00=100.0" && rSlow == 0
+               && off == "0.00=100.0 0.25=0.0 0.50=25.0 0.75=50.0 1.00=75.0" && rOff == 0
+               && rC == 2 && c == "0.00=0.0 0.25=50.0 0.75=100.0"
+               && echojay::refusedAsLagging (true, true, "5", "5", 0.5f, 0.4f) && ! echojay::refusedAsLagging (false, true, "5", "5", 0.5f, 0.4f)
+               && ! echojay::refusedAsLagging (true, true, "5", "5", 0.5f, 0.5f) && ! echojay::refusedAsLagging (true, false, "5", "5", 0.5f, 0.4f) && ! echojay::refusedAsLagging (true, true, "5", "6", 0.5f, 0.4f),
+               "wizard WZ-29OCT-5: a lagging display is read again until it settles (" + okSlow + "); off, the old stale reads (" + off + "); a repeat while the value moved is refused (" + juce::String (rC) + ")");
+        const auto sw = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSweeper.h").loadFileAsString();
+        const auto px = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_extract.h").loadFileAsString();
+        check (sw.contains ("cfg.rereadSettled = true;") && sw.contains ("echojay::sweepSetRead (*p, cfg, verified, &out.refusedLagging);")
+               && px.contains ("cfg.rereadSettled = true;") && px.contains ("echojay::sweepSetRead (*p, cfg, verified, &refused);") && px.contains ("\\trefused\\t%d\\n"),
+               "wizard WZ-29OCT-5b: EJ Map's sweep and the probe's extract both re-read and refuse; the extract says how many it refused");
+    }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
     // cert's writers set is in the mock's list, and the list names nothing else
@@ -14445,7 +14566,7 @@ int main (int, char**)
                && drv.contains ("{ args.add (\"--neutral-sets\"); args.add (neutralsets::setsOf (nw->second));")
                && drv.contains ("neutralsets::patch (rec, nw->second); ro->setProperty (\"neutral_raised\", neutralsets::raisedVar (nw->second));")
                && mainCpp.contains ("else if (k == \"--neutral-sets\") setenv (\"EJ_PROBE_NEUTRAL_SETS\", v.toRawUTF8(), 1);")
-               && run.contains ("neutralByStem[phaseBStem (ir.desc)] = nw;") && run.contains ("optW.neutralByStem = neutralByStem;")
+               && run.contains ("neutralByStem[phaseBStem (d)] = { *rw };") && run.contains ("optW.neutralByStem = neutralByStem;")   // 26 Oct: the one rule's raise, every route (WZ-29OCT-2)
                && run.contains ("cache[juce::Identifier (pid)].getProperty (\"rules\", \"\").toString() == categorise::kRulesVersion")
                && run.contains ("sig.getDynamicObject()->setProperty (\"rules\", categorise::kRulesVersion);") && juce::String (ejmap::categorise::kRulesVersion) == "2026-10-27",   // 27 Oct: reverb-or-delay tails (24 Oct: the strip rule)
                "wizard WZ-NEUTRAL-1: the raised drive rides at the front of every set= list of the measuring child (" + resp.joinIntoString (" ").fromFirstOccurrenceOf ("--response", true, false) + "), every neutral list says it, an old cached signature is read again");

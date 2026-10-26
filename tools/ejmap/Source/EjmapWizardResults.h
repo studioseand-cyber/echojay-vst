@@ -35,7 +35,8 @@ inline juce::var fileJson (const juce::File& bundle, const juce::String& rel) { 
 // the states an outcome may carry (contract v1.1 §4: the mock's OUTCOME_STATES, B's validator)
 inline const juce::StringArray& outcomeStates()
 { static const juce::StringArray k { "needs_licence", "needs_hardware", "demo", "silent", "crashed", "timed_out", "not_measurable", "wont_load", "custom_default",
-                                     "not_reached", "waves_skipped", "measured", "ready_from_version" }; return k; }
+                                     "not_reached", "waves_skipped", "measured", "ready_from_version",
+                                     "bridged", "bridge_no_match" }; return k; }   // 26 Oct (Kathy, B): a VST3 read against its AU twin - the server decides what it inherits
 inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& bundle, const juce::String& runId, bool finishing,
                                   const std::map<juce::String, Identity>& idOf, const std::map<juce::String, juce::String>& pidOfProduct,
                                   const std::map<juce::String, juce::String>& measuredAtOf = {}, const juce::StringArray& needIds = {},

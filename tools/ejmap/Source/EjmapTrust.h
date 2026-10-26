@@ -142,7 +142,7 @@ inline Verdict judgeObservation (const std::vector<Anchor>& a, double norm, cons
     return v;
 }
 // a control is read back when at least 2 readings were judged and none failed; one failure is a failed read-back (said, kept)
-struct ControlReadback { int judged = 0, failed = 0, superseded = 0, snapped = 0; juce::String worst, source; std::vector<double> failedAt; bool proven() const { return judged >= 2 && failed == 0; } };   // failedAt: the norm of every failure that stands (17 Oct, rulings 2: the read-back at each failure's own setting)   // superseded: old failures a newer clean read-back set aside; snapped: readings judged at the step the plugin took
+struct ControlReadback { int judged = 0, failed = 0, superseded = 0, snapped = 0, onCorrected = 0; juce::String worst, source; std::vector<double> failedAt; bool proven() const { return judged >= 2 && failed == 0; } };   // failedAt: the norm of every failure that stands (17 Oct, rulings 2: the read-back at each failure's own setting)   // superseded: old failures a newer clean read-back set aside; snapped: readings judged at the step the plugin took
 // THE STEPPED-CONTROL RULE (Kathy, 17 Oct: Lindell 50 / 69, Harris Doyle, TB_Sibalance): a plugin that snaps a write to its own step
 // (0.25 -> 0.2222 on a 1/9 grid) is judged at the value it TOOK (getValue), not the one asked; readings at one taken value are one
 // setting, so they count once - three writes that all stayed at 0.5 are one reading, never a read-back
@@ -593,6 +593,14 @@ inline std::vector<MapControl> mapControls (const juce::var& map)
 // normalised) of the failure's setting; a failure elsewhere - in the top tenth while the newer reads sat at 25/50/75 % - stands, as
 // does one with no date
 constexpr double RECENCY_REACH = 0.1;
+// A READ-BACK ON A JUST-CORRECTED ANCHOR (Kathy, 26 Oct): a map copy whose anchors a re-sweep corrected or added lists their norms
+// (anchors_added.norms); a reading at one of them agrees with that re-sweep by construction - it never counts, pass or fail
+inline bool landsOnCorrected (const juce::var& control, double norm)
+{
+    if (const auto* ns = control.getProperty ("anchors_added", {}).getProperty ("norms", {}).getArray())
+        for (const auto& n : *ns) if (std::abs ((double) n - norm) <= 1e-4) return true;
+    return false;
+}
 inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, const std::vector<std::pair<juce::String, Readings>>& sources,
                                                           const std::vector<SourceMeta>& metas = {}, int* otherFormat = nullptr)
 {
@@ -612,12 +620,13 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
         // taper inferred from its own anchors - said in the verdict ("[log taper]")
         const auto taper = c.hasProperty ("taper") ? c.getProperty ("taper", "").toString() : detectTaper (a);
         struct Seen { size_t si; Verdict v; double norm; bool snapped; };
-        std::vector<Seen> vs;
+        std::vector<Seen> vs; int onCorrected = 0;
         for (size_t si = 0; si < sources.size(); ++si)
             if (const auto it = sources[si].second.find (name); it != sources[si].second.end())
                 for (const auto& r : it->second)
                 {
                     if (! ownFormat (si)) { if (otherFormat != nullptr) ++*otherFormat; continue; }
+                    if (landsOnCorrected (c, r.norm)) { ++onCorrected; continue; }   // 26 Oct: on a just-corrected anchor - not counted
                     if (stepped) { vs.push_back ({ si, judgeStep (stepsOf (c), r.norm, r.display), r.norm, r.snapped }); continue; }
                     if (! mode) { vs.push_back ({ si, judgeObservation (a, r.norm, r.display, c.getProperty ("unit", "").toString(), taper), r.norm, r.snapped }); continue; }
                     // a stepped control: the reading at a norm must show the label the map has nearest that norm
@@ -644,14 +653,14 @@ inline std::map<juce::String, ControlReadback> creditMap (const juce::var& map, 
                     for (const auto& s : vs) if (s.si == ci && s.v.judged && std::abs (s.norm - f.norm) <= RECENCY_REACH + 1e-9) return true;
             return false;
         };
-        auto& cr = out[name];
+        auto& cr = out[name]; cr.onCorrected = onCorrected;
         for (const auto& s : vs)
         {
             if (s.v.judged && ! s.v.pass && setAside (s)) { ++cr.superseded; continue; }
             addReading (cr, s.v, sources[s.si].first); if (s.v.judged && s.snapped) ++cr.snapped;
             if (s.v.judged && ! s.v.pass && std::none_of (cr.failedAt.begin(), cr.failedAt.end(), [&] (double n) { return std::abs (n - s.norm) < 1e-6; })) cr.failedAt.push_back (s.norm);
         }
-        if (cr.judged == 0 && cr.superseded == 0) out.erase (name);
+        if (cr.judged == 0 && cr.superseded == 0 && cr.onCorrected == 0) out.erase (name);
     }
     return out;
 }

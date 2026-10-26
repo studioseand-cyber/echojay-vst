@@ -63,6 +63,23 @@ inline void rememberPitchLabel (const juce::File& ledger, const juce::String& fp
     auto* o = new juce::DynamicObject(); o->setProperty ("kind", pl.first); o->setProperty ("control", pl.second);
     all.getDynamicObject()->setProperty (fp, juce::var (o)); ledger.createDirectory(); f.replaceWithText (juce::JSON::toString (all));
 }
+// THE RAISE OF A MAPPED PLUGIN (Kathy, 26 Oct): categorise::raiseFor over the extract's controls and their opening values, kept by map fp
+// for every later step and scan of the run - one rule whichever way the category is then decided ("none" = the plugin has no raise)
+inline void rememberRaise (const juce::File& ledger, const juce::String& fp, const std::optional<categorise::NeutralWrite>& w)
+{
+    if (fp.isEmpty()) return;
+    const auto f = ledger.getChildFile ("raises.json"); auto all = juce::JSON::parse (f.loadFileAsString()); if (! all.isObject()) all = juce::var (new juce::DynamicObject());
+    juce::var v ("none");
+    if (w) { auto* o = new juce::DynamicObject(); o->setProperty ("index", w->index); o->setProperty ("control", w->control); o->setProperty ("norm", w->norm); o->setProperty ("why", w->why); v = juce::var (o); }
+    all.getDynamicObject()->setProperty (fp, v); ledger.createDirectory(); f.replaceWithText (juce::JSON::toString (all));
+}
+inline std::optional<categorise::NeutralWrite> recalledRaise (const juce::File& ledger, const juce::String& fp)
+{
+    const auto rec = juce::JSON::parse (ledger.getChildFile ("raises.json").loadFileAsString()).getProperty (fp, {});
+    if (fp.isEmpty() || ! rec.isObject() || (int) rec.getProperty ("index", -1) < 0) return std::nullopt;
+    categorise::NeutralWrite w; w.index = (int) rec.getProperty ("index", -1); w.control = rec.getProperty ("control", "").toString(); w.norm = (double) rec.getProperty ("norm", 0.0);
+    w.why = rec.getProperty ("why", "").toString(); return w;
+}
 inline bool recalledPitchLabel (const juce::File& ledger, const juce::String& fp, std::pair<juce::String, juce::String>& out)
 {
     const auto all = juce::JSON::parse (ledger.getChildFile ("pitch_labels.json").loadFileAsString());
@@ -1059,6 +1076,10 @@ inline int runWizard (const WizardOptions& wo)
                 {   juce::StringArray texts; for (const auto& pt : xp.points) texts.add (pt.t);
                     if (const auto k = shift::pitchLabelOf (texts, xp.name); k.isNotEmpty()) { pl = { k, xp.name }; break; } }
                 rememberPitchLabel (opt.ledger, fp, pl); }   // 24 Oct: for every later scan of the run
+            {   // 26 Oct (Kathy): the raise, by the one rule, for whichever route the plugin then takes
+                std::vector<categorise::RaiseControl> rcs;
+                for (const auto& xp : fullmap::parseExtract (r.out).params) rcs.push_back ({ xp.index, xp.name, xp.automatable, xp.meta, xp.steps, xp.swept ? std::optional<double> (xp.defNorm) : std::nullopt });
+                rememberRaise (opt.ledger, fp, categorise::raiseFor (rcs)); }
             opt.ledger.getChildFile ("maps").getChildFile (fp + ".json").replaceWithText (juce::JSON::toString (fm.map) + "\n");
             store[uid + "|" + d.version] = { fp, cat };
             if (! catNames.count (d.name)) prog.finished (d.name, false);   // 14 Oct: a plugin whose signature reads follow is done after them
@@ -1102,11 +1123,15 @@ inline int runWizard (const WizardOptions& wo)
         }
     }
     auto fpOf = [&] (const juce::PluginDescription& d) { const auto k = juce::String::toHexString (d.uniqueId).toLowerCase() + "|" + d.version; return store.count (k) ? store.at (k).fp : juce::String(); };
+    // 26 Oct (Kathy): every measured plugin's raise, the same whichever way its category was decided; Phase B takes it only on the retry
+    // after a pass found nothing to measure without it
+    auto raiseInto = [&] (const juce::PluginDescription& d, juce::DynamicObject* row)
+    { if (const auto rw = recalledRaise (opt.ledger, fpOf (d))) { neutralByStem[phaseBStem (d)] = { *rw }; row->setProperty ("raise_if_nothing_measured", rw->control); } };
     for (const auto& p : toMap)
     {
         const auto& d = plugins[p.i].desc; p.row->setProperty ("map_fp", fpOf (d));
         if (early.count (d.name)) { p.row->setProperty ("state", early[d.name]); stampFinal (p.row); p.row->setProperty ("why", earlyWhy.count (d.name) ? earlyWhy[d.name] : "it could not be mapped (" + early[d.name] + ")"); continue; }
-        if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") enqueue (d.name, p.d.category, p.d.passes, p.d.limiterKnown);
+        if (p.d.route == wizroute::Route::measure || p.row->getProperty ("state").toString() == "queued") { enqueue (d.name, p.d.category, p.d.passes, p.d.limiterKnown); raiseInto (d, p.row); }
     }
     // the signature reads (EJ Map's categorise step, one plugin at a time), cached by plugin_id
     const auto cacheF = out.getChildFile ("categorised.json"); auto cache = juce::JSON::parse (cacheF.loadFileAsString()); if (! cache.isObject()) cache = juce::var (new juce::DynamicObject());
@@ -1154,8 +1179,9 @@ inline int runWizard (const WizardOptions& wo)
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
         p.row->setProperty ("state", st); if (st != "queued") stampFinal (p.row);
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category, d.passes);
-        // 21 Oct (Kathy, decision 3): the raised drive goes with the plugin into its measuring passes (the probe's instance only)
-        if (d.route == wizroute::Route::measure) if (const auto nw = wizroute::neutralWritesOf (sig); ! nw.empty()) { neutralByStem[phaseBStem (ir.desc)] = nw; p.row->setProperty ("neutral_raised", sig.getProperty ("neutral_writes", {})); }
+        // 26 Oct (Kathy): the reads' raise was for reading the category only; the measuring passes take the one rule's raise (raiseInto),
+        // and only on the retry after a pass found nothing to measure without it - as for a catalogue or name route
+        if (d.route == wizroute::Route::measure) raiseInto (ir.desc, p.row);
         if (d.route == wizroute::Route::measure) if (const auto* al = sig.getProperty ("also_categories", {}).getArray())   // 20 Oct: a tail with both roles -> both passes
             for (const auto& c : *al) { enqueue (ir.desc.name, c.toString()); p.row->setProperty ("also_categories", sig.getProperty ("also_categories", {}));
                                         if ((bool) sig.getProperty ("tail_either", false)) p.row->setProperty ("tail_either", true); }   // 27 Oct: the roles decided by acceptance

@@ -524,6 +524,9 @@ inline ChildResult runServed (const juce::StringArray& args, int timeoutMs, Watc
 // every probe call of that child whose mode takes a set= list (sweep, burst, response, tail, hits, ramp, material; sweep-pitch's sets=)
 // gets the writes at the FRONT of its list, after prepare with audio pumping (the route Waves accept; EJ_PROBE_PRESET writes before
 // prepare and Waves refuse it), so a pass's own write to the same control still wins. The probe's own instance only - never the user's.
+// 26 Oct (Kathy): a measuring row runs again with the raise only when it found nothing to measure (exit 4) as the plugin opens, and it
+// has a raise (categorise::raiseFor); a row already run with the raise never runs a third time
+inline bool wantsRaisedRetry (bool alreadyRaised, int exitCode, bool hasRaise) { return ! alreadyRaised && exitCode == 4 && hasRaise; }
 namespace neutralsets
 {
 inline juce::String fromEnv() { const char* v = std::getenv ("EJ_PROBE_NEUTRAL_SETS"); return v != nullptr ? juce::String (v) : juce::String(); }
@@ -3831,14 +3834,15 @@ inline categorise::Row categoriseOne (const SweepOptions& opt, const InstalledRe
         // taken again with it in every set= list; the level it moved is recorded and never decides (decideRaised)
         if (! d.settled && categorise::flatAtDefault (sg))
         {
-            std::vector<std::pair<int, juce::String>> ctls; for (const auto& [i, lr] : parseListParams (lp.out)) if (lr.automatable && ! lr.meta && ! (lr.numSteps >= 2 && lr.numSteps <= 4)) ctls.push_back ({ i, lr.name });
+            std::vector<categorise::RaiseControl> rcs;   // 26 Oct: the one rule (categorise::raiseFor) the measuring passes use too
+            for (const auto& [i, lr] : parseListParams (lp.out)) rcs.push_back ({ i, lr.name, lr.automatable, lr.meta, lr.numSteps, categorise::openingNorm (r30.out, i) });
+            std::vector<std::pair<int, juce::String>> ctls; for (const auto& rc : rcs) if (rc.automatable && ! rc.meta && ! (rc.numSteps >= 2 && rc.numSteps <= 4)) ctls.push_back ({ rc.index, rc.name });
             const auto dc = categorise::driveControl (ctls);
-            const auto opened = dc ? categorise::openingNorm (r30.out, dc->first) : std::nullopt;
-            const auto up0 = categorise::raisedNorm (opened ? *opened : 0.0);
-            if (dc && ! up0) d.why += "; flat at default, and its drive '" + dc->second + "' already opens at the top";
+            const auto rw = categorise::raiseFor (rcs);
+            if (dc && ! rw) d.why += "; flat at default, and its drive '" + dc->second + "' already opens at the top";
             else if (dc)
             {
-                categorise::NeutralWrite w; w.index = dc->first; w.control = dc->second; w.norm = *up0;
+                categorise::NeutralWrite w = *rw;
                 w.why = "flat at default: the drive / input control raised so the unit shows its signature";
                 const auto set = "set=" + juce::String (w.index) + ":" + juce::String (w.norm, 6);
                 categorise::Signatures up;
@@ -7379,7 +7383,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     // THE RUN (--jobs N, 10 Oct: EjmapJobs.h): one child ejmap process per product into its own temp folder, renamed into place when
     // complete. prepare and finish run HERE (the parent is the only writer); only the child runs on a worker; the serial lane alone.
     int deviceLeft = 0;
-    struct PItem { const phaseb::Category* cat; PhaseBProduct pp; jobs::Lane lane; juce::String laneWhy; };
+    struct PItem { const phaseb::Category* cat; PhaseBProduct pp; jobs::Lane lane; juce::String laneWhy; bool raised = false; };   // 26 Oct: raised = the retry with the raise
     struct PWork { const phaseb::Category* cat = nullptr; PhaseBProduct pp; juce::File catDir, tmp; juce::DynamicObject::Ptr row; LicenceGate gate; juce::StringArray args; int reused = 0; };
     struct PResult { ChildResult r; double seconds = 0.0; juce::Time startedAt; };
     std::vector<PItem> items;
@@ -7458,7 +7462,8 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                 if (cat.name == "combined" || cat.name == "material" || cat.name == "frequency" || cat.name == "samplerate" || cat.name == "saturation") { args.add ("--cert-root"); args.add (opt.out.getFullPathName()); }   // its inputs (profile, tone check, the two drafts; a saturator's gain draft) live in the real folder
                 args.addArray ({ "--out", tmp.getFullPathName(), "--probe", opt.probe.getFullPathName(), "--ejmap-ledger", opt.ledger.getFullPathName() });
                 if (restorePreset.isNotEmpty()) { args.add ("--preset"); args.add (restorePreset); }   // the custom default restored under every probe process
-                if (const auto nw = opt.neutralByStem.find (pp.stem); nw != opt.neutralByStem.end() && ! nw->second.empty())   // 21 Oct (Kathy): the raised drive, under every measuring call
+                // 26 Oct (Kathy): the raise goes under the measuring calls ONLY on the retry after a pass found nothing to measure without it
+                if (const auto nw = opt.neutralByStem.find (pp.stem); item.raised && nw != opt.neutralByStem.end() && ! nw->second.empty())
                 { args.add ("--neutral-sets"); args.add (neutralsets::setsOf (nw->second)); row->setProperty ("neutral_raised", neutralsets::raisedVar (nw->second)); }
                 int reused = 0;
                 if (resumeTraces.count (cat.name + "/" + pp.stem))
@@ -7494,9 +7499,16 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     // 15 Oct (sharing the Mac, Kathy: "a timeout under load must never file a plugin as crashed on the first try"): with retryTimeoutsAlone a
     // row whose child timed out is not filed - its folder goes as for a stop - and it runs again ALONE once the pass is over; only a
     // second timeout is filed timed_out
-    std::vector<PItem> retryAlone; bool secondPass = false;
+    std::vector<PItem> retryAlone, retryRaised; bool secondPass = false;
     pool.finish = [&] (const PItem& item, PWork& w, PResult& res)
     {
+        // 26 Oct (Kathy): nothing to measure (exit 4) without the raise, and the plugin has one -> not filed: it runs again with the raise
+        if (wantsRaisedRetry (item.raised, res.r.kind == ChildResult::Kind::exited ? res.r.code : -1, opt.neutralByStem.count (item.pp.stem) > 0 && ! opt.neutralByStem.at (item.pp.stem).empty()))
+        {
+            w.tmp.deleteRecursively(); auto again = item; again.raised = true; retryRaised.push_back (again);
+            say ("  " + item.cat->name + ": " + item.pp.product + " - nothing to measure as it opens: it runs again with '" + opt.neutralByStem.at (item.pp.stem).front().control + "' raised");
+            return;
+        }
         if (opt.retryTimeoutsAlone && ! secondPass && res.r.kind == ChildResult::Kind::timedOut)
         {
             w.tmp.deleteRecursively(); retryAlone.push_back (item);
@@ -7570,7 +7582,7 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
                     for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "*.json")) { const auto target = dst.getChildFile (f.getFileName()); target.deleteFile(); f.moveFileTo (target); records.addIfNotAlreadyThere (dstName + "/" + f.getFileName());
                         if (gate.demo) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("licence", gate.stamp); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } }
                         if (! crashPos.isEmpty()) { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { ro->setProperty ("crash_positions", crashPos); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } }
-                        if (const auto nw = opt.neutralByStem.find (pp.stem); nw != opt.neutralByStem.end() && ! nw->second.empty())   // 21 Oct: the raised drive in the record's own neutral
+                        if (const auto nw = opt.neutralByStem.find (pp.stem); item.raised && nw != opt.neutralByStem.end() && ! nw->second.empty())   // 21 Oct: the raised drive in the record's own neutral (26 Oct: only when it was measured with it)
                         { auto rec = juce::JSON::parse (target.loadFileAsString()); if (auto* ro = rec.getDynamicObject()) { neutralsets::patch (rec, nw->second); ro->setProperty ("neutral_raised", neutralsets::raisedVar (nw->second)); target.replaceWithText (juce::JSON::toString (rec) + "\n", false, false, "\n"); } } }
                 }
                 { const auto lg = catDir.getChildFile ("logs"); lg.createDirectory(); const auto target = lg.getChildFile (pp.stem + ".log.txt"); target.deleteFile(); tmp.getChildFile ("log.txt").moveFileTo (target); }
@@ -7605,6 +7617,11 @@ inline int runPhaseBAll (const SweepOptions& opt, const juce::StringArray& onlyC
     };
     if (phaseb::jobsCap()) pool.jobsNow = [&] { return phaseb::jobsCap() (juce::jmax (1, opt.jobs)); };   // 15 Oct: fewer jobs while the user is active
     pool (items, juce::jmax (1, opt.jobs));
+    if (! retryRaised.empty() && phasebStop() == 0 && ! (phaseb::extraStop() && phaseb::extraStop()()))
+    {   // 26 Oct: the rows that measured nothing as they open, with the raise (a timeout here joins the retry alone below)
+        say ("PHASEB: " + juce::String ((int) retryRaised.size()) + " row(s) with nothing to measure as they open - run again with the drive raised");
+        pool (retryRaised, juce::jmax (1, opt.jobs));
+    }
     if (! retryAlone.empty() && phasebStop() == 0 && ! (phaseb::extraStop() && phaseb::extraStop()()))
     {   // the retry: each timed-out row alone (one job), with nothing else running
         say ("PHASEB: " + juce::String ((int) retryAlone.size()) + " row(s) that timed out with other work running - run again alone");
