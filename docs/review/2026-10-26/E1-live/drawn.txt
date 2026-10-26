@@ -1,0 +1,16 @@
+scenario E1-live
+captured 2026-10-26T02:16:15.948Z
+  [user] Add an EchoJay Compressor with a threshold of -20 dB and a ratio of 4:1 to this rack, then tell me how much gain reduction it is doing
+  [assistant] 
+  run row: status=Waiting for your answer changes=1 steps=8 zones=[12,7:Stop]
+  opening: 
+  closing: 
+    step "add EchoJay Compressor" [done] right="applied" detail="Added EchoJay Compressor in slot 1. Read back: threshold -20 dB, ratio 4:1." chips=[]
+    step "To measure the gain reduction I need audio playing on the mix bus." [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "Ready to measure again?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check gr on slot 1" [done] right="" detail="I have not heard anything through this compressor yet, so I cannot say how much it is doing." chips=[]
+    step "Playback only registered about 1 second each time, not enough for the meter to catch anything going through it, so I don't have a gain reduction reading yet - play a longer stretch (8+ seconds) and I can check it then - then tap Playing now." [done] right="" detail="" chips=[]
+    step "I added the EchoJay Compressor with threshold -20 dB and ratio 4:1 to the mix bus.
+Playback only registered about 1 second each time, not enough for the meter to catch anything going through it, so I don't have a gain reduction reading yet - play a longer stretch (8+ seconds) and I can check it then." [running] right="your answer?" detail="" chips=[Playing now, Skip the measurement]

@@ -14,9 +14,9 @@ Sean's rule tonight: nothing may depend on him being at the Mac; prove on non-PA
 | 7 | dialling a slot already on the rack | **not done** - see why below |
 | 8 | clip_drive with its dial | **not done** - see why below |
 | 9 | read-only: which build Pro Tools loads, and the missing [pid] | **done** - see notes; nothing changed |
-| 10 | 03:00 at the latest: full gate + rig since 700f9505 | not started |
-| 11 | install the full-tier build only on S4 100% + S5 green | not started |
-| 12 | the morning report, then A_NIGHT_DONE_26 | not started |
+| 10 | 03:00 at the latest: full gate + rig | **done** - S1..S5 green, S6 RED on two live-model rows (not tonight's work) |
+| 11 | install the full-tier build only on S4 100% + S5 green | **installed** - S4 100%, S5 green |
+| 12 | the morning report, then A_NIGHT_DONE_26 | **done** |
 
 ## Notes as they happen
 
@@ -138,3 +138,77 @@ thing, in this order: `dial_step`, then item 7 (`dial_slot`), then item 8 (`clip
 
 What I did do for them tonight: **item 5 (the bounds) is a dependency of both** and is finished, so
 when the dial op lands it will already clamp each control to its own range.
+
+### 23:52 - a 35-minute S4 lost to a half-applied rule, and the rule restated
+
+The S4 after item 6 came back 92%, SEVEN reds, all of them the compile-a-side family refusing:
+
+    the Link archive is OLDER than the headers this would compile against
+    archive: Oct 25 21:04:33 2026
+
+Item 6 added a NEW header (`EJMapSuspect.h`) and touched the V2's executor only. `cmake --build
+build-release --target EchoJay EchoJayLink` returned 0 and relinked **nothing** for the Link,
+correctly - its own include graph had not changed. But the two-sided guards refuse an archive older
+than **ANY** header, because they cannot know the include graph, so the Link's 21:04 archive was
+refused against a 22:42 header it never includes.
+
+**The rule is DELETE then build, not build.** My own note says exactly that and I applied half of
+it twice in two days: yesterday with an `rm` that matched nothing (the filenames contain a space),
+tonight by building without deleting. The gate's S1 does it properly, which is why the gate was
+brought forward rather than re-running S4 in the quick tree.
+
+### 23:59 - the gate started, and one honest note about the machine
+
+It waited 20 minutes for the load to fall below 3.0 and then proceeded, as it is written to. The
+load was **Sean's own machine**, not this work: `mediaanalysisd` at 68%, Spotlight's `mds_stores`
+indexing tonight's ~70 new guard binaries, plus rekordbox, Adobe Creative Cloud, the UA Mixer
+Engine and WhatsApp. Nothing of mine was runaway (I checked the full process list). It is worth
+knowing when reading the gate's timings: anything that looks slow tonight may be contention rather
+than the product.
+
+### 03:10 - the gate's verdict
+
+| stage | result |
+|---|---|
+| S1 forced delete + relink, three trees | **OK** (345-file manifest) |
+| S2 the guard suite, LTO, universal | **OK** |
+| S3 the four bundles | **OK** |
+| S3b archive provenance | **OK** - the stage that exists for exactly the trap I fell into twice |
+| **S4 `ctest -L fast|plugins`** | **100%, all 85** |
+| **S5 `link_state_guard`** | **GREEN** both sides |
+| S6 the rig, mock pass | **PASSED** (1213 s) |
+| S6 the rig, live pass | **RED: 2 failed, 82 passed, 22 skipped** |
+
+**The two rig failures are the live model's own road, not tonight's code.**
+
+* **H2** *"(honesty) never names a plugin that is not on the rack"* - `THE CARD SAID NOTHING, there is
+  no claim to judge, so this row proves nothing and fails`. The live model produced no card for that
+  prompt. The row fails honestly rather than passing on an empty card.
+* **H3** *"how much gain reduction is the compressor doing on …?"* - the build answered *"I have no
+  fresh reading from that track yet - play the loudest section and I will measure it."* That is the
+  `needs_playback` / `link_meters_stale` refusal working correctly; the rig has no transport running,
+  so there is no reading to quote. The row wants a figure that cannot exist in this run.
+
+Neither touches the live view, the refusal count, the chat home, the limiter ceiling, the dial
+bounds or the map check. The 22 skips are the usual live-road ones (the model's pace, no playback,
+no GR-reporting device on the rack).
+
+### And the rig answered item 3's open question
+
+The instrumentation I added last night reports which window published each snapshot, and it **killed
+my own leading hypothesis**:
+
+    his message WAS drawn in the new chat and was gone again by the snapshot these checks read
+    (onScreen rows now: 0, user rows 0, cards 0). The window that drew it published as editor
+    5392236544; the snapshot these checks read came from editor 5392236544 - the SAME window, so
+    the row really did leave that window's list
+
+So it is **not** two editors taking turns at one state file. The row genuinely left that window's
+`chatMessages`, with **no clear-site line in the log** - and every `chatMessages.clear()` has been
+instrumented since 11 August. That means the list is being emptied by a road that does not log, and
+the next step is to find it: the assignment at `PluginEditor.cpp:20448` (`chatMessages = rows`) is
+the only other mutation in the file and it is guarded by `if (added > 0 || stampedLate > 0)`, which
+cannot produce zero rows. Worth instrumenting that assignment and re-running B6 alone.
+
+Tonight's item-3 fix (a dropped plain row gets a home) stands on its own merits and is green, but
+**it is not this fault** - the honest position, now evidenced rather than suspected.

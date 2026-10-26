@@ -1,0 +1,8 @@
+scenario E3-live
+captured 2026-10-26T02:17:56.899Z
+  [assistant] Stopped.
+  [user] How much gain reduction is Renaissance Axx (s) doing?
+  [assistant] I checked the current Mix Bus chain and it only has an EchoJay Compressor loaded - there's no Renaissance Axx in this rack, so there's nothing for me to read gain reduction from here. If Axx is running on another track or inserted elsewhere, let me know which one and I can take a look there.
+  run row: status=Done changes=0 steps=0 zones=[]
+  opening: I checked the current Mix Bus chain and it only has an EchoJay Compressor loaded - there's no Renaissance Axx in this rack, so there's nothing for me to read gain reduction from here. If Axx is running on another track or inserted elsewhere, let me know which one and I can take a look there.
+  closing: I checked the current Mix Bus chain and it only has an EchoJay Compressor loaded - there's no Renaissance Axx in this rack, so there's nothing for me to read gain reduction from here. If Axx is running on another track or inserted elsewhere, let me know which one and I can take a look there.

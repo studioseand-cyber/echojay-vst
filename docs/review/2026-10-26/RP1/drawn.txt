@@ -1,0 +1,7 @@
+scenario RP1
+captured 2026-10-26T02:54:05.834Z
+  [user] how much gain reduction is the compressor doing?
+  [assistant] nothing further
+  run row: status=Done changes=0 steps=0 zones=[]
+  opening: nothing further
+  closing: nothing further

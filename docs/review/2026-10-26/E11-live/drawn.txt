@@ -1,0 +1,8 @@
+scenario E11-live
+captured 2026-10-26T02:08:50.323Z
+  [user] How much gain reduction is the compressor doing?
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=1 zones=[4:Playing now,4:Skip the measurement,7:Stop]
+  opening: 
+  closing: 
+    step "Nothing's playing right now - can you play the loudest section so I can measure the compressor's gain reduction?" [running] right="your answer?" detail="" chips=[Playing now, Skip the measurement]

@@ -2,30 +2,71 @@
 
 ## Installed
 
-**Nothing new yet** at the time of writing — see the end of this report for what the 03:00 full
-gate decided. The build you tested yesterday evening is still in place:
+**The full-tier build is installed** — S4 read 100% of 85 and S5 was green both sides, which is the
+condition you set. LTO, universal, from `build-guards` (the gate's own bundles), AU cache cleared and
+`AUHostingService` killed so you cannot get the old Link back.
 
 | | |
 |---|---|
-| V2 AU | `A831AC56-0CCD-3BA3-8300-F3B60BE5631C` |
-| V2 VST3 | `DA11C2E9-D563-3217-837E-BF4D8DCA1AC2` |
-| Link AU | `B0BAC26E-2F20-3A6F-BAAA-360290DE9C2E` |
-| Link VST3 | `9B4931FE-B929-3969-969D-50C40DE2FAFB` |
+| **V2 AU** | `5ECD2CDF-B05C-3474-BB61-B89FB4A852AC` |
+| V2 VST3 | `BB17B0D8-2AA6-34CA-82D8-E9EFD689254F` |
+| **Link AU** | `14C9DC21-E827-30CA-A5C6-903A5101B356` |
+| Link VST3 | `2B67A837-B358-36C8-A127-31AEA50D34D5` |
+
+Commit `86d4e5d5`, not pushed. The gate was brought forward to 23:59 rather than 03:00, because
+everything on the list that was going to land had landed and the gate's own S1 does the forced
+archive delete that a plain build does not.
 
 **And one thing to know before you test anything in Pro Tools:** Pro Tools loads the **AAX** build,
 which is **2.26.4, built 29 September** — four weeks behind. `tools/install_local.sh` writes
 Components and VST3 only; it has never touched the AAX path. Every install this month went to Logic.
 That is also why yesterday's log looked like it had two writers in it (item 9 below).
 
+## The gate
+
+S1 (forced delete + relink, three trees), S2 (the guard suite, LTO, universal), S3 (the four
+bundles), S3b (archive provenance), **S4 100% of 85**, **S5 GREEN both sides**. The rig's mock pass
+passed; its **live** pass came back RED on **two** rows, and neither is tonight's work:
+
+* **H2** — `THE CARD SAID NOTHING, there is no claim to judge, so this row proves nothing and fails`.
+  The live model produced no card for that prompt.
+* **H3** — the build answered *"I have no fresh reading from that track yet — play the loudest
+  section and I will measure it."* That is the `needs_playback` refusal working correctly: the rig
+  has no transport running, so there is no reading to quote.
+
+Nothing red was caused by last night's changes, so nothing was fixed-at-the-cause overnight on their
+account. 22 rows skipped, all the usual live-road ones.
+
 ## What is done
 
 1. **The live view's smoothness — both halves, and the bench proves it.**
 2. **The refusal count** — a standing refusal now says how many moves it swallowed.
-3. **The disappearing message** — a real hole found and closed; not a proven cause.
+3. **The disappearing message** — a hole found and closed, **and the rig then disproved my own
+   hypothesis** (see below). Still open as a fault.
 4. **The EchoJay Limiter's ceiling** — cause found exactly, fixed, guarded.
 5. **The dial's bounds** — B's contract implemented from his branch.
 6. **The reduction/threshold runtime check** — your approval of yesterday, built.
 9. **Which build Pro Tools loads, and the missing `[pid]`** — answered, nothing changed.
+
+## Item 3: what the rig settled, and what is still open
+
+I instrumented the rig to name which window published each snapshot, and it answered:
+
+> his message WAS drawn in the new chat and was gone again by the snapshot these checks read
+> (onScreen rows now: 0, user rows 0, cards 0). The window that drew it published as editor
+> 5392236544; the snapshot these checks read came from editor **5392236544 — the SAME window**
+
+So it is **not** two editors taking turns at one state file, which was my leading theory. The row
+genuinely left that window's list, and **no clear-site line appears in the log** — and every
+`chatMessages.clear()` has carried one since 11 August. Something empties that list down a road that
+does not log. The only other mutation in the file is the assignment at `PluginEditor.cpp:20448`,
+guarded by `if (added > 0 || stampedLate > 0)`, which cannot produce zero rows — so the next step is
+to instrument that assignment and re-run the B6 row alone. That is the first thing I will do when you
+say go.
+
+The fix I did ship for item 3 (a dropped plain row now gets the home a dropped card has had since
+22 October) stands on its own merits and is guarded, but **it is not this fault.** I would rather tell
+you that than let a green guard imply a cure.
 
 ## What is not done, and why
 

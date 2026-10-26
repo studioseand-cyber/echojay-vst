@@ -1,0 +1,11 @@
+scenario A8-live
+captured 2026-10-26T02:10:57.221Z
+  [user] Add Pro-C 2 to this rack
+  [assistant] 
+  run row: status=Waiting for your answer changes=0 steps=3 zones=[3,7:Stop]
+  opening: 
+  closing: 
+    step "add FabFilter Pro-C 2 - FabFilter Pro-C 2 will need setting by hand (no map to dial it with)" [failed] right="not applied" detail="FabFilter Pro-C 2 is not one this rack can load here" chips=[]
+    step "read the inventory" [done] right="" detail="" chips=[]
+    step "Pro-C 2 isn't available to load on this rack - it may not be licensed on this Mac. You do have Pro-C 3 installed, though EchoJay can't set it by itself (it'd need setting by ear), or I can add the EchoJay Compressor which I can dial in and measure properly.
+Want either of those instead?" [running] right="your answer?" detail="" chips=[]

@@ -1,0 +1,12 @@
+scenario E13-live
+captured 2026-10-26T02:09:11.989Z
+  [user] What is the loudness of this rack?
+  [assistant] I only got a brief 1.2 second flash of audio both times, not enough for the plugin to compute an integrated or loudest-section LUFS reading - so I can't give you a solid loudness figure right now. The one thing that did register was a true peak of -5.3 dBTP. If you want a real loudness number, try starting playback a couple seconds before the loud part and let it run through it.
+  run row: status=Done changes=0 steps=5 zones=[3,11:5 steps]
+  opening: I only got a brief 1.2 second flash of audio both times, not enough for the plugin to compute an integrated or loudest-section LUFS reading - so I can't give you a solid loudness figure right now. The one thing that did register was a true peak of -5.3 dBTP. If you want a real loudness number, try starting playback a couple seconds before the loud part and let it run through it.
+  closing: I only got a brief 1.2 second flash of audio both times, not enough for the plugin to compute an integrated or loudest-section LUFS reading - so I can't give you a solid loudness figure right now. The one thing that did register was a true peak of -5.3 dBTP. If you want a real loudness number, try starting playback a couple seconds before the loud part and let it run through it.
+    step "Can you play the track so I can measure it?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
+    step "check level" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]
+    step "Can you keep playing through the loudest part for a few more seconds?" [done] right="" detail="" chips=[]
+    step "wait for playback" [done] right="" detail="Playback stopped at 1.2 s - using what was heard." chips=[]
