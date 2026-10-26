@@ -67,6 +67,7 @@ struct SweepOutcome
     juce::String method;              // "gettext" | "setread"
     bool flat            = false;     // flat through BOTH paths: text liar
     bool setreadRefused  = false;     // readback-verify failed; not mutated further
+    int  refusedLagging  = 0;         // 26 Oct: set-then-read positions refused as showing the previous position's display
 
     /** The sweep ran and PROVED the control exists, but its displays are
         labels, not numbers: mode/position material. A structured flag, not a
@@ -372,6 +373,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
     // every label).
     cfg.settleMs = 15;
     cfg.settle = [] { settleDisplayPumped(); };
+    cfg.rereadSettled = true;   // 26 Oct (Kathy): read again after settling; refuse a reading that lags one position behind
 
     // Read-only first, exactly like the extractor -- unless the caller has
     // already MEASURED that this plugin's getText lies about set positions
@@ -393,7 +395,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
         inst.getStateInformation (stateBefore);
 
         bool verified = false;
-        auto retried = echojay::sweepSetRead (*p, cfg, verified);
+        auto retried = echojay::sweepSetRead (*p, cfg, verified, &out.refusedLagging);
 
         if (stateBefore.getSize() > 0)
             inst.setStateInformation (stateBefore.getData(), (int) stateBefore.getSize());

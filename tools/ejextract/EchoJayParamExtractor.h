@@ -61,6 +61,14 @@ struct ExtractorConfig
     */
     int   settleMs           = 0;
 
+    /** THE LAGGING DISPLAY (Kathy, 26 Oct; the 9 Aug corpus: 112 of 120 wrong anchors held the display of the position BEFORE): when
+        set, every set-then-read reads the display again after another settle until two reads agree (at most maxRereads), and a stable
+        reading equal to the previous position's display while the control's value moved is REFUSED - not a point (counted in refused).
+        DEFAULT false: the corpus extractor's output stays byte-identical; EJ Map's sweep and the probe's extract set it.
+    */
+    bool  rereadSettled      = false;
+    int   maxRereads         = 4;
+
     /** When set, called INSTEAD of sleeping for settleMs. Needed because a
         bridged AU's read-after-set depends on an XPC reply delivered by the
         MESSAGE LOOP: Thread::sleep on the message thread blocks the very
@@ -234,18 +242,40 @@ inline bool sweepIsFlat (const juce::Array<SweepPoint>& sweep)
 // is not mutated further (some ignore both text paths; retrying those is
 // wasted risk). Restores the parameter's own value before returning; the
 // caller additionally restores full plugin state.
+// THE REFUSAL RULE (rereadSettled): a stable reading equal to the previous position's display while the control's value moved
+inline bool refusedAsLagging (bool enabled, bool havePrevious, const juce::String& text, const juce::String& previousText,
+                              float value, float previousValue)
+{
+    return enabled && havePrevious && text == previousText && std::abs (value - previousValue) > 1.0e-6f;
+}
+
 inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& param,
                                              const ExtractorConfig& cfg,
-                                             bool& verified)
+                                             bool& verified,
+                                             int* refused = nullptr)
 {
-    auto readAt = [&] (float n) -> juce::String
+    auto settle = [&]
     {
-        param.setValue (n);
         if (cfg.settle != nullptr)
             cfg.settle();
         else if (cfg.settleMs > 0)
             juce::Thread::sleep (cfg.settleMs);
-        return param.getCurrentValueAsText().substring (0, cfg.maxStringLen);
+    };
+    auto read = [&] { return param.getCurrentValueAsText().substring (0, cfg.maxStringLen); };
+    auto readAt = [&] (float n) -> juce::String
+    {
+        param.setValue (n);
+        settle();
+        auto t = read();
+        if (cfg.rereadSettled)   // read again after settling, until two reads agree
+            for (int k = 0; k < juce::jmax (1, cfg.maxRereads); ++k)
+            {
+                settle();
+                const auto again = read();
+                if (again == t) break;
+                t = again;
+            }
+        return t;
     };
 
     const float original = param.getValue();
@@ -262,10 +292,19 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
     int pts = juce::jmax (2, cfg.setReadPoints);
     if (param.isDiscrete())
         pts = juce::jlimit (2, 256, param.getNumSteps());
+    juce::String previousText; float previousValue = 0.0f; bool havePrevious = false;
     for (int i = 0; i < pts; ++i)
     {
         const float n = (float) i / (float) (pts - 1);
-        out.add ({ n, readAt (n) });
+        const auto text = readAt (n);
+        const float value = param.getValue();
+        if (refusedAsLagging (cfg.rereadSettled, havePrevious, text, previousText, value, previousValue))
+        {
+            if (refused != nullptr) ++*refused;
+        }
+        else
+            out.add ({ n, text });
+        previousText = text; previousValue = value; havePrevious = true;
     }
     param.setValue (original);
     return out;

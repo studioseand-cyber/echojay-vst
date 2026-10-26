@@ -172,6 +172,67 @@ inline std::map<juce::String, juce::String> loadHeld (const juce::StringArray& h
         for (const auto& x : *q) { const auto id = x.getProperty ("plugin_id", "").toString(); held["@quarantine:" + id.toLowerCase()] = "quarantined (" + x.getProperty ("reason", "").toString() + ")"; }
     return held;
 }
+// A LATER PASSING MEASUREMENT CLEARS AN EARLIER HOLD (Kathy, 26 Oct, SPL IRON; like the read-back recency rule): the same plugin version and
+// format (the profile's plugin_id is the hold's identity), a tone check dated after the hold that passes (within 0.5 dB, the quiet check
+// ok), under the SAME conditions as the failed one (the tone check's spec, target g, reference level within 0.1 dB, map fp). The failed
+// check must be on record (its file beside the hold's outcomes), and the hold stays on the row as earlier_hold
+struct HoldClear { bool cleared = false; juce::String why; };
+inline juce::int64 stampMs (const juce::String& s)
+{
+    auto t = s.trim(); if (t.isEmpty()) return 0;
+    if (t.length() >= 15 && t[8] == 'T' && t.substring (0, 8).containsOnly ("0123456789"))   // 20261012T202902[.278][+0100|Z]
+        t = t.substring (0, 4) + "-" + t.substring (4, 6) + "-" + t.substring (6, 8) + "T" + t.substring (9, 11) + ":" + t.substring (11, 13) + ":" + t.substring (13);
+    if (t.length() >= 5 && (t.endsWithChar ('+') == false) && (t.fromLastOccurrenceOf ("+", false, false).length() == 4)) t = t.dropLastCharacters (2) + ":" + t.getLastCharacters (2);
+    return juce::Time::fromISO8601 (t).toMilliseconds();
+}
+inline HoldClear holdCleared (const juce::var& holdRow, const juce::var& oldTone, const juce::var& newProfile, const juce::var& newTone)
+{
+    HoldClear h;
+    const auto id = holdRow.getProperty ("identity", "").toString(), newId = newProfile.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString();
+    if (id.isEmpty() || newId != id) { h.why = "another plugin version or format (" + newId + " vs " + id + ")"; return h; }
+    if (! oldTone.isObject()) { h.why = "the failed tone check is not on record"; return h; }
+    const auto heldAt = stampMs (holdRow.getProperty ("at", "").toString()), newAt = stampMs (newTone.getProperty ("measuredAt", "").toString());
+    if (heldAt <= 0 || newAt <= heldAt) { h.why = "the tone check is not later than the hold"; return h; }
+    if (! (bool) newTone.getProperty ("pass_within_0_5_db", false) || ! (bool) newTone.getProperty ("quiet_check_ok", false)) { h.why = "the later tone check does not pass"; return h; }
+    if (newTone.getProperty ("spec", "").toString() != oldTone.getProperty ("spec", "x").toString()) { h.why = "another tone-check spec"; return h; }
+    if (std::abs ((double) newTone.getProperty ("g_db", -1.0) - (double) oldTone.getProperty ("g_db", -2.0)) > 1e-6) { h.why = "another target g"; return h; }
+    if (std::abs ((double) newTone.getProperty ("L_ref_dbfs", 0.0) - (double) oldTone.getProperty ("L_ref_dbfs", 99.0)) > 0.1) { h.why = "another reference level"; return h; }
+    const auto fa = oldTone.getProperty ("map_fp", "").toString(), fb = newTone.getProperty ("map_fp", "").toString();
+    if (fa.isNotEmpty() && fb.isNotEmpty() && fa != fb) { h.why = "another map"; return h; }
+    h.cleared = true;
+    h.why = "a later tone check passed under the same conditions (" + newTone.getProperty ("spec", "").toString() + ", g " + juce::String ((double) newTone.getProperty ("g_db", 0.0), 1)
+            + " dB, L " + juce::String ((double) newTone.getProperty ("L_ref_dbfs", 0.0), 2) + " dBFS, measured " + juce::String ((double) newTone.getProperty ("gr_measured_db", 0.0), 2) + " dB) on "
+            + newTone.getProperty ("measuredAt", "").toString();
+    return h;
+}
+// every hold row with a tone check (the held outcomes files) that a cert folder's later profile clears: product (lower case) -> the old row
+// + cleared_by (the identity and the why)
+inline std::map<juce::String, juce::var> clearedHolds (const juce::StringArray& heldFiles, const juce::StringArray& certDirs)
+{
+    std::map<juce::String, juce::var> out;
+    for (const auto& path : heldFiles)
+    {
+        const juce::File hf (path); const auto v = readJson (hf);
+        const auto rows = v.isArray() ? v : v.getProperty ("skipped", {});
+        if (const auto* a = rows.getArray())
+            for (const auto& x : *a)
+            {
+                const auto tc = x.getProperty ("tonecheck", "").toString(); if (tc.isEmpty()) continue;
+                const auto oldTone = readJson (hf.getSiblingFile ("profiles").getChildFile (juce::File (tc).getFileName()));
+                for (const auto& c : certDirs)
+                    for (const auto& tf : juce::File (c).getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.tonecheck.json"))
+                    {
+                        const auto newTone = readJson (tf); if (newTone.getProperty ("product", "").toString() != x.getProperty ("product", "").toString()) continue;
+                        const auto prof = readJson (tf.getSiblingFile (tf.getFileName().replace (".tonecheck.json", ".json")));
+                        const auto h = holdCleared (x, oldTone, prof, newTone); if (! h.cleared) continue;
+                        auto* o = new juce::DynamicObject(); for (const char* k : { "state", "reason", "at", "identity" }) o->setProperty (k, x.getProperty (k, {}));
+                        o->setProperty ("cleared_by", juce::File (c).getFileName() + ": " + h.why);
+                        out[x.getProperty ("product", "").toString().toLowerCase()] = juce::var (o);
+                    }
+            }
+    }
+    return out;
+}
 inline juce::String heldWhyFor (const std::map<juce::String, juce::String>& held, const juce::String& name)
 {
     const auto lower = name.toLowerCase();
@@ -312,6 +373,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     for (const auto& c : certDirs) loadRecords (juce::File (c), "cert:" + juce::File (c).getFileName(), by);
     for (const auto& w : wizardDirs) loadRecords (juce::File (w), "wizard", by);
     const auto held = loadHeld (heldFiles, quarantine);
+    const auto cleared = clearedHolds (heldFiles, certDirs);   // 26 Oct: a later passing measurement clears an earlier hold (holdCleared)
     juce::StringArray listedUnstated;
     const auto compCert = certifiedByFormat (certifiedFromList (publishList), certifiedProfiles, listedUnstated);
     std::map<juce::String, FormatSet> v1Pass;   // category -> (product, format): the format each draft was measured in
@@ -346,7 +408,13 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         const bool certified = (cat == "compressor" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == "amp_sim" && v1Pass["saturation"].count (key))
                                || (cat == "compressor" && v1Pass["multiband"].count (key))    // 16 Oct: a multiband passes per band (mbv1)
                                || (cat == "filter" && pd.filterCert.count (fmt)) || (cat == "pitch" && pd.shiftCert.count (fmt));   // 23 Oct: the two drafts' own certification
-        const auto heldWhy = heldWhyFor (held, name);
+        auto heldWhy = heldWhyFor (held, name);
+        juce::var earlierHold;   // 26 Oct: the cleared hold, kept on the row - only for the map of the hold's own format and version
+        if (heldWhy.isNotEmpty())
+            if (const auto ch = cleared.find (name.toLowerCase()); ch != cleared.end())
+            {   const auto hid = juce::StringArray::fromTokens (ch->second.getProperty ("identity", "").toString(), "|", "");
+                if (hid.size() == 3 && hid[0] == fmt && trust::versionKey (hid[2]) == trust::versionKey (m.getProperty ("identity", {}).getProperty ("version", "").toString()))
+                { heldWhy = {}; earlierHold = ch->second; m.getDynamicObject()->setProperty ("earlier_hold", earlierHold); } }
         auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
         if (L.level == "certified" && (cat == "filter" || cat == "pitch") && ! compCert.count (key) && ! (v1Pass.count (cat) && v1Pass[cat].count (key)))   // 23 Oct: say which
             L.why = cat == "filter" ? "passed the filter measurement's certification: every cutoff matches its labels under one convention, 3+ judged positions"
@@ -409,6 +477,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         o->setProperty ("format", e.fmt);   // 17 Oct (NEXT 1): the counts split by format
         o->setProperty ("version", e.version); o->setProperty ("level", e.L.level); o->setProperty ("why", e.L.why);
         if (e.bridgedFrom.isNotEmpty()) o->setProperty ("bridged_from", e.bridgedFrom);
+        if (e.m.hasProperty ("earlier_hold")) o->setProperty ("earlier_hold", e.m.getProperty ("earlier_hold", {}));   // 26 Oct: the old failure stays on record
         if (e.bridgeWhy.isNotEmpty()) o->setProperty ("bridge_refused", e.bridgeWhy);
         juce::Array<juce::var> d; for (const auto& x : e.L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d));
         juce::Array<juce::var> rl; for (const auto& [need, c] : e.L.roles) { auto* r = new juce::DynamicObject(); r->setProperty ("semantic", need); r->setProperty ("control", c); rl.add (juce::var (r)); }

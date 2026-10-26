@@ -37,6 +37,7 @@ inline void runExtract (juce::AudioPluginInstance& inst)
     const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
     echojay::ExtractorConfig cfg;
     cfg.settleMs = 15;   // EJ Map's own settle (a bridged AU serves the stale text without it)
+    cfg.rereadSettled = true;   // 26 Oct (Kathy): read again after settling; refuse a reading that lags one position behind
     cfg.settle = [] { const double t0 = juce::Time::getMillisecondCounterHiRes();
                       while (juce::Time::getMillisecondCounterHiRes() - t0 < 15.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); } };
     const auto& ps = inst.getParameters();
@@ -47,7 +48,7 @@ inline void runExtract (juce::AudioPluginInstance& inst)
         auto* p = ps[i]; if (p == nullptr) continue;
         const float before = p->getValue();
         auto points = p->isDiscrete() ? echojay::sweepDiscrete (*p, cfg) : echojay::sweepContinuous (*p, cfg);
-        juce::String method = "gettext";
+        juce::String method = "gettext"; int refused = 0;
         if (echojay::sweepIsFlat (points))
         {
             if (setReadMs >= kSetReadBudgetMs) method = "flat_unretried";
@@ -55,14 +56,14 @@ inline void runExtract (juce::AudioPluginInstance& inst)
             {
                 const double t1 = juce::Time::getMillisecondCounterHiRes();
                 juce::MemoryBlock state; inst.getStateInformation (state);
-                bool verified = false; auto retried = echojay::sweepSetRead (*p, cfg, verified);
+                bool verified = false; auto retried = echojay::sweepSetRead (*p, cfg, verified, &refused);
                 if (state.getSize() > 0) inst.setStateInformation (state.getData(), (int) state.getSize());
                 setReadMs += juce::Time::getMillisecondCounterHiRes() - t1; ++setReads;
                 if (verified && ! echojay::sweepIsFlat (retried)) { points = retried; method = "setread"; } else method = "flat";
             }
         }
-        std::printf ("xparam\t%d\tmethod\t%s\tpoints\t%d\tdef\t%.6f\tdeftext\t%s\n", i, method.toRawUTF8(), points.size(), before,
-                     clean (p->getText (before, 256).trim()).toRawUTF8());
+        std::printf ("xparam\t%d\tmethod\t%s\tpoints\t%d\tdef\t%.6f\tdeftext\t%s\trefused\t%d\n", i, method.toRawUTF8(), points.size(), before,
+                     clean (p->getText (before, 256).trim()).toRawUTF8(), refused);   // 26 Oct: refused = set-then-read positions that lagged
         for (const auto& pt : points) std::printf ("xpt\t%d\t%.6f\t%s\n", i, pt.n, clean (pt.t).toRawUTF8());
     }
     std::printf ("extract\tdone\tparams\t%d\tsetread\t%d\tms\t%d\n", ps.size(), setReads, (int) (juce::Time::getMillisecondCounterHiRes() - start));
