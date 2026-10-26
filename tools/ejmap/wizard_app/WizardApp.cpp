@@ -370,6 +370,21 @@ public:
         return false;
     }
 
+    juce::Rectangle<int> titleArea() const { return getLocalBounds().reduced (40, 28).withTrimmedTop (92).withHeight (40); }
+    // THE HIDDEN SIGN OUT (Kathy, 26 Oct; testing only - switching test accounts without the Terminal Keychain line): Option-click on the
+    // title, where no run is going (wizapp::signOutAllowed). Revokes and deletes the saved sign-in; logged; nothing shown to a tester
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! e.mods.isAltDown() || ! titleArea().contains (e.getPosition()) || ! kNetworked || session == nullptr) return;
+        if (! wizapp::signOutAllowed (screen)) { logLine ("sign out (Option-click): not on " + wizapp::screenName (screen) + " - a run is going, so nothing changed"); return; }
+        const auto at = screen; logLine ("sign out (Option-click on the title, testing only) on " + wizapp::screenName (at));
+        onNet ([this, at]
+        {
+            { std::lock_guard<std::mutex> l (netMutex); session->signOut(); }
+            onUi ([this, at] { logLine ("signed out: the saved sign-in is deleted - the next run signs in again");
+                               if (at == Screen::welcome || at == Screen::consent) show (Screen::welcome); else { text = wizapp::kSignedOutText; repaint(); } });
+        });
+    }
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colours::white);
@@ -394,7 +409,7 @@ public:
         if ((screen == Screen::scan || screen == Screen::measuring) && stepText.isNotEmpty())   // 18 Oct (NEVER LOOKS FROZEN): the step, above the title
         { g.setColour (accent); g.setFont (juce::FontOptions (12.5f, juce::Font::bold)); g.drawText (stepText, juce::Rectangle<int> (40, 100, getWidth() - 80, 16), juce::Justification::centred); }
         g.setColour (ink); g.setFont (juce::FontOptions (24.0f, juce::Font::bold));
-        g.drawFittedText (title, body.removeFromTop (40), juce::Justification::centred, 2);
+        g.drawFittedText (title, body.removeFromTop (40), juce::Justification::centred, 2);   // == titleArea() (the hidden Sign out's target)
         g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (15.5f));
         g.drawFittedText (text, body.removeFromTop (screen == Screen::consent ? 150 : 64).reduced (10, 0), juce::Justification::centredTop, screen == Screen::consent ? 9 : 3);
         if (showBar)
@@ -657,6 +672,7 @@ private:
                 if (! c.done) { netWords = wizcontract::plainWords (c.reply); logLine ("run end not reported: " + netWords); title = c.reply.network ? "You're offline" : "Couldn't reach EchoJay";
                                 text = netWords + " Your results are kept on this Mac."; showBar = false; primary.setButtonText ("Try again"); primary.setVisible (true); secondary.setButtonText ("Done"); secondary.setVisible (true); repaint(); return; }
                 setState ("uploaded", true);
+                logLine (wizcontract::runEndCountsLine (c.reply.json));   // 26 Oct (staging run 1): the server's counts, in the log
                 logLine ("run end reported: promo " + juce::String (c.eligible ? (c.issuedNow ? "issued" : "already issued") : "not eligible") + (c.message.isNotEmpty() ? " - " + c.message : juce::String()));
                 if (c.eligible && c.code.isNotEmpty())
                 {   auto* r = new juce::DynamicObject(); r->setProperty ("code", c.code); r->setProperty ("months", c.months); r->setProperty ("message", c.message); r->setProperty ("expires_at", c.expiresAt);
@@ -713,6 +729,7 @@ private:
         screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); anyway.setVisible (false); email.setVisible (false); password.setVisible (false);
         agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true); resetTestButton.setVisible (kTest && wizapp::resetTestShownOn (s));
         autoTicks = 0; lastSnapQuarter = -1.0;
+        if (wizapp::runIsOver (s) && powerNotice.isNotEmpty()) powerWatch (power);   // 26 Oct: the notice goes with the run's end, not 10 s later
         auto copy = [&] (const wizapp::Copy& c) { title = c.title; text = c.text; primary.setButtonText (c.primary); primary.setVisible (c.primary.isNotEmpty());
                                                   secondary.setButtonText (c.secondary); secondary.setVisible (c.secondary.isNotEmpty()); };
         switch (s)
@@ -999,9 +1016,11 @@ private:
     {
         power = p;
         const bool running = (screen == Screen::scan || screen == Screen::measuring) && engine.running() && ! pausing && ! finishing;
-        const auto step = wizapp::batteryStep (p, running, batteryPaused && screen == Screen::paused);
+        const bool over = wizapp::runIsOver (screen);   // 26 Oct (staging run 1): no plug-in notice once measuring is done
+        const auto step = wizapp::batteryStep (p, running, batteryPaused && screen == Screen::paused, over);
         const auto notice = step.notice ? wizapp::plugInNotice() : juce::String();
-        if (notice != powerNotice) { powerNotice = notice; repaint(); }
+        if (notice != powerNotice) { if (notice.isEmpty() && over && p.onBattery) logLine ("power: " + wizapp::powerWords (p) + " - the run is over, so the notice is hidden");
+                                     powerNotice = notice; repaint(); }
         const auto words = wizapp::powerWords (p);
         if (words.isNotEmpty() && (words.upToFirstOccurrenceOf (" ", false, false) != lastPowerLog.upToFirstOccurrenceOf (" ", false, false)))
         { lastPowerLog = words; logLine ("power: " + words + (step.notice ? " - the notice asks to plug in" : "")); }
@@ -1113,6 +1132,7 @@ private:
                     {   // 21 Oct: no stub - the server's check decided what is known; the engine's own count is what is left to measure
                         const auto ws = juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()); const auto an = juce::JSON::parse (answersFile().loadFileAsString());
                         auto* e = new juce::DynamicObject(); e->setProperty ("count", (int) ws.getProperty ("to_measure", 0)); e->setProperty ("eligible", true); e->setProperty ("minimum", 0);
+                        e->setProperty ("minimum_is", "local - the Beta does not know the server's qualify_minimum; the server decides at the run's end");   // 26 Oct: never read as the server's
                         e->setProperty ("known", (int) an.getProperty ("have", 0) + (int) an.getProperty ("held", 0)); eligibility = juce::var (e);
                     }
                     else eligibility = stub::lookup (cfg.work, account, device, juce::JSON::parse (engineDir().getChildFile ("wizard_state.json").loadFileAsString()));

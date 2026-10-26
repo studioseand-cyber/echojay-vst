@@ -11254,7 +11254,7 @@ void testWizardCategories()
                && powerWords (P (true, false, 80)) == "AC" && powerWords (P (false, false, 80)).isEmpty() && line.endsWith (" | power battery 19%")
                && app.contains ("CFStringCompare (src, CFSTR (kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo") && app.contains ("CFSTR (kIOPSInternalBatteryType)")
                && app.contains ("now - lastPowerCheck >= 10000.0) { lastPowerCheck = now; powerWatch (readPower()); }")
-               && app.contains ("const auto step = wizapp::batteryStep (p, running, batteryPaused && screen == Screen::paused);")
+               && app.contains ("const auto step = wizapp::batteryStep (p, running, batteryPaused && screen == Screen::paused, over);")   // 26 Oct: the run's end (WZ-31OCT-2)
                && app.contains ("{ batteryPaused = true; resumeTo = screen; logLine (\"paused by itself: \" + step.why); pauseNow (step.why, false); return; }")
                && app.contains ("{ logLine (\"carrying on by itself: plugged in (\" + words + \")\"); batteryPaused = false; plugInFirst = false; show (resumeTo); }")
                && app.contains (": batteryPaused ? wizapp::batteryPausedText (power.percent)") && app.contains ("if (powerNotice.isNotEmpty())")
@@ -14457,6 +14457,51 @@ int main (int, char**)
                       const auto Rm = rolesOf (map, deesserDepths (mm, "de-esser")), Rn = rolesOf (map, Measured());
                       return meetNeed ("threshold|depth|freq", Rm, "de-esser") == juce::StringArray { "Low S-Reduction" } && meetNeed ("threshold|depth|freq", Rn, "de-esser").isEmpty(); }(),
                "trust WZ-31OCT-1: a de-esser's Range / reduction is its depth, never its threshold; a compressor's Peak Reduction stays its threshold");
+    }
+    // WZ-31OCT-2 NO PLUG-IN NOTICE ONCE THE RUN IS OVER (Kathy, staging run 1, 26 Oct: the free-month screen still asked to plug in). On
+    // battery the notice shows before and during a run; on sending and the end screens it does not; the pause and the resume are unchanged
+    {
+        using namespace ejmap::wizapp;
+        Power bat; bat.known = true; bat.onBattery = true; bat.percent = 81; Power low = bat; low.percent = 12; Power ac; ac.known = true; ac.percent = 100;
+        bool perScreen = true;
+        for (auto s : { Screen::welcome, Screen::consent, Screen::scan, Screen::scanDone, Screen::crashRecovered, Screen::measuring, Screen::paused, Screen::signIn })
+            perScreen = perScreen && ! runIsOver (s) && batteryStep (bat, false, false, runIsOver (s)).notice;
+        for (auto s : { Screen::upload, Screen::reward, Screen::noCode, Screen::betaSaved, Screen::alreadyDone })
+            perScreen = perScreen && runIsOver (s) && ! batteryStep (bat, false, false, runIsOver (s)).notice;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (perScreen && batteryStep (low, true, false).pause && batteryStep (ac, false, true, true).resume && ! batteryStep (ac, false, false).notice
+               && app.contains ("const auto step = wizapp::batteryStep (p, running, batteryPaused && screen == Screen::paused, over);")
+               && app.contains ("if (wizapp::runIsOver (s) && powerNotice.isNotEmpty()) powerWatch (power);"),
+               "wizard WZ-31OCT-2: the plug-in notice shows before and during a run, never on sending or the end screens");
+    }
+    // WZ-31OCT-3 THE RUN'S END COUNTS ARE LOGGED, AND THE LOCAL MINIMUM SAYS IT IS LOCAL (staging run 1, 26 Oct: /complete's counts never
+    // reached the log; eligibility.json's "minimum": 0 read like the server's qualify_minimum). An absent count is "absent", never 0
+    {
+        using namespace ejmap::wizcontract;
+        const auto full = runEndCountsLine (juce::JSON::parse (R"J({"results_received": 10, "results_accepted": 8, "results_new": 8, "plugins_checked": 5, "promo": {}})J"));
+        const auto part = runEndCountsLine (juce::JSON::parse (R"J({"results_received": 3, "results_accepted": 0})J"));
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const int counts = app.indexOf ("logLine (wizcontract::runEndCountsLine (c.reply.json));"), promo = app.indexOf ("logLine (\"run end reported: promo \"");
+        check (full == "run end counts: results_received 10, results_accepted 8, results_new 8, plugins_checked 5"
+               && part == "run end counts: results_received 3, results_accepted 0, results_new absent, plugins_checked absent"
+               && counts > 0 && promo > counts && promo - counts < 200
+               && app.contains ("e->setProperty (\"minimum_is\", \"local - the Beta does not know the server's qualify_minimum; the server decides at the run's end\");"),
+               "wizard WZ-31OCT-3: the run's end counts go to the log ('" + full + "'); the local minimum is named local");
+    }
+    // WZ-31OCT-4 A HIDDEN SIGN OUT FOR TEST ACCOUNTS (Kathy, 26 Oct: switching accounts needed a Terminal Keychain line). Option-click on the
+    // title, only where no run is going; it revokes and deletes the saved sign-in (the Session's own signOut), and says so in the log
+    {
+        using namespace ejmap::wizapp;
+        bool allowed = true;
+        for (auto s : { Screen::welcome, Screen::consent, Screen::reward, Screen::noCode, Screen::betaSaved, Screen::alreadyDone }) allowed = allowed && signOutAllowed (s);
+        for (auto s : { Screen::scan, Screen::scanDone, Screen::crashRecovered, Screen::measuring, Screen::paused, Screen::upload, Screen::signIn }) allowed = allowed && ! signOutAllowed (s);
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const auto con = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardContract.h").loadFileAsString();
+        check (allowed && app.contains ("if (! e.mods.isAltDown() || ! titleArea().contains (e.getPosition()) || ! kNetworked || session == nullptr) return;")
+               && app.contains ("if (! wizapp::signOutAllowed (screen)) {") && app.contains ("{ std::lock_guard<std::mutex> l (netMutex); session->signOut(); }")
+               && app.contains ("juce::Rectangle<int> titleArea() const { return getLocalBounds().reduced (40, 28).withTrimmedTop (92).withHeight (40); }")
+               && con.contains ("rq.body.append (b.toRawUTF8(), (size_t) b.getNumBytesAsUTF8()); log (\"auth/revoke -> \" + statusWords (send (rq))); }\n        store.clear();"),
+               "wizard WZ-31OCT-4: Option-click on the title signs out where no run is going, never mid-run");
     }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the

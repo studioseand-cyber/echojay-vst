@@ -599,10 +599,13 @@ inline constexpr int kBatteryPausePercent = 20;
 inline juce::String plugInNotice() { return "Please plug in your Mac - the run takes several hours"; }
 inline juce::String powerWords (const Power& p) { return ! p.known ? juce::String() : p.onBattery ? "battery " + juce::String (p.percent) + "%" : juce::String ("AC"); }
 struct BatteryStep { bool notice = false, pause = false, resume = false; juce::String why; };
-inline BatteryStep batteryStep (const Power& p, bool running, bool pausedForBattery)
+// THE RUN IS OVER (Kathy, staging run 1, 26 Oct: the notice still asked to plug in on the free-month screen): once measuring is done -
+// sending, the end screens - sleep can spoil nothing (an upload waits and carries on), so the notice is not shown there
+inline bool runIsOver (Screen s) { return s == Screen::upload || s == Screen::reward || s == Screen::noCode || s == Screen::betaSaved || s == Screen::alreadyDone; }
+inline BatteryStep batteryStep (const Power& p, bool running, bool pausedForBattery, bool runOver = false)
 {
     BatteryStep s; if (! p.known) return s;
-    s.notice = p.onBattery;
+    s.notice = p.onBattery && ! runOver;
     if (running && ! pausedForBattery && p.onBattery && p.percent >= 0 && p.percent < kBatteryPausePercent)
     { s.pause = true; s.why = "the battery is at " + juce::String (p.percent) + "%"; }
     if (pausedForBattery && ! p.onBattery) s.resume = true;
@@ -611,6 +614,12 @@ inline BatteryStep batteryStep (const Power& p, bool running, bool pausedForBatt
 // CARRY ON ON A LOW BATTERY (Kathy, 24 Oct; the 23 Oct run: Carry on at 19% paused again at 18%, then macOS slept at 1%): below
 // kBatteryPausePercent on battery, Carry on does not carry on - it says why and the run stays paused until the Mac is plugged in, then
 // carries on by itself (the user asked to carry on)
+// THE HIDDEN SIGN OUT (Kathy, 26 Oct; testing only, for switching test accounts without Terminal): Option-click on the title, on a screen
+// where no run is going (before it starts, or after it ends). Never while scanning, measuring, paused or sending, nor mid sign-in (the
+// browser's approval would land after it)
+inline bool signOutAllowed (Screen s)
+{ return s == Screen::welcome || s == Screen::consent || s == Screen::reward || s == Screen::noCode || s == Screen::betaSaved || s == Screen::alreadyDone; }
+inline constexpr const char* kSignedOutText = "Signed out of EchoJay on this Mac. The next run asks you to sign in.";
 inline constexpr const char* kPlugInFirst = "Plug in first - the Mac will sleep at low battery";
 inline bool carryOnBlocked (const Power& p) { return p.known && p.onBattery && p.percent >= 0 && p.percent < kBatteryPausePercent; }
 inline juce::String batteryPausedText (int percent)

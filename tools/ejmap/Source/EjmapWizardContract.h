@@ -480,4 +480,13 @@ inline Completion complete (Session& s, const juce::String& runId, const juce::S
     if (! c.eligible) c.code = {};   // a code only with the server's "eligible": never shown otherwise
     return c;
 }
+// THE RUN'S END COUNTS (staging run 1, 26 Oct: /complete answered them and the log kept only the promo line). One line, the server's own
+// numbers; a count the server did not send is "absent", never 0 (an absent key is not a zero)
+inline juce::String runEndCountsLine (const juce::var& completeReply)
+{
+    juce::StringArray parts;
+    for (auto* k : { "results_received", "results_accepted", "results_new", "plugins_checked" })
+        parts.add (juce::String (k) + " " + (completeReply.hasProperty (k) ? juce::String ((int) completeReply.getProperty (k, 0)) : juce::String ("absent")));
+    return "run end counts: " + parts.joinIntoString (", ");
+}
 } // namespace ejmap::wizcontract
