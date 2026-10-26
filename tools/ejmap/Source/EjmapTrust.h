@@ -179,6 +179,9 @@ inline const std::vector<Role>& roleTable()
         { "predelay",   "pre-delay|predelay|pre delay|pre dly|predly",              "ms|s" },
         { "ceiling",    "ceiling",                                                   "db" },
         { "threshold",  "threshold|thresh|thrsh",                                    "db" },
+        // 26 Oct (Kathy): how MUCH it reduces is a depth, not where it starts - a de-esser's Range / S-Reduction / Gain Reduction (8 of 15
+        // mapped de-essers called one "threshold"); before "gain", so "Gain Reduction" is a depth
+        { "depth",      "range|depth|reduction",                                     "db" },
         { "ratio",      " ratio",                                                    "ratio" },   // a word start: "satu-ratio-n" is not a ratio
         { "attack",     "attack|atk",                                                "ms|s" },
         { "release",    "release|recovery",                                          "ms|s" },
@@ -256,7 +259,9 @@ inline juce::String sectionOf (const juce::String& name)
     auto s = " " + name.toLowerCase().replaceCharacters ("_-:()[]", "       ") + " ";
     // the role words come off LONGEST FIRST (17 Oct): "freq" taken before "frequency" left "Mid Frequency" as "mid uency", no section, so
     // its band never paired with "Mid Gain" (MF). Substrings stay allowed ("CompThresh" -> comp)
-    static const juce::StringArray words = [] { juce::StringArray w; for (const auto& r : roleTable()) for (const auto& x : juce::StringArray::fromTokens (r.words, "|", ""))
+    // 26 Oct: the depth words (range / depth / reduction) do NOT come off: "Gate Threshold Range" stays its own section, as before the depth
+    // role - stripping them moved six bx_console strips' dial (bx_console N onto "LC 2nd Thresh Level")
+    static const juce::StringArray words = [] { juce::StringArray w; for (const auto& r : roleTable()) if (juce::String (r.role) != "depth") for (const auto& x : juce::StringArray::fromTokens (r.words, "|", ""))
                                                     if (x != "^q$" && x.trim().isNotEmpty()) w.add (x.trim());
                                                 std::stable_sort (w.begin(), w.end(), [] (const juce::String& a, const juce::String& b) { return a.length() > b.length(); }); return w; }();
     for (const auto& w : words) s = s.replace (w, " ");
@@ -267,6 +272,7 @@ struct Roles
 {
     std::map<juce::String, juce::StringArray> identified;   // role -> control names (name + unit + unique in its section)
     juce::StringArray ambiguous, wrongUnit;                  // "role: a, b" / "name (role, unit seen 'x')"
+    juce::StringArray measuredDepth;                         // 26 Oct: the depth control(s) a measurement chose (a de-esser's amount)
     std::map<juce::String, juce::String> sectionFor;         // a person's section for a control, over what its name says
 };
 // measured: role -> controls a measurement identified (confirmed, or found on a control its name did not propose); dropped: controls a
@@ -304,6 +310,7 @@ inline Roles rolesOf (const juce::var& map, const Measured& measured = {})
         }
     for (const auto& [role, names] : measured.roles) for (const auto& n : names) R.identified[role].addIfNotAlreadyThere (n);   // measurement decides
     R.sectionFor = measured.section;
+    if (const auto md = measured.roles.find ("depth"); md != measured.roles.end()) R.measuredDepth = md->second;
     return R;
 }
 // THE DIAL TARGETS: what a category needs identified (and read back) before it may be dialled. Each entry is alternatives ('|');
@@ -317,7 +324,7 @@ inline juce::StringArray needsFor (const juce::String& category, bool pitchShift
         { "compressor",       { "threshold" } },
         { "limiter",          { "ceiling|threshold" } },
         { "eq",               { "freq+gain" } },
-        { "de-esser",         { "threshold|freq" } },
+        { "de-esser",         { "threshold|depth|freq" } },   // 26 Oct: a de-esser is dialled on its threshold, its depth (Range, S-Reduction) or its frequency
         { "gate",             { "threshold" } },
         { "saturation",       { "drive" } },
         { "amp_sim",          { "drive|gain" } },
@@ -328,6 +335,17 @@ inline juce::StringArray needsFor (const juce::String& category, bool pitchShift
         { "filter",           { "cutoff|freq" } },
     };
     const auto it = k.find (category.toLowerCase()); return it != k.end() ? it->second : juce::StringArray { "__never__" };   // pitch: the tuner spec decides
+}
+// 26 Oct (Kathy): a measured AMOUNT control is a threshold unless its name says it is a depth (range / depth / reduction): a de-esser's
+// compressor-shaped profile takes its Range as the amount, and that is how much it reduces, not where it starts
+inline bool depthNamed (const juce::String& control) { return wordsMatch (control.toLowerCase().replaceCharacters ("_", " "), "range|depth|reduction"); }
+// ...for a DE-ESSER only: a compressor's amount ("Peak Reduction" on CLA-2A / CLA-3A) stays its threshold role, as before
+inline Measured deesserDepths (Measured m, const juce::String& category)
+{
+    if (category.toLowerCase() != "de-esser") return m;
+    if (const auto it = m.roles.find ("threshold"); it != m.roles.end())
+    {   juce::StringArray keep; for (const auto& n : it->second) (depthNamed (n) ? m.roles["depth"] : keep).addIfNotAlreadyThere (n); m.roles["threshold"] = keep; }
+    return m;
 }
 // the controls a need is met by (empty = not met)
 // THE SECTION PREFIXES (Kathy's ruling, 16 Oct): a role word under a section prefix - Comp / Gate / Exp / EQ / Band N / LF / LMF / MF /
@@ -405,6 +423,8 @@ inline juce::StringArray meetNeed (const juce::String& need, const Roles& R, con
                 if (k.isEmpty() || k == "?" || preferredSections (category).contains (k) || category.isEmpty()) return { it->second[0] };
                 continue;
             }
+            // 26 Oct: a de-esser's two named depths (Low / High S-Reduction) - the one its measurement chose is the dial
+            if (alt == "depth" && R.measuredDepth.size() == 1 && it->second.contains (R.measuredDepth[0])) return { R.measuredDepth[0] };
             std::map<juce::String, juce::String> bySec; bool clean = true;
             for (const auto& n : it->second) { const auto k = secOf (n); if (k == "?" || bySec.count (k)) { clean = false; break; } bySec[k] = n; }
             if (clean) for (const auto& want : preferredSections (category)) if (bySec.count (want)) return { bySec[want] };

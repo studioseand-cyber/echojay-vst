@@ -402,7 +402,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         const auto rb = trust::creditMap (m, pd.readings, pd.metas, &otherFormat);
         for (const auto& [ctl, r] : rb) { if (r.superseded > 0) { supersededReadings += r.superseded; ++supersededControls; } snappedReadings += r.snapped; }
         const auto fpKey = m.getProperty ("fp", "").toString();
-        const auto measured = human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured;
+        const auto measured = trust::deesserDepths (human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured, cat);   // 26 Oct
         const auto fmt = m.getProperty ("identity", {}).getProperty ("format", "").toString();
         const std::pair<juce::String, juce::String> key { name, fmt };   // 17 Oct (rulings 2): certified only in the format it was measured in
         const bool certified = (cat == "compressor" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == "amp_sim" && v1Pass["saturation"].count (key))
