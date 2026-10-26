@@ -3984,10 +3984,14 @@ private:
                 { inlineEditor->removeComponentListener(editorResizeWatch.get()); }
                 inlineHolder.removeChildComponent(inlineEditor.get());
                 inlineEditor.reset();
-                // Only detach a container we actually attached: a built-in
-                // never created one.
-                if (!inlineIsBuiltin) NativeClip::detach(this);
             }
+            // ---- AND THE CONTAINER GOES WHETHER OR NOT THE EDITOR WAS STILL HERE -------------
+            // This used to be inside the `if (inlineEditor)` above, so a road that had already
+            // nulled the editor (the live view closing its copy's editor before the instance goes)
+            // left the container standing with the dead editor's guest view inside it - the view
+            // that then showed under the next plugin's name. Detaching is idempotent and does
+            // nothing when there is no container.
+            if (!inlineIsBuiltin) NativeClip::detach(this);
             inlineHolder.setVisible(false);
             inlineSlot = -1;
             realW = realH = 0;
@@ -4183,13 +4187,41 @@ private:
         // from OUR layout only — this never resizes it to the plugin.
         // The editor's reported size rides along so degenerate out-of-process
         // proxies can have it imposed (hypothesis A).
+        /** ---- THIS EDITOR'S OWN HOSTED VIEW, BY IDENTITY (his 11:20 fault, 26 Oct 2026) ----
+            *"A view must only ever be shown in the slot that owns it, and a parked instance's view
+             must never be reparented anywhere."*
+
+            JUCE hosts an AU's own NSView inside a juce::NSViewComponent in the editor it made, so
+            the view can be NAMED rather than guessed at from the peer's subviews - which is what
+            put the deleted AUDelay's panel under the CL 1B's title. A VST3's editor attaches its
+            IPlugView to the peer with no NSViewComponent, so this answers null there and
+            NativeClip says in the log that it is falling back to a guess. */
+        void* hostedViewOfThisEditor() const
+        {
+            if (inlineEditor == nullptr) return nullptr;
+            struct Find
+            {
+                static void* in (juce::Component* c)
+                {
+                    if (c == nullptr) return nullptr;
+                    if (auto* nv = dynamic_cast<juce::NSViewComponent*> (c))
+                        if (void* v = nv->getView()) return v;
+                    for (int i = 0; i < c->getNumChildComponents(); ++i)
+                        if (void* v = in (c->getChildComponent (i))) return v;
+                    return nullptr;
+                }
+            };
+            return Find::in (inlineEditor.get());
+        }
+
         void attachNative(bool log)
         {
             if (inlineIsBuiltin) return;   // no foreign view to clip
             if (inlineEditor)
             {
                 NativeClip::attach(this, displayArea(), log,
-                                   inlineEditor->getWidth(), inlineEditor->getHeight());
+                                   inlineEditor->getWidth(), inlineEditor->getHeight(),
+                                   hostedViewOfThisEditor());
                 // ---- AND THE READ-ONLY SHIELD GOES BACK ON TOP (his ruling of 24 Oct 2026) ----
                 // Here, because attach is the one place that reparents the plugin's view, and a
                 // shield that is not the last subview blocks nothing. The decision is

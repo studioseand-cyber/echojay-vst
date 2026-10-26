@@ -3893,7 +3893,7 @@ int main (int argc, char* argv[])
         // What a Link adds is FOLLOW and CONTROL - the Link's values and the gesture hold - and those
         // get their own rows next, with the copy's and the Link's values sampled per tick. Saying which
         // half this proves matters more than a row that claims both.
-        if (rowWanted ("LV1") || rowWanted ("LV2") || rowWanted ("LV3"))
+        if (rowWanted ("LV1") || rowWanted ("LV2") || rowWanted ("LV3") || rowWanted ("LV7"))
         {
             leg ("LV: a hosted plugin's own view in the V2, in a real host with a real window");
             // AUDelay IS HIS CRASH, and Apple's own AU is free of PACE, so the standing rule is kept.
@@ -3947,7 +3947,63 @@ int main (int argc, char* argv[])
                 ejMeasureHostedView (subject + " on the V2's own rack", openThrow,
                                      "LV1", "LV2", "LV3", ejPumpMsgThread);
             }
-            std::printf ("        (LV) subjects run: %s%s\n",
+            // ---- LV7: A PLUGIN REPLACED IN A SLOT SHOWS ITS OWN PANEL (his 11:20 fault, 26 Oct) ---
+        //
+        // *"The live view's title said 'Tube-Tech CL 1B' but showed Apple Delay's panel (the
+        //  deleted plugin)."*  His exact sequence, with two of Apple's own AUs whose view classes
+        //  differ by name (AUDelayCustomView vs AUMultibandCustomView), so the row can say WHICH
+        //  panel is on screen rather than that one is.
+        if (rowWanted ("LV7"))
+        {
+            juce::String firstClass, secondClass;
+            auto openAndNameTheView = [&] (const juce::String& plugin) -> juce::String
+            {
+                clearOwnRack (rig);
+                Rig::pump (400);
+                rig.send (echojay::rig::cmd::addSlot, args1 ("name", plugin), 25000);
+                juce::String slot1;
+                rig.until ([&] (const juce::var& stv)
+                {
+                    if (auto* arr = stv.getProperty ("ownRack", juce::var())
+                                       .getProperty ("slots", juce::var()).getArray())
+                        if (! arr->isEmpty())
+                            slot1 = (*arr)[0].getProperty ("name", juce::var()).toString();
+                    return slot1.containsIgnoreCase (plugin);
+                }, 15000);
+                if (! slot1.containsIgnoreCase (plugin)) return {};
+                Rig::pump (600);
+                rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1), 10000);
+                Rig::pump (3000);
+                NSView* c = ejFindClipContainer();
+                NSView* g = ejGuestInside (c);
+                return g != nil ? ejNS (NSStringFromClass ([g class])) : juce::String();
+            };
+            firstClass = openAndNameTheView ("AUDelay");
+            // The DELETE and the REPLACE, through the product's own removeSlot and its own loader.
+            secondClass = openAndNameTheView ("AUMultibandCompressor");
+            std::printf ("        (LV7) the view on screen was %s, then %s\n",
+                         firstClass.isEmpty() ? "(none)" : firstClass.toRawUTF8(),
+                         secondClass.isEmpty() ? "(none)" : secondClass.toRawUTF8());
+            if (firstClass.isEmpty() || secondClass.isEmpty())
+                skip ("LV7: a plugin replaced in a slot shows its OWN panel",
+                      "one of the two opens put no plugin view on screen (first \"" + firstClass
+                      + "\", second \"" + secondClass + "\"), so there is nothing to compare.");
+            else
+            {
+                check (firstClass.containsIgnoreCase ("Delay"),
+                       "LV7 (precondition): opening AUDelay shows AUDelay's own view",
+                       firstClass);
+                check (! secondClass.equalsIgnoreCase (firstClass),
+                       "LV7: after the slot's plugin is replaced, the view on screen is the NEW "
+                       "plugin's - not the deleted one's panel under the new one's name",
+                       secondClass.equalsIgnoreCase (firstClass)
+                           ? "BOTH opens showed " + firstClass + " - the deleted plugin's own view "
+                             "was adopted into the new plugin's container, which is his 11:20 fault"
+                           : juce::String());
+            }
+        }
+
+        std::printf ("        (LV) subjects run: %s%s\n",
                          ran.isEmpty() ? "NONE" : ran.joinIntoString (", ").toRawUTF8(),
                          notRan.isEmpty() ? "" : ("  |  could not be added: "
                                                   + notRan.joinIntoString ("; ")).toRawUTF8());
@@ -4082,6 +4138,84 @@ int main (int argc, char* argv[])
                         // *"Measure the V2's message-thread load and frame time with a live view
                         //  open."*  The figure is the editor's own 20 Hz tick, and the bound is his
                         //  acceptance: the live view must not make the message thread miss that tick.
+                        // ---- LV8: A PLUGIN REPLACED IN A LINK'S SLOT, HIS 11:20 ACTION ------
+                        //
+                        // *"I deleted the AUDelay from Aitch_4_01's Link rack, added the CL 1B in
+                        //  its place, and clicked the CL 1B's card"* - and got the deleted plugin's
+                        //  panel under the new one's name, and then "not following" for ever.
+                        //
+                        // THIS IS THE FAITHFUL ROW AND LV7 IS NOT. LV7 does the same replacement on
+                        // the own rack and passes even with the adopt guess put back, so it holds
+                        // nothing; here the live view is OPEN on the old plugin while the slot is
+                        // replaced under it, which is what he did.
+                        if (rowWanted ("LV8") && (slotToOpen < 1 || slotToOpen > 5))
+                            skip ("LV8: a plugin replaced in a Link's slot",
+                                  "the live view opened slot " + juce::String (slotToOpen)
+                                  + " and this rig's mock only carries a replace plan for slots 1-5, "
+                                    "so the replacement could not be asked for.");
+                        if (rowWanted ("LV8") && slotToOpen >= 1 && slotToOpen <= 5)
+                        {
+                            // The replace op takes a SLOT NUMBER and this row cannot know it in
+                            // advance - the Link's rack holds whatever earlier legs left - so the
+                            // marker carries it. The first cut gated on "slot 1" and AUDelay landed
+                            // on slot 3: the row vanished without a line, which is the invisible
+                            // skip this suite counts separately for.
+                            const auto replaced = askAgent (rig, "rig-linkreplace"
+                                                   + juce::String (slotToOpen) + "-marker: put an "
+                                                   "AUMultibandCompressor in slot "
+                                                   + juce::String (slotToOpen) + " instead", 90000);
+                            juce::ignoreUnused (replaced);
+                            juce::String nameNow;
+                            rig.until ([&] (const juce::var& stv)
+                            {
+                                if (auto* arr = stv.getProperty ("links", juce::var()).getArray())
+                                    for (const auto& l : *arr)
+                                        if (l.getProperty ("uid", juce::var()).toString() == uid)
+                                        {
+                                            const auto names = juce::StringArray::fromTokens (
+                                                l.getProperty ("slots", juce::var()).toString(), "|", "");
+                                            if (slotToOpen - 1 < names.size())
+                                                nameNow = names[slotToOpen - 1];
+                                        }
+                                return nameNow.containsIgnoreCase ("Multiband");
+                            }, 25000);
+                            if (! nameNow.containsIgnoreCase ("Multiband"))
+                                skip ("LV8: a plugin replaced in a Link's slot",
+                                      "the replace never landed on " + uid + " slot "
+                                      + juce::String (slotToOpen) + " (it holds \""
+                                      + nameNow + "\"), so nothing was measured.");
+                            else
+                            {
+                                rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen), 10000);
+                                livePump (5000);
+                                NSView* c2 = ejFindClipContainer();
+                                NSView* g2 = ejGuestInside (c2);
+                                const auto cls2 = g2 != nil ? ejNS (NSStringFromClass ([g2 class]))
+                                                            : juce::String();
+                                const auto st2 = rig.freshState();
+                                const auto note = st2.getProperty ("shadowFollowNote", juce::var()).toString();
+                                std::printf ("        (LV8) after the replace: view \"%s\", running=%d, "
+                                             "plugin \"%s\", note \"%s\"\n",
+                                             cls2.toRawUTF8(),
+                                             (int) (bool) st2.getProperty ("shadowRunning", false),
+                                             st2.getProperty ("shadowPlugin", juce::var()).toString().toRawUTF8(),
+                                             note.toRawUTF8());
+                                check (cls2.isNotEmpty() && ! cls2.containsIgnoreCase ("Delay"),
+                                       "LV8: the replaced slot shows the NEW plugin's own panel, not "
+                                       "the deleted plugin's",
+                                       cls2.isEmpty() ? "no plugin view was on screen at all"
+                                           : "the view on screen is " + cls2
+                                             + (cls2.containsIgnoreCase ("Delay")
+                                                 ? " - the DELETED plugin's, which is his fault 1" : ""));
+                                check ((bool) st2.getProperty ("shadowRunning", false)
+                                       && ! note.containsIgnoreCase ("not have the same parameter"),
+                                       "LV8a: ...and the live view FOLLOWS it - the Link publishes the "
+                                       "digest of the plugin that is in that slot NOW",
+                                       note.isEmpty() ? juce::String ("no note, and the view is running")
+                                                      : "the card says: \"" + note + "\"");
+                            }
+                        }
+
                         if (rowWanted ("LV6"))
                         {
                             livePump (2000);

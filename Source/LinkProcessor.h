@@ -463,6 +463,11 @@ private:
     std::vector<float> shadowValScratch_;      // one sweep's values, reused, never allocated on a tick
     juce::uint32 shadowValDigest_ = 0;         // recomputed when the slot or the plugin changes
     int  shadowValDigestSlot_ = -1;
+    // AND THE TWO FACTS THAT TELL A REPLACED PLUGIN FROM THE SAME ONE (26 Oct 2026): the rack's
+    // structure revision and the parameter count the digest was computed from. Keyed on the slot
+    // alone, a plugin swapped into the same slot kept the old one's digest - his 11:20 fault.
+    juce::uint32 shadowValDigestRev_ = 0u;
+    int          shadowValDigestCount_ = -1;
     bool shadowValSaidTruncated_ = false;      // the "more than we can carry" line, said once
     bool shadowValSaidCost_ = false;           // the measured sweep cost, said once per tap
     void publishShadowValuesTick();

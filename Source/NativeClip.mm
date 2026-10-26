@@ -166,10 +166,21 @@ static NSView* NativeClip2_findStrayPluginView(NSView* peer, NSView* container)
     return found;
 }
 
+/** THE GUEST VIEW INSIDE THE CONTAINER, which is NOT simply subviews[0] (26 Oct 2026).
+    Our own shield is a subview too, and since the stale-view sweep stopped removing it the guest
+    can sit at index 1 - at which point subviews[0] is the shield and every "the plugin's view"
+    read would have been about our own overlay. One accessor, so the readers cannot drift. */
+static NSView* NativeClip2_guestInContainer(NSView* container)
+{
+    if (container == nil) return nil;
+    for (NSView* sv in [container subviews])
+        if (! [sv isKindOfClass:[ECHOJAY_SHIELD_CLASS class]]) return sv;
+    return nil;
+}
+
 static NSView* NativeClip2_pluginViewIn(NSView* peer, NSView* container)
 {
-    if (container != nil && [[container subviews] count] > 0)
-        return [container subviews][0];
+    if (NSView* g = NativeClip2_guestInContainer (container)) return g;
     return NativeClip2_findStrayPluginView(peer, container);
 }
 
@@ -187,7 +198,7 @@ static NSString* NativeClip2_listSubviews(NSView* v)
 // into it, and re-centres the plugin view. The container is NEVER sized from
 // the plugin. Returns true once a plugin view is inside the container.
 bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool doLog,
-                        int desiredW, int desiredH)
+                        int desiredW, int desiredH, void* expectedGuestView)
 {
     if (!peerHandle) return false;
     NSView* peer = (__bridge NSView*)peerHandle;
@@ -266,11 +277,48 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
             continue;
         [strays addObject:sv];
     }
-    NSView* newest = [strays lastObject];
+    // ---- WHOSE VIEW IS IT? (his 11:20 fault, 26 Oct 2026) --------------------------------------
+    //
+    // *"The live view's title said 'Tube-Tech CL 1B' but showed Apple Delay's panel (the deleted
+    //  plugin)... A view must only ever be shown in the slot that owns it, and a parked instance's
+    //  view must never be reparented anywhere."*
+    //
+    // "The newest unknown subview of the peer" was a GUESS, and this is what it cost: he deleted
+    // the AUDelay, added a CL 1B in its place and opened it, the parked AUDelay's own view was
+    // still sitting at peer level, and we adopted it into the CL 1B's container -
+    //
+    //   11:21:10.035  EJPane(main): open: Tube-Tech CL 1B
+    //   11:21:10.038  NativeClip2: reparenting stray AUDelayCustomView ... from peer into container
+    //
+    // When the caller can name the view JUCE gave THIS editor, the guess is not made at all: that
+    // view is adopted and no other is touched. An AU's editor holds it in a juce::NSViewComponent,
+    // so the caller can; a VST3's does not, and that road keeps the search, with its guess said out
+    // loud in the log rather than presented as a fact.
+    NSView* expected = (__bridge NSView*) expectedGuestView;
+    NSView* newest = nil;
+    if (expected != nil)
+    {
+        newest = expected;
+        if ([strays containsObject:expected]) [strays removeObject:expected];
+    }
+    else
+    {
+        newest = [strays lastObject];
+        if (newest != nil)
+            NSLog(@NATIVECLIP_LOG_TAG ": the caller could not name this editor's own view, so the "
+                  @"newest peer-level view (%@) is being ADOPTED ON A GUESS - correct for a VST3 "
+                  @"editor, and the one road where a parked plugin's view could still be shown "
+                  @"under another slot's name", NSStringFromClass([newest class]));
+    }
     for (NSView* sv in strays)
         if (sv != newest)
         {
-            NSLog(@NATIVECLIP_LOG_TAG ": removing orphaned peer view %@ frame=%@",
+            // OUT OF THE HIERARCHY, NEVER INTO ANOTHER SLOT'S CONTAINER. A view left at peer level
+            // renders unclipped over our own interface (the floating "EchoJay V2" strip, pre-2.9.22),
+            // and it may belong to a PARKED instance - so it is removed from the window and adopted
+            // nowhere, which is his rule of 26 Oct exactly.
+            NSLog(@NATIVECLIP_LOG_TAG ": removing orphaned peer view %@ frame=%@ - it is not this "
+                  @"editor's own view and is adopted nowhere",
                   NSStringFromClass([sv class]), NSStringFromRect([sv frame]));
             [sv removeFromSuperview];
         }
@@ -280,40 +328,47 @@ bool NativeClip2_attach(void* peerHandle, int cx, int cy, int cw, int ch, bool d
         // plugin view arriving after an out-of-process placeholder)
         for (NSView* old in [[container subviews] copy])
         {
+            if (old == newest) continue;                 // already where it belongs
+            if ([old isKindOfClass:[ECHOJAY_SHIELD_CLASS class]]) continue;   // ours, re-asserted below
             NSLog(@NATIVECLIP_LOG_TAG ": replacing stale container view %@ frame=%@",
                   NSStringFromClass([old class]), NSStringFromRect([old frame]));
             [old removeFromSuperview];
         }
-        NSSize keep = [newest frame].size;   // keep the plugin's NATIVE size
-        NSLog(@NATIVECLIP_LOG_TAG ": reparenting stray %@ frame=%@ from peer into container",
-              NSStringFromClass([newest class]), NSStringFromRect([newest frame]));
-        // ---- THE MOVE MUST NOT TAKE IT OUT OF THE WINDOW (his AUDelay crash, 26 Oct 2026) ----
-        //
-        // `removeFromSuperview` followed by `addSubview:` is two moves, and the gap between them
-        // has the guest view at superview nil - and therefore at WINDOW nil. An AppKit probe says
-        // so plainly: with the remove it gets viewWillMoveToWindow:NIL / viewDidMoveToWindow (nil)
-        // and then the window again; with addSubview: ALONE it is reparented and never once sees a
-        // nil window. AppKit does the removal itself and keeps the window when both superviews are
-        // in the same one, which ours always are.
-        //
-        // WHAT THAT COST. Apple's own AU views give up their parameter connection on the way out of
-        // a window, and the next draw asserts reading a parameter:
-        //
-        //    07:22:31.890  NativeClip2: reparenting stray AUDelayCustomView ... from peer
-        //    07:22:31.914  *** Assertion failure in AUDelayCustomView.mm:176   (in drawRect)
-        //    07:22:31.944  EXC_BREAKPOINT in -[NSApplication _crashOnException:]
-        //
-        // 24 ms, and in Logic the AU's UI lives in a view-service process where an exception out of
-        // drawRect is fatal - so clicking an AUDelay slot card took Logic's whole hosting process
-        // with it. One move instead of two, and the transition never happens. Row LV1 holds it in
-        // the host rig, on the real plugin, and was RED before this line changed.
-        [newest setAutoresizingMask:NSViewNotSizable];
-        [container addSubview:newest];
+        const NSSize keep = [newest frame].size;   // keep the plugin's NATIVE size
+        if ([newest superview] != container)
+        {
+            NSLog(@NATIVECLIP_LOG_TAG ": putting %@ (this editor's %@ view) frame=%@ into the container",
+                  NSStringFromClass([newest class]),
+                  expected != nil ? @"OWN" : @"newest-stray",
+                  NSStringFromRect([newest frame]));
+            // ---- THE MOVE MUST NOT TAKE IT OUT OF THE WINDOW (his AUDelay crash, 26 Oct 2026) ----
+            //
+            // `removeFromSuperview` followed by `addSubview:` is two moves, and the gap between
+            // them has the guest view at superview nil - and therefore at WINDOW nil. An AppKit
+            // probe says so plainly: with the remove it gets viewWillMoveToWindow:NIL /
+            // viewDidMoveToWindow (nil) and then the window again; with addSubview: ALONE it is
+            // reparented and never once sees a nil window, because AppKit keeps the window when
+            // both superviews are in the same one, which ours always are.
+            //
+            // WHAT THAT COST. Apple's own AU views give up their parameter connection on the way
+            // out of a window, and the next draw asserts reading a parameter:
+            //
+            //    07:22:31.890  NativeClip2: reparenting stray AUDelayCustomView ... from peer
+            //    07:22:31.914  *** Assertion failure in AUDelayCustomView.mm:176   (in drawRect)
+            //    07:22:31.944  EXC_BREAKPOINT in -[NSApplication _crashOnException:]
+            //
+            // 24 ms, and in Logic the AU's UI lives in a view-service process where an exception
+            // out of drawRect is fatal - so clicking an AUDelay slot card took Logic's whole
+            // hosting process with it. One move instead of two, and the transition never happens.
+            // Row LV1 holds it in the host rig, on the real plugin.
+            [newest setAutoresizingMask:NSViewNotSizable];
+            [container addSubview:newest];
+        }
         [newest setFrame:NSMakeRect(wanted.origin.x, wanted.origin.y,
                                     keep.width, keep.height)];
     }
 
-    NSView* plugin = ([[container subviews] count] > 0) ? [container subviews][0] : nil;
+    NSView* plugin = NativeClip2_guestInContainer (container);
 
     // First capture after an absent stretch (late-attaching plugin view) —
     // force the full diagnostic log so live streams show the transition.
@@ -419,8 +474,7 @@ bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
     if (!peerHandle) return false;
     NSView* peer = (__bridge NSView*)peerHandle;
     ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
-    NSView* inContainer = (container != nil && [[container subviews] count] > 0)
-                              ? [container subviews][0] : nil;
+    NSView* inContainer = NativeClip2_guestInContainer (container);
     NSView* plugin = inContainer != nil
                          ? inContainer
                          : NativeClip2_findStrayPluginView(peer, container);

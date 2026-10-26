@@ -5168,14 +5168,30 @@ void LinkProcessor::publishShadowValuesTick()
     const int n    = juce::jmin (have, echojay::kShadowValMax);
     if (n <= 0) return;
 
-    // THE DIGEST IS RECOMPUTED WHEN THE SLOT CHANGES, not every tick: it walks every parameter's
-    // name, which is the one genuinely dear thing here, and a plugin's parameter list does not
-    // change under a running tap without the rack's structure changing with it.
-    if (shadowValDigestSlot_ != slot)
+    // THE DIGEST IS RECOMPUTED WHEN THE SLOT, THE RACK'S STRUCTURE OR THE PARAMETER COUNT MOVES,
+    // never every tick: it walks every parameter's name, which is the one genuinely dear thing
+    // here. The old key was the slot INDEX alone, and his 11:20 fault of 26 Oct is what that cost -
+    // a plugin replaced in the same slot kept the old plugin's digest, the V2 refused every frame
+    // and the live view said "not following" for ever. The decision is
+    // echojay::shadowDigestNeedsRecompute, and it is held in both directions by the guard.
+    const auto revNow = (juce::uint32) juce::jmax (0, chainHost.getChainRevision());
+    if (echojay::shadowDigestNeedsRecompute (slot, shadowValDigestSlot_, revNow, shadowValDigestRev_,
+                                             have, shadowValDigestCount_))
     {
-        shadowValDigest_     = echojay::shadowSchemaDigest (*proc);
-        shadowValDigestSlot_ = slot;
-        shadowValSaidCost_   = false;
+        const auto wasDigest = shadowValDigest_;
+        shadowValDigest_      = echojay::shadowSchemaDigest (*proc);
+        shadowValDigestSlot_  = slot;
+        shadowValDigestRev_   = revNow;
+        shadowValDigestCount_ = have;
+        shadowValSaidCost_    = false;
+        if (wasDigest != 0u && wasDigest != shadowValDigest_)
+            EchoJay_NSLog (("EJShadow: slot " + juce::String (slot + 1) + "'s parameter list has "
+                            "CHANGED under the tap (digest " + juce::String ((int) wasDigest) + " -> "
+                            + juce::String ((int) shadowValDigest_) + ", " + juce::String (have)
+                            + " parameter(s), rack revision " + juce::String ((int) revNow)
+                            + ") - the values published from here describe the plugin that is in "
+                              "that slot NOW, which is what a replaced plugin needs and what his "
+                              "11:20 fault of 26 Oct did not get").toRawUTF8());
     }
 
     if ((int) shadowValScratch_.size() < n) shadowValScratch_.resize ((size_t) n, 0.0f);
@@ -5249,7 +5265,8 @@ void LinkProcessor::setShadowSlot (int slot0)
                                   shadowValPath_, /*unlink*/ true);
             shadowValMap_ = nullptr; shadowValFd_ = -1; shadowValPath_.clear();
         }
-        shadowValDigestSlot_ = -1; shadowValSaidTruncated_ = false; shadowValSaidCost_ = false;
+        shadowValDigestSlot_ = -1; shadowValDigestRev_ = 0u; shadowValDigestCount_ = -1;
+                shadowValSaidTruncated_ = false; shadowValSaidCost_ = false;
         EchoJay_NSLog (("EJShadow: STOPPED on this Link - " + juce::String (frames)
                         + " frame(s) were streamed while it ran, and the ring is unlinked. The slot's "
                           "pre-trim now does one atomic load per block and nothing else (stage A; his "
@@ -5336,7 +5353,8 @@ void LinkProcessor::setShadowSlot (int slot0)
                 // treats as no frame at all rather than as a frame of zeros.
                 std::memset (vmap, 0, echojay::kShadowValFileSize);
                 shadowValMap_ = vmap; shadowValFd_ = vfd; shadowValPath_ = vpath;
-                shadowValDigestSlot_ = -1; shadowValSaidTruncated_ = false; shadowValSaidCost_ = false;
+                shadowValDigestSlot_ = -1; shadowValDigestRev_ = 0u; shadowValDigestCount_ = -1;
+                shadowValSaidTruncated_ = false; shadowValSaidCost_ = false;
             }
         }
     }

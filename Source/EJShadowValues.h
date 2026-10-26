@@ -137,6 +137,34 @@ inline juce::uint32 shadowSchemaDigest (const juce::AudioProcessor& p)
     return h;
 }
 
+// ---- WHEN MUST THE PUBLISHER RECOMPUTE ITS DIGEST? (his 11:20 fault, 26 Oct 2026) -----------
+//
+//  *"After I closed and reopened the V2, the CL 1B's own panel showed, but with the bar 'this view
+//   is not following the plugin on the Link' ... Suspect: the follow data for that slot still
+//   describes the AUDelay (same slot, old schema digest)."*  He was right, and the code said so:
+//
+//      // THE DIGEST IS RECOMPUTED WHEN THE SLOT CHANGES, not every tick: ... a plugin's
+//      // parameter list does not change under a running tap without the rack's structure
+//      // changing with it.
+//      if (shadowValDigestSlot_ != slot) { ... }
+//
+//  He deleted the AUDelay and put a CL 1B in the SAME SLOT. The slot index never changed, so the
+//  publisher went on stamping AUDelay's digest on the CL 1B's values (the Link's -906613778
+//  against the copy's 814727135), the V2 refused every frame - correctly, by its own rule that a
+//  value by index on a different parameter list can land on the wrong control - and the shield
+//  stayed up for ever.
+//
+//  THE ASSUMPTION WAS ONE FACT SHORT, and the fact was already in the header being published: the
+//  rack's structure revision. So the key is the triple, and a parameter count that moves on its
+//  own is caught too (a plugin that swaps its own list under a running tap, which no rack change
+//  would announce). Pure, so the guard holds it in both directions without a Link.
+inline bool shadowDigestNeedsRecompute (int slotNow, int slotCached,
+                                        juce::uint32 revNow, juce::uint32 revCached,
+                                        int countNow, int countCached)
+{
+    return slotCached < 0 || slotNow != slotCached || revNow != revCached || countNow != countCached;
+}
+
 // ---- PUBLISH AND READ, SEQLOCKED EXACTLY AS THE METER FRAME IS -------------------------------
 
 inline void publishShadowValues (void* map, const ShadowValueHeader& h,

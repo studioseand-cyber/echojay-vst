@@ -383,6 +383,66 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-linkreplace1-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lrp1", "name": "do", "approval": "free",
+            "summary": "replace slot 1's plugin",
+            "args": { "op": "replace", "slot": 1, "name": "AUMultibandCompressor" } },
+          { "event": "await", "ids": ["tc_lrp1"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Replaced slot 1." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkreplace2-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lrp2", "name": "do", "approval": "free",
+            "summary": "replace slot 2's plugin",
+            "args": { "op": "replace", "slot": 2, "name": "AUMultibandCompressor" } },
+          { "event": "await", "ids": ["tc_lrp2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Replaced slot 2." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkreplace3-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lrp3", "name": "do", "approval": "free",
+            "summary": "replace slot 3's plugin",
+            "args": { "op": "replace", "slot": 3, "name": "AUMultibandCompressor" } },
+          { "event": "await", "ids": ["tc_lrp3"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Replaced slot 3." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkreplace4-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lrp4", "name": "do", "approval": "free",
+            "summary": "replace slot 4's plugin",
+            "args": { "op": "replace", "slot": 4, "name": "AUMultibandCompressor" } },
+          { "event": "await", "ids": ["tc_lrp4"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Replaced slot 4." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkreplace5-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lrp5", "name": "do", "approval": "free",
+            "summary": "replace slot 5's plugin",
+            "args": { "op": "replace", "slot": 5, "name": "AUMultibandCompressor" } },
+          { "event": "await", "ids": ["tc_lrp5"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Replaced slot 5." } ]
+      ]
+    },
+    {
       "goalContains": "rig-eqband-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

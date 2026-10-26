@@ -46,6 +46,21 @@ Steps 3–7 of Test 1, on the CL 1B slot card.
    the plugin's names match its panel — the question `docs/VAC_ATTACK_TWO_KNOB_TEST.md` was written
    for. **Nothing about the map has been changed**, by your ruling.
 
+## Test 4 — replacing a plugin in a slot (his 11:20 faults, build A3C54E19)
+
+1. On a Link's rack, put **AUDelay** on a slot and click its card: the live view opens on it.
+2. **Delete it** from that Link's rack and **add another plugin in its place** (the CL 1B, or anything).
+3. **Click the new plugin's card.**
+   * **Expect:** the panel is the NEW plugin's. Before this build the deleted plugin's own panel was
+     adopted into the new one's container - Apple Delay's sliders under a Tube-Tech CL 1B's title.
+   * The log now names what it put there: `NativeClip2: putting <class> (this editor's OWN view) ...`.
+     If it ever says **ADOPTED ON A GUESS**, that road is a VST3 editor's and worth telling me about.
+4. **Then turn one of its knobs.**
+   * **Expect:** it moves, and the sound follows. No bar saying "this view is not following the plugin
+     on the Link".
+   * In the log, when a slot's plugin is replaced under a live view, the Link now says so:
+     `EJShadow: slot N's parameter list has CHANGED under the tap (digest X -> Y ...)`.
+
 ## And the one thing I would like you to say either way
 
 **Does the live view feel like using the plugin?** That is fault 4, and the figure behind it is now

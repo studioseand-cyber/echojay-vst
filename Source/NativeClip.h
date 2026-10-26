@@ -11,8 +11,13 @@
 // view proxies (AUv2ContainerView) may wait for the HOST to impose a size —
 // when the found view is still degenerate and a sane desired size is given,
 // it is imposed (logged before/after). 0/0 disables imposition.
+// expectedGuestView: the NSView that JUCE gave THIS editor, when we can identify it (an AU's
+// editor holds it in a juce::NSViewComponent). Non-null means the adopt is a fact rather than a
+// guess: that view and no other is put in the container, and no other view is adopted from the
+// peer. Null (a VST3's editor attaches no NSViewComponent) falls back to the newest-stray search,
+// which is what showed Apple Delay's panel under a Tube-Tech CL 1B's title on 26 Oct 2026.
 extern "C" bool NativeClip2_attach(void* peerHandle, int x, int y, int w, int h, bool doLog,
-                                   int desiredW, int desiredH);
+                                   int desiredW, int desiredH, void* expectedGuestView);
 extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH);
 extern "C" bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
                                                  char* desc, int descLen);
@@ -40,7 +45,7 @@ namespace NativeClip
     // it. Call again after any layout change — it only ever re-asserts OUR
     // frame; it never resizes the container to the plugin.
     inline bool attach(juce::Component* comp, juce::Rectangle<int> areaInComp, bool doLog,
-                       int desiredW = 0, int desiredH = 0)
+                       int desiredW = 0, int desiredH = 0, void* expectedGuestView = nullptr)
     {
         if (!comp) return false;
         auto* top = comp->getTopLevelComponent();
@@ -49,7 +54,7 @@ namespace NativeClip
         if (!handle) return false;
         auto r = top->getLocalArea(comp, areaInComp);
         return NativeClip2_attach(handle, r.getX(), r.getY(), r.getWidth(), r.getHeight(), doLog,
-                                  desiredW, desiredH);
+                                  desiredW, desiredH, expectedGuestView);
     }
 
     // The hosted plugin view's ACTUAL native frame size. Degenerate sizes

@@ -2448,6 +2448,33 @@ int main()
                        "SH27g the second is the stated figure, not a feeling", "500 ms honoured");
             }
 
+            // ---- SH28: A PLUGIN REPLACED IN THE SAME SLOT (his 11:20 fault, 26 Oct 2026) -----
+            //
+            // *"the CL 1B's own panel showed, but with the bar 'this view is not following the
+            //  plugin on the Link' ... the follow data for that slot still describes the AUDelay
+            //  (same slot, old schema digest)."*  The publisher's key was the slot INDEX, and the
+            //  KNOWN-BAD is the first leg here: on that key alone, nothing recomputes.
+            {
+                using echojay::shadowDigestNeedsRecompute;
+                check (shadowDigestNeedsRecompute (/*slotNow*/ 1, /*slotCached*/ -1, 7u, 0u, 8, -1),
+                       "SH28 nothing cached yet -> compute it", "first frame");
+                check (shadowDigestNeedsRecompute (/*slotNow*/ 2, /*slotCached*/ 1, 7u, 7u, 8, 8),
+                       "SH28a the tap moved to another slot -> recompute", "slot 1 -> 2");
+                check (shadowDigestNeedsRecompute (1, 1, /*revNow*/ 8u, /*revCached*/ 7u, 8, 8),
+                       "SH28b THE SAME SLOT with a new rack structure -> recompute. This is his "
+                       "fault: a plugin deleted and another put in its place keeps the slot index, "
+                       "and the old key never fired",
+                       "revision 7 -> 8");
+                check (shadowDigestNeedsRecompute (1, 1, 7u, 7u, /*countNow*/ 4, /*countCached*/ 8),
+                       "SH28c ...and a parameter count that moves on its own -> recompute, for a "
+                       "plugin that swaps its own list under a running tap with no rack change",
+                       "8 -> 4 parameters");
+                check (! shadowDigestNeedsRecompute (1, 1, 7u, 7u, 8, 8),
+                       "SH28d and the steady state does NOT walk every parameter name at 30 Hz - "
+                       "which is why the key exists at all",
+                       "nothing moved -> keep the cached digest");
+            }
+
             // ---- SH28: A STEADY TICK CHANGES NOTHING (his overnight item 1b) ----------------
             //
             // *"the wobble: something still re-sets the hosted view's frame or order on the 100 ms

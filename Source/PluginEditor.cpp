@@ -40093,6 +40093,10 @@ void EchoJayEditor::publishRigState()
     //   tickMaxMs      - the longest this editor's 20 Hz tick has taken in the last second, which
     //                    is the message thread's frame time and the whole of his fault 4.
     o->setProperty ("shadowCopyVals", processorRef.shadowCopyValuesLine (16));
+    // AND THE SENTENCE THE CARD IS SHOWING ABOUT FOLLOWING, which is how a row can tell "it is
+    // following" from "it is up and refusing every frame" (his 11:20 fault, where the Link kept
+    // publishing a replaced plugin's digest and the view said so for ever).
+    o->setProperty ("shadowFollowNote", processorRef.shadowFollowNote());
     o->setProperty ("tickMaxMs",      juce::String (tickMaxMs_, 2).getDoubleValue());
     o->setProperty ("tickMeanMs",     juce::String (tickMeanMs_, 2).getDoubleValue());
     o->setProperty ("borrowActive",  processorRef.borrowActive());
