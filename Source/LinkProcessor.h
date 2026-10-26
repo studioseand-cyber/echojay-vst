@@ -16,6 +16,7 @@
 #include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
 #include "EJSlotMeters.h"   // per-slot meters on a Link's cards (25 Oct 2026)
 #include "EJLocalInstances.h"   // real-editor round 1: this Link is findable, and its editors are leased
+#include "EJRingDrainClaim.h"   // one consumer of the value ring, audio thread or timer (26 Oct 2026)
 #include <atomic>
 #include <functional>
 #include <vector>
@@ -1053,6 +1054,24 @@ private:
     /** The editors this Link has made for its own slots, by 1-based slot. The owner's hand: nothing
         else deletes one. */
     std::map<int, std::unique_ptr<juce::AudioProcessorEditor>> lentEditors_;
+    // ---- THE VALUE RING HAS TWO POSSIBLE CONSUMERS AND EXACTLY ONE AT A TIME (26 Oct 2026) ----
+    //
+    // His fault of 16:35: with the transport stopped nothing drained the ring, so a knob moved in a
+    // V2's live view never reached the plugin. The timer drains it when the audio thread is idle -
+    // and his condition on that is the whole of this block: the exclusion is an atomic try-claim,
+    // never a clock. EJRingDrainClaim.h sets out which of the two is correctness and which is
+    // policy.
+    echojay::RingDrainFlag ringDrainClaim_ { 0 };     // 0 = free; whoever wins the CAS drains
+    std::atomic<double>    lastAudioDrainMs_ { 0.0 }; // POLICY only: when the audio thread last drained
+    std::atomic<int>       ringDrainSkipped_ { 0 };   // blocks that found the claim taken (never a wait)
+    int                    timerDrains_ = 0;          // how often this thread has had to do it
+    bool                   saidTimerDrain_ = false;   // the handover is said once, not per tick
+    /** Every frame a drain produced, applied. Called by BOTH consumers, under the claim. */
+    void applyRingFrames (const echojay::cmdring::Drain& d);
+    /** The timer's drain, for when no audio is running. Returns at once if the audio thread holds
+        the claim, or has drained within the idle window. */
+    void drainRingWhileAudioIdle();
+
     /** Put this Link in the process-local directory, or say why it is not there. Called at
         construction and again whenever instanceUid_ changes (a registry collision, a state
         restore) - the directory is keyed on that uid, so it has to follow it. */

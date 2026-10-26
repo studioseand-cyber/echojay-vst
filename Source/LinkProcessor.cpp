@@ -480,6 +480,18 @@ void LinkProcessor::timerCallback()
     // CONTROL (C1) BEFORE THE PUBLISH, so a value that lands on this tick is published on the same
     // one: the V2's mirror is the acknowledgement, and an acknowledgement a tick late is a knob
     // that springs back for 33 ms.
+    // ---- THE RING, WHEN NO AUDIO IS RUNNING (his 16:35 fault, 26 Oct 2026) --------------------
+    //
+    // *"changing settings no longer carries over to the plugin on the Link"* - and the log's answer
+    // was that no Link was processing audio at all: every one of them published the same level
+    // figures for minutes. The ring is drained in processBlock, so with the transport stopped a
+    // knob moved in the V2's live view sat in the ring and nothing applied it.
+    //
+    // So this thread drains it too, under the SAME single-consumer claim the audio thread takes
+    // (his condition: an atomic try-claim, not a time check). The clock below is policy only - keep
+    // out of the audio thread's way while it is servicing the ring, so a move still lands on the
+    // same buffer whenever audio runs.
+    drainRingWhileAudioIdle();
     applyStagedSetParams();
     publishShadowValuesTick();
     // ---- PER-SLOT METERS, on the same tick (his 25 Oct ask) -----------------------------------
@@ -3091,52 +3103,17 @@ void LinkProcessor::releaseResources()
     chainHost.release();
 }
 
-void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+/** EVERY FRAME A DRAIN PRODUCED, APPLIED - ONE BODY FOR BOTH CONSUMERS (26 Oct 2026).
+
+    The audio thread calls this from processBlock; the timer calls it while the audio thread is idle,
+    which is what makes a knob move land with the transport stopped (his fault of 16:35, 26 Oct).
+    Two copies of this switch would be two sets of rules about what a frame does, so there is one.
+
+    Allocation-free and lock-free, as the audio thread requires: atomics for the figures, and a
+    device parameter is STAGED rather than applied, because a plugin call can never be made
+    real-time safe (the 10 Oct ruling, unchanged). The caller holds the drain claim. */
+void LinkProcessor::applyRingFrames (const echojay::cmdring::Drain& d)
 {
-    juce::ScopedNoDenormals noDenormals;
-    audioBlockCounter_.fetch_add(1, std::memory_order_relaxed);   // audio liveness
-
-    // Transport state for the passive key scheduler (§5.1): the rolling flag
-    // gates arming, and a position landing far from where the last block left
-    // off flags a section jump (§5.4 invalidation). One playhead query per
-    // block, relaxed stores — the scheduler reads at 1 Hz.
-    // Host sample position for the ring's position stamp (stage 0 of remote
-    // editing). Captured from the SAME single per-block playhead query the
-    // key scheduler uses; -1 = the host gave no position this block, and no
-    // stamp is published, so absence stays absence (see LinkShm.h).
-    int64_t stampHostPos = -1;
-    if (auto* ph = getPlayHead())
-    {
-        if (auto pos = ph->getPosition())
-        {
-            if (auto ts = pos->getTimeInSamples())
-                stampHostPos = *ts;
-            const bool playingNow = pos->getIsPlaying();
-            if (auto t = pos->getTimeInSeconds())
-            {
-                const double prev = transportTimeS_.load(std::memory_order_relaxed);
-                if (playingNow && transportPlaying_.load(std::memory_order_relaxed)
-                    && std::abs(*t - prev) > kKeyJumpSeconds)
-                    keySectionJump_.store(true, std::memory_order_relaxed);
-                transportTimeS_.store(*t, std::memory_order_relaxed);
-            }
-            transportPlaying_.store(playingNow, std::memory_order_relaxed);
-        }
-    }
-    // Pass-through: silence extra output channels
-    for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
-        buffer.clear(ch, 0, buffer.getNumSamples());
-
-    // ---- THE VALUE RING, DRAINED HERE (stage 3, 10 Oct 2026) --------------------------------------
-    // BEFORE the chain runs, so a value written by the V2 lands on THIS buffer - that is the whole bound the
-    // ring exists for (one buffer: 2.7 ms at 128 samples, 10.7 ms at 512). Draining after the chain, or on a
-    // timer, would put the move a buffer or a timer tick late and the drag would feel broken.
-    // Allocation-free and lock-free: cmdring::drain coalesces into a fixed array and the appliers write only
-    // the atomics the audio path reads. The logging, the revision bump and the undo step are downstream, on
-    // the message thread (ChainHost::drainRingBookkeeping).
-    if (auto* ring = cmdRing_.load (std::memory_order_acquire))
-    {
-        const auto d = echojay::cmdring::drain (ring, (uint32_t) chainHost.getChainRevision());
         for (int i = 0; i < d.count; ++i)
         {
             const auto& f = d.kept[i];
@@ -3183,6 +3160,67 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             ringLastDropped_.fetch_add (d.dropped, std::memory_order_relaxed);
             ringLastOverflow_.store (d.overflow, std::memory_order_relaxed);
         }
+}
+
+void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    audioBlockCounter_.fetch_add(1, std::memory_order_relaxed);   // audio liveness
+
+    // Transport state for the passive key scheduler (§5.1): the rolling flag
+    // gates arming, and a position landing far from where the last block left
+    // off flags a section jump (§5.4 invalidation). One playhead query per
+    // block, relaxed stores — the scheduler reads at 1 Hz.
+    // Host sample position for the ring's position stamp (stage 0 of remote
+    // editing). Captured from the SAME single per-block playhead query the
+    // key scheduler uses; -1 = the host gave no position this block, and no
+    // stamp is published, so absence stays absence (see LinkShm.h).
+    int64_t stampHostPos = -1;
+    if (auto* ph = getPlayHead())
+    {
+        if (auto pos = ph->getPosition())
+        {
+            if (auto ts = pos->getTimeInSamples())
+                stampHostPos = *ts;
+            const bool playingNow = pos->getIsPlaying();
+            if (auto t = pos->getTimeInSeconds())
+            {
+                const double prev = transportTimeS_.load(std::memory_order_relaxed);
+                if (playingNow && transportPlaying_.load(std::memory_order_relaxed)
+                    && std::abs(*t - prev) > kKeyJumpSeconds)
+                    keySectionJump_.store(true, std::memory_order_relaxed);
+                transportTimeS_.store(*t, std::memory_order_relaxed);
+            }
+            transportPlaying_.store(playingNow, std::memory_order_relaxed);
+        }
+    }
+    // Pass-through: silence extra output channels
+    for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+        buffer.clear(ch, 0, buffer.getNumSamples());
+
+    // ---- THE VALUE RING, DRAINED HERE (stage 3, 10 Oct 2026) --------------------------------------
+    // BEFORE the chain runs, so a value written by the V2 lands on THIS buffer - that is the whole bound the
+    // ring exists for (one buffer: 2.7 ms at 128 samples, 10.7 ms at 512). Draining after the chain, or on a
+    // timer, would put the move a buffer or a timer tick late and the drag would feel broken.
+    // Allocation-free and lock-free: cmdring::drain coalesces into a fixed array and the appliers write only
+    // the atomics the audio path reads. The logging, the revision bump and the undo step are downstream, on
+    // the message thread (ChainHost::drainRingBookkeeping).
+    // ---- ONE CONSUMER, DECIDED BY AN ATOMIC AND NEVER BY A CLOCK (26 Oct 2026) ----------------
+    // The timer drains this same ring while the audio thread is idle, so a knob moved with the
+    // transport stopped still reaches the plugin (his 16:35 fault; EJRingDrainClaim.h says why).
+    // His condition, and it is the right one: the exclusion is an ATOMIC TRY-CLAIM, not a time
+    // check. This thread never waits - if the timer holds the claim this block does not drain and
+    // the frames are still there for the next one, which is a value one buffer late at worst.
+    if (auto* ring = cmdRing_.load (std::memory_order_acquire))
+    {
+        echojay::RingDrainClaim claim (ringDrainClaim_);
+        if (claim.held())
+        {
+            lastAudioDrainMs_.store (juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+            applyRingFrames (echojay::cmdring::drain (ring, (uint32_t) chainHost.getChainRevision()));
+        }
+        else
+            ringDrainSkipped_.fetch_add (1, std::memory_order_relaxed);
     }
 
     // Hosted chain runs FIRST so the ring tap (and the track) hears the
@@ -5121,6 +5159,33 @@ void LinkProcessor::setSourceTypeFromUser (const juce::String& wire, const juce:
     EVERY REFUSAL IS COUNTED AND NAMED. A paramId past the plugin's list, a slot with no plugin, a
     ring that lapped: each is logged with what it was. A value that cannot be applied must never
     look like one that was.                                                                      */
+void LinkProcessor::drainRingWhileAudioIdle()
+{
+    auto* ring = cmdRing_.load (std::memory_order_acquire);
+    if (ring == nullptr) return;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (! echojay::timerMayDrain (now, lastAudioDrainMs_.load (std::memory_order_relaxed))) return;
+
+    // The claim, not the clock, is what makes this safe: if the audio thread is inside its own
+    // drain at this instant, this returns at once and the next tick tries again.
+    echojay::RingDrainClaim claim (ringDrainClaim_);
+    if (! claim.held()) return;
+
+    const auto d = echojay::cmdring::drain (ring, (uint32_t) chainHost.getChainRevision());
+    if (d.count == 0 && d.dropped == 0) return;
+    applyRingFrames (d);
+    ++timerDrains_;
+    if (! saidTimerDrain_)
+    {
+        saidTimerDrain_ = true;
+        EchoJay_NSLog ("EJControl: this Link's audio is not running, so the value ring is being "
+                       "drained on the message thread instead - a change made in a V2's live view "
+                       "still reaches the plugin, within a tick rather than within a buffer. The "
+                       "audio thread takes it back the moment the transport rolls, and only ever one "
+                       "of the two drains (an atomic claim, not a clock)");
+    }
+}
+
 void LinkProcessor::applyStagedSetParams()
 {
     const uint32_t r = stagedParamR_.load (std::memory_order_relaxed);

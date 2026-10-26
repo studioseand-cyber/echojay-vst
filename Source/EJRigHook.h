@@ -184,6 +184,18 @@ namespace cmd
     //   { op: "arm_self" }               put the V2's OWN rack in the directory, so its structural
     //                                    doors can be driven exactly (a Link's need an agent turn)
     inline constexpr const char* lease       = "lease";            // { op, uid, n }
+    // ---- A KNOB ON THE LIVE VIEW, THROUGH THE KNOB'S OWN ROAD (26 Oct 2026) ---------------------
+    //
+    // His rule after the 16:35 regression: *"a guard that a live-view knob change reaches the Link
+    // and stays there with the switch off"*, and *"if any row that covers the live view, control or
+    // settings carrying over skips or doesn't run, that is a stop"*.
+    //
+    // A synthetic mouse drag on a hosted AU's own view could not carry that row: nine of them moved
+    // no parameter at all (25 Oct), which is why those rows skip rather than pass. This moves the
+    // COPY'S parameter the way its knob does - beginChangeGesture, setValueNotifyingHost,
+    // endChangeGesture - so the product's own listener, ring and staging carry it from there, with
+    // nothing of the control road bypassed.
+    inline constexpr const char* liveParam   = "live_param";       // { i, v } - the copy's parameter i to v
     // press gains "undo" (fix 4) alongside apply / apply_all / skip_all / skip_line / details / stop.
 }
 

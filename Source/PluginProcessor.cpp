@@ -4687,6 +4687,9 @@ void EchoJayProcessor::shadowFollowTick()
     int count = 0;
     const bool read = echojay::readShadowValues (shadowValMap_, h, shadowValRead_.data(),
                                                  echojay::kShadowValMax, count);
+    // What the LINK is holding, kept whether or not this frame is new or applicable: it is the
+    // answer to "did my change reach the Link and stay there", and no test could read it before.
+    if (read) shadowValLastCount_ = count;
     if (read && h.seq == shadowValSeqSeen_) return;            // no new frame: nothing to do
 
     // ---- AND THIS GOES BEFORE THE MIRROR'S DECISION, NOT AFTER IT (26 Oct 2026, second cut) ---

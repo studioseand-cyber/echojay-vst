@@ -677,6 +677,7 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     int          shadowValFd_  = -1;
     juce::String shadowValPath_;
     std::vector<float> shadowValRead_;     // one frame's values, reused, never allocated on a tick
+    int shadowValLastCount_ = 0;           // how many of them the last frame carried (the rig reads these)
     juce::uint32 shadowValSeqSeen_ = 0;    // the last STABLE seq applied; unchanged = no new frame
     juce::uint32 shadowCopyDigest_ = 0;    // the copy's schema, taken once when the view starts
     juce::String shadowFollowNote_;        // what he reads when the knobs are NOT being followed
@@ -825,6 +826,21 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** The live copy's own parameter values, as the rig's state carries them ("i:v|i:v"), which is
         what its editor draws its knobs from. Empty when no view is up. Message thread. */
     juce::String shadowCopyValuesLine (int maxN) { return shadowView_.copyValuesLine (maxN); }
+    /** THE LINK'S OWN VALUES, as the last FOLLOW frame published them (26 Oct 2026, his new rule).
+        The copy's values alone cannot answer "did my change reach the Link and stay there" - that
+        question is about the OTHER side, and until now no test could read it. Kept as the frame is
+        read; "i:v|i:v", 0 values = no frame has arrived. */
+    juce::String shadowLinkValuesLine (int maxN) const
+    {
+        juce::StringArray bits;
+        for (int i = 0; i < juce::jmin (maxN, shadowValLastCount_); ++i)
+            bits.add (juce::String (i) + ":" + juce::String (shadowValRead_[(size_t) i], 4));
+        return bits.joinIntoString ("|");
+    }
+    int shadowLinkValuesCount() const { return shadowValLastCount_; }
+    /** The copy itself, for the rig's live_param command only: it moves the copy's parameter the way
+        the knob does and lets the product carry it from there. Not used by anything shipped. */
+    juce::AudioProcessor* shadowInstanceForRig() { return shadowView_.instance(); }
     juce::String shadowUid() const { return shadowView_.uid(); }
     int  shadowSlot() const noexcept { return shadowView_.slot(); }
     juce::String shadowPluginName() const { return shadowView_.pluginName(); }

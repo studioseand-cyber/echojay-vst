@@ -39927,6 +39927,52 @@ void EchoJayEditor::serviceRigHook()
                  + " slot(s); the load is asynchronous, so read ownRack for the answer)";
         }
     }
+    else if (c.name == echojay::rig::cmd::liveParam)
+    {
+        // The copy's own parameter, moved as its knob moves it. Everything after this line is the
+        // product's: the control listener hears the gesture, frames the move, writes it to the ring
+        // and the Link applies it. Nothing here touches the Link, the ring or the staging.
+        const int   i = (int) c.args.getProperty ("i", juce::var());
+        const float v = (float) (double) c.args.getProperty ("v", juce::var());
+        // THE LIVE VIEW'S COPY IF THERE IS ONE, OTHERWISE THE OWN RACK'S SLOT (26 Oct 2026). The
+        // own-rack rows need the same road: a plugin hosted here has no live view and no copy, and
+        // a row that cannot move a parameter cannot judge the picture - which under his rule is a
+        // stop, not a skip. `slot` is 1-based and defaults to the first.
+        const int slot1 = c.args.hasProperty ("slot") ? (int) c.args.getProperty ("slot", juce::var()) : 1;
+        auto* copy = processorRef.shadowInstanceForRig();
+        juce::String movedWhat = "the live view's copy";
+        if (copy == nullptr)
+        {
+            copy = processorRef.getChainHost().getSlotProcessor (slot1 - 1);
+            movedWhat = "the own rack's slot " + juce::String (slot1);
+        }
+        if (copy == nullptr)
+        {
+            ok = false;
+            note = "no live view is running and the own rack has no slot " + juce::String (slot1)
+                 + ", so there is nothing to move";
+        }
+        else
+        {
+            const auto& params = copy->getParameters();
+            if (i < 0 || i >= params.size())
+            {
+                ok = false;
+                note = "the copy has " + juce::String (params.size()) + " parameter(s), not " + juce::String (i);
+            }
+            else
+            {
+                auto* prm = params[i];
+                const float was = prm->getValue();
+                prm->beginChangeGesture();
+                prm->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, v));
+                prm->endChangeGesture();
+                note = "moved " + movedWhat + "'s parameter " + juce::String (i) + " (\"" + prm->getName (32)
+                     + "\") from " + juce::String (was, 4) + " to " + juce::String (prm->getValue(), 4)
+                     + " as a gesture, through the knob's own road";
+            }
+        }
+    }
     else if (c.name == echojay::rig::cmd::lease)
     {
         // ---- ROUND 1 OF THE REAL EDITOR, DRIVEN FROM THE V2'S OWN IMAGE (26 Oct 2026) ----------
@@ -40319,6 +40365,12 @@ void EchoJayEditor::publishRigState()
     //   tickMaxMs      - the longest this editor's 20 Hz tick has taken in the last second, which
     //                    is the message thread's frame time and the whole of his fault 4.
     o->setProperty ("shadowCopyVals", processorRef.shadowCopyValuesLine (16));
+    // AND THE LINK'S OWN VALUES BESIDE THEM (26 Oct 2026). His rule after the 16:35 regression: a
+    // row has to be able to say that a change MADE in the live view REACHED the Link and STAYED
+    // there. The copy's values cannot answer that - they are this side's - so the Link's last
+    // published frame travels here too, and LV9 asserts on the pair.
+    o->setProperty ("shadowLinkVals",  processorRef.shadowLinkValuesLine (16));
+    o->setProperty ("shadowLinkValCount", processorRef.shadowLinkValuesCount());
     // AND THE SENTENCE THE CARD IS SHOWING ABOUT FOLLOWING, which is how a row can tell "it is
     // following" from "it is up and refusing every frame" (his 11:20 fault, where the Link kept
     // publishing a replaced plugin's digest and the view said so for ever).
@@ -40532,6 +40584,20 @@ void EchoJayEditor::publishRigState()
         auto* rack = new juce::DynamicObject();
         rack->setProperty ("slots", juce::var (slots));
         rack->setProperty ("count", ch.getNumSlots());
+        // ---- THE FIRST SLOT'S OWN PARAMETER VALUES (26 Oct 2026) --------------------------------
+        // The own-rack picture rows ask "the value moved, did the screen follow" - and on this rack
+        // there is no copy, so the values they compare are the hosted plugin's own. Same shape as
+        // shadowCopyVals, so one reader serves both roads.
+        {
+            juce::StringArray vals;
+            if (auto* p0 = ch.getSlotProcessor (0))
+            {
+                const auto& prms = p0->getParameters();
+                for (int k = 0; k < juce::jmin (16, prms.size()); ++k)
+                    vals.add (juce::String (k) + ":" + juce::String (prms[k]->getValue(), 4));
+            }
+            rack->setProperty ("slot1Vals", vals.joinIntoString ("|"));
+        }
         rack->setProperty ("busGainDb", (double) processorRef.getBusGainDb());
         o->setProperty ("ownRack", juce::var (rack));
     }

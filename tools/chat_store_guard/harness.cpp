@@ -40,6 +40,8 @@
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include "EJLocalInstances.h"        // EL: the real editor's directory and lease (round 1, 26 Oct)
 #include "EJRealEditorSwitch.h"      // ES: which live view a Link gets, and why (his condition, 26 Oct)
+#include "EJRingDrainClaim.h"        // RD: one consumer of the value ring (his condition, 26 Oct 17:40)
+#include <thread>                    // RD4: two threads contending for the one claim
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -3845,6 +3847,98 @@ int main()
                "ES6a ...and it goes on and off again, which is the \"switch back and park it\" he "
                "asked for - one act, nothing else to undo",
                "on then off");
+    }
+
+    // =============================================================================================
+    //  RD: ONE CONSUMER OF THE VALUE RING, AUDIO THREAD OR TIMER (his condition, 26 Oct 2026)
+    // =============================================================================================
+    //
+    //  *"'processBlock hasn't drained for 200 ms' is a time check, not exclusion. If the transport
+    //   starts while the timer is draining, you have two consumers on a single-consumer ring. Make
+    //   it a real single-consumer guard (an atomic try-claim: the audio thread never blocks, and if
+    //   the timer holds it, the audio thread skips draining that block)."*
+    //
+    //  He is right, and these legs are written against exactly that: the clock decides who WANTS to
+    //  drain, the claim decides who MAY. RD4 is the one that matters - two threads hammering the
+    //  claim while a counter records how many were inside at once.
+    {
+        using echojay::RingDrainFlag; using echojay::RingDrainClaim; using echojay::timerMayDrain;
+
+        RingDrainFlag flag { 0 };
+        {
+            RingDrainClaim a (flag);
+            check (a.held(), "RD1 a free ring is claimed by whoever asks first", "held");
+            RingDrainClaim b (flag);
+            check (! b.held(),
+                   "RD2 ...and the second asker is REFUSED rather than made to wait - the audio "
+                   "thread never blocks on this, it simply does not drain that block",
+                   "refused");
+        }
+        {
+            RingDrainClaim c (flag);
+            check (c.held(),
+                   "RD3 ...and the claim is released when its holder leaves, so the next pass takes it",
+                   "held again");
+        }
+
+        // ---- RD4: THE HANDOVER UNDER LOAD, which is the condition he set --------------------
+        // Two threads, one claim, a hundred thousand attempts each: a counter is incremented on the
+        // way in and decremented on the way out, and its maximum must never exceed one. Known-bad
+        // is this same leg with the claim removed (a plain bool test-then-set), which fails here.
+        {
+            RingDrainFlag f { 0 };
+            std::atomic<int> inside { 0 };
+            std::atomic<int> worstInside { 0 };
+            std::atomic<int> drains { 0 };
+            std::atomic<bool> go { false };
+            auto hammer = [&] (int n)
+            {
+                while (! go.load()) std::this_thread::yield();
+                for (int i = 0; i < n; ++i)
+                {
+                    RingDrainClaim claim (f);
+                    if (! claim.held()) continue;
+                    const int now = inside.fetch_add (1) + 1;
+                    int worst = worstInside.load();
+                    while (now > worst && ! worstInside.compare_exchange_weak (worst, now)) {}
+                    // a few cycles of "work", so the window is real rather than instantaneous
+                    for (volatile int k = 0; k < 20; ++k) {}
+                    inside.fetch_sub (1);
+                    drains.fetch_add (1);
+                }
+            };
+            std::thread t1 (hammer, 100000), t2 (hammer, 100000);
+            go.store (true);
+            t1.join(); t2.join();
+            check (worstInside.load() == 1 && drains.load() > 0,
+                   "RD4 with two threads contending 200,000 times, NEVER MORE THAN ONE was inside "
+                   "the drain - the single-consumer ring keeps one consumer however the transport "
+                   "starts and stops (his condition, and the leg that proves it rather than arguing "
+                   "it)",
+                   "most inside at once " + juce::String (worstInside.load()) + ", "
+                   + juce::String (drains.load()) + " drain(s) between them");
+            check (f.load() == 0,
+                   "RD4a ...and the claim is free afterwards: no thread left holding it, which would "
+                   "stop the ring being drained by anyone for the rest of the session",
+                   "free");
+        }
+
+        // ---- THE POLICY, which is allowed to be a clock because nothing's safety rests on it ----
+        check (timerMayDrain (/*now*/ 1000.0, /*lastAudio*/ 0.0),
+               "RD5 a Link that has never processed a block counts as idle - the transport-stopped "
+               "case at its most literal, a session opened and a knob moved before anything played",
+               "the timer may drain");
+        check (! timerMayDrain (1000.0, 950.0),
+               "RD6 while the audio thread is draining (50 ms ago) the timer keeps out of its way, so "
+               "a move still lands on the SAME BUFFER whenever audio is running",
+               "the timer stands off");
+        check (timerMayDrain (1000.0, 700.0),
+               "RD7 ...and once the audio thread has been quiet for the window, the timer takes over",
+               "the timer may drain");
+        check (! timerMayDrain (1000.0, 1200.0),
+               "RD8 a clock that went backwards (a stamp in the future) is treated as BUSY, not idle - "
+               "the safe direction, because the claim is what keeps it correct either way",
+               "the timer stands off");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

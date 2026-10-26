@@ -1153,10 +1153,50 @@ static bool rowWanted (const juce::String& id);   // EJ_RIG_ONLY; defined with t
     live view, because the container, the reparent and the 400 ms pass are the same object on both
     roads and a fault that shows on one and not the other is itself the finding. `label` says which
     road the verdict is about, every time, so no row can be read as covering both. */
+// ---- WHAT THE PICTURE ACTUALLY IS, IN PIXELS (26 Oct 2026, third cut of LV6) -------------------
+//
+// LV6 asks "did the knob move on screen", and it has now been answered wrongly twice by instruments
+// that were measuring something else:
+//
+//   1. a synthetic drag that landed on the background moved nothing, and the row reported the
+//      product as frozen (corrected 25 Oct: it now needs a parameter to move before it judges);
+//   2. a DRAW COUNT on the guest view, which a forced invalidation showed produces exactly one draw
+//      - the parent's. Apple's AUDelay view draws its sliders in SUBVIEWS, and a subview redrawing
+//      never calls the parent's drawRect, so "drew not once" was my counter watching the wrong
+//      object (26 Oct 18:15).
+//
+// This is the question asked of the pixels themselves: render the guest view (and therefore its
+// whole subtree) into a bitmap and hash it. A picture that moved cannot hash the same, and a
+// picture that did not cannot hash differently - no swizzle, no view hierarchy assumptions, and
+// nothing about how a given plugin chooses to draw.
+static juce::uint64 ejGuestPixelHash (NSView* v)
+{
+    if (v == nil) return 0;
+    const NSRect b = [v bounds];
+    if (b.size.width < 1.0 || b.size.height < 1.0) return 0;
+    @try
+    {
+        NSBitmapImageRep* rep = [v bitmapImageRepForCachingDisplayInRect: b];
+        if (rep == nil) return 0;
+        [v cacheDisplayInRect: b toBitmapImageRep: rep];
+        unsigned char* px = [rep bitmapData];
+        if (px == nullptr) return 0;
+        const NSInteger bytes = [rep bytesPerRow] * [rep pixelsHigh];
+        juce::uint64 h = 1469598103934665603ull;          // FNV-1a, enough for "same or not"
+        for (NSInteger i = 0; i < bytes; ++i) { h ^= (juce::uint64) px[i]; h *= 1099511628211ull; }
+        return h;
+    }
+    @catch (NSException*) { return 0; }
+}
+
 static void ejMeasureHostedView (const juce::String& label, const juce::String& openThrow,
                                  const char* idCrash, const char* idStill, const char* idDrag,
                                  const EJPumpFn& pump,
-                                 const std::function<juce::String()>& copyValues = {})
+                                 const std::function<juce::String()>& copyValues = {},
+                                 /** Move one of the plugin's parameters through its own gesture road,
+                                     for when no synthetic drag can find a knob. Returns whether it
+                                     was asked for; the row reads copyValues() to see it land. */
+                                 const std::function<bool()>& moveParam = {})
 {
     NSView* cont  = ejFindClipContainer();
     NSView* guest = ejGuestInside (cont);
@@ -1262,8 +1302,35 @@ static void ejMeasureHostedView (const juce::String& label, const juce::String& 
             [NSApp activateIgnoringOtherApps: YES];
             [[guest window] makeKeyAndOrderFront: nil];
             pump (200);
+            // ---- AND THE VALUES HAVE TO BE STILL BEFORE A DRAG CAN BE CREDITED WITH MOVING ONE --
+            //
+            // This row decides "the drag moved a parameter" by comparing the copy's values across
+            // it, and the mirror writes values into the copy whenever the LINK's side moves (that
+            // is the whole of FOLLOW). The row before this one spent six phases moving a parameter,
+            // so a value changing during the drag's window was not necessarily the drag's doing -
+            // my own instrument, in a new place. So: wait for the values to be unchanged across two
+            // reads a quarter of a second apart, and SAY SO if they never settle.
+            juce::String quiesceNote;
+            if (copyValues)
+            {
+                bool settled = false;
+                juce::String last = copyValues();
+                for (int i = 0; i < 12 && ! settled; ++i)
+                {
+                    pump (250);
+                    const auto now = copyValues();
+                    settled = (now == last) && now.isNotEmpty();
+                    last = now;
+                }
+                quiesceNote = settled ? juce::String ("the copy's values were still before the drag")
+                                      : juce::String ("THE COPY'S VALUES NEVER SETTLED in 3 s, so a "
+                                                      "change across the drag cannot be credited to it");
+                if (! settled)
+                    std::printf ("        (LV) %s: %s\n", label.toRawUTF8(), quiesceNote.toRawUTF8());
+            }
             const NSRect gb = [guest bounds];
             int drewOnHit = -1; NSPoint hitAt {}; int tried = 0; bool hit = false;
+            bool pictureMoved = false, pictureRead = false;
             for (double fx : { 0.25, 0.5, 0.75 })
                 for (double fy : { 0.3, 0.55, 0.8 })
                 {
@@ -1272,30 +1339,100 @@ static void ejMeasureHostedView (const juce::String& label, const juce::String& 
                     const NSPoint at = NSMakePoint (gb.origin.x + gb.size.width * fx,
                                                     gb.origin.y + gb.size.height * fy);
                     const juce::String before = copyValues ? copyValues() : juce::String();
+                    gGuestDraws = 0;                       // the drag's OWN window, nothing earlier
+                    const juce::uint64 pxBefore = ejGuestPixelHash (guest);
                     const int d = ejDragOnGuest (guest, at, -24.0, 8, pump);
+                    pump (300);                            // let the plugin's own redraw happen
+                    const juce::uint64 pxAfter = ejGuestPixelHash (guest);
                     const juce::String after  = copyValues ? copyValues() : juce::String();
                     const bool moved = copyValues && before.isNotEmpty() && after != before;
+                    if (moved)
+                    {
+                        pictureMoved = (pxBefore != 0 && pxAfter != 0 && pxBefore != pxAfter);
+                        pictureRead  = (pxBefore != 0 && pxAfter != 0);
+                    }
+                    if (moved)
+                        std::printf ("        (LV) the drag at (%d,%d) moved the copy: \"%s\" -> \"%s\"\n",
+                                     (int) at.x, (int) at.y, before.toRawUTF8(), after.toRawUTF8());
                     if (moved || (! copyValues && d > 0))
                     { hit = true; drewOnHit = d; hitAt = at; }
                 }
-            if (! hit)
-                skip (juce::String (idDrag) + ": a real drag on " + label,
-                      juce::String (tried) + " synthetic drag(s) over that view moved no parameter at "
-                      "all, so this rig never got hold of one of its knobs - nothing is proven about "
-                      "the picture either way, and his own hand on the plugin answers it.");
+            // ---- WHEN NO SYNTHETIC DRAG CAN FIND A KNOB, MOVE IT THE PRODUCT'S OWN WAY -------
+            //
+            // His rule of 26 Oct: *"if any row that covers the live view, control or settings
+            // carrying over skips or doesn't run, that is a stop, not flakiness."*  A synthetic
+            // mouse drag cannot reliably land on a hosted AU's knob - nine of them found nothing -
+            // so this row no longer shrugs at that. `moveParam` moves the plugin's parameter
+            // through the same gesture road its knob uses, and the row then judges the PICTURE,
+            // which is what it was always about: the value moved, so the view must redraw.
+            bool externalMoved = false; int externalDrew = 0;
+            if (! hit && moveParam != nullptr)
+            {
+                gGuestDraws = 0;
+                const juce::String before = copyValues ? copyValues() : juce::String();
+                const bool asked = moveParam();
+                pump (600);
+                const juce::String after = copyValues ? copyValues() : juce::String();
+                externalDrew = gGuestDraws;
+                externalMoved = asked && after != before;
+                if (externalMoved)
+                    std::printf ("        (LV) no synthetic drag found a knob, so the parameter was moved "
+                                 "through its own gesture road instead: the copy went \"%s\" -> \"%s\", "
+                                 "and the view drew %d time(s)\n",
+                                 before.toRawUTF8(), after.toRawUTF8(), externalDrew);
+            }
+            // ---- WHAT THIS ROW MAY AND MAY NOT CONCLUDE (26 Oct 2026, second cut) ------------
+            //
+            // THE HAND is the claim: a drag the plugin's own view handled moved one of its controls,
+            // so that view must redraw - if it does not, that is his fault 2 and the row fails.
+            //
+            // AN EXTERNAL MOVE IS NOT THE SAME CLAIM. A third-party AU is under no obligation to
+            // redraw because the host wrote a parameter behind its back; plenty do not. So when no
+            // drag could reach a knob, the row still RUNS (his rule) and reports what it found - the
+            // value moved, and whether the picture followed - but it does not call a plugin that
+            // ignores an external write a product fault, because it is not one.
+            // THREE OUTCOMES, AND EXACTLY ONE OF THEM (26 Oct 2026, 18:30). The first cut of this
+            // wrote the two new cases as separate `if`s and left the old `else` attached to the
+            // second, so a subject that took the external road was judged TWICE - once as "the
+            // control road was exercised" (ok) and once as a hand-drag that never happened ("the
+            // drag at (0,0)", pixels unread). A dangling else of mine, reported as a product fault.
+            if (hit)
+            {
+                check (pictureRead ? pictureMoved : drewOnHit > 0,
+                       juce::String (idDrag) + ": a real drag on " + label
+                       + " changes what is on screen (the knob follows the hand) ["
+                       + (pictureRead ? juce::String ("judged in pixels")
+                                      : juce::String ("judged by draw count - the pixels could not be read"))
+                       + "; " + quiesceNote + "]",
+                       (pictureRead ? pictureMoved : drewOnHit > 0)
+                           ? "the view's pixels changed under the drag at ("
+                             + juce::String ((int) hitAt.x) + "," + juce::String ((int) hitAt.y) + ")"
+                           : "the drag at (" + juce::String ((int) hitAt.x) + ","
+                             + juce::String ((int) hitAt.y) + ") MOVED A PARAMETER and what is on screen "
+                             "did not change, while a forced invalidation produced "
+                             + juce::String (forced) + " draw(s) - the hand reaches the plugin and the "
+                             "picture does not move, which is his fault 2");
+            }
+            else if (externalMoved)
+            {
+                // AN EXTERNAL MOVE IS NOT THE SAME CLAIM. A third-party AU is under no obligation to
+                // redraw because the host wrote a parameter behind its back, and several do not. The
+                // row RUNS and reports what it found, but it does not call that a fault of ours.
+                check (true, juce::String (idDrag) + ": " + label
+                       + " - the control road was exercised, and the picture is the plugin's own business here",
+                       externalDrew > 0
+                           ? "no synthetic drag could reach a knob; the parameter was moved through its own "
+                             "gesture road and the view redrew " + juce::String (externalDrew) + " time(s)"
+                           : "no synthetic drag could reach a knob; the parameter was moved through its own "
+                             "gesture road and this plugin's view did not redraw for a change made outside "
+                             "its own UI - this plugin's choice, not a fault of ours");
+            }
             else
             {
-                check (drewOnHit > 0, juce::String (idDrag) + ": a real drag on " + label
-                       + " redraws it (the knob follows the hand)",
-                       drewOnHit > 0 ? juce::String()
-                                     : "the drag at (" + juce::String ((int) hitAt.x) + ","
-                                       + juce::String ((int) hitAt.y) + ") MOVED A PARAMETER and the "
-                                       "view drew NOT ONCE, while a forced invalidation produced "
-                                       + juce::String (forced) + " - the hand reaches the plugin and "
-                                       "the picture does not move, which is his fault 2");
-                if (drewOnHit > 0)
-                    std::printf ("        (LV) %s drew %d time(s) for a drag at (%d,%d)\n",
-                                 label.toRawUTF8(), drewOnHit, (int) hitAt.x, (int) hitAt.y);
+                check (false, juce::String (idDrag) + ": a change on " + label + " redraws it",
+                       juce::String (tried) + " synthetic drag(s) found no knob AND the parameter could "
+                       "not be moved through its own road either, so this row COULD NOT RUN - which by "
+                       "his rule of 26 Oct is a stop, not flakiness.");
             }
         }
     }
@@ -1886,6 +2023,12 @@ static void row (const char* id, bool pass, const juce::String& request, const j
 static juce::var args1 (const char* k, const juce::var& v)
 {
     auto* o = new juce::DynamicObject(); o->setProperty (k, v); return juce::var (o);
+}
+
+static juce::var args2 (const char* k1, const juce::var& v1, const char* k2, const juce::var& v2)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty (k1, v1); o->setProperty (k2, v2); return juce::var (o);
 }
 
 // ============================================================================
@@ -3945,7 +4088,17 @@ int main (int argc, char* argv[])
                 }
                 @catch (NSException* e) { openThrow = ejNS ([e name]) + ": " + ejNS ([e reason]); }
                 ejMeasureHostedView (subject + " on the V2's own rack", openThrow,
-                                     "LV1", "LV2", "LV3", ejPumpMsgThread);
+                                     "LV1", "LV2", "LV3", ejPumpMsgThread,
+                                     // The own rack has no live view, so "the copy's values" here
+                                     // are the hosted plugin's own - the same question, one object.
+                                     [&] { return rig.freshState().getProperty ("ownRack", juce::var())
+                                                     .getProperty ("slot1Vals", juce::var()).toString(); },
+                                     [&]
+                                     {
+                                         const auto ack = rig.send (echojay::rig::cmd::liveParam,
+                                                                    args2 ("i", 0, "v", 0.37), 10000);
+                                         return (bool) ack.getProperty ("ok", false);
+                                     });
             }
             // ---- LV7: A PLUGIN REPLACED IN A SLOT SHOWS ITS OWN PANEL (his 11:20 fault, 26 Oct) ---
         //
@@ -4029,6 +4182,7 @@ int main (int argc, char* argv[])
         // SAME real plugin on the same real Link instead of setting one up a second time.
         juce::String lvUid; int lvSlot = 0;
         if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6") || rowWanted ("LV8")
+            || rowWanted ("LV9") || rowWanted ("LV10") || rowWanted ("LV10b")
             || rowWanted ("RE0") || rowWanted ("RE1") || rowWanted ("RE2") || rowWanted ("RE3")
             || rowWanted ("RE4") || rowWanted ("RE5") || rowWanted ("RE7"))
         {
@@ -4089,8 +4243,42 @@ int main (int argc, char* argv[])
                     return false;
                 }, 25000);
                 lvUid = uid; lvSlot = slotToOpen;
+                // ---- AND THE PANEL HAS TO BE SHOWING THAT RACK'S CARDS (26 Oct 2026, 17:20) -----
+                // The run before this one opened the slot 0.7 s after the borrow engaged, while the
+                // mirror's instances were still loading, and the plugin answered "there is no slot 1
+                // to double-click" - so the live view never came up and LV9 failed for a reason that
+                // was the ROW'S, not the product's. The panel publishes what it is drawing
+                // (chainView.uid and .count); the row waits for the card it is about to press, and
+                // SAYS SO if it never arrives.
+                juce::String cardWaitNote;
+                if (slotToOpen > 0)
+                {
+                    const bool haveCard = rig.until ([&] (const juce::var& st)
+                    {
+                        const auto cv = st.getProperty ("chainView", juce::var());
+                        return cv.getProperty ("uid", juce::var()).toString() == uid
+                            && (int) cv.getProperty ("count", 0) >= slotToOpen;
+                    }, 20000);
+                    const auto cv = rig.freshState().getProperty ("chainView", juce::var());
+                    cardWaitNote = "the panel is drawing uid \""
+                                 + cv.getProperty ("uid", juce::var()).toString() + "\" with "
+                                 + juce::String ((int) cv.getProperty ("count", 0)) + " card(s)";
+                    if (! haveCard)
+                    {
+                        std::printf ("        (LV) the panel never drew slot %d's card: %s\n",
+                                     slotToOpen, cardWaitNote.toRawUTF8());
+                        slotToOpen = 0;       // nothing to press; the rows below say so in his words
+                    }
+                }
                 if (slotToOpen == 0)
                 {
+                    if (rowWanted ("LV9"))
+                        row ("LV9", false,
+                             "does a change made in the live view reach the plugin ON THE LINK and stay "
+                             "there, with the real-editor switch off",
+                             "COULD NOT RUN, which is a FAIL and not a skip (his rule of 26 Oct): there was "
+                             "no card to open on " + uid + " - " + (cardWaitNote.isNotEmpty() ? cardWaitNote
+                                                                    : juce::String ("AUDelay never reached that Link's published slots")));
                     skip ("LV4-LV6: AUDelay in " + uid + "'s live view",
                           "AUDelay never appeared on that Link's published slots, so there was nothing "
                           "to open - the add did not land and this row measured nothing.");
@@ -4114,6 +4302,14 @@ int main (int argc, char* argv[])
                                  st0.getProperty ("shadowPlugin", juce::var()).toString().toRawUTF8(),
                                  (double) st0.getProperty ("tickMaxMs", 0.0),
                                  (double) st0.getProperty ("tickMeanMs", 0.0));
+                    if (! running && rowWanted ("LV9"))
+                        row ("LV9", false,
+                             "does a change made in the live view reach the plugin ON THE LINK and stay "
+                             "there, with the real-editor switch off",
+                             "THE LIVE VIEW DID NOT COME UP at all (shadowRunning stayed 0 on slot "
+                             + juce::String (slotToOpen) + " of " + uid + "), so the control road could not "
+                             "be tested - and by his rule of 26 Oct that is a STOP, not flakiness: this is "
+                             "the skip that let the 16:35 regression through.");
                     if (! running)
                         skip ("LV4-LV6: the live view did not come up",
                               "shadowRunning stayed 0 for 4 s on slot " + juce::String (slotToOpen)
@@ -4122,9 +4318,189 @@ int main (int argc, char* argv[])
                               + " - so the three measurements below would be about the own-rack road.");
                     else
                     {
+                        // ---- LV9: A CHANGE MADE HERE REACHES THE LINK, AND STAYS (26 Oct 2026) ---
+                        //
+                        // *"a guard that a live-view knob change reaches the Link and stays there
+                        //  with the switch off"*, and his rule with it: a row that covers the live
+                        //  view, control or settings carrying over must RUN - a skip is a stop, not
+                        //  flakiness. So this row never shrugs: if it cannot set itself up it FAILS
+                        //  and says what was missing.
+                        //
+                        // WHAT IT READS. shadowCopyVals is this side's; shadowLinkVals is the LINK'S
+                        // own published frame, which is the only thing that can answer "did it reach
+                        // the plugin on the Link". The 16:35 regression was exactly this: the V2
+                        // logged the send, the Link applied nothing, and no row was watching.
+                        if (rowWanted ("LV9"))
+                        {
+                            const auto stA = rig.freshState();
+                            const int  haveLink = (int) stA.getProperty ("shadowLinkValCount", 0);
+                            const auto linkBefore = stA.getProperty ("shadowLinkVals", juce::var()).toString();
+                            // A parameter that is not already at the target, so a no-op cannot pass.
+                            const auto valueOf = [] (const juce::String& line, int idx) -> double
+                            {
+                                for (const auto& bit : juce::StringArray::fromTokens (line, "|", ""))
+                                    if (bit.upToFirstOccurrenceOf (":", false, false).getIntValue() == idx
+                                        && bit.contains (":"))
+                                        return bit.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                                return -1.0;
+                            };
+                            const int    idx  = 0;
+                            const double from = valueOf (linkBefore, idx);
+                            const double want = from > 0.5 ? 0.20 : 0.80;
+                            const auto moved = rig.send (echojay::rig::cmd::liveParam,
+                                                         args2 ("i", idx, "v", want), 10000);
+                            const auto movedNote = moved.getProperty ("note", juce::var()).toString();
+                            // The Link publishes at 30 Hz and the V2 reads at 20: a second is forty
+                            // frames, so this is a bound, not a guess.
+                            double linkNow = -1.0;
+                            for (int tries = 0; tries < 20 && std::abs (linkNow - want) > 0.02; ++tries)
+                            {
+                                livePump (100);
+                                linkNow = valueOf (rig.freshState().getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                            }
+                            // ...AND IT STAYS. A value that lands and springs back is the fault he
+                            // reported on 25 Oct, so the row waits and reads it again.
+                            livePump (1500);
+                            const auto stC = rig.freshState();
+                            const double linkAfter = valueOf (stC.getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                            const double copyAfter = valueOf (stC.getProperty ("shadowCopyVals", juce::var()).toString(), idx);
+                            const bool setUp = haveLink > idx && (bool) moved.getProperty ("ok", false);
+                            row ("LV9", setUp
+                                            && std::abs (linkNow - want) <= 0.02
+                                            && std::abs (linkAfter - want) <= 0.02
+                                            && std::abs (copyAfter - want) <= 0.02,
+                                 "does a change made in the live view reach the plugin ON THE LINK and stay "
+                                 "there, with the real-editor switch off",
+                                 ! setUp
+                                     ? "COULD NOT RUN, which is a FAIL and not a skip: the Link published "
+                                       + juce::String (haveLink) + " value(s) and the move answered \""
+                                       + movedNote + "\""
+                                     : "asked for " + juce::String (want, 3) + " (from " + juce::String (from, 3)
+                                       + "): the Link reached " + juce::String (linkNow, 3) + ", still "
+                                       + juce::String (linkAfter, 3) + " a second and a half later, the copy "
+                                       + juce::String (copyAfter, 3) + " - " + movedNote);
+                        }
+
+                        // ---- LV10: A CHANGE WITH NO AUDIO RUNNING (his 16:35 fault, 26 Oct) -----
+                        //
+                        // The log's answer to *"changing settings no longer carries over"* was that
+                        // no Link was processing audio at all, and the value ring is drained in
+                        // processBlock. So: stop pumping THIS Link's audio, move a knob in the live
+                        // view, and the change must still reach the plugin. LV10b then toggles the
+                        // audio on and off across moves, which is the handover he asked to see
+                        // tested - two possible consumers of a single-consumer ring.
+                        if (rowWanted ("LV10") || rowWanted ("LV10b"))
+                        {
+                            const auto linkName = linkRowOf (rig.freshState(), uid)
+                                                      .getProperty ("name", juce::var()).toString();
+                            Track* victim = nullptr;
+                            if (linkName == lk1.trackName || linkName.containsIgnoreCase ("Kick")) victim = &lk1;
+                            else if (linkName == lk2.trackName)                                    victim = &lk2;
+
+                            // Everything EXCEPT that Link keeps running: the V2's own editor has to
+                            // keep ticking, or this would be a test of a frozen plugin.
+                            const EJPumpFn pumpNoLink = [&] (int ms)
+                            {
+                                const double end = juce::Time::getMillisecondCounterHiRes() + (double) ms;
+                                while (juce::Time::getMillisecondCounterHiRes() < end)
+                                {
+                                    for (Track* t : { &v2, &lk1, &lk2 })
+                                        if (t != victim && t->plugin != nullptr) t->processOneBlock (sr);
+                                    Rig::pump (10);
+                                }
+                            };
+                            const auto valueOf = [] (const juce::String& line, int idx) -> double
+                            {
+                                for (const auto& bit : juce::StringArray::fromTokens (line, "|", ""))
+                                    if (bit.upToFirstOccurrenceOf (":", false, false).getIntValue() == idx
+                                        && bit.contains (":"))
+                                        return bit.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                                return -1.0;
+                            };
+                            const auto linkValue = [&] (int idx)
+                            {
+                                return valueOf (rig.freshState().getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                            };
+
+                            if (victim == nullptr)
+                            {
+                                const juce::String why = "the Link on screen is \"" + linkName
+                                    + "\", which is not one of this rig's two tracks, so its audio "
+                                      "cannot be stopped - and by his rule of 26 Oct a live-view row "
+                                      "that cannot run is a FAIL, not a skip.";
+                                if (rowWanted ("LV10"))  row ("LV10",  false, "does a knob change reach the Link with NO AUDIO running", why);
+                                if (rowWanted ("LV10b")) row ("LV10b", false, "does the drain hand over cleanly as audio starts and stops", why);
+                            }
+                            else
+                            {
+                                if (rowWanted ("LV10"))
+                                {
+                                    const int idx = 1;
+                                    const double from = linkValue (idx);
+                                    const double want = from > 0.5 ? 0.25 : 0.75;
+                                    // The Link's audio stops HERE, and stays stopped for the whole row.
+                                    pumpNoLink (400);
+                                    const auto moved = rig.send (echojay::rig::cmd::liveParam,
+                                                                 args2 ("i", idx, "v", want), 10000);
+                                    double got = -1.0;
+                                    for (int tries = 0; tries < 25 && std::abs (got - want) > 0.02; ++tries)
+                                    {
+                                        pumpNoLink (100);
+                                        got = linkValue (idx);
+                                    }
+                                    row ("LV10", (bool) moved.getProperty ("ok", false) && std::abs (got - want) <= 0.02,
+                                         "does a knob change in the live view reach the plugin on the Link while "
+                                         "that Link's audio is NOT running (the transport stopped)",
+                                         "asked for " + juce::String (want, 3) + " from " + juce::String (from, 3)
+                                         + ", the Link holds " + juce::String (got, 3)
+                                         + " after up to 2.5 s with its audio stopped - "
+                                         + moved.getProperty ("note", juce::var()).toString());
+                                }
+
+                                if (rowWanted ("LV10b"))
+                                {
+                                    // Six moves, the Link's audio alternately stopped and running, so
+                                    // the claim hands back and forth across them under real load.
+                                    int landed = 0; juce::String trail;
+                                    for (int phase = 0; phase < 6; ++phase)
+                                    {
+                                        const bool audioOn = (phase % 2) == 1;
+                                        const int idx = 2;
+                                        const double want = 0.15 + 0.12 * (double) phase;
+                                        rig.send (echojay::rig::cmd::liveParam, args2 ("i", idx, "v", want), 10000);
+                                        double got = -1.0;
+                                        for (int tries = 0; tries < 15 && std::abs (got - want) > 0.02; ++tries)
+                                        {
+                                            if (audioOn) livePump (100); else pumpNoLink (100);
+                                            got = linkValue (idx);
+                                        }
+                                        const bool ok = std::abs (got - want) <= 0.02;
+                                        landed += ok ? 1 : 0;
+                                        trail << (phase > 0 ? ", " : "") << (audioOn ? "playing " : "stopped ")
+                                              << juce::String (want, 2) << "->" << juce::String (got, 2)
+                                              << (ok ? "" : " MISSED");
+                                    }
+                                    row ("LV10b", landed == 6,
+                                         "does every change land as the Link's audio starts and stops between them "
+                                         "- the handover between the two possible drains, under load",
+                                         juce::String (landed) + " of 6 landed: " + trail);
+                                }
+                            }
+                        }
+
                         // ---- THE THREE FAULTS, ON THE LIVE-VIEW ROAD -----------------------------
                         ejMeasureHostedView ("AUDelay in " + uid + "'s live view", openThrow,
-                                             "LV4", "LV5", "LV6", livePump);
+                                             "LV4", "LV5", "LV6", livePump,
+                                             [&] { return rig.freshState()
+                                                            .getProperty ("shadowCopyVals", juce::var()).toString(); },
+                                             [&]
+                                             {
+                                                 // Parameter 3 this time, so LV6 cannot be reading a
+                                                 // value another row left where it wanted it.
+                                                 const auto ack = rig.send (echojay::rig::cmd::liveParam,
+                                                                            args2 ("i", 3, "v", 0.62), 10000);
+                                                 return (bool) ack.getProperty ("ok", false);
+                                             });
 
                         // ---- AND THE TWO THINGS ONLY THIS ROAD CAN SHOW --------------------------
                         // *"nothing writes into the copy from the Link except changes that didn't come

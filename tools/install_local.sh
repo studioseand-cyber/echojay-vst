@@ -132,8 +132,31 @@ install_one() {
     # only the archives the guards link. A binary older than the source it is
     # supposed to contain is never what the caller meant, so it is refused
     # here rather than written to the host's search path.
-    local stale
-    stale="$(find "$ROOT/Source" -type f -newer "$src_bin" -print -quit 2>/dev/null)"
+    # ---- AND A SOURCE THE BUNDLE DOES NOT COMPILE IS NOT STALENESS (26 Oct 2026) -------------
+    # This counted every file under Source/, so a V2-only .cpp refused a Link bundle that was
+    # perfectly current - twice today, and the second time it installed the V2 half of a two-sided
+    # fix and left the Link half behind, which is worse than refusing both. A header still counts
+    # for everything (it can change any object's layout); a .cpp or .mm counts only for the target
+    # that actually compiled it, read off that target's own object list in this build tree. Same
+    # rule harness_build.py has had since 4 Oct, and for the same reason.
+    local objdir="" stale=""
+    case "$label" in
+        Link*) objdir="$BUILD_DIR/CMakeFiles/EchoJayLink.dir/Source" ;;   # BUILD_DIR is absolute by here (line 58)
+        *)     objdir="$BUILD_DIR/CMakeFiles/EchoJay.dir/Source" ;;
+    esac
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        case "$f" in
+            *.cpp|*.mm|*.c)
+                # compiled into THIS target? if there is no object for it, it cannot have changed it
+                if [[ -d "$objdir" ]]; then
+                    [[ -f "$objdir/$(basename "$f").o" ]] || continue
+                else
+                    note "         (no object list at $objdir - every source counts for this bundle)"
+                fi ;;
+        esac
+        stale="$f"; break
+    done < <(find "$ROOT/Source" -type f -newer "$src_bin" 2>/dev/null)
     if [[ -n "$stale" ]]; then
         note "REFUSED: this bundle is older than the source tree"
         note "         bundle: $(date -r "$src_bin" '+%d %b %H:%M')  (from $BUILD_DIR)"
