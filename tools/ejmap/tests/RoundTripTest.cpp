@@ -15084,6 +15084,26 @@ int main (int, char**)
                        "contract WZ-CONTRACT-18: the measurement identity - an honest profile accepted; another run's identity, only its run edited, another result's id and a reused nonce refused as identity, no block as shape ("
                          + whyN.joinIntoString (", ") + ")");
             }
+            // 8f. A VST3 TWIN'S OUTCOME (Kathy, 26 Oct; asked of B): the wizard reads a VST3 against its AU twin and files it "bridged" (its role
+            // controls show the same values) or "bridge_no_match" - both are outcome states the server accepts (the 25 Oct rehearsal: 422 shape)
+            scenario ("13f_vst3_twin_outcomes");
+            {
+                const juce::String runT = "run_" + juce::String::toHexString (0x0000000000000f13LL).paddedLeft ('0', 16);
+                const auto ccT = catalogueCheck (*s4, req1 ({ "ee140001", "ee140002" }), runT);
+                std::map<juce::String, ejmap::wizresults::Identity> idsT; juce::StringArray colT;
+                for (const char* id : { "ee140001", "ee140002" }) { idsT["VST3|" + juce::String (id) + "|1.0"] = { "V", "Twin " + juce::String (id) }; colT.add ("AudioUnit|" + juce::String (id) + "|1.0"); }
+                const auto startT = (juce::Time::getCurrentTime() - juce::RelativeTime::minutes (20)).toISO8601 (true);
+                const RunInfo riT { runT, startT, 2, colT, startT };
+                const auto docsT = ejmap::wizresults::fromPack (juce::JSON::parse (R"({"skipped": [
+                    {"product": "Twin ee140001", "plugin_id": "VST3|ee140001|1.0", "state": "bridged", "why": "3 control(s) show the same in both formats"},
+                    {"product": "Twin ee140002", "plugin_id": "VST3|ee140002|1.0", "state": "bridge_no_match", "why": "Threshold at 0.500: the AU shows -20.0, the VST3 -18.0"}]})"),
+                    bundle, runT, true, idsT, {});
+                Outbox boxT { work.getChildFile ("outbox_t") };
+                ejmap::wizresults::emit (docsT, boxT, {}); const auto stT = drain (*s4, boxT, riT);
+                juce::StringArray statesT; for (const auto& d : docsT) statesT.add (d.kind + ":" + d.body.getProperty ("payload", {}).getProperty ("state", "").toString());
+                check (ccT.ok && docsT.size() == 2 && stT.sent == 2 && stT.rejected == 0 && statesT.contains ("outcome:bridged") && statesT.contains ("outcome:bridge_no_match"),
+                       "contract WZ-CONTRACT-19: a VST3 twin's outcomes accepted (" + statesT.joinIntoString (", ") + "; sent " + juce::String (stT.sent) + ", refused " + juce::String (stT.rejected) + ")");
+            }
             // 8e. THE PROMO'S REFUSAL ORDER (ruling 6): account already claimed > setup already claimed > not finished > failed checks > below
             // minimum - each pair where both hold, the higher one wins
             scenario ("13c_promo_refusal_order");

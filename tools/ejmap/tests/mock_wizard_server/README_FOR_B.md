@@ -2,7 +2,12 @@
 
 This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its top lists every change since v1). Everything in it was produced on our side against our own mock; nothing came from a real server.
 
-**What is new since the 24 Oct package (27 Oct: your notes; the contract's changelog, "27 Oct"):**
+**What is new since the 27 Oct package (29 Oct: the staging rehearsal; the contract's changelog, "29 Oct"):**
+- **Two more outcome states: `bridged` and `bridge_no_match`** (a VST3 read against its AU twin; the server decides what it inherits). The mock accepts both; new scenario `13f_vst3_twin_outcomes` sends one of each.
+- **Only a profile carries a measuring span.** A reference vote, a bridge read and an outcome start at their finish (§4 always said so). In `18_real_results`, 2 documents change: a reference vote and an outcome.
+- **No new numbers elsewhere:** 18_real_results still sends 33 results (32 accepted, 2 of them as held drafts; 1 held).
+
+**What was new in the 27 Oct package (your notes; the contract's changelog, "27 Oct"):**
 - **Limiter and de-esser drafts are validated,** as your server does: accepted, 201 `stored: "held_draft"`, counted in `results_accepted`. A limiter draft with no `ceiling` block, or a de-esser draft with no `deesser` block, is 422 `validator`. `ej_readback_sweep/1` stays held.
 - **A REAL limiter ceiling draft:** L2 (m), measured on this Mac (its ceiling holds true peak). `18_real_results` now sends **33** results: 32 accepted (the de-esser and limiter drafts as held drafts), 1 held (the bridge read).
 - **The pitch draft's key** is `pitch_measurement` (was `measurement`, which every measured file's identity block uses).
@@ -73,6 +78,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 13b_offline_before_run | v1.1: the tester was offline from before POST /runs; on reconnect the run is created with the wizard's own `started_at` and **every result is accepted**. Two controls that hold at any replay time: a missing `measured_at` (`shape`) and one ten years ahead (`timestamp`) |
 | 13d_four_at_once | v1.1 (24 Oct): `measure_started_at` - four compressor profiles measured at once, **all accepted**; then a fifth at once, a compressor measured in 30 s, a start after its end (`timestamp` each) and a missing start (`shape`); an outcome whose start is its end, accepted. Every time is relative, so either replay keeps each verdict |
 | 13e_measurement_identity | v1.1 (24 Oct): every measured file of a profile carries `measurement` {run_id, result_id, nonce, measure_started_at, measured_at}. One honest profile, accepted; then another run's identity, only its run edited, another result's id and a reused nonce (`identity`, tampering), and no block (`shape`) |
+| 13f_vst3_twin_outcomes | 29 Oct: a VST3 twin's two outcome states, `bridged` and `bridge_no_match`, each accepted |
 | 13c_promo_refusal_order | v1.1: two refusals at once answer with the first in the agreed order: account > collection > not finished > failed checks > below minimum |
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |
