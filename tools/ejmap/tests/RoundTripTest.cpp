@@ -14389,7 +14389,8 @@ int main (int, char**)
         check (cache > 0 && start > cache && start - cache < 400
                && app.contains ("if (! noRunNow.exchange (true)) logLine (\"upload: \" + juce::String (pendingN.load()) + \" result(s) waiting, but no run id is on record - nothing can be sent\");")
                && ! app.contains ("const auto run = runInfo(); if (run.runId.isEmpty()) return;") && app.contains ("uv.noRun = noRunNow;")
-               && app.contains ("if (said.isNotEmpty()) logLine (\"sending screen: \" + d); }"),   // what the tester sees, in the log (once per change, not per countdown second)
+               && app.contains ("if (said.isNotEmpty()) logLine (\"sending screen: \" + d); }")
+               && app.contains ("dawPaused.isNotEmpty() && std::getenv (\"EJ_WIZARD_AUTO_ANYWAY\") != nullptr) { logLine (\"rehearsal: carry on anyway beside \" + dawPaused); onAnyway(); return; }"),   // rehearsals beside a DAW   // what the tester sees, in the log (once per change, not per countdown second)
                "wizard WZ-30OCT-1: the run id is read from disk at launch before the uploader starts; no run id with results waiting is said, never silent");
     }
     // WZ-30OCT-2 THE SENDING SCREEN SAYS WHY IT WAITS (Kathy, 26 Oct): the server's words and "Trying again in N s" while retrying; offline

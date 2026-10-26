@@ -1203,6 +1203,8 @@ private:
             juce::Timer::callAfterDelay (1500, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr && safe->closeAsk != nullptr) { safe->logLine ("rehearsal: the close question, kept measuring"); safe->closeAsk->exitModalState (0); } });
         }
         // 24 Oct: a pause the BATTERY caused waits for the power (it carries on by itself when plugged in) - a rehearsal sees that, never quits it
+        // 26 Oct: a rehearsal beside an open DAW (Kathy's Logic) presses Carry on anyway under EJ_WIZARD_AUTO_ANYWAY - rehearsals only (--auto)
+        if (screen == Screen::paused && autoTicks == 4 && dawPaused.isNotEmpty() && std::getenv ("EJ_WIZARD_AUTO_ANYWAY") != nullptr) { logLine ("rehearsal: carry on anyway beside " + dawPaused); onAnyway(); return; }
         if (screen == Screen::paused && autoTicks == 8 && ! batteryPaused) { logLine ("rehearsal: quit while paused"); juce::JUCEApplication::getInstance()->quit(); }
         if (screen == Screen::measuring && cfg.autoCloseAfterS > 0.0 && autoTicks * 0.25 >= cfg.autoCloseAfterS)
         { cfg.autoCloseAfterS = 0.0; logLine ("rehearsal: the close button"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); snap ("closing"); }
