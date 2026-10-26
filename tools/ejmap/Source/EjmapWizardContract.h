@@ -165,6 +165,7 @@ inline juce::String plainWords (const Reply& r)
         { "rejected", "A result didn't pass EchoJay's checks, so it wasn't used." } };
     if (const auto it = k.find (r.error); it != k.end()) return it->second;
     if (r.status >= 500) return "Something went wrong on our side. The wizard will try again.";
+    if (r.status == 404 && r.error.isEmpty()) return "EchoJay's server didn't recognise that request yet (404).";   // 26 Oct: a page, no code
     return "Something went wrong talking to EchoJay (" + (r.error.isNotEmpty() ? r.error : juce::String (r.status)) + ").";
 }
 inline juce::String formEncode (std::initializer_list<std::pair<const char*, juce::String>> kv)
@@ -410,6 +411,9 @@ inline Sent classify (const Reply& r)
     if (r.error == "run_not_found") return Sent::runMissing;
     if (r.error == "bad_request" || r.error == "run_id_required") return Sent::refused;
     if (r.error == "not_found" || r.error == "invalid_client" || r.error == "account_blocked" || r.error == "client_too_old" || r.error == "run_conflict") return Sent::stop;
+    // 26 Oct (staging run 1): a 404 with NO code is not the contract's not_found - a route the server has not got yet answers with the
+    // hosting platform's page. It is retried with back-off, never a stop for the session (not_found / run_not_found keep their meaning)
+    if (r.status == 404 && r.error.isEmpty()) return Sent::retryLater;
     if (retryable (r)) return Sent::retryLater;   // rate_limited, server_error, any other 5xx
     return Sent::stop;                            // a code the wizard does not know: never retried this session
 }
@@ -417,7 +421,7 @@ inline Sent classify (const Reply& r)
 inline int backoffSeconds (int failures) { if (failures <= 0) return 0; return (int) juce::jmin<juce::int64> (600, (juce::int64) 5 << juce::jmin (failures - 1, 10)); }
 
 struct DrainStats { int sent = 0, held = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, signIn = false, stopped = false; int retryAfterS = 0;
-                   juce::StringArray rejectedWords, heldWords; juce::String stopCode, stopWords; };
+                   juce::StringArray rejectedWords, heldWords; juce::String stopCode, stopWords, waitWords; };   // waitWords (26 Oct): why it waits, for the screen
 // one pass over the outbox, in order; stops at the first thing that needs time (offline, rate limit, sign-in) - every file stays put
 inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, const std::function<bool()>& stopNow = {})
 {
@@ -448,6 +452,7 @@ inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, cons
                 f.moveFileTo (box.rejected().getChildFile (f.getFileName())); ++st.rejected; st.rejectedWords.add (plainWords (r)); break; }
             if (k == Sent::signIn) { st.signIn = true; return st; }
             if (k == Sent::offline) { st.offline = true; return st; }
+            st.waitWords = r.message.isNotEmpty() ? r.message : plainWords (r);   // 26 Oct: the server's own words, for the screen
             st.retryAfterS = juce::jmax (1, r.retryAfterS); return st;   // rate limited / server trouble: try again later, in order
         }
     }

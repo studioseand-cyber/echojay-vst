@@ -339,6 +339,7 @@ public:
         logLine ("jobs: " + juce::String (cfg.jobs) + " (" + juce::String (performanceCores()) + " performance cores, " + juce::String (availableMemoryBytes() / 1073741824.0, 1) + " GB free)");
         show (wizapp::openOn (w, kMode, wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString()))));   // 15 Oct: a finished scan carries on into measuring
         startTimer (250);
+        if (kNetworked) cacheRun();   // 26 Oct (staging run 1): the run id FROM DISK before the uploader starts - a reopened wizard sent nothing
         if (kNetworked && session != nullptr && (bool) appState().getProperty ("consented", false)) uploader.startThread();   // 21 Oct: what waits in the outbox goes
         shimmer.tick = [this] { if (wizapp::shimmerOn (screen, pausing, finishing)) repaint(); };   // 15 Oct: the wave by the title and the job lines too
         shimmer.startTimerHz (30);   // 15 Oct: the shimmer moves even while one plugin takes 20 minutes
@@ -526,7 +527,8 @@ private:
     juce::File requestFile() const { return cfg.work.getChildFile ("catalogue_request.json"); }
     juce::CriticalSection runLock; juce::String cachedRunId, cachedConsentAt, cachedStartedAt; int cachedQueue = 0;
     std::atomic<int> sentN { 0 }, pendingN { 0 }, rejectedN { 0 }, failures { 0 }; std::atomic<bool> offlineNow { false }, signInNow { false }, completing { false };
-    double nextTryMs = 0.0; juce::String netWords;   // netWords: the last plain words a call left for a screen
+    std::atomic<bool> stoppedNow { false }, noRunNow { false }; juce::CriticalSection wordsLock; juce::String waitWordsNow, lastUploadSaid;   // 26 Oct: the sending screen's reason
+    std::atomic<double> nextTryMs { 0.0 }; juce::String netWords;   // 26 Oct: atomic - the uploader writes it, the screen reads it   // netWords: the last plain words a call left for a screen
     juce::StringArray cachedCollection;   // 21 Oct: the run's plugin collection (contract v1 §3), from the catalogue request
     wizcontract::RunInfo runInfo() { const juce::ScopedLock l (runLock); return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection, cachedStartedAt }; }
     void cacheRun() { const auto st = appState(); const juce::ScopedLock l (runLock); cachedRunId = st.getProperty ("run_id", "").toString(); cachedConsentAt = st.getProperty ("consent_at", "").toString(); cachedStartedAt = st.getProperty ("run_started_at", "").toString();
@@ -540,10 +542,17 @@ private:
         pendingN = box.pendingFiles().size(); sentN = box.count (box.sent()); rejectedN = box.count (box.rejected());
         const double now = juce::Time::getMillisecondCounterHiRes();
         if (pendingN == 0 || now < nextTryMs) return;
-        const auto run = runInfo(); if (run.runId.isEmpty()) return;
+        const auto run = runInfo();
+        if (run.runId.isEmpty())
+        {   // 26 Oct: never wait silently - a result is waiting and there is no run to send it under: said once in the log, and on screen
+            if (! noRunNow.exchange (true)) logLine ("upload: " + juce::String (pendingN.load()) + " result(s) waiting, but no run id is on record - nothing can be sent");
+            return;
+        }
+        noRunNow = false;
         wizcontract::DrainStats st;
         { std::lock_guard<std::mutex> l (netMutex); st = wizcontract::drain (*session, box, run, [this] { return closing.load(); }); }
-        offlineNow = st.offline; signInNow = st.signIn || session->needsSignIn;
+        offlineNow = st.offline; signInNow = st.signIn || session->needsSignIn; stoppedNow = st.stopped;
+        { const juce::ScopedLock l (wordsLock); waitWordsNow = st.stopped ? st.stopWords : st.waitWords; }   // 26 Oct: why it waits, for the screen
         if (st.stopped) { nextTryMs = now + 1.0e12; logLine ("upload stopped (" + st.stopCode + "): " + st.stopWords + " - nothing more is sent until the wizard is opened again"); }   // v1.1: never retried this session
         else if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
         else if (st.signIn) nextTryMs = now + 30000.0;
@@ -774,7 +783,7 @@ private:
                 primary.setButtonText ("Carry on"); primary.setVisible (true); secondary.setButtonText ("Quit"); secondary.setVisible (true);
                 anyway.setVisible (dawPaused.isNotEmpty()); break;   // 17 Oct: Carry on anyway, beside the DAW
             case Screen::upload:
-                title = "Sending your results"; text = "Just the measurements - no audio, no plugin files, nothing personal.";
+                title = "Sending your results"; text = wizapp::kUploadText;
                 if (kNetworked) { setState ("saved", true); nextTryMs = 0.0; }   // 21 Oct: the run is over; its last results go, then its end is reported
                 showBar = true; barValue = 0.0; barLeft = "Sending"; barRight = {}; uploadT0 = juce::Time::getMillisecondCounterHiRes(); break;
             case Screen::reward:
@@ -1138,7 +1147,15 @@ private:
         {   // 21 Oct: the bar is what the server has confirmed; once nothing waits, the run's end is reported and the server answers the promo
             const int sent = sentN, waiting = pendingN; const int total = juce::jmax (1, sent + waiting);
             if (primary.isVisible()) return;   // waiting on the user (Try again)
-            barValue = (double) sent / (double) total; barLeft = wizapp::uploadLine (sent, waiting, rejectedN, offlineNow, signInNow); barRight = {}; repaint(); snapAtQuarters();
+            barValue = (double) sent / (double) total; barLeft = wizapp::uploadLine (sent, waiting, rejectedN, offlineNow, signInNow); barRight = {};
+            {   // 26 Oct (Kathy): the reason and the next try under the title - never "N waiting" with nothing said
+                wizapp::UploadView uv; uv.waiting = waiting; uv.offline = offlineNow; uv.signIn = signInNow; uv.stopped = stoppedNow; uv.noRun = noRunNow;
+                { const juce::ScopedLock l (wordsLock); uv.words = waitWordsNow; }
+                if (! uv.stopped && nextTryMs > 0.0) uv.retryInS = (int) std::ceil (juce::jmax (0.0, nextTryMs - juce::Time::getMillisecondCounterHiRes()) / 1000.0);
+                const auto d = wizapp::uploadDetail (uv); text = d.isNotEmpty() ? d : juce::String (wizapp::kUploadText);
+                if (const auto said = d.upToFirstOccurrenceOf (" Trying again", false, false); said != lastUploadSaid) { lastUploadSaid = said; if (said.isNotEmpty()) logLine ("sending screen: " + d); }   // what the tester sees, in the log
+            }
+            repaint(); snapAtQuarters();
             if (signInNow) { title = "Please sign in again"; text = "Your results are kept on this Mac."; primary.setButtonText ("Sign in with EchoJay"); primary.setVisible (true); showBar = false; screen = Screen::welcome; repaint(); return; }
             if (waiting == 0 && ! completing && juce::Time::getMillisecondCounterHiRes() - uploadT0 > 1500.0 && wizcontract::Outbox { outboxDir() }.pendingFiles().isEmpty()) { barLeft = "Checking it arrived"; reportRunEnd(); }
             return;

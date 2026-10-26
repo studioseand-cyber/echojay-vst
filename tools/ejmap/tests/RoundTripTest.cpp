@@ -14380,6 +14380,46 @@ int main (int, char**)
                && px.contains ("cfg.rereadSettled = true;") && px.contains ("echojay::sweepSetRead (*p, cfg, verified, &refused);") && px.contains ("\\trefused\\t%d\\n"),
                "wizard WZ-29OCT-5b: EJ Map's sweep and the probe's extract both re-read and refuse; the extract says how many it refused");
     }
+    // WZ-30OCT-1 A REOPENED WIZARD SENDS WHAT WAITS (staging run 1, attempt 2: reopened at 15:02:43Z onto "Sending your results" with 10
+    // pending, it made no request at all - the run id lived only in memory). The run id is read from disk at launch BEFORE the uploader
+    // starts; a pending result with no run id is said in the log (and on screen), never waited on silently
+    {
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const int cache = app.indexOf ("if (kNetworked) cacheRun();   // 26 Oct (staging run 1)"), start = app.indexOf ("uploader.startThread();   // 21 Oct: what waits in the outbox goes");
+        check (cache > 0 && start > cache && start - cache < 400
+               && app.contains ("if (! noRunNow.exchange (true)) logLine (\"upload: \" + juce::String (pendingN.load()) + \" result(s) waiting, but no run id is on record - nothing can be sent\");")
+               && ! app.contains ("const auto run = runInfo(); if (run.runId.isEmpty()) return;") && app.contains ("uv.noRun = noRunNow;")
+               && app.contains ("if (said.isNotEmpty()) logLine (\"sending screen: \" + d); }"),   // what the tester sees, in the log (once per change, not per countdown second)
+               "wizard WZ-30OCT-1: the run id is read from disk at launch before the uploader starts; no run id with results waiting is said, never silent");
+    }
+    // WZ-30OCT-2 THE SENDING SCREEN SAYS WHY IT WAITS (Kathy, 26 Oct): the server's words and "Trying again in N s" while retrying; offline
+    // said; stopped -> why, and that the results are kept; nothing to say -> the usual line
+    {
+        using namespace ejmap::wizapp;
+        auto v = [] (int w, bool off, bool sign, bool stop, bool noRun, const char* words, int in) { UploadView u; u.waiting = w; u.offline = off; u.signIn = sign; u.stopped = stop; u.noRun = noRun; u.words = words; u.retryInS = in; return uploadDetail (u); };
+        const auto retry = v (10, false, false, false, false, "EchoJay is busy - the wizard will carry on sending in a moment.", 20);
+        const auto off = v (3, true, false, false, false, "", 40);
+        const auto stop = v (10, false, false, true, false, "This account can't send results. Contact support@echojay.ai.", -1);
+        const auto stopNoWords = v (10, false, false, true, false, "", -1);
+        const auto norun = v (10, false, false, false, true, "", 5);
+        check (retry == "EchoJay is busy - the wizard will carry on sending in a moment. Trying again in 20 s." && off == "You're offline. Trying again in 40 s."
+               && stop.startsWith ("Not sent: This account can't send results.") && stop.endsWith ("Your results are kept on this Mac and will be sent the next time you open the wizard.")
+               && stopNoWords.contains ("EchoJay didn't accept the request.") && norun.startsWith ("Nothing can be sent") && norun.contains ("Your results are kept here")
+               && v (10, false, false, false, false, "x", 0) == "x Trying again now." && v (10, false, false, false, false, "", 30).isEmpty()
+               && v (0, false, false, true, false, "y", -1).isEmpty() && v (5, false, true, false, false, "z", 3).isEmpty() && juce::String (kUploadText).startsWith ("Just the measurements"),
+               "wizard WZ-30OCT-2: the sending screen says why it waits ('" + retry + "' / '" + stop.substring (0, 60) + "...')");
+    }
+    // WZ-30OCT-3 AN UNEXPLAINED 404 IS RETRIED (staging run 1, attempt 1: the results route was not deployed - the platform's own page, no
+    // code - and the wizard stopped for the session). A 404 with no code backs off and tries again; not_found still stops; run_not_found
+    // still creates the run
+    {
+        using namespace ejmap::wizcontract;
+        Reply bare; bare.status = 404; Reply nf; nf.status = 404; nf.error = "not_found"; Reply rnf; rnf.status = 404; rnf.error = "run_not_found";
+        Reply teapot; teapot.status = 418; Reply unknown404; unknown404.status = 404; unknown404.error = "some_new_code";   // a code it does not know still stops
+        check (classify (bare) == Sent::retryLater && classify (nf) == Sent::stop && classify (rnf) == Sent::runMissing && classify (teapot) == Sent::stop && classify (unknown404) == Sent::stop
+               && plainWords (bare) == "EchoJay's server didn't recognise that request yet (404)." && backoffSeconds (1) == 5 && backoffSeconds (3) == 20 && backoffSeconds (20) == 600,
+               "wizard WZ-30OCT-3: a 404 with no code is retried with back-off ('" + plainWords (bare) + "'); not_found stops; run_not_found makes the run");
+    }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
     // cert's writers set is in the mock's list, and the list names nothing else

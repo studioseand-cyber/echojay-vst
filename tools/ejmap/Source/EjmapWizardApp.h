@@ -258,6 +258,21 @@ inline Eligibility eligibilityOf (const juce::var& v)
 // THE CHECK BEFORE MEASURING (Kathy, 21 Oct): "N already known, M to measure"
 inline juce::String knownWords (int known, int toMeasure) { return juce::String (known) + " already known, " + juce::String (toMeasure) + " to measure"; }
 // THE LIVE UPLOAD's line (21 Oct): what was sent, what waits and why - never a token, never a number the server did not confirm
+// THE SENDING SCREEN SAYS WHY IT WAITS (Kathy, 26 Oct, staging run 1: "0 results sent, 10 waiting" for 15 min with no reason). The body
+// text under the title: the server's words and when the next try is, or why sending stopped and that the results are kept; empty when
+// nothing needs saying (the screen keeps its usual line)
+inline constexpr const char* kUploadText = "Just the measurements - no audio, no plugin files, nothing personal.";
+struct UploadView { int waiting = 0; bool offline = false, signIn = false, stopped = false, noRun = false; juce::String words; int retryInS = -1; };
+inline juce::String uploadDetail (const UploadView& v)
+{
+    if (v.waiting <= 0 || v.signIn) return {};
+    if (v.noRun) return "Nothing can be sent: the wizard can't find this run's details on this Mac. Your results are kept here - quit and open the wizard again, and tell EchoJay if this comes back.";
+    if (v.stopped) return "Not sent: " + (v.words.isNotEmpty() ? v.words : juce::String ("EchoJay didn't accept the request.")) + " Your results are kept on this Mac and will be sent the next time you open the wizard.";
+    juce::String s = v.offline ? juce::String ("You're offline.") : v.words.trim();
+    if (s.isEmpty()) return {};
+    if (v.retryInS > 0) s << " Trying again in " << v.retryInS << " s."; else if (v.retryInS == 0) s << " Trying again now.";
+    return s;
+}
 inline juce::String uploadLine (int sent, int waiting, int rejected, bool offline, bool signIn)
 {
     juce::String s = juce::String (sent) + (sent == 1 ? " result sent" : " results sent");
