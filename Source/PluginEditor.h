@@ -5,6 +5,8 @@
 #include <map>
 #include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the Link editor
 #include "EJSlotMeters.h"    // his 25 Oct ask: per-slot IN / OUT / GR, fed from the Link at 30 Hz
+#include "EJLocalInstances.h" // round 2: this window can borrow a Link's own slot editor
+#include "EJRealEditorSwitch.h" // ...behind his switch, which is off until he turns it on
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
@@ -51,9 +53,21 @@ class EchoJayEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
                        private juce::TextEditor::Listener,
                        public juce::FileDragAndDropTarget,
-                       public juce::TooltipClient
+                       public juce::TooltipClient,
+                       /** ROUND 2: this window can BORROW a Link's own slot editor (behind his
+                           switch). As a borrower it must be able to be told to let go - and it
+                           de-registers in its own destructor, so "the holder has gone" cannot
+                           happen. EJLocalInstances.h sets out the rules. */
+                       public echojay::EditorBorrower
 {
 public:
+    // ---- echojay::EditorBorrower -------------------------------------------------------------
+    /** The owner is taking its editor back, now. SYNCHRONOUS by contract: the editor is destroyed
+        as soon as this returns, so the view comes out of this window before anything else happens
+        and nothing is posted. */
+    void editorLeaseRevoked (const juce::String& uid, int slot1Based, const juce::String& why) override;
+    juce::String borrowerDescribe() const override { return "the EchoJay V2's live view"; }
+
     /** THE AGENT CHIP'S THREE STATES (Sean's ruling, 14 Oct 2026). Declared HERE, at the head of the
         class, because a MEMBER of this type (lastAgentMode_) is declared further down and a class member
         can only name a type the class has already declared - the compiler's rule, and the reason the first
@@ -1853,6 +1867,19 @@ private:
     // a switch whose label overstates the restriction is worse than one with no label - it teaches the user a
     // rule they will then see broken.
     juce::ToggleButton agentModeToggle { "Let EchoJay make changes itself (off: EchoJay dials settings you ask for, and asks before adding or removing plugins)" };
+    // ---- THE REAL EDITOR, HIS SWITCH (26 Oct 2026) ------------------------------------------------------
+    // *"Put the real editor behind a switch (default off until I've tested it) ... and if round 2 doesn't
+    //  look and feel at least as good as the copy ... we switch back and park it."*
+    //
+    // OFF is today's behaviour: the live view shows its own copy of the plugin, which is the road that works.
+    // ON shows the Link's OWN plugin editor where the two run in one process, and falls back to the copy -
+    // saying so - where they do not. The label states what ON does and what it needs, because "real editor"
+    // alone says nothing about consequence, and this switch changes what the live view IS.
+    //
+    // The file it writes is the one echojay::realEditorSwitchOn() reads, so there is one authority and no
+    // second copy of the state to disagree with it.
+    juce::ToggleButton realEditorToggle { "Show the real plugin in the live view, not a copy (experimental; "
+                                          "only where the Link runs in this same process)" };
     // ---- ONE LIST, TWO READERS (11 Oct 2026) ------------------------------------------------------------
     // resized() places these and paint() walks past them, and until now each counted them for itself: paint()
     // carried `y += 2 * (fh + 8)` as "the two rows beyond the one label() covered". The agent toggle made four,
@@ -1899,8 +1926,8 @@ private:
     // drain excluded the only case it exists for. Member removed rather than left unread.
 
     int settingsPluginsHeadingY_ = -1;
-    std::array<juce::ToggleButton*, 4> chainSuggestionToggles()
-    { return { &autoDialToggle, &dialWritesToggle, &echoJayOnlyToggle, &agentModeToggle }; }
+    std::array<juce::ToggleButton*, 5> chainSuggestionToggles()
+    { return { &autoDialToggle, &dialWritesToggle, &echoJayOnlyToggle, &agentModeToggle, &realEditorToggle }; }
     /** Re-reads both dial ticks from the API, which owns their exclusivity. Called after either is clicked and
         when the Settings page is shown, so the pair can never be drawn in a state the saved settings do not
         hold. EchoJay-only is deliberately not in here - it is independent of both. */
@@ -3475,6 +3502,106 @@ private:
         struct InlineHolder : juce::Component {};
         InlineHolder inlineHolder;
 
+        // ---- A LENT EDITOR IS SHOWN HERE BUT OWNED ELSEWHERE (round 2, 26 Oct 2026) -----------
+        //
+        // With his switch on and the Link in this process, the pane shows the LINK'S OWN editor of
+        // the real plugin instead of a copy's. The one rule that makes it safe: the owner created it
+        // and the owner destroys it, so this side must never delete what it is showing. Every road
+        // that would have destroyed the inline editor therefore RELEASES it instead and hands the
+        // lease back, and a revoke from the owner detaches it synchronously and deletes nothing.
+        bool         inlineIsLent = false;
+        juce::String lentUid;
+        int          lentSlot1 = 0;
+        unsigned     lentToken = 0;
+        /** Take the Link's own editor for this slot, or return nothing and let the copy road answer.
+            Set by the editor, which owns the switch and the directory lookup. */
+        std::function<juce::AudioProcessorEditor*(int slot0, juce::String& uidOut, int& slot1Out,
+                                                  unsigned& tokenOut, juce::String& whyOut,
+                                                  void*& guestViewOut)> onCreateLentEditor;
+        /** Give it back: the owner destroys it. Never called for an editor we own. */
+        std::function<void(const juce::String& uid, int slot1, unsigned token)> onReturnLentEditor;
+        /** HIDE IT WHERE IT STANDS (his option 3, approved 26 Oct 2026). The editor stays parented
+            in this window, the lease stays ours, and the plugin's view does not move - which is the
+            whole point: every crash this road has produced came from moving that view. */
+        void hideLentEditor()
+        {
+            if (! inlineIsLent || inlineEditor == nullptr) return;
+            NativeClip::setHidden (this, true);
+            inlineHolder.setVisible (false);
+            stopTimer();
+            settled = false; maintPasses = 0;
+            repaint();
+        }
+
+        /** ...and show it again, with no reparenting of anything. */
+        void showLentEditorAgain()
+        {
+            if (! inlineIsLent || inlineEditor == nullptr) return;
+            inlineHolder.setVisible (true);
+            NativeClip::setHidden (this, false);
+            layoutInline();
+            attachNative (false);        // re-asserts OUR frame only; the view is already inside
+            repaint();
+        }
+
+        /** STOP SHOWING IT FOR GOOD, in the one safe order (his list: another slot opened, the
+            window closed, the slot removed, a revoke).
+
+            The order is the whole of it: the editor Component comes off this holder, the LEASE goes
+            back so its OWNER destroys the editor - which takes the plugin's view with it the way
+            AppKit expects - and only then is our empty container removed. Never the other way
+            round, because a view that outlives its editor and hops to a nil window is the crash
+            this road has produced twice. */
+        void returnLentEditorForGood (const juce::String& why)
+        {
+            if (! inlineIsLent) return;
+            if (inlineEditor != nullptr)
+            {
+                if (editorResizeWatch != nullptr) inlineEditor->removeComponentListener (editorResizeWatch.get());
+                inlineHolder.removeChildComponent (inlineEditor.get());
+                (void) inlineEditor.release();                 // its owner deletes it, not us
+            }
+            const auto uid = lentUid; const int s1 = lentSlot1; const unsigned tok = lentToken;
+            inlineIsLent = false; lentUid.clear(); lentSlot1 = 0; lentToken = 0; lentGuestView = nullptr;
+            if (onReturnLentEditor) onReturnLentEditor (uid, s1, tok);   // the owner destroys it here
+            NativeClip::detachEmptyContainer (this);                     // ...and now the container
+            inlineHolder.setVisible (false);
+            inlineSlot = -1; realW = realH = 0; settled = false; maintPasses = 0;
+            shieldOn_ = false; shieldLine_.clear();
+            stopTimer();
+            EchoJay_NSLog (("EJPane: gave slot " + juce::String (s1) + " of " + uid
+                            + " back to its Link because " + why).toRawUTF8());
+            repaint();
+        }
+
+        /** THE OWNER IS TAKING IT BACK, NOW (the lease's revoke). Synchronous by contract: the
+            editor is destroyed as soon as this returns, so the view comes out of our window and
+            every pointer to it goes, and nothing is posted. */
+        void detachLentEditorNow (const juce::String& why)
+        {
+            if (! inlineIsLent || inlineEditor == nullptr) return;
+            if (editorResizeWatch != nullptr) inlineEditor->removeComponentListener (editorResizeWatch.get());
+            inlineHolder.removeChildComponent (inlineEditor.get());
+            (void) inlineEditor.release();          // ITS OWNER DELETES IT - never us
+            // NOT NativeClip::detach HERE. That removes every child from the container first, and
+            // the child is a view whose editor is alive until the owner destroys it one line after
+            // this function returns - the nil-window hop, exactly. So the container is left standing
+            // and swept afterwards, when it is genuinely empty.
+            juce::Component::SafePointer<ChainListPanel> safe (this);
+            juce::MessageManager::callAsync ([safe]
+            {
+                if (safe != nullptr) NativeClip::detachEmptyContainer (safe.getComponent());
+            });
+            inlineIsLent = false; lentUid.clear(); lentSlot1 = 0; lentToken = 0; lentGuestView = nullptr;
+            inlineHolder.setVisible (false);
+            inlineSlot = -1; realW = realH = 0; settled = false; maintPasses = 0;
+            shieldOn_ = false; shieldLine_.clear();
+            stopTimer();
+            statusText = "The plugin's own window took this editor back (" + why + ").";
+            repaint();
+            EchoJay_NSLog (("EJPane: let go of the Link's lent editor because " + why).toRawUTF8());
+        }
+
         // Inline hosted editor — at most ONE alive at any moment
         std::unique_ptr<juce::AudioProcessorEditor> inlineEditor;
         int  inlineSlot  = -1;
@@ -3928,9 +4055,20 @@ private:
             addChildComponent(settingsBox);
         }
 
-        ~ChainListPanel() override { closeAllEditors(); }
+        ~ChainListPanel() override
+        {
+            // FOR GOOD, not hidden: this window is going away, so the Link takes its editor back
+            // while everything here is still alive.
+            if (inlineIsLent) returnLentEditorForGood ("the window closed");
+            closeAllEditors();
+        }
         /** 21t-e: is a hosted editor open INLINE in the rack (an NSView that composites over everything)? */
         bool hasInlineEditor() const { return inlineEditor != nullptr; }
+        /** The processor behind the editor on screen. For a LENT editor that is the Link's own
+            plugin instance, which is what makes round 2 provable: a knob moved here must appear in
+            the Link's own published values, because it IS the Link's plugin. */
+        juce::AudioProcessor* inlineEditorProcessor()
+        { return inlineEditor != nullptr ? inlineEditor->getAudioProcessor() : nullptr; }
         /** TEST-ONLY SEAM (21t-e): open slot i's editor INLINE, skipping the placement decision.
             The built-in EQ is pop-out only BY DESIGN - the placement poll looks for a hosted native view and a
             JUCE component has none - so showInline will never open it inline, and a headless fixture has no
@@ -3956,6 +4094,16 @@ private:
 
         void closeInline()
         {
+            // ---- A LENT EDITOR IS HIDDEN HERE, NOT CLOSED (his option 3, 26 Oct 2026) ---------
+            // This function is reached whenever the view should stop being on screen - a tab
+            // change, the panel going out of view, the open of another editor. For a LENT editor
+            // none of those is "for good": the lease stays ours and the plugin's view stays exactly
+            // where it is. returnLentEditorForGood is what his four events call.
+            if (inlineIsLent)
+            {
+                hideLentEditor();
+                return;
+            }
             stopTimer();
             if (inlineEditor)
             {
@@ -4037,6 +4185,63 @@ private:
             }
             closeAllEditors();
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
+
+            // ---- THE SAME LENT SLOT COMES BACK WITHOUT TOUCHING A THING -----------------------
+            // Hidden, not closed (his option 3), so re-opening the slot we are already holding is a
+            // show, not a create: no lease, no reparent, no call into the plugin at all.
+            if (inlineIsLent && lentSlot1 == i + 1 && inlineEditor != nullptr)
+            {
+                inlineSlot = i;
+                showLentEditorAgain();
+                startTimer (100);
+                EchoJay_NSLog (("EJPane: showing the Link's lent editor for slot " + juce::String (i + 1)
+                                + " again - it never left this window").toRawUTF8());
+                return;
+            }
+            // ANOTHER slot, or another rack: that IS for good, and the lease goes back first.
+            if (inlineIsLent)
+                returnLentEditorForGood ("another slot was opened");
+
+            // ---- THE LINK'S OWN EDITOR FIRST, WHERE HIS SWITCH SAYS SO (round 2, 26 Oct 2026) --
+            //
+            // Asked before anything is created: with the switch on and the Link in this process the
+            // pane shows the REAL plugin's editor, so no copy is started and none of the mirror
+            // exists for this slot. With the switch off, or the Link elsewhere, this answers nothing
+            // and the copy road below runs exactly as it does today - which is the whole of his
+            // condition. The reason is logged either way; a live view that silently changed kind is
+            // the thing he must never have to guess about.
+            if (onCreateLentEditor)
+            {
+                juce::String uid, why; int slot1 = 0; unsigned token = 0; void* lentView = nullptr;
+                juce::AudioProcessorEditor* lent = nullptr;
+                try { lent = onCreateLentEditor (i, uid, slot1, token, why, lentView); } catch (...) { lent = nullptr; }
+                if (lent != nullptr)
+                {
+                    inlineEditor.reset (lent);              // released again on the way out, never deleted
+                    inlineIsLent = true; lentUid = uid; lentSlot1 = slot1; lentToken = token;
+                    lentGuestView = lentView;               // the LENDER's answer, not a cast of ours
+                    inlineSlot = i;
+                    inlineIsBuiltin = false;
+                    statusText = "Showing " + slotInfos[(size_t) i].name + "'s own window, live on the Link.";
+                    inlineHolder.setVisible (true);
+                    inlineHolder.addAndMakeVisible (*inlineEditor);
+                    if (editorResizeWatch == nullptr)
+                        editorResizeWatch = std::make_unique<EditorResizeWatch>(*this);
+                    inlineEditor->addComponentListener (editorResizeWatch.get());
+                    layoutInline();
+                    attachNative (true);
+                    framePolls = 0; settled = false;
+                    startTimer (100);
+                    repaint();
+                    EchoJay_NSLog (("EJPane: showing the LINK'S OWN editor for slot " + juce::String (slot1)
+                                    + " of " + uid + " - the real plugin, no copy (lease token "
+                                    + juce::String ((int) token) + ")").toRawUTF8());
+                    return;
+                }
+                if (why.isNotEmpty())
+                    EchoJay_NSLog (("EJPane: the live view is using its own copy for slot "
+                                    + juce::String (i + 1) + ": " + why).toRawUTF8());
+            }
 
             // ---- EchoJay's own built-in devices --------------------------
             // Our EQ's editor is a plain juce::Component living in THIS
@@ -4182,8 +4387,19 @@ private:
             put the deleted AUDelay's panel under the CL 1B's title. A VST3's editor attaches its
             IPlugView to the peer with no NSViewComponent, so this answers null there and
             NativeClip says in the log that it is falling back to a guess. */
+        /** The view the lender told us about, for an editor that was built in ANOTHER BUNDLE. Set
+            at the open; see EditorLender::lenderGuestViewForSlot for why this cannot be worked out
+            from here (dynamic_cast across the two images is broken by construction). */
+        void* lentGuestView = nullptr;
+
         void* hostedViewOfThisEditor() const
         {
+            // A LENT EDITOR'S VIEW IS THE LENDER'S ANSWER, NOT OURS (26 Oct 2026). The walk below
+            // uses dynamic_cast, which fails silently across these two bundles - each has its own
+            // hidden-visibility type_info for juce::NSViewComponent - and the first run of round 2
+            // put the WRONG view into the container because of it, which Apple's AUDelayCustomView
+            // then asserted on inside drawRect.
+            if (inlineIsLent && lentGuestView != nullptr) return lentGuestView;
             if (inlineEditor == nullptr) return nullptr;
             struct Find
             {

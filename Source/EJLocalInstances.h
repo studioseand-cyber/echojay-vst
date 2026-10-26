@@ -55,6 +55,29 @@ struct EditorLender
     /** Message thread. Destroy the editor this lender made for that slot. Called AFTER the borrower
         has let go, never before. */
     virtual void lenderDestroySlotEditor (int slot1Based) = 0;
+    /** Message thread. Destroy EVERY editor this lender holds, leased or not.
+
+        This exists because a returned lease now KEEPS its editor (see EditorLease::giveBack), so an
+        instance can hold editors nobody is borrowing - and when the instance goes, those have to go
+        with it. An editor that outlives the processor it edits is the ordering two Softube crashes
+        paid for, and "it was not leased at the time" is no kind of exemption. */
+    virtual void lenderDestroyAllSlotEditors() = 0;
+    /** THE PLUGIN'S OWN NSView FOR THAT SLOT'S EDITOR, as an opaque pointer.
+
+        WHY THE BORROWER CANNOT WORK THIS OUT ITSELF (26 Oct 2026, measured). The V2 finds a hosted
+        editor's view by walking the Component tree with dynamic_cast<juce::NSViewComponent*>. Across
+        these two bundles that cast CANNOT WORK: each image carries its own hidden-visibility copy of
+        JUCE's type_info, so a cast in the V2's image against an object built in the Link's fails and
+        libc++abi says so out loud -
+
+          dynamic_cast error 2: One or more of the following type_info's has hidden visibility or is
+          defined in more than one translation unit.
+
+        The V2 then handed the wrong view to its clip container and Apple's AUDelayCustomView
+        asserted inside its own drawRect. So the LENDER answers this, in its own image, where the
+        cast is sound - the same rule round 1 learned about the directory: nothing but plain data
+        crosses the boundary between these two bundles. */
+    virtual void* lenderGuestViewForSlot (int slot1Based) = 0;
     /** For the log and the rig's evidence: "EchoJay Link \"Kick\" (uid 4814a16004)". */
     virtual juce::String lenderDescribe() const = 0;
 };
@@ -313,6 +336,8 @@ public:
         if (ed == nullptr)
         {
             // Nothing to show: give the lease straight back, so a refusal leaves no holder behind.
+            // (No destroy here either, for the reason giveBack sets out: nothing created an editor
+            // in this branch anyway, and an existing one belongs to the instance, not to this ask.)
             clearLease (uid, slot1Based, token);
             out.why = why.isNotEmpty() ? why : juce::String ("that plugin would not open an editor here");
             return out;
@@ -322,8 +347,27 @@ public:
         return out;
     }
 
-    /** The borrower returns it: the editor is destroyed by its owner. `token` must be the one take()
-        gave, so a stale return cannot close somebody else's editor. */
+    /** The borrower returns it: the lease is free again and THE EDITOR IS KEPT.
+
+        IT USED TO DESTROY IT, AND THAT WAS A CRASH (26 Oct 2026, round 2's first real-host run).
+
+          19:19:11.820  EJLease: MADE the real editor for slot 1 of ...
+          19:19:11.974  EJLease: DESTROYED the real editor for slot 1        (a lease returned)
+          19:19:13.237  EJLease: MADE the real editor for slot 1            (shown in the V2)
+          19:19:22.504  a parameter written to that plugin
+          *** '-[NSBox priv_eventListener:event:value:]: unrecognized selector sent to instance'
+              AUEventListener::MessagesAreAvailable()  <-  CAEventReceiver::Impl::timerFired()
+
+        Apple's AU views register an AUEventListener whose target is the view. Destroying the view
+        does not reliably take that registration with it, so the NEXT parameter write on that
+        still-living instance delivers an event to freed memory - an NSBox the first time, a
+        segfault the second. The copy road never met this because every copy is a throwaway
+        instance that is never written to again; a Link's instance lives for the session.
+
+        So one editor per instance, created once, as §2 of the design actually says. It is destroyed
+        only by the teardowns that destroy what it is an editor OF: the slot being removed, the rack
+        changing under it, or the instance going away (revokeSlot / revokeFrom / revokeAll). A
+        hidden editor costs a little memory; the alternative costs the session. */
     static bool giveBack (const juce::String& uid, int slot1Based, unsigned token)
     {
         auto* t = detail::table();
@@ -333,16 +377,24 @@ public:
             detail::Guard g (t);
             auto* r = detail::findRow (t, uid);
             if (r == nullptr) return false;
+            bool found = false;
             for (auto& l : r->leases)
-                if (l.slot1 == slot1Based && l.token == token)
-                {
-                    l = {};
-                    lender = (EditorLender*) r->lender;
-                    break;
-                }
-            if (lender == nullptr) return false;
+                if (l.slot1 == slot1Based && l.token == token) { l = {}; found = true; break; }
+            if (! found) return false;
+            lender = (EditorLender*) r->lender;
         }
-        lender->lenderDestroySlotEditor (slot1Based);
+        // AND THE EDITOR GOES WITH THE LEASE - the design's teardown table, restored after a
+        // detour. The detour was mine and it is worth recording: I made a returned lease KEEP the
+        // editor, because destroying it seemed to leave Apple's AUEventListener pointing at freed
+        // memory. The real cause of that was a different bug entirely - the V2 was identifying the
+        // plugin's NSView with a dynamic_cast that cannot work across these two bundles, so the
+        // container held a view that did not belong to the editor on screen (see
+        // lenderGuestViewForSlot). With that fixed, keeping the editor has no beneficiary and one
+        // cost: the borrower returns the lease only when it has stopped showing it (it HIDES while
+        // it still wants it - his option 3), so a kept editor is one whose view is stranded in the
+        // borrower's window with nobody responsible for it. Destroying it here takes the view with
+        // it in the way AppKit expects: a dealloc of the hierarchy, never a hop to a nil window.
+        if (lender != nullptr) lender->lenderDestroySlotEditor (slot1Based);
         return true;
     }
 
@@ -427,10 +479,22 @@ public:
         return 1;
     }
 
-    /** The instance is going away. Its destructor's first act, with the directory drop. */
+    /** The instance is going away. Its destructor's first act, with the directory drop.
+
+        Every HOLDER is told to let go first (revokeFrom), and then every editor the instance holds
+        is destroyed - including the ones no lease was on, which only exist because a returned lease
+        keeps them. */
     static int revokeAll (const juce::String& uid, const juce::String& why)
     {
-        return revokeFrom (uid, 1, why);
+        const int revoked = revokeFrom (uid, 1, why);
+        EditorLender* lender = nullptr;
+        if (auto* t = detail::table())
+        {
+            detail::Guard g (t);
+            if (auto* r = detail::findRow (t, uid)) lender = (EditorLender*) r->lender;
+        }
+        if (lender != nullptr) lender->lenderDestroyAllSlotEditors();   // outside the lock, as ever
+        return revoked;
     }
 
     /** The borrower's own destructor (rule 6): return anything it still holds, wherever it is. This
@@ -456,9 +520,8 @@ public:
                     }
             }
         }
-        for (const auto& h : hits)
-            if (h.lender != nullptr)
-                h.lender->lenderDestroySlotEditor (h.slot1);
+        // The leases are free; the editors are NOT destroyed (see giveBack). A borrower that died
+        // holding one has let go, and the instance keeps its editor for whoever shows it next.
         return hits.size();
     }
 

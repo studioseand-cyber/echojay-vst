@@ -36,6 +36,7 @@
 // rig that computed its own fp would pass a map the product could never have matched.
 #include "EJPaceCheck.h"
 #include <regex>
+#include <cstring>   // LV11 hashes the output BITS, so memcpy rather than a reinterpret
 #include "viz/EedGrMeter.h"   // E7: the meter's label geometry is a pure function, so a row can hold it   // the standing rule: this rig never loads a licence-bound bundle
 #include "EchoJayParamMaps.h"
 // ---- APPKIT IN AN AU HOST'S TU, THE WAY JUCE ITSELF DOES IT (26 Oct 2026) ------------------
@@ -1169,6 +1170,75 @@ static bool rowWanted (const juce::String& id);   // EJ_RIG_ONLY; defined with t
 // whole subtree) into a bitmap and hash it. A picture that moved cannot hash the same, and a
 // picture that did not cannot hash differently - no swizzle, no view hierarchy assumptions, and
 // nothing about how a given plugin chooses to draw.
+// ---- WHAT THE V2 ITSELF PUTS OUT, AS A NUMBER (his round-2 acceptance, 26 Oct 2026) -----------
+//
+// *"confirm from the code, with a guard: while the V2's view is on a Link's rack, the V2's own chain
+//  keeps processing its own audio unchanged, and the copy of the Link's plugin is never mixed into
+//  the V2's output."*
+//
+// The code says it cannot happen (ShadowView::pump renders into its own buffer and the host buffer
+// is never written from it), but that is a reading of the source. This is the measurement: render a
+// FIXED input through the V2 from a known phase and hash every output sample. Run it with the live
+// view closed and again with it open; the two hashes must be identical, bit for bit. A copy leaking
+// in - at any level, on any channel - cannot leave the hash alone.
+static juce::uint64 ejRenderV2Hash (Track& v2, double sr, int blocks)
+{
+    v2.phase = 0.0;                                   // same input both times, by construction
+    juce::uint64 h = 1469598103934665603ull;
+    for (int b = 0; b < blocks; ++b)
+    {
+        v2.processOneBlock (sr);
+        for (int ch = 0; ch < v2.buf.getNumChannels(); ++ch)
+        {
+            const float* d = v2.buf.getReadPointer (ch);
+            for (int i = 0; i < v2.buf.getNumSamples(); ++i)
+            {
+                // The bits, not the value: a denormal or a sign of zero is a difference too.
+                juce::uint32 bits; std::memcpy (&bits, &d[i], sizeof bits);
+                h ^= (juce::uint64) bits; h *= 1099511628211ull;
+            }
+        }
+    }
+    return h;
+}
+
+/** THE SAME QUESTION, WITH A CONTROL (26 Oct 2026, second cut of LV11/RE11).
+    Bit-equality across two renders assumes the V2's own chain is deterministic from one starting
+    phase, and it is not: its devices carry envelopes and level trackers, so two identical inputs
+    rendered minutes apart differ a little all by themselves. LV11's first cut read that as the copy
+    leaking into the output. So the row measures the NOISE FLOOR as well: render with the view, then
+    twice without it. If the view's presence changes the output no more than two view-free renders
+    differ from each other, the view is not in the audio path - and a copy that WAS mixed in would
+    differ by its own whole signal, which is nowhere near that floor. */
+static double ejRenderMaxDiff (Track& v2, double sr, int blocks, std::vector<float>& into)
+{
+    // ---- A WARM-UP FIRST (26 Oct 2026, his instruction) -------------------------------------
+    // The own rack holds a delay and a reverb by the time this runs, and their TAILS carry from one
+    // render into the next: the first cut of this measured two view-free renders differing by 0.5 on
+    // a 0.25 tone and read it as the copy leaking into the output. A fixed input drives those tails
+    // to a steady state, so the measured window starts from the same place every time.
+    v2.phase = 0.0;
+    for (int w = 0; w < blocks; ++w) v2.processOneBlock (sr);
+    v2.phase = 0.0;
+    std::vector<float> got;
+    got.reserve ((size_t) blocks * (size_t) v2.buf.getNumSamples() * 2);
+    for (int b = 0; b < blocks; ++b)
+    {
+        v2.processOneBlock (sr);
+        for (int ch = 0; ch < v2.buf.getNumChannels(); ++ch)
+        {
+            const float* d = v2.buf.getReadPointer (ch);
+            for (int i = 0; i < v2.buf.getNumSamples(); ++i) got.push_back (d[i]);
+        }
+    }
+    double worst = 0.0;
+    if (! into.empty() && into.size() == got.size())
+        for (size_t i = 0; i < got.size(); ++i)
+            worst = juce::jmax (worst, (double) std::abs (got[i] - into[i]));
+    into.swap (got);
+    return worst;
+}
+
 static juce::uint64 ejGuestPixelHash (NSView* v)
 {
     if (v == nil) return 0;
@@ -1990,6 +2060,16 @@ static void scenSkip (const char* id, const char* title, const juce::String& why
     scorecard says at the top that it was filtered, so no filtered log can be mistaken for one. */
 static juce::StringArray gOnlyRows;
 static bool gRowsFiltered = false;
+
+/** ANY OF THESE (26 Oct 2026). Three times in one day a block's gate listed some of the rows
+    inside it and not others, and the rows left out vanished with no line at all - once printing a
+    GREEN run that had tested nothing. A gate written as a LIST is one that can be checked against
+    the rows below it at a glance, and this is that list's reader. */
+static bool anyRowWanted (const std::initializer_list<const char*>& ids)
+{
+    for (const char* id : ids) if (rowWanted (juce::String (id))) return true;
+    return false;
+}
 
 static bool rowWanted (const juce::String& id)
 {
@@ -4182,9 +4262,14 @@ int main (int argc, char* argv[])
         // SAME real plugin on the same real Link instead of setting one up a second time.
         juce::String lvUid; int lvSlot = 0;
         if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6") || rowWanted ("LV8")
-            || rowWanted ("LV9") || rowWanted ("LV10") || rowWanted ("LV10b")
+            || rowWanted ("LV9") || rowWanted ("LV10") || rowWanted ("LV10b") || rowWanted ("LV11")
             || rowWanted ("RE0") || rowWanted ("RE1") || rowWanted ("RE2") || rowWanted ("RE3")
-            || rowWanted ("RE4") || rowWanted ("RE5") || rowWanted ("RE7"))
+            || rowWanted ("RE4") || rowWanted ("RE5") || rowWanted ("RE7")
+            // THE REAL-EDITOR ROWS NEED THIS SETUP TOO (26 Oct 2026). Left out of this gate, they
+            // asked for a Link that was never set up, found nothing, and the run printed GREEN with
+            // the rows absent - which is the third time a row has vanished from a block's gate in
+            // this file. A row that does not run is a stop, so the gate names every one of them.
+            || anyRowWanted ({ "RE8", "RE9", "RE10", "RE11", "RE12", "RE13", "RE14", "RE15" }))
         {
             leg ("LV: AUDelay in the LIVE VIEW of a Link's rack (the mirror and CONTROL are live)");
             const EJPumpFn livePump = [&] (int ms)
@@ -4379,6 +4464,43 @@ int main (int argc, char* argv[])
                                        + "): the Link reached " + juce::String (linkNow, 3) + ", still "
                                        + juce::String (linkAfter, 3) + " a second and a half later, the copy "
                                        + juce::String (copyAfter, 3) + " - " + movedNote);
+                        }
+
+                        // ---- LV11: THE V2'S OWN OUTPUT IS NOT TOUCHED BY THE LIVE VIEW ----------
+                        //
+                        // His round-2 acceptance: *"the V2's own chain keeps processing its own audio
+                        // unchanged, and the copy of the Link's plugin is never mixed into the V2's
+                        // output."*  Measured, not read off the source: the same fixed input rendered
+                        // through the V2 from the same starting phase, hashed sample by sample, with
+                        // the live view open and with it closed.
+                        if (rowWanted ("LV11"))
+                        {
+                            const int blocks = 40;                       // about 0.4 s at 512/48k
+                            std::vector<float> ref;
+                            (void) ejRenderMaxDiff (v2, sr, blocks, ref);          // with the view up
+                            // STOP THE VIEW - not the tab, which leaves the copy running on the
+                            // processor (the first cut of this row said so itself).
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                            livePump (1200);
+                            const bool stillRunning = (bool) rig.freshState().getProperty ("shadowRunning", false);
+                            const double withVsWithout = ejRenderMaxDiff (v2, sr, blocks, ref);
+                            const double floorNoise    = ejRenderMaxDiff (v2, sr, blocks, ref);
+                            // ...and back, so the rows after this one find the view as they expect it.
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", uid), 8000);
+                            rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
+                            livePump (600);
+                            rig.send (echojay::rig::cmd::openSlot,   args1 ("n", slotToOpen), 10000);
+                            livePump (2500);
+                            row ("LV11", ! stillRunning && withVsWithout <= juce::jmax (floorNoise, 1.0e-6),
+                                 "is the V2's OWN output unaffected by the live view - the copy of the Link's "
+                                 "plugin never mixed into what the V2 puts out",
+                                 ! stillRunning
+                                     ? "the view's presence moved the output by at most "
+                                       + juce::String (withVsWithout, 9) + ", and two view-free renders differ "
+                                       "by " + juce::String (floorNoise, 9) + " all by themselves (the V2's own "
+                                       "devices carry state) - so the view is not in the path"
+                                     : "THE VIEW WAS STILL RUNNING for the second render, so this row measured "
+                                       "nothing");
                         }
 
                         // ---- LV10: A CHANGE WITH NO AUDIO RUNNING (his 16:35 fault, 26 Oct) -----
@@ -4675,8 +4797,8 @@ int main (int argc, char* argv[])
         //  ordering can be driven and stated. These prove the two bundles meet, and that the two teardowns
         //  that have actually crashed this plugin - a slot removed under an open editor, and the instance
         //  destroyed while someone holds one - reach the holder in the right order with real plugins.
-        if (rowWanted ("RE0") || rowWanted ("RE1") || rowWanted ("RE2") || rowWanted ("RE3")
-            || rowWanted ("RE4") || rowWanted ("RE5") || rowWanted ("RE6") || rowWanted ("RE7"))
+        if (anyRowWanted ({ "RE0", "RE1", "RE2", "RE3", "RE4", "RE5", "RE6", "RE7",
+                            "RE8", "RE9", "RE10", "RE11", "RE12", "RE13", "RE14", "RE15" }))
         {
             leg ("RE: the real editor's directory and lease, with two real bundles in one process");
 
@@ -4810,6 +4932,277 @@ int main (int argc, char* argv[])
                              "V2 told to let go - and is that Link gone from the directory",
                              "before: " + before + " | after: " + after + " | " + find);
                     }
+                }
+            }
+
+            // ================================================================================================
+            //  RE8-RE13: THE REAL EDITOR ON SCREEN, AND THE COPY ROAD BESIDE IT (round 2, 26 Oct 2026)
+            // ================================================================================================
+            //
+            //  *"the V2 showing the real editor behind it, with the copy-versus-real comparison and the
+            //   V2-output-unchanged check as its acceptance ... if round 2 doesn't look and feel at least as
+            //   good as the copy (smooth knobs, no wobble, no crash, settings kept on the Link, slot replace
+            //   working), we switch back and park it."*
+            //
+            //  So the same subject is measured on BOTH roads in one pass, with his own switch thrown between
+            //  them through the Settings toggle itself. The copy road's figures come from LV4-LV11 above; these
+            //  rows are the real editor's, and RE13 proves the switch really does put it back.
+            const bool anyRealEditorRow = anyRowWanted ({ "RE8", "RE9", "RE10", "RE11", "RE12",
+                                                          "RE13", "RE14", "RE15" });
+            if (anyRealEditorRow && (lvUid.isEmpty() || lvSlot <= 0))
+            {
+                const juce::String why = "no Link with a plugin on it was set up in this pass (uid \""
+                    + lvUid + "\", slot " + juce::String (lvSlot) + "), so the real-editor road could not be "
+                    "entered - and by his rule of 26 Oct a live-view row that does not run is a STOP.";
+                if (rowWanted ("RE8"))  row ("RE8",  false, "does the live view show the LINK'S OWN editor", why);
+                if (rowWanted ("RE9"))  row ("RE9",  false, "is the real editor still with his hands off", why);
+                if (rowWanted ("RE10")) row ("RE10", false, "does a knob on the real editor reach the Link", why);
+                if (rowWanted ("RE11")) row ("RE11", false, "is the V2's own output unchanged on the real road", why);
+                if (rowWanted ("RE12")) row ("RE12", false, "does slot replace work on the real road", why);
+                if (rowWanted ("RE13")) row ("RE13", false, "does his switch put the live view back", why);
+                if (rowWanted ("RE14")) row ("RE14", false, "does the V2 let go for the Link's own window", why);
+                if (rowWanted ("RE15")) row ("RE15", false, "...and get it back when its card is pressed", why);
+            }
+            if (anyRealEditorRow && lvUid.isNotEmpty() && lvSlot > 0)
+            {
+                // This block sits outside the LV rows' scope, so it carries its own pump: every
+                // track one block, then the message thread - the same shape livePump has there.
+                const EJPumpFn rePump = [&] (int ms)
+                {
+                    const double end = juce::Time::getMillisecondCounterHiRes() + (double) ms;
+                    while (juce::Time::getMillisecondCounterHiRes() < end)
+                    {
+                        for (Track* t : { &v2, &lk1, &lk2 }) if (t->plugin != nullptr) t->processOneBlock (sr);
+                        Rig::pump (10);
+                    }
+                };
+                const auto road = [&] { return rig.freshState().getProperty ("liveViewRoad", juce::var()).toString(); };
+                const auto valueOf = [] (const juce::String& line, int idx) -> double
+                {
+                    for (const auto& bit : juce::StringArray::fromTokens (line, "|", ""))
+                        if (bit.upToFirstOccurrenceOf (":", false, false).getIntValue() == idx && bit.contains (":"))
+                            return bit.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                    return -1.0;
+                };
+                const auto linkValue = [&] (int idx)
+                {
+                    return valueOf (rig.freshState().getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                };
+                // Close whatever is open, throw his switch, and open the same card again: the road is
+                // chosen at open, which is what the toggle's own log line says.
+                rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chat"), 8000);
+                rePump (500);
+                const auto flip = rig.send (echojay::rig::cmd::press, args1 ("button", "real_editor_on"), 8000);
+                rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chain"), 8000);
+                rePump (500);
+                juce::String openThrow2;
+                @try
+                {
+                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
+                    rePump (4000);
+                }
+                @catch (NSException* e) { openThrow2 = ejNS ([e name]) + ": " + ejNS ([e reason]); }
+
+                const auto st = rig.freshState();
+                const bool onReal = road() == "real";
+                const bool noCopy = ! (bool) st.getProperty ("shadowRunning", false);
+
+                // ---- RE8: IT IS THE REAL PLUGIN, AND NO COPY WAS MADE ----------------------------
+                if (rowWanted ("RE8"))
+                    row ("RE8", onReal && noCopy && openThrow2.isEmpty(),
+                         "with his switch ON, does the live view show the LINK'S OWN editor - and no copy at all",
+                         "the switch: " + flip.getProperty ("note", juce::var()).toString()
+                         + " | the pane is on the \"" + road() + "\" road, a copy is "
+                         + juce::String (noCopy ? "NOT running" : "STILL running")
+                         + (openThrow2.isEmpty() ? juce::String() : ", and the open threw: " + openThrow2));
+
+                if (! onReal)
+                {
+                    const juce::String why = "the pane did not take the real-editor road (it reports \""
+                        + road() + "\"), so the rows below would be measuring the copy road twice - and by "
+                        "his rule of 26 Oct that is a stop, not a skip.";
+                    if (rowWanted ("RE9"))  row ("RE9",  false, "is the real editor still with his hands off", why);
+                    if (rowWanted ("RE10")) row ("RE10", false, "does a knob on the real editor reach the Link", why);
+                    if (rowWanted ("RE11")) row ("RE11", false, "is the V2's own output unchanged on the real road", why);
+                    if (rowWanted ("RE12")) row ("RE12", false, "does slot replace work on the real road", why);
+                }
+                else
+                {
+                    // ---- RE9: HANDS OFF, NOTHING MOVES (his fault 3, measured in pixels) ---------
+                    if (rowWanted ("RE9"))
+                    {
+                        NSView* cont  = ejFindClipContainer();
+                        NSView* guest = ejGuestInside (cont);
+                        const auto h0 = ejGuestPixelHash (guest);
+                        NSRect f0 = guest != nil ? [guest frame] : NSZeroRect;
+                        rePump (5000);
+                        const auto h1 = ejGuestPixelHash (guest);
+                        const NSRect f1 = guest != nil ? [guest frame] : NSZeroRect;
+                        const bool read = (h0 != 0 && h1 != 0);
+                        row ("RE9", guest != nil && NSEqualRects (f0, f1) && (! read || h0 == h1),
+                             "with his hands off, does the real editor sit still for five seconds (no wobble, "
+                             "no shimmer)",
+                             guest == nil
+                                 ? "there was no plugin view inside the container to measure"
+                                 : juce::String ("frame ") + (NSEqualRects (f0, f1) ? "unchanged" : "MOVED")
+                                   + ", pixels " + (! read ? "could not be read"
+                                                           : (h0 == h1 ? "unchanged" : "CHANGED with nobody touching it")));
+                    }
+
+                    // ---- RE10: A KNOB ON THE REAL EDITOR IS THE LINK'S OWN KNOB ------------------
+                    if (rowWanted ("RE10"))
+                    {
+                        // THE LINK PUBLISHES NOTHING ON THIS ROAD - there is no tap and no copy to
+                        // feed - so shadowLinkVals here is the last frame the COPY road left behind,
+                        // and the first cut of this row read it and called a working build broken.
+                        // What answers the question instead: the LENT plugin's own values, and
+                        // whether the change SURVIVES the view being closed and opened again. Nothing
+                        // the V2 owns survives that, so a value that does lives in the Link's
+                        // instance - which is the identity this row exists to prove.
+                        const auto lentVals = [&]
+                        { return rig.freshState().getProperty ("lentVals", juce::var()).toString(); };
+                        const int idx = 1;
+                        const double from = valueOf (lentVals(), idx);
+                        const double want = from > 0.5 ? 0.3 : 0.7;
+                        const auto moved = rig.send (echojay::rig::cmd::liveParam,
+                                                     args2 ("i", idx, "v", want), 10000);
+                        double got = -1.0;
+                        for (int tries = 0; tries < 20 && std::abs (got - want) > 0.02; ++tries)
+                        { rePump (100); got = valueOf (lentVals(), idx); }
+                        // Close the view, let the pane let go of the editor, open it again.
+                        rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                        rePump (1000);
+                        rig.send (echojay::rig::cmd::selectLink, args1 ("uid", lvUid), 8000);
+                        rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
+                        rePump (600);
+                        rig.send (echojay::rig::cmd::openSlot,   args1 ("n", lvSlot), 15000);
+                        rePump (3000);
+                        const auto st3 = rig.freshState();
+                        const double afterReopen = valueOf (st3.getProperty ("lentVals", juce::var()).toString(), idx);
+                        const auto plugin = st3.getProperty ("lentPlugin", juce::var()).toString();
+                        row ("RE10", (bool) moved.getProperty ("ok", false)
+                                        && std::abs (got - want) <= 0.02
+                                        && std::abs (afterReopen - want) <= 0.02
+                                        && st3.getProperty ("liveViewRoad", juce::var()).toString() == "real",
+                             "does a knob moved on the real editor stay on the Link's own plugin - still there "
+                             "after the view is closed and opened again, which nothing the V2 owns would be",
+                             "asked " + juce::String (want, 3) + " from " + juce::String (from, 3)
+                             + ", the plugin held " + juce::String (got, 3)
+                             + ", and after closing and reopening the view it holds "
+                             + juce::String (afterReopen, 3) + " (\"" + plugin + "\", road \""
+                             + st3.getProperty ("liveViewRoad", juce::var()).toString() + "\")");
+                    }
+
+                    // ---- RE11: AND THE V2'S OWN OUTPUT IS STILL ITS OWN -------------------------
+                    if (rowWanted ("RE11"))
+                    {
+                        std::vector<float> ref;
+                        (void) ejRenderMaxDiff (v2, sr, 40, ref);           // with the real editor shown
+                        rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                        rePump (1000);
+                        const double shownVsNot = ejRenderMaxDiff (v2, sr, 40, ref);
+                        const double floorNoise = ejRenderMaxDiff (v2, sr, 40, ref);
+                        rig.send (echojay::rig::cmd::selectLink, args1 ("uid", lvUid), 8000);
+                        rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
+                        rePump (600);
+                        rig.send (echojay::rig::cmd::openSlot,   args1 ("n", lvSlot), 15000);
+                        rePump (3000);
+                        row ("RE11", shownVsNot <= juce::jmax (floorNoise, 1.0e-6),
+                             "is the V2's OWN output unaffected by the real editor being shown - the Link's "
+                             "plugin is never in the V2's audio path",
+                             "showing it moved the output by at most " + juce::String (shownVsNot, 9)
+                             + ", against " + juce::String (floorNoise, 9) + " between two renders with "
+                             "nothing shown at all");
+                    }
+
+                    // ---- RE12: THE SLOT'S PLUGIN IS REPLACED WHILE THE REAL EDITOR IS ON SCREEN --
+                    // The dangerous one: the Link's own removal revokes the lease, this window has to
+                    // let go before the editor is destroyed, and the card must then open the NEW
+                    // plugin's real editor rather than a dead one.
+                    if (rowWanted ("RE12"))
+                    {
+                        rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 10000);
+                        rePump (1000);
+                        const auto before = road();
+                        const auto asked = askAgent (rig, "rig-linkreplace1-marker: replace that plugin on the Link",
+                                                     90000);
+                        juce::ignoreUnused (asked);
+                        rePump (4000);
+                        const auto afterRoad = road();
+                        const bool letGo = afterRoad != "real" || ! (bool) rig.freshState()
+                                               .getProperty ("lentSlot", juce::var()).equals (juce::var (lvSlot));
+                        row ("RE12", letGo,
+                             "when the Link's slot is replaced under a lent editor, does this window let go "
+                             "before the editor is destroyed (rather than hold a dead one)",
+                             "the pane was on \"" + before + "\" and is now on \"" + afterRoad
+                             + "\", lent slot " + rig.freshState().getProperty ("lentSlot", juce::var()).toString());
+                    }
+                }
+
+                    // ---- RE14/RE15: THE HAND-BACK, BOTH WAYS AND REPEATEDLY (his condition 1) ---
+                    //
+                    // *"when I open the plugin on the Link's own window while the V2 holds it, the V2
+                    //  lets go, the owner destroys the editor in the safe order, and the Link's window
+                    //  shows a fresh one. Test that both ways, repeatedly, in the rig."*
+                    //
+                    // Repeatedly is the point: both crashes this road has produced only appear on the
+                    // SECOND editor of one instance, so one hand-over each way would prove nothing.
+                    // Three rounds of V2 -> Link -> V2, and the run surviving them is half the row.
+                    if (rowWanted ("RE14") || rowWanted ("RE15"))
+                    {
+                        int toLink = 0, backToV2 = 0;
+                        juce::String trail;
+                        for (int lap = 0; lap < 3; ++lap)
+                        {
+                            // --- the V2 holds it; ask the LINK's own window for it
+                            const auto ask = noteOf (lease ("link_window", lvUid, lvSlot));
+                            rePump (2500);
+                            const auto st4 = rig.freshState();
+                            const bool v2LetGo = st4.getProperty ("liveViewRoad", juce::var()).toString() != "real"
+                                              || (int) st4.getProperty ("lentSlot", juce::var()) != lvSlot;
+                            if (v2LetGo) ++toLink;
+                            trail << (lap > 0 ? " | " : "") << "lap " << (lap + 1) << ": to the Link "
+                                  << (v2LetGo ? "yes" : "NO");
+                            juce::ignoreUnused (ask);
+
+                            // --- and back: the V2's card is pressed again
+                            rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
+                            rePump (3000);
+                            const auto st5 = rig.freshState();
+                            const bool v2HasIt = st5.getProperty ("liveViewRoad", juce::var()).toString() == "real"
+                                              && (int) st5.getProperty ("lentSlot", juce::var()) == lvSlot;
+                            if (v2HasIt) ++backToV2;
+                            trail << ", back to the V2 " << (v2HasIt ? "yes" : "NO");
+                        }
+                        if (rowWanted ("RE14"))
+                            row ("RE14", toLink == 3,
+                                 "does the V2 let go every time the plugin is opened on the Link's own window "
+                                 "(three laps, because both crashes on this road needed a second editor)",
+                                 juce::String (toLink) + " of 3 - " + trail);
+                        if (rowWanted ("RE15"))
+                            row ("RE15", backToV2 == 3,
+                                 "...and does the V2 get it back every time its card is pressed again - the "
+                                 "hand-over in both directions, repeatedly, with the process still standing",
+                                 juce::String (backToV2) + " of 3 - " + trail);
+                    }
+
+                // ---- RE13: AND HIS SWITCH PUTS IT BACK ------------------------------------------
+                if (rowWanted ("RE13"))
+                {
+                    rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chat"), 8000);
+                    rePump (400);
+                    const auto off = rig.send (echojay::rig::cmd::press, args1 ("button", "real_editor_off"), 8000);
+                    rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chain"), 8000);
+                    rePump (500);
+                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
+                    rePump (4000);
+                    const auto st2 = rig.freshState();
+                    row ("RE13", road() == "copy" && (bool) st2.getProperty ("shadowRunning", false),
+                         "does turning his switch off put the live view back on the copy road, with nothing "
+                         "else to undo - \"we switch back and park it\"",
+                         off.getProperty ("note", juce::var()).toString() + " | the pane is on \"" + road()
+                         + "\" and a copy is " + juce::String ((bool) st2.getProperty ("shadowRunning", false)
+                                                                    ? "running again" : "NOT running"));
                 }
             }
 

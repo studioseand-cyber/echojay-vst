@@ -1044,6 +1044,8 @@ public:
     // ---- echojay::EditorLender: this Link's own slots, lent to whoever shows them ---------------
     juce::AudioProcessorEditor* lenderCreateSlotEditor (int slot1Based, juce::String& why) override;
     void lenderDestroySlotEditor (int slot1Based) override;
+    void lenderDestroyAllSlotEditors() override;
+    void* lenderGuestViewForSlot (int slot1Based) override;
     juce::String lenderDescribe() const override;
 
     // ---- echojay::EditorBorrower: the Link's OWN plugin window is a borrower like any other -----

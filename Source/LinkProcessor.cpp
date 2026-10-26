@@ -1835,6 +1835,25 @@ bool LinkProcessor::showSlotEditorWindow (int slot1Based, juce::String& why)
     // window on the way out instead of leaving it showing a parked instance.
     slotEditorWin_.reset();          // one at a time, like the main plugin's pop-out
     auto taken = echojay::EditorLease::take (instanceUid_, slot1Based, this, echojay::EditorHolder::OwnWindow);
+    // ---- THE HAND-BACK (his condition 1, 26 Oct 2026) ---------------------------------------
+    // *"when I open the plugin on the Link's own window while the V2 holds it, the V2 lets go, the
+    //  owner destroys the editor in the safe order, and the Link's window shows a fresh one."*
+    //
+    // The design said either side can ask the other to hand over; this is that ask. The revoke
+    // tells the holder to let go (synchronously), then THIS object destroys the editor - the owner,
+    // in the one order - and the take below builds a fresh one for this window.
+    if (! taken.ok() && echojay::EditorLease::heldBy (instanceUid_, slot1Based, nullptr)
+                            == echojay::EditorHolder::Borrowed)
+    {
+        juce::String who;
+        echojay::EditorLease::heldBy (instanceUid_, slot1Based, &who);
+        EchoJay_NSLog (("EJLease: slot " + juce::String (slot1Based) + " is open in " + who
+                        + " and this Link's own window has been asked for it - taking it back")
+                       .toRawUTF8());
+        echojay::EditorLease::revokeSlot (instanceUid_, slot1Based,
+                                          "the plugin was opened on the Link's own window");
+        taken = echojay::EditorLease::take (instanceUid_, slot1Based, this, echojay::EditorHolder::OwnWindow);
+    }
     if (! taken.ok())
     {
         // A refusal is a sentence, never a button that did nothing. "Open in EchoJay V2" is the one
@@ -1895,6 +1914,38 @@ void LinkProcessor::lenderDestroySlotEditor (int slot1Based)
     lentEditors_.erase (it);            // the editor dies here, and nowhere else
     EchoJay_NSLog (("EJLease: destroyed the real editor for slot " + juce::String (slot1Based) + " of "
                     + lenderDescribe()).toRawUTF8());
+}
+
+void* LinkProcessor::lenderGuestViewForSlot (int slot1Based)
+{
+    // THE WALK RUNS HERE, IN THIS BUNDLE, which is the whole point: dynamic_cast against
+    // juce::NSViewComponent works against objects built in this image and fails across the boundary
+    // to the V2's (each has its own hidden-visibility type_info - measured 26 Oct, and it put the
+    // wrong view into the V2's container). EditorLender::lenderGuestViewForSlot says it in full.
+    auto it = lentEditors_.find (slot1Based);
+    if (it == lentEditors_.end() || it->second == nullptr) return nullptr;
+    struct Find
+    {
+        static void* in (juce::Component* c)
+        {
+            if (c == nullptr) return nullptr;
+            if (auto* nv = dynamic_cast<juce::NSViewComponent*> (c))
+                if (void* v = nv->getView()) return v;
+            for (int i = 0; i < c->getNumChildComponents(); ++i)
+                if (void* v = in (c->getChildComponent (i))) return v;
+            return nullptr;
+        }
+    };
+    return Find::in (it->second.get());
+}
+
+void LinkProcessor::lenderDestroyAllSlotEditors()
+{
+    if (lentEditors_.empty()) return;
+    const int n = (int) lentEditors_.size();
+    lentEditors_.clear();            // every editor this instance made, leased or not
+    EchoJay_NSLog (("EJLease: destroyed " + juce::String (n) + " editor(s) of " + lenderDescribe()
+                    + " as it goes away - an editor may outlive a lease, never its plugin").toRawUTF8());
 }
 
 juce::String LinkProcessor::lenderDescribe() const

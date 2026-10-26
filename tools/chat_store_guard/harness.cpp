@@ -3646,6 +3646,14 @@ int main()
             {
                 if (made.erase (slot1) > 0) { ++destroyed; if (order != nullptr) *order << "destroy" << slot1 << " "; }
             }
+            void lenderDestroyAllSlotEditors() override
+            { destroyed += (int) made.size(); made.clear(); if (order != nullptr) *order << "destroyAll "; }
+            void* lenderGuestViewForSlot (int slot1) override
+            {
+                // The fake has no NSView; what matters here is that the LENDER is the one asked.
+                auto it = made.find (slot1);
+                return it == made.end() ? nullptr : (void*) it->second.get();
+            }
             juce::String lenderDescribe() const override { return "FakeLink (uid " + uid + ")"; }
         };
 
@@ -3747,9 +3755,23 @@ int main()
                "EL7 a return with the wrong token closes NOTHING - a stale hand cannot destroy an "
                "editor somebody else is showing",
                "still held");
-        check (EditorLease::giveBack (link.uid, 1, t1.token) && link.made.find (1) == link.made.end(),
-               "EL7a ...and the right token returns it, with the owner destroying the editor",
-               "destroyed " + juce::String (link.destroyed));
+        check (EditorLease::giveBack (link.uid, 1, t1.token)
+                   && link.made.find (1) == link.made.end()
+                   && EditorLease::heldBy (link.uid, 1, nullptr) == EditorHolder::None,
+               "EL7a ...and the right token returns it, with the owner destroying the editor - so the "
+               "plugin's view goes with it rather than being stranded in the borrower's window. A "
+               "borrower that still WANTS it does not return it: it hides it (his option 3), so a "
+               "returned lease always means \"I have stopped showing this\"",
+               "destroyed " + juce::String (link.destroyed) + ", nobody holds the lease");
+        {
+            auto again = EditorLease::take (link.uid, 1, &view, EditorHolder::Borrowed);
+            check (again.ok() && again.editor != nullptr,
+                   "EL7b ...and taking it again builds a fresh one, which is safe now that the view "
+                   "the container holds is the one the LENDER named (the cross-bundle dynamic_cast "
+                   "that made this unsafe is in lenderGuestViewForSlot)",
+                   "created " + juce::String (link.created) + " in all");
+            EditorLease::giveBack (link.uid, 1, again.token);
+        }
 
         // ---- A REFUSAL LEAVES NO HOLDER BEHIND --------------------------------------------------
         link.refuseSlot = 4;
@@ -3772,11 +3794,26 @@ int main()
             const int returned = EditorLease::borrowerGone (doomed);   // what its destructor calls
             delete doomed;
             check (returned == 1 && EditorLease::heldBy (link.uid, 6, nullptr) == EditorHolder::None
-                       && link.made.find (6) == link.made.end()
                        && EditorLease::heldBy (link.uid, 5, nullptr) == EditorHolder::Borrowed,
-                   "EL9 a borrower that dies still holding one gives it back from its own destructor, "
-                   "its editor is destroyed, and ANOTHER borrower's lease is untouched",
+                   "EL9 a borrower that dies still holding one gives the lease back from its own "
+                   "destructor, and ANOTHER borrower's lease is untouched",
                    "returned " + juce::String (returned));
+        }
+
+        // ---- AND A TEARDOWN STILL DESTROYS IT, WHICH IS THE OTHER HALF OF THE RULE -------------
+        // Keeping the editor is only safe because the things that END the plugin also end the
+        // editor: the slot removed, the rack changed under it, the instance going away. If a
+        // teardown stopped destroying it, a hosted AU would be disposed with its editor still
+        // alive - the ordering two Softube crashes paid for.
+        {
+            auto t7 = EditorLease::take (link.uid, 7, &view, EditorHolder::Borrowed);
+            juce::ignoreUnused (t7);
+            const int destroyedBefore = link.destroyed;
+            EditorLease::revokeSlot (link.uid, 7, "the slot was removed");
+            check (link.destroyed == destroyedBefore + 1 && link.made.find (7) == link.made.end(),
+                   "EL7c a slot that is REMOVED destroys its editor, exactly as before - a lease "
+                   "returned keeps it, a teardown does not",
+                   "destroyed " + juce::String (link.destroyed) + " in all");
         }
 
         // ---- THE INSTANCE DIES: NOBODY IS LEFT POINTING AT IT ----------------------------------
@@ -3785,8 +3822,9 @@ int main()
         LocalInstances::drop (&link);
         check (all >= 1 && link.made.empty() && order.contains ("letgo") && order.contains ("destroy"),
                "EL10 the Link's destructor's first act closes every editor anyone is showing of it, "
-               "in that order - the design's teardown table, top line",
-               "\"" + order.trim() + "\"");
+               "in that order, AND destroys the ones nobody was holding - an editor may outlive a "
+               "lease (EL7a) but never its plugin, which is the ordering two Softube crashes paid for",
+               "\"" + order.trim() + "\", editors left: " + juce::String ((int) link.made.size()));
         check (LocalInstances::find (link.uid) == nullptr
                    && EditorLease::take (link.uid, 1, &view, EditorHolder::Borrowed).why
                           .contains ("no live EchoJay Link"),

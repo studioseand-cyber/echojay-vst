@@ -593,6 +593,48 @@ bool NativeClip2_setShield(void* peerHandle, bool on, const char* caption)
     return true;
 }
 
+// ---- HIDDEN, NOT TAKEN APART (round 2 option 3, 26 Oct 2026) ----------------------------------
+//
+// His ruling: *"a lent editor moves into the V2's window once and is hidden, not detached, on
+// close."*  The reason is the crash this codebase has now paid for twice: moving a hosted AU's
+// NSView to a nil window while the view goes on living. detach() below removes every child from the
+// container - which is right when the editor is about to be destroyed with it, and fatal when the
+// editor survives. So a view that is coming back is HIDDEN where it stands: same superview, same
+// window, nothing moves.
+void NativeClip2_setHidden(void* peerHandle, bool hidden)
+{
+    if (!peerHandle) return;
+    NSView* peer = (__bridge NSView*)peerHandle;
+    ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
+    if (!container) return;
+    [container setHidden: hidden ? YES : NO];
+    NSLog(@NATIVECLIP_LOG_TAG ": container %@ (its %lu subview(s) stay where they are)",
+          hidden ? @"HIDDEN" : @"shown", (unsigned long) [[container subviews] count]);
+}
+
+// ---- AND THE CONTAINER ALONE, ONCE ITS GUEST IS ALREADY GONE ----------------------------------
+// The other half of the same rule. When a lent editor is handed back, its OWNER destroys it, and
+// that takes the plugin's view with it in the way AppKit expects (a dealloc of the hierarchy, not a
+// hop to nil). What is left is an empty container of ours, and this removes exactly that - it never
+// touches a child, because a child here would be a view that is still alive.
+void NativeClip2_detachEmptyContainer(void* peerHandle)
+{
+    if (!peerHandle) return;
+    NSView* peer = (__bridge NSView*)peerHandle;
+    ECHOJAY_CLIP_CLASS* container = NativeClip2_findContainer(peer);
+    if (!container) return;
+    const unsigned long left = (unsigned long) [[container subviews] count];
+    if (left > 0)
+    {
+        // Said out loud rather than cleaned up: a view still in here means the editor was NOT
+        // destroyed first, which is the ordering this exists to keep.
+        NSLog(@NATIVECLIP_LOG_TAG ": REFUSING to remove the container - %lu view(s) are still inside "
+              @"it, so its guest outlived the editor it belongs to", left);
+        return;
+    }
+    [container removeFromSuperview];
+}
+
 void NativeClip2_detach(void* peerHandle)
 {
     if (!peerHandle) return;

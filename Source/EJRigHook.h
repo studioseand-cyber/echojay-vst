@@ -111,7 +111,7 @@ namespace cmd
     // found no zone, and the plugin answered "unknown button" - which was correct, and the row then
     // measured an interaction it had never performed. Two surfaces, two names, and `askChipsUp` on
     // the state so a row can WAIT for the chips instead of pressing blind.
-    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|ask_chip|got_it|retry|chat_retry|tab_chat|tab_chain }
+    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|ask_chip|got_it|retry|chat_retry|tab_chat|tab_chain|real_editor_on|real_editor_off }
     inline constexpr const char* selectLink   = "select_link";     // { uid }  ("" = the own rack)
     inline constexpr const char* reportState  = "report_state";    // {}
     inline constexpr const char* setRackOut   = "set_rack_out";    // { db }   - the user's own knob, not the agent op
@@ -181,6 +181,8 @@ namespace cmd
     //   { op: "give_back", uid, n }      return it (its owner destroys the editor)
     //   { op: "revokes" }                how many times the rig's borrower has been told to let go
     //   { op: "road",      uid }         which live view that Link would get, and why (the switch)
+    //   { op: "link_window", uid, n }    ask that Link to open slot n in ITS OWN window (the
+    //                                    hand-back, from the Link's side - his condition of 26 Oct)
     //   { op: "arm_self" }               put the V2's OWN rack in the directory, so its structural
     //                                    doors can be driven exactly (a Link's need an agent turn)
     inline constexpr const char* lease       = "lease";            // { op, uid, n }

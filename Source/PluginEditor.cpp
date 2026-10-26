@@ -1512,6 +1512,30 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     echoJayOnlyToggle.setVisible(false);
     echoJayOnlyToggle.onClick = [this] { api.setEchoJayOnly(echoJayOnlyToggle.getToggleState()); };
     addAndMakeVisible(echoJayOnlyToggle);
+    // ---- HIS SWITCH OVER THE REAL EDITOR (26 Oct 2026) ---------------------------------------
+    // One authority: the tick writes the file that echojay::realEditorSwitchOn() reads, and reads
+    // it back so the tick can never show a state the build is not in. Turning it off is one click
+    // and puts the live view back on the copy road with nothing else to undo - which is the
+    // condition he set before any of this was built.
+    realEditorToggle.setColour(juce::ToggleButton::textColourId, C::text2);
+    realEditorToggle.setColour(juce::ToggleButton::tickColourId, C::blue);
+    realEditorToggle.setVisible(false);
+    realEditorToggle.setToggleState(echojay::realEditorSwitchOn(), juce::dontSendNotification);
+    realEditorToggle.onClick = [this]
+    {
+        const bool want = realEditorToggle.getToggleState();
+        const bool ok = echojay::setRealEditorSwitch(want);
+        // Read it BACK, never trust the click: if the file could not be written the tick returns to
+        // what the build will actually do, rather than promising a road it is not on.
+        const bool now = echojay::realEditorSwitchOn();
+        realEditorToggle.setToggleState(now, juce::dontSendNotification);
+        EchoJay_NSLog(("EJRealEditor: the switch was turned " + juce::String(want ? "ON" : "OFF")
+                       + " and now reads " + juce::String(now ? "ON" : "OFF")
+                       + (ok ? "" : " (the file could not be written)")
+                       + " - a live view already open keeps the road it opened on; close and reopen it "
+                         "to change roads").toRawUTF8());
+    };
+    addAndMakeVisible(realEditorToggle);
     // AGENT MODE (Sean's standing rule): the user's own switch, OFF by default. The state is read from the
     // flag file rather than held in a member, so the toggle cannot drift from the thing the executor checks -
     // there is one answer to "is agent mode on" and both read it.
@@ -2256,6 +2280,76 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         return processorRef.shadowRunning()
             && processorRef.shadowUid() == chainViewUid()
             && processorRef.shadowSlot() == i;
+    };
+    // ---- THE LINK'S OWN EDITOR, BEHIND HIS SWITCH (round 2, 26 Oct 2026) --------------------
+    //
+    // Asked before any copy is started. Both tests must pass - the switch he ticked, and the pid
+    // that says this Link really is in our process - and every refusal comes back as a sentence the
+    // pane logs, because "it quietly used a copy instead" is the thing he must never have to guess.
+    //
+    // What this does NOT do: touch the copy road. If it answers nothing, the live view behaves
+    // exactly as it does today, which is the condition he set for these rounds.
+    chainListPanel.onCreateLentEditor = [this](int slot0, juce::String& uidOut, int& slot1Out,
+                                               unsigned& tokenOut, juce::String& whyOut,
+                                               void*& guestViewOut)
+                                        -> juce::AudioProcessorEditor*
+    {
+        const auto uid = chainViewUid();
+        if (uid.isEmpty()) return nullptr;                    // the own rack: nothing to borrow
+        const bool sw = echojay::realEditorSwitchOn();
+        int pubPid = 0;
+        {
+            int err = 0;
+            const auto dir = LinkShm::resolveDir (err);
+            if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
+                pubPid = rc.publisherPid;
+        }
+        if (! echojay::realEditorRoad (sw, pubPid, (int) ::getpid()))
+        {
+            whyOut = echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
+            return nullptr;
+        }
+        auto* lender = echojay::LocalInstances::find (uid);
+        if (lender == nullptr)
+        {
+            whyOut = "the switch is on and the pids match, but that Link is not in this process' "
+                     "directory - so the copy road answers (" + echojay::LocalInstances::describe() + ")";
+            return nullptr;
+        }
+        auto taken = echojay::EditorLease::take (uid, slot0 + 1, this, echojay::EditorHolder::Borrowed);
+        // ---- AND THE OTHER DIRECTION OF THE HAND-BACK (his condition 1, 26 Oct 2026) ----------
+        // *"Test that both ways."*  If the Link's OWN window is showing that slot, this press asks
+        // for it: the revoke closes that window (the Link's own borrower road), its owner destroys
+        // the editor in the one order, and the take below builds a fresh one for this pane.
+        if (! taken.ok() && echojay::EditorLease::heldBy (uid, slot0 + 1, nullptr)
+                                == echojay::EditorHolder::OwnWindow)
+        {
+            echojay::EditorLease::revokeSlot (uid, slot0 + 1,
+                                              "the plugin was opened in the EchoJay V2's live view");
+            taken = echojay::EditorLease::take (uid, slot0 + 1, this, echojay::EditorHolder::Borrowed);
+        }
+        if (! taken.ok())
+        {
+            whyOut = "the Link would not lend slot " + juce::String (slot0 + 1) + ": " + taken.why;
+            return nullptr;
+        }
+        uidOut = uid; slot1Out = slot0 + 1; tokenOut = taken.token;
+        // THE LENDER'S OWN ANSWER for which NSView is the plugin's: our dynamic_cast cannot see
+        // across the bundle boundary (EditorLender::lenderGuestViewForSlot). No answer means we do
+        // NOT guess - the copy road takes it instead, and says so.
+        guestViewOut = lender->lenderGuestViewForSlot (slot0 + 1);
+        if (guestViewOut == nullptr)
+        {
+            echojay::EditorLease::giveBack (uid, slot0 + 1, taken.token);
+            whyOut = "that Link could not say which view belongs to slot " + juce::String (slot0 + 1)
+                   + "'s editor, and this side must never guess one across the bundle boundary";
+            return nullptr;
+        }
+        return taken.editor;
+    };
+    chainListPanel.onReturnLentEditor = [](const juce::String& uid, int slot1, unsigned token)
+    {
+        echojay::EditorLease::giveBack (uid, slot1, token);
     };
     chainListPanel.onCreateEditor = [this](int i) -> juce::AudioProcessorEditor* {
         // ONE AUTHOR, on the processor and FUNCTIONALLY GATED there (twice
@@ -3668,7 +3762,33 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     startTimerHz(20);
 }
 
+// ---- echojay::EditorBorrower: THE OWNER IS TAKING ITS EDITOR BACK (round 2, 26 Oct 2026) ------
+//
+// Synchronous, on the message thread, and it deletes nothing: the Link destroys the editor the
+// moment this returns, so all this side may do is stop showing it and forget it. The sentence goes
+// on the pane, because a plugin that vanishes from a window without a word is the kind of thing
+// that gets reported as a crash.
+void EchoJayEditor::editorLeaseRevoked (const juce::String& uid, int slot1Based, const juce::String& why)
+{
+    if (chainListPanel.inlineIsLent && chainListPanel.lentUid == uid
+        && chainListPanel.lentSlot1 == slot1Based)
+        chainListPanel.detachLentEditorNow (why);
+}
+
 EchoJayEditor::~EchoJayEditor() {
+    // ---- A LENT EDITOR GOES BACK BEFORE ANYTHING ELSE (round 2, 26 Oct 2026) -----------------
+    // If this window is showing a Link's own editor, it must stop showing it and hand the lease
+    // back while every member of this object is still alive. closeAllEditors releases rather than
+    // deletes it (ChainListPanel::closeInline), and borrowerGone is the backstop the lease design
+    // calls for: it can only find something if a lease was left behind, which is a bug and says so.
+    if (chainListPanel.inlineIsLent)
+        chainListPanel.returnLentEditorForGood ("the V2's window is closing");
+    chainListPanel.closeAllEditors();
+    if (const int left = echojay::EditorLease::borrowerGone (this); left > 0)
+        EchoJay_NSLog (("EJPane: " + juce::String (left) + " lent editor(s) were still held when this "
+                        "window closed - returned here, but something should have returned them "
+                        "earlier").toRawUTF8());
+
     // ---- A RUN INTERRUPTED BY THE WINDOW CLOSING IS SAVED (19 Oct 2026, Sean at 11:08) --------
     // *"I closed the plugin window mid-run (during wait for playback) and on reopen the run had
     // vanished; only my question bubble remained, no card. A run interrupted by closing the editor
@@ -13319,6 +13439,13 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
 
 void EchoJayEditor::refreshChainPanelForView(bool force)
 {
+    // ---- A LENT EDITOR BELONGS TO THE RACK THAT IS IN VIEW (round 2, 26 Oct 2026) -------------
+    // His list of "for good" events includes the view moving elsewhere: if this window is holding a
+    // Link's own editor and the rack on screen is no longer that Link's, the lease goes back now.
+    // Cheap (two string compares) and it runs before anything is drawn, so a lent editor can never
+    // be left behind another rack's cards.
+    if (chainListPanel.inlineIsLent && chainListPanel.lentUid != chainViewUid())
+        chainListPanel.returnLentEditorForGood ("the view moved to another rack");
     const auto v = chainRackView();
     // 21m ruling 3: the keep-level toggle is available on the LOCAL rack only (no transport op yet); elsewhere it is
     // greyed with the note, never a silent no-op
@@ -18201,6 +18328,11 @@ void EchoJayEditor::showSettingsView()
     // to "is agent mode on", read by both the toggle and the executor, so they cannot disagree.
     agentModeToggle.setToggleState(agentModeOn(), juce::dontSendNotification);
     agentModeToggle.setVisible(true);
+    // THE REAL-EDITOR SWITCH, read from its file every time this page is shown, for the same reason
+    // agent mode is: one answer to "which live view does this build use", read by the toggle and by
+    // the live view itself, so the tick and the behaviour cannot disagree.
+    realEditorToggle.setToggleState(echojay::realEditorSwitchOn(), juce::dontSendNotification);
+    realEditorToggle.setVisible(true);
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -18304,6 +18436,7 @@ void EchoJayEditor::hideSettingsView()
     dialWritesToggle.setVisible(false);
     echoJayOnlyToggle.setVisible(false);
     agentModeToggle.setVisible(false);
+    realEditorToggle.setVisible(false);
     for (auto& b : dawButtons) b.setVisible(false);
     viewAllPluginsBtn.setVisible(false);
     settingsScanBtn.setVisible(false);
@@ -36975,6 +37108,27 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                         "ask - see shadow_refuse.txt").toRawUTF8());
 
     if (uid.isEmpty() || slot0 < 0) { shadowStopIfRunning ("nothing is selected"); return; }
+    // ---- NO COPY AT ALL WHERE THE REAL EDITOR IS THE ROAD (round 2, 26 Oct 2026) --------------
+    //
+    // With his switch on and this Link in our process, the pane shows the Link's OWN editor, so a
+    // copy would be a second instance of the plugin rendering audio nobody hears, with a mirror
+    // nobody reads. Decided here, before the tap is asked for, so the real-editor road costs the
+    // copy road nothing - and a copy that was already running for this slot is stopped.
+    //
+    // The pid comes from the Link's own sidecar, the same number echojay::embedAllowed asks for.
+    {
+        int pubPid = 0;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
+            pubPid = rc.publisherPid;
+        if (echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid, (int) ::getpid()))
+        {
+            shadowStopIfRunning ("the live view is showing the Link's own plugin editor, so no copy "
+                                 "is needed");
+            return;
+        }
+    }
     // ---- "ALREADY SHOWING THAT ONE" IS ABOUT THE PLUGIN, NOT THE SLOT NUMBER (26 Oct 2026) ---
     //
     // This return read the uid and the slot INDEX and nothing else, and it is the last link in his
@@ -39716,6 +39870,24 @@ void EchoJayEditor::serviceRigHook()
             EchoJay_NSLog (("EJRig: press " + b + " seq=" + juce::String (c.seq) + " -> " + note).toRawUTF8());
             return;
         }
+        // ---- THE REAL-EDITOR SWITCH, PRESSED AS HE PRESSES IT (26 Oct 2026, round 2) ----------
+        // The row flips the actual ToggleButton and runs its onClick, so what a row turns on is what
+        // a finger turns on - not a file written behind the product's back.
+        if (b == "real_editor_on" || b == "real_editor_off")
+        {
+            const bool want = (b == "real_editor_on");
+            realEditorToggle.setToggleState (want, juce::dontSendNotification);
+            if (realEditorToggle.onClick) realEditorToggle.onClick();
+            const bool now = echojay::realEditorSwitchOn();
+            ok = (now == want);
+            note = "the real-editor switch now reads " + juce::String (now ? "ON" : "OFF")
+                 + " (the tick shows " + juce::String (realEditorToggle.getToggleState() ? "ON" : "OFF")
+                 + "), pressed through the Settings toggle itself";
+            publishRigState();
+            echojay::rig::ack (c.seq, c.name, ok, note);
+            EchoJay_NSLog (("EJRig: press " + b + " seq=" + juce::String (c.seq) + " -> " + note).toRawUTF8());
+            return;
+        }
         if (b == "onboarding" || b == "tab_chat" || b == "tab_chain")
         {
             if (b == "onboarding")
@@ -39941,6 +40113,15 @@ void EchoJayEditor::serviceRigHook()
         const int slot1 = c.args.hasProperty ("slot") ? (int) c.args.getProperty ("slot", juce::var()) : 1;
         auto* copy = processorRef.shadowInstanceForRig();
         juce::String movedWhat = "the live view's copy";
+        // THE REAL EDITOR HAS NO COPY: what is on screen IS the Link's plugin, so a knob moved here
+        // moves that instance - which is the whole point of round 2, and the row that reads the
+        // Link's published values afterwards is checking exactly that identity.
+        if (copy == nullptr && chainListPanel.inlineIsLent && chainListPanel.hasInlineEditor())
+        {
+            copy = chainListPanel.inlineEditorProcessor();
+            movedWhat = "the LINK'S OWN plugin on slot " + juce::String (chainListPanel.lentSlot1)
+                      + " (the real editor, no copy)";
+        }
         if (copy == nullptr)
         {
             copy = processorRef.getChainHost().getSlotProcessor (slot1 - 1);
@@ -40029,6 +40210,22 @@ void EchoJayEditor::serviceRigHook()
                 return e;
             }
             void lenderDestroySlotEditor (int slot1) override { made.erase (slot1); }
+            void lenderDestroyAllSlotEditors() override { made.clear(); }
+            void* lenderGuestViewForSlot (int slot1) override
+            {
+                auto it = made.find (slot1);
+                if (it == made.end() || it->second == nullptr) return nullptr;
+                struct Find { static void* in (juce::Component* c)
+                {
+                    if (c == nullptr) return nullptr;
+                    if (auto* nv = dynamic_cast<juce::NSViewComponent*> (c))
+                        if (void* v = nv->getView()) return v;
+                    for (int i = 0; i < c->getNumChildComponents(); ++i)
+                        if (void* v = in (c->getChildComponent (i))) return v;
+                    return nullptr;
+                } };
+                return Find::in (it->second.get());
+            }
             juce::String lenderDescribe() const override { return "the V2's own rack (the rig's lender)"; }
         };
         static RigSelfLender* self = new RigSelfLender();
@@ -40106,6 +40303,25 @@ void EchoJayEditor::serviceRigHook()
             ok = true;
             note = juce::String ("the switch is ") + (sw ? "ON" : "OFF") + "; "
                  + echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
+        }
+        else if (op == "link_window")
+        {
+            // The product's own road: the V2 asks that Link to bring the plugin's own window up
+            // (ctrl-cmd showSlotEditor), which is what his "Open on the Link" press sends. The rig
+            // needs it to test the hand-back in the direction that starts on the Link's side.
+            if (chainListPanel.onBringLinkForward == nullptr)
+            {
+                ok = false; note = "this build has no road to the Link's own window";
+            }
+            else
+            {
+                juce::String trackName;
+                EchoJayProcessor::LinkDisplayEntry en;
+                if (findLinkEntryByAddr (uid, en)) trackName = en.displayName;
+                chainListPanel.onBringLinkForward (trackName, n - 1);
+                note = "asked " + uid + " to open slot " + juce::String (n)
+                     + " in its own window (ctrl-cmd showSlotEditor, the same road the card's press sends)";
+            }
         }
         else if (op == "arm_self")
         {
@@ -40370,6 +40586,30 @@ void EchoJayEditor::publishRigState()
     // there. The copy's values cannot answer that - they are this side's - so the Link's last
     // published frame travels here too, and LV9 asserts on the pair.
     o->setProperty ("shadowLinkVals",  processorRef.shadowLinkValuesLine (16));
+    // ---- WHICH ROAD THE VIEW ON SCREEN IS ON (round 2, 26 Oct 2026) --------------------------
+    // "copy" = its own copy of the plugin (today's road, and what the switch off always gives);
+    // "real" = the Link's OWN editor, lent to this window; "none" = nothing is open. A row that
+    // compares the two roads has to be able to say which one it is looking at, and the pane is the
+    // only place that knows.
+    o->setProperty ("liveViewRoad", chainListPanel.inlineIsLent ? "real"
+                                  : (chainListPanel.hasInlineEditor() ? "copy" : "none"));
+    o->setProperty ("lentUid",  chainListPanel.lentUid);
+    o->setProperty ("lentSlot", chainListPanel.lentSlot1);
+    // ---- AND WHAT THE LENT EDITOR'S OWN PLUGIN HOLDS (round 2, 26 Oct 2026) -------------------
+    // On the real road the Link publishes no values at all - there is no tap and no copy to feed -
+    // so shadowLinkVals is the last thing the COPY road left behind and a row that read it would be
+    // reading a stale frame (which is exactly how RE10 first failed). These come from the plugin on
+    // the other side of the lease: its name, and its own parameter values.
+    if (chainListPanel.inlineIsLent)
+        if (auto* lp = chainListPanel.inlineEditorProcessor())
+        {
+            o->setProperty ("lentPlugin", lp->getName());
+            juce::StringArray vals;
+            const auto& prms = lp->getParameters();
+            for (int k = 0; k < juce::jmin (16, prms.size()); ++k)
+                vals.add (juce::String (k) + ":" + juce::String (prms[k]->getValue(), 4));
+            o->setProperty ("lentVals", vals.joinIntoString ("|"));
+        }
     o->setProperty ("shadowLinkValCount", processorRef.shadowLinkValuesCount());
     // AND THE SENTENCE THE CARD IS SHOWING ABOUT FOLLOWING, which is how a row can tell "it is
     // following" from "it is up and refusing every frame" (his 11:20 fault, where the Link kept

@@ -22,6 +22,12 @@ extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH
 extern "C" bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
                                                  char* desc, int descLen);
 extern "C" void NativeClip2_detach(void* peerHandle);
+/** Hide or show the clip container WITHOUT moving anything inside it (round 2, 26 Oct 2026): a lent
+    editor that is coming back must never see its view hop to a nil window. */
+extern "C" void NativeClip2_setHidden(void* peerHandle, bool hidden);
+/** Remove the container only when it is EMPTY - i.e. after the editor and its view have already
+    been destroyed by their owner. Refuses, loudly, if a view is still inside. */
+extern "C" void NativeClip2_detachEmptyContainer(void* peerHandle);
 // The READ-ONLY SHIELD (24 Oct 2026): a transparent NSView of ours, kept topmost inside the clip
 // container, that swallows every gesture aimed at the hosted plugin's own view and draws one line
 // along its top edge. JUCE's setInterceptsMouseClicks cannot do this - a guest AU's NSView is never
@@ -64,6 +70,18 @@ namespace NativeClip
         w = h = 0;
         auto* handle = windowHandleFor(comp);
         return handle != nullptr && NativeClip2_getPluginSize(handle, &w, &h);
+    }
+
+    /** Hide the clip container where it stands, or show it again. Nothing inside it moves. */
+    inline void setHidden(juce::Component* comp, bool hidden)
+    {
+        if (auto* handle = windowHandleFor(comp)) NativeClip2_setHidden(handle, hidden);
+    }
+
+    /** Remove our container once its guest has gone with the editor that owned it. */
+    inline void detachEmptyContainer(juce::Component* comp)
+    {
+        if (auto* handle = windowHandleFor(comp)) NativeClip2_detachEmptyContainer(handle);
     }
 
     // VERBOSE variant for the settle-verdict log (2 Sep 2026): names WHICH
