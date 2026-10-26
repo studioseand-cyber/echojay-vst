@@ -2561,6 +2561,23 @@ public:
     // setLatencySamples from here.
     std::function<void()> onChainChanged;
 
+    // ---- SOMEONE OUTSIDE THIS RACK MAY BE SHOWING ONE OF ITS SLOTS (26 Oct 2026) ----------------
+    //
+    // Round 1 of the real-editor design (docs/LIVE_VIEW_REAL_EDITOR_2026-10-26.md §2). A Link's slot
+    // editor can be held by the Link's own plugin window or, from round 2, by a V2's live view in the
+    // same process. Both hold the REAL editor of the REAL instance, so a structural change has to
+    // reach them BEFORE the slot moves - and in one order, from one place.
+    //
+    // Fired BEFORE the change, on the message thread, with the 0-based slot it starts at (-1 = the
+    // whole rack). The owner turns it into echojay::EditorLease::revokeFrom, which tells the holder
+    // to let go and then destroys the editor. A slot index is not a plugin (the morning of 26 Oct, in
+    // four places), so everything from that index UP is revoked: the leases above it would otherwise
+    // name a different plugin than the one they were taken on.
+    //
+    // Unset on the main plugin's own rack, whose editors are the pane's business and have never left
+    // this process' own window.
+    std::function<void (int slot0, const char* why)> onSlotsAboutToChange;
+
     // ---- State persistence -----------------------------------------------
     void saveToDisk() const;
     void loadFromDisk();

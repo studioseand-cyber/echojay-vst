@@ -757,13 +757,29 @@ scratch, src = sys.argv[1], sys.argv[2]
 cc = json.load(open('build/compile_commands.json'))
 entry = [e for e in cc if e['file'].endswith('Source/ChainHost.cpp') and 'CMakeFiles/EchoJay.dir' in e['command']][0]
 args = shlex.split(entry['command'])
-out, skip = [], False
-for a in args[1:]:
+# ---- THE RIG IS BUILT FOR THE ARCHITECTURES ITS LIBRARY HAS (26 Oct 2026) -------------------
+# The flags come from the `build` tree, which is universal, so the link makes an arm64 AND an
+# x86_64 slice. LIB, though, is whatever tree the caller is testing - and QUICK's tree is arm64
+# only (his 18 Oct rule), so the x86_64 slice has no library and the link fails with hundreds of
+# undefined JUCE symbols and nothing saying why. The lib's own slices decide, read off the file.
+lib = os.environ.get('LIB', 'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a')
+lib_archs = set()
+try:
+    lib_archs = set(subprocess.run(['lipo', '-archs', lib], capture_output=True, text=True).stdout.split())
+except Exception:
+    pass
+out, skip, dropped = [], False, []
+for i, a in enumerate(args[1:], start=1):
     if skip: skip = False; continue
     if a in ('-c', '-o'): skip = (a == '-o'); continue
     if a.endswith('ChainHost.cpp') or a.endswith('.o'): continue
     if a.startswith('-flto'): continue
+    if a == '-arch' and lib_archs and args[i + 1] not in lib_archs:
+        dropped.append(args[i + 1]); skip = True; continue
     out.append(a)
+if dropped:
+    print(f"  the rig is built for {' '.join(sorted(lib_archs))} only: {' '.join(dropped)} dropped, "
+          f"because {os.path.basename(lib)} has no such slice")
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'), src,
         os.environ.get('LIB', 'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a'),
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',

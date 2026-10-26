@@ -1,4 +1,5 @@
 #include "EJDialWrites.h"
+#include "EJLocalInstances.h"   // real-editor round 1: the directory and the lease (rig-driven for now)
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
 #include "EJSlotLevelsBlock.h"   // B 92(2): the one slot_levels composer
@@ -39924,6 +39925,171 @@ void EchoJayEditor::serviceRigHook()
             });
             note = "asked for \"" + name + "\" (the rack had " + juce::String (had)
                  + " slot(s); the load is asynchronous, so read ownRack for the answer)";
+        }
+    }
+    else if (c.name == echojay::rig::cmd::lease)
+    {
+        // ---- ROUND 1 OF THE REAL EDITOR, DRIVEN FROM THE V2'S OWN IMAGE (26 Oct 2026) ----------
+        //
+        // This is the only thing in the V2 that touches the lease in round 1, and it DRAWS NOTHING:
+        // his condition was that lifetime, lease and ordering are green in the rig *before the V2
+        // ever draws a lent editor*. The borrower below is a recorder - it is told to let go and
+        // writes down that it was told, which is exactly the half that has to be proved first.
+        //
+        // Gated like every other command in this file (EJ_RIG_HOOK and the build-time lock).
+        struct RigLeaseBorrower : echojay::EditorBorrower
+        {
+            juce::String uid; int slot1 = 0; unsigned token = 0;
+            juce::AudioProcessorEditor* editor = nullptr;
+            int revokes = 0; juce::String lastRevoke;
+            ~RigLeaseBorrower() override { echojay::EditorLease::borrowerGone (this); }
+            void editorLeaseRevoked (const juce::String& u, int s1, const juce::String& why) override
+            {
+                ++revokes;
+                lastRevoke = "slot " + juce::String (s1) + " of " + u + ": " + why;
+                if (u == uid && s1 == slot1) { editor = nullptr; slot1 = 0; token = 0; }
+                EchoJay_NSLog (("EJRig: the rig's borrower was told to let go of " + lastRevoke).toRawUTF8());
+            }
+            juce::String borrowerDescribe() const override { return "the rig, holding but not showing it"; }
+        };
+        // One per process run, so a row can take a lease in one command and assert on the revoke in
+        // a later one. Never freed: its destructor is the "borrower went without returning" road,
+        // and the rig tests that door explicitly rather than by exiting.
+        static RigLeaseBorrower* borrower = new RigLeaseBorrower();
+
+        // ---- AND THE SAME LEASE ON THE V2'S OWN RACK, SO THE FOUR STRUCTURAL DOORS CAN BE
+        //      DRIVEN EXACTLY (26 Oct 2026) -------------------------------------------------------
+        //
+        // ChainHost::onSlotsAboutToChange is the one hook every structural door calls - remove,
+        // park (the edit-op road), insert and release. On a Link's rack those doors need an agent
+        // turn to reach, which is a model answering and a plan matching; on the OWN rack the rig can
+        // press them directly through clear_rack and add_slot. The code under test is the same
+        // ChainHost in both images, so arming the hook here tests the doors and the order
+        // deterministically, with a real AU editor of a real plugin.
+        //
+        // Armed only when a row asks, and it registers under its own uid so nothing a Link does can
+        // collide with it.
+        struct RigSelfLender : echojay::EditorLender
+        {
+            EchoJayEditor* ed = nullptr;
+            std::map<int, std::unique_ptr<juce::AudioProcessorEditor>> made;
+            juce::AudioProcessorEditor* lenderCreateSlotEditor (int slot1, juce::String& why) override
+            {
+                if (ed == nullptr) { why = "no editor"; return nullptr; }
+                if (auto it = made.find (slot1); it != made.end()) return it->second.get();
+                auto* e = ed->processorRef.getChainHost().createEditorForSlot (slot1 - 1);
+                if (e == nullptr) { why = "that plugin would not open an editor here"; return nullptr; }
+                made[slot1].reset (e);
+                return e;
+            }
+            void lenderDestroySlotEditor (int slot1) override { made.erase (slot1); }
+            juce::String lenderDescribe() const override { return "the V2's own rack (the rig's lender)"; }
+        };
+        static RigSelfLender* self = new RigSelfLender();
+        const juce::String kSelfUid ("rigself0001");
+
+        const auto op  = c.args.getProperty ("op", juce::var()).toString().trim();
+        const auto uid = c.args.getProperty ("uid", juce::var()).toString().trim();
+        const int  n   = (int) c.args.getProperty ("n", juce::var());
+
+        if (op == "table")
+        {
+            note = juce::String (echojay::LocalInstances::shared()
+                                     ? "this process has one shared EchoJay table"
+                                     : "NO shared table: another EchoJay build owns it")
+                 + ", created by " + (echojay::LocalInstances::createdHere() ? "THIS bundle (the V2)"
+                                                                            : "another bundle (a Link got there first)")
+                 + "; it holds " + echojay::LocalInstances::describe();
+        }
+        else if (op == "find")
+        {
+            auto* lender = echojay::LocalInstances::find (uid);
+            ok = lender != nullptr;
+            note = lender != nullptr
+                 ? "found " + lender->lenderDescribe() + " in this process"
+                 : "no live EchoJay Link with uid \"" + uid + "\" in this process; the table holds "
+                   + echojay::LocalInstances::describe();
+        }
+        else if (op == "who")
+        {
+            juce::String who;
+            const auto h = echojay::EditorLease::heldBy (uid, n, &who);
+            note = "slot " + juce::String (n) + " of " + uid + " is held by " + who
+                 + " (" + echojay::editorHolderName (h) + ")";
+            ok = true;
+        }
+        else if (op == "take")
+        {
+            borrower->uid = uid; borrower->slot1 = n;
+            auto taken = echojay::EditorLease::take (uid, n, borrower, echojay::EditorHolder::Borrowed);
+            ok = taken.ok();
+            if (ok)
+            {
+                borrower->token = taken.token; borrower->editor = taken.editor;
+                note = "took slot " + juce::String (n) + " of " + uid + ": the real editor is "
+                     + juce::String (taken.editor->getWidth()) + "x" + juce::String (taken.editor->getHeight())
+                     + ", held and NOT shown (token " + juce::String ((int) taken.token) + ")";
+            }
+            else
+            {
+                borrower->slot1 = 0;
+                note = "refused: " + taken.why;
+            }
+        }
+        else if (op == "give_back")
+        {
+            const unsigned token = borrower->token;
+            const int slot1 = borrower->slot1 > 0 ? borrower->slot1 : n;
+            borrower->editor = nullptr; borrower->slot1 = 0; borrower->token = 0;
+            ok = echojay::EditorLease::giveBack (uid, slot1, token);
+            note = ok ? "gave slot " + juce::String (slot1) + " of " + uid + " back; its owner destroyed the editor"
+                      : "nothing to give back for slot " + juce::String (slot1) + " of " + uid
+                        + " (token " + juce::String ((int) token) + ")";
+        }
+        else if (op == "road")
+        {
+            // Which live view a Link would get, read in a real host: his condition is that the copy
+            // road is what a build takes until he turns the switch on, and a row has to be able to
+            // say so about the build that is running rather than about the source.
+            int pubPid = 0;
+            int err = 0;
+            const auto dir = LinkShm::resolveDir (err);
+            if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
+                pubPid = rc.publisherPid;
+            const bool sw = echojay::realEditorSwitchOn();
+            ok = true;
+            note = juce::String ("the switch is ") + (sw ? "ON" : "OFF") + "; "
+                 + echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
+        }
+        else if (op == "arm_self")
+        {
+            self->ed = this;
+            ok = echojay::LocalInstances::add (kSelfUid, self);
+            processorRef.getChainHost().onSlotsAboutToChange = [this, kSelfUid] (int slot0, const char* why)
+            {
+                const int n = echojay::EditorLease::revokeFrom (kSelfUid, slot0 < 0 ? 1 : slot0 + 1,
+                                                                why != nullptr ? juce::String (why)
+                                                                               : juce::String ("the rack changed"));
+                if (n > 0)
+                    EchoJay_NSLog (("EJRig: the own rack's structural door revoked " + juce::String (n)
+                                    + " lease(s) because " + why).toRawUTF8());
+            };
+            note = ok ? "the own rack is in the directory as \"" + kSelfUid
+                        + "\" and its structural doors now revoke leases"
+                      : "could not put the own rack in the directory";
+        }
+        else if (op == "revokes")
+        {
+            ok = true;
+            note = juce::String (borrower->revokes) + " revoke(s) so far"
+                 + (borrower->lastRevoke.isNotEmpty() ? ", last: " + borrower->lastRevoke : juce::String())
+                 + "; the rig still holds " + juce::String (borrower->slot1 > 0 ? "slot " + juce::String (borrower->slot1)
+                                                                                : juce::String ("nothing"));
+        }
+        else
+        {
+            ok = false;
+            note = "lease needs op = table | find | who | take | give_back | revokes | road | arm_self";
         }
     }
     else if (c.name == echojay::rig::cmd::newChat)

@@ -4025,7 +4025,12 @@ int main (int argc, char* argv[])
         // EVERY ROW IN THIS BLOCK HAS TO BE IN THIS CONDITION, and twice today one was not: a
         // row left out of it vanishes with no line at all, which the suite counts as neither a
         // pass nor a skip. LV7 and LV8 were both silently absent for a run because of it.
-        if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6") || rowWanted ("LV8"))
+        // The Link and the slot the LV rows worked on, so the real-editor rows below can lease THE
+        // SAME real plugin on the same real Link instead of setting one up a second time.
+        juce::String lvUid; int lvSlot = 0;
+        if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6") || rowWanted ("LV8")
+            || rowWanted ("RE0") || rowWanted ("RE1") || rowWanted ("RE2") || rowWanted ("RE3")
+            || rowWanted ("RE4") || rowWanted ("RE5") || rowWanted ("RE7"))
         {
             leg ("LV: AUDelay in the LIVE VIEW of a Link's rack (the mirror and CONTROL are live)");
             const EJPumpFn livePump = [&] (int ms)
@@ -4083,6 +4088,7 @@ int main (int argc, char* argv[])
                             }
                     return false;
                 }, 25000);
+                lvUid = uid; lvSlot = slotToOpen;
                 if (slotToOpen == 0)
                 {
                     skip ("LV4-LV6: AUDelay in " + uid + "'s live view",
@@ -4275,6 +4281,213 @@ int main (int argc, char* argv[])
                 }
             }
         }
+
+        // ================================================================================================
+        //  RE1-RE6: THE REAL EDITOR'S DIRECTORY AND LEASE, IN A REAL HOST (round 1, 26 Oct 2026)
+        // ================================================================================================
+        //
+        //  *"Build it in your 4-5 rounds, with round 1 (lifetime, lease and ordering) green in the rig
+        //   before the V2 ever draws a lent editor."*
+        //
+        //  WHAT ONLY THIS CAN PROVE, and the reason round 1 had to start here. The V2 and the Link are two
+        //  Mach-O images with hidden visibility: a directory kept in a shared header would be TWO tables,
+        //  one per bundle, and the V2 would never find a single Link. These rows ask the V2's own image for
+        //  a Link's real editor and watch the Link's image answer. Nothing is DRAWN: the rig's borrower
+        //  holds the editor and shows it nowhere, which is exactly his condition.
+        //
+        //  The guard legs EL0-EL10a (tools/chat_store_guard) prove the rules with fakes, where every
+        //  ordering can be driven and stated. These prove the two bundles meet, and that the two teardowns
+        //  that have actually crashed this plugin - a slot removed under an open editor, and the instance
+        //  destroyed while someone holds one - reach the holder in the right order with real plugins.
+        if (rowWanted ("RE0") || rowWanted ("RE1") || rowWanted ("RE2") || rowWanted ("RE3")
+            || rowWanted ("RE4") || rowWanted ("RE5") || rowWanted ("RE6") || rowWanted ("RE7"))
+        {
+            leg ("RE: the real editor's directory and lease, with two real bundles in one process");
+
+            auto lease = [&] (const char* op, const juce::String& uid, int n, int timeoutMs = 10000)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("op", op);
+                if (uid.isNotEmpty()) o->setProperty ("uid", uid);
+                if (n > 0)            o->setProperty ("n", n);
+                return rig.send (echojay::rig::cmd::lease, juce::var (o), timeoutMs);
+            };
+            auto noteOf = [] (const juce::var& ack) { return ack.getProperty ("note", juce::var()).toString(); };
+
+            // ---- RE0: ONE TABLE IN THIS PROCESS, SEEN FROM THE V2'S IMAGE ---------------------------
+            {
+                const auto ack = lease ("table", {}, 0);
+                const auto note = noteOf (ack);
+                row ("RE0", note.contains ("one shared EchoJay table") && note.contains ("live"),
+                     "is there ONE EchoJay table in this process, and does the V2's bundle see the Links' "
+                     "registrations in it",
+                     note);
+            }
+
+            // ---- RE7: AND WHICH LIVE VIEW A BUILD TAKES BY DEFAULT (his condition, 26 Oct) -------
+            // *"Put the real editor behind a switch (default off until I've tested it)."*  A row has
+            // to be able to say that about the BUILD, not about the source, and this one reads it
+            // from the running plugin in a real host.
+            if (rowWanted ("RE7"))
+            {
+                const auto note = noteOf (lease ("road", lvUid, 0));
+                row ("RE7", note.contains ("the switch is OFF") && note.contains ("its own copy"),
+                     "does this build take the COPY road by default, with the real editor behind a "
+                     "switch he has not turned on",
+                     note);
+            }
+
+            if (lvUid.isEmpty() || lvSlot <= 0)
+            {
+                skip ("RE1-RE5: a Link's real editor, leased",
+                      "the LV rows never got a plugin onto a Link's rack in this pass (uid \""
+                      + lvUid + "\", slot " + juce::String (lvSlot) + "), so there is no real remote slot "
+                      "to lease - these rows measured nothing rather than passing on the own rack.");
+            }
+            else
+            {
+                // ---- RE1: THE V2'S IMAGE FINDS THE LINK'S INSTANCE --------------------------------
+                {
+                    const auto ack = lease ("find", lvUid, 0);
+                    const auto note = noteOf (ack);
+                    row ("RE1", (bool) ack.getProperty ("ok", false) && note.contains ("EchoJay Link"),
+                         "can the V2 find that Link's live instance in this process (the two bundles meeting "
+                         "in one table, which a shared header's static cannot do)",
+                         note);
+                }
+
+                // ---- RE2: AND GETS ITS REAL EDITOR, HELD, SHOWN NOWHERE --------------------------
+                juce::String takeNote;
+                bool took = false;
+                {
+                    const auto ack = lease ("take", lvUid, lvSlot, 20000);
+                    takeNote = noteOf (ack);
+                    took = (bool) ack.getProperty ("ok", false);
+                    const auto who = noteOf (lease ("who", lvUid, lvSlot));
+                    row ("RE2", took && takeNote.contains ("real editor") && who.contains ("the rig"),
+                         "does the lease hand the V2 the REAL editor of the real instance on slot "
+                         + juce::String (lvSlot) + ", with one place answering who holds it",
+                         takeNote + " | " + who);
+                }
+
+                // ---- RE3: A SECOND EDITOR OF THAT INSTANCE IS REFUSED, IN A SENTENCE -------------
+                // A row that is gated on the one before it SAYS SO when the gate closes: left out of
+                // its gate it vanishes with no line at all, which is how two rows went missing from
+                // the LV set this morning.
+                if (! took)
+                    skip ("RE3-RE4: the second ask, and the return",
+                          "the lease on slot " + juce::String (lvSlot) + " of " + lvUid
+                          + " was never taken (" + takeNote + "), so there was nothing to ask for "
+                          "twice and nothing to give back.");
+                if (took)
+                {
+                    const auto again = noteOf (lease ("take", lvUid, lvSlot));
+                    row ("RE3", again.contains ("refused") && again.contains ("already open"),
+                         "is a second editor of one instance refused with the sentence that says who has it "
+                         "(one activeEditor per processor; two parents is undefined behaviour)",
+                         again);
+                }
+
+                // ---- RE4: GIVEN BACK, AND ITS OWNER DESTROYS IT ----------------------------------
+                if (took)
+                {
+                    const auto back = noteOf (lease ("give_back", lvUid, lvSlot));
+                    const auto who  = noteOf (lease ("who", lvUid, lvSlot));
+                    row ("RE4", back.contains ("gave slot") && who.contains ("nobody"),
+                         "does returning the lease destroy the editor at its owner and leave the slot free",
+                         back + " | " + who);
+                }
+
+                // ---- RE5: THE LINK IS DESTROYED WHILE THE V2 HOLDS ONE --------------------------
+                //
+                // The design's teardown table, the line with the most risk on it: *"the Link processor is
+                // destroyed (track deleted, plugin removed): destructor's FIRST act - drop from the
+                // directory and revoke every lease"*. Here the host really does destroy it, with the V2
+                // really holding that slot's editor, and the row reads what the V2 was told.
+                if (rowWanted ("RE5"))
+                {
+                    const auto name = linkRowOf (rig.freshState(), lvUid).getProperty ("name", juce::var()).toString();
+                    Track* victim = nullptr;
+                    if (name == lk1.trackName || name.containsIgnoreCase ("Kick")) victim = &lk1;
+                    else if (name == lk2.trackName)                                victim = &lk2;
+
+                    const auto retake = noteOf (lease ("take", lvUid, lvSlot, 20000));
+                    if (victim == nullptr || victim->plugin == nullptr || ! retake.contains ("real editor"))
+                    {
+                        skip ("RE5: the Link destroyed while the V2 holds its editor",
+                              "could not set the row up: the Link on screen is \"" + name
+                              + "\" which is not one of this rig's two tracks, or the lease was not taken ("
+                              + retake + ").");
+                    }
+                    else
+                    {
+                        const auto before = noteOf (lease ("revokes", {}, 0));
+                        // The host deletes the track: releaseResources, then the processor itself.
+                        victim->plugin->releaseResources();
+                        victim->plugin.reset();
+                        Rig::pump (1500);
+                        const auto after = noteOf (lease ("revokes", {}, 0));
+                        const auto find  = noteOf (lease ("find", lvUid, 0));
+                        row ("RE5", after.contains ("going away") && after.contains ("nothing")
+                                        && find.contains ("no live EchoJay Link"),
+                             "when the host destroys the Link while the V2 holds one of its editors, is the "
+                             "V2 told to let go - and is that Link gone from the directory",
+                             "before: " + before + " | after: " + after + " | " + find);
+                    }
+                }
+            }
+
+            // ---- RE6: THE FOUR STRUCTURAL DOORS, DRIVEN EXACTLY ON THE OWN RACK ------------------
+            //
+            // A Link's rack can only be edited through an agent turn from here (a model answering and a
+            // plan matching the rack), which is not a thing to hang an ordering test on - LV8 spent two
+            // passes proving that. ChainHost is the SAME code in both images, so the hook, the slot
+            // numbering and the order are driven here on the own rack, where clear_rack and add_slot press
+            // the doors directly, with a real Apple AU's real editor on the lease.
+            if (rowWanted ("RE6"))
+            {
+                rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+                rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
+                clearOwnRack (rig);
+                Rig::pump (300);
+                const auto armed = noteOf (lease ("arm_self", {}, 0));
+                rig.send (echojay::rig::cmd::addSlot, args1 ("name", "AUDelay"), 25000);
+                bool haveTwo = false;
+                rig.send (echojay::rig::cmd::addSlot, args1 ("name", "AUMatrixReverb"), 25000);
+                rig.until ([&] (const juce::var& stv)
+                {
+                    if (auto* arr = stv.getProperty ("ownRack", juce::var())
+                                       .getProperty ("slots", juce::var()).getArray())
+                        haveTwo = arr->size() >= 2;
+                    return haveTwo;
+                }, 25000);
+                if (! armed.contains ("structural doors") || ! haveTwo)
+                {
+                    skip ("RE6: a structural change revokes the editors anyone is showing",
+                          "the row could not be set up (" + armed + "; two slots on the own rack: "
+                          + juce::String (haveTwo ? "yes" : "no") + ").");
+                }
+                else
+                {
+                    const juce::String selfUid ("rigself0001");
+                    const auto took1 = noteOf (lease ("take", selfUid, 1, 20000));
+                    const auto took2 = noteOf (lease ("take", selfUid, 2, 20000));
+                    juce::ignoreUnused (took2);
+                    const auto before = noteOf (lease ("revokes", {}, 0));
+                    // The user's own delete, through the product's own removeSlot (clear_rack is that
+                    // call, back to front).
+                    clearOwnRack (rig);
+                    Rig::pump (600);
+                    const auto after = noteOf (lease ("revokes", {}, 0));
+                    const auto who1  = noteOf (lease ("who", selfUid, 1));
+                    row ("RE6", took1.contains ("real editor") && after.contains ("removed")
+                                    && who1.contains ("nobody"),
+                         "does removing a slot tell whoever is showing its editor to let go, before the slot "
+                         "goes - the crash family this round exists to close",
+                         "took: " + took1 + " | before: " + before + " | after: " + after + " | " + who1);
+                }
+            }
+        }
     };
 
     if (::getenv ("EJ_RIG_FAST_LV") != nullptr)
@@ -4284,7 +4497,9 @@ int main (int argc, char* argv[])
                      "skipped entirely.\n\n");
         runLiveViewRows();
         v2.closeEditor();
-        for (Track* t : { &v2, &lk1, &lk2 }) t->plugin->releaseResources();
+        // RE5 really does destroy a Link mid-pass (the host deleting the track), so the teardown asks
+        // whether a track still has a plugin rather than assuming it.
+        for (Track* t : { &v2, &lk1, &lk2 }) if (t->plugin != nullptr) t->plugin->releaseResources();
         lk2.plugin.reset(); lk1.plugin.reset(); v2.plugin.reset();
         std::printf ("==== host_rig (LIVE-VIEW ROWS ONLY): %s (%d failed, %d passed, %d skipped) ====\n",
                      failures == 0 ? "GREEN" : "RED", failures, passes, skips);
@@ -10441,7 +10656,7 @@ int main (int argc, char* argv[])
 
     // ---- teardown in the host's own order ---------------------------------
     v2.closeEditor();
-    for (Track* t : { &v2, &lk1, &lk2 }) t->plugin->releaseResources();
+    for (Track* t : { &v2, &lk1, &lk2 }) if (t->plugin != nullptr) t->plugin->releaseResources();
     lk2.plugin.reset(); lk1.plugin.reset(); v2.plugin.reset();
 
     std::printf ("==== host_rig: %s (%d failed, %d passed, %d skipped) ====\n",

@@ -4758,6 +4758,10 @@ void ChainHost::removeSlot(int i)
 {
     GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
+    // ANYONE SHOWING THIS SLOT'S REAL EDITOR LETS GO FIRST (26 Oct 2026, real-editor round 1).
+    // Before the undo entry, before the graph: the holder is told, the editor is destroyed, and only
+    // then does the slot move. Nothing happens here on the main plugin's own rack (hook unset).
+    if (onSlotsAboutToChange) onSlotsAboutToChange (i, "the slot was removed");
     pushUndo("remove " + slots_[(size_t)i].desc.name);   // 21m undo
     // MOVE LOG: what left. Recorded before the slot goes, while its name is
     // still in hand.
@@ -8112,6 +8116,8 @@ void ChainHost::releaseBorrowToPool()
     }
     EchoJay_NSLog(("EJBorrowPool: release about to clear " + juce::String((int) slots_.size())
                    + " slot(s) [+" + sinceT0() + " ms]").toRawUTF8());
+    // The whole rack goes: every editor anyone is showing of it goes with it, first.
+    if (onSlotsAboutToChange) onSlotsAboutToChange (-1, "the whole rack was released");
     slots_.clear();
     borrowReusedNodeIds_.clear();
     borrowSeededNodeIds_.clear();
@@ -8209,6 +8215,9 @@ void ChainHost::parkSlotReattachable(int i)
 {
     GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int) slots_.size() || !graph_) return;
+    // The edit-op road's remove (the agent's replace is a park then an insert): the same revoke, in
+    // the same order, before the slot leaves. This is the door his 11:20 fault came through.
+    if (onSlotsAboutToChange) onSlotsAboutToChange (i, "the slot was replaced or removed by an edit");
     auto& s = slots_[(size_t) i];
     detachHostedListener(i);
     if (s.node != nullptr)
@@ -8246,6 +8255,9 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
                                   juce::String* seedRefusedWhy)
 {
     GraphMutation graphMutation(*this);   // v9 change B
+    // An INSERT renumbers everything from insertAt up, so a lease held on one of those slots would
+    // name a different plugin the moment this returns. Told first, in the one order.
+    if (onSlotsAboutToChange) onSlotsAboutToChange (insertAt, "a slot was inserted at or before this one");
     const auto key = planKeyOf({ d.name,
                                  descUid(d) != 0 ? juce::String(descUid(d))
                                                  : juce::String(), {} });

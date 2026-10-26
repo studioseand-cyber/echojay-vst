@@ -29,6 +29,21 @@ LinkProcessor::LinkProcessor()
     // file part for unnamed Links). Serialised in state; regenerated on
     // registry collision after track duplication.
     instanceUid_ = juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+    // ---- FINDABLE IN THIS PROCESS, AND ITS EDITORS LEASED (26 Oct 2026, real-editor round 1) ----
+    // The directory is how a V2 in the same process reaches THIS instance instead of loading a copy
+    // of the plugin; the hook is how any holder of one of these slots' editors is told to let go
+    // before the slot moves. Both are inert until something borrows: today the only borrower is this
+    // Link's own plugin window.
+    syncLocalDirectory ("constructed");
+    chainHost.onSlotsAboutToChange = [this] (int slot0, const char* why)
+    {
+        const int from = slot0 < 0 ? 1 : slot0 + 1;
+        const int n = echojay::EditorLease::revokeFrom (instanceUid_, from,
+                                                        why != nullptr ? juce::String (why) : juce::String ("the rack changed"));
+        if (n > 0)
+            EchoJay_NSLog (("EJLease: " + juce::String (n) + " editor(s) of this Link from slot "
+                            + juce::String (from) + " up were closed because " + why).toRawUTF8());
+    };
    #if ECHOJAY_NO_VISUAL_FFT
     // Build-configuration diagnostic, and this pass's content check: the
     // 4096-point VISUAL FFT is compiled out of the Link (nothing here reads
@@ -334,6 +349,28 @@ LinkProcessor::LinkProcessor()
 
 LinkProcessor::~LinkProcessor()
 {
+    // ---- FIRST OF ALL: NOBODY IS LEFT SHOWING AN EDITOR OF THIS INSTANCE ------------------------
+    // The design's teardown table, top line: *"the Link processor is destroyed (track deleted,
+    // plugin removed): destructor's FIRST act: drop from the directory + revoke every lease"*. The
+    // revoke tells each holder to let go, destroys each editor and only then is this object allowed
+    // to come apart - so a V2 that is showing one of these slots cannot be left pointing at it.
+    // borrowerGone covers the other direction (this Link's own window, as a borrower) and can only
+    // find anything if a lease was left behind, which is a bug and says so.
+    {
+        const int revoked = echojay::EditorLease::revokeAll (instanceUid_, "the Link is going away");
+        const int stray   = echojay::EditorLease::borrowerGone (this);
+        echojay::LocalInstances::drop (this);
+        chainHost.onSlotsAboutToChange = nullptr;
+        if (revoked > 0 || stray > 0)
+            EchoJay_NSLog (("EJLease: this Link closed " + juce::String (revoked)
+                            + " lent editor(s) as it went away"
+                            + (stray > 0 ? ", and returned " + juce::String (stray)
+                                           + " lease(s) IT still held - a borrower that did not return one"
+                                         : juce::String())).toRawUTF8());
+    }
+    // The window goes before the editors it was showing could be touched again.
+    slotEditorWin_.reset();
+    lentEditors_.clear();
     // FIRST, before stopTimer and before any member is torn down: expire the async token so a message already
     // queued against this object returns instead of running. See aliveToken_ in the header for the crash this
     // closes (ring_leak_guard, 4 crashes in 20 runs, updateShmState reached from the message queue).
@@ -1778,18 +1815,110 @@ bool LinkProcessor::showSlotEditorWindow (int slot1Based, juce::String& why)
     // already open for this slot: raise it, which is what a second press should do
     if (slotEditorWin_ != nullptr && slotEditorWin_->slot1 == slot1Based)
     { slotEditorWin_->setVisible (true); slotEditorWin_->toFront (true); return true; }
-    auto* ed = chainHost.createEditorForSlot (idx);
-    if (ed == nullptr) { why = "that plugin would not open an editor here"; return false; }
-    const auto name = chainHost.getSlotInfo (idx).name;
+
+    // ---- THROUGH THE LEASE (26 Oct 2026, real-editor round 1) ---------------------------------
+    // The same door a V2's live view will use from round 2, used here first by the road that already
+    // exists. What it buys today: one editor per slot whoever asks (the lease is exclusive and says
+    // who holds it in a sentence), and a slot that is removed, replaced or renumbered closes this
+    // window on the way out instead of leaving it showing a parked instance.
     slotEditorWin_.reset();          // one at a time, like the main plugin's pop-out
+    auto taken = echojay::EditorLease::take (instanceUid_, slot1Based, this, echojay::EditorHolder::OwnWindow);
+    if (! taken.ok())
+    {
+        // A refusal is a sentence, never a button that did nothing. "Open in EchoJay V2" is the one
+        // the user will see once a V2 can hold a lease (round 3 puts those words on the card).
+        why = taken.why;
+        EchoJay_NSLog (("EJLease: this Link will not open slot " + juce::String (slot1Based)
+                        + " in its own window: " + why).toRawUTF8());
+        return false;
+    }
+    const auto name = chainHost.getSlotInfo (idx).name;
     slotEditorWin_ = std::make_unique<SlotEditorWindow> (name.isNotEmpty() ? name : juce::String ("Plugin"),
-                                                         ed, slot1Based);
+                                                         taken.editor, slot1Based);
+    slotEditorWin_->leaseToken = taken.token;
     // Deleting the window from inside its own close callback is a use-after-free; the reset is posted.
+    // THE ORDER IN HERE IS THE DESIGN'S ORDER: the window (the borrower) goes first, then the lease
+    // goes back and its owner destroys the editor. Never the other way round.
     slotEditorWin_->onClosed = [this]
     {
-        juce::MessageManager::callAsync ([this] { slotEditorWin_.reset(); });
+        juce::MessageManager::callAsync ([this]
+        {
+            if (slotEditorWin_ == nullptr) return;
+            const int slot1 = slotEditorWin_->slot1;
+            const unsigned token = slotEditorWin_->leaseToken;
+            slotEditorWin_.reset();
+            echojay::EditorLease::giveBack (instanceUid_, slot1, token);
+        });
     };
     return true;
+}
+
+// ---- echojay::EditorLender ---------------------------------------------------------------------
+//
+// The instance's own editor, made once and owned HERE. createEditorForSlot is the same call the
+// Link's window and the main plugin's own rack have always used; what is new is that the pointer it
+// returns now has one owner and one place that deletes it.
+juce::AudioProcessorEditor* LinkProcessor::lenderCreateSlotEditor (int slot1Based, juce::String& why)
+{
+    const int idx = slot1Based - 1;
+    if (idx < 0 || idx >= chainHost.getNumSlots()) { why = "that slot is not on this rack"; return nullptr; }
+    if (auto it = lentEditors_.find (slot1Based); it != lentEditors_.end() && it->second != nullptr)
+        return it->second.get();        // one editor per instance: the same one, never a second
+    auto* ed = chainHost.createEditorForSlot (idx);
+    if (ed == nullptr)
+    {
+        why = "that plugin would not open an editor here";
+        return nullptr;
+    }
+    lentEditors_[slot1Based].reset (ed);
+    EchoJay_NSLog (("EJLease: made the real editor for slot " + juce::String (slot1Based) + " of "
+                    + lenderDescribe()).toRawUTF8());
+    return ed;
+}
+
+void LinkProcessor::lenderDestroySlotEditor (int slot1Based)
+{
+    auto it = lentEditors_.find (slot1Based);
+    if (it == lentEditors_.end()) return;
+    lentEditors_.erase (it);            // the editor dies here, and nowhere else
+    EchoJay_NSLog (("EJLease: destroyed the real editor for slot " + juce::String (slot1Based) + " of "
+                    + lenderDescribe()).toRawUTF8());
+}
+
+juce::String LinkProcessor::lenderDescribe() const
+{
+    auto n = effectiveDisplayName();
+    return "EchoJay Link" + (n.isNotEmpty() ? " \"" + n + "\"" : juce::String())
+         + " (uid " + instanceUid_ + ")";
+}
+
+// ---- echojay::EditorBorrower (this Link's OWN plugin window) -----------------------------------
+//
+// SYNCHRONOUS, by contract: the editor is destroyed as soon as this returns, so the window goes now
+// rather than on a posted message. Deleting a DocumentWindow here is safe because this is never
+// reached from inside that window's own callbacks - the close button's road is the posted one above.
+void LinkProcessor::editorLeaseRevoked (const juce::String& uid, int slot1Based, const juce::String& why)
+{
+    if (uid != instanceUid_) return;
+    if (slotEditorWin_ == nullptr || slotEditorWin_->slot1 != slot1Based) return;
+    slotEditorWin_->editor = nullptr;   // non-owning; its owner deletes it next
+    slotEditorWin_.reset();
+    EchoJay_NSLog (("EJLease: closed this Link's own window for slot " + juce::String (slot1Based)
+                    + " because " + why).toRawUTF8());
+}
+
+juce::String LinkProcessor::borrowerDescribe() const
+{
+    return "the Link's own plugin window";
+}
+
+void LinkProcessor::syncLocalDirectory (const char* why)
+{
+    const bool ok = echojay::LocalInstances::add (instanceUid_, this);
+    EchoJay_NSLog (("EJLease: " + juce::String (ok ? "this Link is findable in this process"
+                                                   : "this Link could NOT be put in this process' directory")
+                    + " (uid " + instanceUid_ + ", " + why + "); the process holds "
+                    + echojay::LocalInstances::describe()).toRawUTF8());
 }
 
 void LinkProcessor::pollControlCommand()
@@ -2601,6 +2730,10 @@ void LinkProcessor::claimRegistrySlot()
                     auto old = instanceUid_;
                     instanceUid_ = juce::String::toHexString(
                         juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
+                    // The directory is keyed on the uid, so a re-mint moves this instance's row with
+                    // it - otherwise a V2 asking for the new uid would find nothing and a V2 asking
+                    // for the old one would find a Link that no longer answers to it.
+                    syncLocalDirectory ("the uid was re-minted after a registry collision");
                     // THE CHUNK WAS NOT OURS (6 Sep 2026 ruling, C1 + C2). A
                     // PROVEN-LIVE holder means the state this instance restored
                     // belongs to ANOTHER LIVE instance: Pro Tools seeds a fresh
@@ -5602,6 +5735,7 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         {
             if (chunkUidIn.isNotEmpty()) instanceUid_ = chunkUidIn;
             chunkUid_ = instanceUid_;
+            syncLocalDirectory ("the uid came from restored state");
             // 28 Sep 2026: THE "AUTHORED IN THIS HOST RUN" TEST IS RETIRED. It used to be computed here from
             // authorPid / authorStartSec / authorStartUsec and read by the claim path to decide a re-mint; it
             // could not tell a gone sibling's seed from a session REOPEN, and re-minted both. The three fields

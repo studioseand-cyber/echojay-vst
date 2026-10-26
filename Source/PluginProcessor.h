@@ -22,6 +22,7 @@
 #include "LinkShm.h"
 #include "EJShadowView.h"   // stage B of the muted shadow: the V2's own copy of the slot in view
 #include "EJLiveControl.h"  // CONTROL stages C1-C3: a gesture on the view reaches the Link
+#include "EJRealEditorSwitch.h"   // which live view a Link gets, and why (his condition, 26 Oct 2026)
 #include "EchoJayUndoHistory.h"   // 21n item 3
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EJChainRole.h"    // 21t-m item 5: the chain's role, from its three sources

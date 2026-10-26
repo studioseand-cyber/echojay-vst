@@ -165,6 +165,25 @@ namespace cmd
     // target. A row cannot test that without being able to press the button, so this calls
     // createNewChat - the same function the sidebar's "+ New chat" calls - and nothing else.
     inline constexpr const char* newChat     = "new_chat";         // { uid } - "" = the main chat
+    // ---- THE REAL EDITOR'S DIRECTORY AND LEASE (26 Oct 2026, round 1) ---------------------------
+    //
+    // Round 1 of docs/LIVE_VIEW_REAL_EDITOR_2026-10-26.md is lifetime, lease and ordering, and his
+    // condition on it is that it is *"green in the rig before the V2 ever draws a lent editor"*. So
+    // the rig drives the lease itself, from inside the V2, with a borrower that records what it was
+    // told and shows nothing: that proves the two BUNDLES meet in one table (they are separate
+    // Mach-O images - see EJProcessGlobal.h), that the lease is exclusive, and that every teardown
+    // order reaches the holder - without a lent editor on screen.
+    //
+    //   { op: "table" }                  is there one shared table in this process, and who made it
+    //   { op: "find",      uid }         is that Link findable from the V2's image
+    //   { op: "who",       uid, n }      who holds slot n's editor
+    //   { op: "take",      uid, n }      take it (the real editor is created and held, never shown)
+    //   { op: "give_back", uid, n }      return it (its owner destroys the editor)
+    //   { op: "revokes" }                how many times the rig's borrower has been told to let go
+    //   { op: "road",      uid }         which live view that Link would get, and why (the switch)
+    //   { op: "arm_self" }               put the V2's OWN rack in the directory, so its structural
+    //                                    doors can be driven exactly (a Link's need an agent turn)
+    inline constexpr const char* lease       = "lease";            // { op, uid, n }
     // press gains "undo" (fix 4) alongside apply / apply_all / skip_all / skip_line / details / stop.
 }
 

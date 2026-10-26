@@ -38,6 +38,8 @@
 #include "EJMapSuspect.h"               // SH31: a reduction control that reduces nothing
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
+#include "EJLocalInstances.h"        // EL: the real editor's directory and lease (round 1, 26 Oct)
+#include "EJRealEditorSwitch.h"      // ES: which live view a Link gets, and why (his condition, 26 Oct)
 #include <algorithm>   // OR2: std::stable_sort, to render through the shipped comparator
 #include <cstdio>
 
@@ -3575,6 +3577,274 @@ int main()
                "DR3 ...and only for the plugins this run armed: another plugin's dial is still the "
                "chat's, because the run never asked anyone to keep playing for it",
                "took it = no");
+    }
+
+    // =============================================================================================
+    //  THE EDITOR LEASE AND THE PROCESS-LOCAL DIRECTORY (real-editor round 1, 26 Oct 2026)
+    // =============================================================================================
+    //
+    //  His ruling: *"Build it in your 4-5 rounds, with round 1 (lifetime, lease and ordering) green
+    //  in the rig before the V2 ever draws a lent editor."*  The rig proves the two halves only a
+    //  real host can show - that the V2's bundle and a Link's bundle meet in ONE table, and that a
+    //  real removal reaches a real window. These legs prove the RULES, where every ordering can be
+    //  driven exactly and the known-bad direction can be stated.
+    //
+    //  The fakes record a SEQUENCE, because the order is the whole risk: the holder lets go, then
+    //  the owner destroys the editor, then the slot moves. A guard that only counted the calls would
+    //  pass on the order that crashed Logic.
+    {
+        using namespace echojay;
+
+        struct Tiny : juce::AudioProcessor
+        {
+            Tiny() : juce::AudioProcessor (BusesProperties()) {}
+            const juce::String getName() const override { return "tiny"; }
+            void prepareToPlay (double, int) override {}
+            void releaseResources() override {}
+            void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+            juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+            bool hasEditor() const override { return false; }
+            int  getNumPrograms() override { return 1; }
+            int  getCurrentProgram() override { return 0; }
+            void setCurrentProgram (int) override {}
+            const juce::String getProgramName (int) override { return {}; }
+            void changeProgramName (int, const juce::String&) override {}
+            void getStateInformation (juce::MemoryBlock&) override {}
+            void setStateInformation (const void*, int) override {}
+            double getTailLengthSeconds() const override { return 0.0; }
+            bool acceptsMidi() const override { return false; }
+            bool producesMidi() const override { return false; }
+        };
+        struct Ed : juce::AudioProcessorEditor
+        {
+            explicit Ed (juce::AudioProcessor& p) : juce::AudioProcessorEditor (p) { setSize (300, 200); }
+            void paint (juce::Graphics&) override {}
+        };
+
+        juce::String order;        // the sequence both sides write into
+
+        struct FakeLink : EditorLender
+        {
+            Tiny proc;
+            juce::String* order = nullptr;
+            juce::String uid;
+            std::map<int, std::unique_ptr<juce::AudioProcessorEditor>> made;
+            int created = 0, destroyed = 0;
+            int refuseSlot = 0;        // a slot that will not give an editor (a built-in we draw)
+            juce::AudioProcessorEditor* lenderCreateSlotEditor (int slot1, juce::String& why) override
+            {
+                if (slot1 == refuseSlot) { why = "that plugin would not open an editor here"; return nullptr; }
+                if (auto it = made.find (slot1); it != made.end()) return it->second.get();
+                ++created;
+                made[slot1] = std::make_unique<Ed> (proc);
+                if (order != nullptr) *order << "create" << slot1 << " ";
+                return made[slot1].get();
+            }
+            void lenderDestroySlotEditor (int slot1) override
+            {
+                if (made.erase (slot1) > 0) { ++destroyed; if (order != nullptr) *order << "destroy" << slot1 << " "; }
+            }
+            juce::String lenderDescribe() const override { return "FakeLink (uid " + uid + ")"; }
+        };
+
+        struct FakeView : EditorBorrower
+        {
+            juce::String* order = nullptr;
+            juce::String name;
+            int told = 0; juce::String lastWhy; int heldSlot = 0;
+            void editorLeaseRevoked (const juce::String&, int slot1, const juce::String& why) override
+            { ++told; lastWhy = why; if (heldSlot == slot1) heldSlot = 0;
+              if (order != nullptr) *order << "letgo" << slot1 << " "; }
+            juce::String borrowerDescribe() const override { return name; }
+        };
+
+        check (LocalInstances::shared(),
+               "EL0 there is one shared EchoJay table in this process - without it every road below "
+               "falls back and says so, which is the honest degradation and not a pass",
+               LocalInstances::describe());
+
+        FakeLink link; link.uid = "aa11bb22cc"; link.order = &order;
+        FakeView view; view.name = "a V2's live view"; view.order = &order;
+
+        check (LocalInstances::find (link.uid) == nullptr,
+               "EL1 a Link that has not registered is NOT findable - the directory answers "
+               "\"nobody\" rather than guessing", "not found");
+        check (LocalInstances::add (link.uid, &link) && LocalInstances::find (link.uid) == &link,
+               "EL1a ...and once it registers, the uid finds THAT instance (the V2's whole road to "
+               "the real plugin instead of a copy)", "found");
+
+        // A Link re-mints its uid on a registry collision and takes one from restored state: the
+        // directory is keyed on the uid, so it has to MOVE, not gain a second row.
+        const int before = LocalInstances::count();
+        LocalInstances::add ("dd33ee44ff", &link);
+        check (LocalInstances::find ("dd33ee44ff") == &link && LocalInstances::find (link.uid) == nullptr
+                   && LocalInstances::count() == before,
+               "EL2 a uid change MOVES that instance's row - the old uid stops answering and no "
+               "second row appears (a Link re-mints its uid on a registry collision; two rows would "
+               "mean a V2 could reach a Link that no longer answers to that name)",
+               "rows " + juce::String (LocalInstances::count()));
+        link.uid = "dd33ee44ff";
+
+        auto taken = EditorLease::take (link.uid, 2, &view, EditorHolder::Borrowed);
+        view.heldSlot = 2;
+        check (taken.ok() && taken.editor == link.made[2].get(),
+               "EL3 the lease hands over the REAL editor of the real instance, made by its owner",
+               taken.ok() ? "got it" : "refused: " + taken.why);
+        juce::String who;
+        check (EditorLease::heldBy (link.uid, 2, &who) == EditorHolder::Borrowed && who == view.name,
+               "EL3a ...and ONE place answers who has it, in words a surface can print",
+               who);
+
+        FakeView second; second.name = "the Link's own window";
+        auto twice = EditorLease::take (link.uid, 2, &second, EditorHolder::OwnWindow);
+        check (! twice.ok() && twice.why.contains ("already open"),
+               "EL3b A SECOND EDITOR OF ONE INSTANCE IS REFUSED, with the sentence that says who has "
+               "it - juce::AudioProcessor holds one activeEditor and two parents is undefined "
+               "behaviour, so this is the rule the whole design rests on",
+               twice.ok() ? juce::String ("IT WAS LENT TWICE") : twice.why);
+        check (EditorLease::take (link.uid, 2, &second, EditorHolder::OwnWindow).editor == nullptr
+                   && link.created == 1,
+               "EL3c ...and a refused take creates NO second editor either (the refusal is before "
+               "the create, not a create thrown away)",
+               "created " + juce::String (link.created));
+
+        check (EditorLease::take (link.uid, 3, &second, EditorHolder::OwnWindow).ok()
+                   && EditorLease::heldBy (link.uid, 2, nullptr) == EditorHolder::Borrowed,
+               "EL4 a DIFFERENT slot of the same Link can be open at the same time, in another "
+               "window, and neither disturbs the other",
+               "slot 3 taken, slot 2 still held");
+        second.heldSlot = 3;
+
+        // ---- THE ORDER, WHICH IS THE WHOLE RISK -------------------------------------------------
+        order.clear();
+        const int revoked = EditorLease::revokeSlot (link.uid, 2, "the slot was removed");
+        check (revoked == 1 && order.trim() == "letgo2 destroy2",
+               "EL5 THE ORDER: the holder is told to let go FIRST, and only then is the editor "
+               "destroyed  (the other order is a window showing a deleted editor, which is the "
+               "class of fault two Softube crashes and this morning's Logic crash all came from)",
+               "\"" + order.trim() + "\"");
+        check (view.told == 1 && view.lastWhy.contains ("removed")
+                   && EditorLease::heldBy (link.uid, 2, nullptr) == EditorHolder::None,
+               "EL5a ...the holder is told WHY, and nobody holds that slot afterwards",
+               view.lastWhy);
+
+        // ---- A SLOT INDEX IS NOT A PLUGIN (the morning of 26 Oct, four places deep) -------------
+        auto t1 = EditorLease::take (link.uid, 1, &view, EditorHolder::Borrowed);
+        view.heldSlot = 1;
+        order.clear();
+        const int swept = EditorLease::revokeFrom (link.uid, 3, "a slot was inserted");
+        check (t1.ok() && swept == 1 && EditorLease::heldBy (link.uid, 1, nullptr) == EditorHolder::Borrowed
+                   && EditorLease::heldBy (link.uid, 3, nullptr) == EditorHolder::None,
+               "EL6 a structural change at slot 3 revokes slot 3 AND UP and leaves slot 1 alone - "
+               "the leases above a change would name a different plugin than the one they were taken "
+               "on, which is the fault that showed Apple Delay's panel under the CL 1B's title",
+               "swept " + juce::String (swept) + ", slot 1 kept");
+
+        check (! EditorLease::giveBack (link.uid, 1, t1.token + 99)
+                   && EditorLease::heldBy (link.uid, 1, nullptr) == EditorHolder::Borrowed,
+               "EL7 a return with the wrong token closes NOTHING - a stale hand cannot destroy an "
+               "editor somebody else is showing",
+               "still held");
+        check (EditorLease::giveBack (link.uid, 1, t1.token) && link.made.find (1) == link.made.end(),
+               "EL7a ...and the right token returns it, with the owner destroying the editor",
+               "destroyed " + juce::String (link.destroyed));
+
+        // ---- A REFUSAL LEAVES NO HOLDER BEHIND --------------------------------------------------
+        link.refuseSlot = 4;
+        auto no = EditorLease::take (link.uid, 4, &view, EditorHolder::Borrowed);
+        check (! no.ok() && no.why.contains ("would not open")
+                   && EditorLease::heldBy (link.uid, 4, nullptr) == EditorHolder::None,
+               "EL8 a slot whose plugin will not give an editor refuses in a sentence AND leaves the "
+               "lease free - a recorded holder with nothing to show would lock that slot for the "
+               "session",
+               no.why);
+        link.refuseSlot = 0;
+
+        // ---- A BORROWER THAT GOES WITHOUT RETURNING (rule 6: impossible, not tolerated) ---------
+        {
+            auto held = EditorLease::take (link.uid, 5, &view, EditorHolder::Borrowed);
+            juce::ignoreUnused (held);
+            FakeView* doomed = new FakeView(); doomed->name = "a borrower that dies holding one";
+            auto d = EditorLease::take (link.uid, 6, doomed, EditorHolder::Borrowed);
+            juce::ignoreUnused (d);
+            const int returned = EditorLease::borrowerGone (doomed);   // what its destructor calls
+            delete doomed;
+            check (returned == 1 && EditorLease::heldBy (link.uid, 6, nullptr) == EditorHolder::None
+                       && link.made.find (6) == link.made.end()
+                       && EditorLease::heldBy (link.uid, 5, nullptr) == EditorHolder::Borrowed,
+                   "EL9 a borrower that dies still holding one gives it back from its own destructor, "
+                   "its editor is destroyed, and ANOTHER borrower's lease is untouched",
+                   "returned " + juce::String (returned));
+        }
+
+        // ---- THE INSTANCE DIES: NOBODY IS LEFT POINTING AT IT ----------------------------------
+        order.clear();
+        const int all = EditorLease::revokeAll (link.uid, "the Link is going away");
+        LocalInstances::drop (&link);
+        check (all >= 1 && link.made.empty() && order.contains ("letgo") && order.contains ("destroy"),
+               "EL10 the Link's destructor's first act closes every editor anyone is showing of it, "
+               "in that order - the design's teardown table, top line",
+               "\"" + order.trim() + "\"");
+        check (LocalInstances::find (link.uid) == nullptr
+                   && EditorLease::take (link.uid, 1, &view, EditorHolder::Borrowed).why
+                          .contains ("no live EchoJay Link"),
+               "EL10a ...and it is gone from the directory, so a later ask is refused in a sentence "
+               "rather than handed a dangling pointer",
+               "gone");
+    }
+
+    // =============================================================================================
+    //  ES: WHICH LIVE VIEW A LINK GETS, AND WHY (his condition of 26 Oct 2026)
+    // =============================================================================================
+    //
+    //  *"Put the real editor behind a switch (default off until I've tested it) ... and if round 2
+    //   doesn't look and feel at least as good as the copy ... we switch back and park it."*
+    //
+    //  The copy road must therefore be what a build takes unless he has said otherwise, and the
+    //  known-bad here is the one that matters: a switch that defaults ON would put every build he
+    //  installs on an untested road. ES1 is that leg, and it is written so it fails if the default
+    //  ever moves.
+    {
+        using echojay::realEditorRoad; using echojay::realEditorRoadWhy;
+        const int us = 4321;
+
+        check (! realEditorRoad (/*switchOn*/ false, us, us),
+               "ES1 WITH THE SWITCH OFF the live view takes the COPY road even where the Link is in "
+               "this very process - his condition, and the one leg that must never be allowed to "
+               "pass by accident",
+               realEditorRoadWhy (false, us, us));
+        check (realEditorRoad (/*switchOn*/ true, us, us),
+               "ES2 with the switch ON and the Link in this process, the real editor is the road",
+               realEditorRoadWhy (true, us, us));
+        check (! realEditorRoad (true, 9999, us),
+               "ES3 the switch alone is not enough: a Link in ANOTHER process keeps the copy road, "
+               "whatever the switch says",
+               realEditorRoadWhy (true, 9999, us));
+        check (! realEditorRoad (true, 0, us),
+               "ES4 ...and an older Link that publishes no pid keeps it too - unknown is not "
+               "permission, which is the rule embedAllowed already holds",
+               realEditorRoadWhy (true, 0, us));
+        check (realEditorRoadWhy (false, us, us).contains ("switch is off")
+                   && realEditorRoadWhy (true, 9999, us).contains ("another process")
+                   && realEditorRoadWhy (true, 0, us).contains ("unknown is not permission"),
+               "ES5 and the three refusals are DIFFERENT SENTENCES: \"the switch is off\" and \"that "
+               "Link is in another process\" are different facts, and he must not have to guess which "
+               "one he is looking at",
+               "three distinct reasons");
+
+        // The switch itself, in this guard's isolated state root (the file is the one authority, so
+        // round 2's Settings toggle and this leg are testing the same thing).
+        check (! echojay::realEditorSwitchOn(),
+               "ES6 the switch is off in a fresh state root: OFF BY ABSENCE, so there is no build and "
+               "no machine where it is on because something forgot to write it",
+               echojay::realEditorFlagFile().getFullPathName());
+        echojay::setRealEditorSwitch (true);
+        const bool onNow = echojay::realEditorSwitchOn();
+        echojay::setRealEditorSwitch (false);
+        check (onNow && ! echojay::realEditorSwitchOn(),
+               "ES6a ...and it goes on and off again, which is the \"switch back and park it\" he "
+               "asked for - one act, nothing else to undo",
+               "on then off");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

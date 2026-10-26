@@ -85,14 +85,20 @@ endif()
 #                     counterpart — its only call site (ChainHost.cpp) is
 #                     already inside #if JUCE_MAC, so nothing references it.
 # Both are Objective-C++ and can never compile under MSVC.
+#   EJProcessGlobal.mm — Obj-C++: the one process-wide rendezvous both bundles find each other in
+#                     (see the header; two .component bundles are two Mach-O images with hidden
+#                     visibility, so a shared header's static is TWO tables). EJProcessGlobalWin.cpp
+#                     is its off-Mac counterpart, in NativeClipWin.cpp's shape.
 if(APPLE)
     set(ECHOJAY_NATIVE_SOURCES
         Source/NativeClip.mm
         Source/AUEnumerator.mm
+        Source/EJProcessGlobal.mm
     )
 else()
     set(ECHOJAY_NATIVE_SOURCES
         Source/NativeClipWin.cpp
+        Source/EJProcessGlobalWin.cpp
     )
 endif()
 
@@ -159,6 +165,8 @@ target_sources(EchoJay PRIVATE
     ${ECHOJAY_NATIVE_SOURCES}
     Source/AUEnumerator.h
     Source/NativeClip.h
+    Source/EJProcessGlobal.h
+    Source/EJLocalInstances.h
     Source/MeterEngine.cpp
     Source/MeterEngine.h
     Source/CodecRender.cpp
@@ -562,6 +570,8 @@ target_sources(EchoJayLink PRIVATE
     Source/AUEnumerator.h
     Source/PluginScanner.h
     Source/NativeClip.h
+    Source/EJProcessGlobal.h
+    Source/EJLocalInstances.h
     # --- built-in surgical EQ (feat/surgical-eq) ---
     # Shared with the main plugin: the EQ has to run in the Link insert too, so
     # the DSP core, the AudioProcessor wrapper and its editor all build here.

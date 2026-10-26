@@ -3466,12 +3466,13 @@ private:
         // locked to the display area. Descendant painting (e.g. an AU editor
         // component's white background) cannot leak outside it — that leak was
         // the white bands around plugins in 2.9.20.
-        struct InlineHolder : juce::Component
-        {
-            std::function<void()> onChildBounds;
-            void childBoundsChanged(juce::Component*) override
-            { if (onChildBounds) onChildBounds(); }
-        };
+        // ---- ONE RESIZE LISTENER, NOT TWO (26 Oct 2026, his instruction with round 1) ----------
+        // This held an onChildBounds hook that did the same work as EditorResizeWatch below: a
+        // hosted editor resizing itself fired BOTH, so every self-resize re-measured the NSView and
+        // re-attached twice. The ComponentListener is the one the design names (§2, "resize by
+        // ComponentListener") and the one that stays correct when an editor is lent to another
+        // window, so the holder's road is gone and hostedEditorResizedItself is the single author.
+        struct InlineHolder : juce::Component {};
         InlineHolder inlineHolder;
 
         // Inline hosted editor — at most ONE alive at any moment
@@ -3819,21 +3820,6 @@ private:
             inlineHolder.setName("inlineHolder");
             addChildComponent(inlineHolder);
             inlineHolder.setInterceptsMouseClicks(false, true);
-            inlineHolder.onChildBounds = [this]
-            {
-                // Hosted editor resized itself — re-centre within the FIXED
-                // container (never resize the container)
-                if (layoutGuard || inlineEditor == nullptr) return;
-                // Ours already fills the display area; re-running the native
-                // measure/attach for it would be pointless and would create a
-                // clip container around a component that has no plugin view.
-                if (inlineIsBuiltin) { layoutInline(); return; }
-                int w = 0, h = 0;
-                if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60)
-                { realW = w; realH = h; }
-                layoutInline();
-                attachNative(false);
-            };
 
             editBtn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff0e7490));
             editBtn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -4247,7 +4233,16 @@ private:
             no timer is started, because this IS the notification a timer was polling for. */
         void hostedEditorResizedItself()
         {
-            if (!inlineEditor || inlineIsBuiltin) return;
+            if (!inlineEditor) return;
+            // OUR OWN LAYOUT IS NOT THE PLUGIN RESIZING ITSELF. layoutInline sets the editor's
+            // bounds, which calls this listener synchronously; without this test the pass re-enters
+            // itself through every layout - and re-measuring and re-attaching the NSView on our own
+            // move is one of the ways a view that nobody is touching appears to move. The road this
+            // replaced had the test; the listener was written this morning without it.
+            if (layoutGuard) return;
+            // Ours already fills the display area: re-running the native measure and attach for it
+            // would build a clip container around a component that has no plugin view in it.
+            if (inlineIsBuiltin) { layoutInline(); return; }
             int w = 0, h = 0;
             if (NativeClip::getPluginViewSize(this, w, h) && w > 100 && h > 60
                 && (w != realW || h != realH))

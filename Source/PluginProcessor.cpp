@@ -4636,6 +4636,22 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
     EchoJay_NSLog (("EJShadow: the V2 is now running its own copy of \"" + pluginName + "\" on slot "
                     + juce::String (slot0 + 1) + " of " + uid + ", fed from " + file
                     + " - output DISCARDED, no lease, no borrow, nothing owned (stage B)").toRawUTF8());
+    // ---- WHICH LIVE VIEW THIS IS, AND WHY (his condition, 26 Oct 2026) --------------------------
+    // The real-editor road is behind a switch that is OFF until he turns it on, and the copy road
+    // above is untouched by any of it. One line per open so the log says which road a build took -
+    // "the live view silently became the other kind" is exactly the thing that must not be
+    // guessable. Reading only; this decides nothing in round 1, because nothing draws a lent editor
+    // yet.
+    {
+        int pubPid = 0;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
+            pubPid = rc.publisherPid;
+        const bool sw = echojay::realEditorSwitchOn();
+        EchoJay_NSLog (("EJRealEditor: " + echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid())
+                        + " [round 1: the directory and the lease are live, nothing is lent yet]").toRawUTF8());
+    }
     return true;
 }
 

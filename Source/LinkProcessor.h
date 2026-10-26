@@ -15,11 +15,25 @@
 #include "EedKeyWorker.h"
 #include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
 #include "EJSlotMeters.h"   // per-slot meters on a Link's cards (25 Oct 2026)
+#include "EJLocalInstances.h"   // real-editor round 1: this Link is findable, and its editors are leased
 #include <atomic>
 #include <functional>
 #include <vector>
 
+/** ---- THE LINK AS A LENDER OF ITS OWN SLOT EDITORS (26 Oct 2026) --------------------------------
+
+    Real-editor round 1, docs/LIVE_VIEW_REAL_EDITOR_2026-10-26.md §2. This Link puts itself in the
+    process-local directory (EJLocalInstances.h) so that a V2 in the SAME process can find the real
+    instance, and every editor of one of its slots is handed out under an exclusive lease.
+
+    It is BOTH sides of that lease, which is the whole of round 1's economy: the Link lends, and the
+    Link's own plugin window borrows - so the one order (holder lets go, then the editor is destroyed,
+    then the slot moves) is exercised in the field by the road that already exists, before the V2
+    ever draws a lent editor. Removing a slot whose own window was open used to leave that window
+    holding an editor of a parked instance; it now cannot. */
 class LinkProcessor : public juce::AudioProcessor,
+                      public echojay::EditorLender,
+                      public echojay::EditorBorrower,
                       private juce::Timer
 {
 public:
@@ -996,16 +1010,21 @@ private:
         same rules the main plugin's own pop-out follows. */
     struct SlotEditorWindow : juce::DocumentWindow
     {
-        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        // NON-OWNING since the lease exists (26 Oct 2026): the editor belongs to the instance that
+        // made it, and only its owner destroys it. The window used to hold a unique_ptr, which meant
+        // the editor's lifetime was the WINDOW's - and a slot removed under an open window left that
+        // window showing the editor of a parked instance until the user closed it by hand.
+        juce::AudioProcessorEditor* editor = nullptr;
         std::function<void()> onClosed;
         int slot1 = 0;
+        unsigned leaseToken = 0;
 
         SlotEditorWindow (const juce::String& name, juce::AudioProcessorEditor* e, int slot1Based)
             : juce::DocumentWindow (name, juce::Colour (0xff0A0C18), juce::DocumentWindow::closeButton),
               editor (e), slot1 (slot1Based)
         {
             setUsingNativeTitleBar (true);
-            setContentNonOwned (editor.get(), true);
+            setContentNonOwned (editor, true);
             setResizable (false, false);
             centreWithSize (juce::jmax (200, editor->getWidth()), juce::jmax (120, editor->getHeight()));
             // Logic keeps plugin windows at a raised level; a normal-level window would open behind it.
@@ -1014,8 +1033,31 @@ private:
             toFront (true);
         }
         void closeButtonPressed() override { if (onClosed) onClosed(); else setVisible (false); }
+        /** The editor outlives this window by one step (its owner destroys it), so the content is
+            dropped here rather than deleted. */
+        ~SlotEditorWindow() override { clearContentComponent(); }
     };
     std::unique_ptr<SlotEditorWindow> slotEditorWin_;
+
+public:
+    // ---- echojay::EditorLender: this Link's own slots, lent to whoever shows them ---------------
+    juce::AudioProcessorEditor* lenderCreateSlotEditor (int slot1Based, juce::String& why) override;
+    void lenderDestroySlotEditor (int slot1Based) override;
+    juce::String lenderDescribe() const override;
+
+    // ---- echojay::EditorBorrower: the Link's OWN plugin window is a borrower like any other -----
+    void editorLeaseRevoked (const juce::String& uid, int slot1Based, const juce::String& why) override;
+    juce::String borrowerDescribe() const override;
+
+private:
+    /** The editors this Link has made for its own slots, by 1-based slot. The owner's hand: nothing
+        else deletes one. */
+    std::map<int, std::unique_ptr<juce::AudioProcessorEditor>> lentEditors_;
+    /** Put this Link in the process-local directory, or say why it is not there. Called at
+        construction and again whenever instanceUid_ changes (a registry collision, a state
+        restore) - the directory is keyed on that uid, so it has to follow it. */
+    void syncLocalDirectory (const char* why);
+
     /** Opens (or raises) the window for one hosted slot. Message thread only - pollControlCommand
         runs on the Timer, which is where every other command is applied. */
     bool showSlotEditorWindow (int slot1Based, juce::String& why);
