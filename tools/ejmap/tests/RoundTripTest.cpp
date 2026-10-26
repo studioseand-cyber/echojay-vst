@@ -14433,6 +14433,30 @@ int main (int, char**)
                && app.contains ("for (const auto& n : cfg.only) ol.add (n); so.getDynamicObject()->setProperty (\"only\", ol);"),
                "wizard WZ-30OCT-4: --only is the run's own list - saved at consent, used by a reopen, before anything is shown or started");
     }
+    // WZ-31OCT-1 A DE-ESSER'S DEPTH IS NOT ITS THRESHOLD (Kathy, 26 Oct: 8 of 15 mapped de-essers called Range / S-Reduction / Gain Reduction
+    // "threshold"). By name, range / depth / reduction is a depth; a de-esser's measured amount with such a name is a depth; a compressor's
+    // measured amount ("Peak Reduction" on CLA-2A / CLA-3A) stays its threshold; a de-esser is dialled on threshold, depth or frequency
+    {
+        using namespace ejmap::trust;
+        auto ctl = [] (const char* name) { return juce::JSON::parse (juce::String (R"J({"name": ")J") + name + R"J(", "kind": "anchored", "unit": "db", "anchors": [[-20.0, 0.0], [0.0, 1.0]]})J"); };
+        Measured m; m.roles["threshold"] = { "Range", "DeEss Thresh" };
+        Measured comp; comp.roles["threshold"] = { "Peak Reduction" };
+        const auto de = deesserDepths (m, "de-esser"), cp = deesserDepths (comp, "compressor"), deComp = deesserDepths (comp, "De-Esser");
+        const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (roleOf (ctl ("Range")).role == "depth" && roleOf (ctl ("S-Sh-Z Gain Reduction")).role == "depth" && roleOf (ctl ("Low S-Reduction")).role == "depth"
+               && roleOf (ctl ("Threshold")).role == "threshold" && roleOf (ctl ("DeEss Thresh")).role == "threshold" && roleOf (ctl ("Gain")).role == "gain" && roleOf (ctl ("Output Gain")).role == "output"
+               && de.roles.at ("threshold") == juce::StringArray { "DeEss Thresh" } && de.roles.at ("depth") == juce::StringArray { "Range" }
+               && cp.roles.at ("threshold") == juce::StringArray { "Peak Reduction" } && cp.roles.count ("depth") == 0 && deComp.roles.at ("depth") == juce::StringArray { "Peak Reduction" }
+               && needsFor ("de-esser") == juce::StringArray { "threshold|depth|freq" } && needsFor ("compressor") == juce::StringArray { "threshold" }
+               && tr.contains ("const auto measured = trust::deesserDepths (human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured, cat);")
+               && [&] {   // SPL De-Esser Dual-Band: Low and High S-Reduction are both depths by name; the measured one is the dial
+                      const auto map = juce::JSON::parse (R"J({"controls": {"a": {"name": "Low S-Reduction", "kind": "anchored", "unit": "db", "anchors": [[-20.0, 0.0], [0.0, 1.0]]},
+                                                                            "b": {"name": "High S-Reduction", "kind": "anchored", "unit": "db", "anchors": [[-20.0, 0.0], [0.0, 1.0]]}}})J");
+                      Measured mm; mm.roles["threshold"] = { "Low S-Reduction" };
+                      const auto Rm = rolesOf (map, deesserDepths (mm, "de-esser")), Rn = rolesOf (map, Measured());
+                      return meetNeed ("threshold|depth|freq", Rm, "de-esser") == juce::StringArray { "Low S-Reduction" } && meetNeed ("threshold|depth|freq", Rn, "de-esser").isEmpty(); }(),
+               "trust WZ-31OCT-1: a de-esser's Range / reduction is its depth, never its threshold; a compressor's Peak Reduction stays its threshold");
+    }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
     // cert's writers set is in the mock's list, and the list names nothing else
