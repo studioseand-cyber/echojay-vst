@@ -259,7 +259,9 @@ inline juce::String sectionOf (const juce::String& name)
     auto s = " " + name.toLowerCase().replaceCharacters ("_-:()[]", "       ") + " ";
     // the role words come off LONGEST FIRST (17 Oct): "freq" taken before "frequency" left "Mid Frequency" as "mid uency", no section, so
     // its band never paired with "Mid Gain" (MF). Substrings stay allowed ("CompThresh" -> comp)
-    static const juce::StringArray words = [] { juce::StringArray w; for (const auto& r : roleTable()) for (const auto& x : juce::StringArray::fromTokens (r.words, "|", ""))
+    // 26 Oct: the depth words (range / depth / reduction) do NOT come off: "Gate Threshold Range" stays its own section, as before the depth
+    // role - stripping them moved six bx_console strips' dial (bx_console N onto "LC 2nd Thresh Level")
+    static const juce::StringArray words = [] { juce::StringArray w; for (const auto& r : roleTable()) if (juce::String (r.role) != "depth") for (const auto& x : juce::StringArray::fromTokens (r.words, "|", ""))
                                                     if (x != "^q$" && x.trim().isNotEmpty()) w.add (x.trim());
                                                 std::stable_sort (w.begin(), w.end(), [] (const juce::String& a, const juce::String& b) { return a.length() > b.length(); }); return w; }();
     for (const auto& w : words) s = s.replace (w, " ");

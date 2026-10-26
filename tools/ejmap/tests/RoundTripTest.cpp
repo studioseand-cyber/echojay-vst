@@ -14448,6 +14448,7 @@ int main (int, char**)
                && de.roles.at ("threshold") == juce::StringArray { "DeEss Thresh" } && de.roles.at ("depth") == juce::StringArray { "Range" }
                && cp.roles.at ("threshold") == juce::StringArray { "Peak Reduction" } && cp.roles.count ("depth") == 0 && deComp.roles.at ("depth") == juce::StringArray { "Peak Reduction" }
                && needsFor ("de-esser") == juce::StringArray { "threshold|depth|freq" } && needsFor ("compressor") == juce::StringArray { "threshold" }
+               && sectionOf ("Gate Threshold Range") != sectionOf ("Gate Threshold") && sectionOf ("LC Threshold Range") != sectionOf ("LC Threshold")   // the strips' sections as before
                && tr.contains ("const auto measured = trust::deesserDepths (human.count (fpKey) ? withHuman (pd.measured, human.at (fpKey)) : pd.measured, cat);")
                && [&] {   // SPL De-Esser Dual-Band: Low and High S-Reduction are both depths by name; the measured one is the dial
                       const auto map = juce::JSON::parse (R"J({"controls": {"a": {"name": "Low S-Reduction", "kind": "anchored", "unit": "db", "anchors": [[-20.0, 0.0], [0.0, 1.0]]},
