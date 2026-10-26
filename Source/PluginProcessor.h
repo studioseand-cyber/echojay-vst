@@ -704,6 +704,10 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     //                        frame carrying it is recognised as ours without an echo rule.
     std::map<int, double> liveUserTouchedMs_;
     std::map<int, float>  liveSentValue_;
+    // The Link's structureRevision as it stood when the live copy was built. A frame carrying a
+    // different one is the Link saying its rack changed shape, which is when - and the only when -
+    // the copy's identity is re-checked against the sidecar (his 11:20 and 12:33 faults).
+    juce::uint32 shadowBuiltAtRevision_ = 0u;
     /** May the mirror write this parameter with this value? echojay::mirrorMayWriteParam decides;
         this binds in his touch and what we sent. Message thread only. */
     bool mirrorMayWrite (int index, float frameValue) const;
@@ -1005,6 +1009,11 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         NOT borrowRebaseAfterPush: that re-stamps the mirror's own contents as the baseline, which on
         a drifted copy blesses the drift. */
     std::function<void (const juce::String& uid)> onBorrowCopyStale;
+    /** The LIVE VIEW's copy is stale for that slot: the Link's rack says one plugin and the copy is
+        another (his 11:20 and 12:33 faults). The editor is refused and this asks for the view to be
+        rebuilt from the Link - the same shape as onBorrowCopyStale, which has done it for the
+        borrowed copy since his 09:59 ruling. uid, 0-based slot. */
+    std::function<void (const juce::String&, int)> onLiveCopyStale;
     // 20 Sep 2026 (rebase-on-ack, the owed fix): a pushed structural edit is PENDING until the Link acks it "ok"; the session
     // rebases in the ack callback, never on write success. The chain-cmd transport has ONE file per Link, so pushes are QUEUED
     // and written one at a time (the next is written when the previous is acked); a missing or "failed" ack keeps the op at the

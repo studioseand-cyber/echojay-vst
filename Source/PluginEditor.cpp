@@ -2287,6 +2287,42 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainListPanel.repaint();
         startBorrow (uid);
     };
+    // ---- AND THE LIVE VIEW'S COPY GETS THE SAME TREATMENT (his 11:20 and 12:33) --------------
+    // The editor path refuses when the copy is for a different plugin than the Link's rack now
+    // holds; that refusal lands here and rebuilds the view for the plugin that IS there, which is
+    // the road the borrowed copy has used since his 09:59 ruling. One sentence on the card while
+    // it happens, because a panel that goes blank for a moment with no explanation reads as a fault.
+    processorRef.onLiveCopyStale = [this] (const juce::String& uid, int slot0)
+    {
+        if (uid.isEmpty()) return;
+        // ---- DEFERRED, AND NEVER SILENT (26 Oct 2026, third cut) -----------------------------
+        //
+        // TWO faults of my own in one line. It demanded uid == chainViewUid() and returned without
+        // a word otherwise - the third silent early return of the day, and it is why the log said
+        // "the view is being rebuilt" and nothing was rebuilt. And it called shadowFollowSelection
+        // from INSIDE shadowFollowTick, which would end and rebuild the very view the tick is
+        // walking: a reentrancy this plugin has paid for before. So it is deferred by one turn of
+        // the message loop, and a view that is no longer the one on screen is ENDED rather than
+        // ignored, because a stale copy left running is what showed the deleted plugin's panel.
+        const bool isOnScreen = (uid == chainViewUid());
+        EchoJay_NSLog (("EJShadow: the live copy of slot " + juce::String (slot0 + 1) + " of " + uid
+                        + " is stale - " + (isOnScreen ? "rebuilding it for the plugin that is there "
+                                                         "now (it is the rack on screen)"
+                                                       : "ending it (that rack is no longer the one "
+                                                         "on screen)")).toRawUTF8());
+        if (isOnScreen)
+        {
+            chainListPanel.statusText = "That slot's plugin changed - opening the one that is there now.";
+            chainListPanel.repaint();
+        }
+        juce::WeakReference<juce::Component> safe (this);
+        juce::MessageManager::callAsync ([safe, this, uid, slot0, isOnScreen]
+        {
+            if (safe == nullptr) return;
+            if (isOnScreen) shadowFollowSelection (uid, slot0);
+            else            processorRef.shadowEnd();
+        });
+    };
     chainListPanel.onSelectSlot = [this](int i)
     {
         chainSelectedSlot_ = i;
@@ -36938,9 +36974,33 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                         "ask - see shadow_refuse.txt").toRawUTF8());
 
     if (uid.isEmpty() || slot0 < 0) { shadowStopIfRunning ("nothing is selected"); return; }
+    // ---- "ALREADY SHOWING THAT ONE" IS ABOUT THE PLUGIN, NOT THE SLOT NUMBER (26 Oct 2026) ---
+    //
+    // This return read the uid and the slot INDEX and nothing else, and it is the last link in his
+    // 11:20 and 12:33 chain: he deleted a plugin and put another in the same slot, every road that
+    // asked for the view to be rebuilt was told "already showing that one", and the copy of the
+    // deleted plugin stayed on screen refusing his knobs. The same mistaken assumption as the
+    // Link's digest key - that a slot index identifies a plugin - in a second place.
+    //
+    // So the copy's own plugin is compared with what the Link's rack says is in that slot now. The
+    // sidecar read is the cache the rest of this function already uses, so this costs nothing.
     if (processorRef.shadowRunning() && processorRef.shadowUid() == uid
         && processorRef.shadowSlot() == slot0)
-        return;                                   // already showing that one
+    {
+        juce::String theirsNow;
+        if (auto itNow = processorRef.linkRackCache.find (uid);
+            itNow != processorRef.linkRackCache.end() && itNow->second.valid
+            && slot0 < (int) itNow->second.rack.slots.size())
+            theirsNow = itNow->second.rack.slots[(size_t) slot0].name.trim();
+        const auto mineNow = processorRef.shadowPluginName().trim();
+        if (theirsNow.isEmpty() || mineNow.isEmpty()
+            || ChainHost::namesMatchLoose (mineNow, theirsNow))
+            return;                               // the same plugin on the same slot: nothing to do
+        EchoJay_NSLog (("EJShadow: the live view of slot " + juce::String (slot0 + 1) + " of " + uid
+                        + " is showing \"" + mineNow + "\" and that slot now holds \"" + theirsNow
+                        + "\" - rebuilding it rather than reporting \"already showing that one\", "
+                          "which is what left the deleted plugin's panel up (his 12:33)").toRawUTF8());
+    }
     if (shadowAsking_ && shadowWantUid_ == uid && shadowWantSlot_ == slot0) return;
 
     shadowStopIfRunning ("he moved to another slot");

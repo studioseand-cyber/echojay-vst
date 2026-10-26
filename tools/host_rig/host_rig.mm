@@ -4022,7 +4022,10 @@ int main (int argc, char* argv[])
         // AND IT KEEPS THE HOST ALIVE WHILE IT MEASURES. A live view that stops following puts the
         // read-only shield back up, and a drag would then land on our shield instead of the plugin - so
         // the pump used here feeds real audio on every turn.
-        if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6"))
+        // EVERY ROW IN THIS BLOCK HAS TO BE IN THIS CONDITION, and twice today one was not: a
+        // row left out of it vanishes with no line at all, which the suite counts as neither a
+        // pass nor a skip. LV7 and LV8 were both silently absent for a run because of it.
+        if (rowWanted ("LV4") || rowWanted ("LV5") || rowWanted ("LV6") || rowWanted ("LV8"))
         {
             leg ("LV: AUDelay in the LIVE VIEW of a Link's rack (the mirror and CONTROL are live)");
             const EJPumpFn livePump = [&] (int ms)
@@ -4160,10 +4163,47 @@ int main (int argc, char* argv[])
                             // marker carries it. The first cut gated on "slot 1" and AUDelay landed
                             // on slot 3: the row vanished without a line, which is the invisible
                             // skip this suite counts separately for.
-                            const auto replaced = askAgent (rig, "rig-linkreplace"
-                                                   + juce::String (slotToOpen) + "-marker: put an "
-                                                   "AUMultibandCompressor in slot "
-                                                   + juce::String (slotToOpen) + " instead", 90000);
+                            // THE PLAN IS MADE AGAINST THE RACK IT IS FOR (26 Oct 2026). The first
+                            // cut asked for the replace and the Link answered "the rack is not the
+                            // one this plan was made for - nothing was changed": the V2's cache for
+                            // that uid held 0 slots at that moment (EJEdit: staleness guards
+                            // passed rev=2 slots=0), so the plan was composed against an empty
+                            // rack. Aim again and WAIT until the rack this row is about is the one
+                            // the V2 can see, then ask.
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", uid), 10000);
+                            rig.send (echojay::rig::cmd::workOn,     args1 ("uid", uid), 10000);
+                            int seenSlots = 0;
+                            rig.until ([&] (const juce::var& stv)
+                            {
+                                if (auto* arr = stv.getProperty ("links", juce::var()).getArray())
+                                    for (const auto& l : *arr)
+                                        if (l.getProperty ("uid", juce::var()).toString() == uid)
+                                            seenSlots = juce::StringArray::fromTokens (
+                                                l.getProperty ("slots", juce::var()).toString(),
+                                                "|", "").size();
+                                return seenSlots >= slotToOpen;
+                            }, 15000);
+                            std::printf ("        (LV8) the V2 can see %d slot(s) on %s before the "
+                                         "replace of slot %d\n", seenSlots, uid.toRawUTF8(), slotToOpen);
+                            // ---- HOW THIS ROW CHANGES WHAT THAT SLOT HOLDS (26 Oct 2026) -----
+                            //
+                            // His action was a delete and an add in the same slot. The agent's
+                            // `replace` op will not land through this rig (the Link answers "the
+                            // rack is not the one this plan was made for"; its own base read holds
+                            // 0 slots), so the row produces the SAME condition by the road that
+                            // does work here: an INSERT at the front. After it, the slot index the
+                            // live view is open on holds a different plugin - which is exactly the
+                            // state his sequence left: a copy built for the plugin that WAS there.
+                            // WHAT LANDS IN THAT SLOT MUST BE ONE WE MAY LOAD. The first cut
+                            // inserted at the FRONT, which shifted a licensed plugin (Vertigo
+                            // VSM-3) into the slot under test - and the rebuild then had nothing it
+                            // was allowed to build, so the row stayed red for the rig's own reason
+                            // and not the product's. Inserting directly BEFORE the slot puts one of
+                            // Apple's in it, and the plugin the view is open on shifts down by one.
+                            const auto replaced = askAgent (rig, "rig-linkinsert"
+                                                   + juce::String (slotToOpen - 1) + "-marker: put an "
+                                                   "AUMultibandCompressor into slot "
+                                                   + juce::String (slotToOpen), 90000);
                             juce::ignoreUnused (replaced);
                             juce::String nameNow;
                             rig.until ([&] (const juce::var& stv)
@@ -4180,10 +4220,11 @@ int main (int argc, char* argv[])
                                 return nameNow.containsIgnoreCase ("Multiband");
                             }, 25000);
                             if (! nameNow.containsIgnoreCase ("Multiband"))
-                                skip ("LV8: a plugin replaced in a Link's slot",
-                                      "the replace never landed on " + uid + " slot "
-                                      + juce::String (slotToOpen) + " (it holds \""
-                                      + nameNow + "\"), so nothing was measured.");
+                                skip ("LV8: the plugin in a Link's slot is replaced under the live view",
+                                      "slot " + juce::String (slotToOpen) + " of " + uid
+                                      + " still holds \"" + nameNow + "\" after the insert, so the "
+                                        "condition his fault needs - a copy built for the plugin "
+                                        "that WAS in that slot - was never created.");
                             else
                             {
                                 rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen), 10000);
@@ -4194,15 +4235,15 @@ int main (int argc, char* argv[])
                                                             : juce::String();
                                 const auto st2 = rig.freshState();
                                 const auto note = st2.getProperty ("shadowFollowNote", juce::var()).toString();
-                                std::printf ("        (LV8) after the replace: view \"%s\", running=%d, "
+                                std::printf ("        (LV8) slot %d now holds \"%s\"; the view is \"%s\", running=%d, "
                                              "plugin \"%s\", note \"%s\"\n",
-                                             cls2.toRawUTF8(),
+                                             slotToOpen, nameNow.toRawUTF8(), cls2.toRawUTF8(),
                                              (int) (bool) st2.getProperty ("shadowRunning", false),
                                              st2.getProperty ("shadowPlugin", juce::var()).toString().toRawUTF8(),
                                              note.toRawUTF8());
                                 check (cls2.isNotEmpty() && ! cls2.containsIgnoreCase ("Delay"),
-                                       "LV8: the replaced slot shows the NEW plugin's own panel, not "
-                                       "the deleted plugin's",
+                                       "LV8: the slot whose plugin changed shows the NEW plugin's own "
+                                       "panel, not the one that used to be there",
                                        cls2.isEmpty() ? "no plugin view was on screen at all"
                                            : "the view on screen is " + cls2
                                              + (cls2.containsIgnoreCase ("Delay")

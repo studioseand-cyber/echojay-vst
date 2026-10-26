@@ -4029,10 +4029,51 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
 
     if (from == echojay::SlotEditorSource::LocalRack) return getChainHost().createEditorForSlot (slot);
     if (from == echojay::SlotEditorSource::None)      return nullptr;
-    // THE COPY THAT IS BEING FED. No identity check is owed here and none is skipped: the live
-    // copy was built from the SIDECAR's own slot (shadowFollowSelection reads it by name), never
-    // from the mirror, so the drift the check below exists to catch cannot reach it.
-    if (from == echojay::SlotEditorSource::LiveView)   return shadowCreateEditor();
+    // ---- THE LIVE COPY'S IDENTITY, CHECKED LIKE EVERY OTHER COPY'S (his 11:20 and 12:33) -----
+    //
+    // What stood here said: *"No identity check is owed here and none is skipped: the live copy was
+    // built from the SIDECAR's own slot, so the drift the check below exists to catch cannot reach
+    // it."*  That argument has a hole the size of his morning: the copy was built from the sidecar
+    // AT THE TIME IT WAS BUILT, and the sidecar moves afterwards. He deleted an AUDelay, put a
+    // CL 1B in its place, clicked the card, and got
+    //
+    //   12:34:34.335  EJPane(main): open: Tube-Tech CL 1B mfr="Softube"
+    //   12:34:34.338  NativeClip2: putting AUDelayCustomView (this editor's OWN view) into the container
+    //
+    // - the card named the Link's new plugin and the editor was the old copy's, because the copy
+    // was never rebuilt. And the same staleness is the whole of his second fault: a copy of one
+    // plugin can never agree with another plugin's parameter list, so the view said "not following"
+    // for ever and his knobs were refused.
+    //
+    // THE ROAD ALREADY EXISTS AND IS PROVEN - it is the one the BORROWED copy has used since his
+    // 09:59 ruling: refuse the editor on a mismatch and let the refusal start the rebuild. This
+    // does the same, with the same loose name match, for the live view's copy.
+    if (from == echojay::SlotEditorSource::LiveView)
+    {
+        juce::String theirs;
+        {
+            int err = 0;
+            const auto dir = LinkShm::resolveDir (err);
+            const auto live = dir.isEmpty() ? LinkShm::RackSidecar{}
+                                            : LinkShm::readRackSidecar (dir, viewUid);
+            if (live.valid && slot >= 0 && slot < (int) live.slots.size())
+                theirs = live.slots[(size_t) slot].name.trim();
+        }
+        const auto mine = shadowView_.pluginName().trim();
+        if (theirs.isNotEmpty() && mine.isNotEmpty()
+            && ! ChainHost::namesMatchLoose (mine, theirs))
+        {
+            EchoJay_NSLog (("EJPane: REFUSING to open slot " + juce::String (slot + 1) + " of "
+                            + viewUid + " from the live view - the rack says \"" + theirs
+                            + "\" and this copy is \"" + mine + "\". Opening it would show one "
+                              "plugin's interface under another's name (his 12:33), and a copy of "
+                              "one plugin can never follow another's knobs - so the view is rebuilt "
+                              "from the Link first").toRawUTF8());
+            if (onLiveCopyStale) onLiveCopyStale (viewUid, slot);
+            return nullptr;
+        }
+        return shadowCreateEditor();
+    }
     if (from == echojay::SlotEditorSource::EditSession) return editCreateEditor();
 
     jassert (from == echojay::SlotEditorSource::Borrowed && bh != nullptr);
@@ -4463,6 +4504,9 @@ bool EchoJayProcessor::shadowBegin (const juce::String& uid, int slot0,
     // file's existence, and a V2 that created it would turn "an older Link" into a frame of
     // zeros - which would be applied to his knobs. Absence is the answer, and it is said out loud.
     shadowValSeqSeen_ = 0; shadowFollowNote_.clear(); shadowFollowSaid_ = false;
+    // THE RACK'S SHAPE WHEN THIS COPY WAS BUILT: the follow tick re-checks the slot's identity when
+    // the Link says this has moved, which is how a replaced plugin is noticed without a click.
+    shadowBuiltAtRevision_ = (juce::uint32) juce::jmax (0, linkStructureRevisionFor (uid));
     shadowFollowFrames_ = 0; shadowFollowWrites_ = 0;
     {
         const auto vpath = linkResolvedDir + echojay::shadowValuesFileNameFor (uid);
@@ -4628,6 +4672,47 @@ void EchoJayProcessor::shadowFollowTick()
     const bool read = echojay::readShadowValues (shadowValMap_, h, shadowValRead_.data(),
                                                  echojay::kShadowValMax, count);
     if (read && h.seq == shadowValSeqSeen_) return;            // no new frame: nothing to do
+
+    // ---- AND THIS GOES BEFORE THE MIRROR'S DECISION, NOT AFTER IT (26 Oct 2026, second cut) ---
+    //
+    // My first cut of this check sat below the decision gate - and that gate RETURNS on a digest
+    // mismatch, which is precisely the state a replaced plugin puts the view in. So the one check
+    // that could notice the replacement could never run in the only case it was written for: LV8
+    // stayed red with neither of its lines in the log. The identity question is asked on every new
+    // frame, before anything is judged about whether the values can be applied.
+    //
+    // *"It needs to follow every X, picker add and agent add ... without a reopen"* - his 09:59
+    // ruling, which the borrowed copy has obeyed since and the live view's copy had not. The
+    // frame's structureRevision is the Link's own statement that its rack has changed shape, so
+    // the identity is re-checked exactly when that moves and never on an ordinary frame.
+    if (h.structureRevision != shadowBuiltAtRevision_)
+    {
+        shadowBuiltAtRevision_ = h.structureRevision;
+        int err = 0;
+        const auto dir = LinkShm::resolveDir (err);
+        const auto live = dir.isEmpty() ? LinkShm::RackSidecar{}
+                                        : LinkShm::readRackSidecar (dir, shadowView_.uid());
+        const int slot = shadowView_.slot();
+        if (live.valid && slot >= 0 && slot < (int) live.slots.size())
+        {
+            const auto theirs = live.slots[(size_t) slot].name.trim();
+            const auto mine   = shadowView_.pluginName().trim();
+            if (theirs.isNotEmpty() && mine.isNotEmpty()
+                && ! ChainHost::namesMatchLoose (mine, theirs))
+            {
+                EchoJay_NSLog (("EJShadow: slot " + juce::String (slot + 1) + " of "
+                                + shadowView_.uid() + " now holds \"" + theirs
+                                + "\" and this live copy is \"" + mine + "\" - the view is being "
+                                  "rebuilt for the plugin that is there now, with no click and no "
+                                  "reopen (his 09:59 ruling; before this it sat showing the old "
+                                  "plugin's panel and refusing every knob)").toRawUTF8());
+                const auto uid = shadowView_.uid();
+                if (onLiveCopyStale) onLiveCopyStale (uid, slot);
+                return;
+            }
+        }
+    }
+
 
     const auto decision = echojay::shadowMirrorDecision (read, h.schemaDigest, shadowCopyDigest_,
                                                          count, shadowView_.copyParamCount());

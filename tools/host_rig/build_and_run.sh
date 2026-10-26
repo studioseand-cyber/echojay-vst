@@ -443,6 +443,66 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-linkinsert0-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lin0", "name": "do", "approval": "free",
+            "summary": "put an AUMultibandCompressor after slot 0",
+            "args": { "op": "add", "name": "AUMultibandCompressor", "after": 0 } },
+          { "event": "await", "ids": ["tc_lin0"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it after slot 0." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkinsert1-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lin1", "name": "do", "approval": "free",
+            "summary": "put an AUMultibandCompressor after slot 1",
+            "args": { "op": "add", "name": "AUMultibandCompressor", "after": 1 } },
+          { "event": "await", "ids": ["tc_lin1"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it after slot 1." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkinsert2-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lin2", "name": "do", "approval": "free",
+            "summary": "put an AUMultibandCompressor after slot 2",
+            "args": { "op": "add", "name": "AUMultibandCompressor", "after": 2 } },
+          { "event": "await", "ids": ["tc_lin2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it after slot 2." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkinsert3-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lin3", "name": "do", "approval": "free",
+            "summary": "put an AUMultibandCompressor after slot 3",
+            "args": { "op": "add", "name": "AUMultibandCompressor", "after": 3 } },
+          { "event": "await", "ids": ["tc_lin3"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it after slot 3." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkinsert4-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lin4", "name": "do", "approval": "free",
+            "summary": "put an AUMultibandCompressor after slot 4",
+            "args": { "op": "add", "name": "AUMultibandCompressor", "after": 4 } },
+          { "event": "await", "ids": ["tc_lin4"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added it after slot 4." } ]
+      ]
+    },
+    {
       "goalContains": "rig-eqband-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
