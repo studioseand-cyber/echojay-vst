@@ -31,6 +31,7 @@ REQUIRED=(
   "9907768f|the saturation engage search, one-knob amount, abbreviated thresholds, graphic EQ sliders (25 Oct)"
   "f5b9a85e|the threshold pair rules get their readings (SPL IRON), the onset rule, reverb-or-delay, EQ part by part, a limiter with no ceiling (25 Oct)"
   "21eccad4|only a profile carries a measuring span (the staging rehearsal, 26 Oct)"
+  "e6e2c2ab|the twin's bridged outcome, one raise rule for every route (Kathy's 26 Oct rulings)"
 )
 
 die() { echo "STOP: $*" >&2; exit 1; }
@@ -86,7 +87,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
     t refused client_ok "has space"
     t refused client_ok "sk_live_abcdefghijkl"
     t refused client_ok "eyJhbGciOiJIUzI1NiJ9"
-    t ok      has_fixes "21eccad4"
+    t ok      has_fixes "e6e2c2ab"
+    t refused has_fixes "21eccad4"
     t refused has_fixes "f5b9a85e"
     t refused has_fixes "9907768f"
     echo "self-test: $([ $f = 0 ] && echo 'all cases as expected' || echo FAILED)"; exit $f
