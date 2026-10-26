@@ -261,6 +261,15 @@ inline juce::String knownWords (int known, int toMeasure) { return juce::String 
 // THE SENDING SCREEN SAYS WHY IT WAITS (Kathy, 26 Oct, staging run 1: "0 results sent, 10 waiting" for 15 min with no reason). The body
 // text under the title: the server's words and when the next try is, or why sending stopped and that the results are kept; empty when
 // nothing needs saying (the screen keeps its usual line)
+// THE RUN'S OWN PLUGIN LIST (26 Oct, the v2 rehearsal: a run started with --only and reopened mid-measuring without it scanned the whole
+// Mac and loaded 13 VST3 twins, 8 of them ones the guard refuses): --only belongs to the run. It is saved at consent; a reopen without
+// --only takes the run's list; a --only given on the command line wins
+inline juce::StringArray runOnlyList (const juce::StringArray& given, const juce::var& state)
+{
+    if (! given.isEmpty()) return given;
+    juce::StringArray o; if (const auto* a = state.getProperty ("only", {}).getArray()) for (const auto& x : *a) if (x.toString().trim().isNotEmpty()) o.add (x.toString());
+    return o;
+}
 inline constexpr const char* kUploadText = "Just the measurements - no audio, no plugin files, nothing personal.";
 struct UploadView { int waiting = 0; bool offline = false, signIn = false, stopped = false, noRun = false; juce::String words; int retryInS = -1; };
 inline juce::String uploadDetail (const UploadView& v)

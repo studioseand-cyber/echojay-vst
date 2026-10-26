@@ -14421,6 +14421,18 @@ int main (int, char**)
                && plainWords (bare) == "EchoJay's server didn't recognise that request yet (404)." && backoffSeconds (1) == 5 && backoffSeconds (3) == 20 && backoffSeconds (20) == 600,
                "wizard WZ-30OCT-3: a 404 with no code is retried with back-off ('" + plainWords (bare) + "'); not_found stops; run_not_found makes the run");
     }
+    // WZ-30OCT-4 --only BELONGS TO THE RUN (26 Oct, the v2 rehearsal: reopened mid-measuring without --only, the run scanned the whole Mac and
+    // loaded 13 VST3 twins, 8 the guard refuses): saved at consent, taken by a reopen without --only, an explicit --only wins
+    {
+        using namespace ejmap::wizapp;
+        const auto st = juce::JSON::parse (R"J({"consented": true, "only": ["StandardCLIP", "REDD17 (m)", ""]})J");
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const int load = app.indexOf ("(cfg.only = wizapp::runOnlyList (given, st)) != given"), firstShow = app.indexOf ("show (wizapp::openOn (w, kMode, wizapp::eligibilityOf");
+        check (runOnlyList ({}, st) == juce::StringArray { "StandardCLIP", "REDD17 (m)" } && runOnlyList ({ "X" }, st) == juce::StringArray { "X" }
+               && runOnlyList ({}, juce::JSON::parse ("{}")).isEmpty() && load > 0 && firstShow > load
+               && app.contains ("for (const auto& n : cfg.only) ol.add (n); so.getDynamicObject()->setProperty (\"only\", ol);"),
+               "wizard WZ-30OCT-4: --only is the run's own list - saved at consent, used by a reopen, before anything is shown or started");
+    }
     // WZ-SCHEMAS-1 THE MOCK KNOWS EXACTLY WHAT THE WIZARD SENDS (22 Oct, found by the real-result fixtures: the mock's hand-written list named
     // three schemas no draft carries, so real reverb / delay / strip / de-esser / limiter results were never accepted): every draft schema the
     // cert's writers set is in the mock's list, and the list names nothing else

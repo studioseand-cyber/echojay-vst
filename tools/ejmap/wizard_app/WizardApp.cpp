@@ -325,6 +325,7 @@ public:
         crashed = wizapp::recover (cfg.work, engineDir().getChildFile ("inflight"), cfg.reports, juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(),
                                    juce::SystemStats::getLogonName(), hostName());
         wizapp::Where w; const auto st = appState();
+        if (const auto given = cfg.only; (cfg.only = wizapp::runOnlyList (given, st)) != given) logLine ("this run's own plugin list (saved at its start): " + cfg.only.joinIntoString (", "));   // 26 Oct
         w.signedIn = kNetworked ? (session != nullptr && session->signedIn()) : cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
         w.measureStarted = (bool) st.getProperty ("measure_started", false); w.measureDone = (bool) st.getProperty ("measure_done", false);
         w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
@@ -834,6 +835,9 @@ private:
             case Screen::consent:
                 if (! agree.getToggleState()) return;   // the tick is required
                 setState ("consented", true); logLine ("consent: I agree (" + juce::Time::getCurrentTime().toISO8601 (true) + ")");
+                if (! cfg.only.isEmpty())   // 26 Oct: --only belongs to the run - a reopen without it measures the same plugins, never the whole Mac
+                {   auto so = appState(); juce::Array<juce::var> ol; for (const auto& n : cfg.only) ol.add (n); so.getDynamicObject()->setProperty ("only", ol);
+                    cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (so)); }
                 if (kNetworked)
                 {   // 21 Oct: the consent's version and time travel with the run (contract v1 §3); then the plugin list and the server's check
                     auto st = appState(); st.getDynamicObject()->setProperty ("consent_at", juce::Time::getCurrentTime().toISO8601 (true)); st.getDynamicObject()->setProperty ("consent_version", wizcontract::kConsentVersion);
