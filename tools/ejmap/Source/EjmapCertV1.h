@@ -23,6 +23,10 @@
     GATE        threshold: the measured open level vs the dB label within 1.5 dB (3+ positions), or - where the positions carry no display -
                 the acceptance steps (asked open level vs measured); PASS: threshold passes, at least one
                 acceptance step ran and none failed. Feel (tight / natural) waits.
+    TRANSIENT   (27 Oct) attack / sustain as AMOUNTS against their labels: the change rises with the control over 3+ dB, every label's sign agrees
+                within 1.0 dB; a multiband band's control is not judged; PASS: one amount passes, at least one acceptance step ran and none failed
+    DE-ESSER    (27 Oct) the threshold or the depth (by name) against its labels on the noise ladder, frequency vs its Hz label within 1/6
+                octave (offered only where it passes); PASS: the amount passes and the acceptance step ran and passed (judgeDeesser)
 */
 
 #pragma once
@@ -253,7 +257,146 @@ inline Result judgeGate (const juce::var& d)
     r.parts = { t, acc }; r.pass = ok (t) && ok (acc);
     return r;
 }
-inline Result judge (const juce::String& category, const juce::var& draft)
+// TRANSIENT SHAPER v1 (Kathy, 26 Oct; FOR_SEAN_DRAFT_TYPES): attack and sustain are AMOUNTS, never times. Each is judged against its own
+// labels: the measured change rises with the control (3+ points, 0.5 dB allowance) over at least 3 dB (the acceptance steps ask +-3 dB), and
+// every labelled position agrees in sign within 1.0 dB (the transient bar): a label of 0 changes nothing, a positive label adds, a negative
+// one takes away. A control on one band of a multiband ("Band 4 Range") or a crossover is not a transient amount: not judged
+inline bool multibandControl (const juce::String& control)
+{
+    const auto l = control.toLowerCase();
+    if (l.contains ("crossover") || l.contains ("xover")) return true;
+    const int b = l.indexOf ("band"); if (b < 0) return false;
+    const auto rest = l.substring (b + 4).trimStart(); return rest.isNotEmpty() && juce::CharacterFunctions::isDigit (rest[0]);
+}
+// a multiband transient designer (FOR_SEAN_DRAFT_TYPES Table C, approved 26 Oct: "exclude multiband transient designers (MTransientMB)"):
+// its amounts act per band, so a whole-plugin attack / sustain is not what it offers. By the product's name: "multiband", a word "multi",
+// or a name ending in "MB"
+inline bool multibandProduct (const juce::String& name)
+{
+    const auto l = name.toLowerCase(); const auto words = juce::StringArray::fromTokens (l, " ()-_", "");
+    return l.contains ("multiband") || l.contains ("multi-band") || words.contains ("multi") || name.trim().endsWith ("MB");
+}
+inline constexpr double kTransientBarDb = 1.0;
+inline Part transientAmount (const char* name, const juce::var& block, const char* key)
+{
+    if (! block.isObject()) return { name, "not_tested", juce::String ("no ") + name + " control" };
+    const auto ctl = block.getProperty ("control", "").toString();
+    if (block.getProperty ("verdict", "").toString() != "measured") return { name, "not_tested", ctl + ": " + block.getProperty ("verdict", "").toString() };
+    if (multibandControl (ctl)) return { name, "not_tested", "'" + ctl + "' is one band of a multiband: not a transient amount (v1)" };
+    auto p = monotonic (name, block.getProperty ("map", {}), key, true, 0.5, 3.0);
+    if (! ok (p)) return p;
+    int n = 0; juce::String worst;
+    if (const auto* l = listOf (block.getProperty ("map", {})))
+        for (const auto& x : *l)
+        {
+            double m = 0.0, lab = 0.0; if (! num (x, key, m) || ! trust::numberOf (x.getProperty ("display", "").toString(), lab)) continue;
+            ++n; const bool agrees = lab > 0.0 ? m >= -kTransientBarDb : lab < 0.0 ? m <= kTransientBarDb : std::abs (m) <= kTransientBarDb;
+            if (! agrees && worst.isEmpty()) worst = "'" + x.getProperty ("display", "").toString().trim() + "' measured " + juce::String (m, 2) + " dB";
+        }
+    if (n < 2) return { name, "not_tested", juce::String (n) + " labelled position(s)" };
+    if (worst.isNotEmpty()) return { name, "fail", "the label's sign disagrees: " + worst };
+    return { name, "pass", p.why + ", " + juce::String (n) + " labels agree" };
+}
+inline Result judgeTransient (const juce::var& d)
+{
+    Result r;
+    const auto acc = accPart (acceptanceOf (d.getProperty ("acceptance", {})), true);
+    if (const auto product = d.getProperty ("plugin", {}).getProperty ("name", "").toString(); multibandProduct (product))
+    { r.parts = { { "attack", "not_tested", "'" + product + "' is a multiband transient designer: per band, not v1" }, acc }; return r; }
+    const auto atk = transientAmount ("attack", d.getProperty ("attack", {}), "transient_db");
+    const auto sus = transientAmount ("sustain", d.getProperty ("sustain", {}), "sustain_db");
+    r.parts = { atk, sus, acc }; r.pass = (ok (atk) || ok (sus)) && ok (acc);   // each amount offered only where it passes (certifiedParts)
+    return r;
+}
+// DE-ESSER v1 (Kathy, 26 Oct; FOR_SEAN_DRAFT_TYPES): the amount control, its noise ladder (every label at every level) and the frequency
+// positions with their Hz labels - from the draft (drafts from 27 Oct carry them, so the server can run this rule) or, for an older draft,
+// from its measuring record beside it. The amount is a THRESHOLD or a DEPTH by its name (trust::depthNamed: range / depth / reduction),
+// and the part is named so:
+//   threshold  the GR rises as the labelled threshold falls, at every level (3+ labels, 0.5 dB allowance), over 3 dB at the pick's level;
+//              a label 12 dB or more above the signal barely acts (GR <= 1.0 dB), 1+ such cell. Labels above 0 (an amount scale, "40.0")
+//              are not a dB threshold: not judged
+//   depth      the GR rises as the labelled depth grows, at every level (same allowance and span), and never takes more than its label
+//              (GR <= |label| + 0.5 dB, the de-esser bar)
+//   frequency  each position's measured corner (a shelf) or centre (a notch) vs its Hz label within 1/6 octave (the EQ rule), 2+ positions;
+//              offered only where it passes
+// PASS: the amount passes and the acceptance step ran and passed
+inline constexpr double kDeesserBarDb = 0.5;
+inline Part deesserAmount (const juce::String& ctl, const juce::var& nl, double pickLevel)
+{
+    const bool depth = trust::depthNamed (ctl); const char* name = depth ? "depth" : "threshold";
+    if (ctl.isEmpty()) return { "threshold", "not_tested", "no amount control named (no measuring record beside an older draft)" };
+    if (! (bool) nl.getProperty ("ok", false)) return { name, "not_tested", "the noise ladder did not complete" };
+    std::map<double, std::vector<std::pair<double, double>>> byLevel;   // level -> (label, GR)
+    if (const auto* cs = listOf (nl.getProperty ("cells", {})))
+        for (const auto& c : *cs) { double lab = 0.0, gr = 0.0, lv = 0.0; if (trust::numberOf (c.getProperty ("display", "").toString(), lab) && num (c, "gr_db", gr) && num (c, "level_dbfs", lv)) byLevel[lv].push_back ({ lab, gr }); }
+    if (byLevel.empty()) return { name, "not_tested", "no labelled cell" };
+    int judgedFar = 0;
+    for (auto& [lv, pts] : byLevel)
+    {
+        if (pts.size() < 3) return { name, "not_tested", juce::String ((int) pts.size()) + " labels at " + juce::String (lv, 0) + " dBFS" };
+        for (const auto& p : pts) if (! depth && p.first > 0.0) return { name, "not_tested", "'" + ctl + "' labels run above 0 (" + juce::String (p.first, 1) + "): an amount scale, not a dB threshold" };
+        for (auto& p : pts) p.first = depth ? std::abs (p.first) : -p.first;   // both read as "more": a deeper depth, a lower threshold
+        std::sort (pts.begin(), pts.end());
+        double lo = pts[0].second, hi = pts[0].second;
+        for (size_t i = 1; i < pts.size(); ++i)
+        {
+            lo = std::min (lo, pts[i].second); hi = std::max (hi, pts[i].second);
+            if (pts[i].second < pts[i - 1].second - kDeesserBarDb)
+                return { name, "fail", "GR falls by " + juce::String (pts[i - 1].second - pts[i].second, 2) + " dB as the " + name + " goes to " + juce::String (depth ? pts[i].first : -pts[i].first, 1) + " at " + juce::String (lv, 0) + " dBFS" };
+        }
+        if (std::abs (lv - pickLevel) < 0.01 && hi - lo < 3.0) return { name, "fail", "GR moves only " + juce::String (hi - lo, 2) + " dB at " + juce::String (lv, 0) + " dBFS" };
+        for (const auto& p : pts)
+        {
+            if (depth && p.second > p.first + kDeesserBarDb) return { name, "fail", "takes " + juce::String (p.second, 2) + " dB at a depth of " + juce::String (p.first, 1) + " (" + juce::String (lv, 0) + " dBFS)" };
+            if (! depth && -p.first >= lv + 12.0) { ++judgedFar; if (p.second > 1.0) return { name, "fail", "a threshold of " + juce::String (-p.first, 1) + " takes " + juce::String (p.second, 2) + " dB of a " + juce::String (lv, 0) + " dBFS signal" }; }
+        }
+    }
+    if (! depth && judgedFar == 0) return { name, "not_tested", "no label 12 dB above the signal to judge the threshold by" };
+    return { name, "pass", "'" + ctl + "', " + juce::String ((int) byLevel.size()) + " levels" };
+}
+// a position's measured figure: a notch's centre, a shelf's corner (the draft names it centre_hz / corner_hz; the record carries both, with its shape)
+inline bool deesserHz (const juce::var& c, double& hz)
+{
+    if (c.hasProperty ("centre_hz")) return num (c, "centre_hz", hz);
+    if (c.getProperty ("shape", "shelf").toString() != "shelf" && c.hasProperty ("deepest_hz")) return num (c, "deepest_hz", hz);
+    return num (c, "corner_hz", hz);
+}
+inline Part deesserFrequency (const juce::String& ctl, const juce::var& positions)
+{
+    if (ctl.isEmpty()) return { "frequency", "not_tested", "no frequency control" };
+    int n = 0; double worst = -1.0; juce::String w;
+    if (const auto* cs = listOf (positions))
+        for (const auto& c : *cs)
+        {
+            double lab = 0.0, hz = 0.0; if (! num (c, "label_hz", lab) || ! deesserHz (c, hz) || lab <= 0.0 || hz <= 0.0) continue;
+            ++n; const double oct = std::abs (std::log2 (hz / lab));
+            if (oct > 1.0 / 6.0 && oct > worst) { worst = oct; w = "'" + c.getProperty ("display", "").toString() + "' measured " + juce::String (hz, 0) + " Hz (" + juce::String (oct, 2) + " octave)"; }
+        }
+    if (n < 2) return { "frequency", "not_tested", juce::String (n) + " Hz-labelled position(s)" };
+    if (worst >= 0.0) return { "frequency", "fail", w };
+    return { "frequency", "pass", juce::String (n) + " positions" };
+}
+inline Result judgeDeesser (const juce::var& d, const juce::var& record)
+{
+    Result r; const auto blk = d.getProperty ("deesser", {}), a = blk.getProperty ("acceptance", {});
+    const bool own = blk.hasProperty ("amount_control");   // a draft from 27 Oct carries everything; an older one reads its record
+    const auto ctl = (own ? blk.getProperty ("amount_control", "") : record.getProperty ("threshold_control", "")).toString();
+    const auto nl = own ? blk.getProperty ("noise_ladder", {}) : record.getProperty ("noise_ladder", {});
+    double pickLevel = -12.0; num (blk.getProperty ("pick", {}), "level_dbfs", pickLevel);
+    const auto amount = deesserAmount (ctl, nl, pickLevel);
+    const bool ownHz = own && blk.getProperty ("band", {}).hasProperty ("positions");
+    const auto freq = deesserFrequency ((ownHz ? blk.getProperty ("band", {}).getProperty ("control", "") : record.getProperty ("frequency_control", "")).toString(),
+                                        ownHz ? blk.getProperty ("band", {}).getProperty ("positions", {}) : record.getProperty ("centre", {}));
+    Part acc { "acceptance", "not_tested", "no acceptance step ran (needed)" };
+    if ((bool) a.getProperty ("ran", false)) acc = (bool) a.getProperty ("pass", false) ? Part { "acceptance", "pass", "1 step(s)" } : Part { "acceptance", "fail", a.getProperty ("why", "").toString() };
+    r.parts = { amount, freq, acc }; r.pass = ok (amount) && ok (acc);   // frequency offered only where it passes (certifiedParts)
+    return r;
+}
+// the drafts' folder names (phaseb/<folder>/drafts) and the map categories they certify
+inline juce::String mapCategoryOf (const juce::String& folder)
+{ return folder == "transient" ? juce::String ("transient_shaper") : folder == "deesser" ? juce::String ("de-esser") : folder; }
+// record: the measuring record beside the draft, where the rule reads one (an older de-esser draft)
+inline Result judge (const juce::String& category, const juce::var& draft, const juce::var& record = {})
 {
     Result r;
     if (category == "eq") r = judgeEq (draft);
@@ -262,13 +405,15 @@ inline Result judge (const juce::String& category, const juce::var& draft)
     else if (category == "reverb") r = judgeSpace (draft, true);
     else if (category == "saturation") r = judgeSaturation (draft);
     else if (category == "gate") r = judgeGate (draft);
+    else if (category == "transient") r = judgeTransient (draft);   // 27 Oct
+    else if (category == "deesser") r = judgeDeesser (draft, record);   // 27 Oct
     else { r.parts.push_back ({ "rule", "not_tested", "no v1 rule for " + category }); }
     r.category = category;
     r.product = draft.getProperty ("plugin", {}).getProperty ("name", "").toString();
     r.pluginId = draft.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString();
     return r;
 }
-inline const juce::StringArray& v1Categories() { static const juce::StringArray c { "eq", "limiter", "delay", "reverb", "saturation", "gate" }; return c; }
+inline const juce::StringArray& v1Categories() { static const juce::StringArray c { "eq", "limiter", "delay", "reverb", "saturation", "gate", "transient", "deesser" }; return c; }
 // the parts that wait for the listening session (said beside every count)
 inline juce::String feelWaits (const juce::String& category)
 {
@@ -278,6 +423,8 @@ inline juce::String feelWaits (const juce::String& category)
     if (category == "saturation") return "character words (subtle / warm / crunch / fuzz) as THD bands";
     if (category == "gate") return "the feel (tight / natural) and the bleed / hit levels A must send";
     if (category == "limiter") return "the loudness feel (nothing: the LUFS target is EchoJay's)";
+    if (category == "transient") return "the feel (punchier / softer) and the release / mix, which v1 does not judge";
+    if (category == "deesser") return "how natural the result sounds (lisp, dullness) and the mode / selectivity choice";
     return "all of it";
 }
 

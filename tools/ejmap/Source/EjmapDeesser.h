@@ -221,11 +221,20 @@ inline juce::var deesserBlock (const juce::var& rec)
     if (rec.hasProperty ("not_selective") && (bool) rec.getProperty ("not_selective", false)) notes.add ("not_selective: " + rec.getProperty ("selectivity_note", "").toString());
     // the band: the frequency control's positions with the shape's own figure
     { auto* b = new juce::DynamicObject(); b->setProperty ("control", rec.getProperty ("frequency_control", juce::var())); juce::String shape; juce::Array<juce::var> ps;
-      if (const auto* cs = rec.getProperty ("centre", {}).getArray()) for (const auto& r : *cs) { const auto sh = r.getProperty ("shape", "").toString(); if (shape.isEmpty()) shape = sh; auto* p = new juce::DynamicObject(); p->setProperty ("norm", r.getProperty ("freq_norm", juce::var())); p->setProperty ("display", r.getProperty ("display", "")); if (sh == "shelf") p->setProperty ("corner_hz", r.getProperty ("corner_hz", juce::var())); else p->setProperty ("centre_hz", r.getProperty ("deepest_hz", juce::var())); p->setProperty ("depth_db", r.getProperty ("depth_db", juce::var())); ps.add (juce::var (p)); }
+      if (const auto* cs = rec.getProperty ("centre", {}).getArray()) for (const auto& r : *cs) { const auto sh = r.getProperty ("shape", "").toString(); if (shape.isEmpty()) shape = sh; auto* p = new juce::DynamicObject(); p->setProperty ("norm", r.getProperty ("freq_norm", juce::var())); p->setProperty ("display", r.getProperty ("display", "")); if (sh == "shelf") p->setProperty ("corner_hz", r.getProperty ("corner_hz", juce::var())); else p->setProperty ("centre_hz", r.getProperty ("deepest_hz", juce::var())); p->setProperty ("depth_db", r.getProperty ("depth_db", juce::var())); p->setProperty ("label_hz", r.getProperty ("label_hz", juce::var())); ps.add (juce::var (p)); }   // 27 Oct: the Hz label (certv1 judges against it)
       b->setProperty ("shape", shape.isNotEmpty() ? juce::var (shape) : juce::var()); b->setProperty ("positions", ps); o->setProperty ("band", juce::var (b)); }
     o->setProperty ("tone_vs_noise_at_pick_db", rec.hasProperty ("tone_vs_noise_at_pick_db") ? rec.getProperty ("tone_vs_noise_at_pick_db", {}) : juce::var());
     if ((bool) rec.getProperty ("tone_noise_disagree", false)) notes.add ("tone_noise_disagree: " + rec.getProperty ("tone_noise_note", "").toString());
     o->setProperty ("pick", rec.hasProperty ("pick") ? rec.getProperty ("pick", {}) : juce::var());
+    // 27 Oct (THE DE-ESSER'S v1 RULE, certv1::judgeDeesser): the amount control and its noise ladder - every label at every level - so the rule
+    // (and the server) can judge the threshold or depth against its labels from the draft alone
+    o->setProperty ("amount_control", rec.getProperty ("threshold_control", juce::var()));
+    if (const auto nl = rec.getProperty ("noise_ladder", {}); nl.isObject())
+    {   auto* L = new juce::DynamicObject(); L->setProperty ("ok", nl.getProperty ("ok", false)); juce::Array<juce::var> cs;
+        if (const auto* cells = nl.getProperty ("cells", {}).getArray())
+            for (const auto& c : *cells) { auto* x = new juce::DynamicObject(); for (const char* k : { "norm", "display", "level_dbfs", "gr_db" }) x->setProperty (k, c.getProperty (k, juce::var())); cs.add (juce::var (x)); }
+        L->setProperty ("cells", cs); o->setProperty ("noise_ladder", juce::var (L)); }
+    else o->setProperty ("noise_ladder", juce::var());
     o->setProperty ("acceptance", rec.hasProperty ("acceptance") ? rec.getProperty ("acceptance", {}) : juce::var());
     if (rec.hasProperty ("acceptance") && ! (bool) rec.getProperty ("acceptance", {}).getProperty ("pass", false)) notes.add ("acceptance on noise: " + rec.getProperty ("acceptance", {}).getProperty ("why", "not run").toString());
     if (rec.hasProperty ("section_token") && rec.getProperty ("section_token", "").toString().isNotEmpty()) o->setProperty ("section", rec.getProperty ("section_token", ""));

@@ -7390,6 +7390,77 @@ void testProfileSweepPlan()
                           return meetNeed ("threshold|depth|freq", Rm, "de-esser") == juce::StringArray { "Low S-Reduction" } && meetNeed ("threshold|depth|freq", Rn, "de-esser").isEmpty(); }(),
                    "CERT-31OCT-1: a de-esser's Range / reduction is its depth, never its threshold; a compressor's Peak Reduction stays its threshold");
         }
+    // WZ-31OCT-5 THE TRANSIENT SHAPER'S v1 RULE (Kathy, 26 Oct; FOR_SEAN_DRAFT_TYPES): attack and sustain are amounts, judged against their
+    // labels (rising, 3 dB or more, every label's sign agreeing within 1.0 dB), with the acceptance steps; a multiband band's control is
+    // not judged. Smack Attack's real numbers (24 Oct) pass both; a label whose sign disagrees fails; TransX Multi's "Band 4 Range" waits
+    {
+        using namespace ejmap::certv1;
+        auto draft = [] (const char* atkCtl, const char* atkMap, const char* susMap, const char* acc)
+        { return juce::JSON::parse (juce::String (R"J({"plugin": {"name": "T", "plugin_id": "AudioUnit|1|1"}, "attack": {"control": ")J") + atkCtl + R"J(", "verdict": "measured", "map": )J" + atkMap
+                                    + R"J(}, "sustain": {"control": "Sustain", "verdict": "measured", "map": )J" + susMap + R"J(}, "acceptance": )J" + acc + "}"); };
+        const char* smackA = R"J([{"norm": 0.0, "display": "-100", "transient_db": -20.0}, {"norm": 0.17, "display": "", "transient_db": -16.08}, {"norm": 0.33, "display": "", "transient_db": -7.92},
+                                 {"norm": 0.5, "display": "0", "transient_db": 0.0}, {"norm": 0.67, "display": "", "transient_db": 7.92}, {"norm": 0.83, "display": "", "transient_db": 16.08}, {"norm": 1.0, "display": "100", "transient_db": 20.77}])J";
+        const char* smackS = R"J([{"norm": 0.0, "display": "-100", "sustain_db": -10.83}, {"norm": 0.33, "display": "", "sustain_db": -7.15}, {"norm": 0.5, "display": "0", "sustain_db": 0.0},
+                                 {"norm": 0.83, "display": "", "sustain_db": 8.43}, {"norm": 1.0, "display": "100", "sustain_db": 9.7}])J";
+        const char* offZero = R"J([{"norm": 0.0, "display": "-100", "sustain_db": -10.0}, {"norm": 0.5, "display": "0", "sustain_db": 2.5}, {"norm": 1.0, "display": "100", "sustain_db": 9.7}])J";   // 0 adds 2.5 dB
+        const char* flat = R"J([{"norm": 0.0, "display": "-100", "sustain_db": -1.0}, {"norm": 0.5, "display": "0", "sustain_db": 0.0}, {"norm": 1.0, "display": "100", "sustain_db": 1.0}])J";   // moves 2 dB
+        const char* accOk = R"J([{"step": "attack +3 dB", "ran": true, "pass": true}, {"step": "attack -3 dB", "ran": true, "pass": true}])J";
+        const char* accFail = R"J([{"step": "attack +3 dB", "ran": true, "pass": true}, {"step": "attack -3 dB", "ran": true, "pass": false, "why": "1.4 dB off"}])J";
+        const auto both = judge ("transient", draft ("Attack", smackA, smackS, accOk)), sign = judge ("transient", draft ("Attack", smackA, offZero, accOk));
+        const auto small = judge ("transient", draft ("Attack", smackA, flat, accOk)), failed = judge ("transient", draft ("Attack", smackA, smackS, accFail));
+        const auto multi = judge ("transient", draft ("Band 4 Range", smackA, flat, accOk)), noAcc = judge ("transient", draft ("Attack", smackA, smackS, "[]"));
+        auto mb = draft ("Attack (Transient)", smackA, smackS, accOk); mb.getProperty ("plugin", {}).getDynamicObject()->setProperty ("name", "MTransientMB");
+        const auto mbR = judge ("transient", mb);
+        check (! mbR.pass && mbR.parts[0].why.contains ("multiband transient designer") && multibandProduct ("TransX Multi (m)") && ! multibandProduct ("Smack Attack (m)") && ! multibandProduct ("Transient Master"),
+               "cert WZ-31OCT-5b: a multiband transient designer (MTransientMB) is not judged as a whole-plugin amount");
+        check (both.pass && both.certifiedParts() == juce::StringArray { "attack", "sustain" } && sign.pass && sign.certifiedParts() == juce::StringArray { "attack" } && sign.parts[1].state == "fail"
+               && small.pass && small.parts[1].state == "fail" && ! failed.pass && ! multi.pass && multi.parts[0].state == "not_tested" && ! noAcc.pass
+               && multibandControl ("Band 4 Range") && multibandControl ("Crossover 2") && ! multibandControl ("Range") && ! multibandControl ("Bandwidth")
+               && v1Categories().contains ("transient") && mapCategoryOf ("transient") == "transient_shaper" && mapCategoryOf ("deesser") == "de-esser" && mapCategoryOf ("gate") == "gate",
+               "cert WZ-31OCT-5: a transient shaper's attack / sustain pass as amounts against their labels, with the acceptance steps ('" + sign.why() + "')");
+    }
+    // WZ-31OCT-6 THE DE-ESSER'S v1 RULE (Kathy, 26 Oct; FOR_SEAN_DRAFT_TYPES): judged on the draft and its measuring record. The amount is a
+    // threshold or a depth by its name: a threshold's GR rises as its label falls and a label 12 dB above the signal barely acts; a depth's GR
+    // rises with it and never exceeds it; an amount scale (0..100) is not a dB threshold. Frequency: corner vs label within 1/6 octave, offered
+    // only where it passes. DeEsser / RDeEsser / MannyM TripleD's real ladders (20 Oct) at -12 and -30 dBFS
+    {
+        using namespace ejmap::certv1;
+        auto rec = [] (const char* ctl, const char* cells, const char* centre)
+        { return juce::JSON::parse (juce::String (R"J({"threshold_control": ")J") + ctl + R"J(", "frequency_control": "Freq", "noise_ladder": {"ok": true, "cells": )J" + cells
+                                    + R"J(}, "pick": {"level_dbfs": -12.0}, "centre": )J" + centre + "}"); };
+        auto cells = [] (std::initializer_list<const char*> labels, std::initializer_list<double> at12, std::initializer_list<double> at30)
+        {   juce::String s = "["; int i = 0; for (auto* l : labels) { s << (i ? ", " : "") << "{\"display\": \"" << l << "\", \"level_dbfs\": -12.0, \"gr_db\": " << juce::String (at12.begin()[i]) << "}, {\"display\": \"" << l << "\", \"level_dbfs\": -30.0, \"gr_db\": " << juce::String (at30.begin()[i]) << "}"; ++i; }
+            return s + "]"; };
+        const auto deCells = cells ({ "-80.0", "-64.0", "-48.0", "-32.0", "-16.0", "0.0" }, { 11.5, 11.5, 11.5, 10.8, 3.7, 0.0 }, { 11.5, 11.5, 10.4, 2.4, 0.0, 0.0 });
+        const auto rdCells = cells ({ "-48.0", "-38.4", "-28.8", "-19.2", "-9.6", "0.0" }, { 14.5, 14.5, 14.5, 12.8, 7.8, 0.0 }, { 6.4, 6.4, 6.4, 6.4, 6.4, 0.0 });
+        const auto overCells = cells ({ "-48.0", "-38.4", "-28.8", "-19.2", "-9.6", "0.0" }, { 14.5, 14.5, 14.5, 12.8, 11.0, 0.0 }, { 6.4, 6.4, 6.4, 6.4, 6.4, 0.0 });   // 11 dB at a depth of 9.6
+        const auto mmCells = cells ({ "0.0", "20.0", "40.0", "60.0", "80.0", "100.0" }, { 0.0, 2.7, 4.3, 6.1, 7.7, 8.4 }, { 0.0, -0.8, -1.2, -1.0, -0.4, -0.4 });
+        const auto revCells = cells ({ "-48.0", "-38.4", "-28.8", "-19.2", "-9.6", "0.0" }, { 1.0, 1.0, 1.0, 1.0, 7.8, 0.0 }, { 1.0, 1.0, 1.0, 1.0, 6.4, 0.0 });   // more depth, less GR
+        const auto flatCells = cells ({ "-48.0", "-38.4", "-28.8", "-19.2", "-9.6", "0.0" }, { 2.0, 2.0, 2.0, 2.0, 1.5, 0.0 }, { 6.4, 6.4, 6.4, 6.4, 6.4, 0.0 });   // 2 dB at the pick's level
+        const auto openCells = cells ({ "-80.0", "-64.0", "-48.0", "-32.0", "-16.0", "0.0" }, { 11.5, 11.5, 11.5, 10.8, 3.7, 2.0 }, { 11.5, 11.5, 10.4, 2.4, 0.0, 0.0 });   // 0 dBFS takes 2 dB at -12
+        const char* deCentre = R"J([{"display": "2000", "label_hz": 2000.0, "corner_hz": 2709.0}, {"display": "5657", "label_hz": 5657.0, "corner_hz": 6938.0}])J";
+        const char* goodCentre = R"J([{"display": "2000", "label_hz": 2000.0, "corner_hz": 2100.0, "shape": "shelf"}, {"display": "5657", "label_hz": 5657.0, "corner_hz": 5400.0, "shape": "shelf"}])J";
+        const auto draft = juce::JSON::parse (R"J({"plugin": {"name": "D", "plugin_id": "AudioUnit|1|1"}, "deesser": {"acceptance": {"ran": true, "pass": true}}})J");
+        const auto draftFail = juce::JSON::parse (R"J({"plugin": {"name": "D", "plugin_id": "AudioUnit|1|1"}, "deesser": {"acceptance": {"ran": true, "pass": false, "why": "0.8 dB off"}}})J");
+        const auto de = judge ("deesser", draft, rec ("Threshold", deCells.toRawUTF8(), deCentre)), deHz = judge ("deesser", draft, rec ("Threshold", deCells.toRawUTF8(), goodCentre));
+        const auto rd = judge ("deesser", draft, rec ("Range", rdCells.toRawUTF8(), deCentre)), over = judge ("deesser", draft, rec ("Range", overCells.toRawUTF8(), deCentre));
+        const auto mm = judge ("deesser", draft, rec ("DeEss Thresh", mmCells.toRawUTF8(), "[]")), open = judge ("deesser", draft, rec ("Threshold", openCells.toRawUTF8(), deCentre));
+        const auto rev = judge ("deesser", draft, rec ("Range", revCells.toRawUTF8(), deCentre)), flatD = judge ("deesser", draft, rec ("Range", flatCells.toRawUTF8(), deCentre));
+        const auto accFails = judge ("deesser", draftFail, rec ("Threshold", deCells.toRawUTF8(), goodCentre)), noRec = judge ("deesser", draft, juce::var());
+        // a draft from 27 Oct carries the amount control, the ladder and the Hz labels itself: the same verdict with no record beside it
+        auto withAcc = rec ("Threshold", deCells.toRawUTF8(), goodCentre); withAcc.getDynamicObject()->setProperty ("acceptance", juce::JSON::parse (R"J({"ran": true, "pass": true})J"));
+        withAcc.getDynamicObject()->setProperty ("pick", juce::JSON::parse (R"J({"level_dbfs": -12.0})J"));
+        auto* dd = new juce::DynamicObject(); dd->setProperty ("deesser", ejmap::deesser::deesserBlock (withAcc)); const juce::var ownDraft (dd);
+        const auto own = judge ("deesser", ownDraft, juce::var());
+        const auto& blk = ownDraft.getProperty ("deesser", {});
+        check (own.pass && own.certifiedParts() == juce::StringArray { "threshold", "frequency" } && blk.getProperty ("amount_control", "") == "Threshold"
+               && blk.getProperty ("noise_ladder", {}).getProperty ("cells", {}).size() == 12 && (double) blk.getProperty ("band", {}).getProperty ("positions", {})[0].getProperty ("label_hz", 0.0) == 2000.0,
+               "cert WZ-31OCT-6b: a de-esser draft carries its amount control, noise ladder and Hz labels, so the rule runs on the draft alone ('" + own.why() + "')");
+        check (de.pass && de.certifiedParts() == juce::StringArray { "threshold" } && de.parts[1].state == "fail" && deHz.certifiedParts() == juce::StringArray { "threshold", "frequency" }
+               && rd.pass && rd.certifiedParts() == juce::StringArray { "depth" } && ! over.pass && over.parts[0].state == "fail" && ! mm.pass && mm.parts[0].state == "not_tested"
+               && ! open.pass && open.parts[0].state == "fail" && ! rev.pass && rev.parts[0].why.contains ("falls") && ! flatD.pass && flatD.parts[0].why.contains ("moves only") && ! accFails.pass && ! noRec.pass && v1Categories().contains ("deesser"),
+               "cert WZ-31OCT-6: a de-esser's threshold or depth passes against its labels, frequency only where it passes ('" + rd.why() + "')");
+    }
         const auto vac = juce::JSON::parse (R"json({"product": "Mixland Vac Attack", "controls": [
             {"index": 6, "name": "Left Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
             {"index": 13, "name": "Right Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
@@ -11599,8 +11670,8 @@ int main (int, char**)
         const auto trr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
         const auto mainTl = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/Main.cpp").loadFileAsString().fromFirstOccurrenceOf ("if (a == \"--trust-levels\")", false, false).upToFirstOccurrenceOf ("if (a == \"--self-guard\")", false, false);
         check (fs.size() == 1 && fs.count ({ "A", "AudioUnit" }) && ! fs.count ({ "A", "VST3" }) && unstated.size() == 2 && unstated.contains ("B") && unstated.contains ("C")
-               && trr.contains ("auto r = certv1::judge (cat, d); r.format = trust::formatOfRecord (d, f.getFileName()); out.push_back (r);")
-               && trr.contains ("r.format = trust::formatOfRecord (d, f.getFileName());") && trr.contains ("v1Pass[r.category].insert ({ r.product, r.format });")
+               && trr.contains ("auto r = certv1::judge (cat, d, cat == \"deesser\" && dsRecords.count (pid) ? dsRecords[pid] : juce::var()); r.format = trust::formatOfRecord (d, f.getFileName()); out.push_back (r);")
+               && trr.contains ("r.format = trust::formatOfRecord (d, f.getFileName());") && trr.contains ("v1Pass[certv1::mapCategoryOf (r.category)].insert ({ r.product, r.format });")
                && trr.contains ("const std::pair<juce::String, juce::String> key { name, fmt };")
                && trr.contains ("(cat == \"compressor\" && compCert.count (key)) || (v1Pass.count (cat) && v1Pass[cat].count (key)) || (cat == \"amp_sim\" && v1Pass[\"saturation\"].count (key))")
                && trr.contains ("|| (cat == \"compressor\" && v1Pass[\"multiband\"].count (key))")

@@ -41,12 +41,16 @@ inline std::vector<certv1::Result> judgeFolder (const juce::File& cert)
             out.push_back (r);
         }
     }
+    std::map<juce::String, juce::var> dsRecords;   // 27 Oct: an older de-esser draft is judged with its measuring record (by identity)
+    for (const auto& f : cert.getChildFile ("phaseb").getChildFile ("deesser").getChildFile ("deesser").findChildFiles (juce::File::findFiles, false, "*.deesser.json"))
+    { const auto r = readJson (f); if (r.isObject()) dsRecords[r.getProperty ("identity", "").toString()] = r; }
     for (const auto& cat : certv1::v1Categories())
         for (const auto& f : cert.getChildFile ("phaseb").getChildFile (cat).getChildFile ("drafts").findChildFiles (juce::File::findFiles, false, "*.json"))
         {
             if (cat == "limiter" && ! f.getFileName().contains ("limiter_ceiling")) continue;
             const auto d = readJson (f); if (! d.isObject()) continue;
-            auto r = certv1::judge (cat, d); r.format = trust::formatOfRecord (d, f.getFileName()); out.push_back (r);
+            const auto pid = d.getProperty ("plugin", {}).getProperty ("plugin_id", "").toString();
+            auto r = certv1::judge (cat, d, cat == "deesser" && dsRecords.count (pid) ? dsRecords[pid] : juce::var()); r.format = trust::formatOfRecord (d, f.getFileName()); out.push_back (r);
         }
     return out;
 }
@@ -377,7 +381,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     juce::StringArray listedUnstated;
     const auto compCert = certifiedByFormat (certifiedFromList (publishList), certifiedProfiles, listedUnstated);
     std::map<juce::String, FormatSet> v1Pass;   // category -> (product, format): the format each draft was measured in
-    for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[r.category].insert ({ r.product, r.format });
+    for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[certv1::mapCategoryOf (r.category)].insert ({ r.product, r.format });   // 27 Oct: "transient" certifies transient_shaper maps
     if (! listedUnstated.isEmpty()) std::cout << "TRUST-LEVELS: " << listedUnstated.size() << " published product(s) with no profile stating its format here - certified for no format: " << listedUnstated.joinIntoString (", ") << "\n";
     out.getChildFile ("maps").createDirectory();
     const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
