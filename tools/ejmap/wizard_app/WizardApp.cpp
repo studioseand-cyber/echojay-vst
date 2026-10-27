@@ -404,6 +404,7 @@ public:
         for (const char* k : { "consented", "consent_at", "consent_version", "only" }) if (st.hasProperty (k)) o->setProperty (k, st.getProperty (k, {}));
         cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (juce::var (o)));
         { const juce::ScopedLock l (runLock); cachedRunId = {}; }
+        runCompletedNow = false; stoppedNow = false; nextTryMs = 0.0;   // 28 Oct: the new run sends as normal
         runId(); cacheRun();
     }
     // A FINISHED RUN NEVER RUNS AGAIN (Kathy, 27 Oct): at Start, a folder whose run is finished (or signed out of) moves that run's files to
@@ -427,6 +428,7 @@ public:
                  + ") is kept in " + juce::String (wizapp::kPreviousRuns) + "/" + dest.getFileName() + " (" + moved.joinIntoString (", ") + ")");
         { const juce::ScopedLock l (runLock); cachedRunId = {}; cachedConsentAt = {}; cachedStartedAt = {}; }
         catalogueAnswered.clear(); catalogueFailures = 0; catalogueRetryAt = 0.0; eligibility = juce::var(); completing = false; stoppedNow = false; noRunNow = false; failures = 0; nextTryMs = 0.0; resetShownProgress();
+        runCompletedNow = false; checkRunCompleted = 0;   // 28 Oct (the rehearsal): the finished run's "finished on EchoJay" never follows the new run onto its sending screen
         return true;
     }
     void paint (juce::Graphics& g) override
@@ -617,7 +619,7 @@ private:
         {   // 27 Oct (B: 409 run_completed): this run is finished on EchoJay - nothing is sent under it again; the next Start is a fresh run
             auto s = appState(); s.getDynamicObject()->setProperty ("server_completed", juce::Time::getCurrentTime().toISO8601 (true)); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (s));
             logLine ("run finished on EchoJay (run_completed): " + st.stopWords + " - nothing more is sent under " + run.runId + "; the next Start makes a fresh run"); }
-        if (st.stopped) { nextTryMs = now + 1.0e12; logLine ("upload stopped (" + st.stopCode + "): " + st.stopWords + " - nothing more is sent until the wizard is opened again"); }   // v1.1: never retried this session
+        if (st.stopped) { nextTryMs = now + 1.0e12; if (! st.runCompleted) logLine ("upload stopped (" + st.stopCode + "): " + st.stopWords + " - nothing more is sent until the wizard is opened again"); }   // run_completed: said above   // v1.1: never retried this session
         else if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
         else if (st.signIn) nextTryMs = now + 30000.0;
         else failures = 0;

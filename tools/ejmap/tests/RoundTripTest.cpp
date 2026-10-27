@@ -14567,6 +14567,47 @@ int main (int, char**)
                && tr.contains ("if (certv1::partByPart (certv1::mapCategoryOf (r.category))) v1Parts[{ r.product, r.format }] = certv1::mergeParts (v1Parts[{ r.product, r.format }], r.parts);"),
                "cert WZ-31OCT-7: a certified de-esser / transient shaper says per part what is verified ('" + partsWhy (shown) + "')");
     }
+    // WZ-33OCT-1 THE DELAY'S TIME STEPS (Kathy, 28 Oct: delay acceptance 56%, mostly "time N ms off"). The 24 Oct maps, as measured: a
+    // control whose times go up and down (Crystallizer SpliceValue) or stop moving (Needlepoint Noise Level) gets no time step; a stepped
+    // one (CLA EchoSphere's 3-position SlapVSO, MannyM's 19 note values) is asked for its OWN positions at their exact norms; a continuous
+    // one (H-Delay) as before
+    {
+        using namespace ejmap::reverbdelay;
+        const std::vector<std::pair<double, double>> crystal { { 0.0, 256.5 }, { 0.167, 260.5 }, { 0.333, 324.5 }, { 0.5, 568.5 }, { 0.667, 568.5 }, { 0.833, 332.5 }, { 1.0, 2441.5 } };
+        const std::vector<std::pair<double, double>> needle { { 0.0, 0.5 }, { 0.167, 34.5 }, { 0.333, 38.5 }, { 0.5, 38.5 }, { 0.667, 38.5 }, { 0.833, 38.5 }, { 1.0, 38.5 } };
+        const std::vector<std::pair<double, double>> echo { { 1.0, 83.5 }, { 0.0, 332.5 }, { 0.5, 228.5 } };
+        std::vector<std::pair<double, double>> manny; const double ms[] = { 20.5, 32.5, 40.5, 48.5, 64.5, 84.5, 92.5, 124.5, 168.5, 188.5, 252.5, 332.5, 376.5, 500.5, 668.5, 752.5, 1000.5, 1500.5, 2000.5 };
+        for (int i = 0; i < 19; ++i) manny.push_back ({ i / 18.0, ms[i] });
+        const std::vector<std::pair<double, double>> hdelay { { 0.0, 1.5 }, { 0.167, 171.5 }, { 0.333, 337.5 }, { 0.5, 483.5 }, { 0.667, 896.5 }, { 0.833, 1394.5 }, { 1.0, 1947.5 } };
+        const auto c = planTimeSteps (crystal, 0), n = planTimeSteps (needle, 0), e = planTimeSteps (echo, 3), m = planTimeSteps (manny, 19), h = planTimeSteps (hdelay, 0), mNot = planTimeSteps (manny, 0);
+        check (c.steps.empty() && c.skip.contains ("do not rise or fall steadily") && n.steps.empty() && n.skip.contains ("the time stops moving")
+               && e.stepped && e.steps.size() == 1 && e.steps[0].exact && e.steps[0].norm == 0.5 && e.steps[0].targetMs == 228.5   // a third and two thirds of 3 positions: the middle one, once
+               && m.stepped && m.steps.size() == 2 && m.steps[0].targetMs == 92.5 && m.steps[1].targetMs == 376.5 && m.steps[0].exact && std::abs (m.steps[1].norm - 12.0 / 18.0) < 1e-9
+               && ! h.stepped && h.steps.size() == 2 && ! h.steps[0].exact && h.steps[0].norm < 0.0 && std::abs (h.steps[0].targetMs - (1.5 + (1947.5 - 1.5) / 3.0)) < 1e-9
+               && ! mNot.stepped && mNot.steps.size() == 2 && planTimeSteps ({ { 0.0, 10.0 } }, 0).skip.isNotEmpty(),
+               "rd WZ-33OCT-1: no time step on a control that is no time; a stepped one asked for its own positions (" + c.skip + " | " + n.skip + ")");
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (drv.contains ("const auto plan = reverbdelay::planTimeSteps (timeMap, timeCtl.steps);")
+               && drv.contains ("const auto inv = step.exact ? reverbdelay::Inverse { true, step.norm, {} } : invertMap (timeMap, target, lo > 0.0);")
+               && drv.contains ("a->setProperty (\"why\", \"not asked: \" + plan.skip);"),
+               "rd WZ-33OCT-1b: the delay's acceptance uses the plan: not asked is said, a stepped position written at its own norm");
+    }
+    // WZ-33OCT-2 AN EQ "BAND" THAT DOES NOT MOVE IS NOT A BAND (Kathy, 28 Oct: EQ acceptance; Acon Digital DeNoise 2's four bands read
+    // 12.7 Hz at every frequency setting and -8.76 dB at every gain setting but one, and were asked for 12.7 Hz - 8 failed steps). No
+    // acceptance on a frequency map that stops moving, nor a gain inverted from a gain map that stops moving; a band that moves as before
+    {
+        using namespace ejmap::eq;
+        auto fp = [] (std::initializer_list<std::pair<float, double>> v) { std::vector<FreqPoint> o; for (const auto& [n, hz] : v) { FreqPoint p; p.norm = n; p.figureHz = hz; o.push_back (p); } return o; };
+        const auto acon = fp ({ { 0.17f, 12.7 }, { 0.33f, 12.7 }, { 0.5f, 12.7 }, { 0.67f, 12.7 }, { 0.83f, 12.7 }, { 1.0f, 12.7 } });
+        const auto lin = fp ({ { 0.0f, 23.7 }, { 0.17f, 35.5 }, { 0.33f, 128.9 }, { 0.42f, 246.0 }, { 0.5f, 472.2 }, { 0.67f, 952.7 } });
+        auto gr = [] (std::initializer_list<std::pair<float, double>> v) { std::vector<GainRow> o; for (const auto& [n, db] : v) { GainRow r; r.norm = n; r.band.result = "measured"; r.band.gainDb = db; o.push_back (r); } return o; };
+        const auto aconGain = normForGain (gr ({ { 0.0f, 0.0 }, { 0.17f, -8.76 }, { 0.33f, -8.76 }, { 0.5f, -8.76 }, { 0.67f, -8.76 }, { 0.83f, -8.76 }, { 1.0f, -8.76 } }), -3.0, false);
+        const auto linGain = normForGain (gr ({ { 0.0f, -27.32 }, { 0.17f, -17.21 }, { 0.33f, -9.47 }, { 0.5f, 0.0 }, { 0.67f, 9.99 }, { 0.83f, 20.0 }, { 1.0f, 30.0 } }), -3.0, false);
+        check (acceptanceTargets (acon, false).empty() && acceptanceTargets (acon, true).empty() && acceptanceTargets (lin, false).size() == 2
+               && ! aconGain.ok && aconGain.why.contains ("stops moving") && linGain.ok
+               && stopsMoving ({ 38.5, 38.5, 38.5, 38.5, 0.5, 34.5, 38.5 }, 1.0, false) && ! stopsMoving ({ 1.0, 2.0, 3.0, 4.0 }, 0.02, true),
+               "eq WZ-33OCT-2: a band whose frequency or gain stops moving gets no acceptance step (" + aconGain.why + ")");
+    }
     // WZ-32OCT-1 A SLOW ANSWER IS NOT "OFFLINE", AND THE CHECK GOES IN PARTS (STAGING 3 run 3, 27 Oct: 1,378 plugins in one call, no answer in
     // 30 s, "You're offline" while online). Against the live mock: a check that runs its whole timeout is timedOut ("EchoJay is taking a while
     // to answer"), tried again by itself; a closed port is offline; the check goes in parts of 500 under one run id, an answered part is never
@@ -14682,6 +14723,8 @@ int main (int, char**)
                        Where o = w; o.serverCompleted = false; Where out = w; out.signedIn = false;
                        return openOn (w, Mode::beta) == Screen::consent && openOn (o, Mode::beta) == Screen::upload && openOn (out, Mode::beta) == Screen::welcome; }()
                && app.contains ("w.serverCompleted = st.hasProperty (\"server_completed\");")
+               && app.contains ("runCompletedNow = false; checkRunCompleted = 0;   // 28 Oct") && app.contains ("runCompletedNow = false; stoppedNow = false; nextTryMs = 0.0;   // 28 Oct")
+               && app.contains ("if (! st.runCompleted) logLine (\"upload stopped (\"")
                && con.contains ("if (k == Sent::runCompleted) { st.runCompleted = true; st.stopped = true;")
                && app.contains ("if (wizcontract::runCompleted (cr.reply) && ++checkRunCompleted == 1)") && app.contains ("const auto old = runInfo().runId; freshRunId(); catalogueAnswered.clear();")
                && app.contains ("if (st.runCompleted && ! runCompletedNow.exchange (true))") && app.contains ("s.getDynamicObject()->setProperty (\"server_completed\"")

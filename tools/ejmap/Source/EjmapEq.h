@@ -405,10 +405,19 @@ inline bool serverMayUse (const juce::String& verdict) { return verdict == "meas
 // a stepped one; the gain map inverted), written and re-measured.
 struct FreqPoint { float norm = 0.0f; juce::String display; double figureHz = 0.0; };   // the freq sweep's usable rows: norm -> measured figure (centre or corner)
 struct FigureTarget { double targetHz = 0.0; float norm = 0.0f; juce::String display; double detentHz = 0.0; bool stepped = false; };
+// A MAP THAT STOPS MOVING (Kathy, 28 Oct: EQ acceptance; Acon Digital DeNoise 2's four "bands" read 12.7 Hz at every frequency setting
+// and -8.76 dB at every gain setting but one - the denoiser's own fixed effect, not a band): more than half the positions within tol of one
+// value is not that control, and no acceptance step is asked of it (the delay's time steps follow the same rule: reverbdelay::planTimeSteps)
+inline bool stopsMoving (const std::vector<double>& v, double tol, bool relative)
+{
+    for (const double x : v) { int same = 0; for (const double y : v) if (std::abs (y - x) <= (relative ? tol * std::abs (x) : tol)) ++same; if (same * 2 > (int) v.size()) return true; }
+    return false;
+}
 // the two targets: the measured figures at the 1/3 and 2/3 points of the range in log f (a stepped control: the detents nearest those)
 inline std::vector<FigureTarget> acceptanceTargets (std::vector<FreqPoint> pts, bool stepped)
 {
     std::vector<FigureTarget> out; if (pts.size() < 2) return out;
+    { std::vector<double> f; for (const auto& p : pts) f.push_back (p.figureHz); if (stopsMoving (f, 0.02, true)) return out; }   // 28 Oct: not a frequency control
     std::sort (pts.begin(), pts.end(), [] (const FreqPoint& a, const FreqPoint& b) { return a.figureHz < b.figureHz; });
     const double lo = std::log2 (pts.front().figureHz), hi = std::log2 (pts.back().figureHz);
     for (double frac : { 1.0 / 3.0, 2.0 / 3.0 })
@@ -439,6 +448,8 @@ inline GainInverse normForGain (std::vector<GainRow> rows, double targetDb, bool
     GainInverse g; std::vector<std::pair<float, std::pair<double, juce::String>>> pts;
     for (const auto& r : rows) if (usable (r.band)) pts.push_back ({ r.norm, { r.band.gainDb, r.display } }); else if (r.band.result == "flat") pts.push_back ({ r.norm, { 0.0, r.display } });
     if (pts.size() < 2) { g.why = "fewer than two gain positions read"; return g; }
+    { std::vector<double> gv; for (const auto& p : pts) gv.push_back (p.second.first);   // 28 Oct: a gain that stops moving is not a gain control
+      if (stopsMoving (gv, 0.25, false)) { g.why = "the gain stops moving (more than half the positions read the same): not a gain control"; return g; } }
     std::sort (pts.begin(), pts.end(), [] (const auto& a, const auto& b) { return a.second.first < b.second.first; });
     if (targetDb < pts.front().second.first - 1e-9 || targetDb > pts.back().second.first + 1e-9) { g.why = "the target " + juce::String (targetDb, 1) + " dB is outside the measured span " + juce::String (pts.front().second.first, 2) + " .. " + juce::String (pts.back().second.first, 2); return g; }
     if (stepped) { const auto* best = &pts.front(); for (const auto& p : pts) if (std::abs (p.second.first - targetDb) < std::abs (best->second.first - targetDb)) best = &p; g.ok = true; g.norm = best->first; g.promisedDb = best->second.first; g.display = best->second.second; return g; }
