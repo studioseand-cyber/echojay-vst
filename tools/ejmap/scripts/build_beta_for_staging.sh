@@ -35,6 +35,8 @@ REQUIRED=(
   "0ee1d00b|a reopened Beta sends what waits; the sending screen says why; an unexplained 404 retried (staging run 1)"
   "d2b57103|a run's --only list is kept with the run (a reopen never measures the whole Mac)"
   "5c01df04|no plug-in notice once the run is over, the run's end counts logged, the local minimum named, a hidden Sign out (staging run 1)"
+  "0d1aaa76|slow is never offline, the catalogue check in parts of 500, a finished run's folder starts a fresh run (staging run 3)"
+  "8d246736|409 run_completed: a finished run is never sent to again (B, 27 Oct)"
 )
 
 die() { echo "STOP: $*" >&2; exit 1; }
@@ -90,7 +92,9 @@ if [[ "${1:-}" == "--self-test" ]]; then
     t refused client_ok "has space"
     t refused client_ok "sk_live_abcdefghijkl"
     t refused client_ok "eyJhbGciOiJIUzI1NiJ9"
-    t ok      has_fixes "5c01df04"
+    t ok      has_fixes "8d246736"
+    t refused has_fixes "0d1aaa76"
+    t refused has_fixes "5c01df04"
     t refused has_fixes "d2b57103"
     t refused has_fixes "0ee1d00b"
     t refused has_fixes "e6e2c2ab"
