@@ -36,7 +36,7 @@
 namespace ejmap::certv1
 {
 
-struct Part { juce::String name, state, why; };   // state: pass | fail | not_tested
+struct Part { juce::String name, state, why, control; bool readBack = false, notTheRole = false; };   // notTheRole: the control is not that part at all (a level control, a band of a multiband) - never listed   // state: pass | fail | not_tested; control: the control the part judged; readBack: the trust run found that control read back (27 Oct: per-part trust)
 struct Result { juce::String category, product, pluginId, format; bool pass = false; std::vector<Part> parts;   // format: what the draft was measured in (17 Oct, rulings 2: certification counts only for that format)
     // the parts a certified product offers: every part that passed (an EQ band's gain / freq, a delay's mix ...); never a failed one
     juce::StringArray certifiedParts() const { juce::StringArray c; if (pass) for (const auto& p : parts) if (p.state == "pass" && p.name != "acceptance" && ! p.name.containsChar (':')) c.add (p.name); return c; }   // "band 2: gain" is a sub-check, "band 2" the offered band
@@ -277,14 +277,32 @@ inline bool multibandProduct (const juce::String& name)
     return l.contains ("multiband") || l.contains ("multi-band") || words.contains ("multi") || name.trim().endsWith ("MB");
 }
 inline constexpr double kTransientBarDb = 1.0;
+// A LEVEL CONTROL IS NOT A TRANSIENT AMOUNT (27 Oct: Quantum's "Output" and KNOCK's "Input Gain" were drafted as sustain): where the control
+// takes 3 dB or more away, a plain gain takes the hits and the sustain away together - the other measure within 1.0 dB (the transient bar)
+// at every such position, one at least. A shaper's control always moves them apart there (Envolution's Sus Level: -27.3 against -2.5)
+inline bool levelControl (const juce::var& map, const char* key, const char* otherKey)
+{
+    int cuts = 0;
+    if (const auto* l = listOf (map))
+        for (const auto& x : *l)
+        {
+            double own = 0.0, other = 0.0; if (! num (x, key, own) || own > -3.0) continue;
+            if (! num (x, otherKey, other) || std::abs (other - own) > kTransientBarDb) return false;
+            ++cuts;
+        }
+    return cuts > 0;
+}
 inline Part transientAmount (const char* name, const juce::var& block, const char* key)
 {
     if (! block.isObject()) return { name, "not_tested", juce::String ("no ") + name + " control" };
     const auto ctl = block.getProperty ("control", "").toString();
-    if (block.getProperty ("verdict", "").toString() != "measured") return { name, "not_tested", ctl + ": " + block.getProperty ("verdict", "").toString() };
-    if (multibandControl (ctl)) return { name, "not_tested", "'" + ctl + "' is one band of a multiband: not a transient amount (v1)" };
+    if (block.getProperty ("verdict", "").toString() != "measured")   // never measured as this part (TransX's Release: no_effect) - not listed
+    { Part x { name, "not_tested", ctl + ": " + block.getProperty ("verdict", "").toString() }; x.notTheRole = true; return x; }
+    if (multibandControl (ctl)) { Part x { name, "not_tested", "'" + ctl + "' is one band of a multiband: not a transient amount (v1)" }; x.notTheRole = true; return x; }
     auto p = monotonic (name, block.getProperty ("map", {}), key, true, 0.5, 3.0);
     if (! ok (p)) return p;
+    if (levelControl (block.getProperty ("map", {}), key, juce::String (key) == "transient_db" ? "sustain_db" : "transient_db"))
+    { Part x { name, "fail", "'" + ctl + "' takes the hits and the sustain away together: a level control, not a transient amount" }; x.notTheRole = true; return x; }
     int n = 0; juce::String worst;
     if (const auto* l = listOf (block.getProperty ("map", {})))
         for (const auto& x : *l)
@@ -303,8 +321,9 @@ inline Result judgeTransient (const juce::var& d)
     const auto acc = accPart (acceptanceOf (d.getProperty ("acceptance", {})), true);
     if (const auto product = d.getProperty ("plugin", {}).getProperty ("name", "").toString(); multibandProduct (product))
     { r.parts = { { "attack", "not_tested", "'" + product + "' is a multiband transient designer: per band, not v1" }, acc }; return r; }
-    const auto atk = transientAmount ("attack", d.getProperty ("attack", {}), "transient_db");
-    const auto sus = transientAmount ("sustain", d.getProperty ("sustain", {}), "sustain_db");
+    auto atk = transientAmount ("attack", d.getProperty ("attack", {}), "transient_db");
+    auto sus = transientAmount ("sustain", d.getProperty ("sustain", {}), "sustain_db");
+    atk.control = d.getProperty ("attack", {}).getProperty ("control", "").toString(); sus.control = d.getProperty ("sustain", {}).getProperty ("control", "").toString();
     r.parts = { atk, sus, acc }; r.pass = (ok (atk) || ok (sus)) && ok (acc);   // each amount offered only where it passes (certifiedParts)
     return r;
 }
@@ -383,16 +402,37 @@ inline Result judgeDeesser (const juce::var& d, const juce::var& record)
     const auto ctl = (own ? blk.getProperty ("amount_control", "") : record.getProperty ("threshold_control", "")).toString();
     const auto nl = own ? blk.getProperty ("noise_ladder", {}) : record.getProperty ("noise_ladder", {});
     double pickLevel = -12.0; num (blk.getProperty ("pick", {}), "level_dbfs", pickLevel);
-    const auto amount = deesserAmount (ctl, nl, pickLevel);
+    auto amount = deesserAmount (ctl, nl, pickLevel); amount.control = ctl;
     const bool ownHz = own && blk.getProperty ("band", {}).hasProperty ("positions");
-    const auto freq = deesserFrequency ((ownHz ? blk.getProperty ("band", {}).getProperty ("control", "") : record.getProperty ("frequency_control", "")).toString(),
-                                        ownHz ? blk.getProperty ("band", {}).getProperty ("positions", {}) : record.getProperty ("centre", {}));
+    const auto fctl = (ownHz ? blk.getProperty ("band", {}).getProperty ("control", "") : record.getProperty ("frequency_control", "")).toString();
+    auto freq = deesserFrequency (fctl, ownHz ? blk.getProperty ("band", {}).getProperty ("positions", {}) : record.getProperty ("centre", {})); freq.control = fctl;
     Part acc { "acceptance", "not_tested", "no acceptance step ran (needed)" };
     if ((bool) a.getProperty ("ran", false)) acc = (bool) a.getProperty ("pass", false) ? Part { "acceptance", "pass", "1 step(s)" } : Part { "acceptance", "fail", a.getProperty ("why", "").toString() };
     r.parts = { amount, freq, acc }; r.pass = ok (amount) && ok (acc);   // frequency offered only where it passes (certifiedParts)
     return r;
 }
 // the drafts' folder names (phaseb/<folder>/drafts) and the map categories they certify
+// 27 Oct (Kathy: "certify PART BY PART"): the categories whose certified trust row lists each part, verified or not - a part that did not
+// pass is dialled as mapped, "not verified yet"
+inline bool partByPart (const juce::String& mapCategory) { return mapCategory == "de-esser" || mapCategory == "transient_shaper"; }
+// the parts a certified row lists (acceptance is the rule's own step, not a part); several passing drafts: a part is verified when any verifies it
+inline std::vector<Part> mergeParts (std::vector<Part> into, const std::vector<Part>& from)
+{
+    for (const auto& p : from)
+    {
+        if (p.name == "acceptance" || p.control.isEmpty() || p.notTheRole) continue;   // no control (Sibilance has no frequency control), or not that part at all (Quantum's Output as "sustain"): not listed
+        auto it = std::find_if (into.begin(), into.end(), [&] (const Part& q) { return q.name == p.name; });
+        if (it == into.end()) into.push_back (p); else if (! ok (*it) && ok (p)) *it = p;
+    }
+    return into;
+}
+inline juce::String partsWhy (const std::vector<Part>& parts)
+{
+    juce::StringArray v, m, n;   // verified; mapped (read back) but not verified; neither
+    for (const auto& p : parts) (ok (p) ? v : p.readBack ? m : n).add (p.name + (p.control.isNotEmpty() ? " (" + p.control + ")" : juce::String()));
+    return (v.isEmpty() ? juce::String() : "; verified: " + v.joinIntoString (", ")) + (m.isEmpty() ? juce::String() : "; mapped, not verified yet: " + m.joinIntoString (", "))
+         + (n.isEmpty() ? juce::String() : "; not verified, not mapped: " + n.joinIntoString (", "));
+}
 inline juce::String mapCategoryOf (const juce::String& folder)
 { return folder == "transient" ? juce::String ("transient_shaper") : folder == "deesser" ? juce::String ("de-esser") : folder; }
 // record: the measuring record beside the draft, where the rule reads one (an older de-esser draft)
