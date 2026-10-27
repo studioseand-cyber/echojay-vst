@@ -229,7 +229,7 @@ inline int resetTest (const juce::File& work)
 // beta_db, wizard_app/beta_db - scripts/beta_db_snapshot.py); the release keeps the stubbed server's folder in its work folder
 inline juce::File databaseFolder (Mode m, const juce::File& appBundle, const juce::File& work)
 { return m == Mode::beta ? appBundle.getChildFile ("Contents/Resources/beta_db") : work.getChildFile ("server_stub/db"); }
-struct Where { bool signedIn = false, consented = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false, saved = false; int crashed = 0; };
+struct Where { bool signedIn = false, consented = false, scanned = false, measureStarted = false, measureDone = false, uploaded = false, rewarded = false, saved = false, serverCompleted = false; int crashed = 0; };
 // THE CONSENT (item 3; the wording is Kathy's to approve - docs/WIZARD_SPEC.md section 2b): one paragraph, and a tick that must be set
 struct Copy { juce::String title, text, primary, secondary; };
 inline juce::String consentText (Mode m)
@@ -772,6 +772,7 @@ inline Screen openOn (const Where& w, Mode m = Mode::normal)
 {
     if (m == Mode::normal && ! w.signedIn) return Screen::welcome;
     if (m == Mode::beta && ! w.signedIn) return Screen::welcome;   // 21 Oct: the beta signs in (in the browser) first
+    if (w.serverCompleted) return Screen::consent;   // 27 Oct (B: 409 run_completed): that run is over on EchoJay - the next Start is a new run (freshRunIfNeeded)
     if (! w.consented && ! w.scanned && ! w.measureStarted) return Screen::consent;   // 13 Oct: consent before anything is scanned
     if (w.rewarded) return Screen::reward;
     if (w.crashed > 0) return Screen::crashRecovered;             // a crash is said before anything carries on

@@ -14678,6 +14678,10 @@ int main (int, char**)
         check (ok3 && plainWords (bare) == "This run is finished. Start a new run in the EchoJay Wizard to check again."
                && uploadDetail (uv) == "This run is finished. Start a new run in the EchoJay Wizard to check again. What was measured is kept on this Mac."
                && runNeedsFreshStart (juce::JSON::parse (R"J({"run_id": "run_1", "server_completed": "x"})J"), false)
+               && [] { Where w; w.signedIn = true; w.consented = true; w.scanned = true; w.measureStarted = true; w.measureDone = true; w.saved = true; w.serverCompleted = true;
+                       Where o = w; o.serverCompleted = false; Where out = w; out.signedIn = false;
+                       return openOn (w, Mode::beta) == Screen::consent && openOn (o, Mode::beta) == Screen::upload && openOn (out, Mode::beta) == Screen::welcome; }()
+               && app.contains ("w.serverCompleted = st.hasProperty (\"server_completed\");")
                && con.contains ("if (k == Sent::runCompleted) { st.runCompleted = true; st.stopped = true;")
                && app.contains ("if (wizcontract::runCompleted (cr.reply) && ++checkRunCompleted == 1)") && app.contains ("const auto old = runInfo().runId; freshRunId(); catalogueAnswered.clear();")
                && app.contains ("if (st.runCompleted && ! runCompletedNow.exchange (true))") && app.contains ("s.getDynamicObject()->setProperty (\"server_completed\"")

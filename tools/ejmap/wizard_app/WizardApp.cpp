@@ -329,7 +329,7 @@ public:
         w.signedIn = kNetworked ? (session != nullptr && session->signedIn()) : cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
         w.measureStarted = (bool) st.getProperty ("measure_started", false); w.measureDone = (bool) st.getProperty ("measure_done", false);
         w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
-        w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false);
+        w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false); w.serverCompleted = st.hasProperty ("server_completed");   // 27 Oct
         logLine ("open (" + juce::String (kMode == wizapp::Mode::beta ? "beta" : "normal") + "): " + wizapp::screenName (wizapp::openOn (w, kMode)) + (crashed.empty() ? juce::String() : " (" + juce::String ((int) crashed.size()) + " plugin(s) put on the never-retry list)"));
         if (const int n = drainOutbox(); n > 0)
         {   // 13 Oct: what an offline run kept is sent now; a finished run's code arrives with it
