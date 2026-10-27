@@ -38,6 +38,7 @@ REQUIRED=(
   "0d1aaa76|slow is never offline, the catalogue check in parts of 500, a finished run's folder starts a fresh run (staging run 3)"
   "8d246736|409 run_completed: a finished run is never sent to again (B, 27 Oct)"
   "cb17196a|a run finished on EchoJay mid-upload reopens on the consent; its Start is a fresh run"
+  "76998c88|a fresh run clears the finished run's flag (the STAGING 4 rehearsal); delay / EQ acceptance only on controls that move"
 )
 
 die() { echo "STOP: $*" >&2; exit 1; }
@@ -93,7 +94,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
     t refused client_ok "has space"
     t refused client_ok "sk_live_abcdefghijkl"
     t refused client_ok "eyJhbGciOiJIUzI1NiJ9"
-    t ok      has_fixes "cb17196a"
+    t ok      has_fixes "76998c88"
+    t refused has_fixes "cb17196a"
     t refused has_fixes "8d246736"
     t refused has_fixes "0d1aaa76"
     t refused has_fixes "5c01df04"
