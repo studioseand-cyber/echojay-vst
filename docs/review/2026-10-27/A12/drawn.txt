@@ -1,0 +1,16 @@
+scenario A12
+captured 2026-10-27T16:19:30.191Z
+  [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
+  [user] rig-undoclose-marker: put the pre-gain up
+  [assistant] The pre gain on the Mix Bus is set to 3 dB.
+  [user] rig-setfail-marker: add something that is not there
+  [assistant] One step did not land.
+  [user] rig-eqband-marker: two bells on the EQ
+  [assistant] Two bells on the EQ.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Two bells on the EQ.
+  closing: Two bells on the EQ.
+    step "two bells on an EchoJay EQ" [done] right="applied" detail="Added EchoJay EQ in slot 2. Read back: band 1 Q 1.2, band 2 Q 0.9, band 1 frequency 240 Hz, band 1 gain -2.5 dB, band 2 frequency 3.2 kHz, band 2 gain 1.5 dB." chips=[]

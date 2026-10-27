@@ -123,3 +123,26 @@ With the switch ON (Settings, dev builds only for now), on a Link's rack:
    yesterday behaves as it did.
 7. The CL 1B and the Vac Attack: both have large interfaces and the Vac Attack has the map we fixed.
    Watch for a knob that does not follow, and for the window moving on its own.
+
+---
+
+## §6 Two corrections to this report (27 Oct, written after the morning's passes)
+
+**1. "Nothing skipped" was about the live-view verdict only.** The line this report quoted - *"90 passed, 1
+failed, 0 skipped"* - is `runLiveViewRows`'s own verdict, which counts the assertions of the LV, RE and RH
+rows it ran. The FULL suite's verdict never printed last night: the process died in static destruction on
+the way out (see `docs/VALHALLA_EXIT_CRASH_2026-10-27.md`), after that line. This morning's unfiltered pass
+printed it for the first time in a while - **RED, 14 failed, 175 passed, 21 skipped** - and most of those
+skips are long-standing legs in other blocks, each with its reason in the log. They were there last night
+too; nothing in this report had looked.
+
+**2. "The ValhallaDelay crash on track deletion" was the wrong attribution**, corrected in full in the
+write-up above: it is the process leaving, not the track going.
+
+And one thing this report could not have said, because the configuration it ran in hid it:
+
+**3. Every pass of the live-view, RE and RH rows - last night's included - ran with the V2 and both Links in
+ONE process.** `tools/link_host` had never built on this machine (the quick tree's archive is arm64-only),
+so the out-of-process Link scenarios had always skipped. The first pass that did build it skipped LV1-LV3
+and LV7 for want of a plugin view on screen. That is being separated one variable at a time; the rows that
+matter are about one process, which is what Logic and Pro Tools do.

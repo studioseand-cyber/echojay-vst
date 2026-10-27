@@ -56,3 +56,31 @@ live view. No more patching.
   road with the pane saying "the real-editor switch is off" moments after the row verified it ON
   through the plugin's own road. Contradiction logged, not resolved. NOT INSTALLED, per his rule.
 - [ ] 8. (the gate is 90/91 - RH3 open)   - [ ] 9. (no install, by his rule)
+
+---
+
+## 27 Oct, morning: what the full pass found (A)
+
+1. **The ValhallaDelay crash is not ours and not the track delete** - it is static destruction on the way out
+   of the process, reproduced in a process with no EchoJay object in it. `docs/VALHALLA_EXIT_CRASH_2026-10-27.md`.
+   host_rig now leaves by `_Exit`; `tools/hosted_exit_probe` is the guard, red in both directions.
+2. **MCompressor is PACE-wrapped** and was loaded in the rig overnight against the standing rule. Every
+   identifier the rig enumerates is now screened by EJPaceCheck; FabFilter Pro-C 3 takes the third maker's place.
+3. **RH3's "switch-state contradiction" was not the switch.** The pane was showing the V2's own rack's plugin
+   behind the Link's cards: the refresh asked "is the open slot index the selected one" and a slot index does
+   not name a rack. Fixed as a pure function (`echojay::inlineNeedsReopen`), guard legs IV0-IV6
+   (chat_store_guard GREEN 366), new rig row RH9, and two new state fields (`inlinePlugin`, `inlineRack`) so a
+   row can read WHOSE plugin is on screen rather than only which road.
+4. **And the full pass found what the filtered run could not: the real editor only opens where an edit
+   session is already engaged.** In the full pass the session was on `6c8b649d5d` while the live-view rows
+   worked on `e80636c4fb`, and the real road produced **zero** lent editors (the pane reports the "none"
+   road). Overnight every lent editor and every session renewal was the same uid (`1229413db5`), so the
+   precondition was armed by accident and RE8-RE15 and RH1-RH8 were green under it.
+   The cause is one line: `ChainListPanel::selectSlot` returns early for a remote rack unless
+   `editingSession && i == sessionSlot`, and on a remote rack that early return is the ONLY thing between a
+   selection and `showInline`. The copy road does not need a session - it opens from
+   `shadowFollowSelection`'s tap-ack - so with the switch ON and no session, nothing opens at all.
+   **This is a product fault, not a row fault**, and it is the next thing to fix: ask for the real editor in
+   the place that already decided the road.
+
+Nothing is installed. Sean remains on V2 AU 9B29E0FE / Link AU F95EC755.

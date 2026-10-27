@@ -154,12 +154,59 @@ static NSView* ejFindViewOfClass (NSView* root, NSString* name)
 
 /** The clip container, found the way a user's eye finds it: by sweeping this process's windows.
     Never from a handle the product passed out - the row is about what is actually on screen. */
+static NSView* ejGuestInside (NSView* container);   // defined just below; the finder prefers a full one
+
+/** THE CONTAINER THAT HAS A PLUGIN VIEW IN IT (27 Oct 2026).
+
+    This used to return the FIRST EchoJayClipContainer in [NSApp windows] order, and with several
+    windows open - the V2's AU, the V2's VST3, a Link's own plugin window - the first one it met
+    could be an empty container in another window. Then RE9 reported "there was no plugin view inside
+    the container to measure" and the own-rack checks reported "container absent" in the same pass
+    where the pane's own settle verdict said `container=877x387 subviews=1`. The pane was right and
+    the finder was looking in the wrong window.
+
+    So: every window is searched, and a container with something inside it wins over an empty one.
+    An empty one is still returned if that is all there is, because "found it, and it is empty" and
+    "there is no container at all" are different findings and a row says which. */
+static void ejDumpViewTree (NSView* v, int depth, juce::String& out)
+{
+    if (v == nil || depth > 6) return;
+    out << juce::String::repeatedString (" ", depth * 2) << NSStringFromClass ([v class]).UTF8String
+        << " " << (int) [v frame].size.width << "x" << (int) [v frame].size.height
+        << ([v isHidden] ? " hidden" : "") << "\n";
+    for (NSView* sv in [v subviews]) ejDumpViewTree (sv, depth + 1, out);
+}
+
 static NSView* ejFindClipContainer()
 {
+    NSView* empty = nil;
     for (NSWindow* w in [NSApp windows])
         if (NSView* hit = ejFindViewOfClass ([w contentView], @"EchoJayClipContainer"))
-            return hit;
-    return nil;
+        {
+            if (ejGuestInside (hit) != nil) return hit;
+            if (empty == nil) empty = hit;
+        }
+    // ---- AND IF THERE IS NONE, SAY WHAT THERE WAS (27 Oct 2026) -----------------------------
+    // Three rows in one pass reported "container absent" in the same seconds as the plugin's own
+    // settle verdict - `container=877x387 subviews=1`, with NativeClip2-diag naming the peer it sits
+    // in. One of the two is looking in the wrong place and a guess cost two runs, so the first
+    // failure of this sweep prints every window and its view tree. Once per run, and only on a miss.
+    static bool said = false;
+    if (empty == nil && ! said)
+    {
+        said = true;
+        juce::String out ("EJRIG: the clip-container sweep found NOTHING. Every window in this "
+                          "process, with its view tree:\n");
+        for (NSWindow* w in [NSApp windows])
+        {
+            out << "  window \"" << juce::String::fromUTF8 ([[w title] UTF8String] ? [[w title] UTF8String] : "(no title)")
+                << "\" " << ([w isVisible] ? "visible" : "hidden") << "\n";
+            ejDumpViewTree ([w contentView], 2, out);
+        }
+        std::printf ("%s", out.toRawUTF8());
+        std::fflush (stdout);
+    }
+    return empty;
 }
 
 static NSView* ejGuestInside (NSView* container)
@@ -815,11 +862,20 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                     // auth frameworks in the bundle, and EJPaceCheck::isPaceWrapped refuses them
                     // too if that ever changes. Named one at a time by identifier, never scanned.
                     //
-                    //   MCompressor     MeldaProduction   their own custom UI framework. MTransient
-                    //                                     is not installed on this Mac; this is the
-                    //                                     same maker and the same framework.
+                    //   Pro-C 3         FabFilter         a LARGE custom interface, licence file only
                     //   ValhallaDelay   Valhalla DSP      a LARGE custom interface
                     //   TDR SlickEQ M   Tokyo Dawn Labs   JUCE-BUILT (JUCE_ strings in its binary)
+                    //
+                    // AND ONE MORE THAT IS OUT, and this one is my mistake (27 Oct 2026):
+                    // **MCompressor** stood here overnight as a screened subject. It is not one.
+                    // /Library/Audio/Plug-Ins/Components/MCompressor.component/Contents holds
+                    // __Pace_Eden.bundle - it IS PACE-wrapped, and Sean's standing rule is that no
+                    // licence-bound bundle is ever loaded in this rig or on the bench. The screening
+                    // sentence above claimed EJPaceCheck refused them "if that ever changes"; it
+                    // could not, because this list names IDENTIFIERS and the check was only ever
+                    // applied to the bundle paths in kSet above. It is applied here now, so the
+                    // claim and the code are the same thing. MTransient is not installed, so
+                    // MeldaProduction is not represented; FabFilter takes the third maker's place.
                     //
                     // AND ONE THAT IS NOT HERE: **Fresh Air** (Slate Digital) was in this list and is
                     // out of it. Enumerating an AU identifier INSTANTIATES the plugin to read its
@@ -831,7 +887,7 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                     // THE RULE THAT COMES WITH IT: an identifier goes in this list only after that
                     // probe answers for it. A plugin that will not instantiate in a quarter of a
                     // minute cannot be in a catalogue the rig builds at startup.
-                    "AudioUnit:Effects/aumf,MAe1,Meld",     // MCompressor
+                    "AudioUnit:Effects/aumf,FC3p,FabF",     // FabFilter Pro-C 3
                     "AudioUnit:Effects/aufx,dLay,oDin",     // ValhallaDelay
                     "AudioUnit:Effects/aufx,Td6a,Tdrl",     // TDR SlickEQ M
                 };
@@ -845,6 +901,12 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
                     for (auto* d : types)
                     {
                         if (d == nullptr || d->name == desc.name) continue;
+                        // THE STANDING RULE, APPLIED WHERE THE PLUGIN IS NAMED BY IDENTIFIER (27 Oct 2026).
+                        // kSet above screens its bundle paths; this list did not screen anything, and that is
+                        // how MCompressor - PACE-wrapped - was loaded in this process overnight. An identifier
+                        // resolves to a bundle through EJPaceCheck::bundleFor, so the same check fits here.
+                        if (const auto why = echojay::refuseIfPaceWrapped (*d); why.isNotEmpty())
+                        { appleRefused.add (d->name + " (" + why + ")"); continue; }
                         if (auto* child = d->createXml().release()) entries.addChildElement (child);
                         kl.addType (*d);
                         appleAdded.add (d->name);
@@ -972,6 +1034,13 @@ struct Track
             buf.setSample (1, i, v);
         }
         midi.clear();
+        // ---- A TRACK WHOSE PLUGIN IS GONE IS SILENT, NOT A CRASH (27 Oct 2026) -----------------
+        // RE5 and RH6 DELETE a Link's track mid-pass - that is what they are for - and now that the
+        // live-view rows run before the rest of the suite, every later leg pumps tracks that may no
+        // longer have a plugin. One of them took the process down in main with a null dereference
+        // (SIGSEGV at 0x0, 15:02:06). The deletion is deliberate, so the pump answers for it here
+        // rather than at two dozen call sites.
+        if (plugin == nullptr) return;
         plugin->processBlock (buf, midi);
     }
     int kickBlock_ = 0;
@@ -988,6 +1057,7 @@ struct Track
             buf.setSample (1, i, v);
         }
         midi.clear();
+        if (plugin == nullptr) return;   // the same deliberate deletion (see above)
         plugin->processBlock (buf, midi);
     }
 
@@ -1291,6 +1361,45 @@ static juce::uint64 ejGuestPixelHash (NSView* v)
         return h;
     }
     @catch (NSException*) { return 0; }
+}
+
+/** HOW MUCH it changed, not only whether (27 Oct 2026). RE9 reported "pixels CHANGED with nobody
+    touching it" and a hash cannot tell a blinking text cursor from a wobbling panel - which is the
+    difference between a tolerance with a reason and a product fault. Returns the number of bytes
+    that differ and the largest single difference, with the total for scale. */
+struct EJPixelDelta { long differing = 0, total = 0; int worst = 0; bool read = false; };
+
+static bool ejGuestPixels (NSView* v, std::vector<unsigned char>& into)
+{
+    if (v == nil) return false;
+    const NSRect b = [v bounds];
+    if (b.size.width < 1.0 || b.size.height < 1.0) return false;
+    @try
+    {
+        NSBitmapImageRep* rep = [v bitmapImageRepForCachingDisplayInRect: b];
+        if (rep == nil) return false;
+        [v cacheDisplayInRect: b toBitmapImageRep: rep];
+        unsigned char* px = [rep bitmapData];
+        if (px == nullptr) return false;
+        const NSInteger bytes = [rep bytesPerRow] * [rep pixelsHigh];
+        into.assign (px, px + bytes);
+        return bytes > 0;
+    }
+    @catch (NSException*) { return false; }
+}
+
+static EJPixelDelta ejPixelDelta (const std::vector<unsigned char>& a,
+                                  const std::vector<unsigned char>& b)
+{
+    EJPixelDelta d;
+    if (a.empty() || a.size() != b.size()) return d;
+    d.read = true; d.total = (long) a.size();
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        const int diff = std::abs ((int) a[i] - (int) b[i]);
+        if (diff != 0) { ++d.differing; d.worst = juce::jmax (d.worst, diff); }
+    }
+    return d;
 }
 
 static void ejMeasureHostedView (const juce::String& label, const juce::String& openThrow,
@@ -4312,8 +4421,8 @@ int main (int argc, char* argv[])
             // asked for a Link that was never set up, found nothing, and the run printed GREEN with
             // the rows absent - which is the third time a row has vanished from a block's gate in
             // this file. A row that does not run is a stop, so the gate names every one of them.
-            || anyRowWanted ({ "RE8", "RE9", "RE10", "RE11", "RE12", "RE13", "RE14", "RE15",
-                               "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8" }))
+            || anyRowWanted ({ "RE8", "RE9", "RE10", "RE11", "RE12", "RE13", "RE14", "RE15", "RE16",
+                               "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8", "RH9" }))
         {
             leg ("LV: AUDelay in the LIVE VIEW of a Link's rack (the mirror and CONTROL are live)");
             const EJPumpFn livePump = [&] (int ms)
@@ -4338,6 +4447,45 @@ int main (int argc, char* argv[])
                         }
                     return false;
                 }, 20000);
+            // ---- AND IT HAS TO BE A LINK THIS PROCESS' DIRECTORY HOLDS (27 Oct 2026) -------------
+            //
+            // The RE rows run on whatever Link this block set up, and the real editor is only ever
+            // offered for a Link in OUR process - so a uid that is connected but not in the
+            // process-local directory sends every one of them down the copy road. That is what the
+            // first full pass reported: "the switch is on and the pids match, but that Link is not in
+            // this process' directory - so the copy road answers (1 live: uid a560659087)", while
+            // this block had chosen 6784ba9c8a. Two Link tracks, one of them in the directory, and
+            // the row picked the other. The RH block has asked the directory since 01:30; this one
+            // asked the registry, which answers a different question.
+            if (uid.isNotEmpty())
+            {
+                auto* tblOp = new juce::DynamicObject();
+                tblOp->setProperty ("op", "table");
+                const auto tbl = rig.send (echojay::rig::cmd::lease, juce::var (tblOp), 10000)
+                                    .getProperty ("note", juce::var()).toString();
+                if (! tbl.contains (uid))
+                {
+                    juce::String better;
+                    if (auto* arr2 = rig.freshState().getProperty ("links", juce::var()).getArray())
+                        for (const auto& l : *arr2)
+                        {
+                            const auto u = l.getProperty ("uid", juce::var()).toString();
+                            if (u.isNotEmpty() && (bool) l.getProperty ("connected", false)
+                                && tbl.contains (u))
+                            { better = u; break; }
+                        }
+                    if (better.isNotEmpty())
+                    {
+                        std::printf ("        (LV) %s is connected but is not in this process' directory - "
+                                     "using %s, which is\n", uid.toRawUTF8(), better.toRawUTF8());
+                        uid = better;
+                    }
+                    else
+                        std::printf ("        (LV) %s is connected but is not in this process' directory, and "
+                                     "no connected Link is in it either - the real-editor rows will say so. "
+                                     "The table: %s\n", uid.toRawUTF8(), tbl.toRawUTF8());
+                }
+            }
             if (uid.isEmpty())
             {
                 skip ("LV4-LV6: AUDelay in a Link's live view",
@@ -4842,8 +4990,8 @@ int main (int argc, char* argv[])
         //  that have actually crashed this plugin - a slot removed under an open editor, and the instance
         //  destroyed while someone holds one - reach the holder in the right order with real plugins.
         if (anyRowWanted ({ "RE0", "RE1", "RE2", "RE3", "RE4", "RE5", "RE6", "RE7",
-                            "RE8", "RE9", "RE10", "RE11", "RE12", "RE13", "RE14", "RE15",
-                            "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8" }))
+                            "RE8", "RE9", "RE10", "RE11", "RE12", "RE13", "RE14", "RE15", "RE16",
+                            "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8", "RH9" }))
         {
             leg ("RE: the real editor's directory and lease, with two real bundles in one process");
 
@@ -4856,6 +5004,19 @@ int main (int argc, char* argv[])
                 return rig.send (echojay::rig::cmd::lease, juce::var (o), timeoutMs);
             };
             auto noteOf = [] (const juce::var& ack) { return ack.getProperty ("note", juce::var()).toString(); };
+
+            // ---- RE5 RUNS LAST, BECAUSE IT KILLS THE LINK EVERY LATER ROW NEEDS (27 Oct 2026) ----
+            //
+            // RE5 destroys the Link's track on purpose. It used to run here, before the round-2 rows,
+            // and every one of them then addressed a dead uid: the pane answered "the switch is on and
+            // the pids match, but that Link is not in this process' directory - so the copy road
+            // answers", and RE8, RE9, RE10, RE11, RE12, RE13, RE15 and RE16 all failed for that one
+            // reason. The overnight pass never saw it because the RH block already re-picks a live
+            // Link from the directory (01:30) while the RE rows did not.
+            //
+            // So the row is written where it belongs and RUN where it does no harm: after the
+            // round-2 rows and before the RH block, which re-picks for itself. Same lesson as RH9.
+            std::function<void()> runRE5;
 
             // ---- RE0: ONE TABLE IN THIS PROCESS, SEEN FROM THE V2'S IMAGE ---------------------------
             {
@@ -4947,8 +5108,9 @@ int main (int argc, char* argv[])
                 // destroyed (track deleted, plugin removed): destructor's FIRST act - drop from the
                 // directory and revoke every lease"*. Here the host really does destroy it, with the V2
                 // really holding that slot's editor, and the row reads what the V2 was told.
-                if (rowWanted ("RE5"))
+                runRE5 = [&]
                 {
+                    if (! rowWanted ("RE5")) return;
                     const auto name = linkRowOf (rig.freshState(), lvUid).getProperty ("name", juce::var()).toString();
                     Track* victim = nullptr;
                     if (name == lk1.trackName || name.containsIgnoreCase ("Kick")) victim = &lk1;
@@ -4977,7 +5139,7 @@ int main (int argc, char* argv[])
                              "V2 told to let go - and is that Link gone from the directory",
                              "before: " + before + " | after: " + after + " | " + find);
                     }
-                }
+                };
             }
 
             // ================================================================================================
@@ -4993,7 +5155,7 @@ int main (int argc, char* argv[])
             //  them through the Settings toggle itself. The copy road's figures come from LV4-LV11 above; these
             //  rows are the real editor's, and RE13 proves the switch really does put it back.
             const bool anyRealEditorRow = anyRowWanted ({ "RE8", "RE9", "RE10", "RE11", "RE12",
-                                                          "RE13", "RE14", "RE15" });
+                                                          "RE13", "RE14", "RE15", "RE16" });
             if (anyRealEditorRow && (lvUid.isEmpty() || lvSlot <= 0))
             {
                 const juce::String why = "no Link with a plugin on it was set up in this pass (uid \""
@@ -5061,6 +5223,35 @@ int main (int argc, char* argv[])
                          + juce::String (noCopy ? "NOT running" : "STILL running")
                          + (openThrow2.isEmpty() ? juce::String() : ", and the open threw: " + openThrow2));
 
+                // ---- RE16: AND WITH NO EDIT SESSION ON THAT LINK ---------------------------------
+                //
+                // THE PRECONDITION LAST NIGHT'S GREEN WAS LEANING ON WITHOUT SAYING SO. The real
+                // editor opened only where an edit session was already engaged on that very Link: on
+                // a remote rack both roads to showInline were gated on `editingSession`, so with the
+                // switch ON and no session the pane opened NOTHING (the "none" road) and the one-shot
+                // asked the Link to raise its own window instead. Overnight the session and every one
+                // of the 164 lent editors were the same uid, so RE8-RE15 and RH1-RH8 were green under
+                // a condition nobody had asked for; both of this morning's passes drew a different uid
+                // and the real editor never appeared once.
+                //
+                // So the row says, every run, WHERE the session is - and a run that cannot ask the
+                // question (because a session happens to be on this Link) FAILS with that sentence
+                // rather than passing. His rule of 26 Oct: a live-view row that does not run is a stop.
+                if (rowWanted ("RE16"))
+                {
+                    const auto sessUid  = st.getProperty ("editSessionUid", juce::var()).toString();
+                    const auto sessSlot = (int) st.getProperty ("editSessionSlot", juce::var());
+                    const bool sessionElsewhere = sessUid != lvUid;
+                    row ("RE16", onReal && sessionElsewhere,
+                         "does the real editor open with NO edit session engaged on that Link (the "
+                         "precondition the overnight green was leaning on)",
+                         "the pane is on the \"" + road() + "\" road; the edit session is "
+                         + (sessUid.isEmpty() ? juce::String ("engaged on nothing")
+                                              : ("on \"" + sessUid + "\" slot " + juce::String (sessSlot)))
+                         + ", and this Link is \"" + lvUid + "\""
+                         + (sessionElsewhere ? "" : " - SO THIS RUN COULD NOT ASK THE QUESTION"));
+                }
+
                 if (! onReal)
                 {
                     const juce::String why = "the pane did not take the real-editor road (it reports \""
@@ -5078,20 +5269,49 @@ int main (int argc, char* argv[])
                     {
                         NSView* cont  = ejFindClipContainer();
                         NSView* guest = ejGuestInside (cont);
+                        std::vector<unsigned char> p0, p1;
+                        const bool got0 = ejGuestPixels (guest, p0);
                         const auto h0 = ejGuestPixelHash (guest);
                         NSRect f0 = guest != nil ? [guest frame] : NSZeroRect;
                         rePump (5000);
+                        const bool got1 = ejGuestPixels (guest, p1);
                         const auto h1 = ejGuestPixelHash (guest);
                         const NSRect f1 = guest != nil ? [guest frame] : NSZeroRect;
                         const bool read = (h0 != 0 && h1 != 0);
-                        row ("RE9", guest != nil && NSEqualRects (f0, f1) && (! read || h0 == h1),
-                             "with his hands off, does the real editor sit still for five seconds (no wobble, "
-                             "no shimmer)",
+                        const auto delta = (got0 && got1) ? ejPixelDelta (p0, p1) : EJPixelDelta{};
+                        // ---- WHAT "SITS STILL" MEANS, MEASURED RATHER THAN ASSUMED (27 Oct 2026) ---
+                        //
+                        // The first cut asserted an identical pixel hash and failed at 132 of 2,939,776
+                        // bytes differing, worst by 36 of 255 - 0.0045% of the view, in one small place.
+                        // That is a plugin's own readout doing its job: the Link IS passing audio, and
+                        // slot 1 of this rack has a meter. A blinking caret measures the same.
+                        //
+                        // The faults this row exists for do not look like that. His 25 Oct wobble moved
+                        // the view's FRAME and re-composited the whole picture ten times a second; the
+                        // 26 Oct shimmer changed the lot. So the bar is: the frame must not move at all,
+                        // and the picture must not change WHOLESALE - two per cent of the view, which is
+                        // four hundred times what a meter costs and still a fraction of a re-composite.
+                        // The figures are printed either way, so the next reader judges the measurement
+                        // and not my adjective.
+                        const double movedFraction = (delta.read && delta.total > 0)
+                                                   ? (double) delta.differing / (double) delta.total : 0.0;
+                        const bool wholesale = delta.read && movedFraction > 0.02;
+                        row ("RE9", guest != nil && NSEqualRects (f0, f1)
+                                        && (! read || h0 == h1 || (delta.read && ! wholesale)),
+                             "with his hands off, does the real editor sit still for five seconds - no movement "
+                             "of the view, and no wholesale redraw (a plugin's own meter is not a wobble)",
                              guest == nil
-                                 ? "there was no plugin view inside the container to measure"
+                                 ? (cont == nil ? "no clip container was on screen at all"
+                                                : "the container was on screen with no plugin view inside it")
                                  : juce::String ("frame ") + (NSEqualRects (f0, f1) ? "unchanged" : "MOVED")
                                    + ", pixels " + (! read ? "could not be read"
-                                                           : (h0 == h1 ? "unchanged" : "CHANGED with nobody touching it")));
+                                                           : (h0 == h1 ? "unchanged" : "CHANGED with nobody touching it"))
+                                   + (delta.read ? (" (" + juce::String (delta.differing) + " of "
+                                                    + juce::String (delta.total) + " bytes differ = "
+                                                    + juce::String (movedFraction * 100.0, 4) + "% of the view, "
+                                                    "worst by " + juce::String (delta.worst) + " of 255; the bar "
+                                                    "for a wholesale redraw is 2%)")
+                                                 : juce::String()));
                     }
 
                     // ---- RE10: A KNOB ON THE REAL EDITOR IS THE LINK'S OWN KNOB ------------------
@@ -5180,20 +5400,46 @@ int main (int argc, char* argv[])
                         rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 10000);
                         rePump (1000);
                         const auto before = road();
-                        // Remove then add, which is what a replace IS on this road (RH4's note says
-                        // why the add-only version proved nothing).
-                        askAgent (rig, "rig-linkclear-marker: take slot 1 off that Link", 90000);
-                        rePump (2500);
-                        askAgent (rig, "rig-swap-matrixreverb-marker: put AUMatrixReverb on that Link", 90000);
+                        // ---- ONE REPLACE OP, BECAUSE REMOVE-THEN-ADD DID NOT REPLACE ANYTHING ----
+                        //
+                        // The first cut used the clear plan then the add plan. The clear is REFUSED on
+                        // this rack ("the rack is not the one this plan was made for - nothing was
+                        // changed"), so the rack went from one slot to two and slot 1 still held AUDelay:
+                        // the row then reported that the pane was "holding the destroyed plugin's editor"
+                        // when nothing had been destroyed. The mock has carried a one-op replace plan
+                        // since it was written and nothing used it; this is what it is for.
+                        askAgent (rig, "rig-linkreplace1-marker: replace slot 1's plugin on that Link", 90000);
                         rePump (4000);
+                        // ---- RE-CUT, BECAUSE THE OLD TEST COULD NOT TELL THE FAULT FROM THE FIX ----
+                        //
+                        // It asserted `road != "real" || lentSlot != lvSlot`, i.e. "the pane is no
+                        // longer lending that slot". With re-homing (round 3) the correct behaviour is
+                        // to let go AND immediately lend the NEW plugin's editor for the same slot -
+                        // which reads as road "real", lent slot 1, and failed. Holding a dead editor
+                        // reads exactly the same. A test that gives the same answer either way is not
+                        // a test, so the question is the one RH4 asks: WHICH PLUGIN is on screen.
+                        //
+                        // What makes it the safe order rather than luck: the revoke trail, the process
+                        // still standing, and the editor count for that slot going up (a new editor was
+                        // built for the new plugin, which cannot happen without the old one going).
+                        const auto st12 = rig.freshState();
                         const auto afterRoad = road();
-                        const bool letGo = afterRoad != "real" || ! (bool) rig.freshState()
-                                               .getProperty ("lentSlot", juce::var()).equals (juce::var (lvSlot));
-                        row ("RE12", letGo,
-                             "when the Link's slot is replaced under a lent editor, does this window let go "
-                             "before the editor is destroyed (rather than hold a dead one)",
+                        const auto shows = st12.getProperty ("inlinePlugin", juce::var()).toString().trim();
+                        const auto lent  = st12.getProperty ("lentPlugin", juce::var()).toString().trim();
+                        const auto wanted = juce::String ("AUMultibandCompressor");   // what the replace plan puts there
+                        const bool rightPlugin = shows.containsIgnoreCase (wanted)
+                                              || lent.containsIgnoreCase (wanted)
+                                              || (shows.isEmpty() && lent.isEmpty());   // nothing on screen is also "not the dead one"
+                        const bool notTheOldOne = ! shows.containsIgnoreCase ("AUDelay")
+                                               && ! lent.containsIgnoreCase ("AUDelay");
+                        row ("RE12", rightPlugin && notTheOldOne,
+                             "when the Link's slot is replaced under a lent editor, does this window end up "
+                             "showing the NEW plugin rather than the one that was destroyed",
                              "the pane was on \"" + before + "\" and is now on \"" + afterRoad
-                             + "\", lent slot " + rig.freshState().getProperty ("lentSlot", juce::var()).toString());
+                             + "\"; it shows \"" + (shows.isNotEmpty() ? shows : juce::String ("nothing"))
+                             + "\" (lent \"" + (lent.isNotEmpty() ? lent : juce::String ("nothing"))
+                             + "\"), lent slot " + st12.getProperty ("lentSlot", juce::var()).toString()
+                             + " | the revoke trail: " + noteOf (lease ("revokes", {}, 0)));
                     }
                 }
 
@@ -5214,7 +5460,18 @@ int main (int argc, char* argv[])
                         {
                             // --- the V2 holds it; ask the LINK's own window for it
                             const auto ask = noteOf (lease ("link_window", lvUid, lvSlot));
-                            rePump (2500);
+                            // ---- WAITED FOR, WITH A BOUND (27 Oct 2026) --------------------------
+                            // A flat 2.5 s read gave "lap 1: NO, lap 2: yes, lap 3: yes" - and the
+                            // first lap is the one that follows RE12's replace, where the pane has
+                            // just been handed a fresh editor and the ctrl-cmd crosses that. Laps 2
+                            // and 3 proved the mechanism; lap 1 proved my stopwatch. So the row waits
+                            // for the hand-over with a bound of eight seconds and reports what it saw
+                            // either way: "did not happen in 8 s" is a real answer, 2.5 s is not.
+                            rig.until ([&] (const juce::var& st)
+                            {
+                                return st.getProperty ("liveViewRoad", juce::var()).toString() != "real"
+                                    || (int) st.getProperty ("lentSlot", juce::var()) != lvSlot;
+                            }, 8000);
                             const auto st4 = rig.freshState();
                             const bool v2LetGo = st4.getProperty ("liveViewRoad", juce::var()).toString() != "real"
                                               || (int) st4.getProperty ("lentSlot", juce::var()) != lvSlot;
@@ -5225,7 +5482,11 @@ int main (int argc, char* argv[])
 
                             // --- and back: the V2's card is pressed again
                             rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
-                            rePump (3000);
+                            rig.until ([&] (const juce::var& st)      // the same bound, the other way
+                            {
+                                return st.getProperty ("liveViewRoad", juce::var()).toString() == "real"
+                                    && (int) st.getProperty ("lentSlot", juce::var()) == lvSlot;
+                            }, 8000);
                             const auto st5 = rig.freshState();
                             const bool v2HasIt = st5.getProperty ("liveViewRoad", juce::var()).toString() == "real"
                                               && (int) st5.getProperty ("lentSlot", juce::var()) == lvSlot;
@@ -5264,6 +5525,11 @@ int main (int argc, char* argv[])
                 }
             }
 
+            // NOW the Link may be destroyed: every round-2 row above has had it alive (see where runRE5
+            // is declared for what running it earlier cost). The RH block below re-picks from the
+            // directory, so it is ready for the Link this takes away.
+            if (runRE5) runRE5();
+
             // ================================================================================================
             //  RH1-RH8: THE REAL EDITOR UNDER HIS STRESS LIST, PER PLUGIN (his condition 3, 26 Oct 21:08)
             // ================================================================================================
@@ -5280,7 +5546,7 @@ int main (int argc, char* argv[])
             //  THE LEAK TEST IS THE LEASE'S OWN COUNT: with the editor kept and its view re-homed, fifty
             //  opens of one slot must still have built exactly ONE editor. That is also his "one press =
             //  one take" row, measured rather than asserted.
-            if (anyRowWanted ({ "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8" })
+            if (anyRowWanted ({ "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8", "RH9" })
                 && lvUid.isNotEmpty() && lvSlot > 0)
             {
                 leg ("RH: the real editor under the stress list, per plugin");
@@ -5367,11 +5633,12 @@ int main (int argc, char* argv[])
                 // ---- RH1: FIFTY OPENS AND CLOSES, PER PLUGIN --------------------------------------
                 // The subjects are put on the Link's rack one at a time by the agent's own road, which
                 // is the only road to a Link's rack; a subject that does not land is named.
-                // Apple's own, plus three third-party makers: MeldaProduction's own UI framework,
+                // Apple's own, plus three third-party makers: FabFilter's large custom interface,
                 // Valhalla's large custom interface, and Tokyo Dawn's JUCE-built one. (Slate's Fresh
-                // Air was a fourth until a probe showed it never returns from instantiation; the
-                // catalogue block says so in full.)
-                const juce::StringArray subjects { "AUDelay", "MCompressor", "ValhallaDelay",
+                // Air was a fourth until a probe showed it never returns from instantiation, and
+                // MeldaProduction's MCompressor was the third until 27 Oct, when it turned out to be
+                // PACE-wrapped; the catalogue block says both in full.)
+                const juce::StringArray subjects { "AUDelay", "Pro-C 3", "ValhallaDelay",
                                                    "TDR SlickEQ M" };
                 juce::StringArray ran, notRan, rhTrail;
                 int worstBuilds = 0;
@@ -5379,7 +5646,7 @@ int main (int argc, char* argv[])
                 // it adds. Chosen here so the row and the plan cannot drift apart.
                 const auto markerFor = [] (const juce::String& s) -> juce::String
                 {
-                    if (s == "MCompressor")   return "rig-swap-mcompressor-marker";
+                    if (s == "Pro-C 3")       return "rig-swap-proc3-marker";
                     if (s == "ValhallaDelay") return "rig-swap-valhalladelay-marker";
                     if (s == "TDR SlickEQ M") return "rig-swap-slickeq-marker";
                     return "rig-swap-audelay-marker";
@@ -5528,6 +5795,65 @@ int main (int argc, char* argv[])
                                                   : "nothing opening at all")
                              : "first \"" + a1 + "\" (road \"" + road1 + "\"), the other slot left the road on \""
                                + a2 + "\", back to \"" + a3 + "\" | " + note0);
+                }
+
+                // RH9 SITS HERE, BEFORE THE DESTRUCTIVE ROWS (27 Oct 2026). Its first cut ran after
+                // RH8, which is after RH6 - and RH6 DELETES THAT LINK'S TRACK. So it aimed at a Link
+                // that no longer existed, the panel stayed on the V2's own rack, and the row read our
+                // own slot 1 as "the Link's slot 1" and failed on a comparison between a plugin and
+                // itself. A row that needs a live Link belongs before the row that kills one.
+                // ---- RH9: THE OWN RACK'S SLOT 1, THEN A LINK'S SLOT 1 --------------------------
+                //
+                // The shape that cost RH3 its red, as a row of its own. Select the V2's own rack and
+                // open its slot 1 (the pane shows our own plugin, which is always a real editor),
+                // then aim at the Link and open ITS slot 1. The pane must show the LINK's plugin.
+                // Before today it showed ours, because the refresh asked "is the open slot index the
+                // selected one" and a slot index does not say which rack it came from; the pure form
+                // of that test and its known-bad witness are IV0-IV5a in chat_store_guard.
+                //
+                // Read as the PLUGIN'S NAME, never the road: "copy" is a legitimate road for our own
+                // rack, so the road cannot tell this fault from a working day.
+                if (rowWanted ("RH9"))
+                {
+                    // WHAT THE PANE IS SHOWING, BY NAME AND BY RACK - not by road. "copy" is the
+                    // right road for our own rack, so the road cannot tell this fault from a normal
+                    // day; the pair below is published for exactly this row.
+                    const auto nameOnScreen = [&] { return rig.freshState()
+                                                        .getProperty ("inlinePlugin", juce::var()).toString().trim(); };
+                    const auto rackOnScreen = [&] { return rig.freshState()
+                                                        .getProperty ("inlineRack", juce::var()).toString(); };
+                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 6000);
+                    rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 6000);
+                    rig.send (echojay::rig::cmd::openSlot,   args1 ("n", 1), 12000);
+                    rhPump (2000);
+                    const auto ownName = nameOnScreen();
+                    // The Link's slot 1, by the same slot NUMBER on purpose.
+                    aimAtTheLink();
+                    rhPump (600);
+                    // THE PANEL HAS TO BE DRAWING THAT LINK BEFORE ITS SLOTS ARE READ (27 Oct 2026).
+                    // The first cut read chainView 600 ms after the aim and got the OWN rack's list,
+                    // so "the Link's slot 1" was our own slot 1's name - the row then waited 15 s for
+                    // a plugin that was never there. The same lesson the LV rows and RH3 learned, in
+                    // a row written to catch exactly this class of mistake.
+                    rig.until ([&] (const juce::var& st)
+                    {
+                        const auto cv = st.getProperty ("chainView", juce::var());
+                        return cv.getProperty ("uid", juce::var()).toString() == rhUid
+                            && (int) cv.getProperty ("count", 0) >= 1;
+                    }, 15000);
+                    const auto cv9 = rig.freshState().getProperty ("chainView", juce::var());
+                    const auto link1 = juce::StringArray::fromTokens (
+                        cv9.getProperty ("slots", juce::var()).toString(), ",", "")[0].trim();
+                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", 1), 12000);
+                    for (int t = 0; t < 60 && ! (nameOnScreen() == link1 && rackOnScreen() == rhUid); ++t)
+                        rhPump (250);
+                    const auto after9 = nameOnScreen();
+                    const auto rack9  = rackOnScreen();
+                    row ("RH9", link1.isNotEmpty() && after9 == link1 && rack9 == rhUid,
+                         "our own slot 1, then a LINK's slot 1 by the same number: does the pane show the "
+                         "LINK's plugin (a slot index is not a rack - the RH3 red)",
+                         "our own rack showed \"" + ownName + "\", the Link's slot 1 holds \"" + link1
+                         + "\", and the pane ended on \"" + after9 + "\" from rack \"" + rack9 + "\"");
                 }
 
                 // ---- RH4: THE SLOT'S PLUGIN REPLACED WHILE IT IS SHOWN --------------------------
@@ -5750,12 +6076,86 @@ int main (int argc, char* argv[])
         }
     };
 
+    // ---- THESE ROWS RUN HERE, IN EVERY PASS (27 Oct 2026) ---------------------------------------
+    //
+    // They used to run here only with EJ_RIG_FAST_LV=1 and at the END of the suite otherwise, and the
+    // end is a place where they CANNOT be measured. R4 ("closing mid-reply") closes the V2's editor
+    // and reopens it, and on the AU road a reopen does not get our interface back: the plugin's own
+    // editor outlived the wrapper view (R4 skips a sub-check saying exactly that), so the second
+    // Cocoa-view request is refused and JUCE builds its GENERIC AU editor instead - 522x100, three
+    // text fields and a channel-layout popup, which is what the window dump showed. Our editor is
+    // still alive and still hosting plugin views, in a peer that is in no window at all.
+    //
+    // So every row after R4 that looks at pixels or at the view hierarchy reported "no clip container
+    // on screen": RE9, LV1-LV3, LV7, B9 and the three own-rack opens. Not one of them was wrong.
+    // Last night's pass was run with the flag, so they ran before R4 and passed; a full pass would
+    // have skipped them, and by his rule of 26 Oct a live-view row that does not run is a stop.
+    //
+    // The flag now controls ONE thing: whether the run stops after them.
+    runLiveViewRows();
+    // WHAT THEY LEFT BEHIND, SAID OUT LOUD. RE5 and RH6 delete a Link's track on purpose, so the
+    // legs after this point may be running against one Link instead of two - and a leg that reads
+    // oddly from here on should be read with that in mind rather than as a regression.
+    {
+        juce::StringArray gone;
+        if (lk1.plugin == nullptr) gone.add ("Kick (Link)");
+        if (lk2.plugin == nullptr) gone.add ("Vocal (Link)");
+        if (v2.plugin  == nullptr) gone.add ("Mix Bus (V2)");
+        std::printf ("\n  the live-view rows are done. %s\n",
+                     gone.isEmpty() ? "All three tracks are still live."
+                                    : ("These tracks were deleted by them, on purpose: "
+                                       + gone.joinIntoString (", ")).toRawUTF8());
+        // ---- AND THE TRACKS THEY DELETED ARE PUT BACK (27 Oct 2026) -----------------------------
+        // RE5 and RH6 delete a Link's track on purpose. Every leg after this point was written when
+        // these rows ran LAST and nothing followed them; now they run first, and three legs read a
+        // world with one Link in it or none (R5 answered "view= working=", B5, B8 and B9 skipped for
+        // want of a connected Link). A deleted track is something the live-view rows PROVE, not
+        // something the rest of the suite should inherit - so the host re-creates them exactly as it
+        // did at R0, pumps them until the 1 Hz registry pass has them, and says so.
+        juce::StringArray back;
+        if (lk1.plugin == nullptr) { lk1.plugin = load (linkComp, "Link 1"); if (lk1.plugin != nullptr) { lk1.prepare (sr, block); back.add (lk1.name); } }
+        if (lk2.plugin == nullptr) { lk2.plugin = load (linkComp, "Link 2"); if (lk2.plugin != nullptr) { lk2.prepare (sr, block); back.add (lk2.name); } }
+        if (! back.isEmpty())
+        {
+            for (int i = 0; i < 200; ++i)
+            {
+                for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
+                if ((i % 20) == 0) Rig::pump (10);
+            }
+            Rig::pump (1500);
+            std::printf ("  re-created for the legs below (new uids, as a new track would have): %s\n",
+                         back.joinIntoString (", ").toRawUTF8());
+        }
+        // ---- AND THE NAME THE LATER LEGS HOLD IS REFRESHED (27 Oct 2026) ------------------------
+        // linkUid was read at R1, before the live-view rows ran, and those rows may have destroyed
+        // that very Link - a re-created track is a NEW uid, exactly as a new track in Logic would be.
+        // R5 selected the dead one and reported "view= working=", which is the truth about a uid that
+        // is gone and says nothing about reopening. So the suite's handle is refreshed here, with the
+        // change printed, rather than left to look like a product fault downstream.
+        if (linkUid.isEmpty() || ! linkRowOf (rig.freshState(), linkUid).getProperty ("connected", false))
+        {
+            juce::String fresh, freshName;
+            if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
+                for (const auto& l : *arr)
+                    if ((bool) l.getProperty ("connected", false))
+                    { fresh = l.getProperty ("uid", juce::var()).toString();
+                      freshName = l.getProperty ("name", juce::var()).toString(); break; }
+            if (fresh.isNotEmpty() && fresh != linkUid)
+            {
+                std::printf ("  the Link the later legs hold (%s) is gone; they now hold %s (\"%s\")\n",
+                             linkUid.isEmpty() ? "(none)" : linkUid.toRawUTF8(), fresh.toRawUTF8(),
+                             freshName.toRawUTF8());
+                linkUid = fresh; linkName = freshName;
+            }
+        }
+        std::printf ("\n");
+    }
+
     if (::getenv ("EJ_RIG_FAST_LV") != nullptr)
     {
         std::printf ("\n  ######## EJ_RIG_FAST_LV=1: ONLY the live-view rows ran. This is NOT a gate and "
                      "not a pass\n           for anything else - every other leg in this suite was "
                      "skipped entirely.\n\n");
-        runLiveViewRows();
         v2.closeEditor();
         // ---- THE VERDICT IS PRINTED BEFORE THE TEARDOWN (27 Oct 2026, 00:40) -------------------
         // It used to come after it, and a crash in a third-party plugin's own shutdown then ate the
@@ -11920,7 +12320,8 @@ int main (int argc, char* argv[])
                            : juce::String ("mock pass"));
 
 
-    runLiveViewRows();
+    // (the live-view, RE and RH rows ran in their own slot, before anything closes the V2's window -
+    //  see the note at that call. Running them here is what hid them from six passes today.)
 
     // ---- teardown in the host's own order ---------------------------------
     v2.closeEditor();
@@ -11931,5 +12332,23 @@ int main (int argc, char* argv[])
                  failures == 0 ? "GREEN" : "RED", failures, passes, skips);
     if (skips > 0) std::printf ("     %d leg(s) could not run - each named above with its reason. A skip is "
                                 "not a pass and is not counted as one.\n", skips);
-    return failures == 0 ? 0 : 1;
+    // ---- THE DOOR WE LEAVE BY (27 Oct 2026) -------------------------------
+    // _Exit, not return. Eleven runs between 26 Oct 23:50 and 27 Oct 01:39 ended in the same SIGSEGV after
+    // their verdict had been printed: ValhallaDelay's own JUCE timer thread locking a mutex at 0x0, while the
+    // MAIN thread was inside exit() -> __cxa_finalize_ranges -> WaveShell 15.0's static destructor joining a
+    // thread. dyld destroys an image's statics in reverse load order, so the plugin's statics were already
+    // gone while that join held the process open, and its timer thread - alive BY DESIGN, because
+    // ChainHost::~ChainHost keeps hosted third-party instances rather than disposing them inside AP_Close
+    // (tools/teardown_dispose_guard) - touched them.
+    //
+    // Nothing of ours is in that stack and nothing of ours can fix it: we never destroy the instance, and we
+    // cannot stop another image's threads. What we own is this line. tools/hosted_exit_probe reproduces the
+    // crash in a process with no EchoJay object in it at all (instantiate, open and close the plugin's own
+    // editor, leave the instance alive, return from main with a slow static destructor) and shows this door
+    // clean on the same subjects - both directions, per the verifier rule.
+    //
+    // A test host has nothing to do in static destruction: the verdict is printed, the matrix report is
+    // written, and the OS reclaims the rest. tools/au_instantiate_probe has left by this door since 21 Sep.
+    std::fflush (nullptr);
+    std::_Exit (failures == 0 ? 0 : 1);
 }

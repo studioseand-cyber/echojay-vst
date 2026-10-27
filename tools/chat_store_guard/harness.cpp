@@ -3992,6 +3992,60 @@ int main()
                "the timer stands off");
     }
 
+    // ================================================================================================
+    // IV: WHAT IS ON SCREEN IS A RACK AND A SLOT (27 Oct 2026, the RH3 red)
+    //
+    // echojay::inlineNeedsReopen is the panel's refresh test, pulled out of the UI so it can be
+    // driven exactly. IV1 IS THE KNOWN-BAD CASE: it is the one the shipped build got wrong, and it
+    // fails against the old test (`inlineSlot != selectedIdx`) by construction - same index, other
+    // rack. The rest hold the test to its other promises so the fix cannot be a blunt "always
+    // re-open", which would tear a plugin's editor down and build it again on every refresh tick.
+    {
+        using echojay::InlineViewState;
+        using echojay::inlineNeedsReopen;
+        const juce::String linkA = "1229413db5", linkB = "17ab55b27b", own = "";
+
+        // THE KNOWN-BAD WITNESS, CARRIED IN THE SUITE. The test this replaced is two terms long, so
+        // the leg can hold it rather than describe it: on IV1's state it answers "leave it alone",
+        // which is the defect. A guard that only ever saw the fixed code could not tell me that.
+        const auto theTestThisReplaced = [] (const echojay::InlineViewState& st, int sel)
+        { return st.inlineSlot != sel || ! st.haveInlineEditor; };
+        check (! theTestThisReplaced ({ 0, true, own, false, -1, "" }, 0),
+               "IV0 the test this replaced - slot index and nothing else - answers \"leave it alone\" for "
+               "the state IV1 is about, which is the overnight red in one line; IV1 is the same state "
+               "through the new test",
+               "known-bad reproduced");
+        check (inlineNeedsReopen ({ 0, true, own, false, -1, "" }, 0, linkA),
+               "IV1 the SAME slot number on ANOTHER rack re-opens - the V2's own slot 1 is on screen, a "
+               "Link's slot 1 is selected, and the pane must not go on showing our own plugin behind "
+               "that Link's cards (the RH3 red, and the only reason it was red)",
+               "re-open");
+        check (inlineNeedsReopen ({ 0, true, linkA, false, -1, "" }, 0, linkB),
+               "IV1a ...and between two LINKS as well, which is the same fault with no local rack in it",
+               "re-open");
+        check (! inlineNeedsReopen ({ 0, true, linkA, false, -1, "" }, 0, linkA),
+               "IV2 the same slot on the SAME rack does NOT re-open - this is the whole reason the test "
+               "exists, and a fix that re-opened anyway would rebuild a lent editor on every refresh tick",
+               "leave it alone");
+        check (inlineNeedsReopen ({ 0, true, linkA, false, -1, "" }, 1, linkA),
+               "IV3 another slot on the same rack re-opens, as it always did",
+               "re-open");
+        check (inlineNeedsReopen ({ 0, false, linkA, false, -1, "" }, 0, linkA),
+               "IV4 a remembered slot with NO editor in it re-opens - the index alone was never evidence "
+               "that anything is on screen",
+               "re-open");
+        check (! inlineNeedsReopen ({ -1, false, "", true, 2, linkA }, 2, linkA),
+               "IV5 a POPOUT of that slot on that rack covers it, so nothing re-opens inline underneath it",
+               "leave it alone");
+        check (inlineNeedsReopen ({ -1, false, "", true, 2, linkA }, 2, linkB),
+               "IV5a ...but a popout belonging to ANOTHER rack covers nothing: it is the same mistake in "
+               "the floating window, and it was in the same line of code",
+               "re-open");
+        check (! inlineNeedsReopen ({ -1, false, "", false, -1, "" }, -1, linkA),
+               "IV6 with no slot selected there is nothing to open, on any rack",
+               "leave it alone");
+    }
+
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures, passes);
     return failures == 0 ? 0 : 1;

@@ -1536,6 +1536,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // not end it. So the switch itself gives it back, and the next open takes the copy road.
         if (! now && chainListPanel.inlineIsLent)
             chainListPanel.returnLentEditorForGood ("the real-editor switch was turned off");
+        // ---- ...AND THE COPY IS BACK ON SCREEN WITHOUT ANOTHER PRESS (27 Oct 2026, RE13) ------
+        // *"turning it off is a single act that puts you back on the copy with no other change"* -
+        // and it was not. Giving the lent editor back emptied the pane, and nothing put anything in
+        // it again: the copy road opens its editor from its own tap-ack callback, and when a copy is
+        // ALREADY running there is no fresh ack to open it with. RE13 read the pane on the "none"
+        // road with a copy running behind it, which is the honest description of an empty window.
+        //
+        // So the switch asks for the view again, for the slot that is selected, and forces the panel
+        // to render: shadowFollowSelection decides the road from scratch (it is the one place that
+        // does) and the rebuild then opens whatever there is to open.
+        if (! now)
+            if (const auto uid = chainViewUid(); uid.isNotEmpty() && chainSelectedSlot_ >= 0)
+            {
+                shadowFollowSelection (uid, chainSelectedSlot_);
+                refreshChainPanelForView (true);
+            }
         EchoJay_NSLog(("EJRealEditor: the switch was turned " + juce::String(want ? "ON" : "OFF")
                        + " and now reads " + juce::String(now ? "ON" : "OFF")
                        + (ok ? "" : " (the file could not be written)")
@@ -2296,6 +2312,36 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     //
     // What this does NOT do: touch the copy road. If it answers nothing, the live view behaves
     // exactly as it does today, which is the condition he set for these rounds.
+    // ---- CAN THIS SLOT'S EDITOR BE SHOWN HERE? ONE DECISION, ASKED BY THE PANEL (27 Oct) -----
+    //
+    // The panel asks this before it short-circuits a remote slot. TWO roads answer yes, and the
+    // second one is why this is not called "canLend":
+    //
+    //   the REAL road - his switch, the pid that says this Link is in our process, and the
+    //                   process-local directory actually holding it: the same three tests
+    //                   onCreateLentEditor makes, with nothing created;
+    //   the COPY road - a copy of THIS slot is already running, so there is an editor of it to put
+    //                   on screen. RE13 is why: turning the switch off returned the lent editor, the
+    //                   copy came back up, and the pane stayed empty - because the only road that
+    //                   re-opens it from a rebuild was gated on an EDIT SESSION being engaged. The
+    //                   copy road has always leaned on its own tap-ack callback to open the editor;
+    //                   when a copy is already running there is no fresh ack to lean on.
+    //
+    // Neither answer does anything on its own: showInline still decides what to create, and with the
+    // switch off and no copy running this is false and the panel behaves as it did yesterday.
+    chainListPanel.canShowSlotEditorHere = [this](int slot0) -> bool
+    {
+        if (slot0 < 0) return false;
+        const auto uid = chainViewUid();
+        if (uid.isEmpty()) return false;
+        const int pubPid = publisherPidFor (uid);
+        if (echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid, (int) ::getpid())
+            && echojay::LocalInstances::find (uid) != nullptr)
+            return true;
+        return processorRef.shadowRunning() && processorRef.shadowUid() == uid
+            && processorRef.shadowSlot() == slot0;
+    };
+
     chainListPanel.onCreateLentEditor = [this](int slot0, juce::String& uidOut, int& slot1Out,
                                                unsigned& tokenOut, juce::String& whyOut,
                                                void*& guestViewOut)
@@ -13761,6 +13807,10 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // window" is per rack as well as per slot, so switching racks and selecting slot 1 again asks
     // again rather than sitting silent because the LAST rack's slot 1 had been asked for.
     if (chainListPanel.remoteName != v.name) chainListPanel.autoShownSlot_ = -1;
+    // ...AND THE RACK AN OPEN EDITOR BELONGS TO (27 Oct 2026, the RH3 red). The line above resets a
+    // one-shot per rack; this one gives the panel the rack itself, so "is the editor on screen the
+    // right one" is asked about the rack AND the slot rather than the slot alone. Empty = our own.
+    chainListPanel.viewRackUid   = chainViewUid();
     chainListPanel.remote        = v.remote;
     chainListPanel.remoteName    = v.name;
     chainListPanel.remoteOffline = v.offline;
@@ -40628,6 +40678,12 @@ void EchoJayEditor::publishRigState()
     // only place that knows.
     o->setProperty ("liveViewRoad", chainListPanel.inlineIsLent ? "real"
                                   : (chainListPanel.hasInlineEditor() ? "copy" : "none"));
+    // ---- AND WHAT THE PANE IS SHOWING, BY NAME AND BY RACK (27 Oct 2026, the RH3 red) --------
+    // The road says which KIND of view is up; these two say WHOSE. RH3 could only ever report "no
+    // lent editor, the road is copy" while the pane was in fact showing the V2's own rack's plugin
+    // behind a Link's cards, because nothing published the rack the open editor belonged to.
+    o->setProperty ("inlinePlugin", chainListPanel.inlineSlotName());
+    o->setProperty ("inlineRack",   chainListPanel.inlineRackUid);
     o->setProperty ("lentUid",  chainListPanel.lentUid);
     o->setProperty ("lentSlot", chainListPanel.lentSlot1);
     // ---- AND WHAT THE LENT EDITOR'S OWN PLUGIN HOLDS (round 2, 26 Oct 2026) -------------------
@@ -40664,6 +40720,12 @@ void EchoJayEditor::publishRigState()
     // the row could not tell the difference because the state did not carry it. A claim about one
     // rack needs the rack's name in the reading.
     o->setProperty ("borrowUid",     processorRef.borrowUid());
+    // WHICH RACK AND SLOT THE EDIT SESSION IS ON (27 Oct 2026). Published because the real editor's
+    // rows were resting on it without saying so: it opened only where a session was already engaged,
+    // and nothing in the state let a row notice. RE16 asserts the opposite case out loud.
+    o->setProperty ("editSessionUid",  processorRef.editSession_.uid);
+    o->setProperty ("editSessionSlot", processorRef.editSession_.slot0 + 1);
+    o->setProperty ("editActive",      processorRef.editActive());
     o->setProperty ("agentTarget", agentTargetLast_);
     o->setProperty ("agentModeOn", agentModeOn());
     // The MODE, not just the boolean (Sean's Auto ruling): a row that sets Auto has to be able to assert

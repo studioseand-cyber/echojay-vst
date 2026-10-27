@@ -1,0 +1,10 @@
+scenario B4
+captured 2026-10-27T16:16:03.502Z
+  [user] rig-newinstr-marker: check the gr
+  [assistant] Stopped.
+  [user] rig-row-marker: set the pre-gain
+  [assistant] 
+  run row: status=Working changes=0 steps=0 zones=[7:Stop]
+  opening: 
+  closing: 
+    step "Thinking…" [running] right="" detail="" chips=[]

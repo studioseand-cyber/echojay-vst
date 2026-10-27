@@ -383,15 +383,15 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
-      "goalContains": "rig-swap-mcompressor-marker",
+      "goalContains": "rig-swap-proc3-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },
           { "event": "tool_call", "id": "tc_sw1", "name": "do", "approval": "free",
-            "summary": "put MCompressor on this rack",
-            "args": { "op": "add", "name": "MCompressor" } },
+            "summary": "put Pro-C 3 on this rack",
+            "args": { "op": "add", "name": "Pro-C 3" } },
           { "event": "await", "ids": ["tc_sw1"] } ],
         [ { "event": "done", "reason": "complete", "rounds": 1,
-            "summary": "Added MCompressor." } ]
+            "summary": "Added Pro-C 3." } ]
       ]
     },
     {
@@ -887,7 +887,23 @@ if [ $? -ne 0 ]; then echo "REFUSED: the rig did not compile"; exit 2; fi
 # EJ_RIG_HOOK is exported above and INHERITED by those processes, which is the point:
 # with it set a Link is refused a plugin scan (the iLok rule, both doors), so it finds
 # its plugins in the catalogue the rig writes into this run's isolated root.
-if bash "$ROOT/tools/link_host/build.sh" "$SCRATCH/link_host" >/dev/null 2>&1; then
+#
+# EJ_RIG_NO_LINK_HOST=1 LEAVES THEM OUT, and 27 Oct is why it exists. Until today this binary had
+# never built on this machine (the quick tree's archive is arm64-only and link_host needs the slices
+# the caller's LIB has), so EVERY pass of the live-view, RE and RH rows - last night's included - ran
+# with the V2 and both Links in ONE process. The first pass that did launch them skipped LV1-LV3 and
+# LV7 with "no clip container with a plugin view was on screen", and JUCEAUView - the class our pane
+# hosts a plugin's view in - appears 400-500 times in every earlier log and NOT ONCE in that one.
+#
+# The rows that flag is for are about one process: Logic and Pro Tools load the V2 and the Link into
+# one process, which is measured, and the real editor is only ever offered for a Link in OUR process.
+# The out-of-process scenarios (the matrix's T2-T4, and the refusals) are a different subject and get
+# their own pass. What is NOT acceptable is a silent choice, so the configuration is printed either
+# way and the rows that cannot run in it skip loudly.
+if [ -n "${EJ_RIG_NO_LINK_HOST:-}" ]; then
+  echo "EJ_RIG_NO_LINK_HOST=1: no out-of-process Links in this pass (the V2 and both Links share one"
+  echo "  process, which is what Logic does) - the out-of-process scenarios will SKIP loudly."
+elif bash "$ROOT/tools/link_host/build.sh" "$SCRATCH/link_host" >/dev/null 2>&1; then
   echo "link_host built -> $SCRATCH/link_host (two out-of-process Links will be launched)"
 else
   echo "NOTE: link_host did not build; the out-of-process Link scenarios will SKIP loudly."

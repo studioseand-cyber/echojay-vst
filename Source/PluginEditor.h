@@ -8,6 +8,7 @@
 #include "EJLocalInstances.h" // round 2: this window can borrow a Link's own slot editor
 #include "EJRealEditorSwitch.h" // ...behind his switch, which is off until he turns it on
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
+#include "EJInlineViewIdentity.h"   // the rack-and-slot identity of what is on screen
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
 #include "EJAgentHome.h"      // ITEM 0b (15 Oct 2026): the client and executor live on the PROCESSOR
@@ -3656,6 +3657,39 @@ private:
         std::unique_ptr<ChainEditorWindow> popout;
         int popoutSlot = -1;
 
+        // ---- A SLOT INDEX IS NOT A RACK (27 Oct 2026) ------------------------------------------
+        //
+        // RH3 ("switching between slots") failed in the full pass and passed on its own, and this is
+        // why. The refresh below re-opens the editor when `inlineSlot != selectedIdx`, so when the
+        // view moves from one rack to another and the SAME index is selected on the new one, nothing
+        // re-opens: the pane goes on showing the OLD rack's editor behind the new rack's cards. In
+        // the rig the previous row had left the V2's own slot 1 open, the next row aimed at a Link
+        // and double-clicked ITS slot 1, and for eighteen seconds the pane held the own rack's copy
+        // of AUMultibandCompressor while the panel drew the Link's four cards - so the row read
+        // "no lent editor, road = copy" and was right to.
+        //
+        // Same family as "a slot index is not a plugin" (660d1f95, his 11:20 and 12:33 of 26 Oct) and
+        // as autoShownSlot_ being reset per rack above: the identity of what is on screen is the rack
+        // AND the slot, never the slot alone. viewRackUid is what the panel is drawing (empty = the
+        // V2's own rack); inlineRackUid/popoutRackUid are what the open editor belongs to.
+        juce::String viewRackUid;
+        juce::String inlineRackUid;
+        juce::String popoutRackUid;
+
+        /** CAN THIS SLOT'S EDITOR BE SHOWN IN THIS WINDOW? (27 Oct 2026) The road decision lives with the editor - the switch,
+            the Link's published pid and the process-local directory are all its business - and the panel
+            only ever asks. Empty or false means the panel behaves exactly as it did before the real
+            editor existed, which is what keeps the copy road untouched.
+
+            WHY THE PANEL HAS TO ASK AT ALL: a remote slot never had an inline editor, so two places
+            short-circuit before one could be opened - selectSlot returns early unless an EDIT SESSION is
+            engaged on that very slot, and rebuild takes the resting-hint branch for the same reason. On
+            the real road that meant the pane opened nothing at all unless a session happened to be
+            engaged on that Link. Overnight one was (the same uid held the session and every lent editor,
+            351 renewals against 164 opens); this morning's two passes had it on another Link and the real
+            editor never appeared once. A green that rested on that is not a green. */
+        std::function<bool(int slot0)> canShowSlotEditorHere;
+
         /** THE RACK SELECTOR. It lives on the PANEL, not on the editor, and
             that is the fix for the bug that hid it: as a panel child its
             visibility follows the panel's automatically, so there is ONE
@@ -4081,6 +4115,16 @@ private:
         }
         /** 21t-e: is a hosted editor open INLINE in the rack (an NSView that composites over everything)? */
         bool hasInlineEditor() const { return inlineEditor != nullptr; }
+        /** The NAME of the slot whose editor is on screen, whichever road it came by - our own
+            rack's real editor, a copy, or a Link's lent one - and empty when nothing is open. The
+            road cannot answer "is the pane showing the right plugin": "copy" is the correct road for
+            our own rack, so RH9 needs the name and the rack, not the road. */
+        juce::String inlineSlotName() const
+        {
+            if (inlineEditor == nullptr || inlineSlot < 0 || inlineSlot >= (int) slotInfos.size())
+                return {};
+            return slotInfos[(size_t) inlineSlot].name;
+        }
         /** The processor behind the editor on screen. For a LENT editor that is the Link's own
             plugin instance, which is what makes round 2 provable: a knob moved here must appear in
             the Link's own published values, because it IS the Link's plugin. */
@@ -4150,6 +4194,7 @@ private:
             maintPasses = 0;
             shieldOn_ = false; shieldLine_.clear();
             inlineIsBuiltin = false;
+            inlineRackUid.clear();
         }
 
         void closePopout()
@@ -4161,6 +4206,7 @@ private:
                 popout->setVisible(false); popout.reset();
             }
             popoutSlot = -1;
+            popoutRackUid.clear();
         }
 
         void closeAllEditors() { closeInline(); closePopout(); }
@@ -4202,6 +4248,9 @@ private:
             }
             closeAllEditors();
             if (!onCreateEditor || i < 0 || i >= (int)slotInfos.size()) return;
+            // Whatever this call opens belongs to the rack the panel is drawing NOW (see
+            // viewRackUid). Set once, here, rather than at each of the four creation points below.
+            inlineRackUid = viewRackUid;
 
             // ---- THE SAME LENT SLOT COMES BACK WITHOUT TOUCHING A THING -----------------------
             // Hidden, not closed (his option 3), so re-opening the slot we are already holding is a
@@ -4209,6 +4258,7 @@ private:
             if (inlineIsLent && lentSlot1 == i + 1 && inlineEditor != nullptr)
             {
                 inlineSlot = i;
+                inlineRackUid = viewRackUid;
                 showLentEditorAgain();
                 startTimer (100);
                 EchoJay_NSLog (("EJPane: showing the Link's lent editor for slot " + juce::String (i + 1)
@@ -4775,7 +4825,13 @@ private:
                 // starts the session. The click used to auto-begin one,
                 // which coupled selection to a lease and gave the flow no
                 // visible starting point.
-                if (!(editingSession && i == sessionSlot))
+                // ---- AND A SLOT THAT CAN BE LENT FALLS THROUGH (27 Oct 2026) -----------------
+                // The sentence above is still true of the copy road: that instance lives in the
+                // Link's process and cannot render here. On the REAL road it is this process'
+                // instance and its editor is ours to borrow, so the press has somewhere to go. With
+                // the switch off canLendSlotEditor answers false and this is the code of yesterday.
+                const bool lendable = canShowSlotEditorHere != nullptr && canShowSlotEditorHere (i);
+                if (! lendable && !(editingSession && i == sessionSlot))
                 {
                     popBtn.setVisible(false);
                     resized();   // editBtn visibility follows the selection
@@ -4783,9 +4839,18 @@ private:
                     return;
                 }
             }
-            if (inlineSlot != i || inlineEditor == nullptr)
+            // THE POPOUT IS DELIBERATELY NOT PART OF THIS TEST, because it never was: a press on the
+            // card of a slot that is floating has always re-docked it inline (showInline closes the
+            // floating window first), and keeping that is the difference between adding the rack to
+            // this decision and quietly changing what a press does. The REBUILD's copy of the test
+            // does count a popout, exactly as it did before today.
+            if (echojay::inlineNeedsReopen ({ inlineSlot, inlineEditor != nullptr, inlineRackUid,
+                                              /*havePopout*/ false, -1, {} },
+                                            i, viewRackUid))
                 showInline(i, deliberate);
-            popBtn.setVisible(selectedIdx >= 0);
+            // NO POP-OUT OVER A LENT EDITOR: floating it would be a second reparent of the plugin's
+            // own view, and one move is the whole rule (reparent keeps the window, 26 Oct).
+            popBtn.setVisible(selectedIdx >= 0 && ! inlineIsLent);
             // Header may have appeared/disappeared with the new selection —
             // re-run layout so the clip container is re-asserted at the new
             // display-area rect.
@@ -4851,6 +4916,7 @@ private:
                 + slotInfos[(size_t)i].name).toRawUTF8());
             popout = std::make_unique<ChainEditorWindow>(slotInfos[(size_t)i].name, ed);
             popoutSlot = i;
+            popoutRackUid = viewRackUid;
             // Closing the floating window returns the editor to the plugin
             // box. Deferred: the window can't be destroyed from inside its
             // own close callback.
@@ -5039,14 +5105,22 @@ private:
             popBtn.setVisible(!remote && selectedIdx >= 0);
 
             // Bring the inline editor in line with the selection
-            if (remote || selectedIdx < 0)
+            //
+            // A LENT EDITOR OF THE RACK IN VIEW SURVIVES A REBUILD (27 Oct 2026). This closed every
+            // editor on a remote rack because a remote slot never had one. Now it can, and a rack
+            // publishing a new revision - which happens on every settle - would hide the plugin's own
+            // view while the lease stayed ours, leaving the pane blank with nothing to re-show it.
+            const bool keepLent = inlineIsLent && selectedIdx >= 0
+                               && lentSlot1 == selectedIdx + 1 && lentUid == viewRackUid;
+            if ((remote || selectedIdx < 0) && ! keepLent)
                 closeAllEditors();
             // The RESTING HINT names the affordance. Sticky: it only ever
             // replaces text this same line wrote (or emptiness), so the edit
             // flow's own messages -- refusals, sizes, timeouts, all the real
             // walls with their real reasons -- survive rebuilds and stay
             // readable until the flow itself moves on.
-            if (remote && !editingSession)
+            if (remote && !editingSession
+                && ! (canShowSlotEditorHere != nullptr && canShowSlotEditorHere (selectedIdx)))
             {
                 // ---- THE RESTING HINT NAMES NOTHING THAT IS GONE (his 17:3x note, 21 Oct) ----
                 //
@@ -5065,8 +5139,9 @@ private:
                     statusText = hint;
                 restingHint_ = hint;
             }
-            else if ((inlineSlot != selectedIdx || inlineEditor == nullptr)
-                     && !(popout != nullptr && popoutSlot == selectedIdx))
+            else if (echojay::inlineNeedsReopen ({ inlineSlot, inlineEditor != nullptr, inlineRackUid,
+                                                   popout != nullptr, popoutSlot, popoutRackUid },
+                                                 selectedIdx, viewRackUid))
                 showInline(selectedIdx);
             resized();   // header visibility may have changed — re-assert clip rect
             repaint();
