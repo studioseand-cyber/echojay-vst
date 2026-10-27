@@ -91,6 +91,7 @@ WORDS = {
     "rate_limited": "EchoJay is busy - the wizard will carry on sending in a moment.",
     "run_not_found": "That run isn't on the server yet.",
     "run_conflict": "This run belongs to another account. Sign in with the account you started it with.",
+    "run_completed": "This run is finished. Start a new run in the EchoJay Wizard to check again.",   # 27 Oct (B)
     "result_conflict": "That result was already sent with different contents.",
     "results_missing": "Some results still need sending.",
     "too_large": "One result was too big to send and wasn't used.",
@@ -123,6 +124,7 @@ def personal_detail(text):
 
 
 LOCK = threading.RLock()
+RUN_COMPLETED_WORDS = "This run is finished. Start a new run in the EchoJay Wizard to check again."   # 27 Oct: B's words, as staging sends them (also WORDS)
 RECORD = {"dir": None, "scenario": "unlabelled", "seq": 0}   # --record DIR: every exchange written raw (scrub before sharing: tools/ejmap/scripts/make_mock_for_b.py)   # re-entrant: a handler holding it also logs the request through _send
 STATE = {
     "config": {"client_id": "ejwiz-mock", "qualify_minimum": 25, "access_ttl_s": 3600, "force_429_once": False,
@@ -415,6 +417,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(*err("run_id_required", "", 400))
         if len(plugins) > 2000:
             return self._send(*err("bad_request", "", 400))
+        with LOCK:   # 27 Oct (B): a finished run is never checked again - the wizard starts a new run
+            done = (STATE["runs"].get(rid) or {}).get("completed")
+        if done:
+            return self._send(*err("run_completed", RUN_COMPLETED_WORDS, 409))
         # 27 Oct (STAGING 3, run 3: 1,378 plugins in one call, no answer in 30 s): a slow answer, for the client's timeout and back-off.
         # catalogue_delays_s: one delay per call, used up in order; then catalogue_delay_s for every call (default 0)
         with LOCK:
@@ -486,6 +492,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(*err("run_not_found", "", 404))
         if run["account_id"] != acct:
             return self._send(*err("run_conflict", "", 409))
+        if run.get("completed"):   # 27 Oct (B): nothing more is taken under a finished run
+            return self._send(*err("run_completed", RUN_COMPLETED_WORDS, 409))
         try:   # stop decompressing at the limit: no zip bombs
             with gzip.GzipFile(fileobj=__import__("io").BytesIO(raw)) as g:
                 plain = g.read(MAX_UNCOMPRESSED + 1)
@@ -607,6 +615,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/__mock/config":
                 STATE["config"].update(body)
                 return self._send(200, STATE["config"])
+            if path == "/__mock/complete_run":   # 27 Oct, rehearsals: a run finished on the server mid-upload (409 run_completed from then on)
+                r = STATE["runs"].get(body.get("run_id", ""))
+                if r is not None:
+                    r["completed"] = True
+                return self._send(200, {"completed": r is not None})
             if path == "/__mock/catalogue":
                 STATE["catalogue"].update(body)
                 return self._send(200, {})

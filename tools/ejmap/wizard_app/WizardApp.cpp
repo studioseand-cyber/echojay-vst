@@ -391,7 +391,21 @@ public:
                                if (at == Screen::welcome || at == Screen::consent) show (Screen::welcome); else { text = wizapp::kSignedOutText; repaint(); } });
         });
     }
-    bool rehearsalSignedOut = false;
+    bool rehearsalSignedOut = false; int checkRunCompleted = 0;
+    // 27 Oct (B: 409 run_completed): a fresh run id for the run under way - its finished predecessor's state kept in previous_runs/<id>/,
+    // this run's consent and plugin list kept (they were made now, under no run of the server's)
+    void freshRunId()
+    {
+        auto st = appState(); const auto old = st.getProperty ("run_id", "").toString();
+        if (old.isNotEmpty())
+        {   auto dest = cfg.work.getChildFile (wizapp::kPreviousRuns).getChildFile (old); dest.createDirectory();
+            cfg.work.getChildFile ("app_state.json").copyFileTo (dest.getChildFile ("app_state.json")); }
+        auto* o = new juce::DynamicObject();
+        for (const char* k : { "consented", "consent_at", "consent_version", "only" }) if (st.hasProperty (k)) o->setProperty (k, st.getProperty (k, {}));
+        cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (juce::var (o)));
+        { const juce::ScopedLock l (runLock); cachedRunId = {}; }
+        runId(); cacheRun();
+    }
     // A FINISHED RUN NEVER RUNS AGAIN (Kathy, 27 Oct): at Start, a folder whose run is finished (or signed out of) moves that run's files to
     // previous_runs/<run id>/ and starts afresh - a new run id at the consent, nothing carried over. Results of the last run still waiting
     // to be sent are never moved away: the Start is refused, said, and they are sent when the wizard is opened signed in
@@ -401,7 +415,7 @@ public:
         const bool endFile = cfg.work.getChildFile ("reward.json").existsAsFile() || cfg.work.getChildFile ("receipt.json").existsAsFile();
         if (! wizapp::runNeedsFreshStart (st, endFile)) return true;
         const auto old = st.getProperty ("run_id", "").toString();
-        if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0)
+        if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0 && ! st.hasProperty ("server_completed"))   // 27 Oct: finished on EchoJay -> kept, never sent
         {   logLine ("start refused: the last run (" + old + ") still has " + juce::String (waiting) + " result(s) waiting to be sent");
             title = "This folder's last run isn't sent yet"; text = juce::String (waiting) + " result(s) from it are still waiting. Open the wizard signed in to send them, or start the new run in a new folder.";
             agree.setVisible (false); primary.setVisible (false); repaint(); return false; }
@@ -572,7 +586,7 @@ private:
     juce::File answersFile() const { return cfg.work.getChildFile ("catalogue_answers.json"); }
     juce::File requestFile() const { return cfg.work.getChildFile ("catalogue_request.json"); }
     juce::CriticalSection runLock; juce::String cachedRunId, cachedConsentAt, cachedStartedAt; int cachedQueue = 0;
-    std::atomic<int> sentN { 0 }, pendingN { 0 }, rejectedN { 0 }, failures { 0 }; std::atomic<bool> offlineNow { false }, signInNow { false }, completing { false };
+    std::atomic<int> sentN { 0 }, pendingN { 0 }, rejectedN { 0 }, failures { 0 }; std::atomic<bool> offlineNow { false }, signInNow { false }, completing { false }, runCompletedNow { false };
     std::atomic<bool> stoppedNow { false }, noRunNow { false }; juce::CriticalSection wordsLock; juce::String waitWordsNow, lastUploadSaid;   // 26 Oct: the sending screen's reason
     std::atomic<double> nextTryMs { 0.0 }; juce::String netWords;   // 26 Oct: atomic - the uploader writes it, the screen reads it   // netWords: the last plain words a call left for a screen
     juce::StringArray cachedCollection;   // 21 Oct: the run's plugin collection (contract v1 §3), from the catalogue request
@@ -599,6 +613,10 @@ private:
         { std::lock_guard<std::mutex> l (netMutex); st = wizcontract::drain (*session, box, run, [this] { return closing.load(); }); }
         offlineNow = st.offline && ! st.timedOut; signInNow = st.signIn || session->needsSignIn; stoppedNow = st.stopped;   // 27 Oct: no answer in time is "taking a while", never "offline"
         { const juce::ScopedLock l (wordsLock); waitWordsNow = st.stopped ? st.stopWords : st.waitWords; }   // 26 Oct: why it waits, for the screen
+        if (st.runCompleted && ! runCompletedNow.exchange (true))
+        {   // 27 Oct (B: 409 run_completed): this run is finished on EchoJay - nothing is sent under it again; the next Start is a fresh run
+            auto s = appState(); s.getDynamicObject()->setProperty ("server_completed", juce::Time::getCurrentTime().toISO8601 (true)); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (s));
+            logLine ("run finished on EchoJay (run_completed): " + st.stopWords + " - nothing more is sent under " + run.runId + "; the next Start makes a fresh run"); }
         if (st.stopped) { nextTryMs = now + 1.0e12; logLine ("upload stopped (" + st.stopCode + "): " + st.stopWords + " - nothing more is sent until the wizard is opened again"); }   // v1.1: never retried this session
         else if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
         else if (st.signIn) nextTryMs = now + 30000.0;
@@ -666,7 +684,9 @@ private:
     {
         waitingOnServer = true; title = "Checking your plugins"; stepText = wizapp::kCheckingStep; nowText = wizapp::catalogueWaitLine (answered, chunks);
         barLeft = "Checking with EchoJay"; barRight = {}; doneLine = {}; heartbeatMs = 0; repaint();
+        if (nowText != lastCheckSaid) { lastCheckSaid = nowText; logLine ("checking screen: " + stepText + " | " + nowText); }   // what the tester sees, in the log
     }
+    juce::String lastCheckSaid;
     void checkCatalogue()
     {
         showCatalogueWait ((int) catalogueAnswered.size(), 0); catalogueRetryAt = 0.0; catalogueShownLeft = -1;
@@ -684,6 +704,12 @@ private:
             onUi ([this, cr, answered]
             {
                 catalogueAnswered = answered;
+                if (wizcontract::runCompleted (cr.reply) && ++checkRunCompleted == 1)
+                {   // 27 Oct (B: 409 run_completed on the check): this run id is finished on EchoJay - never used again. A fresh run id (and run
+                    // state; the old state kept in previous_runs/) for THIS run's listing, then the check again; nothing for the person to do
+                    const auto old = runInfo().runId; freshRunId(); catalogueAnswered.clear();
+                    logLine ("catalogue check: " + old + " is finished on EchoJay (run_completed) - a fresh run " + runInfo().runId + ", checking again"); checkCatalogue(); return;
+                }
                 if (! cr.ok && wizcontract::checkRetryable (cr.reply))
                 {   // 27 Oct: never "offline" for a slow answer; tried again by itself, only the parts still unanswered
                     ++catalogueFailures; catalogueWords = wizcontract::checkWords (cr.reply);
@@ -695,7 +721,7 @@ private:
                 }
                 if (! cr.ok)
                 {   waitingOnServer = false; netWords = wizcontract::checkWords (cr.reply); logLine ("catalogue check failed: " + netWords);
-                    title = "Couldn't reach EchoJay"; text = netWords; showBar = false; primary.setButtonText (session->needsSignIn ? "Sign in again" : "Try again"); primary.setVisible (true); primary.setEnabled (true);
+                    title = wizcontract::runCompleted (cr.reply) ? "This run is finished on EchoJay" : "Couldn't reach EchoJay"; text = netWords; showBar = false; primary.setButtonText (session->needsSignIn ? "Sign in again" : "Try again"); primary.setVisible (true); primary.setEnabled (true);
                     retryCatalogue = true; repaint(); return; }
                 waitingOnServer = false; catalogueFailures = 0; text = {};
                 answersFile().replaceWithText (juce::JSON::toString (cr.answers));
@@ -943,7 +969,8 @@ private:
             case Screen::alreadyDone: case Screen::reward: case Screen::noCode: case Screen::betaSaved: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case Screen::measuring: pauseNow ("the Pause button", false); break;
             case Screen::scan: if (retryCatalogue) { retryCatalogue = false; primary.setVisible (false); if (session != nullptr && session->needsSignIn) { show (Screen::welcome); break; } title = "Checking your plugins"; showBar = true; checkCatalogue(); } break;   // 21 Oct
-            case Screen::upload: if (kNetworked && ! completing) { primary.setVisible (false); secondary.setVisible (false); title = "Sending your results"; showBar = true; nextTryMs = 0.0; } break;   // 21 Oct: Try again
+            case Screen::upload: if (runCompletedNow) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); break; }   // 27 Oct: Done
+                                 if (kNetworked && ! completing) { primary.setVisible (false); secondary.setVisible (false); title = "Sending your results"; showBar = true; nextTryMs = 0.0; } break;   // 21 Oct: Try again
             case Screen::paused:
                 if (wizapp::carryOnBlocked (power))   // 24 Oct (Kathy): never carry on into a sleep - stay paused, carry on once plugged in
                 { logLine ("carry on refused: " + wizapp::powerWords (power) + " - " + wizapp::kPlugInFirst); plugInFirst = true; batteryPaused = true; show (Screen::paused); break; }
@@ -1241,12 +1268,14 @@ private:
             if (primary.isVisible()) return;   // waiting on the user (Try again)
             barValue = (double) sent / (double) total; barLeft = wizapp::uploadLine (sent, waiting, rejectedN, offlineNow, signInNow); barRight = {};
             {   // 26 Oct (Kathy): the reason and the next try under the title - never "N waiting" with nothing said
-                wizapp::UploadView uv; uv.waiting = waiting; uv.offline = offlineNow; uv.signIn = signInNow; uv.stopped = stoppedNow; uv.noRun = noRunNow;
+                wizapp::UploadView uv; uv.waiting = waiting; uv.offline = offlineNow; uv.signIn = signInNow; uv.stopped = stoppedNow; uv.noRun = noRunNow; uv.runCompleted = runCompletedNow;
                 { const juce::ScopedLock l (wordsLock); uv.words = waitWordsNow; }
                 if (! uv.stopped && nextTryMs > 0.0) uv.retryInS = (int) std::ceil (juce::jmax (0.0, nextTryMs - juce::Time::getMillisecondCounterHiRes()) / 1000.0);
                 const auto d = wizapp::uploadDetail (uv); text = d.isNotEmpty() ? d : juce::String (wizapp::kUploadText);
                 if (const auto said = d.upToFirstOccurrenceOf (" Trying again", false, false); said != lastUploadSaid) { lastUploadSaid = said; if (said.isNotEmpty()) logLine ("sending screen: " + d); }   // what the tester sees, in the log
             }
+            if (runCompletedNow)   // 27 Oct: the person must act (a new run) - B's words, and Done
+            { title = "This run is finished on EchoJay"; showBar = false; primary.setButtonText ("Done"); primary.setVisible (true); primary.setEnabled (true); repaint(); return; }
             repaint(); snapAtQuarters();
             if (signInNow) { title = "Please sign in again"; text = "Your results are kept on this Mac."; primary.setButtonText ("Sign in with EchoJay"); primary.setVisible (true); showBar = false; screen = Screen::welcome; repaint(); return; }
             if (waiting == 0 && ! completing && juce::Time::getMillisecondCounterHiRes() - uploadT0 > 1500.0 && wizcontract::Outbox { outboxDir() }.pendingFiles().isEmpty()) { barLeft = "Checking it arrived"; reportRunEnd(); }

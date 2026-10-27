@@ -41,7 +41,8 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | `POST /__mock/approve` `{"account_id": …}` | the user approving the sign-in in the browser |
 | `POST /__mock/deny` | the user denying it |
 | `POST /__mock/expire_access` | access tokens expiring |
-| `POST /__mock/config` | server config (`qualify_minimum`, `collection_threshold`, `collection_min_size`, `agree_tolerance`, `force_429_once`) |
+| `POST /__mock/config` | server config (`qualify_minimum`, `collection_threshold`, `collection_min_size`, `agree_tolerance`, `force_429_once`; 31 Oct: `catalogue_delays_s` (one delay per check call, in order) and `catalogue_delay_s` (every call after), for a slow answer) |
+| `POST /__mock/complete_run` `{"run_id": …}` | 31 Oct: a run finished on the server mid-upload (rehearsals). From then on its checks and results answer 409 `run_completed` |
 | `POST /__mock/catalogue` | seeding what the catalogue already has |
 | `POST /__mock/verify` `{"plugin_id": …}` | our own verification certifying a plugin |
 | `POST /__mock/age_check` `{"run_id": …, "minutes": n}` | v1.1: the run's first catalogue check happened n minutes ago. Used only by our suite's offline timeline, which is not in the fixtures (§3) |
@@ -79,6 +80,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 13d_four_at_once | v1.1 (24 Oct): `measure_started_at` - four compressor profiles measured at once, **all accepted**; then a fifth at once, a compressor measured in 30 s, a start after its end (`timestamp` each) and a missing start (`shape`); an outcome whose start is its end, accepted. Every time is relative, so either replay keeps each verdict |
 | 13e_measurement_identity | v1.1 (24 Oct): every measured file of a profile carries `measurement` {run_id, result_id, nonce, measure_started_at, measured_at}. One honest profile, accepted; then another run's identity, only its run edited, another result's id and a reused nonce (`identity`, tampering), and no block (`shape`) |
 | 13f_vst3_twin_outcomes | 29 Oct: a VST3 twin's two outcome states, `bridged` and `bridge_no_match`, each accepted |
+| 13h_run_completed | 31 Oct (B, 27 Oct): a check, `POST /runs` and `/complete`; then a check and a result under that finished run, each 409 `run_completed` with B's words; then a check under a new run id, answered as normal |
 | 13c_promo_refusal_order | v1.1: two refusals at once answer with the first in the agreed order: account > collection > not finished > failed checks > below minimum |
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
 | 15_refresh_token_reused | a used refresh token presented again: `invalid_grant`, the whole family revoked (`401 token_revoked`) |

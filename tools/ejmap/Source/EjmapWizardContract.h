@@ -164,6 +164,7 @@ inline juce::String plainWords (const Reply& r)
         { "invalid_grant", "Please sign in again - your results are kept." }, { "invalid_client", "This version of the EchoJay Wizard isn't recognised. Please update it." },
         { "rate_limited", "EchoJay is busy - the wizard will carry on sending in a moment." }, { "run_not_found", "That run isn't on the server yet." },
         { "run_conflict", "This run belongs to another account. Sign in with the account you started it with." },
+        { "run_completed", "This run is finished. Start a new run in the EchoJay Wizard to check again." },   // 27 Oct (B): a finished run
         { "result_conflict", "That result was already sent with different contents." }, { "results_missing", "Some results still need sending." },
         { "too_large", "One result was too big to send and wasn't used." }, { "account_blocked", "This account can't send results. Contact support@echojay.ai." },
         { "client_too_old", "Please update the EchoJay Wizard - this version can no longer send results." },
@@ -399,7 +400,7 @@ inline const std::vector<CodeRule>& codes()
 {
     static const std::vector<CodeRule> k {
         { "token_expired", 401, true }, { "token_revoked", 401, false }, { "invalid_grant", 400, false }, { "invalid_client", 401, false },
-        { "rate_limited", 429, true }, { "run_not_found", 404, true }, { "run_conflict", 409, false }, { "result_conflict", 409, false },
+        { "rate_limited", 429, true }, { "run_not_found", 404, true }, { "run_conflict", 409, false }, { "run_completed", 409, false }, { "result_conflict", 409, false },
         { "results_missing", 409, true }, { "too_large", 413, false }, { "account_blocked", 403, false }, { "client_too_old", 426, false },
         { "run_id_required", 400, false }, { "bad_request", 400, false }, { "not_found", 404, false }, { "server_error", 500, true },
         { "rejected", 422, false } };
@@ -418,10 +419,12 @@ inline bool retryable (const Reply& r)
 // held (v1.1, ruling 3): a schema no validator knows yet - kept by the server, never used; marked sent, never retried
 // stop: a code that ends sending for this session without moving the result (not_found: try again on the next launch; invalid_client,
 // account_blocked, client_too_old: the user must act) - the result stays in the outbox
-enum class Sent { accepted, held, duplicate, conflict, rejected, tooLarge, signIn, runMissing, retryLater, offline, refused, stop };
+// runCompleted (27 Oct, B): the run is finished on the server (409 run_completed) - never sent to again; the wizard starts a fresh run
+enum class Sent { accepted, held, duplicate, conflict, rejected, tooLarge, signIn, runMissing, retryLater, offline, refused, stop, runCompleted };
 inline Sent classify (const Reply& r)
 {
     if (r.network) return Sent::offline;
+    if (r.error == "run_completed") return Sent::runCompleted;   // 27 Oct (B): before every other 409
     const auto st = r.json.getProperty ("status", "").toString();
     if (r.status == 201 && st == "held") return Sent::held;
     if (r.status == 201 || (r.status == 200 && st == "accepted")) return Sent::accepted;
@@ -441,11 +444,12 @@ inline Sent classify (const Reply& r)
 }
 // THE CATALOGUE CHECK'S FAILURE (27 Oct): its words (slow, offline, or the server's own) and whether it is tried again by itself
 inline juce::String checkWords (const Reply& r) { if (r.network) return r.timedOut ? juce::String (kTakingAWhile) : juce::String ("You're offline."); return plainWords (r); }
-inline bool checkRetryable (const Reply& r) { return retryable (r) || (r.status == 404 && r.error.isEmpty()); }
+inline bool checkRetryable (const Reply& r) { return retryable (r) || (r.status == 404 && r.error.isEmpty()); }   // run_completed: not retryable (its code rule)
+inline bool runCompleted (const Reply& r) { return r.status == 409 && r.error == "run_completed"; }   // 27 Oct (B)
 // the back-off between tries after N failures in a row: 5 s, 10, 20 ... up to 10 min
 inline int backoffSeconds (int failures) { if (failures <= 0) return 0; return (int) juce::jmin<juce::int64> (600, (juce::int64) 5 << juce::jmin (failures - 1, 10)); }
 
-struct DrainStats { int sent = 0, held = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, timedOut = false, signIn = false, stopped = false; int retryAfterS = 0;
+struct DrainStats { int sent = 0, held = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, timedOut = false, signIn = false, stopped = false, runCompleted = false; int retryAfterS = 0;
                    juce::StringArray rejectedWords, heldWords; juce::String stopCode, stopWords, waitWords; };   // waitWords (26 Oct): why it waits, for the screen
 // one pass over the outbox, in order; stops at the first thing that needs time (offline, rate limit, sign-in) - every file stays put
 inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, const std::function<bool()>& stopNow = {})
@@ -471,6 +475,7 @@ inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, cons
             {   if (k == Sent::held) box.sent().getChildFile (f.getFileName() + ".status.json").replaceWithText (juce::JSON::toString (r.json));   // the server's status + message, kept
                 f.moveFileTo (box.sent().getChildFile (f.getFileName()));
                 if (k == Sent::accepted) ++st.sent; else if (k == Sent::held) { ++st.held; st.heldWords.add (plainWords (r)); } else if (k == Sent::duplicate) ++st.duplicates; else ++st.conflicts; break; }
+            if (k == Sent::runCompleted) { st.runCompleted = true; st.stopped = true; st.stopCode = r.error; st.stopWords = plainWords (r); return st; }   // 27 Oct: never sent to again; the files stay
             if (k == Sent::stop) { st.stopped = true; st.stopCode = r.error; st.stopWords = plainWords (r); return st; }   // kept in the outbox; never retried this session
             if (k == Sent::rejected || k == Sent::tooLarge || k == Sent::refused)
             {   box.rejected().getChildFile (f.getFileName() + ".reason.json").replaceWithText (juce::JSON::toString (r.json.isObject() ? r.json : juce::var()));

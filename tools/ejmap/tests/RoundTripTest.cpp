@@ -14630,6 +14630,61 @@ int main (int, char**)
                && ejmap::wizapp::catalogueWaitLine (1, 3) == "Asking EchoJay which of your plugins it already knows - 1 of 3 parts answered",
                "contract WZ-32OCT-1: a slow answer is \"taking a while\" and tried again; the check goes in parts of 500, an answered part never re-sent (" + seen + ")");
     }
+    // WZ-32OCT-3 A FINISHED RUN ANSWERS 409 run_completed (Sean / B, 27 Oct: "This run is finished. Start a new run in the EchoJay Wizard to
+    // check again."). Against the live mock (scenario 13h_run_completed): a check or a result under a finished run is run_completed - never
+    // retried, never "offline"; a new run id checks fine. The wizard: a check -> a fresh run id by itself (once), then B's words; an upload ->
+    // nothing more sent under that run, B's words and Done, the folder marked so the next Start is fresh, the waiting files kept
+    {
+        using namespace ejmap::wizcontract;
+        const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_rc_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        work.createDirectory();
+        const auto script = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py");
+        const auto portFile = work.getChildFile ("port.txt");
+        juce::StringArray margs { "/usr/bin/python3", script.getFullPathName(), "--port", "0", "--port-file", portFile.getFullPathName() };
+        if (const char* cap = std::getenv ("EJ_CAPTURE_DIR")) { margs.add ("--record"); margs.add (cap); }   // B's fixtures
+        juce::ChildProcess mock; const bool started = mock.start (margs, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr);
+        for (int i = 0; i < 100 && ! portFile.existsAsFile(); ++i) juce::Thread::sleep (100);
+        const int port = portFile.loadFileAsString().trim().getIntValue();
+        bool ok3 = false; juce::String seen = "started " + juce::String ((int) started) + " port " + juce::String (port);
+        if (started && port > 0)
+        {
+            const Endpoints ep { "http://127.0.0.1:" + juce::String (port), "ejwiz-mock" };
+            const auto tx = urlTransport (5000);
+            auto hook = [&] (const juce::String& path, const juce::String& json)
+            { HttpRequest rq; rq.method = "POST"; rq.url = ep.base + path; rq.contentType = "application/json"; rq.body.append (json.toRawUTF8(), (size_t) json.getNumBytesAsUTF8()); return replyOf (tx (rq)); };
+            hook ("/__mock/scenario", "{\"name\": \"13h_run_completed\"}");
+            hook ("/__mock/config", "{\"qualify_minimum\": 1, \"collection_min_size\": 1}");
+            MemoryTokenStore store; Session s (ep, tx, store, {});
+            auto dev = s.startDevice(); juce::String w; hook ("/__mock/approve", "{\"account_id\": \"acct_mock_a\"}"); s.pollOnce (dev, w);
+            const auto req = juce::JSON::parse (R"J({"plugins": [{"plugin_id": "AudioUnit|7c000001|1.0", "name": "P1", "version": "1.0", "format": "AudioUnit"}]})J");
+            const juce::String rid = "run_00000000000032c1", rid2 = "run_00000000000032c2";
+            RunInfo run; run.runId = rid; run.consentAcceptedAt = "2026-10-27T18:04:20.000Z"; run.collection = { "AudioUnit|7c000001|1.0" }; run.startedAt = "2026-10-27T18:04:20.000Z";
+            const auto c1 = catalogueCheck (s, req, rid); const auto er = ensureRun (s, run);
+            const auto done = complete (s, rid, "finished", {}, {}, {});
+            const auto again = catalogueCheck (s, req, rid);                                     // the check under the finished run
+            const auto gz = gzip ("{}"); const auto put = s.call ("PUT", "runs/" + rid + "/results/res_00000000000000000000000000000001", {}, &gz, sha256Hex (gz));
+            const auto fresh = catalogueCheck (s, req, rid2);                                    // a new run id: checked as normal
+            seen << " | c1 " << (int) c1.ok << " run " << er.status << " done " << (int) done.done << " again " << again.reply.status << " " << again.reply.error << " put " << put.status << " " << put.error << " fresh " << (int) fresh.ok;
+            ok3 = c1.ok && done.done && ! again.ok && runCompleted (again.reply) && ! checkRetryable (again.reply) && ! retryable (again.reply)
+                  && again.reply.message == "This run is finished. Start a new run in the EchoJay Wizard to check again." && checkWords (again.reply) == again.reply.message
+                  && classify (again.reply) == Sent::runCompleted && put.status == 409 && classify (put) == Sent::runCompleted && fresh.ok;
+        }
+        mock.kill(); work.deleteRecursively();
+        Reply bare; bare.status = 409; bare.error = "run_completed";   // no words from the server: B's words, ours
+        using namespace ejmap::wizapp;
+        UploadView uv; uv.waiting = 4; uv.stopped = true; uv.runCompleted = true; uv.words = plainWords (bare);
+        const auto con = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardContract.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (ok3 && plainWords (bare) == "This run is finished. Start a new run in the EchoJay Wizard to check again."
+               && uploadDetail (uv) == "This run is finished. Start a new run in the EchoJay Wizard to check again. What was measured is kept on this Mac."
+               && runNeedsFreshStart (juce::JSON::parse (R"J({"run_id": "run_1", "server_completed": "x"})J"), false)
+               && con.contains ("if (k == Sent::runCompleted) { st.runCompleted = true; st.stopped = true;")
+               && app.contains ("if (wizcontract::runCompleted (cr.reply) && ++checkRunCompleted == 1)") && app.contains ("const auto old = runInfo().runId; freshRunId(); catalogueAnswered.clear();")
+               && app.contains ("if (st.runCompleted && ! runCompletedNow.exchange (true))") && app.contains ("s.getDynamicObject()->setProperty (\"server_completed\"")
+               && app.contains ("waiting > 0 && ! st.hasProperty (\"server_completed\"))")
+               && app.contains ("case Screen::upload: if (runCompletedNow) { juce::JUCEApplication::getInstance()->systemRequestedQuit(); break; }"),
+               "contract WZ-32OCT-3: 409 run_completed is never retried; a check gets a fresh run id, an upload stops with B's words (" + seen + ")");
+    }
     // WZ-32OCT-2 A FINISHED RUN'S FOLDER NEVER STARTS A SECOND RUN, AND THE ENGINE'S LAST LINE GOES WHILE THE SERVER IS ASKED (STAGING 3
     // run 3, 27 Oct: a Sign out on run 1's end screen, then Start, sent run 1's finished run id; the screen kept "EchoJay - looking at its
     // VST3" and "Still working on a slow plugin" for 7 minutes after the engine had ended)
@@ -14646,7 +14701,7 @@ int main (int, char**)
                && runStateNames().contains ("reward.json") && ! runStateNames().contains ("app.log")
                && fresh > 0 && consented > fresh && consented - fresh < 300
                && app.contains ("if (const auto f = cfg.work.getChildFile (n); f.exists() && f.moveFileTo (dest.getChildFile (n))) moved.add (n);")
-               && app.contains ("if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0)")
+               && app.contains ("if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0 && ! st.hasProperty (\"server_completed\"))")
                && app.contains ("{ const juce::ScopedLock l (runLock); cachedRunId = {}; cachedConsentAt = {}; cachedStartedAt = {}; }")
                && app.contains ("{ st.getDynamicObject()->setProperty (\"signed_out_at\", juce::Time::getCurrentTime().toISO8601 (true));")
                && app.contains ("if (waitingOnServer) return;   // 27 Oct") && app.contains ("const auto lw = waitingOnServer ? juce::String() : wizapp::liveWords")
@@ -15160,7 +15215,7 @@ int main (int, char**)
             MemoryTokenStore store2; Session s2 (ep, tx, store2, [&] (const juce::String& l) { logLines.add (l); });
             auto dev2 = s2.startDevice(); secrets.push_back (dev2.deviceCode); hook ("/__mock/approve", "{\"account_id\": \"acct_mock_b\"}");
             juce::String w2; const auto p2 = s2.pollOnce (dev2, w2); if (const auto t2 = store2.load()) { secrets.push_back (t2->access); secrets.push_back (t2->refresh); }
-            const auto cc2 = catalogueCheck (s2, reqV, runX), ccK = catalogueCheck (s, reqV, runId);
+            const auto cc2 = catalogueCheck (s2, reqV, runX), ccK = catalogueCheck (s, reqV, "run_" + juce::String::toHexString (0x1234abcd5678ef91LL));   // 27 Oct (B): Kathy's first run is finished - her next check is a new run
             auto statusOf = [] (const CatalogueResult& c, const char* pid) { return c.answers.getProperty ("by_plugin_id", {}).getProperty (juce::Identifier (pid), {}); };
             const auto vOther = statusOf (cc2, "AudioUnit|aaaa0002|1.0"), vKathy = statusOf (ccK, "AudioUnit|aaaa0002|1.0");
             const auto bundle2 = work.getChildFile ("bundle2"); bundle2.getChildFile ("profiles").createDirectory();
@@ -15187,7 +15242,7 @@ int main (int, char**)
                                      prof ("aaaa0002", 1.3) + "," + prof ("aaaa0004", 4.0), "box_y", needOf (ccY));           // another setup: agrees on 0002 (0.3), not on 0004 (3.0)
             const auto served = mockState().getProperty ("served", {});
             const auto l2 = served.getProperty ("AudioUnit|aaaa0002|1.0", {}), l4 = served.getProperty ("AudioUnit|aaaa0004|1.0", {});
-            const auto cc3 = catalogueCheck (s2, reqV, runY);
+            const auto cc3 = catalogueCheck (s2, reqV, "run_" + juce::String::toHexString (0x00000000bbbb0003LL).paddedLeft ('0', 16));   // 27 Oct (B): runY is finished - a new run checks
             hook ("/__mock/verify", "{\"plugin_id\": \"AudioUnit|aaaa0004|1.0\"}");
             const auto l4v = mockState().getProperty ("served", {}).getProperty ("AudioUnit|aaaa0004|1.0", {});
             const auto withApple = juce::JSON::parse ("{\"plugins\": [{\"plugin_id\": \"AudioUnit|1|1\", \"vendor\": \"Apple\"}, {\"plugin_id\": \"AudioUnit|2|1\", \"vendor\": \"V\"}, {\"plugin_id\": \"AudioUnit|2|1\", \"vendor\": \"V\"}]}");
@@ -15224,9 +15279,12 @@ int main (int, char**)
             coverNeeds (*s3, boxZ, riZ, needOf (ccZ1));   // v1.1: an outcome for every "need" - not a measurement
             auto sentOf = [] (const Outbox& b) { juce::StringArray ids; for (const auto& f : b.sent().findChildFiles (juce::File::findFiles, false, "*.json.gz")) ids.add (Outbox::resultIdOf (f)); return ids; };
             const auto z1 = complete (*s3, runZ, "finished", noQ, noQ, sentOf (boxZ));
-            const auto ccZ2 = catalogueCheck (*s3, req1 ({ "cccc0002" }), runZ);
-            coverNeeds (*s3, boxZ, riZ, needOf (ccZ2));
-            const auto z2 = complete (*s3, runZ, "finished", noQ, noQ, sentOf (boxZ));
+            const auto zDone = catalogueCheck (*s3, req1 ({ "cccc0002" }), runZ);   // 27 Oct (B): a finished run is never checked again
+            const juce::String runZ2 = "run_" + juce::String::toHexString (0x00000000cccc0013LL).paddedLeft ('0', 16);
+            const auto ccZ2 = catalogueCheck (*s3, req1 ({ "cccc0001", "cccc0002" }), runZ2);   // a NEW run: two checked
+            ensureRun (*s3, RunInfo { runZ2, "2026-10-21T19:00:02Z", 0, colZ });
+            Outbox boxZ2 { work.getChildFile ("outbox_z2") }; coverNeeds (*s3, boxZ2, RunInfo { runZ2, "2026-10-21T19:00:02Z", 0, colZ }, needOf (ccZ2));
+            const auto z2 = complete (*s3, runZ2, "finished", noQ, noQ, sentOf (boxZ2));
             scenario ("13_failed_cheat_check");
             const auto ccW = catalogueCheck (*s4, req1 ({ "dddd0001", "dddd0002", "dddd0003" }), runW);
             const juce::StringArray colW { "AudioUnit|dddd0001|1.0", "AudioUnit|dddd0002|1.0", "AudioUnit|dddd0003|1.0" };
@@ -15235,7 +15293,12 @@ int main (int, char**)
                 const auto body = juce::String ("{\"schema\": \"ej_wizard_result/1\"}"); const auto gz = gzip (body);
                 s4->call ("PUT", "runs/" + runW + "/results/" + resultIdFor (runW, "outcome", "AudioUnit|dddd0001|1.0"), {}, &gz, juce::String::repeatedString ("0", 64));
             }
-            const auto w0 = complete (*s4, runW, "finished", noQ, noQ, {});   // v1.1 ruling 6: not finished outranks the failed check
+            // 27 Oct (B): a completed run takes nothing more (409 run_completed) - the early /complete has its OWN run, with its own tampered upload
+            const juce::String runW0 = "run_" + juce::String::toHexString (0x00000000dddd0014LL).paddedLeft ('0', 16);
+            catalogueCheck (*s4, req1 ({ "dddd0001", "dddd0002", "dddd0003" }), runW0); ensureRun (*s4, RunInfo { runW0, "2026-10-21T19:00:02Z", 0, colW });
+            {   const auto body = juce::String ("{\"schema\": \"ej_wizard_result/1\"}"); const auto gz = gzip (body);
+                s4->call ("PUT", "runs/" + runW0 + "/results/" + resultIdFor (runW0, "outcome", "AudioUnit|dddd0001|1.0"), {}, &gz, juce::String::repeatedString ("0", 64)); }
+            const auto w0 = complete (*s4, runW0, "finished", noQ, noQ, {});   // v1.1 ruling 6: not finished outranks the failed check
             Outbox boxW { work.getChildFile ("outbox_w") }; coverNeeds (*s4, boxW, RunInfo { runW, "2026-10-21T19:00:02Z", 0, colW }, needOf (ccW));   // finished: every need covered
             const auto w1 = complete (*s4, runW, "finished", noQ, noQ, sentOf (boxW));
             const auto st4 = mockState();
@@ -15243,7 +15306,8 @@ int main (int, char**)
                    && (int) z1.reply.json.getProperty ("plugins_checked", -1) == 1 && (int) z1.reply.json.getProperty ("results_accepted", -1) == 1 && z1.fresh == 0
                    && z2.done && z2.eligible && z2.code.startsWith ("EJ-FREE-") && (int) z2.reply.json.getProperty ("plugins_checked", -1) == 2 && z2.fresh == 0 && z2.received == 2 && z2.accepted == 2
                    && w1.done && ! w1.eligible && w1.reason == "failed_checks" && w1.message.contains ("didn't pass EchoJay's checks") && (int) w1.reply.json.getProperty ("plugins_checked", -1) == 3
-                   && (int) st4.getProperty ("checked_counts", {}).getProperty (juce::Identifier ("acct_mock_c|" + runZ), 0) == 2
+                   && (int) st4.getProperty ("checked_counts", {}).getProperty (juce::Identifier ("acct_mock_c|" + runZ), 0) == 1 && runCompleted (zDone.reply)
+                   && (int) st4.getProperty ("checked_counts", {}).getProperty (juce::Identifier ("acct_mock_c|" + runZ2), 0) == 2
                    && (int) st4.getProperty ("checked_counts", {}).getProperty (juce::Identifier ("acct_mock_c|run_00000000eeee0005"), 0) == 1,   // the decoy run's check stayed with its own run
                    "contract WZ-CONTRACT-14: the minimum counts plugins CHECKED in a finished run ('" + z1.message + "'; then a code with 0 new profiles, 2 outcomes), from the server's records; a failed cheat check gets none ('" + w1.message + "')");
             // 9. AN EXPIRED TOKEN refreshes once (rotated); a REUSED refresh token kills the family -> sign in again, results kept

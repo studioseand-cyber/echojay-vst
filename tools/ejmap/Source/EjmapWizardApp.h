@@ -271,9 +271,11 @@ inline juce::StringArray runOnlyList (const juce::StringArray& given, const juce
     return o;
 }
 inline constexpr const char* kUploadText = "Just the measurements - no audio, no plugin files, nothing personal.";
-struct UploadView { int waiting = 0; bool offline = false, signIn = false, stopped = false, noRun = false; juce::String words; int retryInS = -1; };
+struct UploadView { int waiting = 0; bool offline = false, signIn = false, stopped = false, noRun = false, runCompleted = false; juce::String words; int retryInS = -1; };
 inline juce::String uploadDetail (const UploadView& v)
 {
+    if (v.runCompleted)   // 27 Oct (B: 409 run_completed): EchoJay's words, and never a promise to send them - a new run is the way on
+        return (v.words.isNotEmpty() ? v.words.trim() : juce::String ("This run is finished. Start a new run in the EchoJay Wizard to check again.")) + " What was measured is kept on this Mac.";
     if (v.waiting <= 0 || v.signIn) return {};
     if (v.noRun) return "Nothing can be sent: the wizard can't find this run's details on this Mac. Your results are kept here - quit and open the wizard again, and tell EchoJay if this comes back.";
     if (v.stopped) return "Not sent: " + (v.words.isNotEmpty() ? v.words : juce::String ("EchoJay didn't accept the request.")) + " Your results are kept on this Mac and will be sent the next time you open the wizard.";
@@ -625,7 +627,7 @@ inline bool signOutAllowed (Screen s)
 inline bool runNeedsFreshStart (const juce::var& st, bool endFileExists)
 {
     if (st.getProperty ("run_id", "").toString().isEmpty()) return false;   // no run yet: nothing to start afresh
-    return endFileExists || st.hasProperty ("signed_out_at") || (bool) st.getProperty ("uploaded", false) || (bool) st.getProperty ("saved", false)
+    return endFileExists || st.hasProperty ("signed_out_at") || st.hasProperty ("server_completed") || (bool) st.getProperty ("uploaded", false) || (bool) st.getProperty ("saved", false)
         || (bool) st.getProperty ("measure_done", false);
 }
 inline const juce::StringArray& runStateNames()   // what belongs to one run (app.log stays: one log for the folder, it says where each run went)
