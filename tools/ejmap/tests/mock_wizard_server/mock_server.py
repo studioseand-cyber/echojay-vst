@@ -494,6 +494,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(*err("run_conflict", "", 409))
         if run.get("completed"):   # 27 Oct (B): nothing more is taken under a finished run
             return self._send(*err("run_completed", RUN_COMPLETED_WORDS, 409))
+        with LOCK:   # 28 Oct, rehearsals: finish_run_after_results N - the run is finished on the server once N results are in
+            n = int(STATE["config"].get("finish_run_after_results") or 0)
+            if n and len(run["results"]) >= n:
+                run["completed"] = True
+        if run.get("completed"):
+            return self._send(*err("run_completed", RUN_COMPLETED_WORDS, 409))
         try:   # stop decompressing at the limit: no zip bombs
             with gzip.GzipFile(fileobj=__import__("io").BytesIO(raw)) as g:
                 plain = g.read(MAX_UNCOMPRESSED + 1)

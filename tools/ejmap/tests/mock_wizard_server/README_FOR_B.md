@@ -41,7 +41,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | `POST /__mock/approve` `{"account_id": …}` | the user approving the sign-in in the browser |
 | `POST /__mock/deny` | the user denying it |
 | `POST /__mock/expire_access` | access tokens expiring |
-| `POST /__mock/config` | server config (`qualify_minimum`, `collection_threshold`, `collection_min_size`, `agree_tolerance`, `force_429_once`; 31 Oct: `catalogue_delays_s` (one delay per check call, in order) and `catalogue_delay_s` (every call after), for a slow answer) |
+| `POST /__mock/config` | server config (`qualify_minimum`, `collection_threshold`, `collection_min_size`, `agree_tolerance`, `force_429_once`; 31 Oct: `catalogue_delays_s` (one delay per check call, in order) and `catalogue_delay_s` (every call after), for a slow answer; 28 Oct: `finish_run_after_results` N, the run finished on the server once N results are in) |
 | `POST /__mock/complete_run` `{"run_id": …}` | 31 Oct: a run finished on the server mid-upload (rehearsals). From then on its checks and results answer 409 `run_completed` |
 | `POST /__mock/catalogue` | seeding what the catalogue already has |
 | `POST /__mock/verify` `{"plugin_id": …}` | our own verification certifying a plugin |

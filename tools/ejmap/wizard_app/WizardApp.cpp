@@ -695,8 +695,13 @@ private:
         {
             auto req = juce::JSON::parse (requestFile().loadFileAsString());
             if (const char* extra = std::getenv ("EJ_WIZARD_REHEARSAL_EXTRA_CATALOGUE"))   // 27 Oct, rehearsals only: a big catalogue (fake plugins the mock answers)
-                if (const auto* add = juce::JSON::parse (juce::File (extra).loadFileAsString()).getProperty ("plugins", {}).getArray())
-                    if (auto* pl = req.getProperty ("plugins", {}).getArray()) { pl->addArray (*add); logLine ("rehearsal: " + juce::String (add->size()) + " extra plugin(s) in the check, " + juce::String (pl->size()) + " in all"); }
+            {   // 28 Oct: every var held by name - an array read through a temporary var dangles (the 27 Oct rehearsal added 0)
+                const auto extraV = juce::JSON::parse (juce::File (extra).loadFileAsString()); const auto addV = extraV.getProperty ("plugins", {});
+                auto plV = req.getProperty ("plugins", {});
+                if (const auto* add = addV.getArray()) if (auto* pl = plV.getArray())
+                {   juce::Array<juce::var> all (*pl); all.addArray (*add); req.getDynamicObject()->setProperty ("plugins", all);
+                    logLine ("rehearsal: " + juce::String (add->size()) + " extra plugin(s) in the check, " + juce::String (all.size()) + " in all"); }
+            }
             auto answered = catalogueAnswered;
             wizcontract::CatalogueResult cr;
             {   std::lock_guard<std::mutex> l (netMutex);
