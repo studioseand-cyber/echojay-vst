@@ -134,6 +134,7 @@ STATE = {
     "accounts": {"acct_mock_a": {"display_name": "Tester A"}, "acct_mock_b": {"display_name": "Tester B"}, "acct_mock_c": {"display_name": "Tester C"}, "acct_mock_d": {"display_name": "Tester D"},
                  "acct_mock_e": {"display_name": "Tester E"}, "acct_mock_f": {"display_name": "Tester F"},
                  "acct_mock_g": {"display_name": "Tester G"}},
+    "catalogue_calls": [],   # 27 Oct: every check call - {run_id, n, delay_s} - so a test sees the chunks and the retries
     "checked": {},        # (account_id, run_id) -> set of plugin_ids checked under that run (the server's own record; contract v1 §2 / §5)
     "catalogue": {},      # plugin_id -> {status, level, category, reason, fingerprint}
     "runs": {},           # run_id -> {account_id, consent, results: {result_id: sha}, completed: bool}
@@ -414,6 +415,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(*err("run_id_required", "", 400))
         if len(plugins) > 2000:
             return self._send(*err("bad_request", "", 400))
+        # 27 Oct (STAGING 3, run 3: 1,378 plugins in one call, no answer in 30 s): a slow answer, for the client's timeout and back-off.
+        # catalogue_delays_s: one delay per call, used up in order; then catalogue_delay_s for every call (default 0)
+        with LOCK:
+            ds = STATE["config"].get("catalogue_delays_s") or []
+            delay = float(ds.pop(0)) if ds else float(STATE["config"].get("catalogue_delay_s", 0) or 0)
+            STATE["catalogue_calls"].append({"run_id": rid, "n": len(plugins), "delay_s": delay})
+        if delay > 0:
+            time.sleep(delay)
         out = []
         acct = self._account()[0]
         with LOCK:

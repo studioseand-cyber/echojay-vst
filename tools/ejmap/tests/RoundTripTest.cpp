@@ -14567,6 +14567,92 @@ int main (int, char**)
                && tr.contains ("if (certv1::partByPart (certv1::mapCategoryOf (r.category))) v1Parts[{ r.product, r.format }] = certv1::mergeParts (v1Parts[{ r.product, r.format }], r.parts);"),
                "cert WZ-31OCT-7: a certified de-esser / transient shaper says per part what is verified ('" + partsWhy (shown) + "')");
     }
+    // WZ-32OCT-1 A SLOW ANSWER IS NOT "OFFLINE", AND THE CHECK GOES IN PARTS (STAGING 3 run 3, 27 Oct: 1,378 plugins in one call, no answer in
+    // 30 s, "You're offline" while online). Against the live mock: a check that runs its whole timeout is timedOut ("EchoJay is taking a while
+    // to answer"), tried again by itself; a closed port is offline; the check goes in parts of 500 under one run id, an answered part is never
+    // sent again, and the answers exist only when every part is answered
+    {
+        using namespace ejmap::wizcontract;
+        const auto work = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_slow_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        work.createDirectory();
+        const auto script = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py");
+        const auto portFile = work.getChildFile ("port.txt");
+        juce::ChildProcess mock;
+        const bool started = mock.start (juce::StringArray { "/usr/bin/python3", script.getFullPathName(), "--port", "0", "--port-file", portFile.getFullPathName() }, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr);
+        for (int i = 0; i < 100 && ! portFile.existsAsFile(); ++i) juce::Thread::sleep (100);
+        const int port = portFile.loadFileAsString().trim().getIntValue();
+        bool ok1 = false; juce::String seen = "started " + juce::String ((int) started) + " port " + juce::String (port);
+        if (started && port > 0)
+        {
+            const Endpoints ep { "http://127.0.0.1:" + juce::String (port), "ejwiz-mock" };
+            const auto tx = urlTransport (5000);
+            auto hook = [&] (const juce::String& path, const juce::String& json)
+            { HttpRequest rq; rq.method = "POST"; rq.url = ep.base + path; rq.contentType = "application/json"; rq.body.append (json.toRawUTF8(), (size_t) json.getNumBytesAsUTF8()); return replyOf (tx (rq)); };
+            auto calls = [&] { HttpRequest rq; rq.url = ep.base + "/__mock/state"; juce::StringArray n; const auto stv = replyOf (tx (rq)).json.getProperty ("catalogue_calls", {}); if (const auto* a = stv.getArray()) for (const auto& c : *a) n.add (c.getProperty ("n", 0).toString() + "@" + c.getProperty ("run_id", "").toString().getLastCharacters (2)); return n; };
+            MemoryTokenStore store; Session s (ep, tx, store, {});
+            auto dev = s.startDevice(); juce::String w; hook ("/__mock/approve", "{\"account_id\": \"acct_mock_a\"}"); s.pollOnce (dev, w);
+            juce::Array<juce::var> plist;
+            for (int i = 0; i < 1200; ++i) { auto* o = new juce::DynamicObject(); o->setProperty ("plugin_id", "AudioUnit|" + juce::String::toHexString (0x5a000000 + i) + "|1.0"); o->setProperty ("name", "P" + juce::String (i)); o->setProperty ("version", "1.0"); o->setProperty ("format", "AudioUnit"); plist.add (juce::var (o)); }
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("plugins", plist); const juce::var req (ro);
+            const juce::String rid = "run_00000000000032a1";
+            // 1. the first part takes 3 s; the part has 1.5 s: no answer in time -> timedOut, "taking a while", tried again by itself
+            hook ("/__mock/config", "{\"catalogue_delays_s\": [3.0]}");
+            std::map<int, juce::var> answered; std::vector<std::pair<int, int>> prog;
+            const auto t1 = catalogueCheck (s, req, rid, answered, [&] (int a, int n) { prog.push_back ({ a, n }); }, 1500);
+            // 2. tried again: every part answered, the first now included; the retry sent part 1 again, then 2 and 3
+            const auto t2 = catalogueCheck (s, req, rid, answered, [&] (int a, int n) { prog.push_back ({ a, n }); }, 1500);
+            const auto c2 = calls();
+            // 3. the SECOND part is slow: the first stays answered, the retry sends only parts 2 and 3
+            hook ("/__mock/config", "{\"catalogue_delays_s\": [0, 3.0]}");
+            std::map<int, juce::var> answered3; const juce::String rid3 = "run_00000000000032a3";
+            const auto t3 = catalogueCheck (s, req, rid3, answered3, {}, 1500); const auto t3b = catalogueCheck (s, req, rid3, answered3, {}, 1500);
+            const auto c3 = calls();
+            // 4. a closed port fails at once: offline, not slow
+            const Endpoints dead { "http://127.0.0.1:1", "ejwiz-mock" }; MemoryTokenStore st2; st2.save ({ "a", "r", "acct", "A", juce::Time::currentTimeMillis() + 3600000 });
+            Session sd (dead, urlTransport (5000), st2, {});
+            const auto off = sd.call ("POST", "catalogue/check", juce::JSON::parse ("{\"plugins\": [], \"run_id\": \"run_00000000000032a4\"}"));
+            seen = c2.joinIntoString (",") + " | " + c3.joinIntoString (",") + " | t1 ok " + juce::String ((int) t1.ok) + " net " + juce::String ((int) t1.reply.network) + " to " + juce::String ((int) t1.reply.timedOut)
+                   + " st " + juce::String (t1.reply.status) + " " + t1.reply.error + " ch " + juce::String (t1.chunks) + " | t2 ok " + juce::String ((int) t2.ok) + " st " + juce::String (t2.reply.status) + " " + t2.reply.error
+                   + " | signed " + juce::String ((int) s.signedIn()) + " | off " + juce::String ((int) off.network) + juce::String ((int) off.timedOut);
+            ok1 = ! t1.ok && t1.reply.network && t1.reply.timedOut && t1.chunks == 3 && t1.answeredChunks == 0 && checkWords (t1.reply) == kTakingAWhile && plainWords (t1.reply) == kTakingAWhile && checkRetryable (t1.reply)
+                  && t2.ok && t2.chunks == 3 && t2.answeredChunks == 3 && (int) t2.answers.getProperty ("by_plugin_id", {}).getDynamicObject()->getProperties().size() == 1200
+                  && c2 == juce::StringArray { "500@a1", "500@a1", "500@a1", "200@a1" } && prog.size() == 3 && prog.back() == std::make_pair (3, 3)
+                  && ! t3.ok && t3.answeredChunks == 1 && t3b.ok && c3.size() == 4 + 4 && c3[4] == "500@a3" && c3[5] == "500@a3" && c3[6] == "500@a3" && c3[7] == "200@a3"
+                  && off.network && ! off.timedOut && checkWords (off) == "You're offline." && kCatalogueChunk == 500 && kCatalogueTimeoutMs == 120000;
+        }
+        mock.kill(); work.deleteRecursively();
+        const auto con = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardContract.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (ok1 && con.contains ("if (k == Sent::offline) { st.offline = true; st.timedOut = r.timedOut; if (r.timedOut) st.waitWords = plainWords (r); return st; }")
+               && app.contains ("offlineNow = st.offline && ! st.timedOut;") && app.contains ("if (! cr.ok && wizcontract::checkRetryable (cr.reply))")
+               && app.contains ("if (left <= 0) { catalogueRetryAt = 0.0; checkCatalogue(); }")
+               && ejmap::wizapp::catalogueRetryText (kTakingAWhile, 20) == "EchoJay is taking a while to answer. Trying again in 20 s."
+               && ejmap::wizapp::catalogueWaitLine (1, 3) == "Asking EchoJay which of your plugins it already knows - 1 of 3 parts answered",
+               "contract WZ-32OCT-1: a slow answer is \"taking a while\" and tried again; the check goes in parts of 500, an answered part never re-sent (" + seen + ")");
+    }
+    // WZ-32OCT-2 A FINISHED RUN'S FOLDER NEVER STARTS A SECOND RUN, AND THE ENGINE'S LAST LINE GOES WHILE THE SERVER IS ASKED (STAGING 3
+    // run 3, 27 Oct: a Sign out on run 1's end screen, then Start, sent run 1's finished run id; the screen kept "EchoJay - looking at its
+    // VST3" and "Still working on a slow plugin" for 7 minutes after the engine had ended)
+    {
+        using namespace ejmap::wizapp;
+        auto st = [] (const char* json) { return juce::JSON::parse (json); };
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        const int fresh = app.indexOf ("if (! freshRunIfNeeded()) return;"), consented = app.indexOf ("setState (\"consented\", true); logLine (\"consent: I agree");
+        check (runNeedsFreshStart (st (R"J({"run_id": "run_59cf3b3d4031283b", "uploaded": true})J"), false) && runNeedsFreshStart (st (R"J({"run_id": "run_1", "saved": true})J"), false)
+               && runNeedsFreshStart (st (R"J({"run_id": "run_1", "measure_done": true})J"), false) && runNeedsFreshStart (st (R"J({"run_id": "run_1", "signed_out_at": "x"})J"), false)
+               && runNeedsFreshStart (st (R"J({"run_id": "run_1"})J"), true) && ! runNeedsFreshStart (st (R"J({"run_id": "run_1", "measure_started": true})J"), false)
+               && ! runNeedsFreshStart (st (R"J({"uploaded": true})J"), true)
+               && runStateNames().contains ("app_state.json") && runStateNames().contains ("engine") && runStateNames().contains ("outbox") && runStateNames().contains ("store")
+               && runStateNames().contains ("reward.json") && ! runStateNames().contains ("app.log")
+               && fresh > 0 && consented > fresh && consented - fresh < 300
+               && app.contains ("if (const auto f = cfg.work.getChildFile (n); f.exists() && f.moveFileTo (dest.getChildFile (n))) moved.add (n);")
+               && app.contains ("if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0)")
+               && app.contains ("{ const juce::ScopedLock l (runLock); cachedRunId = {}; cachedConsentAt = {}; cachedStartedAt = {}; }")
+               && app.contains ("{ st.getDynamicObject()->setProperty (\"signed_out_at\", juce::Time::getCurrentTime().toISO8601 (true));")
+               && app.contains ("if (waitingOnServer) return;   // 27 Oct") && app.contains ("const auto lw = waitingOnServer ? juce::String() : wizapp::liveWords")
+               && app.contains ("waitingOnServer = true; title = \"Checking your plugins\"; stepText = wizapp::kCheckingStep; nowText = wizapp::catalogueWaitLine (answered, chunks);"),
+               "wizard WZ-32OCT-2: a finished (or signed-out) run's folder starts a fresh run at Start, its files kept; the engine's last line goes while EchoJay is asked");
+    }
     // WZ-31OCT-2 NO PLUG-IN NOTICE ONCE THE RUN IS OVER (Kathy, staging run 1, 26 Oct: the free-month screen still asked to plug in). On
     // battery the notice shows before and during a run; on sending and the end screens it does not; the pause and the resume are unchanged
     {
@@ -15513,7 +15599,7 @@ int main (int, char**)
                && app.contains ("text = wizapp::knownWords (el.known, n) + \". \" + text; } }")   // the measuring screen keeps the check's words (the 21 Oct rehearsal lost them)
                && app.contains ("cachedCollection = wizcontract::collectionFromRequest (juce::JSON::parse (requestFile().loadFileAsString())); }")   // 21 Oct: once per plugin collection
                && app.contains ("return { cachedRunId, cachedConsentAt, cachedQueue, cachedCollection, cachedStartedAt };")
-               && app.contains ("wizcontract::catalogueCheck (*session, req, rid);") && app.contains ("runId(); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();   // 21 Oct (Sean): the run id exists before the first check") && app.contains ("barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);")
+               && app.contains ("cr = wizcontract::catalogueCheck (*session, req, rid, answered, [this] (int a, int n) { onUi ([this, a, n] { showCatalogueWait (a, n); }); }); }")   /* 27 Oct: in parts, kept across tries */ && app.contains ("runId(); cacheRun(); if (! uploader.isThreadRunning()) uploader.startThread();   // 21 Oct (Sean): the run id exists before the first check") && app.contains ("barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);")
                && cm.contains ("EJ_WIZARD_SERVER_URL=\"${EJ_WIZARD_BETA_SERVER_URL}\" EJ_WIZARD_OAUTH_CLIENT_ID=\"${EJ_WIZARD_BETA_CLIENT_ID}\"")
                && cm.contains ("target_link_libraries(ejmap-wizard-beta PRIVATE \"-framework IOKit\" \"-framework Security\")")
                && asm_.indexOf ("check_bundle_secrets.sh\" \"$A\" || {") > 0 && asm_.indexOf ("check_bundle_secrets.sh\" \"$A\" || {") < asm_.indexOf ("codesign -f -s \"$ID\"")

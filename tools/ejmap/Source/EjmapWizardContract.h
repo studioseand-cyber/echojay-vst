@@ -22,7 +22,12 @@ namespace ejmap::wizcontract
 inline constexpr const char* kResultSchema = "ej_wizard_result/1";
 inline constexpr const char* kConsentVersion = "consent-2026-10-21";
 inline constexpr juce::int64 kMaxCompressedBytes = 4000000, kMaxUncompressedBytes = 32 * 1024 * 1024;
-inline constexpr int kCatalogueChunk = 2000;
+// 27 Oct (STAGING 3, run 3: 1,378 plugins in one call got no answer in 30 s): the check goes in chunks of 500, each with 120 s to answer
+// (the contract allows 2,000 per call; smaller chunks answer sooner and a retry re-sends only what is unanswered)
+inline constexpr int kCatalogueChunk = 500;
+inline constexpr int kCatalogueTimeoutMs = 120000;
+// THE WORDS FOR NO ANSWER (27 Oct): a request that ran its whole timeout without an answer is the server being slow, never "offline"
+inline constexpr const char* kTakingAWhile = "EchoJay is taking a while to answer.";
 
 // THE CONSENT (contract §6), word for word
 inline juce::String consentText()
@@ -80,8 +85,8 @@ inline juce::String redact (juce::String s)
 }
 
 // --- the transport ------------------------------------------------------------------------------------------------------------------
-struct HttpRequest { juce::String method = "GET", url, contentType; juce::MemoryBlock body; juce::StringPairArray headers; };
-struct HttpResponse { int status = 0; juce::String body; bool network = false; juce::StringPairArray headers; };
+struct HttpRequest { juce::String method = "GET", url, contentType; juce::MemoryBlock body; juce::StringPairArray headers; int timeoutMs = 0; };   // timeoutMs: 0 = the transport's own
+struct HttpResponse { int status = 0; juce::String body; bool network = false, timedOut = false; juce::StringPairArray headers; };   // timedOut: no answer within the whole timeout
 using Transport = std::function<HttpResponse (const HttpRequest&)>;
 inline Transport urlTransport (int timeoutMs = 30000)
 {
@@ -93,11 +98,13 @@ inline Transport urlTransport (int timeoutMs = 30000)
         juce::String hs; for (const auto& k : rq.headers.getAllKeys()) hs << k << ": " << rq.headers[k] << "\r\n";
         if (rq.contentType.isNotEmpty()) hs << "Content-Type: " << rq.contentType << "\r\n";
         int status = 0; juce::StringPairArray rh;
+        const int limitMs = rq.timeoutMs > 0 ? rq.timeoutMs : timeoutMs; const double t0 = juce::Time::getMillisecondCounterHiRes();
         auto opts = juce::URL::InputStreamOptions (hasBody ? juce::URL::ParameterHandling::inPostData : juce::URL::ParameterHandling::inAddress)
-                        .withExtraHeaders (hs).withConnectionTimeoutMs (timeoutMs).withStatusCode (&status).withResponseHeaders (&rh)
+                        .withExtraHeaders (hs).withConnectionTimeoutMs (limitMs).withStatusCode (&status).withResponseHeaders (&rh)
                         .withHttpRequestCmd (rq.method).withNumRedirectsToFollow (0);
         auto in = url.createInputStream (opts);
-        if (in == nullptr || status == 0) { r.network = true; return r; }
+        // 27 Oct: no answer at all. One that used the whole timeout is a slow server (timedOut); one that failed at once is the network
+        if (in == nullptr || status == 0) { r.network = true; r.timedOut = juce::Time::getMillisecondCounterHiRes() - t0 >= 0.9 * limitMs; return r; }
         r.status = status; r.body = in->readEntireStreamAsString(); r.headers = rh; return r;
     };
 }
@@ -135,12 +142,12 @@ inline std::optional<Tokens> tokensFromSecret (const juce::String& s)
 // --- a reply ------------------------------------------------------------------------------------------------------------------------
 struct Reply
 {
-    int status = 0; bool network = false; juce::var json; juce::String error, message; int retryAfterS = 0;
+    int status = 0; bool network = false, timedOut = false; juce::var json; juce::String error, message; int retryAfterS = 0;
     bool ok() const { return status >= 200 && status < 300; }
 };
 inline Reply replyOf (const HttpResponse& h)
 {
-    Reply r; r.status = h.status; r.network = h.network; r.json = juce::JSON::parse (h.body);
+    Reply r; r.status = h.status; r.network = h.network; r.timedOut = h.timedOut; r.json = juce::JSON::parse (h.body);
     if (r.json.isObject()) { r.error = r.json.getProperty ("error", "").toString(); r.message = r.json.getProperty ("message", "").toString(); r.retryAfterS = (int) r.json.getProperty ("retry_after_s", 0); }
     if (r.retryAfterS <= 0 && h.headers.containsKey ("Retry-After")) r.retryAfterS = h.headers["Retry-After"].getIntValue();
     return r;
@@ -149,6 +156,7 @@ inline Reply replyOf (const HttpResponse& h)
 inline juce::String plainWords (const Reply& r)
 {
     if (r.message.isNotEmpty()) return r.message;   // the server's words, as written
+    if (r.network && r.timedOut) return kTakingAWhile;   // 27 Oct: the server is slow, not the network
     if (r.network) return "You're offline - your results are kept on this Mac and sent when you're back online.";
     // v1.1 §7: B's words for each code, when the server sent none
     static const std::map<juce::String, juce::String> k {
@@ -233,12 +241,12 @@ public:
         store.clear();
     }
     // an authenticated JSON call; gzipBody: the body is sent gzipped with its SHA-256 (results)
-    Reply call (const juce::String& method, const juce::String& path, const juce::var& body = {}, const juce::MemoryBlock* rawGzip = nullptr, const juce::String& sha = {})
+    Reply call (const juce::String& method, const juce::String& path, const juce::var& body = {}, const juce::MemoryBlock* rawGzip = nullptr, const juce::String& sha = {}, int timeoutMs = 0)
     {
         for (int attempt = 0; attempt < 2; ++attempt)
         {
             const auto t = store.load(); if (! t) { needsSignIn = true; Reply r; r.status = 401; r.error = "not_signed_in"; return r; }
-            HttpRequest rq; rq.method = method; rq.url = apiUrl (ep, path); rq.headers.set ("Authorization", "Bearer " + t->access);
+            HttpRequest rq; rq.method = method; rq.url = apiUrl (ep, path); rq.timeoutMs = timeoutMs; rq.headers.set ("Authorization", "Bearer " + t->access);
             rq.headers.set ("X-EJ-Client", clientHeader (version));
             if (rawGzip != nullptr) { rq.body = *rawGzip; rq.contentType = "application/json"; rq.headers.set ("Content-Encoding", "gzip"); rq.headers.set ("X-EJ-Content-SHA256", sha); }
             else if (! body.isVoid()) { const auto s = juce::JSON::toString (body, true); rq.body.append (s.toRawUTF8(), (size_t) s.getNumBytesAsUTF8()); rq.contentType = "application/json"; }
@@ -254,7 +262,7 @@ public:
 private:
     Endpoints ep; Transport tx; TokenStore& store; std::function<void (const juce::String&)> logFn; juce::String version;
     void log (const juce::String& s) { if (logFn) logFn (redact (s)); }
-    static juce::String statusWords (const Reply& r) { return r.network ? juce::String ("offline") : juce::String (r.status) + (r.error.isNotEmpty() ? " " + r.error : juce::String()); }
+    static juce::String statusWords (const Reply& r) { return r.network && r.timedOut ? juce::String ("no answer in time") : r.network ? juce::String ("offline") : juce::String (r.status) + (r.error.isNotEmpty() ? " " + r.error : juce::String()); }
     HttpResponse rawSend (const HttpRequest& rq) { return tx (rq); }
     Reply send (const HttpRequest& rq) { return replyOf (rawSend (rq)); }
     Reply tokenCall (const juce::String& form)
@@ -274,24 +282,36 @@ private:
 
 // --- THE CATALOGUE CHECK (contract §2) -----------------------------------------------------------------------------------------------
 // the answers the engine reads (--catalogue-answers): { "by_plugin_id": { pid: {status, level, category, reason} }, "known": N, "need": M }
-struct CatalogueResult { bool ok = false; Reply reply; juce::var answers; int have = 0, need = 0, held = 0; };
+struct CatalogueResult { bool ok = false; Reply reply; juce::var answers; int have = 0, need = 0, held = 0, chunks = 0, answeredChunks = 0; };
 // runId: EVERY check carries the run it belongs to (Sean, 21 Oct; contract v1 §2) - the wizard makes the run id before the check; the
 // server ties checks to the run by run_id + account. A check without one is refused here, never sent
-inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, const juce::String& runId)
+// answered (27 Oct): chunk index -> the server's answer, kept across tries - a retry sends only the chunks still unanswered, all under the
+// same run id; the answers exist only when EVERY chunk is answered. progress (answered, chunks) after each answer
+inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, const juce::String& runId, std::map<int, juce::var>& answered,
+                                       const std::function<void (int, int)>& progress = {}, int timeoutMs = kCatalogueTimeoutMs)
 {
     if (runId.isEmpty()) { CatalogueResult none; none.reply.error = "no_run_id"; none.reply.message = "The wizard has no run yet - this is a bug, please report it."; return none; }
     CatalogueResult cr; auto* by = new juce::DynamicObject(); juce::var byV (by);
     const auto* all = request.getProperty ("plugins", {}).getArray(); if (all == nullptr) { cr.ok = true; }
-    juce::String version;
-    for (int from = 0; all != nullptr && from < all->size(); from += kCatalogueChunk)
+    cr.chunks = all == nullptr ? 0 : (all->size() + kCatalogueChunk - 1) / kCatalogueChunk;
+    for (int c = 0; c < cr.chunks; ++c)
     {
+        if (answered.count (c)) continue;
+        const int from = c * kCatalogueChunk;
         juce::Array<juce::var> chunk; for (int i = from; i < juce::jmin (all->size(), from + kCatalogueChunk); ++i) chunk.add ((*all)[i]);
         auto* body = new juce::DynamicObject(); body->setProperty ("plugins", chunk);
         body->setProperty ("run_id", runId);
-        cr.reply = s.call ("POST", "catalogue/check", juce::var (body));
-        if (! cr.reply.ok()) return cr;
-        version = cr.reply.json.getProperty ("categories_version", "").toString();
-        if (const auto* res = cr.reply.json.getProperty ("results", {}).getArray())
+        cr.reply = s.call ("POST", "catalogue/check", juce::var (body), nullptr, {}, timeoutMs);
+        if (! cr.reply.ok()) { cr.answeredChunks = (int) answered.size(); return cr; }
+        answered[c] = cr.reply.json;
+        if (progress) progress ((int) answered.size(), cr.chunks);
+    }
+    cr.answeredChunks = (int) answered.size();
+    juce::String version;
+    for (const auto& [c, json] : answered)
+    {
+        version = json.getProperty ("categories_version", "").toString();
+        if (const auto* res = json.getProperty ("results", {}).getArray())
             for (const auto& e : *res) by->setProperty (juce::Identifier (e.getProperty ("plugin_id", "?").toString()), e);
     }
     for (const auto& [k, v] : by->getProperties()) { const auto st = v.getProperty ("status", "").toString(); if (st == "have") ++cr.have; else if (st == "held") ++cr.held; else ++cr.need; }
@@ -300,6 +320,8 @@ inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, con
     a->setProperty ("have", cr.have); a->setProperty ("held", cr.held); a->setProperty ("need", cr.need);
     cr.answers = juce::var (a); cr.ok = true; return cr;
 }
+inline CatalogueResult catalogueCheck (Session& s, const juce::var& request, const juce::String& runId)
+{ std::map<int, juce::var> answered; return catalogueCheck (s, request, runId, answered); }
 
 // --- RESULTS (contract §4) ------------------------------------------------------------------------------------------------------------
 inline juce::String resultIdFor (const juce::String& runId, const juce::String& kind, const juce::String& pluginId)
@@ -417,10 +439,13 @@ inline Sent classify (const Reply& r)
     if (retryable (r)) return Sent::retryLater;   // rate_limited, server_error, any other 5xx
     return Sent::stop;                            // a code the wizard does not know: never retried this session
 }
+// THE CATALOGUE CHECK'S FAILURE (27 Oct): its words (slow, offline, or the server's own) and whether it is tried again by itself
+inline juce::String checkWords (const Reply& r) { if (r.network) return r.timedOut ? juce::String (kTakingAWhile) : juce::String ("You're offline."); return plainWords (r); }
+inline bool checkRetryable (const Reply& r) { return retryable (r) || (r.status == 404 && r.error.isEmpty()); }
 // the back-off between tries after N failures in a row: 5 s, 10, 20 ... up to 10 min
 inline int backoffSeconds (int failures) { if (failures <= 0) return 0; return (int) juce::jmin<juce::int64> (600, (juce::int64) 5 << juce::jmin (failures - 1, 10)); }
 
-struct DrainStats { int sent = 0, held = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, signIn = false, stopped = false; int retryAfterS = 0;
+struct DrainStats { int sent = 0, held = 0, duplicates = 0, rejected = 0, conflicts = 0; bool offline = false, timedOut = false, signIn = false, stopped = false; int retryAfterS = 0;
                    juce::StringArray rejectedWords, heldWords; juce::String stopCode, stopWords, waitWords; };   // waitWords (26 Oct): why it waits, for the screen
 // one pass over the outbox, in order; stops at the first thing that needs time (offline, rate limit, sign-in) - every file stays put
 inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, const std::function<bool()>& stopNow = {})
@@ -451,7 +476,7 @@ inline DrainStats drain (Session& s, const Outbox& box, const RunInfo& run, cons
             {   box.rejected().getChildFile (f.getFileName() + ".reason.json").replaceWithText (juce::JSON::toString (r.json.isObject() ? r.json : juce::var()));
                 f.moveFileTo (box.rejected().getChildFile (f.getFileName())); ++st.rejected; st.rejectedWords.add (plainWords (r)); break; }
             if (k == Sent::signIn) { st.signIn = true; return st; }
-            if (k == Sent::offline) { st.offline = true; return st; }
+            if (k == Sent::offline) { st.offline = true; st.timedOut = r.timedOut; if (r.timedOut) st.waitWords = plainWords (r); return st; }   // 27 Oct: slow is said as slow
             st.waitWords = r.message.isNotEmpty() ? r.message : plainWords (r);   // 26 Oct: the server's own words, for the screen
             st.retryAfterS = juce::jmax (1, r.retryAfterS); return st;   // rate limited / server trouble: try again later, in order
         }

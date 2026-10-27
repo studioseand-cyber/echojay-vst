@@ -619,6 +619,27 @@ inline BatteryStep batteryStep (const Power& p, bool running, bool pausedForBatt
 // browser's approval would land after it)
 inline bool signOutAllowed (Screen s)
 { return s == Screen::welcome || s == Screen::consent || s == Screen::reward || s == Screen::noCode || s == Screen::betaSaved || s == Screen::alreadyDone; }
+// A FINISHED RUN NEVER RUNS AGAIN (Kathy, 27 Oct; STAGING 3 run 3: a Sign out on run 1's end screen, then a new sign-in and Start, began a
+// second run under run 1's finished run id). At Start: a folder whose run is finished - measured, saved, sent, ended, or signed out of since
+// it began - gets a FRESH run id and fresh run state; the old run's files move to previous_runs/<its run id>/, kept for the record
+inline bool runNeedsFreshStart (const juce::var& st, bool endFileExists)
+{
+    if (st.getProperty ("run_id", "").toString().isEmpty()) return false;   // no run yet: nothing to start afresh
+    return endFileExists || st.hasProperty ("signed_out_at") || (bool) st.getProperty ("uploaded", false) || (bool) st.getProperty ("saved", false)
+        || (bool) st.getProperty ("measure_done", false);
+}
+inline const juce::StringArray& runStateNames()   // what belongs to one run (app.log stays: one log for the folder, it says where each run went)
+{ static const juce::StringArray k { "app_state.json", "reward.json", "receipt.json", "eligibility.json", "catalogue_request.json", "catalogue_answers.json",
+                                     "engine_output.txt", "engine", "outbox", "store" }; return k; }
+inline constexpr const char* kPreviousRuns = "previous_runs";
+// THE CATALOGUE CHECK'S WORDS (27 Oct): while the server is asked, the step says so (the engine's last plugin line is gone); a check
+// with no answer says "EchoJay is taking a while to answer" and when it tries again - "offline" only when the network failed at once
+inline constexpr const char* kCheckingStep = "Step 2 of 3 - Checking your plugins with EchoJay";
+inline juce::String catalogueWaitLine (int answered, int chunks)
+{ return chunks <= 1 ? juce::String ("Asking EchoJay which of your plugins it already knows")
+                     : "Asking EchoJay which of your plugins it already knows - " + juce::String (answered) + " of " + juce::String (chunks) + " parts answered"; }
+inline juce::String catalogueRetryText (const juce::String& words, int inS)
+{ return words.trim() + (inS > 0 ? " Trying again in " + juce::String (inS) + " s." : juce::String (" Trying again now.")); }
 inline constexpr const char* kSignedOutText = "Signed out of EchoJay on this Mac. The next run asks you to sign in.";
 inline constexpr const char* kPlugInFirst = "Plug in first - the Mac will sleep at low battery";
 inline bool carryOnBlocked (const Power& p) { return p.known && p.onBattery && p.percent >= 0 && p.percent < kBatteryPausePercent; }

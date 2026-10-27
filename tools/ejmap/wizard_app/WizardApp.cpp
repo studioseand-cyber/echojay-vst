@@ -377,13 +377,43 @@ public:
     {
         if (! e.mods.isAltDown() || ! titleArea().contains (e.getPosition()) || ! kNetworked || session == nullptr) return;
         if (! wizapp::signOutAllowed (screen)) { logLine ("sign out (Option-click): not on " + wizapp::screenName (screen) + " - a run is going, so nothing changed"); return; }
-        const auto at = screen; logLine ("sign out (Option-click on the title, testing only) on " + wizapp::screenName (at));
+        hiddenSignOut ("Option-click on the title, testing only");
+    }
+    void hiddenSignOut (const juce::String& how)
+    {
+        const auto at = screen; logLine ("sign out (" + how + ") on " + wizapp::screenName (at));
         onNet ([this, at]
         {
             { std::lock_guard<std::mutex> l (netMutex); session->signOut(); }
             onUi ([this, at] { logLine ("signed out: the saved sign-in is deleted - the next run signs in again");
+                               if (auto st = appState(); st.getProperty ("run_id", "").toString().isNotEmpty())   // 27 Oct: the next Start makes a fresh run
+                               { st.getDynamicObject()->setProperty ("signed_out_at", juce::Time::getCurrentTime().toISO8601 (true)); cfg.work.getChildFile ("app_state.json").replaceWithText (juce::JSON::toString (st)); }
                                if (at == Screen::welcome || at == Screen::consent) show (Screen::welcome); else { text = wizapp::kSignedOutText; repaint(); } });
         });
+    }
+    bool rehearsalSignedOut = false;
+    // A FINISHED RUN NEVER RUNS AGAIN (Kathy, 27 Oct): at Start, a folder whose run is finished (or signed out of) moves that run's files to
+    // previous_runs/<run id>/ and starts afresh - a new run id at the consent, nothing carried over. Results of the last run still waiting
+    // to be sent are never moved away: the Start is refused, said, and they are sent when the wizard is opened signed in
+    bool freshRunIfNeeded()
+    {
+        const auto st = appState();
+        const bool endFile = cfg.work.getChildFile ("reward.json").existsAsFile() || cfg.work.getChildFile ("receipt.json").existsAsFile();
+        if (! wizapp::runNeedsFreshStart (st, endFile)) return true;
+        const auto old = st.getProperty ("run_id", "").toString();
+        if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0)
+        {   logLine ("start refused: the last run (" + old + ") still has " + juce::String (waiting) + " result(s) waiting to be sent");
+            title = "This folder's last run isn't sent yet"; text = juce::String (waiting) + " result(s) from it are still waiting. Open the wizard signed in to send them, or start the new run in a new folder.";
+            agree.setVisible (false); primary.setVisible (false); repaint(); return false; }
+        auto dest = cfg.work.getChildFile (wizapp::kPreviousRuns).getChildFile (old);
+        if (dest.exists()) dest = dest.getNonexistentSibling (false);
+        dest.createDirectory(); juce::StringArray moved;
+        for (const auto& n : wizapp::runStateNames()) if (const auto f = cfg.work.getChildFile (n); f.exists() && f.moveFileTo (dest.getChildFile (n))) moved.add (n);
+        logLine ("a fresh run: the finished run " + old + " (" + (st.hasProperty ("signed_out_at") ? juce::String ("signed out of") : juce::String ("finished"))
+                 + ") is kept in " + juce::String (wizapp::kPreviousRuns) + "/" + dest.getFileName() + " (" + moved.joinIntoString (", ") + ")");
+        { const juce::ScopedLock l (runLock); cachedRunId = {}; cachedConsentAt = {}; cachedStartedAt = {}; }
+        catalogueAnswered.clear(); catalogueFailures = 0; catalogueRetryAt = 0.0; eligibility = juce::var(); completing = false; stoppedNow = false; noRunNow = false; failures = 0; nextTryMs = 0.0; resetShownProgress();
+        return true;
     }
     void paint (juce::Graphics& g) override
     {
@@ -483,8 +513,8 @@ public:
           g.setColour (juce::Colour (0xff4a5163)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (nowText, juce::Rectangle<int> (70, 310, getWidth() - 140, 17), juce::Justification::centred, 1, 0.7f);
           g.setColour (ink); g.setFont (juce::FontOptions (13.5f, juce::Font::bold)); g.drawText (doneLine, juce::Rectangle<int> (70, 330, getWidth() - 140, 18), juce::Justification::centred);
           g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.5f)); g.drawFittedText (wizapp::scanWarning(), juce::Rectangle<int> (70, 352, getWidth() - 140, 40), juce::Justification::centred, 2);
-          // 18 Oct (LOOKING FOR PLUGINS): the same 2 min "still working" / 15 min "may be stuck" lines as measuring
-          const auto lw = wizapp::liveWords (wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs));
+          // 18 Oct (LOOKING FOR PLUGINS): the same 2 min "still working" / 15 min "may be stuck" lines as measuring - never while the server is asked (27 Oct)
+          const auto lw = waitingOnServer ? juce::String() : wizapp::liveWords (wizapp::liveState (juce::Time::currentTimeMillis(), heartbeatMs));
           if (lw.isNotEmpty()) { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (13.0f)); g.drawText (lw, juce::Rectangle<int> (40, 396, getWidth() - 80, 18), juce::Justification::centred); } }
         if (screen == Screen::paused && anyway.isVisible() && dawPaused.isNotEmpty())   // 17 Oct: Carry on anyway's one-line warning
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (12.0f)); g.drawFittedText (wizapp::carryOnAnywayWarning (dawPaused), juce::Rectangle<int> (30, getHeight() - 182, getWidth() - 60, 20), juce::Justification::centred, 1); }
@@ -567,7 +597,7 @@ private:
         noRunNow = false;
         wizcontract::DrainStats st;
         { std::lock_guard<std::mutex> l (netMutex); st = wizcontract::drain (*session, box, run, [this] { return closing.load(); }); }
-        offlineNow = st.offline; signInNow = st.signIn || session->needsSignIn; stoppedNow = st.stopped;
+        offlineNow = st.offline && ! st.timedOut; signInNow = st.signIn || session->needsSignIn; stoppedNow = st.stopped;   // 27 Oct: no answer in time is "taking a while", never "offline"
         { const juce::ScopedLock l (wordsLock); waitWordsNow = st.stopped ? st.stopWords : st.waitWords; }   // 26 Oct: why it waits, for the screen
         if (st.stopped) { nextTryMs = now + 1.0e12; logLine ("upload stopped (" + st.stopCode + "): " + st.stopWords + " - nothing more is sent until the wizard is opened again"); }   // v1.1: never retried this session
         else if (st.offline || st.retryAfterS > 0) { ++failures; nextTryMs = now + 1000.0 * juce::jmax (st.retryAfterS, wizcontract::backoffSeconds (failures)); }
@@ -628,22 +658,49 @@ private:
         });
     }
     // THE CATALOGUE CHECK (contract v1 §2): the engine lists the plugins (nothing measured), the server answers, the engine scans with the answers
+    // 27 Oct (STAGING 3 run 3): chunks of 500 under the run's one id, each answered chunk kept across tries; the run goes on only when
+    // every chunk is answered. No answer (slow server, offline, 5xx, rate limited) -> tried again by itself with back-off, the words and the
+    // countdown on screen; while it waits the engine's last plugin line is gone (waitingOnServer)
+    std::map<int, juce::var> catalogueAnswered; int catalogueFailures = 0, catalogueShownLeft = -1; double catalogueRetryAt = 0.0; bool waitingOnServer = false; juce::String catalogueWords;
+    void showCatalogueWait (int answered, int chunks)
+    {
+        waitingOnServer = true; title = "Checking your plugins"; stepText = wizapp::kCheckingStep; nowText = wizapp::catalogueWaitLine (answered, chunks);
+        barLeft = "Checking with EchoJay"; barRight = {}; doneLine = {}; heartbeatMs = 0; repaint();
+    }
     void checkCatalogue()
     {
-        barLeft = "Checking with EchoJay"; repaint();
+        showCatalogueWait ((int) catalogueAnswered.size(), 0); catalogueRetryAt = 0.0; catalogueShownLeft = -1;
         const auto rid = runId();   // 21 Oct (Sean): every check carries the run id (made at consent, kept for the run)
         onNet ([this, rid]
         {
-            const auto req = juce::JSON::parse (requestFile().loadFileAsString());
-            wizcontract::CatalogueResult cr; { std::lock_guard<std::mutex> l (netMutex); cr = wizcontract::catalogueCheck (*session, req, rid); }
-            onUi ([this, cr]
+            auto req = juce::JSON::parse (requestFile().loadFileAsString());
+            if (const char* extra = std::getenv ("EJ_WIZARD_REHEARSAL_EXTRA_CATALOGUE"))   // 27 Oct, rehearsals only: a big catalogue (fake plugins the mock answers)
+                if (const auto* add = juce::JSON::parse (juce::File (extra).loadFileAsString()).getProperty ("plugins", {}).getArray())
+                    if (auto* pl = req.getProperty ("plugins", {}).getArray()) { pl->addArray (*add); logLine ("rehearsal: " + juce::String (add->size()) + " extra plugin(s) in the check, " + juce::String (pl->size()) + " in all"); }
+            auto answered = catalogueAnswered;
+            wizcontract::CatalogueResult cr;
+            {   std::lock_guard<std::mutex> l (netMutex);
+                cr = wizcontract::catalogueCheck (*session, req, rid, answered, [this] (int a, int n) { onUi ([this, a, n] { showCatalogueWait (a, n); }); }); }
+            onUi ([this, cr, answered]
             {
+                catalogueAnswered = answered;
+                if (! cr.ok && wizcontract::checkRetryable (cr.reply))
+                {   // 27 Oct: never "offline" for a slow answer; tried again by itself, only the parts still unanswered
+                    ++catalogueFailures; catalogueWords = wizcontract::checkWords (cr.reply);
+                    const int inS = juce::jmax (cr.reply.retryAfterS, wizcontract::backoffSeconds (catalogueFailures));
+                    catalogueRetryAt = juce::Time::getMillisecondCounterHiRes() + 1000.0 * inS;
+                    logLine ("catalogue check: part " + juce::String (cr.answeredChunks + 1) + " of " + juce::String (cr.chunks) + " not answered (" + catalogueWords + ") - "
+                             + juce::String (cr.answeredChunks) + " answered, trying again in " + juce::String (inS) + " s");
+                    showCatalogueWait (cr.answeredChunks, cr.chunks); text = wizapp::catalogueRetryText (catalogueWords, inS); catalogueShownLeft = inS; repaint(); return;
+                }
                 if (! cr.ok)
-                {   netWords = wizcontract::plainWords (cr.reply); logLine ("catalogue check failed: " + netWords);
+                {   waitingOnServer = false; netWords = wizcontract::checkWords (cr.reply); logLine ("catalogue check failed: " + netWords);
                     title = "Couldn't reach EchoJay"; text = netWords; showBar = false; primary.setButtonText (session->needsSignIn ? "Sign in again" : "Try again"); primary.setVisible (true); primary.setEnabled (true);
                     retryCatalogue = true; repaint(); return; }
+                waitingOnServer = false; catalogueFailures = 0; text = {};
                 answersFile().replaceWithText (juce::JSON::toString (cr.answers));
-                logLine ("catalogue check: " + wizapp::knownWords (cr.have + cr.held, cr.need) + " (have " + juce::String (cr.have) + ", held " + juce::String (cr.held) + ")");
+                logLine ("catalogue check: " + wizapp::knownWords (cr.have + cr.held, cr.need) + " (have " + juce::String (cr.have) + ", held " + juce::String (cr.held) + "; "
+                         + juce::String (cr.chunks) + " part(s) of up to " + juce::String (wizcontract::kCatalogueChunk) + ", all answered)");
                 barLeft = wizapp::knownWords (cr.have + cr.held, cr.need); startEngine (false);
             });
         });
@@ -729,7 +786,10 @@ private:
         screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); anyway.setVisible (false); email.setVisible (false); password.setVisible (false);
         agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true); resetTestButton.setVisible (kTest && wizapp::resetTestShownOn (s));
         autoTicks = 0; lastSnapQuarter = -1.0;
-        if (wizapp::runIsOver (s) && powerNotice.isNotEmpty()) powerWatch (power);   // 26 Oct: the notice goes with the run's end, not 10 s later
+        if (wizapp::runIsOver (s) && powerNotice.isNotEmpty()) powerWatch (power);
+        if ((s == Screen::reward || s == Screen::noCode) && kNetworked && session != nullptr && ! rehearsalSignedOut && std::getenv ("EJ_WIZARD_REHEARSAL_SIGNOUT_ON_END") != nullptr)
+        {   rehearsalSignedOut = true;   // 27 Oct, rehearsals only: the hidden Sign out's own path, as the Option-click takes it
+            juce::Timer::callAfterDelay (1500, [safe = juce::Component::SafePointer<WizardComponent> (this)] { if (safe != nullptr) safe->hiddenSignOut ("rehearsal, on the end screen"); }); }   // 26 Oct: the notice goes with the run's end, not 10 s later
         auto copy = [&] (const wizapp::Copy& c) { title = c.title; text = c.text; primary.setButtonText (c.primary); primary.setVisible (c.primary.isNotEmpty());
                                                   secondary.setButtonText (c.secondary); secondary.setVisible (c.secondary.isNotEmpty()); };
         switch (s)
@@ -851,6 +911,7 @@ private:
             }
             case Screen::consent:
                 if (! agree.getToggleState()) return;   // the tick is required
+                if (! freshRunIfNeeded()) return;      // 27 Oct: a finished run's folder never starts a second run under its id
                 setState ("consented", true); logLine ("consent: I agree (" + juce::Time::getCurrentTime().toISO8601 (true) + ")");
                 if (! cfg.only.isEmpty())   // 26 Oct: --only belongs to the run - a reopen without it measures the same plugins, never the whole Mac
                 {   auto so = appState(); juce::Array<juce::var> ol; for (const auto& n : cfg.only) ol.add (n); so.getDynamicObject()->setProperty ("only", ol);
@@ -1003,6 +1064,12 @@ private:
         if (appInterrupted() != 0 && ! quitting) { appInterrupted() = 0; logLine ("Ctrl-C: a pause (no question asked)"); if (requestQuit (false)) juce::JUCEApplication::getInstance()->quit(); }
         if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastDawCheck >= 2000.0) { lastDawCheck = now; dawWatch (openDaw (dawIgnoredPid)); }
         if (const double now = juce::Time::getMillisecondCounterHiRes(); now - lastPowerCheck >= 10000.0) { lastPowerCheck = now; powerWatch (readPower()); }
+        if (catalogueRetryAt > 0.0 && screen == Screen::scan)
+        {   // 27 Oct: the catalogue check's countdown, then the retry by itself
+            const int left = (int) std::ceil ((catalogueRetryAt - juce::Time::getMillisecondCounterHiRes()) / 1000.0);
+            if (left <= 0) { catalogueRetryAt = 0.0; checkCatalogue(); }
+            else if (left != catalogueShownLeft) { catalogueShownLeft = left; text = wizapp::catalogueRetryText (catalogueWords, left); repaint(); }
+        }
         if (screen == Screen::scan || screen == Screen::measuring) pollEngine();
         if (screen == Screen::upload) tickUpload();
         if (cfg.autoMode && ! quitting) autoAdvance();
@@ -1056,6 +1123,7 @@ private:
     }
     void pollEngine()
     {
+        if (waitingOnServer) return;   // 27 Oct: the engine has ended; its last plugin line must not stay on screen while EchoJay is asked
         const auto p = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString());
         // 22 Oct (the bar flicker): an empty or partial read changes nothing on screen - the last good one stays; the engine's exit is still seen
         if (wizapp::progressUsable (p)) showProgress (p);
