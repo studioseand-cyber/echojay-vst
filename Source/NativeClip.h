@@ -22,6 +22,10 @@ extern "C" bool NativeClip2_getPluginSize(void* peerHandle, int* outW, int* outH
 extern "C" bool NativeClip2_getPluginSizeVerbose(void* peerHandle, int* outW, int* outH,
                                                  char* desc, int descLen);
 extern "C" void NativeClip2_detach(void* peerHandle);
+/** Move a guest view into this bundle's parking view - one addSubview, nothing removed first - so a
+    lent editor can be KEPT while nobody shows it (his ruling of 26 Oct 21:08). Called by the LENDER,
+    in the lender's own image. */
+extern "C" bool NativeClip2_parkGuestView(void* guestView);
 /** Hide or show the clip container WITHOUT moving anything inside it (round 2, 26 Oct 2026): a lent
     editor that is coming back must never see its view hop to a nil window. */
 extern "C" void NativeClip2_setHidden(void* peerHandle, bool hidden);
@@ -71,6 +75,9 @@ namespace NativeClip
         auto* handle = windowHandleFor(comp);
         return handle != nullptr && NativeClip2_getPluginSize(handle, &w, &h);
     }
+
+    /** The lender takes its guest view back out of a borrower's window, in one move. */
+    inline bool parkGuestView (void* guestView) { return NativeClip2_parkGuestView (guestView); }
 
     /** Hide the clip container where it stands, or show it again. Nothing inside it moves. */
     inline void setHidden(juce::Component* comp, bool hidden)

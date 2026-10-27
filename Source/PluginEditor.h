@@ -68,6 +68,23 @@ public:
     void editorLeaseRevoked (const juce::String& uid, int slot1Based, const juce::String& why) override;
     juce::String borrowerDescribe() const override { return "the EchoJay V2's live view"; }
 
+    /** WHICH PROCESS THAT LINK IS IN, REMEMBERED (27 Oct 2026).
+
+        The real-editor decision asks the Link's sidecar for its publisherPid on every open, and a
+        transient zero sends the view down the copy road with "unknown is not permission". That
+        sentence is right about a Link that has never said - and wrong about one that said so a
+        moment ago and happened to be mid-write when we looked: a RH row watched the same slot lend
+        its editor, then refuse it, with nothing changed but the moment of the read.
+
+        A live instance cannot move between processes, so the first non-zero answer stands for the
+        session. Nothing is invented: a uid that has never published a pid is still unknown, and
+        still refused. */
+    int publisherPidFor (const juce::String& uid);
+
+private:
+    std::map<juce::String, int> seenPublisherPid_;
+public:
+
     /** THE AGENT CHIP'S THREE STATES (Sean's ruling, 14 Oct 2026). Declared HERE, at the head of the
         class, because a MEMBER of this type (lastAgentMode_) is declared further down and a class member
         can only name a type the class has already declared - the compiler's rule, and the reason the first

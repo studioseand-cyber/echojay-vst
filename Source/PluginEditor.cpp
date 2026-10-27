@@ -1529,11 +1529,18 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // what the build will actually do, rather than promising a road it is not on.
         const bool now = echojay::realEditorSwitchOn();
         realEditorToggle.setToggleState(now, juce::dontSendNotification);
+        // ---- OFF IS ONE ACT, WITH NOTHING ELSE TO UNDO (his condition, 26 Oct) ---------------
+        // *"we switch back and park it"*, and *"turning it off is a single act that puts you back on
+        // the copy with no other change"*. A lent editor on screen would otherwise sit there until
+        // something else ended it - the pane HIDES rather than closes now, so even a tab change does
+        // not end it. So the switch itself gives it back, and the next open takes the copy road.
+        if (! now && chainListPanel.inlineIsLent)
+            chainListPanel.returnLentEditorForGood ("the real-editor switch was turned off");
         EchoJay_NSLog(("EJRealEditor: the switch was turned " + juce::String(want ? "ON" : "OFF")
                        + " and now reads " + juce::String(now ? "ON" : "OFF")
                        + (ok ? "" : " (the file could not be written)")
-                       + " - a live view already open keeps the road it opened on; close and reopen it "
-                         "to change roads").toRawUTF8());
+                       + (! now ? " - any lent editor has been given back, so the next open takes the copy road"
+                                : " - a live view already open keeps the road it opened on until it is reopened")).toRawUTF8());
     };
     addAndMakeVisible(realEditorToggle);
     // AGENT MODE (Sean's standing rule): the user's own switch, OFF by default. The state is read from the
@@ -2297,13 +2304,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         const auto uid = chainViewUid();
         if (uid.isEmpty()) return nullptr;                    // the own rack: nothing to borrow
         const bool sw = echojay::realEditorSwitchOn();
-        int pubPid = 0;
-        {
-            int err = 0;
-            const auto dir = LinkShm::resolveDir (err);
-            if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
-                pubPid = rc.publisherPid;
-        }
+        const int pubPid = publisherPidFor (uid);
         if (! echojay::realEditorRoad (sw, pubPid, (int) ::getpid()))
         {
             whyOut = echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
@@ -3768,6 +3769,35 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 // moment this returns, so all this side may do is stop showing it and forget it. The sentence goes
 // on the pane, because a plugin that vanishes from a window without a word is the kind of thing
 // that gets reported as a crash.
+int EchoJayEditor::publisherPidFor (const juce::String& uid)
+{
+    if (uid.isEmpty()) return 0;
+    int err = 0;
+    const auto dir = LinkShm::resolveDir (err);
+    int fresh = 0;
+    if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
+        fresh = rc.publisherPid;
+    if (fresh > 0)
+    {
+        auto it = seenPublisherPid_.find (uid);
+        if (it == seenPublisherPid_.end() || it->second != fresh)
+            seenPublisherPid_[uid] = fresh;
+        return fresh;
+    }
+    // Nothing in the sidecar this instant. If that Link has told us before, that answer stands - an
+    // instance cannot change process while it lives - and the fall-back is said once per uid so a
+    // log reader can see it happened at all.
+    const auto it = seenPublisherPid_.find (uid);
+    if (it == seenPublisherPid_.end()) return 0;
+    static std::set<juce::String> said;
+    if (said.insert (uid).second)
+        EchoJay_NSLog (("EJRealEditor: " + uid + "'s sidecar carried no pid just now, so the one it "
+                        "published earlier (" + juce::String (it->second) + ") stands - a live "
+                        "instance does not change process, and a mid-write read is not a different "
+                        "answer").toRawUTF8());
+    return it->second;
+}
+
 void EchoJayEditor::editorLeaseRevoked (const juce::String& uid, int slot1Based, const juce::String& why)
 {
     if (chainListPanel.inlineIsLent && chainListPanel.lentUid == uid
@@ -18331,8 +18361,13 @@ void EchoJayEditor::showSettingsView()
     // THE REAL-EDITOR SWITCH, read from its file every time this page is shown, for the same reason
     // agent mode is: one answer to "which live view does this build use", read by the toggle and by
     // the live view itself, so the tick and the behaviour cannot disagree.
+    // ---- HIDDEN UNTIL HE SAYS IT HAS PASSED (his condition 1, 26 Oct 2026 21:08) -------------
+    // *"The switch stays default off and hidden from Settings in installed builds until I say it's
+    //  passed."*  So the TICK is dev-only; the switch itself still works (the file, the predicate
+    //  and the rig's press), which is what lets the rows drive it without showing it to anyone. A
+    //  row presses the button object directly, and a hidden button's onClick is still its onClick.
     realEditorToggle.setToggleState(echojay::realEditorSwitchOn(), juce::dontSendNotification);
-    realEditorToggle.setVisible(true);
+    realEditorToggle.setVisible(ChainHost::devModeActive());
 
     // Plugins row: scan button + View all + Help & Support. No inline list.
     settingsScanBtn.setVisible(true);
@@ -21738,7 +21773,11 @@ void EchoJayEditor::paintSettingsView(juce::Graphics& g, juce::Rectangle<int> ar
     // THE SAME LIST resized() PLACES. label() has already advanced past one row, so the walk covers the rest -
     // whatever the count is. The hardcoded `2 *` that stood here was right for three toggles and silently wrong
     // for four, which is how "YOUR PLUGINS" came to paint on top of the agent toggle.
-    y += ((int) chainSuggestionToggles().size() - 1) * (fh + 8);
+    {
+        int shown = 0;
+        for (auto* t : chainSuggestionToggles()) if (t->isVisible()) ++shown;
+        y += juce::jmax (0, shown - 1) * (fh + 8);     // the SHOWN ones, as resized() placed them
+    }
 
     g.setColour(C::text3);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
@@ -27649,8 +27688,11 @@ void EchoJayEditor::resized()
             // PLUGINS are offered - but a stacked column does not have to assert that, where a three-across row
             // would have asserted the opposite), then agent mode. paint() walks the same list, so the heading
             // below cannot drift away from these again.
+            // A TOGGLE THAT IS NOT SHOWN TAKES NO ROW (26 Oct 2026). The real-editor switch is
+            // dev-only until he says it has passed, and a hidden button left in this walk would
+            // leave a blank row here and move the heading paint() draws below it.
             for (auto* t : chainSuggestionToggles())
-            { t->setBounds(sx, sy, sw, fh); sy += fh + 8; }
+            { if (! t->isVisible()) continue; t->setBounds(sx, sy, sw, fh); sy += fh + 8; }
 
             // PLUGINS: scan button + "View all" beside it
             sy += labelGap;
@@ -37117,11 +37159,7 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
     //
     // The pid comes from the Link's own sidecar, the same number echojay::embedAllowed asks for.
     {
-        int pubPid = 0;
-        int err = 0;
-        const auto dir = LinkShm::resolveDir (err);
-        if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
-            pubPid = rc.publisherPid;
+        const int pubPid = publisherPidFor (uid);
         if (echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid, (int) ::getpid()))
         {
             shadowStopIfRunning ("the live view is showing the Link's own plugin editor, so no copy "
@@ -40211,6 +40249,7 @@ void EchoJayEditor::serviceRigHook()
             }
             void lenderDestroySlotEditor (int slot1) override { made.erase (slot1); }
             void lenderDestroyAllSlotEditors() override { made.clear(); }
+            void lenderRehomeSlotView (int) override {}      // the own rack never lends across windows
             void* lenderGuestViewForSlot (int slot1) override
             {
                 auto it = made.find (slot1);
@@ -40294,11 +40333,7 @@ void EchoJayEditor::serviceRigHook()
             // Which live view a Link would get, read in a real host: his condition is that the copy
             // road is what a build takes until he turns the switch on, and a row has to be able to
             // say so about the build that is running rather than about the source.
-            int pubPid = 0;
-            int err = 0;
-            const auto dir = LinkShm::resolveDir (err);
-            if (const auto rc = LinkShm::readRackSidecar (dir, uid); rc.valid && rc.uid == uid)
-                pubPid = rc.publisherPid;
+            const int pubPid = publisherPidFor (uid);
             const bool sw = echojay::realEditorSwitchOn();
             ok = true;
             note = juce::String ("the switch is ") + (sw ? "ON" : "OFF") + "; "
@@ -40600,6 +40635,12 @@ void EchoJayEditor::publishRigState()
     // so shadowLinkVals is the last thing the COPY road left behind and a row that read it would be
     // reading a stale frame (which is exactly how RE10 first failed). These come from the plugin on
     // the other side of the lease: its name, and its own parameter values.
+    // HOW MANY EDITORS THAT SLOT HAS EVER NEEDED (round 2): one press should cost one, and with the
+    // editor kept across a hand-back this should stay at 1 however often he opens and closes it.
+    if (chainListPanel.lentUid.isNotEmpty())
+        o->setProperty ("lentBuilds",
+                        echojay::EditorLease::editorsBuiltFor (chainListPanel.lentUid,
+                                                               chainListPanel.lentSlot1));
     if (chainListPanel.inlineIsLent)
         if (auto* lp = chainListPanel.inlineEditorProcessor())
         {

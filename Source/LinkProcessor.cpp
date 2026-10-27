@@ -1902,8 +1902,10 @@ juce::AudioProcessorEditor* LinkProcessor::lenderCreateSlotEditor (int slot1Base
         return nullptr;
     }
     lentEditors_[slot1Based].reset (ed);
+    echojay::EditorLease::noteEditorCreated (instanceUid_, slot1Based);
     EchoJay_NSLog (("EJLease: made the real editor for slot " + juce::String (slot1Based) + " of "
-                    + lenderDescribe()).toRawUTF8());
+                    + lenderDescribe() + " - " + juce::String (echojay::EditorLease::editorsBuiltFor (instanceUid_, slot1Based))
+                    + " built for that slot so far").toRawUTF8());
     return ed;
 }
 
@@ -1937,6 +1939,28 @@ void* LinkProcessor::lenderGuestViewForSlot (int slot1Based)
         }
     };
     return Find::in (it->second.get());
+}
+
+void LinkProcessor::lenderRehomeSlotView (int slot1Based)
+{
+    // ---- THE VIEW COMES HOME, IN ONE MOVE (his ruling of 26 Oct 21:08) ------------------------
+    // The borrower is about to let go and the editor is being KEPT, so its view must not be left in
+    // the borrower's window. This puts it back inside the editor's own NSViewComponent - the wrapper
+    // JUCE made for it - with a single addSubview: AppKit re-parents in place, the view never sees a
+    // nil window, and nothing is removed first. That is the whole rule of this road.
+    auto it = lentEditors_.find (slot1Based);
+    if (it == lentEditors_.end() || it->second == nullptr) return;
+    void* guest = lenderGuestViewForSlot (slot1Based);
+    if (guest == nullptr)
+    {
+        EchoJay_NSLog (("EJLease: slot " + juce::String (slot1Based) + " of " + lenderDescribe()
+                        + " has no view to take back - its editor draws nothing native").toRawUTF8());
+        return;
+    }
+    const bool moved = NativeClip::parkGuestView (guest);
+    EchoJay_NSLog (("EJLease: " + juce::String (moved ? "took the view of slot " : "could NOT take the view of slot ")
+                    + juce::String (slot1Based) + " back into this Link's own wrapper (the editor itself is kept, "
+                      "one per instance)").toRawUTF8());
 }
 
 void LinkProcessor::lenderDestroyAllSlotEditors()

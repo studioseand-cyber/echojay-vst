@@ -1046,6 +1046,7 @@ public:
     void lenderDestroySlotEditor (int slot1Based) override;
     void lenderDestroyAllSlotEditors() override;
     void* lenderGuestViewForSlot (int slot1Based) override;
+    void  lenderRehomeSlotView (int slot1Based) override;
     juce::String lenderDescribe() const override;
 
     // ---- echojay::EditorBorrower: the Link's OWN plugin window is a borrower like any other -----

@@ -593,6 +593,51 @@ bool NativeClip2_setShield(void* peerHandle, bool on, const char* caption)
     return true;
 }
 
+// ---- THE VIEW GOES HOME, IN ONE MOVE (his ruling of 26 Oct 21:08) -----------------------------
+//
+// A lent editor is KEPT across a hand-back (Apple's AUDelay view does not survive being built and
+// destroyed repeatedly on one long-lived instance), so when the borrower lets go its view must leave
+// the borrower's window without being destroyed and without being stranded there. It is moved into a
+// parking view this bundle owns: one addSubview, no removeFromSuperview first, which is the rule this
+// road has paid for twice. AppKit re-parents in place; the view keeps its superview throughout.
+//
+// The parking view is deliberately windowless and never drawn. A view in it is a view nobody is
+// showing, which is exactly its state: retained, intact, and ready to be moved back into a container
+// by attach() the next time somebody opens it.
+static NSView* NativeClip2_parkingView(void)
+{
+    static NSView* parking = nil;
+    if (parking == nil)
+    {
+        parking = [[NSView alloc] initWithFrame: NSMakeRect(0, 0, 4000, 4000)];
+        [parking setHidden: YES];
+        NSLog(@NATIVECLIP_LOG_TAG ": made the parking view for guests nobody is showing");
+    }
+    return parking;
+}
+
+bool NativeClip2_parkGuestView(void* guestView)
+{
+    if (!guestView) return false;
+    NSView* guest = (__bridge NSView*)guestView;
+    NSView* parking = NativeClip2_parkingView();
+    if (parking == nil) return false;
+    if ([guest superview] == parking) return true;          // already home
+    @try
+    {
+        [guest setAutoresizingMask: NSViewNotSizable];
+        [parking addSubview: guest];                         // ONE move; nothing removed first
+    }
+    @catch (NSException* e)
+    {
+        NSLog(@NATIVECLIP_LOG_TAG ": parking %@ threw %@", NSStringFromClass([guest class]), [e name]);
+        return false;
+    }
+    NSLog(@NATIVECLIP_LOG_TAG ": parked %@ (its editor is kept; window=%@)",
+          NSStringFromClass([guest class]), [guest window] == nil ? @"none, as intended" : @"still one");
+    return [guest superview] == parking;
+}
+
 // ---- HIDDEN, NOT TAKEN APART (round 2 option 3, 26 Oct 2026) ----------------------------------
 //
 // His ruling: *"a lent editor moves into the V2's window once and is hidden, not detached, on

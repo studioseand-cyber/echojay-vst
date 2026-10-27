@@ -96,5 +96,6 @@ void NativeClip2_detach(void* /*peerHandle*/)
 
 // Off-Mac counterparts of the round-2 pair (26 Oct 2026): there is no clip container here, so there
 // is nothing to hide and nothing to remove.
+extern "C" bool NativeClip2_parkGuestView(void*) { return false; }
 extern "C" void NativeClip2_setHidden(void*, bool) {}
 extern "C" void NativeClip2_detachEmptyContainer(void*) {}

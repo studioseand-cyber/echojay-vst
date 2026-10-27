@@ -3639,6 +3639,7 @@ int main()
                 if (auto it = made.find (slot1); it != made.end()) return it->second.get();
                 ++created;
                 made[slot1] = std::make_unique<Ed> (proc);
+                EditorLease::noteEditorCreated (uid, slot1);
                 if (order != nullptr) *order << "create" << slot1 << " ";
                 return made[slot1].get();
             }
@@ -3648,6 +3649,9 @@ int main()
             }
             void lenderDestroyAllSlotEditors() override
             { destroyed += (int) made.size(); made.clear(); if (order != nullptr) *order << "destroyAll "; }
+            int rehomed = 0;
+            void lenderRehomeSlotView (int slot1) override
+            { ++rehomed; if (order != nullptr) *order << "rehome" << slot1 << " "; }
             void* lenderGuestViewForSlot (int slot1) override
             {
                 // The fake has no NSView; what matters here is that the LENDER is the one asked.
@@ -3755,21 +3759,30 @@ int main()
                "EL7 a return with the wrong token closes NOTHING - a stale hand cannot destroy an "
                "editor somebody else is showing",
                "still held");
+        const int builtBefore = link.created;
+        const int rehomedBefore = link.rehomed;
         check (EditorLease::giveBack (link.uid, 1, t1.token)
-                   && link.made.find (1) == link.made.end()
+                   && link.rehomed == rehomedBefore + 1
+                   && link.made.find (1) != link.made.end()
                    && EditorLease::heldBy (link.uid, 1, nullptr) == EditorHolder::None,
-               "EL7a ...and the right token returns it, with the owner destroying the editor - so the "
-               "plugin's view goes with it rather than being stranded in the borrower's window. A "
-               "borrower that still WANTS it does not return it: it hides it (his option 3), so a "
-               "returned lease always means \"I have stopped showing this\"",
-               "destroyed " + juce::String (link.destroyed) + ", nobody holds the lease");
+               "EL7a ...and the right token frees the lease, the LENDER TAKES ITS VIEW BACK, and the "
+               "editor is kept - his ruling of 26 Oct 21:08. The two other policies both crash: "
+               "destroying it here kills Apple's AUDelay view faster than it tolerates, and keeping "
+               "it without re-homing strands its view in the borrower's window",
+               "re-homed once, the editor is still there, nobody holds the lease");
         {
             auto again = EditorLease::take (link.uid, 1, &view, EditorHolder::Borrowed);
-            check (again.ok() && again.editor != nullptr,
-                   "EL7b ...and taking it again builds a fresh one, which is safe now that the view "
-                   "the container holds is the one the LENDER named (the cross-bundle dynamic_cast "
-                   "that made this unsafe is in lenderGuestViewForSlot)",
-                   "created " + juce::String (link.created) + " in all");
+            check (again.ok() && again.editor == t1.editor && link.created == builtBefore,
+                   "EL7b ...so opening it again hands back THE SAME editor and builds nothing - one "
+                   "editor per instance, created once, which is what the design said before I argued "
+                   "with it twice",
+                   "built " + juce::String (link.created) + " in all, re-homed "
+                   + juce::String (link.rehomed) + " time(s)");
+            check (EditorLease::editorsBuiltFor (link.uid, 1) == 1,
+                   "EL7d ...and the lease's own count agrees: ONE editor has ever been built for that "
+                   "slot, however many times it has been opened (the count a row reads to prove one "
+                   "press costs one take)",
+                   "built " + juce::String (EditorLease::editorsBuiltFor (link.uid, 1)));
             EditorLease::giveBack (link.uid, 1, again.token);
         }
 

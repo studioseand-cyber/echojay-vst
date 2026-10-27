@@ -383,6 +383,90 @@ cat > "$SCRATCH/script.json" <<'JSON'
       ]
     },
     {
+      "goalContains": "rig-swap-mcompressor-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sw1", "name": "do", "approval": "free",
+            "summary": "put MCompressor on this rack",
+            "args": { "op": "add", "name": "MCompressor" } },
+          { "event": "await", "ids": ["tc_sw1"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added MCompressor." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-swap-valhalladelay-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sw2", "name": "do", "approval": "free",
+            "summary": "put ValhallaDelay on this rack",
+            "args": { "op": "add", "name": "ValhallaDelay" } },
+          { "event": "await", "ids": ["tc_sw2"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added ValhallaDelay." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-swap-slickeq-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sw3", "name": "do", "approval": "free",
+            "summary": "put TDR SlickEQ M on this rack",
+            "args": { "op": "add", "name": "TDR SlickEQ M" } },
+          { "event": "await", "ids": ["tc_sw3"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added TDR SlickEQ M." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-swap-freshair-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sw4", "name": "do", "approval": "free",
+            "summary": "put Fresh Air on this rack",
+            "args": { "op": "add", "name": "Fresh Air" } },
+          { "event": "await", "ids": ["tc_sw4"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added Fresh Air." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-swap-audelay-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sw5", "name": "do", "approval": "free",
+            "summary": "put AUDelay on this rack",
+            "args": { "op": "add", "name": "AUDelay" } },
+          { "event": "await", "ids": ["tc_sw5"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added AUDelay." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-swap-matrixreverb-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_sw6", "name": "do", "approval": "free",
+            "summary": "put AUMatrixReverb on this rack",
+            "args": { "op": "add", "name": "AUMatrixReverb" } },
+          { "event": "await", "ids": ["tc_sw6"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Added AUMatrixReverb." } ]
+      ]
+    },
+    {
+      "goalContains": "rig-linkclear-marker",
+      "rounds": [
+        [ { "event": "round", "round": 1, "ofSoftCap": 20 },
+          { "event": "tool_call", "id": "tc_lclr", "name": "do", "approval": "free",
+            "summary": "take everything off this rack",
+            "args": { "op": "remove", "slot": 1 } },
+          { "event": "await", "ids": ["tc_lclr"] } ],
+        [ { "event": "done", "reason": "complete", "rounds": 1,
+            "summary": "Cleared the rack." } ]
+      ]
+    },
+    {
       "goalContains": "rig-linkreplace1-marker",
       "rounds": [
         [ { "event": "round", "round": 1, "ofSoftCap": 20 },

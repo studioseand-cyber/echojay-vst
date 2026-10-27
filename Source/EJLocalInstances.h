@@ -78,6 +78,21 @@ struct EditorLender
         cast is sound - the same rule round 1 learned about the directory: nothing but plain data
         crosses the boundary between these two bundles. */
     virtual void* lenderGuestViewForSlot (int slot1Based) = 0;
+    /** TAKE YOUR OWN VIEW BACK (his ruling of 26 Oct 21:08, the approved change to §2).
+
+        Called by the borrower just BEFORE it returns the lease, while the view is still inside the
+        borrower's window and everything is alive. The lender moves it back into its own
+        NSViewComponent with ONE addSubview - never a remove-then-add, because a hosted AU's view
+        hopping through a nil window is the crash this road has produced twice.
+
+        WHY THE LENDER DOES IT: it owns both sides of the move (the editor and the wrapper the view
+        belongs to), and it is the only image where the cast that finds that wrapper works at all.
+
+        WHY IT EXISTS AT ALL: the alternative was destroying the editor on every hand-back, and
+        Apple's AUDelay view does not survive being created, destroyed and created again on one
+        long-lived instance inside two seconds - measured four times on 26 Oct. So the editor is kept
+        and its view goes home. */
+    virtual void lenderRehomeSlotView (int slot1Based) = 0;
     /** For the log and the rig's evidence: "EchoJay Link \"Kick\" (uid 4814a16004)". */
     virtual juce::String lenderDescribe() const = 0;
 };
@@ -119,12 +134,18 @@ namespace detail
         unsigned token;
     };
 
+    /** How many editors this instance has had to BUILD, per slot (round 2, 26 Oct 2026). A press
+        that opens a view should cost one, and the pane used to open twice per press. Kept here
+        rather than in the lender so the borrower's side can read it and a row can assert on it. */
+    struct CreateCount { int slot1; int creates; };
+
     struct InstanceRow
     {
         char  uid[kUidChars];
         void* lender;         // EditorLender*, non-owning
         int   pid;
         LeaseRow leases[kMaxLeasesPerInst];
+        CreateCount creates[kMaxLeasesPerInst];
     };
 
     struct Table
@@ -383,18 +404,17 @@ public:
             if (! found) return false;
             lender = (EditorLender*) r->lender;
         }
-        // AND THE EDITOR GOES WITH THE LEASE - the design's teardown table, restored after a
-        // detour. The detour was mine and it is worth recording: I made a returned lease KEEP the
-        // editor, because destroying it seemed to leave Apple's AUEventListener pointing at freed
-        // memory. The real cause of that was a different bug entirely - the V2 was identifying the
-        // plugin's NSView with a dynamic_cast that cannot work across these two bundles, so the
-        // container held a view that did not belong to the editor on screen (see
-        // lenderGuestViewForSlot). With that fixed, keeping the editor has no beneficiary and one
-        // cost: the borrower returns the lease only when it has stopped showing it (it HIDES while
-        // it still wants it - his option 3), so a kept editor is one whose view is stranded in the
-        // borrower's window with nobody responsible for it. Destroying it here takes the view with
-        // it in the way AppKit expects: a dealloc of the hierarchy, never a hop to a nil window.
-        if (lender != nullptr) lender->lenderDestroySlotEditor (slot1Based);
+        // THE EDITOR IS KEPT AND ITS VIEW GOES HOME (his ruling of 26 Oct 21:08).
+        //
+        // Both other policies were tried on 26 Oct and both crash:
+        //   destroy it here          -> Apple's AUDelay view does not survive create/destroy/create
+        //                               on one long-lived instance inside two seconds (four runs);
+        //   keep it and do nothing   -> its view is stranded in the borrower's window, and the next
+        //                               open stacks a second guest view in the same container.
+        // So the lender takes its own view back - one move, by the object that owns both sides -
+        // and the editor lives on for whoever shows it next. ONE editor per instance, created once,
+        // which is what §2 said in the first place.
+        if (lender != nullptr) lender->lenderRehomeSlotView (slot1Based);
         return true;
     }
 
@@ -495,6 +515,33 @@ public:
         }
         if (lender != nullptr) lender->lenderDestroyAllSlotEditors();   // outside the lock, as ever
         return revoked;
+    }
+
+    /** The lender says it had to build one (called from lenderCreateSlotEditor's create branch). */
+    static void noteEditorCreated (const juce::String& uid, int slot1Based)
+    {
+        auto* t = detail::table();
+        if (t == nullptr) return;
+        detail::Guard g (t);
+        auto* r = detail::findRow (t, uid);
+        if (r == nullptr) return;
+        for (auto& c : r->creates)
+            if (c.slot1 == slot1Based) { ++c.creates; return; }
+        for (auto& c : r->creates)
+            if (c.slot1 == 0) { c.slot1 = slot1Based; c.creates = 1; return; }
+    }
+
+    /** How many editors that slot has needed. One press should cost one. */
+    static int editorsBuiltFor (const juce::String& uid, int slot1Based)
+    {
+        auto* t = detail::table();
+        if (t == nullptr) return -1;
+        detail::Guard g (t);
+        auto* r = detail::findRow (t, uid);
+        if (r == nullptr) return -1;
+        for (const auto& c : r->creates)
+            if (c.slot1 == slot1Based) return c.creates;
+        return 0;
     }
 
     /** The borrower's own destructor (rule 6): return anything it still holds, wherever it is. This
