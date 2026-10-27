@@ -797,6 +797,8 @@ def main():
     if a.record:
         os.makedirs(a.record, exist_ok=True)
         RECORD["dir"] = a.record
+        # 31 Oct: a second mock recording into the same folder (a pin with its own mock) carries on the numbering - never overwrites
+        RECORD["seq"] = max([int(n[:5]) for n in os.listdir(a.record) if re.fullmatch(r"\d{5}\.json", n)] or [0])
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)   # localhost only
     if a.port_file:
         tmp = a.port_file + ".tmp"

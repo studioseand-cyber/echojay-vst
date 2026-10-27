@@ -14660,7 +14660,7 @@ int main (int, char**)
             const juce::String rid = "run_00000000000032c1", rid2 = "run_00000000000032c2";
             RunInfo run; run.runId = rid; run.consentAcceptedAt = "2026-10-27T18:04:20.000Z"; run.collection = { "AudioUnit|7c000001|1.0" }; run.startedAt = "2026-10-27T18:04:20.000Z";
             const auto c1 = catalogueCheck (s, req, rid); const auto er = ensureRun (s, run);
-            const auto done = complete (s, rid, "finished", {}, {}, {});
+            const auto done = complete (s, rid, "sent_early", {}, {}, {});   // ended early: no free month, so B's fixtures stay independent
             const auto again = catalogueCheck (s, req, rid);                                     // the check under the finished run
             const auto gz = gzip ("{}"); const auto put = s.call ("PUT", "runs/" + rid + "/results/res_00000000000000000000000000000001", {}, &gz, sha256Hex (gz));
             const auto fresh = catalogueCheck (s, req, rid2);                                    // a new run id: checked as normal
