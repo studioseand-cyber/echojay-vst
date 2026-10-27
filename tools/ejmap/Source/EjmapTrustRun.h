@@ -381,12 +381,15 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
     juce::StringArray listedUnstated;
     const auto compCert = certifiedByFormat (certifiedFromList (publishList), certifiedProfiles, listedUnstated);
     std::map<juce::String, FormatSet> v1Pass;   // category -> (product, format): the format each draft was measured in
-    for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass) v1Pass[certv1::mapCategoryOf (r.category)].insert ({ r.product, r.format });   // 27 Oct: "transient" certifies transient_shaper maps
+    std::map<std::pair<juce::String, juce::String>, std::vector<certv1::Part>> v1Parts;   // 27 Oct: (product, format) -> its parts, for the part-by-part categories
+    for (const auto& c : certDirs) for (const auto& r : judgeFolder (juce::File (c))) if (r.pass)
+    {   v1Pass[certv1::mapCategoryOf (r.category)].insert ({ r.product, r.format });   // 27 Oct: "transient" certifies transient_shaper maps
+        if (certv1::partByPart (certv1::mapCategoryOf (r.category))) v1Parts[{ r.product, r.format }] = certv1::mergeParts (v1Parts[{ r.product, r.format }], r.parts); }
     if (! listedUnstated.isEmpty()) std::cout << "TRUST-LEVELS: " << listedUnstated.size() << " published product(s) with no profile stating its format here - certified for no format: " << listedUnstated.joinIntoString (", ") << "\n";
     out.getChildFile ("maps").createDirectory();
     const auto human = loadHuman (humanFile); juce::Array<juce::var> review;
     std::map<juce::String, std::map<juce::String, int>> counts; juce::Array<juce::var> rows; int creditedControls = 0, failedControls = 0, supersededReadings = 0, supersededControls = 0, otherFormat = 0, snappedReadings = 0;
-    struct Entry { juce::var m; juce::String file, name, cat, fmt, version, heldWhy, bridgedFrom, bridgeWhy; trust::Level L; trust::Measured measured; const ProductData* pd = nullptr; trust::Bridge bridge; };
+    struct Entry { juce::var m; juce::String file, name, cat, fmt, version, heldWhy, bridgedFrom, bridgeWhy; trust::Level L; trust::Measured measured; const ProductData* pd = nullptr; trust::Bridge bridge; std::vector<certv1::Part> parts; };
     std::vector<Entry> entries;
     for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
@@ -441,7 +444,12 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                             if (juce::String (section) == "controls") { ++creditedControls; if (r.failed > 0) ++failedControls; }   // the printed tally stays per control
                         }
         out.getChildFile ("maps").getChildFile (f.getFileName()).replaceWithText (juce::JSON::toString (m));
-        entries.push_back ({ m, f.getFileName(), name, cat, fmt, m.getProperty ("identity", {}).getProperty ("version", "").toString(), heldWhy, {}, {}, L, measured, &pd, {} });
+        std::vector<certv1::Part> parts;   // 27 Oct (PART BY PART): a certified de-esser / transient shaper lists each part, verified or not
+        if (L.level == "certified" && certv1::partByPart (cat) && v1Parts.count (key))
+        {   parts = v1Parts.at (key);
+            for (auto& p : parts) { const auto it = rb.find (p.control); p.readBack = p.control.isNotEmpty() && it != rb.end() && it->second.proven(); }
+            L.why << certv1::partsWhy (parts); }
+        entries.push_back ({ m, f.getFileName(), name, cat, fmt, m.getProperty ("identity", {}).getProperty ("version", "").toString(), heldWhy, {}, {}, L, measured, &pd, {}, parts });
     }
     // THE FORMAT BRIDGE (Kathy, 17 Oct, "ALL DAWs"): a VST3 below its AU twin (same product, same version) inherits the twin's certified /
     // mapped level only when trust::bridgeFor finds every role control displaying the same values in both formats at 3+ shared settings.
@@ -460,7 +468,7 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         if (e.bridge.ok)
         {
             e.L.level = twin->L.level; e.L.why = "bridged from the AU map " + twin->m.getProperty ("fp", "").toString().substring (0, 12) + ": " + e.bridge.why;
-            e.L.dialable = roles; e.L.roles = twin->L.roles; e.bridgedFrom = twin->m.getProperty ("fp", "").toString(); ++bridged; continue;
+            e.L.dialable = roles; e.L.roles = twin->L.roles; e.bridgedFrom = twin->m.getProperty ("fp", "").toString(); e.parts = twin->parts; e.L.why << certv1::partsWhy (e.parts); ++bridged; continue;
         }
         e.bridgeWhy = e.bridge.why; ++bridgeRefused;
         auto* pc = new juce::DynamicObject();
@@ -485,7 +493,12 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
         if (e.bridgeWhy.isNotEmpty()) o->setProperty ("bridge_refused", e.bridgeWhy);
         juce::Array<juce::var> d; for (const auto& x : e.L.dialable) d.add (x); o->setProperty ("dialable", juce::var (d));
         juce::Array<juce::var> rl; for (const auto& [need, c] : e.L.roles) { auto* r = new juce::DynamicObject(); r->setProperty ("semantic", need); r->setProperty ("control", c); rl.add (juce::var (r)); }
-        o->setProperty ("roles", juce::var (rl)); rows.add (juce::var (o));   // 18 Oct (B): each dialable control with the role it was found for
+        o->setProperty ("roles", juce::var (rl));   // 18 Oct (B): each dialable control with the role it was found for
+        if (! e.parts.empty())
+        {   juce::Array<juce::var> ps;   // 27 Oct (Kathy, PART BY PART): verified parts dial as certified; the rest as mapped, "not verified yet"
+            for (const auto& p : e.parts) { auto* x = new juce::DynamicObject(); x->setProperty ("part", p.name); x->setProperty ("control", p.control); x->setProperty ("verified", p.state == "pass"); x->setProperty ("read_back", p.readBack); x->setProperty ("why", p.why); ps.add (juce::var (x)); }
+            o->setProperty ("parts", juce::var (ps)); }
+        rows.add (juce::var (o));
     }
     out.getChildFile ("trust_levels.json").replaceWithText (juce::JSON::toString (juce::var (rows)));
     out.getChildFile ("bridge_plan.json").replaceWithText (juce::JSON::toString (juce::var (plan)));

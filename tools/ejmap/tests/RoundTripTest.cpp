@@ -14529,6 +14529,44 @@ int main (int, char**)
                && ! open.pass && open.parts[0].state == "fail" && ! rev.pass && rev.parts[0].why.contains ("falls") && ! flatD.pass && flatD.parts[0].why.contains ("moves only") && ! accFails.pass && ! noRec.pass && v1Categories().contains ("deesser"),
                "cert WZ-31OCT-6: a de-esser's threshold or depth passes against its labels, frequency only where it passes ('" + rd.why() + "')");
     }
+    // WZ-31OCT-7 PART BY PART (Kathy, 27 Oct: "Threshold/depth certify; frequency stays mapped, not verified, and the trust row must say so
+    // per part"). A certified de-esser / transient shaper lists each part with its control, verified or not and read back or not; its why says
+    // which are verified and which are "mapped, not verified yet"; several passing drafts verify a part when any does; acceptance is no part
+    {
+        using namespace ejmap::certv1;
+        std::vector<Part> a { { "threshold", "pass", "", "Threshold" }, { "frequency", "fail", "0.44 octave", "Freq" }, { "acceptance", "pass", "1 step(s)" } };
+        std::vector<Part> b { { "threshold", "pass", "", "Threshold" }, { "frequency", "pass", "2 positions", "Freq" } };
+        const auto one = mergeParts ({}, a), both = mergeParts (mergeParts ({}, a), b);
+        auto shown = one; shown[1].readBack = true;
+        std::vector<Part> tw { { "attack", "pass", "", "Range" }, { "sustain", "not_tested", "Release: no_effect", "Release" } };
+        const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        // a level control is not a transient amount: Quantum's "Output" (24 Oct drafts) against Envolution's "Sus Level" and Smack's "Sustain"
+        const auto quantumOut = juce::JSON::parse (R"J([{"norm": 0.0, "sustain_db": -24.0, "transient_db": -24.0}, {"norm": 0.17, "sustain_db": -16.0, "transient_db": -16.0}, {"norm": 0.33, "sustain_db": -8.0, "transient_db": -8.0},
+                                                         {"norm": 0.5, "sustain_db": 0.0, "transient_db": 0.0}, {"norm": 0.83, "sustain_db": 16.0, "transient_db": 12.0}, {"norm": 1.0, "sustain_db": 24.0, "transient_db": 12.0}])J");
+        const auto envSus = juce::JSON::parse (R"J([{"norm": 0.0, "sustain_db": -27.3, "transient_db": -2.5}, {"norm": 0.33, "sustain_db": -9.1, "transient_db": -0.9}, {"norm": 0.5, "sustain_db": 0.0, "transient_db": 0.0},
+                                                     {"norm": 0.67, "sustain_db": 4.5, "transient_db": 4.2}, {"norm": 1.0, "sustain_db": 13.7, "transient_db": 12.0}])J");
+        const auto upOnly = juce::JSON::parse (R"J([{"norm": 0.0, "sustain_db": 0.0, "transient_db": 0.0}, {"norm": 1.0, "sustain_db": 6.0, "transient_db": 6.0}])J");
+        auto* qd = new juce::DynamicObject(); qd->setProperty ("plugin", juce::JSON::parse (R"J({"name": "Quantum"})J"));
+        qd->setProperty ("attack", juce::JSON::parse (R"J({"control": "Attack Volume", "verdict": "measured", "map": [{"norm": 0.0, "display": "-13.9", "transient_db": -13.9, "sustain_db": 0.0}, {"norm": 0.5, "display": "0.0", "transient_db": 0.0, "sustain_db": 0.0}, {"norm": 1.0, "display": "12.0", "transient_db": 12.0, "sustain_db": 0.0}]})J"));
+        auto* qs = new juce::DynamicObject(); qs->setProperty ("control", "Output"); qs->setProperty ("verdict", "measured"); qs->setProperty ("map", quantumOut); qd->setProperty ("sustain", juce::var (qs));
+        qd->setProperty ("acceptance", juce::JSON::parse (R"J([{"ran": true, "pass": true}])J"));
+        const auto q = judge ("transient", juce::var (qd));
+        check (levelControl (quantumOut, "sustain_db", "transient_db") && ! levelControl (envSus, "sustain_db", "transient_db") && ! levelControl (upOnly, "sustain_db", "transient_db")
+               && q.pass && q.certifiedParts() == juce::StringArray { "attack" } && q.parts[1].state == "fail" && q.parts[1].why.contains ("a level control")
+               && mergeParts ({}, { { "frequency", "not_tested", "no frequency control", "" }, { "threshold", "pass", "", "Threshold" } }).size() == 1
+               && q.parts[1].notTheRole && mergeParts ({}, q.parts).size() == 1 && mergeParts ({}, q.parts)[0].name == "attack"
+               && transientAmount ("sustain", juce::JSON::parse (R"J({"control": "Release", "verdict": "no_effect"})J"), "sustain_db").notTheRole,
+               "cert WZ-31OCT-7b: a level control (Quantum's Output) is not a transient amount; a part with no control is not listed ('" + q.why() + "')");
+        check (one.size() == 2 && one[1].name == "frequency" && ! ok (one[1]) && both.size() == 2 && ok (both[1])
+               && partsWhy (shown) == "; verified: threshold (Threshold); mapped, not verified yet: frequency (Freq)"
+               && partsWhy (tw) == "; verified: attack (Range); not verified, not mapped: sustain (Release)"
+               && partByPart ("de-esser") && partByPart ("transient_shaper") && ! partByPart ("eq") && ! partByPart ("compressor")
+               && tr.contains ("for (auto& p : parts) { const auto it = rb.find (p.control); p.readBack = p.control.isNotEmpty() && it != rb.end() && it->second.proven(); }")
+               && tr.contains ("x->setProperty (\"verified\", p.state == \"pass\"); x->setProperty (\"read_back\", p.readBack);")
+               && tr.contains ("e.parts = twin->parts; e.L.why << certv1::partsWhy (e.parts);")
+               && tr.contains ("if (certv1::partByPart (certv1::mapCategoryOf (r.category))) v1Parts[{ r.product, r.format }] = certv1::mergeParts (v1Parts[{ r.product, r.format }], r.parts);"),
+               "cert WZ-31OCT-7: a certified de-esser / transient shaper says per part what is verified ('" + partsWhy (shown) + "')");
+    }
     // WZ-31OCT-2 NO PLUG-IN NOTICE ONCE THE RUN IS OVER (Kathy, staging run 1, 26 Oct: the free-month screen still asked to plug in). On
     // battery the notice shows before and during a run; on sending and the end screens it does not; the pause and the resume are unchanged
     {
