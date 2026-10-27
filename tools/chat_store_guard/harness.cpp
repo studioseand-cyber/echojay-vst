@@ -4046,6 +4046,44 @@ int main()
                "leave it alone");
     }
 
+    // ================================================================================================
+    // RV: A REVOKE OUTLASTS THE NEXT REFRESH TICK (27 Oct 2026, the RE14 red)
+    //
+    // inlineNeedsReopen above says the pane has nothing on screen for the selected slot. Whether it
+    // may then TAKE the Link's own instance is a second question, and the shipped build never asked
+    // it: after the user opened the plugin on the Link's own window the Link took its editor back,
+    // the next settle found the pane empty, and showInline asked for the lease again 180 ms later -
+    // both windows then believing they held one plugin, which is the road both crash reports came
+    // down. RV0 carries the behaviour that produced it.
+    {
+        using echojay::mayTakeLentEditor;
+
+        // THE KNOWN-BAD WITNESS: yesterday's build asked for the lease whenever the pane had nothing
+        // for the selected slot, press or refresh tick alike. One line, so the leg holds it.
+        const auto theBehaviourThisReplaced = [] (bool /*deliberate*/, bool /*revokeStands*/)
+        { return true; };
+        check (theBehaviourThisReplaced (false, true),
+               "RV0 the behaviour this replaced takes the Link's editor back on a REFRESH TICK with the "
+               "revoke standing - RE14's lap 3 in one line, and the state where two windows hold one "
+               "plugin; RV1 is the same case through the new decision",
+               "known-bad reproduced");
+        check (! mayTakeLentEditor (false, true),
+               "RV1 an AUTOMATIC open does not take the Link's editor back while the revoke stands - the "
+               "user has the plugin open on the Link's own window and the refresh must leave it there",
+               "leave the lease alone");
+        check (mayTakeLentEditor (true, true),
+               "RV2 ...but HIS PRESS does: asking for it here again is exactly what clears a revoke, and "
+               "without this the V2 could never take an editor back at all (the fault the first cut had)",
+               "take it");
+        check (mayTakeLentEditor (false, false),
+               "RV3 with no revoke standing an automatic open takes it as it always did - the pane shows "
+               "the real editor from a selection, which is what makes a rack switch land on the plugin",
+               "take it");
+        check (mayTakeLentEditor (true, false),
+               "RV4 and a press with nothing revoked is the ordinary open, unchanged",
+               "take it");
+    }
+
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures, passes);
     return failures == 0 ? 0 : 1;

@@ -55,6 +55,10 @@ Turn the switch on with the line above. Nothing to restart.
   and leave the pane empty until you pressed something.
 - **A slot number no longer stands for a rack.** Your own slot 1 and a Link's slot 1 are different things
   to the pane now (step 12).
+- **And the pane no longer takes the plugin back from the Link's own window.** This is the one found
+  this evening, and it is the one step 13 is about: when you open the plugin on the Link's own window
+  the V2 lets go, and until this fix the next refresh tick - 180 ms later - asked for it back and got
+  it, so both windows believed they had it. Now only a press on the V2's card brings it back here.
 - **Nothing about the copy road changed.** With the switch off, every one of those decisions answers "no"
   and the code is yesterday's. Part 1 is there to prove that, and it is the part I most want you to check.
 

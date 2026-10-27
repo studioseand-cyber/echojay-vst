@@ -2329,11 +2329,31 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     //
     // Neither answer does anything on its own: showInline still decides what to create, and with the
     // switch off and no copy running this is false and the panel behaves as it did yesterday.
+    // A PRESS CLEARS A REVOKE'S SUPPRESSION (27 Oct 2026, and see editorLeaseRevoked). Only a
+    // deliberate open reaches this - the selection-driven ones do not - so the Link's own window
+    // keeps the editor until he presses the V2's card again, which is the hand-over his condition 1
+    // asks for in both directions.
+    chainListPanel.onDeliberateOpen = [this](int) { revokedUid_.clear(); revokedSlot1_ = 0; };
+
+    // ---- AND THE SAME REVOKE, ASKED FOR WHERE THE LEASE IS TAKEN (27 Oct 2026, RE14) ---------
+    // canShowSlotEditorHere below answers the panel's "may this slot show an editor here at all",
+    // and an engaged edit session bypasses that question by design (the session's own copy does show
+    // inline). The revoke is not about the copy, so it gets its own answer, read by showInline just
+    // before it asks for the lease - the one place the Link's instance changes hands.
+    chainListPanel.lentReopenSuppressed = [this](int slot0) -> bool
+    {
+        if (slot0 < 0 || revokedSlot1_ != slot0 + 1) return false;
+        const auto uid = chainViewUid();
+        return uid.isNotEmpty() && revokedUid_ == uid;
+    };
+
     chainListPanel.canShowSlotEditorHere = [this](int slot0) -> bool
     {
         if (slot0 < 0) return false;
         const auto uid = chainViewUid();
         if (uid.isEmpty()) return false;
+        // A REVOKE STANDS UNTIL HE ASKS AGAIN (see editorLeaseRevoked).
+        if (revokedSlot1_ == slot0 + 1 && revokedUid_ == uid) return false;
         const int pubPid = publisherPidFor (uid);
         if (echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid, (int) ::getpid())
             && echojay::LocalInstances::find (uid) != nullptr)
@@ -2468,6 +2488,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onSelectSlot = [this](int i)
     {
         chainSelectedSlot_ = i;
+        // The selection moving is him asking for something else; a revoke only ever suppressed the
+        // AUTOMATIC re-open of the slot it was about (see editorLeaseRevoked).
+        if (revokedSlot1_ != i + 1 || revokedUid_ != chainViewUid())
+        { revokedUid_.clear(); revokedSlot1_ = 0; }
         // ---- THE LIVE VIEW FOLLOWS THE SELECTION (his ruling of 23 Oct 2026) ---------------
         // A Link slot gets the V2's own live copy; the main rack's own slots never needed one
         // (they are hosted here, and their editors have always been real).
@@ -3849,6 +3873,22 @@ void EchoJayEditor::editorLeaseRevoked (const juce::String& uid, int slot1Based,
     if (chainListPanel.inlineIsLent && chainListPanel.lentUid == uid
         && chainListPanel.lentSlot1 == slot1Based)
         chainListPanel.detachLentEditorNow (why);
+    // ---- AND WE DO NOT TAKE IT STRAIGHT BACK (27 Oct 2026) ------------------------------------
+    //
+    // *"when I open the plugin on the Link's own window while the V2 holds it, the V2 lets go"* -
+    // and letting go has to last longer than the next refresh tick. The panel re-opens the selected
+    // slot's editor whenever nothing is on screen for it, which is what makes a press work; after a
+    // revoke that same rule grabbed the editor back from the window the user had just opened it in.
+    // RE14's first lap showed it: the Link reported "Its window is open on 88_7even Kick_2_02" and
+    // our road still read "real", holding slot 1 - two windows each believing they had it.
+    //
+    // So a revoke suppresses the AUTOMATIC re-open for that rack and slot. A deliberate press
+    // clears it (that is the user asking again, and then the Link's window is the one that lets
+    // go), and so does the selection moving elsewhere. Nothing else does.
+    revokedUid_ = uid;
+    revokedSlot1_ = slot1Based;
+    EchoJay_NSLog (("EJPane: slot " + juce::String (slot1Based) + " of " + uid + " was revoked ("
+                    + why + ") - this window will not re-open it by itself; a press will").toRawUTF8());
 }
 
 EchoJayEditor::~EchoJayEditor() {
@@ -40833,6 +40873,12 @@ void EchoJayEditor::publishRigState()
         o->setProperty ("onboardingUp", channelPromptVisible || genrePromptVisible || projectPromptVisible);
         o->setProperty ("composerVisible", chatInput.isVisible());
         o->setProperty ("chainPanelUid",    chainViewUid());
+        // ---- THE STRIP LINE, SO A ROW CAN READ WHAT THE PANE SAID (27 Oct 2026) ------------------
+        // RE14's hand-over to the Link's own window answered "lap 1 NO" with a flat read and
+        // "lap 3 NO" with a bounded one, and neither cut could say whether the LINK had ever
+        // reported showing its window - the pane knows (onBringLinkForward writes the answer
+        // here), and nothing published it.
+        o->setProperty ("chainStatusText", chainListPanel.statusText);
         o->setProperty ("slotCaptionSentinel", anySentinel);
         o->setProperty ("slotCaptionOverlapsButtons", anyOverlap);
     }

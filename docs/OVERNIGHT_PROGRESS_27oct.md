@@ -84,3 +84,60 @@ live view. No more patching.
    the place that already decided the road.
 
 Nothing is installed. Sean remains on V2 AU 9B29E0FE / Link AU F95EC755.
+
+---
+
+## 27 Oct, evening: round 14 (3 reds of 205 rows), and one product fault among them
+
+The full unfiltered pass, one process, five open/close laps per plugin (his ruling: the full fifty is
+for the final gate and for overnight runs). **RED: 3 failed, 202 passed, 18 skipped** - against round
+9's 5 failed / 195 passed / 20 skipped. Build V2 `178108C3` / Link `93F3FE99`, not installed.
+
+### 1. RE14 - the V2 took the Link's editor back BY ITSELF, 183 ms after letting go (product)
+
+The row's trail said "lap 3: to the Link NO ... the Link said *Showing AUMultibandCompressor's own
+window, live on the Link*" - both sides claiming the plugin, which is the state the row exists to
+catch. The log settles who was right:
+
+```
+18:37:22.419  the rig asks the Link's own window for slot 1
+18:37:22.478  report_state seq=250      <- the rig's sample, 19 ms BEFORE the hand-over
+18:37:22.497  the V2 lets go; the Link takes its editor back and builds its own (7th for that slot)
+18:37:22.674  EJPanel: rebuild slots=2 sel=0
+18:37:22.680  "closed this Link's own window ... because the plugin was opened in the V2's live view"
+18:37:22.705  report_state seq=251      <- the next sample: the V2 holds it again
+```
+
+No `open_slot` command sits between the ask and that re-take: **nothing pressed anything**. The
+refresh tick found the pane empty for the selected slot and asked for the lease again.
+
+The revoke suppression I added this afternoon was supposed to stop exactly this, and it did not,
+because `ChainListPanel::rebuild` only consults `canShowSlotEditorHere` in the branch guarded by
+`remote && !editingSession` - and an edit session had been engaged on that very Link since
+18:37:12.386 (`EJBorrow: session ACTIVE <- true`, never released before the laps). With a session up,
+the revoke was never asked about.
+
+Fixed where the lease is actually taken rather than at the panel's two reopen sites: `showInline` now
+asks `echojay::mayTakeLentEditor (deliberate, revokeStandsHere)` before it calls `onCreateLentEditor`,
+and refuses an AUTOMATIC take while a revoke stands for that rack and slot. A session's own editing
+copy is not the Link's instance and cannot be in two windows, so it still opens as it always did.
+Guard legs RV0-RV4 in chat_store_guard, RV0 carrying the known-bad behaviour (`return true`).
+
+### 2. R5 and SCEN A4 - the suite was measuring a world with no Link in it (the rig)
+
+R5 answered `view= working=` and SCEN A4 read `slots -1 -> -1`. The restoration that puts back the
+tracks the live-view rows delete DID run and DID re-create both Links - and then printed "no connected
+Link came back within 20 s". It waited with `rig.until`, **which pumps the message thread and nothing
+else**, while a Link is only in the registry as connected for as long as it is passing audio (that is
+why R0 gets its registry rows from a 200-block loop, not from a wait). Twenty seconds of silence, and
+every Link-dependent leg after it inherited an empty world: R5 red, SCEN A4 red, R1b and B9 skipped.
+The wait now plays the tracks while it waits, in the same shape as R0's loop.
+
+**B9 is a live-view row**, so by his 26 Oct rule its skip is a stop on its own - it is in this fix.
+
+### 3. What the reds printer missed
+
+Three failures, two printed: `SCEN A4 FAIL` arrived with stdout noise ahead of it
+(`eMacOS_Cocoa_Runtime eInit_RM ...`) and the `^  ROW .*FAIL` pattern did not match it. Round 15's
+printer matches every shape of failing row. A verdict line that says 3 and a list that shows 2 is the
+kind of thing that gets read as "two reds".

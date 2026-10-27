@@ -5460,25 +5460,31 @@ int main (int argc, char* argv[])
                         {
                             // --- the V2 holds it; ask the LINK's own window for it
                             const auto ask = noteOf (lease ("link_window", lvUid, lvSlot));
-                            // ---- WAITED FOR, WITH A BOUND (27 Oct 2026) --------------------------
-                            // A flat 2.5 s read gave "lap 1: NO, lap 2: yes, lap 3: yes" - and the
-                            // first lap is the one that follows RE12's replace, where the pane has
-                            // just been handed a fresh editor and the ctrl-cmd crosses that. Laps 2
-                            // and 3 proved the mechanism; lap 1 proved my stopwatch. So the row waits
-                            // for the hand-over with a bound of eight seconds and reports what it saw
-                            // either way: "did not happen in 8 s" is a real answer, 2.5 s is not.
+                            // ---- WAITED FOR, WITH A BOUND, AND BOTH SIDES RECORDED (27 Oct 2026) -
+                            //
+                            // A flat 2.5 s read gave "lap 1 NO, laps 2-3 yes". A bounded wait of 8 s
+                            // gave "laps 1-2 yes, lap 3 NO". A failure that moves when the stopwatch
+                            // changes is a timing read, not a lost hand-over - and the one thing
+                            // neither cut recorded is whether the LINK ever said it had shown its
+                            // window. The pane knows (onBringLinkForward writes it into the strip
+                            // line) and nothing published it; now it does, the bound is twelve
+                            // seconds, and a failing lap names the side that did not move.
                             rig.until ([&] (const juce::var& st)
                             {
                                 return st.getProperty ("liveViewRoad", juce::var()).toString() != "real"
                                     || (int) st.getProperty ("lentSlot", juce::var()) != lvSlot;
-                            }, 8000);
+                            }, 12000);   // the Link has to raise its own window first; twelve seconds of it
                             const auto st4 = rig.freshState();
+                            const auto shownNote = st4.getProperty ("chainStatusText", juce::var()).toString();
                             const bool v2LetGo = st4.getProperty ("liveViewRoad", juce::var()).toString() != "real"
                                               || (int) st4.getProperty ("lentSlot", juce::var()) != lvSlot;
                             if (v2LetGo) ++toLink;
                             trail << (lap > 0 ? " | " : "") << "lap " << (lap + 1) << ": to the Link "
                                   << (v2LetGo ? "yes" : "NO");
-                            juce::ignoreUnused (ask);
+                            if (! v2LetGo)
+                                trail << " (the ask answered \"" << ask << "\""
+                                      << (shownNote.isNotEmpty() ? ", the Link said \"" + shownNote + "\"" : "")
+                                      << ")";
 
                             // --- and back: the V2's card is pressed again
                             rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
@@ -5704,12 +5710,21 @@ int main (int argc, char* argv[])
                     }
                     ran.add (subject);
 
-                    // FIFTY. Open the card, let it draw, select the own rack (which hands the lease
-                    // back and re-homes the view), and again.
+                    // FIVE, OR FIFTY FOR A GATE (his ruling, 27 Oct 2026). Open the card, let it
+                    // draw, select the own rack (which hands the lease back and re-homes the view),
+                    // and again.
+                    //
+                    // *"Use 5 open/close laps per plugin for the in-between runs; keep the full 50
+                    //  only for the final gate before install and for overnight runs."*  Fifty laps
+                    //  across four plugins is most of this block's wall-clock, and the fault it is
+                    //  for - a second editor, a leak, a wrong panel - shows up in the first few if it
+                    //  is there at all. EJ_RIG_FULL_STRESS=1 is the gate's setting, and the row SAYS
+                    //  which it ran: a five-lap pass must never be read as the fifty-lap one.
+                    const int laps = ::getenv ("EJ_RIG_FULL_STRESS") != nullptr ? 50 : 5;
                     juce::String firstPlugin, lastPlugin;
                     bool everWrongPanel = false;
                     int builtWhileOpen = -1;
-                    for (int i = 0; i < 50; ++i)
+                    for (int i = 0; i < laps; ++i)
                     {
                         rig.send (echojay::rig::cmd::selectLink, args1 ("uid", rhUid), 6000);
                         rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 6000);
@@ -5722,13 +5737,14 @@ int main (int argc, char* argv[])
                         // THE COUNT IS READ WHILE IT IS OPEN. Read after the close it was always 0:
                         // the state publishes it keyed on the LENT uid and slot, and by then there is
                         // no lent anything - my own field, read at the wrong moment.
-                        if (i == 49) builtWhileOpen = builds();
+                        if (i == laps - 1) builtWhileOpen = builds();
                         rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 6000);
                         rhPump (120);
                     }
                     const int built = builtWhileOpen;
                     worstBuilds = juce::jmax (worstBuilds, built);
-                    rhTrail.add (subject + " (slot " + juce::String (subjectSlot) + "): 50 opens, "
+                    rhTrail.add (subject + " (slot " + juce::String (subjectSlot) + "): "
+                                 + juce::String (laps) + " opens, "
                                  + juce::String (built) + " editor(s) built, panel "
                                  + (everWrongPanel ? "CHANGED" : "steady") + " (\"" + firstPlugin + "\")");
                     juce::ignoreUnused (lastPlugin);
@@ -5740,10 +5756,16 @@ int main (int argc, char* argv[])
                          "ran [" + ran.joinIntoString (", ") + "]"
                          + (notRan.isEmpty() ? "" : ", WOULD NOT LOAD [" + notRan.joinIntoString (", ") + "]"));
                 if (rowWanted ("RH2"))
+                {
+                    const int laps = ::getenv ("EJ_RIG_FULL_STRESS") != nullptr ? 50 : 5;
                     row ("RH2", worstBuilds == 1,
-                         "fifty opens and closes of one slot, per plugin: is the editor built ONCE and kept "
-                         "(his one-press-one-take, and the leak test)",
+                         juce::String (laps) + " opens and closes of one slot, per plugin: is the editor built "
+                         "ONCE and kept (his one-press-one-take, and the leak test)"
+                         + (laps < 50 ? juce::String (" [THE FAST PASS, not the gate: the gate runs 50, with "
+                                                      "EJ_RIG_FULL_STRESS=1]")
+                                      : juce::String (" [the full fifty]")),
                          "the worst count was " + juce::String (worstBuilds) + " - " + rhTrail.joinIntoString (" | "));
+                }
 
                 // ---- RH3: SWITCHING BETWEEN SLOTS -----------------------------------------------
                 if (rowWanted ("RH3"))
@@ -6134,12 +6156,43 @@ int main (int argc, char* argv[])
         // change printed, rather than left to look like a product fault downstream.
         if (linkUid.isEmpty() || ! linkRowOf (rig.freshState(), linkUid).getProperty ("connected", false))
         {
+            // WAITED FOR, WITH A BOUND, AND WITH THE AUDIO RUNNING (27 Oct 2026, the R5 red).
+            //
+            // The first cut looked once, immediately after the re-create, and a freshly instantiated
+            // Link has not published as connected yet. The second waited for it with rig.until, and
+            // that wait pumps the MESSAGE THREAD and nothing else - while a Link is only in the
+            // registry as "connected" for as long as it is passing audio, which is why R0 gets its
+            // registry rows from its 200-block loop and not from a wait. So round 14 sat in silence
+            // for twenty seconds, read "not connected" every turn, printed that nothing came back,
+            // and the legs below inherited a world with no Link in it: R5 answered "view= working="
+            // and SCEN A4 read "slots -1 -> -1". Neither was about the product.
+            //
+            // This wait plays the tracks while it waits, in the same shape as R0's loop, so what it
+            // measures is a Link coming up rather than a Link being starved.
             juce::String fresh, freshName;
-            if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
-                for (const auto& l : *arr)
-                    if ((bool) l.getProperty ("connected", false))
-                    { fresh = l.getProperty ("uid", juce::var()).toString();
-                      freshName = l.getProperty ("name", juce::var()).toString(); break; }
+            const auto firstConnected = [&] (juce::String& uidOut, juce::String& nameOut) -> bool
+            {
+                if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                        if ((bool) l.getProperty ("connected", false))
+                        { uidOut = l.getProperty ("uid", juce::var()).toString();
+                          nameOut = l.getProperty ("name", juce::var()).toString(); return true; }
+                return false;
+            };
+            const auto giveUp = juce::Time::getMillisecondCounter() + (juce::uint32) 20000;
+            while (! firstConnected (fresh, freshName)
+                   && juce::Time::getMillisecondCounter() < giveUp)
+            {
+                for (int i = 0; i < 50; ++i)
+                {
+                    for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
+                    if ((i % 10) == 0) Rig::pump (10);
+                }
+                Rig::pump (300);     // the registry pass runs on the processor's 1 Hz timer
+            }
+            if (fresh.isEmpty())
+                std::printf ("  no connected Link came back within 20 s of re-creating the tracks - the legs "
+                             "below will say so rather than appear to be about the product\n");
             if (fresh.isNotEmpty() && fresh != linkUid)
             {
                 std::printf ("  the Link the later legs hold (%s) is gone; they now hold %s (\"%s\")\n",

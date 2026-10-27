@@ -3690,6 +3690,21 @@ private:
             editor never appeared once. A green that rested on that is not a green. */
         std::function<bool(int slot0)> canShowSlotEditorHere;
 
+        /** A PERSON (or the agent) ASKED FOR THIS SLOT (27 Oct 2026). Called from showInline for a
+            DELIBERATE open only - his press, the pop-out button, the rig's open_slot - never for the
+            selection-driven opens the panel does to keep itself consistent. The editor uses it to
+            clear a revoke's suppression: "the V2 lets go" has to outlast the next refresh tick, but
+            it must not outlast him pressing the card again. */
+        std::function<void(int slot0)> onDeliberateOpen;
+
+        /** IS A REVOKE STILL STANDING FOR THIS SLOT? (27 Oct 2026, RE14) The editor answers yes
+            between the moment a Link took its editor back and the moment he asks for it here again.
+            While it stands, an AUTOMATIC open leaves the lease alone: see showInline, which is the
+            single place the lease road is asked for, and which is reached from the refresh tick as
+            well as from a press. A deliberate open never consults it - clearing it IS what a press
+            means - so this answer only ever decides what the panel does on its own. */
+        std::function<bool(int slot0)> lentReopenSuppressed;
+
         /** THE RACK SELECTOR. It lives on the PANEL, not on the editor, and
             that is the fix for the bug that hid it: as a panel child its
             visibility follows the panel's automatically, so there is ONE
@@ -4239,6 +4254,7 @@ private:
             // nothing is drawn on another tab because nothing is created.
             if (deliberate)
             {
+                if (onDeliberateOpen) onDeliberateOpen (i);
                 if (onEditorNeedsChainTab) onEditorNeedsChainTab();
             }
             else if (! isShowing())
@@ -4277,7 +4293,28 @@ private:
             // and the copy road below runs exactly as it does today - which is the whole of his
             // condition. The reason is logged either way; a live view that silently changed kind is
             // the thing he must never have to guess about.
-            if (onCreateLentEditor)
+            // ---- AND A REVOKE OUTLASTS THE NEXT REFRESH TICK (27 Oct 2026, RE14) -------------
+            //
+            // The lease is asked for on a press and on a refresh alike, and that is right everywhere
+            // except just after the user has opened the plugin on the LINK'S OWN window. The Link
+            // takes its editor back then and this window is told (editorLeaseRevoked); 180 ms later
+            // the next settle rebuilt the panel, nothing was on screen for the selected slot, and
+            // this call asked for the lease again - and got it. Both windows then believed they had
+            // the plugin, which is the state RE14 names and the road both crash reports came down:
+            // lap 3 of its three showed the V2 holding slot 1 while the Link's own strip said
+            // "Showing AUMultibandCompressor's own window, live on the Link."
+            //
+            // The suppression the revoke sets is checked HERE rather than at the panel's two reopen
+            // sites because this is where the lease is taken: a session's own editing copy, which is
+            // not the Link's instance and cannot be two windows at once, still opens as it always
+            // did and falls out of the branch below.
+            const bool revokeStands = lentReopenSuppressed != nullptr && lentReopenSuppressed (i);
+            const bool mayTakeLent   = echojay::mayTakeLentEditor (deliberate, revokeStands);
+            if (! mayTakeLent)
+                EchoJay_NSLog (("EJPane: NOT taking the Link's editor for slot " + juce::String (i + 1)
+                                + " back by itself - it was revoked for this slot and only a press "
+                                "asks for it again").toRawUTF8());
+            if (onCreateLentEditor && mayTakeLent)
             {
                 juce::String uid, why; int slot1 = 0; unsigned token = 0; void* lentView = nullptr;
                 juce::AudioProcessorEditor* lent = nullptr;
@@ -4807,6 +4844,11 @@ private:
         void selectSlot(int i, bool deliberate = false)
         {
             selectedIdx = i;
+            // A DELIBERATE SELECTION IS HIM ASKING, AND IT IS SAID FIRST (27 Oct 2026). It has to be
+            // before the remote test below: that test asks canShowSlotEditorHere, which answers NO
+            // while a revoke's suppression stands, and the suppression is exactly what a press is
+            // meant to clear. Saying it afterwards made the V2 unable to take an editor back at all.
+            if (deliberate && onDeliberateOpen) onDeliberateOpen (i);
             if (onSelectSlot) onSelectSlot(i);
             for (auto& bl : blocks)
             { bl->selected = (bl->slotIdx == i); bl->repaint(); }
@@ -7343,6 +7385,11 @@ private:
     void unpinRackView() { viewRackPinned_ = false; viewRackUid_.clear(); }
     bool         viewRackPinned_ = false;   // R1: a rack selection chose the view
     juce::String viewRackUid_;              // ...and this is the rack it chose ("" = the local one)
+    // ---- THE LAST REVOKE, SO THE REFRESH DOES NOT UNDO IT (27 Oct 2026) ------------------------
+    // Set by editorLeaseRevoked, cleared by a press on another slot. While it stands, the panel's
+    // automatic re-open leaves that rack's slot alone - the window the user opened it in keeps it.
+    juce::String revokedUid_;
+    int          revokedSlot1_ = 0;
     /** Slots for whichever rack chainViewUid() names, in the panel's own
         type. Local reads ChainHost directly; remote converts the sidecar,
         whose RackSidecarSlot carries the same five fields SlotInfo does.

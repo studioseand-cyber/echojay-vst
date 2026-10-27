@@ -46,4 +46,25 @@ inline bool inlineNeedsReopen (const InlineViewState& s, int selectedSlot,
     return ! inlineCoversIt;
 }
 
+/** MAY THIS OPEN ASK FOR THE LINK'S OWN EDITOR? (27 Oct 2026, RE14)
+
+    `inlineNeedsReopen` above says the pane has nothing on screen for the selected slot. It does not
+    say the pane may go and TAKE the Link's instance - and after the user has opened the plugin on
+    the Link's own window, it may not. The Link takes its editor back then and this window is told;
+    the next settle found the pane empty and asked for the lease again, 180 ms later, so both windows
+    believed they had the plugin. That is the state RE14 names and the road both crash reports came
+    down: an editor built for a second time on one instance while another window still held the
+    first.
+
+    A press is the user asking for it here again, and it clears the suppression before this is asked;
+    nothing automatic clears it. So: deliberate opens always may, and an automatic one may only while
+    no revoke stands for that rack and slot.
+
+    @param deliberate        his press, the pop-out button, the rig's open_slot - not a refresh tick
+    @param revokeStandsHere  the Link took this very slot's editor back and he has not asked again */
+inline bool mayTakeLentEditor (bool deliberate, bool revokeStandsHere) noexcept
+{
+    return deliberate || ! revokeStandsHere;
+}
+
 } // namespace echojay
