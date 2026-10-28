@@ -2,8 +2,17 @@
 //  bandpeak_cadence_guard - bandPeak on a sample-counted 256-sample cadence (K's MA10, 28 Oct 2026)
 // ===============================================================================================
 //
-//  WHAT IT IS FOR. K's V1 crest is bandPeak/bandPower within each 100 ms hop, and on her real stems
-//  it separates drums (6.4-7.6 dB) from pad, bass and vocal (1.4-5.4) - PROVIDED bandPeak does not
+//  READ THIS FIRST (28 Oct 2026, 17:05). K's confirmation test came back NEGATIVE: the V1 crest does
+//  NOT separate a real drum excess from a body excess - a 0.13 dB gap - so Sean's ruling is that the
+//  crest is DIRECTIONAL ONLY before the beta and never decides, and this branch stays UNMERGED AND
+//  PARKED. What this guard establishes is narrower than it reads, and still worth keeping: the
+//  cadence does what it says (a figure that no longer moves with the host's block size), bandPower is
+//  untouched, and the COST is measured. It does NOT establish that the crest is usable, and BP3 below
+//  must not be read as saying so - it separates a synthetic click train from a synthetic tone, which
+//  is the easiest case there is and not her stems.
+//
+//  WHAT IT WAS FOR. K's V1 crest is bandPeak/bandPower within each 100 ms hop, and on her MA10 run
+//  it separated drums (6.4-7.6 dB) from pad, bass and vocal (1.4-5.4) - PROVIDED bandPeak does not
 //  depend on the host's block size. Today it does: the engine runs one band FFT per processBlock call,
 //  so a hop holds sampleRate*0.1/blockSize frames (34 at a 128 block, 4 at 1024) and a MAX over more
 //  frames is a higher max. Her measurement of that drift is "up to 0.38 dB from block size alone".
@@ -178,9 +187,14 @@ int main()
             if (d > 0.01) worstDrum = std::min (worstDrum, d);
             bestPad = std::max (bestPad, p);
         }
+        // BP3 IS ABOUT THE CADENCE, NOT ABOUT THE CREST'S USEFULNESS. Her confirmation test (28
+        // Oct) found a 0.13 dB gap between a real drum excess and a body excess, which is why the
+        // crest is directional only before the beta. A click train against a steady tone is the
+        // easiest case there is: this row says the cadence RESOLVES a transient at all, which is the
+        // property the 256-sample hop was built for, and says nothing about her stems.
         check (worstDrum > bestPad + 1.0,
-               "BP3 a transient signal's crest stands clear of a steady one's - the separation her "
-               "V1 crest exists for (hers: drums 6.4-7.6, pad/bass/vocal 1.4-5.4)",
+               "BP3 a transient signal's crest stands clear of a steady one's - the cadence resolves "
+               "a transient at all (NOT a claim about her stems: her drums-vs-body gap is 0.13 dB)",
                "drums (worst band with any crest) " + juce::String (worstDrum, 2)
                + " dB vs pad (best band) " + juce::String (bestPad, 2) + " dB");
     }
