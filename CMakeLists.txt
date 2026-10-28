@@ -1019,7 +1019,14 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/viz/TransferCurveView.cpp
     Source/viz/VizView.cpp
     Source/viz/WaveshaperView.cpp
+    # THE NATIVE LOG TU (28 Oct 2026). SurgicalEqProcessor::clampBandGainDb says what it did when it
+    # clamps a band past +/-24 dB, and saying it is EchoJay_NSLog - defined in NativeClip.mm, which
+    # every plugin target gets through this same list. This target compiles that .cpp directly, so
+    # before today it had no need of the symbol; it does now, and the alternative (a clamp that moves
+    # a number silently) is the fault the clamp was added to end.
+    ${ECHOJAY_NATIVE_SOURCES}
 )
+
 target_include_directories(EchoJayBuiltinRegistryTest PRIVATE Source)
 
 target_compile_definitions(EchoJayBuiltinRegistryTest PRIVATE
