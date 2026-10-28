@@ -203,13 +203,32 @@ where they live:
 - **Nothing renders it.** No layout reads `crestLog`; K's `EJMatchReport.h` does not take it. A field
   nobody draws is the point: it is a log that happens to ride the card's own record.
 - **It also goes to the server with the Match request** (Sean, 28 Oct; B takes it). One computation,
-  two destinations — never two computations.
+  two destinations — never two computations. It rides **`context.match.crestLog`** in **this exact
+  shape**, and B's bounds are part of the contract: `hostBlockSize` an integer **16..8192**,
+  `framesPerHop` **0..1000**, each `v0`/`v1` entry **−10..40 dB or null**, `v0` required and `v1` as
+  available. **An out-of-bounds log is dropped, never the block** — so a figure outside those bounds
+  costs the log and nothing else. The plugin therefore **checks before it sends** rather than clamping
+  (`echojay::crestlog::withinServerBounds`): a clamped figure would be a wrong number that passes,
+  which is worse than a missing log. It is kept at `match:hist:<uid>:<chatId>:crest` (20 entries, 30
+  days), covered by account deletion, and **nothing reads it to decide**.
 
-**The card's one sentence.** Whenever the card proposes **at least one band move**, it shows, once and
-not under each move: *"These EQ moves were proposed without the check that tells body from peaks."*
-With no band move it is **absent**. (B's plan road carries its own sentence in a plan's `warnings`,
-once per plan, for a Match plan with an EQ step — that is C3 §2's surface, not this one, and the two
-wordings are not identical. Raised with B.)
+**The card's one sentence, from ONE source.** The wording is Sean's, verbatim, and it is now the only
+one: *"These EQ moves were proposed without the check that tells body from peaks."*  B's earlier
+variant is gone (settled 28 Oct), so there is one sentence in the system.
+
+Where it is drawn needs a rule, and B found the reason: a Match card that draws the sentence itself
+**and** shows a drafted plan whose `warnings` carry it would show it **twice on one screen**. So:
+
+- **before a plan exists** — the Match card draws it itself, once, whenever the card proposes at
+  least one band move, and never under each move;
+- **once a plan exists** — the plan's `warnings` carry it (B pushes it once per plan, deduped, when
+  the plan has an EQ step), and **the card stops drawing its own**;
+- **with no band move** it is absent from both.
+
+One sentence, one source at a time. This is the same rule the run card already applies to an ask's
+question (`askHere`: the row and the block are two drawings of one thing, so the block goes) — and it
+is a rule about IDENTITY, not about comparing prose: the card knows whether a plan is on screen, so
+it never has to ask whether two strings are the same sentence.
 
 Rules that hold the card honest, and that MA-rows pin: a figure that was not measured is **absent, never 0**; `tier` carries "bounded" where X1 bounds a band; `after.present` false means no verify capture exists, which is not the same as "nothing changed".
 

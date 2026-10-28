@@ -1,5 +1,5 @@
 scenario A4b
-captured 2026-10-28T13:13:21.884Z
+captured 2026-10-28T18:06:41.603Z
   [user] rig-rawids-marker: set the attack and release
   [assistant] Set the attack and release.
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold

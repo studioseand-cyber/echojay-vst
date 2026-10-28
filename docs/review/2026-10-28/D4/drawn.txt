@@ -1,5 +1,5 @@
 scenario D4
-captured 2026-10-28T16:29:09.297Z
+captured 2026-10-28T18:15:39.049Z
   [user] rig-undoadd-marker: add a gate
   [assistant] Added an EchoJay Gate.
   [user] rig-twostep-marker: two changes

@@ -1,9 +1,5 @@
 scenario I9d
-captured 2026-10-28T16:28:28.225Z
-  [user] cl1b  [rig-replay:rp_cp_4]
-  [assistant] I added a Tube-Tech CL 1B compressor to the kick with threshold around -15 dB, ratio 4:1, attack 3 and release 5 on its dial.
-  [user] Add Renaissance Axx with threshold at -20 dB  [rig-replay:rp_cp_2]
-  [assistant] Stopped.
+captured 2026-10-28T18:15:12.597Z
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it, with the setting you asked for.
   [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
@@ -13,4 +9,4 @@ captured 2026-10-28T16:28:28.225Z
   run row: status=Done changes=0 steps=1 zones=[11:1 step]
   opening: Had a look at that one.
   closing: Had a look at that one.
-    step "gain reduction on the third-party slot" [done] right="" detail="I measured what reaches Renaissance Axx (s) and what leaves it: in -10.2 loudest, -37.0 typical; out -3.5 loudest, -3.8 typical dBFS RMS. I cannot read its own gain-reduction meter." chips=[]
+    step "gain reduction on the third-party slot" [done] right="" detail="I measured what reaches Renaissance Axx (s) and what leaves it: in -10.2 loudest, -37.0 typical; out -4.0 loudest, -11.4 typical dBFS RMS. I cannot read its own gain-reduction meter." chips=[]

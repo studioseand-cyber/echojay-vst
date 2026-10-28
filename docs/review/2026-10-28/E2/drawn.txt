@@ -1,6 +1,7 @@
 scenario E2
-captured 2026-10-28T16:23:21.343Z
-  [user] rig-gr-marker: how much is it doing?
+captured 2026-10-28T18:09:45.859Z
+  [user] The gain I was levelling with is no longer there - level loop stopped.
+The chain changed after the level was matched - re-measuring from whatever is playing.
   [assistant] Read the gain reduction.
   run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
   opening: Read the gain reduction.

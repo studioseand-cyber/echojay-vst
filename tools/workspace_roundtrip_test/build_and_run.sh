@@ -18,6 +18,26 @@ echo "isolated state root: $ECHOJAY_STATE_HOME"
 
 set -e
 cd "$(dirname "$0")/../.."
+# ---- WHAT THIS NEEDS, NAMED BEFORE IT IS MISSED (28 Oct 2026) -----------------------------
+# This test compiles EchoJayWorkspace.cpp a second time with EJ_SELFTEST, using the PRODUCT'S OWN
+# compile line lifted out of build/compile_commands.json - that is how it is guaranteed to be
+# compiled with the flags the plugin is. Without the file the python below threw and the gate said
+# only "could not be built", which sent K looking for a broken test instead of a missing flag.
+if [ ! -f build/compile_commands.json ]; then
+  echo "REFUSING TO RUN - build/compile_commands.json does not exist."
+  echo "  It is what this test lifts the product's own compile line from."
+  echo "  Create it:  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+  echo "  (an existing build/ only needs the re-configure; nothing is rebuilt by it)"
+  exit 2
+fi
+if [ ! -f "build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a" ]; then
+  echo "REFUSING TO RUN - build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a does not exist."
+  echo "  This test links the V2 archive from the build/ tree."
+  echo "  Build it:  cmake --build build -j 4 --target EchoJay"
+  echo "  (a header change deletes the archives in build, build-guards AND build-release, and this"
+  echo "   is the one that then has to be rebuilt before this test can run at all)"
+  exit 2
+fi
 SCRATCH=$(mktemp -d)
 python3 - "$SCRATCH" <<'PYEOF'
 import json, sys, shlex, subprocess, os

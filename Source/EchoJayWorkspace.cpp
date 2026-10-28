@@ -1,4 +1,5 @@
 #include "EchoJayWorkspace.h"
+#include <clocale>   // the selftest's comma-decimal leg (28 Oct 2026)
 #include "EJAgentRunView.h"   // normalisedProse: the record compares answers the way the card does
 extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm, as every other unit declares it
 #include <algorithm>
@@ -1341,15 +1342,40 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
     WsChat chan = pre;                // identical but a channel chat
     chan.id = "t2"; chan.linkUid = "abc123def0"; chan.linkNameSnap = "Drums";
 
+    // ---- "STABLE" MEANS STABLE AFTER THE MIGRATION (28 Oct 2026) -------------------------
+    //
+    // parseChat migrates an unplaced log: it stamps each row's `seq`, sets the chat's `nextSeq` and
+    // MINTS an entryId from a fresh juce::Uuid. chatToVar writes those three only when they are set,
+    // so ser(pre) has none of them and ser(parse(ser(pre))) has all three - with a random id. The
+    // old check compared those two strings, which cannot match on any machine, in any locale, and
+    // had nothing to do with K's Mac.
+    //
+    // What CAN be asserted, and is the property worth having: the migrated form is stable under
+    // repeat (the migration is idempotent, which is what its own comment claims). So each of these
+    // takes the round trip ONCE to get the migrated text, and then asserts the next one is identical.
+    auto migrated = [&ser](const WsChat& c) { return ser (parseChat (juce::JSON::parse (ser (c)))); };
+    auto stableAfterMigration = [&ser](const juce::String& once)
+    { return ser (parseChat (juce::JSON::parse (once))) == once; };
+
     const auto s1  = ser(pre);
-    const auto s1b = ser(parseChat(juce::JSON::parse(s1)));
+    const auto s1m = migrated(pre);
     const auto s2  = ser(chan);
     const auto rt2 = parseChat(juce::JSON::parse(s2));
-    const auto s2b = ser(rt2);
+    const auto s2m = ser(rt2);
 
-    const bool preStable  = s1 == s1b;
+    const bool preStable  = stableAfterMigration (s1m);
     const bool preNoKeys  = !s1.contains("linkUid") && !s1.contains("linkNameSnap");
-    const bool chanStable = s2 == s2b;
+    const bool chanStable = stableAfterMigration (s2m);
+    // ...AND THE MIGRATION ITSELF, which the old check was covering by accident while asserting its
+    // opposite: a row with no place gets one, in file order, with an id, and the chat's allocator
+    // moves past it.
+    const auto rt1 = parseChat (juce::JSON::parse (s1));
+    const bool migStamped = rt1.messages.size() == 1
+                         && rt1.messages[0].seq == 1
+                         && rt1.messages[0].entryId.isNotEmpty()
+                         && rt1.nextSeq >= 2
+                         && ! s1.contains ("_seq") && ! s1.contains ("_nextSeq")
+                         && s1m.contains ("_seq") && s1m.contains ("_nextSeq");
     const bool chanFields = rt2.linkUid == "abc123def0" && rt2.linkNameSnap == "Drums";
 
     // B.0: a chat neither client has stamped must serialise with NO
@@ -1362,9 +1388,13 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
     webStamped.id = "t3";
     webStamped.updatedAt = "2026-07-28T09:15:00.123Z";   // as new Date().toISOString()
     const auto s3   = ser(webStamped);
+    const auto s3m  = migrated(webStamped);
     const auto rt3  = parseChat(juce::JSON::parse(s3));
+    // The POINT of this one is that a field this client does not own survives untouched. That is
+    // asserted directly, and the text comparison is against the migrated form for the reason above.
     const bool updPreserved = rt3.updatedAt == "2026-07-28T09:15:00.123Z"
-                           && ser(rt3) == s3;
+                           && s3m.contains ("\"updatedAt\": \"2026-07-28T09:15:00.123Z\"")
+                           && stableAfterMigration (s3m);
     // And our own stamp must be in the web's exact shape, not JUCE's
     // local-offset ISO: 24 chars, T at 10, dot at 19, trailing Z.
     const auto stamp = isoUtcNow();
@@ -1401,27 +1431,80 @@ bool EchoJayWorkspace::runRoundTripSelfTest()
     fm.figuresJson = "{\"a\":{\"label\":\"X\",\"int\":-14.2},\"b\":{\"label\":\"Y\"},\"cross\":true}";
     figChat.messages.push_back(fm);
     const auto sf  = ser(figChat);
+    const auto sfm = migrated(figChat);
     const auto rtf = parseChat(juce::JSON::parse(sf));
     const bool figRoundTrip = rtf.messages.size() == 2
                            && rtf.messages[1].figuresJson == fm.figuresJson
-                           && ser(rtf) == sf;
+                           && stableAfterMigration (sfm);
     const bool figNoKey = !s1.contains("_figures");   // plain pre-C chat carries none
 
 
-    lastResult = preStable && preNoKeys && chanStable && chanFields
+    // ---- AND UNDER A COMMA-DECIMAL LOCALE (Sean's ask, 28 Oct 2026) ---------------------
+    //
+    // It was his first suspect for K's failure and it turned out not to be the cause - but a round
+    // trip that writes numbers as text and reads them back is exactly the shape that breaks under
+    // one, and nothing here had ever been run under a comma. So: the same chat, serialised and
+    // migrated with LC_NUMERIC set to a comma locale, must produce byte-identical text. If the
+    // locale is unavailable on this machine the leg says so rather than passing quietly - a leg that
+    // silently does nothing is worse than no leg.
+    bool localeStable = true;
+    juce::String localeNote;
+    {
+        // THE SUBJECT HAS TO BE DETERMINISTIC, and my first cut of this leg was not: it compared
+        // migrated(pre) with the earlier migrated(pre), and the migration MINTS A FRESH UUID each
+        // time, so the two differed on every machine and the leg failed for its own reason rather
+        // than for a locale's. Found by the leg failing, which is the right way round.
+        //
+        // So the subject is a chat whose rows are ALREADY placed (nothing to mint) and a review
+        // carrying a NON-INTEGRAL figure - because the only thing a decimal separator can reach in
+        // this file is a double written as text, and a leg that carries no such number would pass
+        // under any locale and prove nothing.
+        WsChat locChat;
+        locChat.id = "loc1"; locChat.title = "locale"; locChat.created = "2026-01-01T00:00:00Z";
+        locChat.revisionCount = 3; locChat.nextSeq = 2;
+        WsMessage lm; lm.role = "user"; lm.content = "zahl"; lm.seq = 1; lm.entryId = "1-fixed";
+        locChat.messages.push_back (lm);
+        WsReview locRev;
+        locRev.id = "locr"; locRev.label = "v1"; locRev.fileName = "v1.wav";
+        locRev.channelType = "FullMix"; locRev.date = "2026-01-01T00:00:00Z";
+        locRev.data.crest = 7.25f;   // the non-integral figures a separator would reach
+        locRev.data.integ = -14.25f;
+        const auto locBefore    = ser (locChat);
+        const auto locRevBefore = serR (locRev);
+        const char* had = std::setlocale (LC_NUMERIC, nullptr);
+        const juce::String before = had != nullptr ? juce::String (had) : juce::String ("C");
+        const char* got = nullptr;
+        for (const char* want : { "de_DE.UTF-8", "fr_FR.UTF-8", "de_DE", "fr_FR" })
+            if ((got = std::setlocale (LC_NUMERIC, want)) != nullptr) break;
+        if (got == nullptr)
+        {
+            localeNote = "no comma-decimal locale on this machine (tried de_DE.UTF-8, fr_FR.UTF-8)";
+        }
+        else
+        {
+            localeNote = juce::String ("under ") + got;
+            localeStable = (ser (locChat) == locBefore) && (serR (locRev) == locRevBefore)
+                        && locRevBefore.contains ("7.25");   // the figure really is in the text
+        }
+        std::setlocale (LC_NUMERIC, before.toRawUTF8());
+    }
+
+    lastResult = preStable && preNoKeys && chanStable && chanFields && migStamped && localeStable
               && revMainStable && revMainNoKey && revChanStable && revChanField && revMainNoSnap
               && updNoKey && updPreserved && updFormat
               && figRoundTrip && figNoKey;
     std::fprintf(stderr,
         "EJWorkspace selftest: %s (preStable=%d preNoKeys=%d chanStable=%d chanFields=%d "
         "revMainStable=%d revMainNoKey=%d revChanStable=%d revChanField=%d revMainNoSnap=%d "
-        "updNoKey=%d updPreserved=%d updFormat=%d figRoundTrip=%d figNoKey=%d)\n",
+        "updNoKey=%d updPreserved=%d updFormat=%d figRoundTrip=%d figNoKey=%d "
+        "migStamped=%d localeStable=%d [%s])\n",
         lastResult ? "PASS" : "FAIL",
         (int)preStable, (int)preNoKeys, (int)chanStable, (int)chanFields,
         (int)revMainStable, (int)revMainNoKey, (int)revChanStable, (int)revChanField,
         (int)revMainNoSnap,
         (int)updNoKey, (int)updPreserved, (int)updFormat,
-        (int)figRoundTrip, (int)figNoKey);
+        (int)figRoundTrip, (int)figNoKey,
+        (int)migStamped, (int)localeStable, localeNote.toRawUTF8());
     return lastResult;
 #endif
 }

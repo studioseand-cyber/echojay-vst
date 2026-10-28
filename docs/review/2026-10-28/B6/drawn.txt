@@ -1,5 +1,5 @@
 scenario B6
-captured 2026-10-28T16:18:17.244Z
+captured 2026-10-28T18:02:35.601Z
   [user] rig-auto-marker: set the pre gain, twice
   [assistant] Stopped.
   [user] Set the pre-gain to 2 dB
