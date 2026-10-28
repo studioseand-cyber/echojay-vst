@@ -109,6 +109,12 @@ void MeterEngine::prepare(double sampleRate, int samplesPerBlock)
         for (auto& r : boundedRings) r.setCapacity (boundedCapacity_);
     }
     samplesPerBlock100ms = static_cast<int>(sampleRate * 0.1);
+    // A12: one allocation, here, for the whole series. push_back inside reserved capacity does not
+    // allocate, which is the only reason the audio thread may append at all.
+    hopFrames_.clear();
+    hopFrames_.reserve((size_t) kMaxHopFrames);
+    hopBandSum_.fill(0.0); hopBandMax_.fill(0.0f);
+    hopBandFrames_ = 0; hopAllSilent_ = true; hopsTruncated_ = false;
     samplesPerSpecFrame  = std::max(1, (int)(sampleRate / 25.0)); // ~25 fps frames
     computeKWeightingCoeffs(sampleRate);
     computeWidthHpfCoeffs(sampleRate);
@@ -384,6 +390,11 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             // at read-out by echojay::bandMeanFromSum. Nothing below this line
             // changes: the ballistic field is untouched by this commit.
             bandAccum.sumPower[(size_t)bi] += perOct;
+            // A12, THE FOURTH CONSUMER OF perOct (C2 §5). Same value, same line, so a band's level
+            // cannot acquire a fourth definition. Summed and maxed within the hop; the hop boundary
+            // below turns them into one frame. Ungated by silence, matching bandAccum, not macroRing.
+            hopBandSum_[(size_t)bi] += perOct;
+            hopBandMax_[(size_t)bi]  = std::max(hopBandMax_[(size_t)bi], (float) perOct);
             // THE BOUNDED WINDOW, from the same perOct. Three consumers of one
             // value: the ballistic field below, the whole-run sum above, and
             // this ring. One definition, three spans.
@@ -395,6 +406,7 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             // stale for as long as the window is deep. Frozen and aged beats
             // draining and silent.
             if (! silentBlock) boundedRings[(size_t)bi].push (perOct);
+            if (bi == 0) { ++hopBandFrames_; if (! silentBlock) hopAllSilent_ = false; }
             float dbv = perOct > 1e-12 ? (float)(10.0 * std::log10(perOct)) : -120.0f;
             float coeff = (dbv > smoothedMacroBands[(size_t)bi]) ? attackCoeff : releaseCoeff;
             smoothedMacroBands[(size_t)bi] += coeff * (dbv - smoothedMacroBands[(size_t)bi]);
@@ -745,6 +757,37 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
             shortTermHistory.push_back(stLoud);
         }
         
+        // ---- A12: ONE HOP FRAME, HERE, WHERE THE HOP IS (C2 §5) ----------------------------
+        // Everything it needs is in hand at this exact point: the 3 s short-term window above, the
+        // 3 s true-peak window beside it, and this hop's band accumulation. Appended into reserved
+        // capacity, so no allocation on the audio thread; past the cap it stops and sets the flag.
+        if ((int) hopFrames_.size() < kMaxHopFrames)
+        {
+            HopFrame hf;
+            if (shortTermBlocks.size() >= 30)
+            {
+                double stPower = 0.0;
+                for (auto& sb : shortTermBlocks) stPower += sb.power;
+                stPower /= (double) shortTermBlocks.size();
+                hf.shortTermLufs = stPower > 0.0 ? (float)(-0.691 + 10.0 * std::log10(stPower)) : -100.0f;
+                float stTp = 0.0f;
+                for (auto v : stTpBlocks) stTp = std::max(stTp, v);
+                hf.shortTermTruePeak = stTp > 0.0f ? 20.0f * std::log10(stTp) : -100.0f;
+            }
+            const double n = (double) std::max(1, hopBandFrames_);
+            for (int bi = 0; bi < 6; ++bi)
+            {
+                hf.bandPower[(size_t)bi] = (float)(hopBandSum_[(size_t)bi] / n);
+                hf.bandPeak [(size_t)bi] = hopBandMax_[(size_t)bi];
+            }
+            hf.bandFrames = (std::uint16_t) juce::jlimit(0, 65535, hopBandFrames_);
+            hf.flags      = (std::uint16_t) (hopAllSilent_ ? 1u : 0u);
+            hopFrames_.push_back(hf);
+        }
+        else hopsTruncated_ = true;
+        hopBandSum_.fill(0.0); hopBandMax_.fill(0.0f);
+        hopBandFrames_ = 0; hopAllSilent_ = true;
+
         kWeightedL.erase(kWeightedL.begin(), kWeightedL.begin() + samplesPerBlock100ms);
         kWeightedR.erase(kWeightedR.begin(), kWeightedR.begin() + samplesPerBlock100ms);
         blockSampleCount -= samplesPerBlock100ms;

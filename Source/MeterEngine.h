@@ -272,6 +272,29 @@ public:
     // The two existing accumulations disagree about this and the choice is
     // recorded in RESULTS_PHASE1B.md; blocks is stored so it can be revisited
     // without re-measuring.
+    // ===== THE HOP SERIES (A12, C2 §5, 27-28 Oct 2026) =====
+    // One frame per sample-counted 100 ms LUFS block - the engine's OWN hop, which is why the
+    // capture (host block size) and the reference (2048, and now 512) share one clock. K's pure
+    // headers derive whole-file PSR/PLR, the six-band crest and the loudest-30 window from it.
+    //
+    // The index IS the clock: frame i covers [i*100ms, (i+1)*100ms) from the start.
+    struct HopFrame
+    {
+        float shortTermLufs     = -100.0f;   // the 3 s window ENDING here; -100 for the first 29
+        float shortTermTruePeak = -100.0f;   // dBTP over the same 30 blocks (PSR = this - above)
+        std::array<float, 6> bandPower {};   // MEAN of perOct over this hop's FFT frames, linear
+        std::array<float, 6> bandPeak  {};   // MAX of perOct over the same frames, same units
+        std::uint16_t bandFrames = 0;        // 0 = NO spectral evidence: unavailable, never a level
+        std::uint16_t flags      = 0;        // bit 0: every block in this hop was silent
+    };
+    /** Every hop so far. Reserved in prepare() and NEVER grown on the audio thread; read on the
+        message thread after the capture state has moved on, exactly as getAccumulatedBands is. */
+    const std::vector<HopFrame>& hopFrames() const noexcept { return hopFrames_; }
+    bool hopFramesTruncated() const noexcept { return hopsTruncated_; }
+    /** 20 minutes at 10 hops a second. Past it the audio thread stops appending and says so, rather
+        than decimating in place - halving 700 KB on the audio thread is a spike nobody asked for. */
+    static constexpr int kMaxHopFrames = 12000;
+
     struct BandAccum
     {
         std::array<double, 6> sumPower {};   // per-octave-normalised, linear
@@ -391,6 +414,14 @@ private:
         double loudness;
         int64_t timeMs;
     };
+    // A12: the hop series, plus this hop's band accumulation (reset at every boundary).
+    std::vector<HopFrame> hopFrames_;
+    std::array<double, 6> hopBandSum_ {};
+    std::array<float,  6> hopBandMax_ {};
+    int  hopBandFrames_ = 0;
+    bool hopAllSilent_  = true;
+    bool hopsTruncated_ = false;
+
     std::vector<LufsBlock> momentaryBlocks;  // 400ms window
     std::vector<LufsBlock> shortTermBlocks;  // 3s window
     std::vector<LufsBlock> allBlocks;        // all blocks for integrated

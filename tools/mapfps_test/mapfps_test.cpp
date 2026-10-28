@@ -2941,7 +2941,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        && plan.contains ("c.identity.name"),
                        "of PIN D premise: every one of the four names comes off an identity");
 
-                const auto ed = readAll ("Source/PluginEditor.cpp");
+                const auto ed = (readAll ("Source/PluginEditor.cpp") + "\n" + readAll ("Source/EJMatchTab.cpp"));
                 int created = 0; at = 0;
                 while ((at = ed.indexOf (at, "borrowCreatedIdentity_.push_back")) >= 0) { ++created; at += 20; }
                 check (created == 2,
@@ -14972,7 +14972,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::stringstream ss; ss << f.rdbuf();
                 return codeOnly (juce::String (ss.str()));
             };
-            const auto edSrc  = readAll ("Source/PluginEditor.cpp");
+            const auto edSrc  = (readAll ("Source/PluginEditor.cpp") + "\n" + readAll ("Source/EJMatchTab.cpp"));
             const auto prSrc  = readAll ("Source/PluginProcessor.cpp");
             const auto figSrc = readAll ("Source/EJCompareFigures.h");
             const auto refSrc = readAll ("Source/ReferenceAnalyser.cpp");

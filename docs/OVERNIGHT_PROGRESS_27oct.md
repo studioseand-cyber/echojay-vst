@@ -160,10 +160,16 @@ real-editor gate, with a gate of their own. K starts today on the zero-conflict 
       control-channel `gainDb`, clamps +/-24 dB, confirms from the registry row within 3 s and has its own
       `linkGain` undo kind. My first draft said it did not reach a Link at all, concluding from the silence
       of the op table and the control keys; corrected, and B is holding for the corrected version.
-- [ ] **A0.3 the extraction** - `EJMatchTab.*` behind `MatchHost`, no behaviour change, the Match rows of
-      `mapfps_test` and `ui_guard` green as they are. 28 Oct, its own gate.
-- [ ] **A0.4 cut `k-base-1`** once the extraction passes, and tell K.
-- [ ] **The hop accumulator** (C2 §5), K's specification, mine to build: one 60-byte frame per
+- [x] **A0.3 the extraction** - DONE, `5d20da4e`. 2,563 lines verbatim into `Source/EJMatchTab.cpp`
+      behind `MatchHost`; `EJCompareMenuIds.h` new (two of Compare's menu constants were file-statics
+      the moved picker still reads). It compiles, **ui_guard GREEN**, **every Match pin in
+      mapfps_test green**, full rig unchanged at 2 failed / 203 passed. Three mapfps pins that grep
+      PluginEditor.cpp for Match code were mine and now read both halves of the editor; the other 26
+      failures in that harness are stale and unrelated (it is not registered in the gate).
+- [x] **A0.4 cut `k-base-1`** - cut and pushed at `5d20da4e`, ls-remote agrees. B has relayed it to
+      Sean and Kathy in its own morning report.
+- [~] **The hop accumulator** (C2 §5), K's specification, mine to build - APPLIED, gate queued, with
+      guard legs HP1-HP4b that drive it for real (a tone then silence, every promise both ways): one 60-byte frame per
       sample-counted 100 ms LUFS block, both sides, 20-minute cap, read at `stopCapture` with no lock.
       It is a fourth consumer of `perOct`, tapped at the same line as the other three.
 - [ ] **A real-time allocation already in that function**: `allBlocks.push_back` runs once per hop for the

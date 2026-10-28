@@ -2130,6 +2130,21 @@ private:
         int  agentStepsOpen = -1;
     };
     std::vector<ChatMsg> chatMessages;
+
+    /** ---- AND WHO EMPTIED THE WINDOW'S OWN LIST (his item 3, 28 Oct 2026) --------------------
+        The processor's log has `clearChatHistory(site)` for the same reason. This is the list the
+        USER sees, and the rig's B6 evidence is specifically about it: *"his message WAS drawn in the
+        new chat and was gone again by the snapshot these checks read ... the SAME window, so the row
+        really did leave that window's list"*. Seven sites empty it and none of them said so.
+        A site name a person can read, logged only when there was something to lose. */
+    void clearChatMessages (const char* site)
+    {
+        if (! chatMessages.empty())
+            EchoJay_NSLog (("EJChat: the window's drawn rows were cleared by " + juce::String (site)
+                            + " - " + juce::String ((int) chatMessages.size())
+                            + " row(s) went").toRawUTF8());
+        chatMessages.clear();
+    }
     // THE shared display source: both text-layout passes (measure + paint)
     // MUST get their string from here so heights and pixels cannot disagree.
     //

@@ -4473,7 +4473,9 @@ int main (int argc, char* argv[])
                 if (! tbl.contains (uid))
                 {
                     juce::String better;
-                    if (auto* arr2 = rig.freshState().getProperty ("links", juce::var()).getArray())
+                    const auto stLinks = rig.freshState();      // NAMED: it must outlive the loop below
+                    const auto lv = stLinks.getProperty ("links", juce::var());
+                    if (auto* arr2 = lv.getArray())
                         for (const auto& l : *arr2)
                         {
                             const auto u = l.getProperty ("uid", juce::var()).toString();
@@ -5521,6 +5523,21 @@ int main (int argc, char* argv[])
                                               && (int) st5.getProperty ("lentSlot", juce::var()) == lvSlot;
                             if (v2HasIt) ++backToV2;
                             trail << ", back to the V2 " << (v2HasIt ? "yes" : "NO");
+                            // ---- AND THE BACK LEG SAYS WHY TOO (28 Oct 2026) ----------------------
+                            // The forward leg has named both sides since this morning; this one just
+                            // said NO, and that is how round 24's "lap 1 NO, laps 2-3 yes" arrived
+                            // with nothing to read. A first lap that fails where later laps pass is
+                            // either a hand-over that needs longer the first time (the Link builds
+                            // its own editor on lap 1) or a real loss, and those two look identical
+                            // from the outside. So: what the road and the lent slot actually were at
+                            // the deadline, and what the pane last said about it.
+                            if (! v2HasIt)
+                                trail << " (at the deadline the road was \""
+                                      << st5.getProperty ("liveViewRoad", juce::var()).toString()
+                                      << "\", lentSlot " << st5.getProperty ("lentSlot", juce::var()).toString()
+                                      << ", and the pane said \""
+                                      << st5.getProperty ("chainStatusText", juce::var()).toString()
+                                      << "\")";
                         }
                         if (rowWanted ("RE14"))
                             row ("RE14", toLink == 3,
@@ -5718,7 +5735,9 @@ int main (int argc, char* argv[])
                             // it and now holds 4 slot(s)" - so the row was looking in the wrong place
                             // or for the wrong spelling, and a row that cannot say which is useless.
                             juce::String slotsNow;
-                            if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
+                            const auto stLinks = rig.freshState();      // NAMED: it must outlive the loop below
+                            const auto lv = stLinks.getProperty ("links", juce::var());
+                            if (auto* arr = lv.getArray())
                                 for (const auto& l : *arr)
                                     if (l.getProperty ("uid", juce::var()).toString() == rhUid)
                                         slotsNow = l.getProperty ("slots", juce::var()).toString();
@@ -6220,9 +6239,25 @@ int main (int argc, char* argv[])
             // This wait plays the tracks while it waits, in the same shape as R0's loop, so what it
             // measures is a Link coming up rather than a Link being starved.
             juce::String fresh, freshName;
+            // ---- A NAMED STATE, OR THE ARRAY IS GONE BEFORE THE LOOP (28 Oct 2026) --------------
+            //
+            // freshState() returns a var BY VALUE. The Array<var> a reader gets back is owned by that
+            // var's reference-counted object, so with the parent a TEMPORARY the last reference dies
+            // at the end of the full expression: the pointer dangles and the list reads EMPTY. This
+            // project already has the rule, written after the 18 Sep Pro Tools crash - no raw pointer
+            // into a temporary parsed var - and I broke it in this very instrument.
+            //
+            // It cost R5, SCEN A4, R1b and B9 three rounds and four wrong hypotheses about the Link
+            // registry (a Link that failed to register, a wait too short, a wait with no audio, the
+            // AU-road editor loss), while the Links were there the whole time. What settled it was
+            // printing the RAW SHAPE of what I was reading: "links is an array with 2 element(s)",
+            // beside my own line saying there were no rows at all. Two readings of one object cannot
+            // both be right, and the reader was wrong.
             const auto firstConnected = [&] (juce::String& uidOut, juce::String& nameOut) -> bool
             {
-                if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
+                const auto stLinks = rig.freshState();      // NAMED: it must outlive the loop below
+                const auto lv = stLinks.getProperty ("links", juce::var());
+                if (auto* arr = lv.getArray())
                     for (const auto& l : *arr)
                         if ((bool) l.getProperty ("connected", false))
                         { uidOut = l.getProperty ("uid", juce::var()).toString();
@@ -6241,7 +6276,9 @@ int main (int argc, char* argv[])
             const auto describeRows = [&] () -> juce::String
             {
                 juce::StringArray rows;
-                if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
+                const auto stLinks = rig.freshState();      // NAMED: it must outlive the loop below
+                const auto lv = stLinks.getProperty ("links", juce::var());
+                if (auto* arr = lv.getArray())
                     for (const auto& l : *arr)
                         rows.add (l.getProperty ("uid", juce::var()).toString().substring (0, 10)
                                   + " \"" + l.getProperty ("name", juce::var()).toString() + "\""
@@ -6309,6 +6346,44 @@ int main (int argc, char* argv[])
                                   + snap.instanceUid.substring (0, 10) + " \"" + snap.displayName
                                   + "\" active=" + juce::String ((int) snap.active)
                                   + " ring=\"" + snap.audioFilename + "\"");
+                    }
+                    // ---- AND THE RAW SHAPE OF WHAT I AM READING (28 Oct 2026) -----------------
+                    //
+                    // The two readings below disagree in the same breath: `consumerDiag` says the
+                    // last refresh found two slots with the right names, and the published `links`
+                    // array reads empty - and BOTH are written by one publishState on one processor.
+                    // When two numbers from the same object disagree, the reader is wrong before the
+                    // product is, so this prints the state's own top-level keys and what `links`
+                    // actually IS. One line, and the next run stops me theorising about it.
+                    {
+                        const auto st = rig.freshState();
+                        juce::StringArray keys;
+                        if (auto* o = st.getDynamicObject())
+                            for (const auto& kv : o->getProperties())
+                                keys.add (kv.name.toString());
+                        const auto lv = st.getProperty ("links", juce::var());
+                        std::printf ("    the state I am reading has %d key(s) [%s]; \"links\" is %s"
+                                     " with %d element(s)\n",
+                                     keys.size(), keys.joinIntoString (",").toRawUTF8(),
+                                     lv.isArray() ? "an array" : (lv.isVoid() ? "ABSENT" : "not an array"),
+                                     lv.getArray() != nullptr ? lv.getArray()->size() : -1);
+                    }
+                    // AND THE V2'S OWN ANSWER, BESIDE IT (28 Oct 2026). Published by this build;
+                    // an older one has no "registry" object and the line says so rather than
+                    // printing zeros that look like an answer.
+                    {
+                        const auto reg = rig.freshState().getProperty ("registry", juce::var());
+                        if (auto* ro = reg.getDynamicObject())
+                            std::printf ("    the V2 itself says: dir \"%s\" opened=%d errno=%d "
+                                         "slots it found=%d names=\"%s\"\n",
+                                         ro->getProperty ("dir").toString().toRawUTF8(),
+                                         (int) (bool) ro->getProperty ("opened"),
+                                         (int) ro->getProperty ("errno"),
+                                         (int) ro->getProperty ("slotCount"),
+                                         ro->getProperty ("names").toString().toRawUTF8());
+                        else
+                            std::printf ("    (this build publishes no registry diagnostic, so the "
+                                         "V2's own side cannot be compared here)\n");
                     }
                     std::printf ("    the registry FILE itself (%s) holds: %s\n",
                                  regDir.toRawUTF8(),

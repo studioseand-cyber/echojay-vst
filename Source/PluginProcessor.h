@@ -110,6 +110,15 @@ struct CaptureSnapshot {
     ChannelType channelType;
     juce::String customChannelName;
     MeterData averagedData;
+    // ---- A13 / A12 (C2 §5.1): THE TWO HOP SERIES, AND WHICH ONE IS P_bus --------------------
+    // `hopFrames` is the bus OUTPUT (post-chain, post-trim): always present. `hopFramesRackIn` is
+    // the rack INPUT: present only when the capture ran with the pre-chain tap. C4's P_bus comes
+    // from the INPUT when it is non-empty, and the card's `busTap` says which it was - a figure
+    // that cannot say where it was measured is one nobody can check later.
+    std::vector<MeterEngine::HopFrame> hopFrames;
+    std::vector<MeterEngine::HopFrame> hopFramesRackIn;
+    bool hopFramesTruncated = false;
+    int  hopFramesHops      = 0;    // the bus's own hop count, for C4 §3's grid check
     // ===== THE ACCUMULATED MACRO BANDS (Phase 1b commit 3) =====
     // The whole-capture mean of the six pink-referenced bands, in POWER, read
     // off captureEngine at stopCapture. It sits BESIDE averagedData rather than
@@ -1733,6 +1742,24 @@ public:
         juce::String entryId;
     };
     std::vector<ChatEntry> chatHistory;
+
+    /** ---- WHO EMPTIED THE LIST (his item 3, 28 Oct 2026: the disappearing message) ------------
+        EIGHT sites clear this list and exactly one of them said so, which is why two attempts at
+        this defect both ended at "the rig shows no clear-site line at all" (EJChatHome.h). The
+        26 Oct work closed a hole found by READING - a row with no card could be deleted with no
+        home - and shipped on the grounds that it is wrong whatever else is true. It did not prove
+        the cause, because nothing in the log could say which site ran.
+        Now every site names itself. `site` is a fixed string a person can read, not an id: the next
+        sighting says "cleared by the chat switch" or "cleared by the 1 Hz tick", and that sentence
+        is the difference between a third guess and a fix. */
+    void clearChatHistory (const char* site)
+    {
+        if (! chatHistory.empty())
+            EchoJay_NSLog (("EJStores: chatHistory cleared by " + juce::String (site)
+                            + " - " + juce::String ((int) chatHistory.size())
+                            + " row(s) went").toRawUTF8());
+        chatHistory.clear();
+    }
     bool saidUnstampedRow_ = false;   // stage B: the no-chat-id line is said once per session
     /** ---- STAGE B: ONE STAMPER FOR BOTH ROADS (his chat-log ruling) -------------------------
         The store has its own (EchoJayWorkspace::stampLogEntry) and this is the processor's, for the
@@ -2274,6 +2301,12 @@ private:
 
     MeterEngine meterEngine;       // Live meters (always running — live input only)
     MeterEngine captureEngine;     // Capture pass meters (reset each capture)
+    // A13 (C2 §5.1): the RACK INPUT, pre-chain and pre-bus-trim, fed ONLY while Capturing. C4's
+    // P_bus wants the bus before its own processing: without it, a limiter push added by one Match
+    // pass lifts every band of the output, every share drops with it, and the next pass sends moves
+    // to the bus for a reason that has nothing to do with the tracks. Idle cost is zero - it is
+    // prepared with the others and never fed outside the capture branch.
+    MeterEngine captureInEngine;
     MeterEngine abMeterEngine;     // AB playback spectrum only (used by Compare playing-slot panel)
     MeterEngine cmpMeter[2];       // Compare stream meters (one per slot)
     PluginScanner pluginScanner;

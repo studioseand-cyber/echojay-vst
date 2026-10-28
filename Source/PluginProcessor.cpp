@@ -954,6 +954,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         EchoJayFader::gainForDb(busGainDb_.load(std::memory_order_relaxed)));
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
+    captureInEngine.prepare(sampleRate, samplesPerBlock);   // A13: the pre-chain tap
     // The shadow view's scratch buffer, allocated HERE and never on the audio thread (stage B).
     shadowView_.prepare(sampleRate, samplesPerBlock);
     selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
@@ -1552,6 +1553,17 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         // switched off - it was the same channel processed twice. Every soloed Link is now heard from its own
         // ring, addressed or not, which also means the figure does not change when the user selects it.
         applyBorrowSoloMixOn(buffer, soloActive() && soloRingSlot_.load(std::memory_order_acquire) >= 0);
+
+    // ---- A13: THE RACK INPUT, WHILE CAPTURING ONLY (C2 §5.1, 28 Oct 2026) ---------------------
+    // Here, and only here, is the bus before EchoJay does anything to it: after the Link solo mix
+    // and before the chain and the bus trim. Gated on the same state as captureEngine below, so a
+    // session that is not capturing pays nothing.
+    if (captureState.load() == CaptureState::Capturing)
+    {
+        const float* inL = buffer.getReadPointer(0);
+        const float* inR = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : inL;
+        captureInEngine.processBlock(inL, inR, buffer.getNumSamples());
+    }
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
     {
@@ -5353,6 +5365,7 @@ echojay::OutputSubstitution EchoJayProcessor::activeOutputSubstitution() const
 void EchoJayProcessor::startCapture()
 {
     captureEngine.reset();
+    captureInEngine.reset();   // A13: the pre-chain tap starts where the capture does
     waveformRecorder.startRecording();
     captureStartTime = juce::Time::currentTimeMillis();
     captureSampleCount = 0;
@@ -5472,6 +5485,12 @@ void EchoJayProcessor::stopCapture()
     // values (peak, RMS, crest, width, correlation) with our time-windowed
     // measurements computed across the whole capture.
     snap.averagedData = captureEngine.getMeterData();
+    // A12/A13: read here for the same reason getAccumulatedBands is - the state has moved to
+    // Complete, so the audio thread has stopped feeding both engines and no lock is needed.
+    snap.hopFrames          = captureEngine.hopFrames();
+    snap.hopFramesRackIn    = captureInEngine.hopFrames();
+    snap.hopFramesTruncated = captureEngine.hopFramesTruncated();
+    snap.hopFramesHops      = (int) snap.hopFrames.size();
 
     // THE ACCUMULATED MACRO BANDS, over the same span the spectrum rebuild
     // below uses: both cover exactly the blocks taken while Capturing.
@@ -5892,6 +5911,7 @@ void EchoJayProcessor::resetCapture()
 {
     captureState.store(CaptureState::Idle);
     captureEngine.reset();
+    captureInEngine.reset();   // A13: the pre-chain tap starts where the capture does
     waveformRecorder.reset();
 }
 
@@ -7484,7 +7504,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
 
         if (auto* chatArr = obj->getProperty("chatHistory").getArray())
         {
-            chatHistory.clear();
+            clearChatHistory ("a state restore replacing the saved log");
             for (auto& entry : *chatArr)
             {
                 if (auto* chatObj = entry.getDynamicObject())

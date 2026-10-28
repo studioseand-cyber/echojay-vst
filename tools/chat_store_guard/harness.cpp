@@ -4127,6 +4127,119 @@ int main()
                "nothing automatic, everything on a press");
     }
 
+    // ================================================================================================
+    // HP: THE HOP SERIES (A12, C2 §5-§7, 28 Oct 2026)
+    //
+    // The accumulator is driven here rather than described: a MeterEngine, a known signal, and the
+    // four promises C2 §5 makes to K. It is the only test that can tell her series is on the clock
+    // the contract says it is - the rig never looks at a hop, and ReferenceAnalyser's own pass is
+    // offline. Both directions where there are two: a loud hop and a silent one, a full 3 s window
+    // and the first 29 hops that have none.
+    {
+        MeterEngine eng;
+        const double sr = 48000.0;
+        const int    bs = 512;                 // a HOST block, deliberately not a multiple of a hop
+        eng.prepare (sr, bs);
+        std::vector<float> L ((size_t) bs), R ((size_t) bs);
+        // 5 seconds of a steady tone at -12 dBFS: 50 hops, every one with spectral evidence.
+        double ph = 0.0;
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 1000.0 / sr;
+        const int blocks = (int) std::round (5.0 * sr / bs);
+        for (int b = 0; b < blocks; ++b)
+        {
+            for (int i = 0; i < bs; ++i) { const float v = 0.25f * (float) std::sin (ph); ph += inc; L[(size_t)i] = v; R[(size_t)i] = v; }
+            eng.processBlock (L.data(), R.data(), bs);
+        }
+        const auto& hops = eng.hopFrames();
+        check (hops.size() >= 45 && hops.size() <= 50,
+               "HP1 five seconds of audio at a 512-sample block gives ~50 hops - the hop is COUNTED IN "
+               "SAMPLES (sampleRate * 0.1), which is what lets the capture and the reference share one "
+               "clock at different block sizes",
+               juce::String ((int) hops.size()) + " hops");
+        check (! eng.hopFramesTruncated(),
+               "HP1b ...and nothing was truncated at five seconds (the cap is twenty minutes)");
+        if (hops.size() > 35)
+        {
+            const auto& late = hops[30];
+            check (late.bandFrames > 0,
+                   "HP2 a hop that held FFT frames says so - bandFrames is the difference between "
+                   "\"no spectral evidence\" and \"a level of zero\", which a reader must not confuse",
+                   "bandFrames=" + juce::String ((int) late.bandFrames));
+            check (late.shortTermLufs > -70.0f,
+                   "HP2b ...and by hop 30 the 3 s short-term window is full, so it reads a real level",
+                   "shortTermLufs=" + juce::String (late.shortTermLufs, 2));
+            check (hops[5].shortTermLufs <= -99.0f,
+                   "HP2c ...while hop 5 has no window yet and reads -100: the first 29 hops are an "
+                   "ABSENCE, and C4 §7's \"usable hop\" rule exists to skip them",
+                   "shortTermLufs=" + juce::String (hops[5].shortTermLufs, 2));
+            float bandSum = 0.0f;
+            for (auto v : late.bandPower) bandSum += v;
+            check (bandSum > 0.0f && late.bandPeak[2] >= late.bandPower[2],
+                   "HP3 the six bands carry POWER and a PEAK that is never below the mean of the same "
+                   "hop - linear, per-octave-normalised, from the same perOct as every other band "
+                   "figure in the product",
+                   "sum=" + juce::String (bandSum, 6) + " peak[2]=" + juce::String (late.bandPeak[2], 6)
+                       + " mean[2]=" + juce::String (late.bandPower[2], 6));
+            check ((late.flags & 1u) == 0u,
+                   "HP3b a hop of real audio is not marked silent");
+        }
+        // AND THE OTHER DIRECTION: silence must be IN the series, flagged, not missing from it.
+        const int before = (int) eng.hopFrames().size();
+        std::fill (L.begin(), L.end(), 0.0f); std::fill (R.begin(), R.end(), 0.0f);
+        for (int b = 0; b < blocks; ++b) eng.processBlock (L.data(), R.data(), bs);
+        const auto& hops2 = eng.hopFrames();
+        check ((int) hops2.size() > before + 40,
+               "HP4 silence still produces hops - the series is ungated, so a quiet passage is IN the "
+               "window and can be told apart rather than vanishing from it",
+               juce::String ((int) hops2.size() - before) + " hops of silence");
+        bool anySilentFlag = false;
+        for (size_t i = (size_t) before + 5; i < hops2.size(); ++i) if ((hops2[i].flags & 1u) != 0u) anySilentFlag = true;
+        check (anySilentFlag,
+               "HP4b ...and those hops are FLAGGED silent, which is how a reader tells \"quiet\" from "
+               "\"no evidence\" (bandFrames) and from \"a level\"");
+
+        // ---- BT: THE TWO TAPS (A13, C2 5.1) ----------------------------------------------------
+        // The rack-input tap exists because it answers a DIFFERENT question from the output one
+        // whenever the V2's own chain or bus trim is doing something - which is exactly the case
+        // Match creates: a limiter push lifts every band of the output, every share drops with it,
+        // and the next pass sends moves to the bus for a reason that has nothing to do with the
+        // tracks. Two engines, the same audio through one and a scaled copy through the other.
+        MeterEngine inTap, outTap;
+        inTap.prepare (sr, bs); outTap.prepare (sr, bs);
+        std::vector<float> sL ((size_t) bs), sR ((size_t) bs);
+        double ph2 = 0.0;
+        for (int b = 0; b < blocks; ++b)
+        {
+            for (int i = 0; i < bs; ++i)
+            {
+                const float v = 0.25f * (float) std::sin (ph2); ph2 += inc;
+                L[(size_t)i] = v;          R[(size_t)i] = v;
+                sL[(size_t)i] = v * 0.5f;  sR[(size_t)i] = v * 0.5f;   // "the chain" = -6 dB
+            }
+            inTap .processBlock (L.data(),  R.data(),  bs);
+            outTap.processBlock (sL.data(), sR.data(), bs);
+        }
+        const auto& hi = inTap.hopFrames();
+        const auto& ho = outTap.hopFrames();
+        check (hi.size() == ho.size(),
+               "BT1 both taps are on the SAME grid - one clock, so hop i of the input and hop i of "
+               "the output cover the same span and C4 can divide one by the other",
+               juce::String ((int) hi.size()) + " vs " + juce::String ((int) ho.size()));
+        if (hi.size() > 35 && ho.size() > 35)
+        {
+            const float pin = hi[30].bandPower[2], pout = ho[30].bandPower[2];
+            check (pin > 0.0f && pout > 0.0f && pin > pout * 2.0f,
+                   "BT2 and they do NOT answer the same question: six dB of \"chain\" between them "
+                   "puts the input's band power about four times the output's, which is the whole "
+                   "reason C4 asked for the input tap",
+                   "in=" + juce::String (pin, 8) + " out=" + juce::String (pout, 8));
+            check (std::abs (hi[30].shortTermLufs - ho[30].shortTermLufs - 6.0f) < 1.0f,
+                   "BT2b ...by the six dB that was put between them, MEASURED rather than assumed - "
+                   "so a reader adding the trim back gets the other tap's figure",
+                   juce::String (hi[30].shortTermLufs - ho[30].shortTermLufs, 2) + " dB apart");
+        }
+    }
+
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures, passes);
     return failures == 0 ? 0 : 1;

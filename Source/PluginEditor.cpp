@@ -4419,7 +4419,7 @@ void EchoJayEditor::handleLogout()
     // BETWEEN sends without any user action.
     EchoJay_NSLog(("EJStores: chatRoles.clear() in handleLogout, had "
                    + juce::String(processorRef.chatRoles.size()) + " entries").toRawUTF8());
-    chatMessages.clear(); processorRef.chatHistory.clear(); processorRef.chatRoles.clear(); processorRef.chatContents.clear();
+    clearChatMessages ("signing out"); processorRef.clearChatHistory ("signing out"); processorRef.chatRoles.clear(); processorRef.chatContents.clear();
     showLoginScreen();
 }
 
@@ -17970,8 +17970,8 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
                                          : juce::String())).toRawUTF8());
         }
 
-        chatMessages.clear();
-        processorRef.chatHistory.clear();
+        clearChatMessages ("opening a chat from the workspace");
+        processorRef.clearChatHistory ("opening a chat from the workspace");
         // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
         // the wire history, so "cleared between turns" is falsifiable rather
         // than argued from reading. timerCallback is the one that can fire
@@ -18524,8 +18524,8 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
     processorRef.chatTargetLinkName.clear();
     refreshChannelBannerCache();              // reflects the INHERITED channel
                                               // (or clears it for a main chat)
-    chatMessages.clear();
-    processorRef.chatHistory.clear();
+    clearChatMessages ("starting a new chat");
+    processorRef.clearChatHistory ("starting a new chat");
     // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
     // the wire history, so "cleared between turns" is falsifiable rather
     // than argued from reading. timerCallback is the one that can fire
@@ -18855,8 +18855,8 @@ void EchoJayEditor::showMoveToAlbumMenu(const juce::String& chatId)
                             safeThis->currentChatId = {};
                             safeThis->processorRef.activeChatId = {};
                             safeThis->refreshChannelBannerCache();   // deactivation clears the banner
-                            safeThis->chatMessages.clear();
-                            safeThis->processorRef.chatHistory.clear();
+                            safeThis->clearChatMessages ("moving a chat to an album");
+                            safeThis->processorRef.clearChatHistory ("moving a chat to an album");
                             // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
                             // the wire history, so "cleared between turns" is falsifiable rather
                             // than argued from reading. timerCallback is the one that can fire
@@ -26350,8 +26350,8 @@ void EchoJayEditor::timerCallback()
                 workspace.addChat(nc);
                 currentChatId = nc.id;
                 processorRef.activeChatId = nc.id;
-                chatMessages.clear();
-                processorRef.chatHistory.clear();
+                clearChatMessages ("the editor's own timer tick");
+                processorRef.clearChatHistory ("the editor's own timer tick");
                 // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
                 // the wire history, so "cleared between turns" is falsifiable rather
                 // than argued from reading. timerCallback is the one that can fire
@@ -33906,8 +33906,8 @@ void EchoJayEditor::resetToMainContext()
     processorRef.pendingChannelUid.clear();
     processorRef.chatTargetLinkUid.clear();
     processorRef.chatTargetLinkName.clear();
-    chatMessages.clear();
-    processorRef.chatHistory.clear();
+    clearChatMessages ("returning to the main context");
+    processorRef.clearChatHistory ("returning to the main context");
     // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
     // the wire history, so "cleared between turns" is falsifiable rather
     // than argued from reading. timerCallback is the one that can fire
@@ -34052,8 +34052,8 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
     processorRef.pendingChannelUid = uid;
     processorRef.chatTargetLinkUid.clear();   // router selection resets
     processorRef.chatTargetLinkName.clear();
-    chatMessages.clear();
-    processorRef.chatHistory.clear();
+    clearChatMessages ("opening a channel by uid");
+    processorRef.clearChatHistory ("opening a channel by uid");
     // Clear-site instrumentation (11 Aug 2026): names WHICH site emptied
     // the wire history, so "cleared between turns" is falsifiable rather
     // than argued from reading. timerCallback is the one that can fire
@@ -38491,6 +38491,27 @@ void EchoJayEditor::publishRigState()
             links.add (juce::var (l));
         }
         o->setProperty ("links", juce::var (links));
+        // ---- AND THE V2'S OWN VIEW OF THE REGISTRY (28 Oct 2026, the empty-list hunt) ----------
+        //
+        // Four explanations have been ruled out with evidence and the list is still empty while the
+        // registry FILE holds a live row: it is not a Link that failed to register, not a wait that
+        // was too short or silent, not the AU-road editor loss (RH7/RH8 deferred, no change), and
+        // not a refresh nobody triggers (the rig now switches tabs, which calls refreshLinkRegistry
+        // directly - no change). What is left is the V2's own read, and nothing published it.
+        //
+        // So it does now: the directory this instance resolved, whether its registry map is open,
+        // the errno if not, and how many slots its own walk found. A rig row can then compare the
+        // V2's answer with the file's contents side by side instead of inferring from silence.
+        {
+            auto* reg = new juce::DynamicObject();
+            const auto& d = processorRef.consumerDiag;
+            reg->setProperty ("dir",       d.regKey);
+            reg->setProperty ("opened",    d.regOpened);
+            reg->setProperty ("errno",     d.regErrno);
+            reg->setProperty ("slotCount", d.activeSlotCount);
+            reg->setProperty ("names",     d.nameList);
+            o->setProperty ("registry", juce::var (reg));
+        }
     }
 
     // ---- the agent card, as the user sees it
