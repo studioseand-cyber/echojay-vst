@@ -176,7 +176,9 @@ inline Onsets onsetsOf (const Tail& t)
     const double bar = o.floorDb + kOnsetAboveFloorDb;
     // onset from the BURST's start: the first window (burst or tail) whose output peak is above the bar - for a wet-only run
     // (mix 100 %) that is the pre-delay / delay time; the burst's own dry would make it 0 on a dry-carrying run (said by the caller)
-    for (const auto& w : t.windows) if (w.peakDb > bar) { o.onsetMs = w.tMs; break; }
+    // 28 Oct (Kathy: every measured time was +0.5 ms - 1/4 at 120 bpm read 500.5): a window's tMs is its CENTRE, so the onset is the
+    // START of the first window above the bar (an echo at 500.0 ms opens the window 500.0 .. 501.0)
+    for (const auto& w : t.windows) if (w.peakDb > bar) { o.onsetMs = w.tMs - 0.5 * t.winMs; break; }
     // REPEATS ARE RISING EDGES (5 Oct, H-Delay): an echo of a 50 ms burst is a flat-topped block whose ripples are not repeats;
     // a repeat starts where the peak envelope jumps kRepeatRiseDb above the preceding 10 ms, its level is the block's peak over
     // the next burst length, and the next repeat can only start after that block
@@ -187,7 +189,7 @@ inline Onsets onsetsOf (const Tail& t)
         double before = -999.0; for (size_t j = i; j > 0 && t.windows[j - 1].tMs > w.tMs - 10.0; --j) before = juce::jmax (before, t.windows[j - 1].peakDb);
         if (w.peakDb < before + riseDb) continue;
         double level = w.peakDb; size_t k = i; for (; k < t.windows.size() && t.windows[k].tMs < w.tMs + t.burstMs; ++k) level = juce::jmax (level, t.windows[k].peakDb);
-        if (o.repeats.empty() || level >= o.repeats.front().levelDb + kRepeatMinDb) o.repeats.push_back ({ w.tMs, level });
+        if (o.repeats.empty() || level >= o.repeats.front().levelDb + kRepeatMinDb) o.repeats.push_back ({ w.tMs - 0.5 * t.winMs, level });   // 28 Oct: the window's start, as the onset
         i = k > i ? k - 1 : i;
     }
     if (o.repeats.size() >= 2)
@@ -475,6 +477,23 @@ inline juce::var spaceProfile (const juce::var& rec, const juce::var& plugin, co
 //   - a STEPPED control whose every step was measured is asked only for times it HAS: two of its own positions (a third and two thirds
 //     along), written at their exact norms - nothing interpolated
 //   - a continuous control: as before (a third and two thirds of the span, the map inverted)
+// EXTRA TIME POINTS WHERE NEIGHBOURS ARE FAR APART (Kathy, 28 Oct: "measure extra points where neighbouring points are far apart"; H-Delay
+// asked 650.2 ms and got 664.5 - its 7 positions jump 483.5 -> 896.5 ms between neighbours and its taper is not log-linear there). On a
+// continuous time control whose times move steadily: a pair of neighbours more than max(1 ms, 2 %) apart gets its midpoint measured; a
+// midpoint its neighbours' log-linear interpolation predicts within max(0.5 ms, 1 %) settles the pair, else both halves are split again -
+// up to kTimeAdaptMaxPoints positions in all
+inline constexpr int kTimeAdaptMaxPoints = 15;
+inline double interpTimeMs (const std::pair<double, double>& a, const std::pair<double, double>& b, double norm)
+{
+    if (std::abs (b.first - a.first) < 1e-12) return a.second;
+    const double t = (norm - a.first) / (b.first - a.first);
+    if (a.second > 0.0 && b.second > 0.0) return std::pow (2.0, std::log2 (a.second) + t * (std::log2 (b.second) - std::log2 (a.second)));
+    return a.second + t * (b.second - a.second);
+}
+inline bool timeGapWide (const std::pair<double, double>& a, const std::pair<double, double>& b)
+{ return std::abs (b.first - a.first) > 1.0 / 128.0 && std::abs (b.second - a.second) > std::max (1.0, 0.02 * std::max (std::abs (a.second), std::abs (b.second))); }
+inline bool timeMidHolds (const std::pair<double, double>& a, const std::pair<double, double>& b, const std::pair<double, double>& mid)
+{ return std::abs (interpTimeMs (a, b, mid.first) - mid.second) <= std::max (0.5, 0.01 * std::abs (mid.second)); }
 struct TimeStep { double targetMs = 0.0, norm = -1.0; bool exact = false; };   // exact: a measured position's own norm (stepped)
 struct TimePlan { std::vector<TimeStep> steps; juce::String skip; bool stepped = false; };
 inline TimePlan planTimeSteps (std::vector<std::pair<double, double>> map, int controlSteps)

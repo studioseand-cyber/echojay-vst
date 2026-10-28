@@ -42,6 +42,21 @@ inline bool hasAny (const juce::StringArray& tk, std::initializer_list<const cha
 // a word INSIDE a token (21 Oct, Kathy's group 4: "UltraPitch", "SoundShifter", "FilterFreak1" are one token each)
 inline bool hasInside (const juce::StringArray& tk, std::initializer_list<const char*> ws) { for (const auto& t : tk) for (const char* w : ws) if (t.contains (w)) return true; return false; }
 
+// RESTORATION IS OUT OF SCOPE (Kathy, 28 Oct: Acon Digital DeNoise 2 was filed as an EQ - its "bands" read 12.7 Hz and -8.76 dB whatever
+// they were set to; they don't change normal audio). A product that repairs audio - noise, clicks, hum, clipping, room - by its name. Never
+// the word "noise" alone (a noise gate is a gate)
+inline bool restorationByName (const juce::String& name)
+{
+    const auto tk = juce::StringArray::fromTokens (name.toLowerCase(), " -_/()[]:.,", "\"'");
+    for (const auto& t : tk)
+        for (const char* w : { "denoise", "denoiser", "denoising", "declick", "declicker", "declip", "declipper", "dehum", "dehummer", "decrackle",
+                               "decrackler", "dereverb", "restoration", "restore", "noisereduction" })
+            if (t == w) return true;
+    for (int i = 0; i + 1 < tk.size(); ++i)   // "De-click", "De-noise", "De-hum" ... - never "De-ess" (a de-esser is in scope)
+        if (tk[i] == "de" && juce::StringArray { "noise", "click", "clip", "hum", "reverb", "crackle" }.contains (tk[i + 1])) return true;
+    return tk.contains ("noise") && tk.contains ("reduction");
+}
+inline constexpr const char* kRestorationWhy = "restoration: it repairs audio (noise, clicks, hum, clipping) and doesn't change normal audio";
 // 1. out of scope
 inline juce::String outOfScope (const juce::String& typeCode, const juce::String& name, const juce::String& kind)
 {
@@ -50,6 +65,7 @@ inline juce::String outOfScope (const juce::String& typeCode, const juce::String
     const auto tk = tokens (name + " " + kind);
     // GTR STOMP (Kathy, 21 Oct): a pedal board whose controls depend on the pedal loaded in it - skipped, filed with that reason
     if (name.containsIgnoreCase ("GTR Stomp")) return "pedal board: its controls depend on the pedal loaded";
+    if (restorationByName (name)) return kRestorationWhy;   // 28 Oct (Kathy)
     if (hasAny (tk, { "meter", "meters", "metering", "analyser", "analyzer", "analysis", "scope", "spectrum", "lufs", "loudness", "visualizer", "visualiser", "oscilloscope", "correlation" })) return "meter";
     if (hasAny (tk, { "utility", "trim", "pan", "panner", "routing", "router", "dither", "tone", "generator", "phase", "polarity", "downmix", "downmixer", "mono", "send", "return", "latency", "delaycomp", "monitor", "monitoring", "switcher", "matrix", "patch" })) return "utility";
     return {};

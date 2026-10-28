@@ -17,6 +17,7 @@
 
 #include "EjmapCertV1.h"
 #include "EjmapMultibandV1.h"
+#include "EjmapCategorise.h"   // 28 Oct: restorationByName
 #include <iostream>
 
 namespace ejmap::trustrun
@@ -423,6 +424,8 @@ inline int runTrustLevels (const juce::File& mapsDir, const juce::StringArray& c
                 if (hid.size() == 3 && hid[0] == fmt && trust::versionKey (hid[2]) == trust::versionKey (m.getProperty ("identity", {}).getProperty ("version", "").toString()))
                 { heldWhy = {}; earlierHold = ch->second; m.getDynamicObject()->setProperty ("earlier_hold", earlierHold); } }
         auto L = trust::levelFor (m, certified, heldWhy, rb, measured);
+        if (categorise::restorationByName (name))   // 28 Oct (Kathy): restoration is out of scope - never a mapped EQ (Acon DeNoise 2), never dialled
+        {   L = {}; L.level = "unsure"; L.why = "out of scope: " + juce::String (categorise::kRestorationWhy); cat = {}; m.getDynamicObject()->setProperty ("category", juce::var()); }
         if (L.level == "certified" && (cat == "filter" || cat == "pitch") && ! compCert.count (key) && ! (v1Pass.count (cat) && v1Pass[cat].count (key)))   // 23 Oct: say which
             L.why = cat == "filter" ? "passed the filter measurement's certification: every cutoff matches its labels under one convention, 3+ judged positions"
                                     : "passed the pitch-shift measurement's certification: every judged position within 5 cents, 3+ positions";
