@@ -14587,7 +14587,7 @@ int main (int, char**)
                && ! mNot.stepped && mNot.steps.size() == 2 && planTimeSteps ({ { 0.0, 10.0 } }, 0).skip.isNotEmpty(),
                "rd WZ-33OCT-1: no time step on a control that is no time; a stepped one asked for its own positions (" + c.skip + " | " + n.skip + ")");
         const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
-        check (drv.contains ("const auto plan = reverbdelay::planTimeSteps (timeMap, timeCtl.steps);")
+        check (drv.contains ("const auto plan = reverbdelay::planTimeSteps (timeMap, sweep::isSteppedControl (tcv) && tst > 2 && tst <= 24 ? tst : 0);")
                && drv.contains ("const auto inv = step.exact ? reverbdelay::Inverse { true, step.norm, {} } : invertMap (timeMap, target, lo > 0.0);")
                && drv.contains ("a->setProperty (\"why\", \"not asked: \" + plan.skip);"),
                "rd WZ-33OCT-1b: the delay's acceptance uses the plan: not asked is said, a stepped position written at its own norm");

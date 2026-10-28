@@ -6241,7 +6241,10 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     {
         // 28 Oct (Kathy, delay 56%): reverbdelay::planTimeSteps - no time step on a control that is not a time; a stepped one asked only
         // for its own positions, at their exact norms
-        const auto plan = reverbdelay::planTimeSteps (timeMap, timeCtl.steps);
+        // the steps as the measuring took them (sevenNorms): a stepped control of 3..24 steps was read at every step (timeCtl.steps is not
+        // carried by ctlFrom - 28 Oct, the re-measure: CLA EchoSphere's 3-position SlapVSO came through as 0 steps)
+        const auto tcv = sweep::findControl (base, timeCtl.index); const int tst = (int) tcv.getProperty ("numSteps", 0);
+        const auto plan = reverbdelay::planTimeSteps (timeMap, sweep::isSteppedControl (tcv) && tst > 2 && tst <= 24 ? tst : 0);
         double lo = 1e9; for (const auto& [n, ms] : timeMap) lo = std::min (lo, ms);
         if (plan.skip.isNotEmpty())
         {   auto* a = new juce::DynamicObject(); a->setProperty ("map", "time"); a->setProperty ("step", "-"); a->setProperty ("ran", false); a->setProperty ("pass", false);
