@@ -1,0 +1,10 @@
+scenario RP4
+captured 2026-10-28T11:33:13.185Z
+  [user] cl1b  [rig-replay:rp_cp_4]
+  [assistant] I'll add a Tube-Tech CL 1B compressor to the kick with threshold around -15 dB, ratio 4:1, attack 3 and release 5 on its dial.
+  [user] Add Renaissance Axx with threshold at -20 dB  [rig-replay:rp_cp_2]
+  [assistant] 
+  run row: status=Waiting for your OK changes=0 steps=1 zones=[1:Apply,2:Skip,7:Stop]
+  opening: 
+  closing: 
+    step "add Renaissance Axx" [awaiting] right="" detail="" chips=[]

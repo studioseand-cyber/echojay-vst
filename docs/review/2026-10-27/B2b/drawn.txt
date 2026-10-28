@@ -1,5 +1,6 @@
 scenario B2b
-captured 2026-10-27T16:14:31.590Z
+captured 2026-10-27T23:33:27.230Z
+  [assistant] The gain I was levelling with is no longer there - level loop stopped.
   [user] rig-tappick-marker: add a transient shaper
   [assistant] Added the EchoJay Compressor.
   run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]

@@ -1,5 +1,5 @@
 scenario A4
-captured 2026-10-27T16:53:44.601Z
+captured 2026-10-27T23:33:05.612Z
   [user] rig-gr-marker: build a compressor and read its gain reduction
   [assistant] Read the gain reduction.
   [user] rig-setfail-marker: add something that is not installed

@@ -1,5 +1,5 @@
 scenario I9b
-captured 2026-10-27T15:38:21.152Z
+captured 2026-10-27T23:43:32.715Z
   [assistant] The gain I was levelling with is no longer there - level loop stopped.
   [user] rig-tpown-marker: add Renaissance Axx (s) and set its Threshold
   [assistant] Added it to this rack, with the setting you asked for.

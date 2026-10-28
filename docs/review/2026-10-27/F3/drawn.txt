@@ -1,5 +1,5 @@
 scenario F3
-captured 2026-10-27T16:25:47.001Z
+captured 2026-10-27T23:25:05.666Z
   [user] rig-row-marker: set the pre gain, twice (then I close the window)
   [assistant] 
   run row: status=Waiting for your OK changes=0 steps=2 zones=[1:Apply,2:Skip,1:Apply,2:Skip,7:Stop,6:Skip all,5:Apply all]

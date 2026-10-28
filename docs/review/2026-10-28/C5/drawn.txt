@@ -1,0 +1,12 @@
+scenario C5
+captured 2026-10-28T11:28:28.863Z
+  [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
+  [user] rig-undoclose-marker: put the pre-gain up
+  [assistant] The pre gain on the Mix Bus is set to 3 dB.
+  run row: status=Done changes=0 steps=1 zones=[11:1 step]
+  opening: The pre gain on the Mix Bus is set to 3 dB.
+  closing: Everything this run changed has been undone, so what it said above no longer describes the rack.
+    step "pre-gain 3 dB" [undone] right="undone" detail="undone" chips=[]

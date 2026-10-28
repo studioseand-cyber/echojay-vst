@@ -1,0 +1,20 @@
+scenario N2
+captured 2026-10-28T11:16:24.210Z
+  [user] rig-row-marker: set the pre gain, twice (then I close the window)
+  [assistant] Stopped.
+  [user] rig-row-marker: set the pre gain, twice (survive the close)
+  [assistant] Set the pre-gain to 4 dB, then to 6 dB.
+  [user] rig-rowask-marker: how firm should it be? (chips through a close)
+  [assistant] Gentle it is - the pre-gain is at 2 dB.
+  [user] rig-auto-marker: set the pre gain, twice (no window at all)
+  [assistant] Set the pre-gain to 4 dB, then to 6 dB.
+  [user] rig-nowindowbuild-marker: build a compressor on this rack (nothing open while it runs)
+  [assistant] Built a compressor on the rack.
+  [user] rig-row-marker: set the pre gain (N1: a row must be drawn)
+  [assistant] Stopped.
+  [user] rig-pregain-marker: make this louder, target -8
+  [assistant] Added a compressor and dialled it to -8 LUFS.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added a compressor and dialled it to -8 LUFS.
+  closing: Added a compressor and dialled it to -8 LUFS.
+    step "add a compressor and dial it to a loudness target" [done] right="applied" detail="Added EchoJay Compressor in slot 1. Read back: threshold -16 dB, ratio 2.5:1." chips=[]

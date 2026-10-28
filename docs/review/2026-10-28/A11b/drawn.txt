@@ -1,0 +1,20 @@
+scenario A11b
+captured 2026-10-28T11:33:58.311Z
+  [user] cl1b  [rig-replay:rp_cp_4]
+  [assistant] I added a Tube-Tech CL 1B compressor to the kick with threshold around -15 dB, ratio 4:1, attack 3 and release 5 on its dial.
+  [user] Add Renaissance Axx with threshold at -20 dB  [rig-replay:rp_cp_2]
+  [assistant] Stopped.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it, with the setting you asked for.
+  [user] rig-thirdparty-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it, with the setting you asked for.
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
+  [user] rig-builtinset-marker: add the compressor to the kick
+  [assistant] Added the EchoJay Compressor.
+  [user] rig-autoadd-marker: add it there
+  [assistant] Added a compressor with a threshold of -18 dB.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added a compressor with a threshold of -18 dB.
+  closing: Added a compressor with a threshold of -18 dB.
+    step "add a compressor with a threshold" [done] right="auto-applied" detail="Added EchoJay Compressor in slot 5. Read back: threshold -18 dB, ratio 3:1." chips=[]

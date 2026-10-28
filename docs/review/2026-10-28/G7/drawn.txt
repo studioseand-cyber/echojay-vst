@@ -1,0 +1,10 @@
+scenario G7
+captured 2026-10-28T11:28:22.267Z
+  [user] The gain I was levelling with is no longer there - level loop stopped.
+The chain changed after the level was matched - re-measuring from whatever is playing.
+  [assistant] Read the gain reduction.
+  run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]
+  opening: Read the gain reduction.
+  closing: Read the gain reduction.
+    step "build a compressor on this rack" [done] right="applied" detail="Built EchoJay Compressor in slot 1. Read back: threshold -24 dB, ratio 4:1." chips=[]
+    step "gain reduction on slot 1" [done] right="" detail="I have not heard anything through this compressor yet, so I cannot say how much it is doing." chips=[]
