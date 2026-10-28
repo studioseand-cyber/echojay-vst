@@ -145,21 +145,77 @@ The payload A stores on the chat row and hands back to K's layout:
   "kind": "match_report",
   "reference": { "name": "...", "windowS": 30.0, "figures": { "lufs": -9.2, "psr": 8.1, "plr": 12.4 } },
   "mix":       { "name": "...", "windowS": 30.0, "figures": { "lufs": -11.8, "psr": 6.3, "plr": 10.9 } },
-  "bands": [ { "name": "low-mid", "deltaDb": -2.4, "tier": "bounded", "crest": 7.1 }, ... ],  // six, in band order
+  "bands": [ { "name": "low-mid", "deltaDb": -2.4, "tier": "bounded" }, ... ],  // six, in band order
+                                      // [rev 4, K] NO `crest` HERE. It moved into crestLog below:
+                                      // crest is never rendered, and a field in the drawn payload is
+                                      // a field something will eventually draw.
   "moves": [ { "text": "cut 2.4 dB at the low-mid", "deltaDb": -2.4, "band": 2, "kind": "eq" }, ... ],
   "attribution": [ { "uid": "...", "name": "Gtr L", "share": 1.34, "known": true }, ... ],  // C4 §3's s_i[b]: 0..1-and-beyond, NOT normalised
-  "coverage":    [ { "band": 2, "share": 1.16 }, ... ],       // per band, C4 §3's c[b], same scale; six entries
+  "coverage":    [ { "band": 2, "coverage": 1.16 }, ... ],    // per band, C4 §3's c[b], same scale; six entries
+                                      // [rev 4, K] the field is `coverage`, not `share`: one row
+                                      // carrying two different quantities under one name is how a
+                                      // reader draws a Link's share as the band's coverage.
   "preFaderCaveat": true,                                     // C4 §9: always true when any move is placed on a track
   "busTap": "input",                                          // "input" | "output" - see §5.1; which tap P_bus came from
   "discriminator": "one sentence, K's words",
+  "crestLog": { },                    // [rev 4, 28 Oct] LOGGED, NEVER RENDERED - see below
   "after": { "present": false },      // K6 fills this from verifyCapture(): the same shape as "mix"
   "planId": ""                        // set once draftPlan has answered, so the card can open it
 }
 ```
 
+### `crestLog` — logged for tuning, rendered by nothing (C4 rev 4 §6; Sean, 28 Oct)
+
+Sean's ruling after K's MA10 §10 and §11: **crest decides nothing before the beta and reaches no
+user.** Her confirmation test is why — the gap between a real drum excess and a body excess is
+**0.13 dB** (*"in a finished mix the band is already mostly the peaky material, so adding more barely
+changes it"*). So `bandCrest` is `null` on both sides on the wire, no crest finding is ever written,
+**and no band move is ever withheld for crest**.
+
+What the plugin still computes, and stores here **for tuning**, per band and per side, over the
+selected window — exactly C4 rev 4 §6's definitions, restated here only because this payload is
+where they live:
+
+```jsonc
+"crestLog": {
+  "v": 1,
+  "hostBlockSize": 512,                      // the block size the CAPTURE ran at
+  "sides": {
+    "reference": {
+      "framesPerHop": 4,                     // that series' FFT frames per 100 ms hop
+      "v0": [ 5.9, 6.4, null, 7.2, 6.8, 5.1 ],   // six bands, in band order; null = not enough hops
+      "v1": [ 2.1, 2.4, null, 3.0, 2.8, 1.9 ]    // "as available"; see the bias note
+    },
+    "mix": { "framesPerHop": 8, "v0": [ ... ], "v1": [ ... ] }
+  }
+}
+```
+
+- **V0** is `10·log10(95th percentile of bandPower_h / its 3 s local mean)`. A hop qualifies when
+  `bandFrames > 0` **and** flags bit 0 is clear; the local mean is over hops `h-15 … h+14` with at
+  least **10** qualifying; the band is **`null` under 100 qualifying hops** — a figure from a window
+  that short is not a figure.
+- **V1 "as available"** is the **median** over qualifying hops of `10·log10(bandPeak_h / bandPower_h)`.
+  Before the 256-sample cadence this reads `bandPeak` from **one FFT per host block**, so it carries
+  the block-size bias §6 of this document names — which is exactly why `hostBlockSize` and
+  `framesPerHop` travel with it: the bias can be corrected later, and a figure that does not carry
+  what it was measured under cannot be.
+- **Nothing renders it.** No layout reads `crestLog`; K's `EJMatchReport.h` does not take it. A field
+  nobody draws is the point: it is a log that happens to ride the card's own record.
+- **It also goes to the server with the Match request** (Sean, 28 Oct; B takes it). One computation,
+  two destinations — never two computations.
+
+**The card's one sentence.** Whenever the card proposes **at least one band move**, it shows, once and
+not under each move: *"These EQ moves were proposed without the check that tells body from peaks."*
+With no band move it is **absent**. (B's plan road carries its own sentence in a plan's `warnings`,
+once per plan, for a Match plan with an EQ step — that is C3 §2's surface, not this one, and the two
+wordings are not identical. Raised with B.)
+
 Rules that hold the card honest, and that MA-rows pin: a figure that was not measured is **absent, never 0**; `tier` carries "bounded" where X1 bounds a band; `after.present` false means no verify capture exists, which is not the same as "nothing changed".
 
-**Attribution is a SHARE, and C4 owns its definition. [K's review, 27 Oct; Sean's approval of her three asks, same evening. My first §4 invented a normalised share and this replaces it.]** The authority is **`CONTRACT_MATCH_ATTRIBUTION_2026-10-27.md` (C4, K)** — a Link's band power divided by the **mix bus's** band power in the same band, **not normalised and not capped**. This document does not restate it. C4 §3 defines `share`, `coverage` and `known Link`; C4 §9 fixes the card's fields, which is why the payload above carries `sharePct` (share × 100), per-band `coverage`, and `preFaderCaveat`. §7 below answers C4 §8's questions about where those powers come from, and §5.1 is the new pre-chain tap that changes the answer for `P_bus`.
+**Attribution is a SHARE, and C4 owns its definition. [K's review, 27 Oct; Sean's approval of her three asks, same evening. My first §4 invented a normalised share and this replaces it.]** The authority is **`CONTRACT_MATCH_ATTRIBUTION_2026-10-27.md` (C4, K)** — a Link's band power divided by the **mix bus's** band power in the same band, **not normalised and not capped**. This document does not restate it. C4 §3 defines `share`, `coverage` and `known Link`; C4 §9 fixes the card's fields, which is why the payload above carries per-band `coverage` and `preFaderCaveat`. **[rev 4, K: the
+line that stood here said the payload carries `sharePct`. It does not and must not — the field is
+`share`, ×100 only at display, which the JSON above and the paragraph below both already say.]** §7 below answers C4 §8's questions about where those powers come from, and §5.1 is the new pre-chain tap that changes the answer for `P_bus`.
 
 **One name, one scale (C4 §8.6, settled 27 Oct):** the field is **`share`**, on the wire and in this payload, the same name and the same **0..1-and-beyond** scale that C3 already uses. **×100 happens at the point of display and nowhere else** — a stored percentage is how two scales end up in one pipeline. `coverage` follows it exactly.
 
@@ -274,7 +330,13 @@ While siting this I found that the same function already does `allBlocks.push_ba
 - **Mine:** `ReferenceAnalyser` will feed its engine in **512-sample blocks** instead of 2048. It is offline, so the extra FFTs cost nothing anyone waits for, and it puts the reference on the same hop as the common live case. It lands with the accumulator.
 - **Mine:** every hop frame carries `bandFrames`, so K's code can read the frames-per-hop of each series and either correct for it or refuse to compare two series whose counts differ. The figure can then state its own provenance instead of hiding the difference.
 - **Residual, stated plainly:** a host at 1024 or 2048 still gives fewer frames per hop than the reference will, so `bandPeak` comparisons are "same within a known bias", not identical. I cannot fix that from the plugin side — the host chooses the block size.
-- **SETTLED, C4 rev 2 §6: the crest is rebuilt on the 100 ms grid and no longer uses `bandPeak` at all.** Precisely, because the one-line version of it is easy to implement wrongly: for each qualifying hop (`bandFrames > 0`, not silent) the **local** level `M_h` is the mean `bandPower` over the qualifying hops in the 3 s *around that hop* (`h−15` to `h+14`, skipped when fewer than 10 qualify); `r_h = bandPower_h / M_h`; and the figure is `10·log10(95th percentile of r_h)` over the window, null under 100 qualifying hops. **A per-hop local mean, not one mean for the window** — which is the whole point, since a single mean would mostly measure the arrangement. `bandPeak` stays in the frame as evidence that a hop held a loud frame. That is the hop-grid definition recommended below, and it has a consequence worth stating: **C4's 1.0 dB margin no longer waits on my FFT answer.** The 95th percentile of hop power against a local mean lives entirely on the sample-counted 100 ms grid, so it does not inherit the frames-per-hop bias of a within-hop maximum, and the margin can be chosen on its own merits. `bandPeak` remains useful for exactly what it is — evidence that a hop held a loud frame — and is no longer the basis of a published number.
+- **SUPERSEDED BY C4 REV 4 §6 (28 Oct, K).** Everything in this bullet and the next was right about
+  rev 2's measure and is no longer what happens: under rev 4 **crest decides nothing before the beta
+  and is never shown**, both measures are computed and **logged** under `crestLog` (§4), and `V1` is
+  kept "as available" rather than abandoned — it reads `bandPeak` from one FFT per host block until
+  the parked 256-sample branch merges, which is why `crestLog` carries the host block size and each
+  series' frames per hop. Kept below rather than deleted because it is the reasoning rev 4 rests on.
+- **(rev 2, superseded) C4 rev 2 §6: the crest is rebuilt on the 100 ms grid and no longer uses `bandPeak` at all.** Precisely, because the one-line version of it is easy to implement wrongly: for each qualifying hop (`bandFrames > 0`, not silent) the **local** level `M_h` is the mean `bandPower` over the qualifying hops in the 3 s *around that hop* (`h−15` to `h+14`, skipped when fewer than 10 qualify); `r_h = bandPower_h / M_h`; and the figure is `10·log10(95th percentile of r_h)` over the window, null under 100 qualifying hops. **A per-hop local mean, not one mean for the window** — which is the whole point, since a single mean would mostly measure the arrangement. `bandPeak` stays in the frame as evidence that a hop held a loud frame. That is the hop-grid definition recommended below, and it has a consequence worth stating: **C4's 1.0 dB margin no longer waits on my FFT answer.** The 95th percentile of hop power against a local mean lives entirely on the sample-counted 100 ms grid, so it does not inherit the frames-per-hop bias of a within-hop maximum, and the margin can be chosen on its own merits. `bandPeak` remains useful for exactly what it is — evidence that a hop held a loud frame — and is no longer the basis of a published number.
 - **(The reasoning, kept because it is why the above is right.)** Define the six-band crest from the **distribution of `bandPower` across hops** (say the 95th percentile against the mean over the window) rather than from `bandPeak` within a hop. That lives entirely on the 100 ms grid, which IS sample-counted and identical on both sides by construction, so the figure stops depending on the host's block size at all. `bandPeak` then stays in the frame as evidence rather than as the basis of a published number. Her figure, her call — but if she wants it, it costs nothing extra in the accumulator, because both fields are already there.
 
 ---
@@ -306,8 +368,10 @@ counters sit **last** (`bandFrames`, `flags`), and a cadence marker is additive 
 positional rule `RackSidecarSlot` has four notes about. Nothing in the audio path moves until her
 numbers say which cadence to build.
 
-**C4 is at rev 3** (K, 28 Oct): a Link whose band is silent is **known with share 0**, not unknown.
-That lives in her attribution code, not in anything here — noted so the two documents cannot drift.
+**C4 is at rev 4** (K, 28 Oct). Two things from it that live in her code rather than here, noted so
+the two documents cannot drift: a Link whose band is silent is **known with share 0**, not unknown
+(rev 3); and under **rev 4** crest decides nothing before the beta, is never shown, and withholds no
+band move — what this document owes it is `crestLog` in §4 and the card's one sentence.
 
 ---
 
