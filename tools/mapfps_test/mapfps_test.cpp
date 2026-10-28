@@ -67,6 +67,9 @@
 #include "EJMatchProposal.h"   // Match Reference phase 2a: the shipped proposal arithmetic
 #include "EJCompareFigures.h"  // the compare figures and matchSideFrom, now linkable
 #include "EJMatchPage.h"       // the Match screen's geometry and the words it draws
+#include "EJMatchWindow.h"     // C4 sections 6 and 7: crest, PSR, loudest-30, over the hop series
+#include "EJMatchAttribution.h" // C4 sections 2 to 5: routing, sizing and sentences for a band move
+#include "ma10/ma10_hops.h"    // MA10's offline hop series: the block-size crest pin feeds it audio
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -16284,6 +16287,454 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (echojay::matchProvenanceText (a, none).isNotEmpty(),
                    "mr PIN19: and a side with no spectrum at all says that rather than drawing nothing "
                    "and explaining nothing");
+        }
+    }
+
+    // ======================================================================
+    // ma -- MATCH ATTRIBUTION AND THE SIX-BAND CREST (C4 section 10: MA2, MA8)
+    //
+    // C4 rev 2 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27), EJMatchAttribution.h
+    // and EJMatchWindow.h. One row block per line of C4 section 10, MA10 aside
+    // (MA10 is an offline run on real stems, tools/mapfps_test/ma10/).
+    //
+    // PREFIX ma, AND mw FOR THE WINDOW FIGURES. Neither was taken.
+    //
+    // THE FIXTURES BUILD SHARES DIRECTLY. The bus band power is 1.0, so a
+    // Link's pre-trim power IS its share, and a row about 0.50 against 0.49 is
+    // about exactly those two numbers and not about a division.
+    //
+    // THE HOP FRAME HERE IS LOCAL. A's type (C2 section 5) lands after
+    // k-base-1; this struct carries the same six fields, which is all the
+    // templates read. The block-size row feeds real audio through
+    // ma10/ma10_hops.h, a reproduction of MeterEngine's perOct path, and must
+    // move to A's accumulator when it exists.
+    // ======================================================================
+    {
+        std::cout << "match attribution and crest:\n";
+        using namespace echojay;
+
+        struct TestHop
+        {
+            float shortTermLufs = -100.0f;
+            float shortTermTruePeak = -100.0f;
+            std::array<float, 6> bandPower {};
+            std::array<float, 6> bandPeak {};
+            std::uint16_t bandFrames = 1;
+            std::uint16_t flags = 0;
+        };
+
+        constexpr int kLow = 1;     // the band most rows use
+        constexpr int kHops = 1000; // the bus's hop count in every routing row
+
+        auto link = [] (const juce::String& name, const juce::String& role, double share,
+                        int hops = kHops, double cover = 1.0, float gainDb = 0.0f)
+        {
+            AttribLinkIn l;
+            l.uid = "uid-" + name; l.name = name; l.role = role;
+            // post-trim = pre-trim * 10^(gain/10); the bus is 1.0, so pre-trim = share
+            l.postTrimPower = share * std::pow (10.0, (double) gainDb / 10.0);
+            l.gainDb = gainDb; l.hopCount = hops; l.frameCoverage = cover;
+            return l;
+        };
+        auto move = [] (float D, std::vector<AttribLinkIn> links, bool tap = true, int band = kLow)
+        {
+            AttribIn in;
+            in.band = band; in.busPower = 1.0; in.busHopCount = kHops; in.D = D;
+            in.crestMix = 5.0f; in.crestRef = 5.0f;   // equal: the crest test passes the move
+            in.busInputTap = tap; in.links = std::move (links);
+            return in;
+        };
+        auto near = [] (double a, double b, double tol) { return std::abs (a - b) <= tol; };
+        auto vdb  = [] (const AttribResult& r) { return r.valueDb ? juce::String (*r.valueDb, 3) : juce::String ("null"); };
+
+        // ma PIN1 -- RULE 1, X1's FLOOR. Under 2 dB is no move; exactly 2 is.
+        {
+            const auto a = attributeBandMove (move (1.99f, { link ("Kick", "kick", 0.8) }));
+            check (a.target == AttribTarget::None && a.rule == AttribRule::R1Floor && ! a.valueDb,
+                   "ma PIN1: a 1.99 dB gap is no move, by rule 1, with no value");
+            const auto b = attributeBandMove (move (2.0f, { link ("Kick", "kick", 0.8) }));
+            check (b.rule == AttribRule::R6Single,
+                   "ma PIN1: and a 2.0 dB gap is a move (rule 6 here, not rule 1)");
+        }
+
+        // ma PIN2 -- RULE 3, THE FADER. A share of 1.01 and a coverage of 1.16
+        // go to the bus; 1.00 and 1.14 do not. Two sentences, by the tap.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 1.01) }));
+            check (a.target == AttribTarget::Bus && a.rule == AttribRule::R3Fader
+                   && a.reason == attribFaderSentenceWithTap() && a.valueDb && *a.valueDb == -2.2f,
+                   "ma PIN2: a known share of 1.01 goes on the bus at -D, with the tap's sentence",
+                   a.reason + " / " + vdb (a));
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 1.0) }));
+            check (b.rule == AttribRule::R6Single,
+                   "ma PIN2: a share of exactly 1.00 is not over 1 and reaches rule 6");
+            const auto c = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.58),
+                                                            link ("Bass", "bass", 0.58) }));
+            check (c.rule == AttribRule::R3Fader && c.coverage && near (*c.coverage, 1.16, 1e-12),
+                   "ma PIN2: a coverage of 1.16 goes on the bus by rule 3");
+            const auto d = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.57),
+                                                            link ("Bass", "bass", 0.57) }));
+            check (d.rule != AttribRule::R3Fader && d.rule == AttribRule::R6Single,
+                   "ma PIN2: a coverage of 1.14 does not, and reaches rule 6");
+            const auto e = attributeBandMove (move (2.2f, { link ("Kick", "kick", 1.01) }, false));
+            check (e.rule == AttribRule::R3Fader && e.reason == attribFaderSentenceNoTap()
+                   && e.reason == "Track shares can't be measured here: a fader is well below unity, or "
+                                  "the mix bus's own processing is changing this band. This move goes on "
+                                  "the mix bus.",
+                   "ma PIN2: without the bus input tap the sentence names the bus chain too", e.reason);
+        }
+
+        // ma PIN3 -- RULE 4, LOW COVERAGE: 0.59 against 0.61.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.59) }));
+            check (a.target == AttribTarget::Bus && a.rule == AttribRule::R4LowCoverage
+                   && a.reason == "Most of the low comes from tracks without an EchoJay Link.",
+                   "ma PIN3: a coverage of 0.59 goes on the bus by rule 4, with its sentence", a.reason);
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.61) }));
+            check (b.rule == AttribRule::R6Single,
+                   "ma PIN3: a coverage of 0.61 does not, and reaches rule 6");
+        }
+
+        // ma PIN4 -- RULE 5, AN UNKNOWN LINK THAT COULD HOLD THE BAND. In the
+        // sub, a bass can and a vocal cannot (section 4a).
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.8),
+                                                            link ("Bass 2", "bass", 0.1, kHops, 0.5) },
+                                                   true, 0));
+            check (a.target == AttribTarget::Bus && a.rule == AttribRule::R5Unknown
+                   && a.reason == "Bass 2 didn't give a full reading in this window and may hold the sub.",
+                   "ma PIN4: an unknown bass in the sub sends the move to the bus by rule 5, named", a.reason);
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.8),
+                                                            link ("Vox", "vocal", 0.1, kHops, 0.5) },
+                                                   true, 0));
+            check (b.rule == AttribRule::R6Single && b.links.size() == 1 && b.links[0].name == "Kick",
+                   "ma PIN4: an unknown vocal cannot carry the sub, so the move reaches the kick");
+        }
+
+        // ma PIN5 -- THE GRID. Two hops short of the bus is unknown; one is known.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.7),
+                                                            link ("Drums", "drums", 0.2, kHops - 2) }));
+            check (a.rule == AttribRule::R5Unknown && a.unknown.size() == 1 && a.unknown[0].name == "Drums",
+                   "ma PIN5: a Link two hops short of the bus is unknown");
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.7),
+                                                            link ("Drums", "drums", 0.2, kHops - 1) }));
+            bool drumsKnown = false;
+            for (const auto& k : b.known) if (k.name == "Drums" && near (k.share, 0.2, 1e-12)) drumsKnown = true;
+            check (drumsKnown && b.unknown.empty() && b.coverage && near (*b.coverage, 0.9, 1e-12),
+                   "ma PIN5: and one hop short is known, with its share in the coverage");
+        }
+
+        // ma PIN6 -- RULE 6, ONE TRACK: 0.50 against 0.49.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.50),
+                                                            link ("Bass", "bass", 0.15) }));
+            check (a.target == AttribTarget::Track && a.rule == AttribRule::R6Single
+                   && a.reason == "Kick holds 50% of the low." && a.caveat,
+                   "ma PIN6: a share of 0.50 puts the move on that track, with its sentence and the caveat",
+                   a.reason);
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.49),
+                                                            link ("Bass", "bass", 0.20) }));
+            check (b.target == AttribTarget::Bus && b.rule == AttribRule::R8Spread
+                   && b.reason == "The low is spread across several tracks." && ! b.caveat,
+                   "ma PIN6: 0.49 does not, and with no pair it is rule 8 on the bus", b.reason);
+        }
+
+        // ma PIN7 -- RULE 7, A PAIR: 0.25 + 0.45 against 0.24 + 0.46.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.25),
+                                                            link ("Bass", "bass", 0.45) }));
+            check (a.target == AttribTarget::Pair && a.rule == AttribRule::R7Pair
+                   && a.reason == "Bass and Kick hold 70% of the low between them."
+                   && a.combinedShare && near (*a.combinedShare, 0.70, 1e-12) && a.links.size() == 2,
+                   "ma PIN7: 0.25 and 0.45 get the move between them, with the pair's sentence", a.reason);
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.24),
+                                                            link ("Bass", "bass", 0.46) }));
+            check (b.rule == AttribRule::R8Spread,
+                   "ma PIN7: 0.24 and 0.46 do not (one is under a quarter), and it is rule 8");
+        }
+
+        // ma PIN8 -- TRIM. A -6 dB trim on the same audio gives the same share.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.8, kHops, 1.0, 0.0f) }));
+            const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.8, kHops, 1.0, -6.0f) }));
+            check (a.known.size() == 1 && b.known.size() == 1
+                   && near (a.known[0].share, b.known[0].share, 1e-12) && near (b.known[0].share, 0.8, 1e-12),
+                   "ma PIN8: a Link at a -6 dB trim reads the same share as the same audio at 0 dB",
+                   juce::String (a.known.empty() ? -1.0 : a.known[0].share, 6) + " vs "
+                   + juce::String (b.known.empty() ? -1.0 : b.known[0].share, 6));
+        }
+
+        // ma PIN9 to ma PIN13 -- SECTION 5's TABLE, TO 0.1 dB.
+        {
+            const auto a = attributeBandMove (move (2.8f, { link ("Kick", "kick", 0.80) }));
+            check (a.target == AttribTarget::Track && a.valueDb && near (*a.valueDb, -3.9, 0.05)
+                   && ! a.combinedShare && a.measuredDb == 2.8f,
+                   "ma PIN9: one track at 0.80 and D +2.8 is -3.9 dB, not D/s", vdb (a));
+
+            const auto b = attributeBandMove (move (2.8f, { link ("Kick", "kick", 0.40),
+                                                            link ("Bass", "bass", 0.35) }));
+            check (b.target == AttribTarget::Pair && b.valueDb && near (*b.valueDb, -4.4, 0.05)
+                   && b.combinedShare && near (*b.combinedShare, 0.75, 1e-12),
+                   "ma PIN10: a pair at 0.40 + 0.35 and D +2.8 is -4.4 dB on each", vdb (b));
+
+            // The 0.50 rows carry a second Link at 0.15: alone, a coverage of
+            // 0.50 is rule 4's, and these rows are about section 5. At 0.15 it
+            // is under a quarter, so it never makes a pair.
+            const auto c = attributeBandMove (move (2.8f, { link ("Kick", "kick", 0.50),
+                                                            link ("Hat", "drums", 0.15) }));
+            check (c.target == AttribTarget::Bus && c.rule == AttribRule::S5TooLarge
+                   && c.valueDb && *c.valueDb == -2.8f
+                   && c.reason == "Closing this on Kick would need -13.0 dB; the mix bus does it with -2.8 dB.",
+                   "ma PIN11: one track at 0.50 and D +2.8 needs -13.0 dB, so it is too large and goes "
+                   "on the bus with its sentence", c.reason);
+
+            const auto d = attributeBandMove (move (3.5f, { link ("Kick", "kick", 0.50),
+                                                            link ("Hat", "drums", 0.15) }));
+            check (d.target == AttribTarget::Bus && d.rule == AttribRule::S5Infeasible
+                   && d.reason == "Kick holds 50% of the low; cutting it can take at most 3.0 dB off the "
+                                  "mix, and the gap is 3.5 dB.",
+                   "ma PIN12: one track at 0.50 and D +3.5 is infeasible and goes on the bus with its "
+                   "sentence", d.reason);
+
+            const auto e = attributeBandMove (move (-2.0f, { link ("Keys", "keys", 0.60) }));
+            check (e.target == AttribTarget::Track && e.valueDb && near (*e.valueDb, 3.0, 0.05),
+                   "ma PIN13: a boost on one track at 0.60 and D -2.0 is +3.0 dB", vdb (e));
+        }
+
+        // ---- the crest, on the hop series ----
+
+        // A stereo fixture of six sines, one inside each band, each with its own
+        // amplitude envelope. Same in both channels.
+        constexpr double kSr = 48000.0;
+        const double freqs[6] = { 40.0, 150.0, 350.0, 1000.0, 4000.0, 10000.0 };
+        auto sines = [&] (double seconds, std::function<double (int band, double t)> env)
+        {
+            const size_t n = (size_t) (seconds * kSr);
+            std::vector<float> l (n);
+            for (size_t i = 0; i < n; ++i)
+            {
+                const double t = (double) i / kSr;
+                double v = 0.0;
+                for (int b = 0; b < 6; ++b)
+                    v += env (b, t) * std::sin (2.0 * juce::MathConstants<double>::pi * freqs[b] * t);
+                l[i] = (float) v;
+            }
+            return l;
+        };
+        auto crestText = [] (const BandCrest& c)
+        {
+            juce::String s;
+            for (int b = 0; b < 6; ++b)
+                s << (b ? ", " : "") << (c.db[(size_t) b] ? juce::String (*c.db[(size_t) b], 2) : juce::String ("null"));
+            return s;
+        };
+
+        // ma PIN14 -- BLOCK SIZE DOES NOT MOVE THE CREST. A 300 ms burst every
+        // second in each band (20 ms raised-cosine edges, a floor 20 dB down,
+        // staggered across bands), fed at 128 and at 2048 samples a block.
+        {
+            auto burst = [] (int b, double t)
+            {
+                const double ph = std::fmod (t + 0.13 * b, 1.0);
+                double g;
+                if      (ph < 0.02) g = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * ph / 0.02);
+                else if (ph < 0.30) g = 1.0;
+                else if (ph < 0.32) g = 0.5 + 0.5 * std::cos (juce::MathConstants<double>::pi * (ph - 0.30) / 0.02);
+                else                g = 0.0;
+                return 0.04 * (0.1 + 0.9 * g);
+            };
+            const auto x = sines (40.0, burst);
+            const auto c128  = bandCrest (ma10::hopsFor (x, x, kSr, 128));
+            const auto c2048 = bandCrest (ma10::hopsFor (x, x, kSr, 2048));
+            bool same = true;
+            for (size_t b = 0; b < 6; ++b)
+                if (! c128.db[b] || ! c2048.db[b] || std::abs (*c128.db[b] - *c2048.db[b]) > 0.1f
+                    || *c128.db[b] < 3.0f)
+                    same = false;
+            check (same, "ma PIN14: a bursting fixture with real crest reads the same crest at 128-sample "
+                         "and 2048-sample blocks, to 0.1 dB, in every band",
+                   "128: " + crestText (c128) + "  2048: " + crestText (c2048));
+        }
+
+        // ma PIN15 -- ARRANGEMENT IS NOT CREST. A quiet verse, a loud chorus 20 dB
+        // up and the verse again, steady sines, no transients: under 1 dB in
+        // every band, because each hop is read against its own 3 s.
+        {
+            auto sections = [] (int, double t)
+            {
+                return (t >= 30.0 && t < 60.0) ? 0.04 : 0.004;
+            };
+            const auto x = sines (90.0, sections);
+            const auto c = bandCrest (ma10::hopsFor (x, x, kSr, 512));
+            bool under = true;
+            for (size_t b = 0; b < 6; ++b)
+                if (! c.db[b] || *c.db[b] >= 1.0f) under = false;
+            check (under, "ma PIN15: a quiet verse and a loud chorus with no transients reads a crest under "
+                          "1 dB in every band", crestText (c));
+        }
+
+        // ma PIN16 and ma PIN17 -- THE MARGIN: a finding at 1.0 dB, none at 0.9.
+        {
+            auto in = move (2.8f, { link ("Kick", "kick", 0.8) });
+            in.crestMix = 7.0f; in.crestRef = 6.0f;
+            const auto a = attributeBandMove (in);
+            check (a.target == AttribTarget::Finding && a.rule == AttribRule::R2Peaks && ! a.valueDb
+                   && a.reason == "The low is 2.8 dB hotter than the reference and 1.0 dB peakier: the "
+                                  "excess is peaks, not body. That's a dynamics job; EQ would cut the body "
+                                  "with it.",
+                   "ma PIN16: hotter and 1.0 dB peakier is a finding with no move, in C4's words", a.reason);
+            in.crestMix = 6.9f;
+            const auto b = attributeBandMove (in);
+            check (b.target == AttribTarget::Track && b.rule == AttribRule::R6Single,
+                   "ma PIN17: 0.9 dB peakier is not a finding, and the move goes ahead");
+        }
+
+        // ma PIN18 -- A NULL CREST: the move goes ahead with decision 4's sentence.
+        {
+            auto in = move (2.8f, { link ("Kick", "kick", 0.8) });
+            in.crestMix.reset();
+            const auto a = attributeBandMove (in);
+            check (a.target == AttribTarget::Track && a.discriminator
+                   && attribNoDiscriminatorSentence()
+                      == "This EQ move was proposed without the check that tells body from peaks.",
+                   "ma PIN18: a null mix crest gives the move plus the decision 4 sentence");
+            const auto b = attributeBandMove (move (2.8f, { link ("Kick", "kick", 0.8) }));
+            check (! b.discriminator, "ma PIN18: and with both crests present the sentence is not raised");
+        }
+
+        // ma PIN19 -- TOO LITTLE DATA: 99 qualifying hops is null, 100 is a figure.
+        {
+            auto flat = [] (int n)
+            {
+                std::vector<TestHop> v ((size_t) n);
+                for (auto& h : v) h.bandPower.fill (1.0f);
+                return v;
+            };
+            const auto a = bandCrest (flat (99));
+            const auto b = bandCrest (flat (100));
+            bool aNull = true, bSet = true;
+            for (size_t i = 0; i < 6; ++i) { if (a.db[i]) aNull = false; if (! b.db[i]) bSet = false; }
+            check (aNull && a.qualifyingHops == 99, "ma PIN19: 99 qualifying hops give no crest, never 0");
+            check (bSet && b.db[0] && near (*b.db[0], 0.0, 1e-6),
+                   "ma PIN19: and 100 give one (0 dB on a flat series)");
+        }
+
+        // ma PIN20 -- AN UNKNOWN LINK NEVER APPEARS IN THE SHARES.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.8),
+                                                            link ("Bass 2", "bass", 0.3, kHops, 0.5) },
+                                                   true, 0));
+            bool inShares = false;
+            for (const auto& k : a.known) if (k.name == "Bass 2") inShares = true;
+            for (const auto& k : a.links) if (k.name == "Bass 2") inShares = true;
+            check (! inShares && a.unknown.size() == 1 && a.coverage && near (*a.coverage, 0.8, 1e-12),
+                   "ma PIN20: an unknown Link is named as unknown and is never in the shares or the coverage");
+        }
+
+        // ma PIN21 -- A HOP WITH NO FRAMES, OR A SILENT ONE, IS NEVER A LEVEL.
+        // Every tenth hop carries a wild power with bandFrames 0, and every
+        // tenth (offset) is flagged silent with the same: the crest of the
+        // flat remainder is 0 dB and the qualifying count leaves them out.
+        {
+            std::vector<TestHop> v (300);
+            for (size_t i = 0; i < v.size(); ++i)
+            {
+                v[i].bandPower.fill (1.0f);
+                if (i % 10 == 3) { v[i].bandFrames = 0; v[i].bandPower.fill (1000.0f); }
+                if (i % 10 == 7) { v[i].flags = kHopFlagSilent; v[i].bandPower.fill (1000.0f); }
+            }
+            const auto c = bandCrest (v);
+            check (c.qualifyingHops == 240 && c.db[0] && near (*c.db[0], 0.0, 1e-6),
+                   "ma PIN21: a hop with bandFrames 0 or flagged silent never counts as a level",
+                   crestText (c) + " q=" + juce::String (c.qualifyingHops));
+        }
+
+        // ma PIN22 -- bandPeak NEVER ENTERS THE CREST. Same powers, wild peaks.
+        {
+            std::vector<TestHop> v (200);
+            for (size_t i = 0; i < v.size(); ++i)
+            {
+                v[i].bandPower.fill (1.0f);
+                v[i].bandPeak.fill (i % 7 == 0 ? 1.0e6f : 1.0f);
+            }
+            const auto c = bandCrest (v);
+            check (c.db[0] && near (*c.db[0], 0.0, 1e-6), "ma PIN22: crest reads bandPower only, never bandPeak",
+                   crestText (c));
+        }
+
+        // ma PIN23 -- THE 95th PERCENTILE IS NEAREST RANK: index ceil(0.95 n) - 1.
+        check (nearestRankIndex (100, 95) == 94 && nearestRankIndex (101, 95) == 95
+               && nearestRankIndex (1, 95) == 0 && nearestRankIndex (20, 95) == 18,
+               "ma PIN23: the 95th percentile is nearest rank (100 -> 94, 101 -> 95, 1 -> 0, 20 -> 18)");
+
+        // ma PIN24 -- C4 rev 3, A SILENT BAND IS KNOWN WITH SHARE 0. The bass
+        // heard the whole window and its sub is under the silent floor (1e-14 of
+        // the bus). It stays known at exactly 0, and rule 5 never fires for it,
+        // though a bass can carry the sub.
+        {
+            const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.8),
+                                                            link ("Bass", "bass", 1e-14) },
+                                                   true, 0));
+            bool bassZero = false;
+            for (const auto& k : a.known) if (k.name == "Bass" && k.share == 0.0) bassZero = true;
+            check (bassZero && a.unknown.empty() && a.coverage && near (*a.coverage, 0.8, 1e-12),
+                   "ma PIN24: a Link with full coverage and a silent band is known, with share 0 and the coverage unchanged");
+            check (a.rule == AttribRule::R6Single && a.target == AttribTarget::Track
+                   && a.links.size() == 1 && a.links[0].name == "Kick",
+                   "ma PIN24: and rule 5 does not fire for it, so the move reaches the kick by rule 6", a.reason);
+        }
+
+        // ---- mw: C4 section 7, beyond section 10's list ----
+
+        // mw PIN1 -- PSR is the median of TP minus LUFS over usable, non-silent
+        // hops. The first 29, a hop at -80 LUFS and a silent hop all carry a
+        // wild PSR, and none of them may count. The first 29 read a plausible
+        // -14 LUFS here, not C2's -100, so the index rule is tested on its own
+        // and not hidden behind the -70 rule.
+        {
+            auto series = [] (std::vector<float> psrs)
+            {
+                std::vector<TestHop> v (29);
+                for (auto& h : v) { h.shortTermLufs = -14.0f; h.shortTermTruePeak = 36.0f; }
+                TestHop quiet; quiet.shortTermLufs = -80.0f; quiet.shortTermTruePeak = 0.0f;
+                TestHop silent; silent.shortTermLufs = -20.0f; silent.shortTermTruePeak = 30.0f;
+                silent.flags = kHopFlagSilent;
+                v.push_back (quiet); v.push_back (silent);
+                for (float p : psrs) { TestHop h; h.shortTermLufs = -14.0f; h.shortTermTruePeak = -14.0f + p; v.push_back (h); }
+                return v;
+            };
+            const auto odd  = psrMedian (series ({ 10.0f, 6.0f, 8.0f }), MatchWindowMode::Whole);
+            const auto even = psrMedian (series ({ 12.0f, 6.0f, 10.0f, 8.0f }), MatchWindowMode::Whole);
+            check (odd && near (*odd, 8.0, 1e-5) && even && near (*even, 9.0, 1e-5),
+                   "mw PIN1: PSR is the median over usable, non-silent hops (8 of three, 9 of four)",
+                   juce::String (odd ? *odd : -1.0f) + " / " + juce::String (even ? *even : -1.0f));
+            check (! psrMedian (series ({ 10.0f, 6.0f, 8.0f }), MatchWindowMode::Loudest30),
+                   "mw PIN2: and in a loudest-30 window PSR is null, never a figure");
+        }
+
+        // mw PIN3 -- LOUDEST-30: the loudest 300 hops, ties to the earliest. 50
+        // loud hops at 400-449 sit inside every window from 150 to 400, which
+        // all tie, so the window starts at 150.
+        {
+            std::vector<TestHop> v (600);
+            for (size_t i = 0; i < v.size(); ++i)
+                v[i].shortTermLufs = i < 29 ? -100.0f : (i >= 400 && i < 450 ? -10.0f : -20.0f);
+            const auto w = loudest30Window (v);
+            check (w.window && w.window->begin == 150 && w.window->end == 450,
+                   "mw PIN3: the loudest-30 window holds the loudest hops, and a tie goes to the earliest",
+                   w.window ? juce::String ((int) w.window->begin) : juce::String ("none"));
+        }
+
+        // mw PIN4 -- A SIDE UNDER 30 s HAS NO WINDOW, AND THE REFUSAL NAMES ITS LENGTH.
+        {
+            std::vector<TestHop> v (299);
+            for (auto& h : v) h.shortTermLufs = -14.0f;
+            const auto w = loudest30Window (v);
+            const auto msg = loudest30RefusalMessage ("the reference", w.sideSeconds);
+            check (! w.window && msg.contains ("29.9 s") && msg.contains ("30 s"),
+                   "mw PIN4: a 29.9 s side has no loudest-30 window, and the refusal says 29.9 against 30",
+                   msg);
         }
     }
 
