@@ -6125,11 +6125,11 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     if (timeCtl.index >= 0)
     {
         juce::Array<juce::var> rows; std::optional<double> own; int read = 0; std::set<long> distinct;
-        for (double norm : sevenNorms (timeCtl))
+        auto readTime = [&] (double norm) -> int   // one position read: 0 read (or no reading), 5 a window appeared
         {
             juce::StringArray sets = wetOnly; sets.add (setOf (timeCtl.index, norm));
             const auto t = readTail ("time" + juce::String (norm, 3), tailArgs (sets), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
-            if (! t.ok) continue;
+            if (! t.ok) return 0;
             const auto on = onsetsOf (t); const auto text = textOf (t, timeCtl.index); ++read; ++measured; if (on.onsetMs) distinct.insert (std::lround (*on.onsetMs));
             if (! own && norm < 1e-6) own = on.onsetMs;
             if (! isTimeLabel (text)) timeLabels = false;
@@ -6140,6 +6140,36 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             if (lab && rel) ro->setProperty ("within", timeWithin (*rel, *lab, 10.0, 2.0));
             rows.add (juce::var (ro));
             say ("  " + timeCtl.name + " = '" + text + "': onset " + (on.onsetMs ? juce::String (*on.onsetMs, 1) : juce::String ("none")) + " ms" + (kind == "reverb" && rel ? ", relative " + juce::String (*rel, 1) + " ms" : juce::String()) + (lab ? " vs label " + juce::String (*lab, 1) : juce::String (" (label not a time: not judged)")));
+            return 0;
+        };
+        for (double norm : sevenNorms (timeCtl)) if (readTime (norm) == 5) return 5;
+        // 28 Oct (Kathy: "measure extra points where neighbouring points are far apart"): a continuous time control whose times move
+        // steadily gets midpoints between far-apart neighbours until the interpolation holds (reverbdelay::timeGapWide / timeMidHolds)
+        {
+            const auto tcv = sweep::findControl (base, timeCtl.index); const int tst = (int) tcv.getProperty ("numSteps", 0);
+            const bool allSteps = sweep::isSteppedControl (tcv) && tst > 2 && tst <= 24;
+            if (! allSteps && timeMap.size() >= 2 && reverbdelay::planTimeSteps (timeMap, 0).skip.isEmpty())
+            {
+                using Pt = std::pair<double, double>; std::vector<std::pair<Pt, Pt>> open; auto sorted = timeMap; std::sort (sorted.begin(), sorted.end());
+                for (size_t i = 0; i + 1 < sorted.size(); ++i) if (reverbdelay::timeGapWide (sorted[i], sorted[i + 1])) open.push_back ({ sorted[i], sorted[i + 1] });
+                int added = 0, round = 0;
+                while (! open.empty() && (int) timeMap.size() < reverbdelay::kTimeAdaptMaxPoints && round++ < 5)
+                {
+                    std::sort (open.begin(), open.end(), [] (const auto& x, const auto& y) { return x.second.first - x.first.first > y.second.first - y.first.first; });
+                    std::vector<std::pair<Pt, Pt>> next;
+                    for (const auto& [a, b] : open)
+                    {
+                        if ((int) timeMap.size() >= reverbdelay::kTimeAdaptMaxPoints) break;
+                        const size_t before = timeMap.size(); if (readTime (0.5 * (a.first + b.first)) == 5) return 5;
+                        if (timeMap.size() == before) continue;   // no reading there: the pair stays as it is
+                        const auto mid = timeMap.back(); ++added;
+                        if (! reverbdelay::timeMidHolds (a, b, mid)) { if (reverbdelay::timeGapWide (a, mid)) next.push_back ({ a, mid }); if (reverbdelay::timeGapWide (mid, b)) next.push_back ({ mid, b }); }
+                    }
+                    open = next;
+                }
+                if (added > 0) say ("  time: " + juce::String (added) + " extra position(s) where neighbours were far apart, " + juce::String ((int) timeMap.size()) + " in all");
+                std::sort (rows.begin(), rows.end(), [] (const juce::var& x, const juce::var& y) { return (double) x.getProperty ("norm", 0.0) < (double) y.getProperty ("norm", 0.0); });   // the positions in norm order
+            }
         }
         auto* m = new juce::DynamicObject(); m->setProperty ("control", timeCtl.name); m->setProperty ("found_by", pTime.foundBy); m->setProperty ("positions", rows); if (kind == "reverb") m->setProperty ("own_onset_ms", own ? juce::var (*own) : juce::var());
         m->setProperty ("verdict", mapVerdict (read, 7, distinct.size() > 1, false, false, timeLabels)); o->setProperty ("time", juce::var (m));

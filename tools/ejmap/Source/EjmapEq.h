@@ -414,9 +414,30 @@ inline bool stopsMoving (const std::vector<double>& v, double tol, bool relative
     return false;
 }
 // the two targets: the measured figures at the 1/3 and 2/3 points of the range in log f (a stepped control: the detents nearest those)
+// THE MAP'S MONOTONIC STRETCH (Kathy, 28 Oct, EQ accuracy: LinEQ Broadband Band6 asked 3,629 Hz and got 4,480 - its 21-point map rises with
+// the norm to 12.6 kHz, then the top positions FOLD back to 5.7 - 9.2 kHz; sorted by figure, the target fell between a point below the fold
+// (0.75) and one above it (0.9375), and the norm between them is no frequency the map measured). The targets are planned only inside the
+// longest stretch, by norm, over which the figure keeps rising (or keeps falling) - a plateau within 2 % is part of the stretch
+inline std::vector<FreqPoint> monotonicStretch (std::vector<FreqPoint> pts)
+{
+    std::sort (pts.begin(), pts.end(), [] (const FreqPoint& x, const FreqPoint& y) { return x.norm < y.norm; });
+    std::vector<FreqPoint> best;
+    for (const int dir : { 1, -1 })
+        for (size_t s = 0; s < pts.size(); ++s)
+        {
+            std::vector<FreqPoint> run { pts[s] };
+            for (size_t i = s + 1; i < pts.size(); ++i)
+            {   const double prev = run.back().figureHz, now = pts[i].figureHz;
+                if (dir > 0 ? now < prev * 0.98 : now > prev * 1.02) break;
+                run.push_back (pts[i]); }
+            if (run.size() > best.size()) best = run;
+        }
+    return best;
+}
 inline std::vector<FigureTarget> acceptanceTargets (std::vector<FreqPoint> pts, bool stepped)
 {
     std::vector<FigureTarget> out; if (pts.size() < 2) return out;
+    pts = monotonicStretch (pts); if (pts.size() < 2) return out;   // 28 Oct: never across a fold
     { std::vector<double> f; for (const auto& p : pts) f.push_back (p.figureHz); if (stopsMoving (f, 0.02, true)) return out; }   // 28 Oct: not a frequency control
     std::sort (pts.begin(), pts.end(), [] (const FreqPoint& a, const FreqPoint& b) { return a.figureHz < b.figureHz; });
     const double lo = std::log2 (pts.front().figureHz), hi = std::log2 (pts.back().figureHz);

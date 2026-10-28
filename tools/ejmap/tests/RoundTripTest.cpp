@@ -14567,6 +14567,61 @@ int main (int, char**)
                && tr.contains ("if (certv1::partByPart (certv1::mapCategoryOf (r.category))) v1Parts[{ r.product, r.format }] = certv1::mergeParts (v1Parts[{ r.product, r.format }], r.parts);"),
                "cert WZ-31OCT-7: a certified de-esser / transient shaper says per part what is verified ('" + partsWhy (shown) + "')");
     }
+    // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
+    // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
+    {
+        using namespace ejmap::reverbdelay;
+        Tail t; t.ok = true; t.burstMs = 50.0; t.winMs = 1.0;
+        for (int k = 0; k < 2000; ++k)
+        { Window w; w.tMs = k + 0.5; w.burst = k < 50; const bool echo = (k >= 500 && k < 550) || (k >= 1000 && k < 1050); w.outDb = w.peakDb = echo ? (k < 1000 ? -20.0 : -26.0) : -120.0; w.inDb = w.burst ? -12.0 : -999.0; t.windows.push_back (w); }
+        const auto on = onsetsOf (t);
+        const auto rd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReverbDelay.h").loadFileAsString();
+        check (on.onsetMs && *on.onsetMs == 500.0 && on.repeats.size() == 2 && on.repeats[0].tMs == 500.0 && on.repeats[1].tMs == 1000.0 && on.spacingMs && *on.spacingMs == 500.0
+               && rd.contains ("o.onsetMs = w.tMs - 0.5 * t.winMs; break;"),
+               "rd WZ-34OCT-1: an echo at 500.0 ms reads 500.0 (the window's start), not 500.5 (" + juce::String (on.onsetMs ? *on.onsetMs : -1.0, 2) + ")");
+    }
+    // WZ-34OCT-2 EXTRA TIME POINTS WHERE NEIGHBOURS ARE FAR APART (Kathy, 28 Oct; H-Delay: 7 positions, 483.5 -> 896.5 ms between neighbours,
+    // 650.2 asked, 664.5 got). A pair more than max(1 ms, 2 %) apart is split; a midpoint the log-linear interpolation predicts within
+    // max(0.5 ms, 1 %) settles it; a stepped control read at every step is never split
+    {
+        using namespace ejmap::reverbdelay;
+        const std::pair<double, double> a { 0.5, 483.5 }, b { 0.6667, 896.5 };
+        const double predicted = interpTimeMs (a, b, 0.58335);
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (timeGapWide (a, b) && timeGapWide ({ 0.5, 100.0 }, { 0.55, 104.0 }) && ! timeGapWide ({ 0.5, 500.0 }, { 0.51, 505.0 }) && ! timeGapWide ({ 0.5, 0.5 }, { 0.55, 1.2 })
+               && timeMidHolds (a, b, { 0.58335, predicted + 0.4 }) && ! timeMidHolds (a, b, { 0.58335, predicted * 0.95 })
+               && std::abs (interpTimeMs ({ 0.0, 100.0 }, { 1.0, 400.0 }, 0.5) - 200.0) < 1e-9 && std::abs (interpTimeMs ({ 0.0, 0.0 }, { 1.0, 10.0 }, 0.5) - 5.0) < 1e-9
+               && kTimeAdaptMaxPoints == 15
+               && drv.contains ("if (! allSteps && timeMap.size() >= 2 && reverbdelay::planTimeSteps (timeMap, 0).skip.isEmpty())")
+               && drv.contains ("const size_t before = timeMap.size(); if (readTime (0.5 * (a.first + b.first)) == 5) return 5;")
+               && drv.contains ("if (! reverbdelay::timeMidHolds (a, b, mid)) { if (reverbdelay::timeGapWide (a, mid)) next.push_back ({ a, mid }); if (reverbdelay::timeGapWide (mid, b)) next.push_back ({ mid, b }); }"),
+               "rd WZ-34OCT-2: far-apart neighbours on a moving time control get midpoints until the interpolation holds");
+    }
+    // WZ-34OCT-3 THE EQ TARGETS NEVER CROSS A FOLD (Kathy, 28 Oct; LinEQ Broadband (s) Band6, measured 28 Oct: rising to 12.6 kHz at 0.927,
+    // then 5.7 - 9.2 kHz above it; 3,629 Hz was planned between 0.75 and 0.9375 and read 4,480). The targets come from the monotonic stretch
+    {
+        using namespace ejmap::eq;
+        std::vector<FreqPoint> b6; const std::pair<float, double> v[] = { { 0.0f, 302.1 }, { 0.0833f, 302.1 }, { 0.25f, 302.1 }, { 0.4583f, 362.3 }, { 0.5f, 444.7 }, { 0.5833f, 868.8 },
+            { 0.6667f, 1726.8 }, { 0.75f, 3189.0 }, { 0.8333f, 6118.8 }, { 0.875f, 8439.9 }, { 0.9167f, 11541.0 }, { 0.9271f, 12575.9 }, { 0.9375f, 5679.1 }, { 0.9479f, 6151.0 },
+            { 0.9583f, 6654.6 }, { 0.9792f, 7843.4 }, { 1.0f, 9172.9 } };
+        for (const auto& [n, hz] : v) { FreqPoint p; p.norm = n; p.figureHz = hz; b6.push_back (p); }
+        const auto st = monotonicStretch (b6); const auto t = acceptanceTargets (b6, false);
+        bool inside = t.size() == 2; for (const auto& x : t) inside = inside && x.norm <= 0.9271f + 1e-4f;
+        check (st.size() == 12 && st.back().figureHz == 12575.9 && inside && t[1].norm > 0.75f && t[1].norm < 0.78f   /* across the fold it would be 0.792 */ && t[1].display == juce::String() + " .. ",
+               "eq WZ-34OCT-3: the EQ's acceptance targets stay inside the map's monotonic stretch (" + juce::String (t.size() == 2 ? t[1].targetHz : 0.0, 1) + " Hz at norm " + juce::String (t.size() == 2 ? t[1].norm : 0.0f, 3) + ")");
+    }
+    // WZ-34OCT-4 RESTORATION IS OUT OF SCOPE (Kathy, 28 Oct: Acon Digital DeNoise 2 is not a mapped EQ - its bands don't change normal audio).
+    // By name, in the wizard's routing and in the trust count; never the word "noise" alone, never a de-esser
+    {
+        using namespace ejmap::categorise;
+        const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (restorationByName ("Acon Digital DeNoise 2") && restorationByName ("Acon Digital DeClick 2") && restorationByName ("Acon Digital DeClip 2") && restorationByName ("Acon Digital DeHum 2")
+               && restorationByName ("RX 10 De-click") && restorationByName ("Waves Noise Reduction") && ! restorationByName ("Noise Gate") && ! restorationByName ("DeEsser (m)")
+               && ! restorationByName ("RX De-ess") && ! restorationByName ("X-Noise (m)") && ! restorationByName ("C1 gate (m)")
+               && outOfScope ("aufx", "Acon Digital DeNoise 2", "").startsWith ("restoration") && outOfScope ("aufx", "DeEsser (m)", "").isEmpty()
+               && tr.contains ("if (categorise::restorationByName (name))") && tr.contains ("L.why = \"out of scope: \" + juce::String (categorise::kRestorationWhy); cat = {};"),
+               "cat WZ-34OCT-4: restoration (de-noise, de-click, de-clip, de-hum) is out of scope - never a mapped EQ");
+    }
     // WZ-33OCT-1 THE DELAY'S TIME STEPS (Kathy, 28 Oct: delay acceptance 56%, mostly "time N ms off"). The 24 Oct maps, as measured: a
     // control whose times go up and down (Crystallizer SpliceValue) or stop moving (Needlepoint Noise Level) gets no time step; a stepped
     // one (CLA EchoSphere's 3-position SlapVSO, MannyM's 19 note values) is asked for its OWN positions at their exact norms; a continuous
