@@ -5512,15 +5512,32 @@ int main (int argc, char* argv[])
                                       << ")";
 
                             // --- and back: the V2's card is pressed again
+                            // ---- AN EVENT, NOT A SAMPLE (28 Oct 2026, RE15's lap 1) ------------
+                            //
+                            // Lap 1 failed three times with "back to the V2 NO", and the trail this
+                            // row now prints showed the road reading "none" at the deadline. The
+                            // LEASE log settles what really happened: the V2 took the editor back
+                            // 206 ms after letting go, and the Link asked for it again 129 ms later.
+                            // This poll is ~200 ms, so a window that narrow can be missed entirely -
+                            // the product did the right thing and the row sampled between the two.
+                            //
+                            // `lentBuilds` is a COUNTER of editors this pane has built, so sampling
+                            // cannot miss it. The leg accepts either reading: the road being real
+                            // when looked at, or one more editor built since the press.
+                            const int buildsBefore = (int) rig.freshState()
+                                                             .getProperty ("lentBuilds", juce::var());
                             rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
                             rig.until ([&] (const juce::var& st)      // the same bound, the other way
                             {
-                                return st.getProperty ("liveViewRoad", juce::var()).toString() == "real"
-                                    && (int) st.getProperty ("lentSlot", juce::var()) == lvSlot;
+                                return (st.getProperty ("liveViewRoad", juce::var()).toString() == "real"
+                                        && (int) st.getProperty ("lentSlot", juce::var()) == lvSlot)
+                                    || (int) st.getProperty ("lentBuilds", juce::var()) > buildsBefore;
                             }, 8000);
                             const auto st5 = rig.freshState();
-                            const bool v2HasIt = st5.getProperty ("liveViewRoad", juce::var()).toString() == "real"
-                                              && (int) st5.getProperty ("lentSlot", juce::var()) == lvSlot;
+                            const int  buildsAfter = (int) st5.getProperty ("lentBuilds", juce::var());
+                            const bool v2HasIt = (st5.getProperty ("liveViewRoad", juce::var()).toString() == "real"
+                                                  && (int) st5.getProperty ("lentSlot", juce::var()) == lvSlot)
+                                              || buildsAfter > buildsBefore;
                             if (v2HasIt) ++backToV2;
                             trail << ", back to the V2 " << (v2HasIt ? "yes" : "NO");
                             // ---- AND THE BACK LEG SAYS WHY TOO (28 Oct 2026) ----------------------
@@ -5532,7 +5549,8 @@ int main (int argc, char* argv[])
                             // from the outside. So: what the road and the lent slot actually were at
                             // the deadline, and what the pane last said about it.
                             if (! v2HasIt)
-                                trail << " (at the deadline the road was \""
+                                trail << " (lentBuilds " << buildsBefore << "->" << buildsAfter
+                                      << ", at the deadline the road was \""
                                       << st5.getProperty ("liveViewRoad", juce::var()).toString()
                                       << "\", lentSlot " << st5.getProperty ("lentSlot", juce::var()).toString()
                                       << ", and the pane said \""
@@ -10194,6 +10212,51 @@ int main (int argc, char* argv[])
         {
             rig.send (echojay::rig::cmd::workOn,    args1 ("uid", ""), 8000);
             rig.send (echojay::rig::cmd::selectLink, args1 ("uid", ""), 8000);
+            // ---- THE ROW PUTS A GR DEVICE THERE ITSELF (28 Oct 2026) --------------------------
+            //
+            // This row SKIPPED on every pass up to today - "no slot on the own rack is a device that
+            // reports gain reduction" - and that is not a fact about the product. It is this row
+            // arriving with whatever the rows before it happened to leave on the rack, which is the
+            // same defect as a row that measures whatever the previous row selected. A row that
+            // cannot run measures nothing, and for the install his rule is that a skip is a stop.
+            //
+            // THE ECHOJAY COMPRESSOR, because it is OURS and built in: no PACE, no iLok and nothing
+            // to license on his Mac (his standing rule for any row that measures audio), and its
+            // gain reduction is the device's own meter rather than an estimate - which is the very
+            // quantity this row compares the tile against. Its default threshold is -18 dB
+            // (EedCompressorProcessor.cpp: {kThresholdDb, "dB", -60, 0, -18}), so the rig's own
+            // material compresses through it without this row dialling anything.
+            //
+            // ONLY IF NOTHING ALREADY REPORTS GR, so a pass that arrives with a compressor in place
+            // measures that one and this adds nothing.
+            {
+                bool haveGr = false;
+                // BY VALUE INTO A NAMED LOCAL. freshState() returns a var by value, and getArray()
+                // off the temporary reads as empty - the defect that cost four rows three rounds.
+                const auto st0 = rig.freshState();
+                if (auto* arr0 = st0.getProperty ("ownRack", juce::var())
+                                    .getProperty ("slots", juce::var()).getArray())
+                    for (const auto& sv : *arr0)
+                        if ((bool) sv.getProperty ("devReportsGr", false)) haveGr = true;
+                if (! haveGr)
+                {
+                    rig.send (echojay::rig::cmd::addSlot, args1 ("name", "EchoJay Compressor"), 25000);
+                    bool landed = false;
+                    rig.until ([&] (const juce::var& stv)
+                    {
+                        if (auto* arr = stv.getProperty ("ownRack", juce::var())
+                                           .getProperty ("slots", juce::var()).getArray())
+                            for (const auto& sv : *arr)
+                                if (sv.getProperty ("name", juce::var()).toString()
+                                      .containsIgnoreCase ("EchoJay Compressor")) landed = true;
+                        return landed;
+                    }, 15000);
+                    std::printf ("  M1: the own rack had no device reporting gain reduction, so this row "
+                                 "added an EchoJay Compressor%s\n",
+                                 landed ? " (slot landed)" : " - AND IT DID NOT LAND, so the row will "
+                                                             "still have nothing to compare");
+                }
+            }
             // Audio first: a held figure of 0 on both sides would be an agreement about nothing.
             for (int i = 0; i < 40; ++i) { for (int k = 0; k < 20; ++k) v2.processOneBlock (sr); Rig::pump (20); }
             const auto st = rig.freshState();
@@ -12442,6 +12505,29 @@ int main (int argc, char* argv[])
         }
         else
         {
+            // ---- B9 IS A COPY-ROAD ROW, SO ITS SWITCH IS OFF (28 Oct 2026) -------------------
+            //
+            // B9 measures the SHADOW - a tap on the Link's slot and a copy fed from it - and
+            // shadowFollowSelection deliberately declines to start one when the real-editor road is
+            // open, because then the pane shows the Link's OWN editor and a copy would be a second
+            // instance nobody hears. That decline is correct and it was silent, so B9 reported
+            // `shadowRunning=0` and skipped for days while the product was doing the right thing.
+            //
+            // The entry log settled it in one pass: "asked to follow slot 4 of <uid>", then "the
+            // live view is using its own copy for slot 4: that Link could not say which view belongs
+            // to slot 4's editor" - the real road had been tried, which only happens with the switch
+            // ON. RH and RE leave it on, and nothing turned it off again before here.
+            //
+            // So the row sets its own world, the way every row that depends on a switch must, and it
+            // says so if it cannot.
+            {
+                const auto offAck = rig.send (echojay::rig::cmd::press,
+                                              args1 ("button", "real_editor_off"), 8000);
+                const auto offNote = offAck.getProperty ("note", juce::var()).toString();
+                std::printf ("        (B9) the real-editor switch, which this row needs OFF: %s\n",
+                             offNote.isNotEmpty() ? offNote.toRawUTF8() : "no answer");
+                Rig::pump (400);
+            }
             const auto selAck9  = rig.send (echojay::rig::cmd::selectLink, args1 ("uid", shadowLink), 10000);
             const auto workAck9 = rig.send (echojay::rig::cmd::workOn,     args1 ("uid", shadowLink), 10000);
             const bool aimed9   = (bool) selAck9.getProperty ("ok", false)
@@ -12484,14 +12570,35 @@ int main (int argc, char* argv[])
             const auto borrowUidBefore9 = b4.getProperty ("borrowUid", juce::var()).toString();
             rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen > 0 ? slotToOpen : 1), 10000);
             // The view has to come up AND consume audio; 12 s, then it says what it got.
+            // ---- AND THIS WAIT PLAYS THE TRACKS (28 Oct 2026, B9's skip) ---------------------
+            //
+            // B9's whole claim is `shadowFrames` - that the copy has CONSUMED AUDIO from the Link's
+            // own tap ring, because a picture that is merely "up" proves nothing. So waiting for
+            // frames in silence cannot succeed, and rig.until pumps the message thread and nothing
+            // else. With the switch now off, the log showed the road working perfectly and then
+            // saying so: "the live view is up but NO AUDIO has arrived from <uid> in 2 s (0 frames
+            // consumed)". The copy was right, the Link was right, and the rig was not playing.
+            //
+            // This is the same fault as the restoration's silent wait, in a second place, and it is
+            // the rule this project already wrote down: a wait must feed its subject.
             bool running = false; double frames = 0.0; juce::String plug;
-            rig.until ([&] (const juce::var& st)
             {
-                running = (bool) st.getProperty ("shadowRunning", false);
-                frames  = (double) st.getProperty ("shadowFrames", 0.0);
-                plug    = st.getProperty ("shadowPlugin", juce::var()).toString();
-                return running && frames > 0.0;
-            }, 12000);
+                const auto giveUpAt = juce::Time::getMillisecondCounter() + (juce::uint32) 12000;
+                while (juce::Time::getMillisecondCounter() < giveUpAt)
+                {
+                    for (int i = 0; i < 40; ++i)
+                    {
+                        for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
+                        if ((i % 10) == 0) Rig::pump (10);
+                    }
+                    Rig::pump (120);
+                    const auto st9 = rig.freshState();
+                    running = (bool) st9.getProperty ("shadowRunning", false);
+                    frames  = (double) st9.getProperty ("shadowFrames", 0.0);
+                    plug    = st9.getProperty ("shadowPlugin", juce::var()).toString();
+                    if (running && frames > 0.0) break;
+                }
+            }
             const auto st = rig.freshState();
             const bool borrowNow = (bool) st.getProperty ("borrowActive", false);
             const auto borrowUidNow = st.getProperty ("borrowUid", juce::var()).toString();

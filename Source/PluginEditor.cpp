@@ -1638,7 +1638,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
     // The Match page, added the same way and right after it: hidden, and made
     // visible only by setRefSubTab (Match). See MatchPanel in the header.
-    matchPanel_.owner = this;
+    matchPanel_.host = this;   // the editor IS the MatchHost (EJMatchTab.h); A0b, 28 Oct 2026
     matchPanel_.setWantsKeyboardFocus(true);
     addChildComponent(matchPanel_);
 
@@ -35033,8 +35033,12 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
             // plugin whose first copy is still alive and must stay alive. Reuse is what makes that
             // bounded: one spare per plugin, handed back here. It is also the faster road - no
             // instantiation, so the picture comes up at once.
+            // AN AudioProcessor, NOT AN AudioPluginInstance (28 Oct 2026, B9's skip). The view has
+            // always held `std::unique_ptr<juce::AudioProcessor> inst_` and casts where it needs
+            // plugin-only API - it was only this parameter that insisted on a hosted plugin, and
+            // that is what made a built-in device impossible to copy: see the fork below.
             auto startCopy = [safeThis, uid, slot0, pName, seedState, seedLine]
-                             (std::unique_ptr<juce::AudioPluginInstance> inst,
+                             (std::unique_ptr<juce::AudioProcessor> inst,
                               const juce::String& loadErr)
             {
                 if (safeThis == nullptr) return;
@@ -35112,6 +35116,40 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                                 "and nothing to instantiate").toRawUTF8());
                 safeThis->shadowAsking_ = false;
                 startCopy (std::move (reused), {});
+                return;
+            }
+            // ---- A BUILT-IN IS CONSTRUCTED, NOT INSTANTIATED (28 Oct 2026, B9's skip) --------
+            //
+            // This is the fault B9 has been skipping on. The copy road asked the format manager for
+            // every plugin, and an EchoJay device's `echojay:builtin:*` identifier is not a scanned
+            // format - so the only answer it can give is "No compatible plug-in format exists for
+            // this plug-in", which is exactly what the log said about our own EchoJay Compressor.
+            // A Link slot holding one of OUR devices therefore showed a static picture, which is the
+            // one case his 23 Oct ruling names most directly: the moving gain reduction.
+            //
+            // The same fork already exists on the borrowed-editing road, with the same reason written
+            // beside it ("a built-in is constructed straight from the registry factory, no format
+            // manager and no scan"). This is that fork, on this road, resolving through the SAME
+            // registry lookup so a description rebuilt from a sidecar resolves identically.
+            if (ChainHost::isBuiltinDescription (desc))
+            {
+                const auto* device = BuiltinDeviceRegistry::instance().findForDescription (desc);
+                if (device == nullptr || ! device->create)
+                {
+                    startCopy (nullptr, "\"" + pName + "\" is a built-in device this build does not "
+                                        "carry, so no live copy can be made");
+                    return;
+                }
+                auto built = device->create();
+                if (built == nullptr)
+                {
+                    startCopy (nullptr, "the built-in device \"" + pName + "\" would not construct");
+                    return;
+                }
+                EchoJay_NSLog (("EJShadow: \"" + pName + "\" is an EchoJay device, so the live copy is "
+                                "CONSTRUCTED from the registry rather than asked of the format manager "
+                                "(its identifier is not a scanned format)").toRawUTF8());
+                startCopy (std::move (built), {});
                 return;
             }
             safeThis->processorRef.getChainHost().asyncCreatePlugin (desc, startCopy);
@@ -38193,11 +38231,27 @@ void EchoJayEditor::publishRigState()
         o->setProperty ("transcriptRows", (int) processorRef.chatHistory.size());
         juce::Array<juce::var> shown;
         int cardsOnScreen = 0;
+        // ---- A WAITING RUN'S PROSE IS IN THE PLANNED TENSE (28 Oct 2026, Sean's point 2) -------
+        //
+        // SCEN RP4 reads these rows, and what it found was "I added a Tube-Tech CL 1B compressor to
+        // the kick with threshold around -15 dB, ratio 4:1..." while that run's card was still in
+        // awaiting_approval. Nothing had been added. The step rows already obey the rule; this is
+        // the assistant's PROSE, which is where he actually read it.
+        //
+        // Rewritten at DRAW time, never in the store: the text stays exactly as it was sent, and
+        // what changes is the tense of the line while the work is still waiting. One sentence form,
+        // every figure left alone - the numbers are what he is approving.
+        // The state, not a proxy: a plan waiting for Go is State::AwaitingApproval, and that is
+        // exactly the window RP4 reads. An ask pending is a different thing and must not borrow
+        // this rule - a question is not a claim.
+        const bool runAwaitsHim = agentClient() != nullptr
+                               && agentClient()->state() == EJAgentClient::State::AwaitingApproval;
         for (const auto& m : chatMessages)
         {
             auto* r = new juce::DynamicObject();
             r->setProperty ("role", m.role);
-            r->setProperty ("text", m.content);
+            r->setProperty ("text", echojay::pendingClaimText (m.content,
+                                                               runAwaitsHim && m.role != "user"));
             // ---- AND WHETHER THIS ROW IS A RUN'S CARD (22 Oct 2026, his 09:24 fault) --------
             //
             // *"the chat showed only my message: no agent card, no steps, no closing, no chips, no

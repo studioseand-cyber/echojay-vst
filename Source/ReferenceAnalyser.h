@@ -36,6 +36,14 @@ struct ReferenceResult {
     bool                  hasMacroBandAccum = false;   // false = not measured, NOT a floor
     float                 macroAccumSeconds = 0.0f;    // the window it covers
     int                   macroAccumBlocks  = 0;       // and how many blocks made it
+    // ---- A12b: THE REFERENCE'S OWN HOP SERIES (28 Oct 2026) ----------------------------------
+    // Same frames, same sample-counted 100 ms clock as the capture's, so K's window pass and crest
+    // run one implementation over both sides. The file is fed in 512-sample blocks (see the loop)
+    // rather than 2048, which puts the reference on the same FFT cadence as the common live case -
+    // the one thing that was NOT shared before, and the reason a within-hop maximum read differently
+    // on the two sides (C2 §6).
+    std::vector<MeterEngine::HopFrame> hopFrames;
+    int                   hops = 0;
     echojay::SpectralReduction macroAccumReduction = echojay::SpectralReduction::Unknown;
 };
 

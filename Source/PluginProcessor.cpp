@@ -107,6 +107,10 @@ struct EchoJayProcessor::LinkCaptureChannel
         waveformRecorder.startRecording();
     }
 
+    /** A12b: this Link's own trim at the moment the capture started. The series below is taken
+        from the ring, which is POST-trim, and C4 §2 adds it back. */
+    float gainDbAtCapture = 0.0f;
+
     // Non-copyable — managed via unique_ptr
     LinkCaptureChannel(const LinkCaptureChannel&) = delete;
     LinkCaptureChannel& operator=(const LinkCaptureChannel&) = delete;
@@ -199,6 +203,10 @@ static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel
     if (result.framesReceived != 0)
         result.thumbnail = lcc.waveformRecorder.getThumbnail();
     result.meterData = lcc.meterEngine.getMeterData();
+    // A12b: the series, and the count C4 §3's grid check needs as a field rather than an inference.
+    result.hopFrames = lcc.meterEngine.hopFrames();
+    result.hops      = (int) result.hopFrames.size();
+    result.gainDb    = lcc.gainDbAtCapture;
 
     auto toDb = [](float lin) { return lin > 1e-10f ? 20.0f * std::log10(lin) : -100.0f; };
 
@@ -5435,7 +5443,15 @@ void EchoJayProcessor::startCapture()
                 // prefers a bus channel over everything else (§5.2).
                 for (const auto& si : linkSlotInfos)
                     if (si.uid.isNotEmpty() && si.uid == lcc->uid)
-                        { lcc->placement = si.placement; break; }
+                    {
+                        lcc->placement = si.placement;
+                        // A12b: AND ITS TRIM, AS IT IS NOW (28 Oct 2026). The series this channel is
+                        // about to record comes off the Link's ring, which is POST this trim, and C4
+                        // adds it back. Read here, where the capture starts, because reading the
+                        // registry at report time would read whatever the user has moved since.
+                        lcc->gainDbAtCapture = si.gainDb;
+                        break;
+                    }
                 linkCaptureChannels.push_back(std::move(lcc));
             }
         }
@@ -5491,6 +5507,8 @@ void EchoJayProcessor::stopCapture()
     snap.hopFramesRackIn    = captureInEngine.hopFrames();
     snap.hopFramesTruncated = captureEngine.hopFramesTruncated();
     snap.hopFramesHops      = (int) snap.hopFrames.size();
+    snap.hopFramesRackInHops = (int) snap.hopFramesRackIn.size();
+    snap.busGainDbAtCapture  = getBusGainDb();
 
     // THE ACCUMULATED MACRO BANDS, over the same span the spectrum rebuild
     // below uses: both cover exactly the blocks taken while Capturing.

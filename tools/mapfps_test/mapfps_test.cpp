@@ -5829,10 +5829,42 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "only@" + juce::String (iOnly) + " split@" + juce::String (iSplit));
             check (ed.contains ("out += echoJayOnlyFeed ? EchoJayAPI::buildBuiltinOnlyChainInjection()"),
                    "ej PIN3: and it swaps the injection rather than the name list");
-            check (ed.contains ("echoJayOnlyToggle.setBounds(sx, sy, sw, fh)"),
-                   "ej PIN3: the toggle is a full-width row, stacked not beside");
-            check (ed.contains ("y += 2 * (fh + 8);"),
-                   "ej PIN3: and the settings paint walk covers all three rows");
+            // ---- RE-PINNED AFTER THE SETTINGS LIST (28 Oct 2026) -------------------------
+            //
+            // Both halves used to be pinned on LITERALS: one toggle's own setBounds line, and
+            // `y += 2 * (fh + 8)` in paint. The second was the defect it later caused - the comment
+            // in PluginEditor.cpp says it: *"The hardcoded `2 *` that stood here was right for three
+            // toggles and silently wrong for four, which is how 'YOUR PLUGINS' came to paint on top
+            // of the agent toggle."*  Both are now driven by ONE list, chainSuggestionToggles(),
+            // which resized() places and paint() walks, and a toggle that is not shown takes no row
+            // (26 Oct, the dev-only real-editor switch).
+            //
+            // So the pin is the property, not the spelling: one list, full-width rows, the same list
+            // in paint, and the hidden ones excluded on BOTH sides. A literal count cannot come back
+            // without failing here.
+            check (ed.contains ("for (auto* t : chainSuggestionToggles())")
+                     && ed.contains ("t->setBounds(sx, sy, sw, fh); sy += fh + 8;"),
+                   "ej PIN3: the toggles are placed FROM THE LIST, full-width (sw) and stacked");
+            check (ed.contains ("{ if (! t->isVisible()) continue; t->setBounds(sx, sy, sw, fh); sy += fh + 8; }"),
+                   "ej PIN3: ...and a toggle that is not shown takes no row");
+            check (ed.contains ("for (auto* t : chainSuggestionToggles()) if (t->isVisible()) ++shown;")
+                     && ed.contains ("y += juce::jmax (0, shown - 1) * (fh + 8);"),
+                   "ej PIN3: and the paint walk advances by the SHOWN count from that same list, "
+                   "never by a literal");
+            {
+                // CONTROL, both ways: the literal coming back, and the count being taken from the
+                // list's SIZE rather than from what is shown - which is the same defect in a new
+                // spelling, because the dev-only switch is in the list and not on screen.
+                juce::String literal = ed.replace ("y += juce::jmax (0, shown - 1) * (fh + 8);",
+                                                   "y += 2 * (fh + 8);");
+                check (! literal.contains ("y += juce::jmax (0, shown - 1) * (fh + 8);"),
+                       "ej PIN3: control: a paint walk back on a literal is reported");
+                juce::String bySize = ed.replace ("for (auto* t : chainSuggestionToggles()) if (t->isVisible()) ++shown;",
+                                                  "shown = (int) chainSuggestionToggles().size();");
+                check (! bySize.contains ("for (auto* t : chainSuggestionToggles()) if (t->isVisible()) ++shown;"),
+                       "ej PIN3: control: a count taken from the list's size rather than what is shown "
+                       "is reported");
+            }
         }
     }
 
@@ -10209,23 +10241,57 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
                 // rs PIN15 -- ESCAPE ON THE MATCH PAGE RETURNS TO COMPARE, the
                 // Playback page's rule for its grid, not a third behaviour.
+                // ---- RE-PINNED AFTER A0/A0b (28 Oct 2026) ------------------------------------
+                //
+                // THE PROPERTY IS UNCHANGED; ITS TEXT MOVED TWICE. The Match page was carved out of
+                // PluginEditor.cpp into EJMatchTab.cpp (A0), so MatchPanel::keyPressed is no longer
+                // in `cpp` at all - this pin failed on a FILE, not on a behaviour. Then the page's
+                // reaches into the editor became calls on MatchHost (A0b), so Escape no longer names
+                // setRefSubTab: it asks `host->goBackToCompare()`, and the editor answers that with
+                // the sub-tab move.
+                //
+                // So the pin is now the CHAIN, in both files, which is strictly stronger than what
+                // it asserted before: a page that asks nothing fails here, and so does a host whose
+                // answer stops being "go to Compare". Each half has its own control.
                 {
+                    std::ifstream fmt ("Source/EJMatchTab.cpp");
+                    std::stringstream smt; smt << fmt.rdbuf();
+                    const std::string mt = codeOnly (juce::String (smt.str())).toStdString();
+                    std::ifstream fph ("Source/PluginEditor.h");
+                    std::stringstream sph; sph << fph.rdbuf();
+                    const std::string ph = codeOnly (juce::String (sph.str())).toStdString();
+
                     const std::string sig = "bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)";
                     auto escapes = [&] (const std::string& raw)
                     {
                         const std::string body = fnBody (raw, sig);
                         return std::regex_search (body, std::regex (R"(escapeKey)"))
-                            && std::regex_search (body, std::regex (R"(setRefSubTab\s*\(\s*echojay::RefSubTab::Compare\s*\))"));
+                            && std::regex_search (body, std::regex (R"(goBackToCompare\s*\(\s*\))"));
                     };
-                    check (escapes (cpp),
-                           "rs PIN15 (text pin): Escape on the Match page calls setRefSubTab (Compare)");
-                    std::string noEsc = cpp;
+                    check (! mt.empty() && escapes (mt),
+                           "rs PIN15 (text pin): Escape on the Match page asks the host to go back to "
+                           "Compare");
+                    check (std::regex_search (ph, std::regex (
+                               R"(goBackToCompare\s*\(\s*\)\s*override\s*\{\s*setRefSubTab\s*\(\s*echojay::RefSubTab::Compare\s*\))")),
+                           "rs PIN15b (text pin): ...and the host answers that with the sub-tab move, "
+                           "so the two halves cannot drift apart");
+                    std::string noEsc = mt;
+                    const std::string call = "host->goBackToCompare();";
                     const auto kp = noEsc.find (sig);
-                    const std::string call = "owner->setRefSubTab (echojay::RefSubTab::Compare);";
                     const auto e1 = (kp == std::string::npos) ? std::string::npos : noEsc.find (call, kp);
                     if (e1 != std::string::npos) noEsc.erase (e1, call.size());
                     check (e1 != std::string::npos && ! escapes (noEsc),
                            "rs PIN15 (text pin): control: a Match page whose Escape goes nowhere is reported");
+                    std::string noMap = ph;
+                    const std::string mapped = "setRefSubTab (echojay::RefSubTab::Compare);";
+                    const auto g1 = noMap.find ("goBackToCompare");
+                    const auto m1 = (g1 == std::string::npos) ? std::string::npos : noMap.find (mapped, g1);
+                    if (m1 != std::string::npos) noMap.erase (m1, mapped.size());
+                    check (m1 != std::string::npos
+                             && ! std::regex_search (noMap, std::regex (
+                                    R"(goBackToCompare\s*\(\s*\)\s*override\s*\{\s*setRefSubTab)")),
+                           "rs PIN15b (text pin): control: a host whose goBackToCompare moves no tab is "
+                           "reported");
                 }
             }
         }
@@ -11023,8 +11089,26 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
             // And the click still reaches the applier. A button wired to nothing
             // is the same defect wearing a different hat.
-            check (ec.contains ("applyChainEditFromMsg(editApplyMsgIdx[(size_t)i])"),
-                   "ap PIN1: the onClick calls applyChainEditFromMsg");
+            //
+            // RE-PINNED 28 OCT 2026: the press no longer applies the pool slot's index straight
+            // off, because of his 09:52 ruling of 20 Oct - "one press, one card". The handler reads
+            // the index, checks that the slot still carries the identity it was DRAWN for, and only
+            // then applies. So the pin is the whole road: the index is read from the slot, the
+            // identity is checked, and the applier is called with THAT index. The old one-line
+            // spelling would now pass a press that had been re-aimed onto another card.
+            const int idxAt   = ec.indexOf ("const int idx = editApplyMsgIdx[(size_t) i];");
+            const int sameAt  = ec.indexOf ("const bool sameCard = idx >= 0 && idx < (int) chatMessages.size()");
+            const int guardAt = ec.indexOf ("if (! sameCard) return;");
+            const int callAt  = ec.indexOf ("applyChainEditFromMsg (idx);");
+            check (idxAt > 0 && sameAt > idxAt && guardAt > sameAt && callAt > guardAt,
+                   "ap PIN1: the press reads its slot's index, checks the card it was drawn for, "
+                   "and only then calls applyChainEditFromMsg",
+                   "idx@" + juce::String (idxAt) + " same@" + juce::String (sameAt)
+                   + " guard@" + juce::String (guardAt) + " call@" + juce::String (callAt));
+            check (! ec.contains ("applyChainEditFromMsg (editApplyMsgIdx[(size_t) i]);")
+                     && ! ec.contains ("applyChainEditFromMsg(editApplyMsgIdx[(size_t)i])"),
+                   "ap PIN1: control: applying the pool slot's index WITHOUT that check - the form "
+                   "his 09:52 ruling forbids - is reported");
         }
 
         // pb PIN1 -- THE SIMULATION STAGE IS A NO-OP WHEN NOTHING IS SELECTED

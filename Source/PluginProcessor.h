@@ -95,6 +95,16 @@ struct ChannelMeterData {
     // never a claim about sound); >0 = real audio was received (silent
     // values are then a genuine fact).
     int64_t      framesReceived = -1;
+    // ---- A12b (28 Oct 2026, Sean's point 27 / K's K1, K2, K5) --------------------------------
+    // THE SERIES, PER LINK, with the two numbers a reader needs beside it. C4 §2 divides a Link's
+    // band power by the bus's, and C4 §3 calls a Link unknown when its hop count is more than one
+    // from the bus's - so the count is a FIELD here, not something to infer from sample totals.
+    // `gainDb` is this Link's own trim AT CAPTURE TIME: the series is taken from the ring, which is
+    // post-trim, and C4 adds the trim back (P_pre = P_post / 10^(gainDb/10)). Reading the registry
+    // later would read a figure the user may since have moved.
+    std::vector<MeterEngine::HopFrame> hopFrames;
+    int   hops   = 0;
+    float gainDb = 0.0f;
 };
 
 struct CaptureSnapshot {
@@ -119,6 +129,11 @@ struct CaptureSnapshot {
     std::vector<MeterEngine::HopFrame> hopFramesRackIn;
     bool hopFramesTruncated = false;
     int  hopFramesHops      = 0;    // the bus's own hop count, for C4 §3's grid check
+    int  hopFramesRackInHops = 0;   // and the INPUT tap's, which can differ if the tap started late
+    // THE BUS TRIM AS IT WAS WHILE THIS CAPTURE RAN (28 Oct 2026, Sean's point 27). C4 adds it back
+    // to reach the bus's pre-trim figure, and reading getBusGainDb() later would read whatever the
+    // user has done since. Captured here, with the series it belongs to.
+    float busGainDbAtCapture = 0.0f;
     // ===== THE ACCUMULATED MACRO BANDS (Phase 1b commit 3) =====
     // The whole-capture mean of the six pink-referenced bands, in POWER, read
     // off captureEngine at stopCapture. It sits BESIDE averagedData rather than

@@ -103,7 +103,8 @@ bool SurgicalEqProcessor::setParamValue (const juce::String& id, double value)
         auto b = getBand (band1Based - 1);          // read-modify-write: one control, the rest kept
         bool known = true;
         if      (leaf == "freq_hz")      b.freqHz        = (float) value;
-        else if (leaf == "gain_db")      b.gainDb        = (float) value;
+        else if (leaf == "gain_db")      b.gainDb        = clampBandGainDb ((float) value, band1Based,
+                                                                            &lastBandGainClamp_);
         else if (leaf == "q")            b.q             = (float) value;
         else if (leaf == "type")         b.type          = (echojay::BandType) (int) value;
         else if (leaf == "enabled" || leaf == "on") b.enabled = value >= 0.5;
@@ -367,7 +368,7 @@ BandSpec SurgicalEqProcessor::specFromVar (const juce::var& e, bool& disableOut,
             s.freqHz = hz;
     }
 
-    s.gainDb = (float) (double) e.getProperty ("gain_db", (double) s.gainDb);
+    s.gainDb = clampBandGainDb ((float) (double) e.getProperty ("gain_db", (double) s.gainDb), 0);
     s.q      = (float) (double) e.getProperty ("q",       (double) s.q);
     s.slopeDbPerOct = (int) e.getProperty ("slope_db_oct", s.slopeDbPerOct);
     s.enabled = (bool) e.getProperty ("enabled", true);  // a set enables by default

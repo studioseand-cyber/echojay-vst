@@ -27,7 +27,7 @@ struct MatchHost
         loop). Null until a verify capture exists. Same type on purpose: one window pass, two inputs. */
     virtual const CaptureSnapshot* verifyCapture() const = 0;
     /** The reference the page is comparing against, or null. */
-    virtual const ReferenceEntry* selectedReference() const = 0;
+    virtual const ReferenceResult* selectedReference() const = 0;   ///< MEASURED, not filed - below
     /** Every Link this instance can see: uid, name, role, caps, framesReceived. The tab uses it for
         attribution rows and for naming a track in a sentence; it never addresses a Link itself. */
     virtual std::vector<MatchLink> liveLinks() const = 0;
@@ -44,7 +44,7 @@ struct MatchHost
 
     // ---- listening ----------------------------------------------------------------------------
     /** The dual stream: which side is audible. Today's toggleCompareAudible. */
-    virtual void setAudible (MatchSide side) = 0;
+    virtual void setAudible (MatchRefSide side) = 0;
     /** ONE SEEK, TWO PAGES: the page's click-to-seek calls the host's, so Compare and Match cannot
         drift apart. `fraction` is of the FILE, never of a pixel width. */
     virtual void seekCompareStream (int slotIdx, float fraction) = 0;
@@ -68,7 +68,48 @@ struct MatchHost
 };
 ```
 
-`MatchSide`, `MatchLink` and `ReferenceEntry` are small structs in `EJMatchTab.h` (K's file). `MatchLink` is `{ uid, name, role, caps, framesReceived }` — a projection, deliberately not `LinkSlotInfo`, so the tab cannot start addressing Links.
+**The names are the code's, not prose** (Sean's point 14, 28 Oct): the side is **`MatchRefSide`** with `Top`/`Bottom` (`EJMatchPage.h`), one of the two types this document used to invent a name for.
+
+**The reference is a `ReferenceResult`, not a `RefEntry`** — corrected on 28 Oct when the re-point made it compile. Two types in the code can answer "which reference", and the difference matters to K's side:
+
+| type | what it is | who writes it |
+|---|---|---|
+| `echojay::RefEntry` (`EJReferenceIndex.h`) | the **library record**: id, path, folder, availability, and the measurements last written to disk | the reference index, across sessions |
+| `ReferenceResult` (`ReferenceAnalyser.h`) | the **measurement made in this session**: `data` (MeterData), `macroBandAccum` + its window, `eqCurve`, the thumbnail, and since A12b `hopFrames`/`hops` | `ReferenceAnalyser`, on analysis |
+
+The Match page compares numbers, so it gets the measured one. It is also the one a Reference slot addresses: `CompareSlotState::index` is an index into `getReferences()`, which is the convention `applyReferenceToSlot` writes and the browser reads — so `selectedReference()` is `matchSlots().ref->index` resolved, never a name match. Two files called `master.wav` is the normal case, and name matching would have picked whichever was added first. `MatchLink` is the one new type and it lives in `EJMatchTab.h`: `{ uid, name, role, caps, framesReceived }`, a projection and deliberately **not** `LinkSlotInfo`, so the tab cannot start addressing Links itself. `MatchSide` also exists in `EJMatchPage.h` but it is a side's *figures*, not which side is audible - which is exactly why `setAudible` takes `MatchRefSide`.
+
+**[A0b, 28 Oct] The list grew, because re-pointing the page's own `owner->` uses is what told us what it actually reaches for.** Twelve more calls, all genuinely the editor's business: `slotDisplayName`, `slotSpectralEvidence`, `toggleComparePlay`, `compareStreamFrac`, `matchFastEngine`, `matchFastFrame`, `matchWavePoints`, `matchRefIsTop`/`setMatchRefIsTop`, `goBackToCompare`, `streamSampleRate`, `compareSlotAudible`. And four things the page used to ask the editor for turned out to be the page's own business, so they moved onto the tab instead: the Match sides, the slot pair, the mix picker, and the *storage* of which side is the reference — the editor still decides that one, because `setRefSubTab`'s Match branch sets it, which is why it is a pair of accessors and not a field.
+
+Every one of those takes or returns a type this header can name, which is why **`CompareSlotState` was lifted out of `EchoJayEditor`** first (`EJCompareSlotState.h`, with a `using` alias in the editor so not one existing call site changed). A boundary that cannot be stated without the other side's header is not a boundary.
+
+**[A0b, the re-point itself — 28 Oct] Four more calls, and two more lifted types.** The 37 `owner->` reaches are now calls on `host`. Doing it found four reaches that were not calls at all but reads of the editor's and the processor's own members, and each is now a question with a name:
+
+| what the page read | what it asks now |
+|---|---|
+| `owner->matchRefIsTop_` (12 times) | `host->matchRefIsTop()` |
+| `owner->processorRef.cmpAudible.load()` | `host->compareSlotAudible (slotIdx)` |
+| `owner->processorRef.cmpStream[i].playing.load()` | `host->compareSlotPlaying (slotIdx)` — **bounds-checked**, because the index comes from the page |
+| `owner->processorRef.getSampleRate()` | `host->streamSampleRate()` |
+
+That is the part of the boundary that was load-bearing. A page holding an `EchoJayEditor*` could read any processor member through it, and no interface could have said so; the reads above are what it happened to use *today*.
+
+The slot pair and the sides stayed the host's answer rather than moving onto the page, because which slot is the reference is held by the editor (`setRefSubTab`'s Match branch sets it) and a second derivation in the page would be a second answer to one question — the exact defect `refBarIsTop()` was. So `matchSlots()` and `buildMatchSides()` are host calls, and their two return types were lifted into `EJMatchTab.h` beside `CompareSlotState`: **`echojay::MatchSides`** and **`echojay::MatchSlotPair`**, aliased in the editor so no call site in either file moved. `openMixPicker()` joins `openReferenceBrowser()`: the left picker offers Live, the session snapshots and the chat captures and **never** a reference, which is half of why the two roles cannot swap slots.
+
+`MatchPanel`'s member is now `echojay::MatchHost* host`, set once in the editor's constructor (`matchPanel_.host = this`). **What the page may ask for is exactly what `EJMatchTab.h` declares**, and anything K needs next is a line A adds there.
+
+**`EJMatchTab.cpp` has one region that is A's, at the end of the file.** The `MatchHost`
+implementations (`EchoJayEditor::latestCapture`, `selectedReference`, `liveLinks`, `pickMixSlot`,
+`pickReferenceSlot`, `setAudible`, `postToSessionChat`, `draftPlan`, `openSessionChatAt`, `isV2`,
+`agentOn`, `hasCap`, `pluginVersion`, `slotSpectralEvidence`, `streamSampleRate`,
+`compareSlotPlaying`) are **A's**, and they sit below the banner that says so. They are in this file
+deliberately — they exist for the Match tab and they are read beside the code that calls them — but
+they are the host's half of the boundary, so the same rule the `PluginEditor.cpp` regions contract
+uses applies here: **K owns everything above that banner, A owns everything below it**, and neither
+edits the other's region without saying so. A rebase conflict inside one function body is the thing
+this split exists to avoid.
+
+**One behaviour did change, and K should know which.** The strips used to read `processorRef.cmpAudible` and compare the index; `compareSlotAudible(slotIdx)` answers from `audibleCompareSlot()`, which applies the three conditions the audio block itself applies — the slot is loaded, it has samples, and its mix gain is above zero. That accessor's own comment says why: *"a display that ignored these would light a button for audio that cannot be heard."* So a side selected as audible whose stream is not loaded, or has stopped at zero, no longer draws as audible. The re-point was meant to change nothing; this one row does, and it is better for it.
 
 **If K needs something that is not here, A adds it.** A missing call is one line of mine; a reach into A's half is a conflict on every rebase. That asymmetry is the whole point of the boundary.
 
@@ -235,6 +276,92 @@ While siting this I found that the same function already does `allBlocks.push_ba
 - **Residual, stated plainly:** a host at 1024 or 2048 still gives fewer frames per hop than the reference will, so `bandPeak` comparisons are "same within a known bias", not identical. I cannot fix that from the plugin side — the host chooses the block size.
 - **SETTLED, C4 rev 2 §6: the crest is rebuilt on the 100 ms grid and no longer uses `bandPeak` at all.** Precisely, because the one-line version of it is easy to implement wrongly: for each qualifying hop (`bandFrames > 0`, not silent) the **local** level `M_h` is the mean `bandPower` over the qualifying hops in the 3 s *around that hop* (`h−15` to `h+14`, skipped when fewer than 10 qualify); `r_h = bandPower_h / M_h`; and the figure is `10·log10(95th percentile of r_h)` over the window, null under 100 qualifying hops. **A per-hop local mean, not one mean for the window** — which is the whole point, since a single mean would mostly measure the arrangement. `bandPeak` stays in the frame as evidence that a hop held a loud frame. That is the hop-grid definition recommended below, and it has a consequence worth stating: **C4's 1.0 dB margin no longer waits on my FFT answer.** The 95th percentile of hop power against a local mean lives entirely on the sample-counted 100 ms grid, so it does not inherit the frames-per-hop bias of a within-hop maximum, and the margin can be chosen on its own merits. `bandPeak` remains useful for exactly what it is — evidence that a hop held a loud frame — and is no longer the basis of a published number.
 - **(The reasoning, kept because it is why the above is right.)** Define the six-band crest from the **distribution of `bandPower` across hops** (say the 95th percentile against the mean over the window) rather than from `bandPeak` within a hop. That lives entirely on the 100 ms grid, which IS sample-counted and identical on both sides by construction, so the figure stops depending on the host's block size at all. `bandPeak` then stays in the frame as evidence rather than as the basis of a published number. Her figure, her call — but if she wants it, it costs nothing extra in the accumulator, because both fields are already there.
+
+---
+
+## 5.2 A12b — the series carried everywhere K reads it  **[Sean's point 27; K's K1, K2, K5]**
+
+| Where | What it carries |
+|---|---|
+| `ChannelMeterData` (per Link) | `hopFrames`, `hops`, **`gainDb`** — that Link's own trim **as it was when the capture started**. The series comes off the ring, which is post-trim, and C4 §2 adds it back; reading the registry at report time would read whatever the user has moved since |
+| `ReferenceResult` | `hopFrames`, `hops`, from the same engine that made every other figure, **fed in 512-sample blocks** instead of 2048 |
+| `CaptureSnapshot` | `hopFrames` (bus output), `hopFramesRackIn` (the input tap), `hopFramesHops`, **`hopFramesRackInHops`**, `hopFramesTruncated`, and **`busGainDbAtCapture`** |
+
+**Why 512 on the reference.** The FFT's hop follows whoever feeds it, so a file read in 2048-sample
+blocks sat at 42.7 ms while a live capture at a 512-sample host block runs at 10.7 ms. Every per-hop
+**mean** survived that; a within-hop **maximum** did not. **K's MA10 measured the cost on real stems:
+block size alone moved the crest by up to 0.38 dB** — and for comparison, 4:1 compression at 6 dB of
+gain reduction moved it +1.0 dB in the mids and ≤0.25 dB elsewhere. A measure whose block-size noise
+is a third of its signal is not yet a measure, which is exactly why the reference now matches the
+common live cadence.
+
+### `bandPeak` is FROZEN, deliberately  **[K, 28 Oct]**
+
+`bandPower` is carried exactly as it is. `bandPeak` is carried **as currently defined**, and **neither
+its meaning nor the FFT cadence in MeterEngine changes yet** — K is testing offline today whether
+`bandPeak / bandPower` within a hop works on a **sample-counted 256-sample cadence**, and the same
+with a **1024-point FFT above 250 Hz**. If either does, `bandPeak` will need that cadence in the
+audio path, which is mine. So the frame keeps the field and keeps room for it: `HopFrame`'s two
+counters sit **last** (`bandFrames`, `flags`), and a cadence marker is additive there — the same
+positional rule `RackSidecarSlot` has four notes about. Nothing in the audio path moves until her
+numbers say which cadence to build.
+
+**C4 is at rev 3** (K, 28 Oct): a Link whose band is silent is **known with share 0**, not unknown.
+That lives in her attribution code, not in anything here — noted so the two documents cannot drift.
+
+---
+
+## 5.3 A8 — the limiter dial in loudest-30 mode  **[Sean's point 3, 28 Oct]**
+
+**In `loudest30` mode the dial carries an offset. In `whole` mode it carries none.**
+
+```
+offset = ref.loudest30Lufs - mix.loudest30Lufs          // loudest30 mode only
+target = <the plugin's OWN fresh integrated reading, taken at dial time> + offset
+```
+
+**Why an offset, and why against a fresh reading.** The figures compared in `loudest30` mode are each
+side's *loudest 30 seconds* — not their whole songs. The limiter dials against what it can measure at
+dial time, which is an integrated reading of what is playing. Handing it a loudest-30 target directly
+would mix two windows in one subtraction: a whole-song measurement aimed at a loudest-window number,
+missing by however much the mix's quiet parts pull its integrated figure down. The **difference**
+between the two loudest-30 figures is the one quantity that survives the change of window, so that is
+what travels — and the plugin adds it to a reading it takes itself.
+
+**Fresh matters.** A figure measured when the plan was drafted describes the mix before the plan's own
+EQ and dynamics moves landed. The dial happens after them, so the integrated reading is taken **at
+dial time, by the plugin, every time**.
+
+**No offset in `whole` mode**, because both sides are already whole-song figures and the plugin's own
+integrated reading is the same kind of number: correcting for a window difference that is not there
+would simply be wrong.
+
+**What must not cross the wire:** a *target* computed on the server from stale figures. The server
+carries `offset` (or nothing, in `whole` mode); the plugin owns the reading it is applied to. One
+number travels and it is a difference, not a destination.
+
+---
+
+## 6b. How far an EchoJay EQ band may move  **[Sean's point 6, agreed with B, 28 Oct]**
+
+**24 dB, and it is a real limit now.** The finding was that the processor had **none**: both write
+sites (`SurgicalEqProcessor.cpp:106`, the per-control setter, and `:370`, the JSON restore) assigned
+`gain_db` straight from whatever arrived, with no `jlimit` anywhere in the file — and the agent and
+preset restore both come through those paths, so a plan asking for +60 dB got it. `X1.eqGainMaxDb = 24`
+was only the editor's **view scale**, which is a different claim: past it the drawn curve cannot show
+what the band is doing, which is its own lie.
+
+- **One definition:** `lib/mixRules` **`X1.eqGainMaxDb = 24`** is the source. The plugin's
+  `SurgicalEqProcessor::kBandGainMaxDb` names that figure and nothing else.
+- **Clamped in the processor**, at both write sites, through one function — so the two cannot drift.
+- **The clamp speaks when it bites:** "band 2: asked for 30.0 dB, the band holds 24.0 dB (a band moves
+  at most 24 dB)", in the log and in `takeLastBandGainClamp()` for the step to report. A value quietly
+  altered is the fault class the refusal-after-apply rule exists for. It is **silent** for ordinary
+  moves, because a clamp that narrates every write is noise.
+- **It is a magnitude, not a ceiling:** a −80 dB cut is held at −24 the same way.
+- **The server refuses above it** on the Match path already, and B is adding the same refusal to the
+  chat and agent paths, so the model learns the bound and this clamp only catches what slips through.
+- Guard legs **EQG1–EQG5**, including the silence on an ordinary move and the sentence when it bites.
 
 ---
 

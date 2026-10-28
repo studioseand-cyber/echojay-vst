@@ -9,6 +9,8 @@
 #include "EJRealEditorSwitch.h" // ...behind his switch, which is off until he turns it on
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJInlineViewIdentity.h"   // the rack-and-slot identity of what is on screen
+#include "EJCompareSlotState.h"    // what a Compare slot is, so MatchHost can name one
+#include "EJMatchTab.h"            // MatchHost: the Match tab's one door to this class
 #include "EJShadowRetry.h"         // a copy-road request the rack cache could not answer yet
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
@@ -60,7 +62,14 @@ class EchoJayEditor : public juce::AudioProcessorEditor,
                            switch). As a borrower it must be able to be told to let go - and it
                            de-registers in its own destructor, so "the holder has gone" cannot
                            happen. EJLocalInstances.h sets out the rules. */
-                       public echojay::EditorBorrower
+                       public echojay::EditorBorrower,
+                       /** A0b (28 Oct 2026): and it is the Match tab's HOST. The tab was reaching
+                           into this class through an `owner` pointer - fifteen members, thirty-seven
+                           uses - which is exactly the coupling the carve was for. The interface is
+                           EJMatchTab.h, the contract is docs/CONTRACT_MATCH_HOST_2026-10-27.md, and
+                           several of its calls are satisfied by members this class already had under
+                           the same names: that is why the list looks the way it does. */
+                       public echojay::MatchHost
 {
 public:
     // ---- echojay::EditorBorrower -------------------------------------------------------------
@@ -1112,15 +1121,10 @@ private:
     int compareMeterId_ = 0; // 0=Waveform, 1=Spectrum, 2=Levels, 3=Stereo, 4=Loudness
 
     // Stage 2: per-slot source selection
-    struct CompareSlotState {
-        enum class Kind { Empty, Live, Snapshot, WsCapture, Reference, CodecFile };
-        Kind kind = Kind::Empty;
-        int  index = -1;          // Snapshot or Reference index
-        juce::String wsReviewId;  // WsCapture: review ID from workspace
-        juce::String label;       // display name shown in the slot button
-        juce::String codecPath;   // CodecFile: rendered temp wav path
-        std::vector<float> codecThumb;  // CodecFile: abs-peak thumbnail
-    };
+    // A0b (28 Oct 2026): the definition moved to EJCompareSlotState.h so MatchHost can name it
+    // without this header - see that file. The alias keeps every existing use of
+    // `CompareSlotState` (and `EchoJayEditor::CompareSlotState`) meaning exactly what it did.
+    using CompareSlotState = echojay::CompareSlotState;
     CompareSlotState compareTop_, compareBot_;
     juce::TextButton compareTopSlotBtn_;
     juce::TextButton compareBotSlotBtn_;
@@ -1181,8 +1185,10 @@ private:
     /** The two sides of the compare, named by role rather than by position.
         WHICH SLOT IS THE REFERENCE IS DECIDED ON ENTRY AND HELD in
         matchRefIsTop_, not derived per call. See setRefSubTab's Match branch. */
-    struct MatchSides { echojay::MatchSide mix, ref; };
-    MatchSides buildMatchSides() const;
+    // LIFTED INTO EJMatchTab.h (A0b, 28 Oct 2026) so MatchHost can name it; the alias keeps every
+    // call site in this file and in EJMatchTab.cpp exactly as it was.
+    using MatchSides = echojay::MatchSides;
+    MatchSides buildMatchSides() const override;
 
     /** Which slot is the reference side, decided by CONTENT when the Match page
         is entered (echojay::matchRefSideOnEntry) and then held for as long as
@@ -1232,8 +1238,47 @@ private:
         themselves as well as their sides, because the curves come from each
         slot's spectral evidence and MatchSide carries only the six bands. One
         answer to "which one is the reference", read in both places. */
-    struct MatchSlotPair { const CompareSlotState* mix = nullptr; const CompareSlotState* ref = nullptr; };
-    MatchSlotPair matchSlots() const;
+    using MatchSlotPair = echojay::MatchSlotPair;   // lifted with MatchSides, same members
+    MatchSlotPair matchSlots() const override;
+
+    // ---- MatchHost (A0b, 28 Oct 2026): the calls the Match tab makes, and nothing more ---------
+    //
+    // Several of this interface's calls are ALREADY members of this class under the same names and
+    // signatures - slotDisplayName, toggleComparePlay, compareStreamFrac, matchFastEngine,
+    // matchFastFrame, matchWavePoints, seekCompareStream, openReferenceBrowser - so they satisfy it
+    // by being what they already were. These are the rest. Four of them are contracted for work that
+    // is not built yet (the Whole session chat and the plan road), and each of those REFUSES IN
+    // WORDS rather than doing nothing quietly: a stub that silently succeeds is how a caller comes
+    // to believe something happened.
+    const CaptureSnapshot* latestCapture() const override;
+    const CaptureSnapshot* verifyCapture() const override;
+    const ReferenceResult*   selectedReference() const override;
+    std::vector<echojay::MatchLink> liveLinks() const override;
+    bool pickMixSlot       (const juce::String& name, juce::String& why) override;
+    bool pickReferenceSlot (const juce::String& name, juce::String& why) override;
+    void setAudible (echojay::MatchRefSide side) override;
+    void postToSessionChat (const juce::String& kind, const juce::var& payload) override;
+    void draftPlan (const juce::var& matchBlock,
+                    std::function<void (bool, juce::String, juce::String)> cb) override;
+    void openSessionChatAt (const juce::String& planId) override;
+    bool isV2() const override;
+    bool agentOn() const override;
+    bool hasCap (const juce::String& cap) const override;
+    juce::String pluginVersion() const override;
+    echojay::SpectralEvidence slotSpectralEvidence (const CompareSlotState& slot) const override;
+    bool matchRefIsTop() const override { return matchRefIsTop_; }
+    void setMatchRefIsTop (bool topIsReference) override { matchRefIsTop_ = topIsReference; }
+    void goBackToCompare() override { setRefSubTab (echojay::RefSubTab::Compare); }
+    double streamSampleRate() const override;
+    bool compareSlotAudible (int slotIdx) const override { return audibleCompareSlot() == slotIdx; }
+    bool compareSlotPlaying (int slotIdx) const override;
+    void openMixPicker() override { openMatchMixPicker(); }
+
+    /** latestCapture and selectedReference hand back POINTERS, and the stores they come from answer
+        by value - so the answer is kept here for the caller to read. One copy, replaced on each
+        call, which is what a drawing pass wants. */
+    mutable CaptureSnapshot latestCaptureCache_;
+    mutable ReferenceResult   selectedRefCache_;
     // Step 2: cross-scope covers all three cases the send must ask about -
     // channel-vs-full, channel-vs-DIFFERENT-channel, and anything-vs-Live.
     // Keys off channelDataScoped (via slotChannelUid), never linkUid presence.
@@ -1385,7 +1430,11 @@ private:
     // has no inner view to step back through first.
     struct MatchPanel : juce::Component, private juce::Timer
     {
-        EchoJayEditor* owner = nullptr;
+        /** THE PAGE'S ONE DOOR (A0b, 28 Oct 2026). This was `EchoJayEditor* owner`, and the page's
+            37 uses of it reached into a 50,000-line class - every one of them a conflict for K on
+            every rebase. It is now the interface, so what this page may ask for is exactly what
+            EJMatchTab.h declares, and anything it needs next is a line A adds there. */
+        echojay::MatchHost* host = nullptr;
         void paint (juce::Graphics& g) override;
         bool keyPressed (const juce::KeyPress& k) override;
         void mouseUp (const juce::MouseEvent& e) override;

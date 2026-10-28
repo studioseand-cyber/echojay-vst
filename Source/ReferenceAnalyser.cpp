@@ -130,7 +130,14 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         
         // Set up the meter engine for offline analysis
         MeterEngine engine;
-        int blockSize = 2048;
+        // ---- A12b: 512, NOT 2048 (28 Oct 2026, C2 §6) -----------------------------------------
+        // The FFT's hop follows whoever feeds it, so a file read in 2048-sample blocks put the
+        // reference on a 42.7 ms cadence while a live capture at a 512-sample host block runs at
+        // 10.7 ms. Every per-hop MEAN survived that; a within-hop MAXIMUM did not, and Kathy's MA10
+        // measured the cost on real stems - block size alone moved the crest by up to 0.38 dB. This
+        // is offline, so the extra FFTs cost nothing anyone waits for, and it puts both sides on the
+        // same cadence as the common live case.
+        int blockSize = 512;
         engine.prepare(sampleRate, blockSize);
         
         // Waveform thumbnail — one peak value per 1024 samples
@@ -273,6 +280,11 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         // was summed, so an unmeasured file reports UNAVAILABLE rather than a
         // -120 that reads like a level.
         {
+            // A12b: the reference's own series, read off the same engine that made every other
+            // figure above - so K's window pass, PSR and crest run ONE implementation over both
+            // sides, on one sample-counted clock.
+            ref.hopFrames = engine.hopFrames();
+            ref.hops      = (int) ref.hopFrames.size();
             const auto acc = engine.getAccumulatedBands();
             if (acc.valid)
             {

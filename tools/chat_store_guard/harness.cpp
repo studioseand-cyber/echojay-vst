@@ -38,6 +38,8 @@
 #include "EJMapSuspect.h"               // SH31: a reduction control that reduces nothing
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
+#include "SurgicalEqProcessor.h"   // EQG: the band-gain clamp, both directions
+#include "EJPendingClaim.h"     // PC: nothing claims "added" while the add is waiting
 #include "EJShadowRetry.h"       // SR: the copy road resuming when the rack cache arrives
 #include "EJLocalInstances.h"        // EL: the real editor's directory and lease (round 1, 26 Oct)
 #include "EJRealEditorSwitch.h"      // ES: which live view a Link gets, and why (his condition, 26 Oct)
@@ -4126,6 +4128,84 @@ int main()
                "RV5 under a standing revoke the automatic open is refused outright - no lease AND no "
                "copy, the pane stays empty - while his press still gets the real editor back",
                "nothing automatic, everything on a press");
+    }
+
+    // ================================================================================================
+    // PC: NOTHING CLAIMS "ADDED" WHILE THE ADD IS STILL WAITING (28 Oct 2026, Sean's point 2)
+    //
+    // SCEN RP4 caught it on real replay data: while a card sat in awaiting_approval the screen read
+    // "I added a Tube-Tech CL 1B compressor to the kick with threshold around -15 dB, ratio 4:1..."
+    // and nothing had been added. The rule is one TENSE on a line that is waiting - every figure
+    // stays exactly where it was, because the numbers are what the user is approving. It lives as a
+    // pure function because the plan card (A2) and the walk-through (A5) must obey it too.
+    {
+        using echojay::pendingClaimText;
+        using echojay::claimsItIsDone;
+        const juce::String cl1b = "I added a Tube-Tech CL 1B compressor to the kick with threshold "
+                                  "around -15 dB, ratio 4:1, attack 3 and release 5";
+        // PC0 IS THE KNOWN-BAD: the line exactly as RP4 found it on screen, untouched.
+        check (cl1b.startsWith ("I added"),
+               "PC0 the sentence RP4 found on screen while the card was WAITING begins \"I added\" - "
+               "that is the defect in one line, and PC1 is the same sentence through the rule",
+               "known-bad reproduced");
+        const auto waiting = pendingClaimText (cl1b, true);
+        check (waiting.startsWith ("I'll add") && waiting.contains ("-15 dB")
+               && waiting.contains ("4:1") && waiting.contains ("attack 3"),
+               "PC1 while it waits the line says \"I'll add\" - and EVERY figure survives: the "
+               "threshold, the ratio, the attack. The numbers are what he is approving and the rule "
+               "must not touch them",
+               waiting.substring (0, 60));
+        check (pendingClaimText (cl1b, false) == cl1b,
+               "PC2 once it is no longer waiting the line is returned UNCHANGED - the rule rewrites a "
+               "tense, it does not own the sentence",
+               "unchanged");
+        check (pendingClaimText ("I'll add a compressor", true) == "I'll add a compressor",
+               "PC3 a line that was already honest is left alone, so a second pass cannot drift it "
+               "further from what the model wrote");
+        check (pendingClaimText ("Added EchoJay Compressor", true) == "Planned EchoJay Compressor",
+               "PC4 ...and a bare \"Added\" headline becomes \"Planned\", which is the word Sean asked "
+               "for on the card");
+        check (pendingClaimText ("The kick is a bit boxy", true) == "The kick is a bit boxy",
+               "PC5 a sentence that never claimed anything is untouched - the swap list is short on "
+               "purpose, because clever rewrites would start changing lines nobody complained about");
+        check (claimsItIsDone (cl1b) && ! claimsItIsDone ("I'll add a compressor"),
+               "PC6 and the same rule answers \"does this line claim it is done\", so a row that would "
+               "rather REFUSE than rewrite can ask without a second implementation");
+        check (pendingClaimText ("", true).isEmpty(),
+               "PC7 an empty line stays empty rather than becoming a claim of its own");
+    }
+
+    // ================================================================================================
+    // EQG: HOW FAR A BAND MAY ACTUALLY MOVE (28 Oct 2026, Sean's point 6, agreed with B)
+    //
+    // The processor had NO limit - both write sites took whatever arrived, and the agent and preset
+    // restore both come through them, so a plan asking for +60 dB got it. X1.eqGainMaxDb = 24 was
+    // only the editor's view scale. 24 dB is now the real bound, clamped in the processor, and the
+    // clamp SAYS what it did: a value quietly altered is the fault class the refusal-after-apply
+    // rule exists for.
+    {
+        check (SurgicalEqProcessor::kBandGainMaxDb == 24.0f,
+               "EQG1 the limit is 24 dB, the one figure lib/mixRules X1.eqGainMaxDb names",
+               juce::String (SurgicalEqProcessor::kBandGainMaxDb, 1) + " dB");
+        juce::String nothingSaid;
+        check (std::abs (SurgicalEqProcessor::clampBandGainDb (6.0f, 1, &nothingSaid) - 6.0f) < 0.001f
+               && nothingSaid.isEmpty(),
+               "EQG2 an ordinary move passes through untouched and says NOTHING - the report is for "
+               "when the bound bites, and a clamp that narrates every write is noise",
+               "6 dB stayed 6 dB, silently");
+        juce::String said;
+        const float held = SurgicalEqProcessor::clampBandGainDb (30.0f, 2, &said);
+        check (std::abs (held - 24.0f) < 0.001f,
+               "EQG3 +30 dB is held at +24 - the known-bad is the old behaviour, which let it through "
+               "and drew a curve that could not show it",
+               juce::String (held, 1) + " dB");
+        check (said.contains ("asked for 30") && said.contains ("holds 24") && said.contains ("band 2"),
+               "EQG4 ...and it SAYS so, naming the band, what was asked and what the band holds, so the "
+               "step can report it instead of a figure nobody set",
+               said);
+        check (std::abs (SurgicalEqProcessor::clampBandGainDb (-80.0f, 3) + 24.0f) < 0.001f,
+               "EQG5 and a cut is bounded the same way - the limit is a magnitude, not a ceiling",
+               "-80 dB held at -24 dB");
     }
 
     // ================================================================================================

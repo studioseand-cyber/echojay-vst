@@ -26,6 +26,7 @@
 #include "EedDeviceProcessor.h"
 #include "EqEngine.h"
 #include "EqMove.h"
+extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm - the log both plugins link
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -93,6 +94,42 @@ public:
 
     // ---- band model (message thread; used by editor) ----------------------
     static constexpr int kNumBands = echojay::EqEngine::kMaxBands;
+
+    /** ---- HOW FAR A BAND MAY ACTUALLY MOVE (28 Oct 2026, Sean's point 6) -----------------------
+        The processor had NO limit: both write sites assigned gain_db straight from whatever arrived,
+        and the agent and preset restore both come through them - so a plan asking for +60 dB got it.
+        X1.eqGainMaxDb = 24 was only the editor's VIEW scale, which is a different claim entirely:
+        beyond it the drawn curve cannot show what the band is doing, which is its own lie.
+
+        Agreed with B, 28 Oct: **24 dB**, clamped HERE at both sites, and the clamp is REPORTED when
+        it bites rather than quietly altering the number (the refusal-after-apply rule). The server
+        refuses above it on the Match, chat and agent paths, so this catches only what slips through.
+        ONE definition: `lib/mixRules` X1.eqGainMaxDb is the source, and this constant names it. */
+    static constexpr float kBandGainMaxDb = 24.0f;
+
+    /** What the last clamp did, in words, or empty if nothing has been clamped - so the step that
+        asked can say "asked for +30, the band holds +24" instead of reporting a figure nobody set. */
+    juce::String takeLastBandGainClamp() { auto s = lastBandGainClamp_; lastBandGainClamp_.clear(); return s; }
+
+    /** The one place a band gain is bounded, so the two write sites cannot disagree. Says what it
+        did when it bites - both in the log and in `lastBandGainClamp_` for the step to read - and is
+        silent when the asked-for value is inside the limit, which is almost always. */
+    /** STATIC, because specFromVar is - the JSON restore is a static member and must be able to
+        bound a gain too, which is half the point (a preset is as good a way to land +60 dB as a
+        plan is). `saidOut` is where a caller that HAS an instance keeps the sentence for its step;
+        the log carries it either way. */
+    static float clampBandGainDb (float asked, int band1Based, juce::String* saidOut = nullptr)
+    {
+        if (asked >= -kBandGainMaxDb && asked <= kBandGainMaxDb) return asked;
+        const float held = juce::jlimit (-kBandGainMaxDb, kBandGainMaxDb, asked);
+        const auto  said = (band1Based > 0 ? "band " + juce::String (band1Based) + ": " : juce::String())
+                         + "asked for " + juce::String (asked, 1) + " dB, the band holds "
+                         + juce::String (held, 1) + " dB (a band moves at most "
+                         + juce::String ((int) kBandGainMaxDb) + " dB)";
+        if (saidOut != nullptr) *saidOut = said;
+        EchoJay_NSLog (("EJEq: " + said).toRawUTF8());
+        return held;
+    }
 
     void                 setBand (int index, const echojay::BandSpec& spec); // UI edit
     echojay::BandSpec    getBand (int index) const;
@@ -286,6 +323,7 @@ private:
                                           int& bandOut, bool& okOut);
 
     echojay::EqEngine     engine_;
+    juce::String          lastBandGainClamp_;       // see takeLastBandGainClamp
     echojay::BandSpec     bands_[kNumBands];        // authoritative model
     juce::CriticalSection modelLock_;               // guards bands_ (message-thread edits)
     // bypassed_ lives in EedDeviceProcessor — one flag, so the base's state

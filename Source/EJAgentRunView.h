@@ -36,6 +36,7 @@
 //  which is true rather than merely harmless.
 // =============================================================================
 #include <JuceHeader.h>
+#include "EJPendingClaim.h"   // nothing claims "added" while the add is still waiting
 #include <vector>
 #include "EJAgentPanelLayout.h"
 #include "EJAgentClient.h"
@@ -619,7 +620,20 @@ inline RunView runViewFrom (const EJAgentClient& c, const juce::StringArray& exp
         // same empty noise as the bare "ask" describeCall no longer passes on.
         r.label       = s.label.isNotEmpty() ? s.label
                                              : (askHere ? juce::String() : juce::String ("step"));
-        r.detail      = s.detail;
+        // ---- AND A WAITING LINE DOES NOT SAY "ADDED" (28 Oct 2026, Sean's point 2) -------------
+        //
+        // SCEN RP4: while a card sat in awaiting_approval the screen read "I added a Tube-Tech CL 1B
+        // compressor to the kick with threshold around -15 dB..." and nothing had been added. The
+        // rule is one tense on a line that is waiting - the figures are the model's and they are
+        // what the user is approving, so they are left exactly where they were. echojay has it as a
+        // pure function because the plan card (A2) and the walk-through (A5) must obey it too.
+        {
+            const bool stillWaiting = (s.status == EJAgentClient::Step::Status::AwaitingApproval
+                                       || s.status == EJAgentClient::Step::Status::Pending);
+            r.label  = echojay::pendingClaimText (r.label,  stillWaiting);
+            r.detail = echojay::pendingClaimText (s.detail, stillWaiting);
+        }
+        r.detail      = r.detail.isNotEmpty() ? r.detail : s.detail;
         r.modelDetail = s.modelDetail;
         r.status      = (int) s.status;
         r.autoApplied = s.autoApplied;

@@ -6,10 +6,17 @@
 // serves and `~/Desktop/FOR_REVIEW_22oct/CONTRACT_PLUGINEDITOR_REGIONS_2026-10-27.md` is the fence:
 // from here on the Match front end is K's file and the editor is A's, and the two meet at MatchHost.
 //
-// WHY THE MOVE IS VERBATIM AND THE `owner->` CALLS SURVIVE IT. The point of tonight's commit is that
-// the code CHANGES FILE and nothing else, so a gate that goes green says the move was clean and
-// says nothing else. Re-pointing the page's fifteen `owner->` uses at MatchHost is the next step and
-// it is a separate commit, because then a red row means something specific.
+// THE MOVE WAS VERBATIM; THIS IS THE RE-POINT (A0b, 28 Oct 2026). The carve changed the file and
+// nothing else, so its green gate said the move was clean and said nothing more. This commit is the
+// second half: the page's 37 reaches through `owner` - an EchoJayEditor* into a 50,000-line class -
+// are now calls on `host`, the MatchHost interface above. Separate commits on purpose, because a
+// red row now means one specific thing.
+//
+// Four of the reaches were not calls at all but reads of the editor's own members (matchRefIsTop_,
+// processorRef.cmpAudible, processorRef.cmpStream[].playing, processorRef.getSampleRate), and each
+// is now a question with a name: matchRefIsTop(), compareSlotAudible(), compareSlotPlaying(),
+// streamSampleRate(). That is the part of the boundary that was load-bearing: a page that can read
+// a processor member can read any of them, and no interface would have been able to say so.
 //
 // This TU includes PluginEditor.h on purpose: MatchPanel is still declared inside EchoJayEditor (the
 // header region the regions contract gives to K), and a nested class's members may be defined in any
@@ -416,7 +423,7 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         }
     } paintTimer { *this, paintT0 };
 
-    if (owner == nullptr) return;
+    if (host == nullptr) return;
     const auto area = getLocalBounds();
 
 
@@ -433,15 +440,15 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
     const auto R = echojay::matchPageLayout (area);
 
     // ---- the data ----------------------------------------------------------
-    const auto slots = owner->matchSlots();
+    const auto slots = host->matchSlots();
     // ONE BUILD PER TICK, read here rather than repeated. Between ticks this is
     // up to 33 ms old, which is shorter than the frame it is being drawn into;
     // the first paint of an opening has no tick behind it yet and builds its
     // own, because a default-constructed pair would draw -100 LUFS and no bands
     // as though they were measurements.
-    const auto sides = tickSidesValid ? tickSides : owner->buildMatchSides();
-    const auto evMix = owner->getSlotSpectralEvidence (*slots.mix);
-    const auto evRef = owner->getSlotSpectralEvidence (*slots.ref);
+    const auto sides = tickSidesValid ? tickSides : host->buildMatchSides();
+    const auto evMix = host->slotSpectralEvidence (*slots.mix);
+    const auto evRef = host->slotSpectralEvidence (*slots.ref);
     const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
     const auto ready = echojay::matchReadiness (prop);
     const auto moves = echojay::matchBandMoves (prop);
@@ -501,8 +508,8 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                                     : juce::Justification::centredRight, 2);
         };
 
-        picker (R.mixPick, owner->slotDisplayName (*slots.mix), true,  hotZone == 2);
-        picker (R.refPick, owner->slotDisplayName (*slots.ref), false, hotZone == 3);
+        picker (R.mixPick, host->slotDisplayName (*slots.mix), true,  hotZone == 2);
+        picker (R.refPick, host->slotDisplayName (*slots.ref), false, hotZone == 3);
 
         // THE CONNECTOR IS THE STRONGEST THING IN THIS ROW (20 Sep 2026): the
         // button REACHING OUT to both names, rather than two stubs beside it.
@@ -622,15 +629,15 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             std::vector<float> pts;
             bool  rolling = false;
             float span    = 0.0f;
-            const bool have = owner->matchWavePoints (slot, pts, rolling, span);
+            const bool have = host->matchWavePoints (slot, pts, rolling, span);
 
             auto lane = r.withTrimmedBottom (9);       // the caption takes the rest
             // THE TRANSPORT GUTTER, on the outer edge so the two sides' controls
             // sit either side of the page rather than facing each other across
             // the middle. echojay::matchWaveLane is the shared answer, so the
             // press and the paint cannot disagree about where the wave is.
-            const auto slotIdxHere = isRef ? (owner->matchRefIsTop_ ? 0 : 1)
-                                           : (owner->matchRefIsTop_ ? 1 : 0);
+            const auto slotIdxHere = isRef ? (host->matchRefIsTop() ? 0 : 1)
+                                           : (host->matchRefIsTop() ? 1 : 0);
             const bool liveHere    = (slot.kind == CompareSlotState::Kind::Live);
             const auto tBtn = echojay::matchWaveTransport (lane, isRef);
             lane = echojay::matchWaveLane (lane, isRef);
@@ -689,7 +696,7 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             // THE PLAYHEAD, from the STREAM'S OWN POSITION. A timer counting
             // seconds beside it would drift the moment the stream looped, was
             // seeked or was stopped, and would then be a confident wrong line.
-            const float frac = owner->compareStreamFrac (slotIdxHere);
+            const float frac = host->compareStreamFrac (slotIdxHere);
             if (frac >= 0.0f && lane.getWidth() > 2)
             {
                 const float x = (float) lane.getX() + frac * (float) lane.getWidth();
@@ -715,7 +722,7 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                 }
                 else
                 {
-                    const bool rollingNow = owner->processorRef.cmpStream[slotIdxHere].playing.load();
+                    const bool rollingNow = host->compareSlotPlaying (slotIdxHere);
                     g.setColour ((hotHere ? C::blue : C::text2).withAlpha (0.9f));
                     const auto b = tBtn.toFloat().reduced (3.0f);
                     if (rollingNow)
@@ -741,10 +748,9 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                         true);
         };
 
-        const int audible = owner->processorRef.cmpAudible.load();
-        const bool refIsTop = owner->matchRefIsTop_;
-        strip (R.mixWave, *slots.mix, false, hotZone == 4, audible == (refIsTop ? 1 : 0));
-        strip (R.refWave, *slots.ref, true,  hotZone == 5, audible == (refIsTop ? 0 : 1));
+        const bool refIsTop = host->matchRefIsTop();
+        strip (R.mixWave, *slots.mix, false, hotZone == 4, host->compareSlotAudible (refIsTop ? 1 : 0));
+        strip (R.refWave, *slots.ref, true,  hotZone == 5, host->compareSlotAudible (refIsTop ? 0 : 1));
     }
 
     // ---- the axis row: four tiles, one selected ----------------------------
@@ -850,9 +856,9 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         // happens to publish between advances simply has its newest spectrum
         // read on the next one; nothing is dropped, because at 60 Hz against
         // 43 Hz there is at most one new hop per frame.
-        auto* hopEngine = owner->matchFastEngine (*slots.mix, owner->matchRefIsTop_ ? 1 : 0);
+        auto* hopEngine = host->matchFastEngine (*slots.mix, host->matchRefIsTop() ? 1 : 0);
         if (hopEngine == nullptr)
-            hopEngine = owner->matchFastEngine (*slots.ref, owner->matchRefIsTop_ ? 0 : 1);
+            hopEngine = host->matchFastEngine (*slots.ref, host->matchRefIsTop() ? 0 : 1);
         const uint32_t hopNow = hopEngine != nullptr ? hopEngine->visHopCount() : 0;
         const bool newHop = hopEngine != nullptr && (! trailHopInit || hopNow != trailHop);
 
@@ -874,8 +880,8 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         // The cloud is CONTEXT and is never compared; the filament below is the
         // measurement. A side with no fast source gets no cloud at all.
         MeterData mixMd, refMd;
-        const bool mixFastOk = owner->matchFastFrame (*slots.mix, owner->matchRefIsTop_ ? 1 : 0, mixMd);
-        const bool refFastOk = owner->matchFastFrame (*slots.ref, owner->matchRefIsTop_ ? 0 : 1, refMd);
+        const bool mixFastOk = host->matchFastFrame (*slots.mix, host->matchRefIsTop() ? 1 : 0, mixMd);
+        const bool refFastOk = host->matchFastFrame (*slots.ref, host->matchRefIsTop() ? 0 : 1, refMd);
 
         echojay::MatchRibbonRow mixFast {}, refFast {};
         if (mixFastOk) matchFastRow (axis, mixMd, sides.mix, -1.0f, mixFast);
@@ -890,14 +896,14 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             {
                 pushTrace (mixTrace, axis, mixMd);
                 double hz = 0.0;
-                if (auto* e = owner->matchFastEngine (*slots.mix, owner->matchRefIsTop_ ? 1 : 0))
+                if (auto* e = host->matchFastEngine (*slots.mix, host->matchRefIsTop() ? 1 : 0))
                     mixVisOk = e->getVisualSpectrum (mixVis, hz);
             }
             if (refFastOk)
             {
                 pushTrace (refTrace, axis, refMd);
                 double hz = 0.0;
-                if (auto* e = owner->matchFastEngine (*slots.ref, owner->matchRefIsTop_ ? 0 : 1))
+                if (auto* e = host->matchFastEngine (*slots.ref, host->matchRefIsTop() ? 0 : 1))
                     refVisOk = e->getVisualSpectrum (refVis, hz);
             }
 
@@ -917,8 +923,8 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             refStaticOk = false;
             if (! refVisOk && evRef.valid)
             {
-                const double sr = owner->processorRef.getSampleRate() > 0.0
-                                    ? owner->processorRef.getSampleRate() : 44100.0;
+                const double sr = host->streamSampleRate() > 0.0
+                                    ? host->streamSampleRate() : 44100.0;
                 refStatic   = EchoJayEditor::expandLog64Spectrum (
                                   evRef.bins, sr / (double) MeterEngine::kVisFftSize);
                 refStaticOk = true;
@@ -1079,8 +1085,8 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                         evMix.valid || evRef.valid,
                         echojay::matchBandMoves (prop),
                         juce::jlimit (0.0f, 1.0f, morphPos), linkPhase,
-                        owner->slotDisplayName (*slots.mix),
-                        owner->slotDisplayName (*slots.ref));
+                        host->slotDisplayName (*slots.mix),
+                        host->slotDisplayName (*slots.ref));
 
         // ---- THE REFUSAL, OVER THE PICTURE -------------------------------
         //
@@ -1169,10 +1175,10 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 // the first one finished.
 void EchoJayEditor::MatchPanel::press()
 {
-    if (owner == nullptr) return;
+    if (host == nullptr) return;
     // ONE read of the sides, not two: they are read from live slots, and two
     // reads could disagree about what the press was for.
-    const auto sides = owner->buildMatchSides();
+    const auto sides = host->buildMatchSides();
     const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (sides.mix, sides.ref));
 
     // TWO OF THE FOUR AXES CANNOT BE MATCHED, AND THE PRESS SAYS SO. The
@@ -2096,8 +2102,8 @@ void EchoJayEditor::MatchPanel::advanceTrail (juce::Rectangle<int> plot,
     //                                                46.88 Hz at 48k
     //     fade    = exp (-ln (20) / (3 * hopRate))   three seconds to 5%
     //             = 0.9772 at 44.1 kHz, 0.9790 at 48 kHz
-    const double sr      = owner != nullptr && owner->processorRef.getSampleRate() > 0.0
-                             ? owner->processorRef.getSampleRate() : 44100.0;
+    const double sr      = host != nullptr && host->streamSampleRate() > 0.0
+                             ? host->streamSampleRate() : 44100.0;
     const double hopRate = sr / (double) MeterEngine::kVisHopSamples;
     const float  kTrailFade = (float) std::exp (-std::log (20.0) / (3.0 * hopRate));
     // BOTH 1.0 BECAUSE THE APPROVED PICTURE IS THE OPAQUE ONE. Until now the
@@ -2425,7 +2431,7 @@ static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
 
 void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
 {
-    if (owner == nullptr) return;
+    if (host == nullptr) return;
     const int z = matchZoneAt (getLocalBounds(), e.getPosition());
     switch (z)
     {
@@ -2433,8 +2439,8 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
         // THE MIX PICKER CANNOT PLACE A REFERENCE and the reference picker
         // writes into the slot that is already the reference side, which is why
         // no pick can swap the two roles.
-        case 2: owner->openMatchMixPicker(); break;
-        case 3: owner->openReferenceBrowser (owner->matchRefIsTop_); break;
+        case 2: host->openMixPicker(); break;
+        case 3: host->openReferenceBrowser (host->matchRefIsTop()); break;
         // PLAYBACK IS THE COMPARE DUAL-STREAM, not the A/B path: both streams
         // are already rolling and analysed, so swapping is click-free and
         // sample-aligned.
@@ -2450,13 +2456,13 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
         case 5:
         {
             const bool isRef   = (z == 5);
-            const int  slotIdx = isRef ? (owner->matchRefIsTop_ ? 0 : 1)
-                                       : (owner->matchRefIsTop_ ? 1 : 0);
+            const int  slotIdx = isRef ? (host->matchRefIsTop() ? 0 : 1)
+                                       : (host->matchRefIsTop() ? 1 : 0);
             const auto R    = echojay::matchPageLayout (getLocalBounds());
             auto       lane = (isRef ? R.refWave : R.mixWave).withTrimmedBottom (9);
             const auto btn  = echojay::matchWaveTransport (lane, isRef);
             const auto wave = echojay::matchWaveLane (lane, isRef);
-            const auto& s   = isRef ? *owner->matchSlots().ref : *owner->matchSlots().mix;
+            const auto& s   = isRef ? *host->matchSlots().ref : *host->matchSlots().mix;
 
             // A LIVE SIDE HAS NO STORED STREAM, so neither gesture means
             // anything on it: toggleComparePlay says so in its own comment and
@@ -2464,9 +2470,9 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
             if (s.kind == CompareSlotState::Kind::Live) break;
 
             if (btn.contains (e.getPosition()))
-                owner->toggleComparePlay (slotIdx == 0);
+                host->toggleComparePlay (slotIdx == 0);
             else if (wave.contains (e.getPosition()))
-                owner->seekCompareStream (slotIdx,
+                host->seekCompareStream (slotIdx,
                                           echojay::matchWaveSeekFraction (wave, e.getPosition().x));
             repaint();
             break;
@@ -2532,10 +2538,10 @@ void EchoJayEditor::MatchPanel::timerCallback()
     // THE CLOUDS STEP EVERY TICK, which is what makes a LIVE side come alive
     // for free: its measurements change, so its targets move, so its points
     // chase them. Nothing here smooths that into stillness.
-    if (owner != nullptr && isVisible())
+    if (host != nullptr && isVisible())
     {
         // THE ONE BUILD OF THE TICK. paint reads what this stores.
-        tickSides      = owner->buildMatchSides();
+        tickSides      = host->buildMatchSides();
         tickSidesValid = true;
         // The trail advances once per TICK, never once per repaint: a hover
         // must not run the history faster than time.
@@ -2571,9 +2577,9 @@ void EchoJayEditor::MatchPanel::timerCallback()
 
 bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)
 {
-    if (k == juce::KeyPress::escapeKey && owner != nullptr)
+    if (k == juce::KeyPress::escapeKey && host != nullptr)
     {
-        owner->setRefSubTab (echojay::RefSubTab::Compare);
+        host->goBackToCompare();
         return true;
     }
     // RETURN AND SPACE PRESS THE BUTTON. It is painted rather than a child, so
@@ -2587,3 +2593,154 @@ bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)
     return false;
 }
 
+
+
+// =================================================================================================
+//  MatchHost (A0b, 28 Oct 2026) - the editor answering the Match tab's one door
+// =================================================================================================
+//
+// They live in THIS file rather than PluginEditor.cpp on purpose: they exist for the Match tab, they
+// are read beside the code that calls them, and the next person changing the boundary changes one
+// file. The four that refuse are the ones whose other half is not built yet; each says so in words,
+// because a stub that quietly succeeds is how a caller comes to believe something happened.
+
+const CaptureSnapshot* EchoJayEditor::latestCapture() const
+{
+    const auto snaps = processorRef.getSnapshots();          // by value: kept below for the caller
+    if (snaps.empty()) return nullptr;
+    latestCaptureCache_ = snaps.back();
+    return &latestCaptureCache_;
+}
+
+const CaptureSnapshot* EchoJayEditor::verifyCapture() const
+{
+    // K6's closed loop takes a SECOND capture after the plan has been applied, and nothing takes one
+    // yet. Null is the honest answer and C2 says what it means: "no verify capture exists", which is
+    // not the same as "nothing changed".
+    return nullptr;
+}
+
+const ReferenceResult* EchoJayEditor::selectedReference() const
+{
+    // WHICH slot is the reference is matchRefIsTop_'s business and matchSlots answers it; the slot
+    // then names the reference by INDEX INTO getReferences(), which is the convention
+    // applyReferenceToSlot writes and the browser reads. Matching on the NAME instead would break
+    // the moment two references share one, and two files called "master.wav" is the normal case.
+    const auto pair = matchSlots();
+    if (pair.ref == nullptr || pair.ref->kind != CompareSlotState::Kind::Reference) return nullptr;
+    const auto refs = processorRef.getReferenceAnalyser().getReferences();
+    if (pair.ref->index < 0 || pair.ref->index >= (int) refs.size()) return nullptr;
+    selectedRefCache_ = refs[(size_t) pair.ref->index];   // by value: kept here for the caller
+    return &selectedRefCache_;
+}
+
+std::vector<echojay::MatchLink> EchoJayEditor::liveLinks() const
+{
+    std::vector<echojay::MatchLink> out;
+    for (const auto& li : processorRef.getLinkSlotInfos())
+    {
+        echojay::MatchLink m;
+        m.uid  = li.uid;
+        m.name = processorRef.resolveLinkDisplayName (li.uid).isNotEmpty()
+                     ? processorRef.resolveLinkDisplayName (li.uid) : li.name;
+        // NO ROLE HERE, DELIBERATELY. The channel's role is the run record's to know (C6 §1 settles
+        // the same question for taste events: two sides sending one fact is how they disagree).
+        // Nothing in this process holds a trustworthy role for a Link, so this leaves it empty
+        // rather than inventing one from a track name.
+        m.framesReceived = li.framesRead;
+        if (li.dialCapable) m.caps.add ("dial_step");
+        if (li.connected)   m.caps.add ("link_meters");
+        out.push_back (std::move (m));
+    }
+    return out;
+}
+
+bool EchoJayEditor::pickMixSlot (const juce::String& name, juce::String& why)
+{
+    // BY NAME, per MATCH_SCREEN_CONTRACT §2B - never by which bar is on top. The side effects of a
+    // pick (ending codec mode, stopping and restarting the stream, redefining AI Compare's subject)
+    // belong to the editor and stay here, which is the whole reason this is a host call.
+    for (const auto& snap : processorRef.getSnapshots())
+        if (snap.name == name)
+        {
+            CompareSlotState next;
+            next.kind  = CompareSlotState::Kind::Snapshot;
+            next.label = snap.name;
+            matchApplyMixSlot (next);
+            return true;
+        }
+    why = "there is no capture called \"" + name + "\" to put on the mix side";
+    return false;
+}
+
+bool EchoJayEditor::pickReferenceSlot (const juce::String& name, juce::String& why)
+{
+    const auto refs = processorRef.getReferenceAnalyser().getReferences();
+    for (int i = 0; i < (int) refs.size(); ++i)
+        if (refs[(size_t) i].name == name)
+        {
+            applyReferenceToSlot (matchRefIsTop_, i);
+            return true;
+        }
+    why = "there is no reference called \"" + name + "\" in this session";
+    return false;
+}
+
+void EchoJayEditor::setAudible (echojay::MatchRefSide side)
+{
+    toggleCompareAudible (side == echojay::MatchRefSide::Top);
+}
+
+void EchoJayEditor::postToSessionChat (const juce::String& kind, const juce::var&)
+{
+    // U2 builds the Whole session chat. Until it exists there is nowhere to post to, and saying so is
+    // better than dropping a card on the floor.
+    EchoJay_NSLog (("EJMatch: a \"" + kind + "\" card was offered to the Whole session chat, which is "
+                    "not built yet (U2) - nothing was posted").toRawUTF8());
+}
+
+void EchoJayEditor::draftPlan (const juce::var&,
+                               std::function<void (bool, juce::String, juce::String)> cb)
+{
+    if (cb) cb (false, {}, "the plan road is not built yet (A2), so Make a plan has nowhere to send "
+                           "this - the report is still yours to read");
+}
+
+void EchoJayEditor::openSessionChatAt (const juce::String&)
+{
+    EchoJay_NSLog ("EJMatch: asked to open the Whole session chat at a plan, which is not built yet (U2)");
+}
+
+/** TRUE, AND IT IS COMPILE-TIME TRUE. "Is this the V2" has a real answer here because the Link is a
+    separate target with its own editor (LinkEditor): nothing that runs this class is a Link. It is
+    still a host call rather than a constant in the page, because the page must not be the thing that
+    knows which binary it is in - that is how a shared front end grows two behaviours. */
+bool EchoJayEditor::isV2() const        { return true; }
+bool EchoJayEditor::agentOn() const     { return agentApprovalMode() != AgentApproval::Off; }
+bool EchoJayEditor::hasCap (const juce::String& cap) const
+{
+    // The plugin has no capability LIST of its own - capabilities are what the server sends the
+    // model. What this build can actually answer for are its own roads, so it answers those and
+    // says no to anything else rather than guessing yes.
+    if (cap == "real_editor")   return ChainHost::devModeActive();
+    if (cap == "live_view")     return echojay::kShadowViewEnabled;
+    if (cap == "match")         return true;
+    return false;
+}
+juce::String EchoJayEditor::pluginVersion() const { return JucePlugin_VersionString; }
+
+echojay::SpectralEvidence EchoJayEditor::slotSpectralEvidence (const CompareSlotState& slot) const
+{
+    return getSlotSpectralEvidence (slot);
+}
+
+double EchoJayEditor::streamSampleRate() const { return processorRef.getSampleRate(); }
+
+/** BOUNDS-CHECKED, because the index comes from the page. cmpStream is two entries and an out of
+    range slot used to be a read past them; the page asking about a third slot now gets "not
+    playing" rather than whatever sat after the array. */
+bool EchoJayEditor::compareSlotPlaying (int slotIdx) const
+{
+    if (slotIdx < 0 || slotIdx >= 2) return false;
+    return processorRef.cmpStream[slotIdx].playing.load();
+}
