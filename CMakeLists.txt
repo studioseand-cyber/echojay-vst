@@ -159,6 +159,12 @@ target_sources(EchoJay PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    # A0 (27-28 Oct 2026): the Match tab's implementation, carved out of PluginEditor.cpp with no
+    # behaviour change and K's to edit from here. docs/CONTRACT_MATCH_HOST_2026-10-27.md is the
+    # boundary it serves; EJMatchTab.h is that contract in code and must never include PluginEditor.h.
+    Source/EJMatchTab.cpp
+    Source/EJMatchTab.h
+    Source/EJCompareMenuIds.h
     Source/ChainHost.cpp
     Source/ChainHost.h
     Source/ChainPluginPicker.h

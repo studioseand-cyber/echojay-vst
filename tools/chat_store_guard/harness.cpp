@@ -4044,6 +4044,40 @@ int main()
         check (! inlineNeedsReopen ({ -1, false, "", false, -1, "" }, -1, linkA),
                "IV6 with no slot selected there is nothing to open, on any rack",
                "leave it alone");
+
+        // ---- AN INLINE EDITOR IS NOT A ROAD (27 Oct 2026, the RE15 red) -------------------------
+        //
+        // The same mistake as IV1, one floor along: IV1 was "a slot index is not a rack", this is
+        // "an editor is not the road it is on". After the Link took its own editor back, the
+        // automatic path refused to grab it again (correctly) and fell through to the copy road, so
+        // a COPY of that plugin sat on screen for that slot of that rack. Every term of the old test
+        // was satisfied, so the press answered "leave it alone" and the V2 could never get the real
+        // editor back - RE15 went 0 of 3 in the same run as RE14 went 3 of 3.
+        //
+        // IV7 IS THE KNOWN-BAD CASE, through the test as it stood this afternoon.
+        const InlineViewState copyOnScreen { 0, true, linkA, false, -1, "", /*inlineIsLent*/ false };
+        const InlineViewState realOnScreen { 0, true, linkA, false, -1, "", /*inlineIsLent*/ true  };
+        check (! inlineNeedsReopen (copyOnScreen, 0, linkA),
+               "IV7 the test WITHOUT the road term answers \"leave it alone\" with a COPY on screen - "
+               "that is the RE15 red in one line, and IV8 is the same state asked properly",
+               "known-bad reproduced");
+        check (inlineNeedsReopen (copyOnScreen, 0, linkA, /*wantLent*/ true),
+               "IV8 a press that may have the LINK'S OWN editor re-opens when a COPY is on screen: the "
+               "press is a request for the real plugin and a copy answers a different question",
+               "re-open");
+        check (! inlineNeedsReopen (realOnScreen, 0, linkA, /*wantLent*/ true),
+               "IV9 ...but it does NOT re-open when the real editor is already the one on screen - "
+               "otherwise every press would destroy a working editor and build it again",
+               "leave it alone");
+        check (! inlineNeedsReopen (copyOnScreen, 0, linkA, /*wantLent*/ false),
+               "IV10 and a REFRESH TICK leaves the copy alone: upgrading a copy to the real editor is "
+               "something the user asks for, never something a settle does behind him",
+               "leave it alone");
+        check (inlineNeedsReopen ({ -1, false, "", true, 2, linkA, /*inlineIsLent*/ false }, 2, linkA,
+                                  /*wantLent*/ true),
+               "IV11 a POPOUT holding a copy does not cover a press for the real one either - the same "
+               "term, in the floating window, which is where IV5a's fault lived too",
+               "re-open");
     }
 
     // ================================================================================================
@@ -4082,6 +4116,15 @@ int main()
         check (mayTakeLentEditor (true, false),
                "RV4 and a press with nothing revoked is the ordinary open, unchanged",
                "take it");
+        // RV5 IS LV11'S LESSON, held as a claim about what this answer MEANS (28 Oct 2026). The
+        // first cut read it as "refuse the lease and carry on", and carrying on meant the copy road
+        // opened a copy of the Link's plugin - which LV11 measured in the V2's own output. There is
+        // no second predicate to test here, so the leg pins the pair that matters: an automatic open
+        // under a revoke may do NOTHING, while the press may do everything.
+        check (! mayTakeLentEditor (false, true) && mayTakeLentEditor (true, true),
+               "RV5 under a standing revoke the automatic open is refused outright - no lease AND no "
+               "copy, the pane stays empty - while his press still gets the real editor back",
+               "nothing automatic, everything on a press");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

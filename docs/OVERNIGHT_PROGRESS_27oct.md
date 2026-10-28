@@ -141,3 +141,40 @@ Three failures, two printed: `SCEN A4 FAIL` arrived with stdout noise ahead of i
 (`eMacOS_Cocoa_Runtime eInit_RM ...`) and the `^  ROW .*FAIL` pattern did not match it. Round 15's
 printer matches every shape of failing row. A verdict line that says 3 and a list that shows 2 is the
 kind of thing that gets read as "two reds".
+
+---
+
+## 27 Oct, evening: the queue after the real editor (A0 and what K's branch needs)
+
+Sean's go-ahead, 27 Oct evening: the `EJMatchTab` extraction and the `k-base-1` tag on 28 Oct, after the
+real-editor gate, with a gate of their own. K starts today on the zero-conflict work from `cea66b4e`.
+
+- [x] **A0.1 C2, the Match host boundary** - `docs/CONTRACT_MATCH_HOST_2026-10-27.md`, copy in
+      `FOR_REVIEW_22oct`. The whole `MatchHost` interface (including the calls K asked for:
+      `openReferenceBrowser`, `seekCompareStream`, `verifyCapture`, `postToSessionChat`,
+      `openSessionChatAt`, `pluginVersion`), file ownership, the `match_report` payload, and §5 the hop
+      accumulator.
+- [x] **A0.2 C5, do the three G1 ops reach a Link** - `FOR_B_C5_GAIN_OPS_TO_A_LINK_2026-10-27.md`.
+      **All three do.** `set_pre_gain` and `set_io` ride the chain-edit channel with sidecar read-backs;
+      `set_rack_out` is NOT an edit op - routed before `translate` to `setRackOutDb`, which writes the
+      control-channel `gainDb`, clamps +/-24 dB, confirms from the registry row within 3 s and has its own
+      `linkGain` undo kind. My first draft said it did not reach a Link at all, concluding from the silence
+      of the op table and the control keys; corrected, and B is holding for the corrected version.
+- [ ] **A0.3 the extraction** - `EJMatchTab.*` behind `MatchHost`, no behaviour change, the Match rows of
+      `mapfps_test` and `ui_guard` green as they are. 28 Oct, its own gate.
+- [ ] **A0.4 cut `k-base-1`** once the extraction passes, and tell K.
+- [ ] **The hop accumulator** (C2 §5), K's specification, mine to build: one 60-byte frame per
+      sample-counted 100 ms LUFS block, both sides, 20-minute cap, read at `stopCapture` with no lock.
+      It is a fourth consumer of `perOct`, tapped at the same line as the other three.
+- [ ] **A real-time allocation already in that function**: `allBlocks.push_back` runs once per hop for the
+      whole capture, unbounded, on the audio thread. Found while siting the accumulator. Not K's, not the
+      contract's, mine.
+- [ ] **A1** remaining-work §2 (the dial as its own step, slot dial, dial ranges, `clip_drive`), then
+      **A2** U1, the plan card, against B's C1.
+
+- [ ] **The pre-chain band tap** (C2 §5.1, Sean approved 27 Oct evening): a second MeterEngine on the V2's
+      rack INPUT, fed only inside the `Capturing` branch, with its own hop series on the same 100 ms grid.
+      `P_bus` comes from `hopFramesRackIn` when non-empty, else from `hopFrames` with the bus trim added
+      back, and `match_report.busTap` says which. Costs a second 2048-point FFT per block while capturing,
+      nothing when idle.
+- [ ] **C2 §4 payload**: `sharePct` (not normalised), per-band `coverage`, `preFaderCaveat`, `busTap`.

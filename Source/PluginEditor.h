@@ -3705,6 +3705,12 @@ private:
             means - so this answer only ever decides what the panel does on its own. */
         std::function<bool(int slot0)> lentReopenSuppressed;
 
+        /** WHY NOT, in words, for the press that opened nothing. Same question as
+            canShowSlotEditorHere and the same terms, but it answers with the term that refused
+            rather than with false - and it is called only when a deliberate press has already been
+            turned away, so it costs nothing on a refresh tick. */
+        std::function<juce::String(int slot0)> whyNotShowHere;
+
         /** THE RACK SELECTOR. It lives on the PANEL, not on the editor, and
             that is the fix for the bug that hid it: as a panel child its
             visibility follows the panel's automatically, so there is ONE
@@ -4310,11 +4316,28 @@ private:
             // did and falls out of the branch below.
             const bool revokeStands = lentReopenSuppressed != nullptr && lentReopenSuppressed (i);
             const bool mayTakeLent   = echojay::mayTakeLentEditor (deliberate, revokeStands);
+            // ---- AND A REVOKE STOPS THE WHOLE OPEN, NOT JUST THE LEASE (28 Oct 2026, LV11) -----
+            //
+            // My first cut refused only the LEASE here and let the rest of this function run, so the
+            // COPY ROAD picked the slot up instead - and LV11 caught what that costs: the V2's own
+            // output moved by 0.0025 where it had moved by exactly 0.000000000 the round before, on
+            // the same floor. A copy of a Link's plugin had started where none used to be, which is
+            // precisely the road Sean's "the copy road stays untouched" rule protects.
+            //
+            // So a standing revoke means NOTHING opens. That is also what the revoke's own line
+            // promises the reader - "this window will not re-open it by itself; a press will" - and
+            // closeAllEditors above has already cleared the pane, so the state is honest: empty
+            // until he asks. A press clears the suppression before this is reached, takes the lease,
+            // and onCreateLentEditor's revoke-and-retake closes the Link's own window on the way.
             if (! mayTakeLent)
-                EchoJay_NSLog (("EJPane: NOT taking the Link's editor for slot " + juce::String (i + 1)
-                                + " back by itself - it was revoked for this slot and only a press "
-                                "asks for it again").toRawUTF8());
-            if (onCreateLentEditor && mayTakeLent)
+            {
+                EchoJay_NSLog (("EJPane: NOT re-opening slot " + juce::String (i + 1)
+                                + " by itself - it was revoked for this slot, so this window shows "
+                                "nothing for it (not even a copy) until a press asks again").toRawUTF8());
+                inlineSlot = -1;
+                return;
+            }
+            if (onCreateLentEditor)
             {
                 juce::String uid, why; int slot1 = 0; unsigned token = 0; void* lentView = nullptr;
                 juce::AudioProcessorEditor* lent = nullptr;
@@ -4875,6 +4898,24 @@ private:
                 const bool lendable = canShowSlotEditorHere != nullptr && canShowSlotEditorHere (i);
                 if (! lendable && !(editingSession && i == sessionSlot))
                 {
+                    // ---- AND A PRESS THAT GOES NOWHERE SAYS SO (27 Oct 2026, the RE15 hunt) -----
+                    //
+                    // RE15 failed three rounds running and the log held NOTHING at the moment of the
+                    // press: every branch that can swallow a press - this early return, and the
+                    // reopen test below - was silent, so three different explanations all fitted the
+                    // evidence equally and I guessed twice. A press is a person asking for something
+                    // and getting nothing; that is worth one line every time it happens. The refresh
+                    // ticks stay silent (they ask this question constantly), which is why it is
+                    // gated on `deliberate`.
+                    if (deliberate)
+                        EchoJay_NSLog (("EJPane: a PRESS on slot " + juce::String (i + 1) + " of "
+                                        + (viewRackUid.isEmpty() ? juce::String ("the own rack") : viewRackUid)
+                                        + " stopped at the remote gate and opened nothing - lendable=n"
+                                        + (whyNotShowHere != nullptr ? " (" + whyNotShowHere (i) + ")" : juce::String())
+                                        + ", editingSession=" + juce::String (editingSession ? "y" : "n")
+                                        + ", sessionSlot=" + juce::String (sessionSlot)
+                                        + ", inlineIsLent=" + juce::String (inlineIsLent ? "y" : "n")
+                                        + ", inlineSlot=" + juce::String (inlineSlot)).toRawUTF8());
                     popBtn.setVisible(false);
                     resized();   // editBtn visibility follows the selection
                     repaint();
@@ -4886,9 +4927,16 @@ private:
             // floating window first), and keeping that is the difference between adding the rack to
             // this decision and quietly changing what a press does. The REBUILD's copy of the test
             // does count a popout, exactly as it did before today.
+            // ---- A PRESS ASKS FOR THE REAL ONE, AND A COPY IS NOT IT (27 Oct 2026, RE15) -------
+            // wantLent is true exactly when this window may show the Link's own editor for this
+            // slot, which is what `lendable` above answered. Without this term a copy left on
+            // screen by the automatic fall-through satisfied every part of the test and the press
+            // did nothing at all - the V2 could not take the editor back once the Link had it.
+            const bool wantLent = remote && canShowSlotEditorHere != nullptr
+                               && canShowSlotEditorHere (i);
             if (echojay::inlineNeedsReopen ({ inlineSlot, inlineEditor != nullptr, inlineRackUid,
-                                              /*havePopout*/ false, -1, {} },
-                                            i, viewRackUid))
+                                              /*havePopout*/ false, -1, {}, inlineIsLent },
+                                            i, viewRackUid, wantLent))
                 showInline(i, deliberate);
             // NO POP-OUT OVER A LENT EDITOR: floating it would be a second reparent of the plugin's
             // own view, and one move is the whole rule (reparent keeps the window, 26 Oct).
@@ -5181,9 +5229,13 @@ private:
                     statusText = hint;
                 restingHint_ = hint;
             }
+            // wantLent is FALSE here on purpose: a refresh tick does not upgrade a copy to the
+            // Link's own editor. Only a press does that (see selectSlot), because tearing a working
+            // editor down and building another one is a thing the user asked for or nothing at all.
             else if (echojay::inlineNeedsReopen ({ inlineSlot, inlineEditor != nullptr, inlineRackUid,
-                                                   popout != nullptr, popoutSlot, popoutRackUid },
-                                                 selectedIdx, viewRackUid))
+                                                   popout != nullptr, popoutSlot, popoutRackUid,
+                                                   inlineIsLent },
+                                                 selectedIdx, viewRackUid, /*wantLent*/ false))
                 showInline(selectedIdx);
             resized();   // header visibility may have changed — re-assert clip rect
             repaint();

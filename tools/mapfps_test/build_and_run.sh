@@ -81,18 +81,51 @@ trap 'rm -rf "$SCRATCH"' EXIT
 python3 - "$SCRATCH" <<'PYEOF'
 import json, sys, shlex, subprocess, os
 scratch = sys.argv[1]
+# ---- WHICH TREE'S ARCHIVE (28 Oct 2026) -----------------------------------------------------
+# The path below was hardcoded to build/, and tonight that archive is routinely DELETED: a header
+# change means removing the archives in build, build-guards and build-release, and only the tree
+# being gated is rebuilt. So this harness failed to COMPILE and reported exit 1, which reads as a
+# red row rather than as "nothing to link against".
+#
+# EJ_MAPFPS_LIB names the archive to link; the default is the old path, so an existing caller is
+# unaffected. build-quick is the usual answer (arm64, no LTO - the same tree the fast guards use).
+libPath = os.environ.get('EJ_MAPFPS_LIB',
+                         'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a')
+if not os.path.exists(libPath):
+    sys.exit("mapfps_test: no archive to link at '%s'. Build one (cmake --build build-quick "
+             "--target EchoJay) or set EJ_MAPFPS_LIB to a tree that has one." % libPath)
 cc = json.load(open('build/compile_commands.json'))
 entry = [e for e in cc if e['file'].endswith('PluginEditor.cpp')][0]
 args = shlex.split(entry['command'])
-out, skip = [], False
+# ---- AND THE ARCHES MUST MATCH THE ARCHIVE (28 Oct 2026) ------------------------------------
+# The flags are lifted from a UNIVERSAL build, so they carry -arch x86_64 as well as -arch arm64.
+# Link those against an arm64-only archive (build-quick's, the fast-guard tree) and the only thing
+# that comes back is "symbol(s) not found for architecture x86_64" - which reads like a missing
+# symbol and is really a missing slice. Ask the archive what it holds and keep only those arches.
+# tools/hosted_exit_probe/build_and_run.sh does the same thing for the same reason.
+try:
+    have = subprocess.run(['lipo', '-archs', libPath], capture_output=True, text=True,
+                          check=True).stdout.split()
+except Exception:
+    have = []
+out, skip, dropped = [], False, []
 for a in args[1:]:
-    if skip: skip = False; continue
+    if skip:
+        if skip == 'arch':
+            if have and a not in have: dropped.append(a)
+            else: out += ['-arch', a]
+            skip = False; continue
+        skip = False; continue
+    if a == '-arch': skip = 'arch'; continue
     if a in ('-c', '-o'): skip = (a == '-o'); continue
     if a.endswith('PluginEditor.cpp') or a.endswith('.o'): continue
     out.append(a)
+if dropped:
+    print("mapfps_test: the archive holds %s, so dropping -arch %s"
+          % ('/'.join(have), ' and -arch '.join(dropped)))
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/mapfps_test/mapfps_test.cpp',
-        'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
+        libPath,
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
         '-framework','IOKit','-framework','Security','-framework','WebKit',

@@ -26,7 +26,12 @@ struct EchoJayTabStripTestAccess
     static void toSettings (EchoJayEditor& e) { e.switchToTab (EchoJayEditor::Tab::Settings, true); }
     static EchoJayAPI& api (EchoJayEditor& e) { return e.api; }
     static int headingY (EchoJayEditor& e) { return e.settingsPluginsHeadingY_; }
-    static std::array<juce::ToggleButton*, 4> toggles (EchoJayEditor& e) { return e.chainSuggestionToggles(); }
+    // FIVE SINCE THE REAL EDITOR (27 Oct 2026). The array this forwards is the product's own list and
+    // it grew a member; this copy said four and the guard stopped COMPILING, which is the loudest a
+    // stale test access can be and still cheap. The fifth is the real-editor switch, and legs (1b) and
+    // (1c) below are what it is worth: a switch that must not be offered in an installed build.
+    static std::array<juce::ToggleButton*, 5> toggles (EchoJayEditor& e) { return e.chainSuggestionToggles(); }
+    static juce::ToggleButton& realEditor (EchoJayEditor& e) { return e.realEditorToggle; }
     static juce::Component& scanBtn (EchoJayEditor& e) { return e.settingsScanBtn; }
 };
 using A = EchoJayTabStripTestAccess;
@@ -83,11 +88,19 @@ int main()
                      t->getButtonText().substring (0, 20).toRawUTF8(), b.toString().toRawUTF8());
     }
     const int hy = A::headingY (*ed);
-    std::printf ("    toggles placed=%d (list size %d)  last bottom=%d  \"YOUR PLUGINS\" painted at y=%d\n",
-                 placed, (int) tg.size(), lastBottom, hy);
-    check (placed == (int) tg.size(),
-           "every toggle in the shared list was actually placed by resized()",
-           juce::String (placed) + " of " + juce::String ((int) tg.size()));
+    // ---- COUNTED AGAINST WHAT THIS BUILD OFFERS (27 Oct 2026) ------------------------------------
+    // The claim is "nothing the user can see is left unplaced". A toggle this build deliberately does
+    // NOT offer - the real-editor switch outside dev mode - is not a counter-example to that, and
+    // counting it would turn Sean's "hidden in installed builds" rule into a red. So the denominator
+    // is the visible ones, and the hidden one gets its own two legs below rather than disappearing.
+    int offered = 0;
+    for (auto* t : tg) if (t != nullptr && t->isVisible()) ++offered;
+    std::printf ("    toggles placed=%d of %d offered (list size %d)  last bottom=%d  \"YOUR PLUGINS\" painted at y=%d\n",
+                 placed, offered, (int) tg.size(), lastBottom, hy);
+    check (placed >= offered,
+           "every toggle this build OFFERS was actually placed by resized()",
+           juce::String (placed) + " placed, " + juce::String (offered) + " offered, "
+               + juce::String ((int) tg.size()) + " in the list");
     check (hy >= 0, "Settings painted, so the heading recorded where it landed", juce::String (hy));
     check (hy >= lastBottom,
            "\"YOUR PLUGINS\" is painted BELOW the last toggle, not on top of it",
@@ -96,6 +109,36 @@ int main()
     check (hy <= A::scanBtn (*ed).getY(),
            "the heading still sits above the scan button it heads (the step did not overshoot)",
            "heading y=" + juce::String (hy) + " vs scan button y=" + juce::String (A::scanBtn (*ed).getY()));
+
+    // ---- (1b) THE REAL-EDITOR SWITCH IS NOT OFFERED IN AN INSTALLED BUILD (27 Oct 2026) ---------
+    //
+    // Sean's standing condition for the whole real-editor road: *"the switch stays default off and
+    // hidden from Settings in installed builds"*. Until now nothing held that but the line of code
+    // that does it (`realEditorToggle.setVisible (ChainHost::devModeActive())`), so a careless
+    // addAndMakeVisible anywhere would have shipped the switch to him with no row going red.
+    //
+    // Both directions are available to this guard, which is why the leg is worth having: it reads
+    // devModeActive() and asserts the visibility that the build must have EITHER way.
+    {
+        const bool dev = ChainHost::devModeActive();
+        const bool shown = A::realEditor (*ed).isVisible();
+        check (shown == dev,
+               dev ? "dev mode is on in this build, so the real-editor switch IS offered in Settings"
+                   : "the real-editor switch is NOT offered in Settings: this is not a dev build, and "
+                     "an installed build must never show it (his standing condition)",
+               "devModeActive=" + juce::String ((int) dev) + " visible=" + juce::String ((int) shown));
+        // ---- (1c) ...AND IT IS OFF UNTIL SOMETHING TURNS IT ON --------------------------------
+        // This harness runs in its own ECHOJAY_STATE_HOME, so the switch file cannot exist: what is
+        // measured is the DEFAULT, which is the half of his condition the visibility leg does not
+        // cover. A build that read the switch as on with no file would put every live view on the
+        // real road for every user at once.
+        check (! echojay::realEditorSwitchOn(),
+               "with no switch file in this isolated state home, the real editor reads OFF - the "
+               "default his condition asks for",
+               "switchOn=" + juce::String ((int) echojay::realEditorSwitchOn()));
+        check (! A::realEditor (*ed).getToggleState(),
+               "...and the tick in Settings agrees with it, so the two cannot drift apart");
+    }
 
     // ---- (2) the two dial settings are mutually exclusive, in the saved state ----
     auto& api = A::api (*ed);

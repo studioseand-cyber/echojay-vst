@@ -9558,7 +9558,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::stringstream ss; ss << f.rdbuf();
                 return ss.str();
             };
-            const std::string cpp = slurp ("Source/PluginEditor.cpp");
+            // ---- THE EDITOR IS TWO FILES SINCE A0 (28 Oct 2026) ------------------------------
+            // The Match tab's implementation moved to Source/EJMatchTab.cpp behind MatchHost, so a
+            // text pin that reads only PluginEditor.cpp stopped finding MatchPanel's members - rs
+            // PIN15 (Escape returns to Compare) went red on a move that changed no behaviour. The
+            // pins are about the EDITOR, not about a filename, so they read both halves. The next
+            // carve cannot break them for the same reason.
+            const std::string cpp = slurp ("Source/PluginEditor.cpp")
+                                  + "\n" + slurp ("Source/EJMatchTab.cpp");
             const std::string hdr = slurp ("Source/PluginEditor.h");
             // A top-level function's body: from its signature to the first
             // closing brace in column 0 after it.
@@ -14658,9 +14665,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // A TEXT PIN because the drawing itself cannot be exercised here: the
         // gate never links the editor. It reads the three painters' own bodies.
         {
+            // A0 (28 Oct 2026): the three painters live in EJMatchTab.cpp now - the editor is two
+            // files and this pin is about the painters, not about which file holds them.
             std::ifstream fed ("Source/PluginEditor.cpp");
             std::stringstream sed_; sed_ << fed.rdbuf();
-            const auto src = codeOnly (juce::String (sed_.str()));
+            std::ifstream fmt ("Source/EJMatchTab.cpp");
+            std::stringstream smt; smt << fmt.rdbuf();
+            const auto src = codeOnly (juce::String (sed_.str()) + "\n" + juce::String (smt.str()));
             const auto loud   = functionBody (src, "void matchPaintLoudness");
             const auto dyn    = functionBody (src, "void matchPaintDynamics");
             const auto stereo = functionBody (src, "void matchPaintStereo");

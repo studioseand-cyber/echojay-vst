@@ -2962,6 +2962,13 @@ int main (int argc, char* argv[])
            v2v.plugin != nullptr ? juce::String ("loaded") : juce::String ("NOT loaded - the lifecycle rows "
                                    "will say what they could not prove"));
 
+    // RH7/RH8 ARE DEFERRED TO THE VERY END (28 Oct 2026). They close the V2's window, and on the AU
+    // road the reopen is JUCE's GENERIC editor - so after them there is no EchoJayEditor, and with it
+    // goes the ~2 Hz timer that is the only caller of refreshLinkRegistry. Four rows paid for that
+    // (R5, SCEN A4, R1b, B9) while the registry file itself held a live row the whole time. Declared
+    // here, in the scope that lives as long as the suite, assigned inside the RH block, called after
+    // the last row.
+    std::function<void()> runRH78;
     const double sr = 48000.0; const int block = 512;
     for (Track* t : { &v2, &lk1, &lk2 }) t->prepare (sr, block);
     if (v2v.plugin != nullptr) v2v.prepare (sr, block);
@@ -5116,6 +5123,22 @@ int main (int argc, char* argv[])
                     if (name == lk1.trackName || name.containsIgnoreCase ("Kick")) victim = &lk1;
                     else if (name == lk2.trackName)                                victim = &lk2;
 
+                    // ---- THE EDITOR MAY BE ON THE LINK'S OWN WINDOW, AND NOW STAYS THERE (27 Oct) ---
+                    //
+                    // RE14/RE15 leave the plugin open on the LINK'S own window, and since this
+                    // evening nothing automatic takes it back - which is the fix RE14 was red for.
+                    // So this row inherited a world where the lease is legitimately held elsewhere
+                    // and skipped with "refused: slot 1 is already open in the Link's own window".
+                    // A user in that position presses the card, so the row does too: the same door
+                    // the mouse uses (Block::onOpen -> selectSlot deliberate), and then takes the
+                    // lease. If the press is what is broken, RE15 says so in its own words rather
+                    // than this row disappearing.
+                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", lvSlot), 15000);
+                    rig.until ([&] (const juce::var& st)
+                    {
+                        return st.getProperty ("liveViewRoad", juce::var()).toString() == "real"
+                            && (int) st.getProperty ("lentSlot", juce::var()) == lvSlot;
+                    }, 8000);
                     const auto retake = noteOf (lease ("take", lvUid, lvSlot, 20000));
                     if (victim == nullptr || victim->plugin == nullptr || ! retake.contains ("real editor"))
                     {
@@ -5997,9 +6020,33 @@ int main (int argc, char* argv[])
                 // ---- RH7/RH8: THE V2's WINDOW CLOSED WHILE SHOWN, AND THE SESSION ENDING --------
                 // The window close is the editor's destructor, which is where a held lease would be
                 // left behind; the rig closes and reopens the V2's editor for real.
+                // ---- RH7/RH8 RUN LAST, BECAUSE THEY COST THE V2 ITS EDITOR (28 Oct 2026) -------
+                //
+                // On the AU road a reopen does NOT give our interface back: the plugin's own editor
+                // outlived the wrapper view, the second Cocoa-view request is refused, and JUCE
+                // builds its GENERIC AU editor instead. So after this pair there is no EchoJayEditor
+                // in the process - and with it goes the ~2 Hz timer that is the ONLY caller of
+                // refreshLinkRegistry. Every later leg then reads a link list that nothing is
+                // updating.
+                //
+                // That is what cost R5, SCEN A4, R1b and B9 three rounds in a row. The restoration's
+                // own instrument settled it: the registry FILE held "slot 0 ... active=1" while the
+                // V2 reported "NO rows at all". Not a stale mapping and not a Link that failed to
+                // register - a published list with nobody left to refresh it.
+                //
+                // Same shape as R4 this morning, one floor along, and the same answer: a row whose
+                // side effect breaks the editor runs at the END. Deferred here, called after the
+                // last row in the suite.
                 if (rowWanted ("RH7") || rowWanted ("RH8"))
+                    runRH78 = [&rig, &v2]
                 {
-                    const auto beforeRoad = road();
+                    // SELF-CONTAINED ON PURPOSE: this body runs after the block it was written in
+                    // has gone, so it may capture only what lives as long as the suite does. `road`,
+                    // `lease` and `noteOf` are that block's locals; their two lines are inlined here
+                    // rather than captured, because a dangling reference in a deferred row would be
+                    // a far worse bug than the one it is here to fix.
+                    const auto beforeRoad = rig.freshState()
+                                               .getProperty ("liveViewRoad", juce::var()).toString();
                     v2.closeEditor();
                     Rig::pump (1500);
                     v2.openEditor();
@@ -6014,13 +6061,16 @@ int main (int argc, char* argv[])
                              + "\", and the reopened window " + (alive ? "answers" : "DOES NOT answer"));
                     if (rowWanted ("RH8"))
                     {
-                        const auto tbl = noteOf (lease ("table", {}, 0));
+                        auto* o = new juce::DynamicObject();
+                        o->setProperty ("op", "table");
+                        const auto tbl = rig.send (echojay::rig::cmd::lease, juce::var (o), 10000)
+                                            .getProperty ("note", juce::var()).toString();
                         row ("RH8", tbl.contains ("one shared EchoJay table"),
                              "and after all of that, is the process-local table still sane - no lease left behind, "
                              "no instance left pointing at a window that has gone",
                              tbl);
                     }
-                }
+                };
 
                 rig.send (echojay::rig::cmd::press, args1 ("button", "real_editor_off"), 8000);
                 rhPump (300);
@@ -6179,7 +6229,31 @@ int main (int argc, char* argv[])
                           nameOut = l.getProperty ("name", juce::var()).toString(); return true; }
                 return false;
             };
+            // ---- AND IT SAYS WHAT IT CAN SEE WHILE IT WAITS (27 Oct 2026, round 16) -----------
+            //
+            // Round 15's fix (wait with the audio running) did not bring a Link back either, and
+            // "no connected Link came back within 20 s" does not say WHICH of the three things
+            // happened: no registry row at all, a row whose Active flag is off, or a row the V2
+            // has not mapped the audio of. `connected` is `snap.active && map != nullptr`, so
+            // those are genuinely different faults with one sentence between them. Every second
+            // the wait now prints the rows it can see, so the next run produces evidence instead
+            // of another guess.
+            const auto describeRows = [&] () -> juce::String
+            {
+                juce::StringArray rows;
+                if (auto* arr = rig.freshState().getProperty ("links", juce::var()).getArray())
+                    for (const auto& l : *arr)
+                        rows.add (l.getProperty ("uid", juce::var()).toString().substring (0, 10)
+                                  + " \"" + l.getProperty ("name", juce::var()).toString() + "\""
+                                  + " connected=" + juce::String ((int) (bool) l.getProperty ("connected", false))
+                                  + " active="    + juce::String ((int) (bool) l.getProperty ("active", false))
+                                  + " flowing="   + juce::String ((int) (bool) l.getProperty ("audioFlowing", false)));
+                return rows.isEmpty() ? juce::String ("the registry has NO rows at all")
+                                      : rows.joinIntoString (" | ");
+            };
             const auto giveUp = juce::Time::getMillisecondCounter() + (juce::uint32) 20000;
+            juce::String lastSeen;
+            int tick = 0;
             while (! firstConnected (fresh, freshName)
                    && juce::Time::getMillisecondCounter() < giveUp)
             {
@@ -6188,7 +6262,63 @@ int main (int argc, char* argv[])
                     for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
                     if ((i % 10) == 0) Rig::pump (10);
                 }
-                Rig::pump (300);     // the registry pass runs on the processor's 1 Hz timer
+                Rig::pump (300);
+                // ---- AND SOMETHING HAS TO ASK FOR THE REFRESH (28 Oct 2026) -------------------
+                //
+                // Two rounds of evidence say the Link list is not refreshed by a clock. The registry
+                // FILE held "slot 0 ... active=1" while the V2's published list was empty, and
+                // deferring RH7/RH8 (which cost the V2 its editor on the AU road) changed nothing.
+                // The published list comes from getLinkSlotInfos(), which only refreshLinkRegistry
+                // writes, and its callers are tab switches and apply paths - a user looking at the
+                // list is what refreshes it.
+                //
+                // So the wait does what a user does: it switches tabs. If the rows appear now, the
+                // finding is "nothing refreshes the Link list on its own", which is A's to decide on
+                // (a 1 Hz refresh in the processor, or an explicit refresh where a Link is expected).
+                // If they still do not appear, the fault is below the editor and this says so.
+                rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chat"), 8000);
+                Rig::pump (200);
+                rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chain"), 8000);
+                Rig::pump (200);
+                const auto now = describeRows();
+                if (now != lastSeen)                   // only when it CHANGES, so the log stays readable
+                {
+                    std::printf ("    waiting for a Link (%d s): %s\n", ++tick, now.toRawUTF8());
+                    lastSeen = now;
+                }
+            }
+            if (fresh.isEmpty())
+            {
+                std::printf ("    the last thing the registry said: %s\n", describeRows().toRawUTF8());
+                // ---- AND WHAT IS PHYSICALLY IN THE FILE (28 Oct 2026) -------------------------
+                //
+                // "the registry has NO rows at all" is the V2's reading of it, and that is one of two
+                // different faults: the Link never wrote a slot, or the V2 is reading a mapping that
+                // no longer corresponds to the file. The rig can open the registry itself, so it
+                // does - and then the next red says which side to go and look at.
+                int e1 = 0, fd = -1, e2 = 0;
+                const auto regDir = LinkShm::resolveDir (e1);
+                if (void* reg = LinkShm::openRegistry (regDir, fd, e2))
+                {
+                    juce::StringArray rows;
+                    for (int i = 0; i < 64; ++i)
+                    {
+                        LinkShm::SlotSnapshot snap;
+                        if (! LinkShm::readSlot (reg, i, snap)) continue;
+                        rows.add ("slot " + juce::String (i) + ": uid "
+                                  + snap.instanceUid.substring (0, 10) + " \"" + snap.displayName
+                                  + "\" active=" + juce::String ((int) snap.active)
+                                  + " ring=\"" + snap.audioFilename + "\"");
+                    }
+                    std::printf ("    the registry FILE itself (%s) holds: %s\n",
+                                 regDir.toRawUTF8(),
+                                 rows.isEmpty() ? "nothing - so the LINK never wrote a slot"
+                                                : rows.joinIntoString (" | ").toRawUTF8());
+                    LinkShm::closeRegistry (reg, fd);
+                }
+                else
+                    std::printf ("    the rig could not open the registry itself either (dir \"%s\", "
+                                 "errno %d/%d)\n", regDir.toRawUTF8(), e1, e2);
             }
             if (fresh.isEmpty())
                 std::printf ("  no connected Link came back within 20 s of re-creating the tracks - the legs "
@@ -12375,6 +12505,18 @@ int main (int argc, char* argv[])
 
     // (the live-view, RE and RH rows ran in their own slot, before anything closes the V2's window -
     //  see the note at that call. Running them here is what hid them from six passes today.)
+
+    // ---- AND NOW THE TWO THAT CLOSE THE WINDOW (28 Oct 2026) ------------------------------------
+    // RH7/RH8 are the last rows in the suite because they are the only ones that take the V2's
+    // editor away for good on the AU road: a reopen gives JUCE's generic editor, and the ~2 Hz timer
+    // that is refreshLinkRegistry's only caller goes with ours. Everything above has had a live
+    // window; these two are free to end it.
+    if (runRH78)
+    {
+        std::printf ("\n  the last two rows close the V2's window on purpose - nothing after them "
+                     "needs it\n");
+        runRH78();
+    }
 
     // ---- teardown in the host's own order ---------------------------------
     v2.closeEditor();
