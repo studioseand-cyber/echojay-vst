@@ -13,7 +13,7 @@
 //  MATCH, THE HOP-SERIES FIGURES: six-band crest, PSR and the loudest-30 window.
 // =============================================================================
 //
-// C4 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27, revision 3) sections 6 and 7, read
+// C4 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27, revision 4) sections 6 and 7, read
 // off C2 section 5's hop series: one frame per sample-counted 100 ms hop, kept
 // for the whole capture and the whole reference.
 //
@@ -31,10 +31,17 @@
 // 0 dB is a real measurement (a band that never rises above its own level), and
 // it must not be confused with "no crest".
 //
-// bandPeak IS NEVER READ HERE. It is a maximum over FFT frames, and the number of
-// frames in a hop follows the host's block size (C2 section 6), so the same audio
-// reads peakier at 128 samples than at 2048. C4 section 6 rebuilt crest on
-// bandPower alone. A crest that reads bandPeak is the defect rev 2 removed.
+// bandPeak IS NEVER READ BY bandCrest. It is a maximum over FFT frames, and the
+// number of frames in a hop follows the host's block size (C2 section 6), so the
+// same audio reads peakier at 128 samples than at 2048. C4 section 6 rebuilt
+// crest on bandPower alone. A crest that reads bandPeak is the defect rev 2
+// removed.
+//
+// CREST DECIDES NOTHING (C4 rev 4 section 6). Before the beta both crest
+// figures here are LOGGED for tuning and never shown or routed on: bandCrest
+// (V0) and bandCrestPeakOverMean (V1 as available). The second is the one place
+// bandPeak is read, and it carries the block-size bias C2 section 6 names, which
+// is why meanFramesPerHop is logged beside it.
 // =============================================================================
 
 namespace echojay
@@ -214,6 +221,55 @@ template <typename Frame>
 inline BandCrest bandCrest (const std::vector<Frame>& frames)
 {
     return bandCrest (frames, HopRange { 0, frames.size() });
+}
+
+// -----------------------------------------------------------------------------
+// CREST, LOGGED ONLY (C4 rev 4 section 6): V1 AS AVAILABLE, AND FRAMES PER HOP
+// -----------------------------------------------------------------------------
+
+/** V1 as available: per band, the median over qualifying hops of
+    10 log10 (bandPeak / bandPower). A hop with no power in the band gives no
+    ratio; a band with no ratio is nullopt. An even count takes the mean of the
+    two middle values, as psrMedian does. Before A's 256-sample cadence this
+    reads bandPeak from one FFT per host block, so it moves with the block
+    size. LOGGED, NEVER DECIDING. */
+template <typename Frame>
+inline std::array<std::optional<float>, 6> bandCrestPeakOverMean (const std::vector<Frame>& frames, HopRange w)
+{
+    std::array<std::optional<float>, 6> out {};
+    const std::size_t end = std::min (w.end, frames.size());
+    std::array<std::vector<double>, 6> r;
+    for (std::size_t h = w.begin; h < end; ++h)
+    {
+        const auto& f = frames[h];
+        if (! crestHopQualifies (f)) continue;
+        for (std::size_t b = 0; b < 6; ++b)
+            if (f.bandPower[b] > 0.0f && f.bandPeak[b] > 0.0f)
+                r[b].push_back (10.0 * std::log10 ((double) f.bandPeak[b] / (double) f.bandPower[b]));
+    }
+    for (std::size_t b = 0; b < 6; ++b)
+    {
+        if (r[b].empty()) continue;
+        std::sort (r[b].begin(), r[b].end());
+        const std::size_t n = r[b].size(), m = n / 2;
+        out[b] = (float) (n % 2 == 1 ? r[b][m] : 0.5 * (r[b][m - 1] + r[b][m]));
+    }
+    return out;
+}
+
+/** The mean bandFrames over the window's hops that hold spectral evidence:
+    the frames per hop C4 rev 4 section 6 logs beside the host block size.
+    nullopt when no hop in the window has a frame. */
+template <typename Frame>
+inline std::optional<float> meanFramesPerHop (const std::vector<Frame>& frames, HopRange w)
+{
+    const std::size_t end = std::min (w.end, frames.size());
+    double sum = 0.0;
+    int n = 0;
+    for (std::size_t h = w.begin; h < end; ++h)
+        if (frames[h].bandFrames > 0) { sum += frames[h].bandFrames; ++n; }
+    if (n == 0) return std::nullopt;
+    return (float) (sum / n);
 }
 
 // -----------------------------------------------------------------------------

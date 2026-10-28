@@ -6,22 +6,28 @@
 #include <vector>
 #include "EJMatchProposal.h"   // kMatchBandFloorDb (X1's 2 dB), juce::String
 #include "EJBandScheme.h"      // macroBandName
+#include "EJMatchWindow.h"     // HopRange, for the window powers read off a hop series
 
 // =============================================================================
 //  MATCH ATTRIBUTION: where one band move goes, how big it is, and what it says.
 // =============================================================================
 //
-// C4 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27, revision 3) sections 2 to 6 and 9.
+// C4 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27, revision 4) sections 2 to 5 and 9.
 // For one band move this:
 //   - adds each Link's own trim back (section 2);
 //   - routes the move by the rules of section 4, in order, with the 4a role table;
 //   - sizes a track or pair move by section 5;
 //   - and returns the target, the shares, valueDb, measuredDb, coverage, the
-//     sentence, the caveat flag and the discriminator flag.
+//     sentence and the caveat flag.
 //
 // ONE PLACE DECIDES (C4 section 1). The plugin runs this and sends the result;
-// the server checks bounds and never re-applies the routing, the sizing or the
-// crest test. So a rule here that differs from C4 is a rule the product ships.
+// the server checks bounds and never re-applies the routing or the sizing. So a
+// rule here that differs from C4 is a rule the product ships.
+//
+// NOTHING ROUTES ON CREST (C4 rev 4, rule 2 off before the beta). The routing
+// takes no crest input at all, so no band move can be withheld for one: rules
+// 1 and 3 to 8 are the whole of it. Crest is logged by EJMatchReport.h and
+// decides nothing; decision 4's sentence is the card's, once (EJMatchReport.h).
 //
 // PURE. No JUCE audio type, no global, no I/O. Strings are juce::String, as in
 // EJMatchProposal.h. Every sentence is C4's wording, and a pin reads it.
@@ -66,11 +72,6 @@ inline constexpr double kAttribPairSumShare = 0.7;
     taste cap: a track that needs more than 12 dB to move the mix by D is a sign
     the attribution is wrong. */
 inline constexpr float kAttribTrackLimitDb = 12.0f;
-
-/** C4 section 6, PROPOSED until MA10: a hotter band whose crest exceeds the
-    reference's by at least this is peaks, not body. Chosen for rev 1's measure,
-    and rev 2's measure has a different scale. */
-inline constexpr float kCrestMarginDb = 1.0f;
 
 /** NOT C4's. The silent floor, MeterEngine's own power floor: the value below
     which it reports -120 dB instead of taking a log, so only true digital
@@ -224,20 +225,6 @@ inline juce::String attribTooLargeSentence (const juce::String& subject, float x
          + " dB; the mix bus does it with " + attribDb (-D) + " dB.";
 }
 
-/** Section 6: the finding that replaces an EQ move. */
-inline juce::String attribPeaksFindingSentence (int band, float D, float crestDeltaDb)
-{
-    return "The " + attribBand (band) + " is " + attribDb (D) + " dB hotter than the reference and "
-         + attribDb (crestDeltaDb) + " dB peakier: the excess is peaks, not body. That's a dynamics "
-           "job; EQ would cut the body with it.";
-}
-
-/** Section 6 and plan decision 4: a cut proposed with a null crest on either side. */
-inline juce::String attribNoDiscriminatorSentence()
-{
-    return "This EQ move was proposed without the check that tells body from peaks.";
-}
-
 /** Section 9: always shown when any move is placed on a track. */
 inline juce::String attribPreFaderCaveatSentence()
 {
@@ -264,6 +251,64 @@ struct AttribLinkIn
     double frameCoverage = 0.0;   ///< 0..1: how much of the window its frames cover
 };
 
+// -----------------------------------------------------------------------------
+// WHERE P_bus CAME FROM (C2 section 5.1, C4 section 2)
+// -----------------------------------------------------------------------------
+
+/** Input: the rack-input tap (pre-chain, pre-bus-trim). Output: the bus output
+    with the bus trim added back, its chain included. */
+enum class MatchBusTap { Input, Output };
+
+/** C2 section 5.1: P_bus comes from hopFramesRackIn when it is non-empty, else
+    from hopFrames. A template over the capture so the gate can drive it with a
+    stand-in; CaptureSnapshot drops in with no adapter. */
+template <typename Capture>
+inline MatchBusTap matchBusTapOf (const Capture& c) noexcept
+{
+    return c.hopFramesRackIn.empty() ? MatchBusTap::Output : MatchBusTap::Input;
+}
+
+/** The payload's busTap value (C2 section 4). */
+inline const char* matchBusTapName (MatchBusTap t) noexcept
+{
+    return t == MatchBusTap::Input ? "input" : "output";
+}
+
+/** One series over one window, as section 2 and section 3 read it. */
+struct AttribSeriesWindow
+{
+    std::array<double, 6> power {};   ///< mean bandPower over the window's hops with frames
+    int    hopCount = 0;              ///< the series' hops inside the window
+    double frameCoverage = 0.0;       ///< hops with frames / the window's length in hops
+};
+
+/** A Link's or the bus's window figures from its hop series.
+
+    WHERE C4 IS SILENT, K's READING: the power is the mean of bandPower over the
+    hops that hold frames (bandFrames > 0 is the absence rule, C2 section 5's
+    promise 3), silent hops included, because a quiet hop is a real level. The
+    caller adds the trim back (section 2). */
+template <typename Frame>
+inline AttribSeriesWindow attribSeriesWindow (const std::vector<Frame>& frames, HopRange w)
+{
+    AttribSeriesWindow out;
+    const std::size_t end = std::min (w.end, frames.size());
+    if (w.end <= w.begin) return out;
+    int withFrames = 0;
+    std::array<double, 6> sum {};
+    for (std::size_t h = w.begin; h < end; ++h)
+    {
+        ++out.hopCount;
+        if (frames[h].bandFrames == 0) continue;
+        ++withFrames;
+        for (std::size_t b = 0; b < 6; ++b) sum[b] += (double) frames[h].bandPower[b];
+    }
+    if (withFrames > 0)
+        for (std::size_t b = 0; b < 6; ++b) out.power[b] = sum[b] / withFrames;
+    out.frameCoverage = (double) withFrames / (double) (w.end - w.begin);
+    return out;
+}
+
 /** One band move to place. */
 struct AttribIn
 {
@@ -271,15 +316,13 @@ struct AttribIn
     double busPower = 0.0;        ///< P_bus[b], ALREADY trim-corrected by the caller
     int    busHopCount = 0;
     float  D = 0.0f;              ///< measuredDb: mix minus reference; positive = mix hotter
-    std::optional<float> crestMix, crestRef;
-    bool   busInputTap = false;   ///< P_bus is the rack INPUT (C4 section 2's requested tap)
+    MatchBusTap busTap = MatchBusTap::Output;   ///< where P_bus came from: rule 3's sentence
     std::vector<AttribLinkIn> links;
 };
 
 enum class AttribTarget
 {
     None,          ///< rule 1: under X1's floor, no move
-    Finding,       ///< rule 2: peaks, not body; a finding instead of a move
     Bus,
     Track,
     Pair,
@@ -291,7 +334,8 @@ enum class AttribTarget
 enum class AttribRule
 {
     Unavailable = 0,
-    R1Floor, R2Peaks, R3Fader, R4LowCoverage, R5Unknown,
+    R1Floor,            ///< no R2: rule 2 is off before the beta (C4 rev 4)
+    R3Fader, R4LowCoverage, R5Unknown,
     R6Single, R7Pair, R8Spread,
     S5Infeasible, S5TooLarge
 };
@@ -326,11 +370,9 @@ struct AttribResult
     std::optional<double> coverage;        ///< sum of the known shares
     std::optional<float>  valueDb;         ///< x for Track and Pair, -D for Bus; nullopt for no move
     float                 measuredDb = 0.0f;   ///< D
-    std::optional<float>  crestDeltaDb;    ///< crest_mix - crest_ref, when both exist
 
     juce::String reason;          ///< C4's sentence for the target, or "" for rule 1
     bool caveat = false;          ///< a move is on a track: the pre-fader caveat shows
-    bool discriminator = false;   ///< a cut proposed with no crest check: decision 4's sentence
 };
 
 // -----------------------------------------------------------------------------
@@ -343,9 +385,6 @@ inline AttribResult attributeBandMove (const AttribIn& in)
     out.measuredDb = in.D;
     const int b = in.band;
 
-    if (in.crestMix && in.crestRef)
-        out.crestDeltaDb = *in.crestMix - *in.crestRef;
-
     // Rule 1: under X1's floor. EJMatchProposal's floor is the same 2 dB and the
     // same ">=" convention, so there is one definition of it.
     if (std::abs (in.D) < kMatchBandFloorDb)
@@ -355,16 +394,7 @@ inline AttribResult attributeBandMove (const AttribIn& in)
         return out;
     }
 
-    // Rule 2: hotter AND peakier. Boosts are not tested (C4 section 6).
-    const bool cut = in.D >= kMatchBandFloorDb;
-    if (cut && out.crestDeltaDb && *out.crestDeltaDb >= kCrestMarginDb)
-    {
-        out.target = AttribTarget::Finding;
-        out.rule   = AttribRule::R2Peaks;
-        out.reason = attribPeaksFindingSentence (b, in.D, *out.crestDeltaDb);
-        return out;
-    }
-    const bool noCheck = cut && ! (in.crestMix && in.crestRef);
+    // Rule 2 is off before the beta (C4 rev 4): there is nothing to test it on.
 
     // A D cannot exist without the mix's band power, so this is a guard and not
     // a routing rule. It says nothing rather than inventing a sentence.
@@ -398,7 +428,6 @@ inline AttribResult attributeBandMove (const AttribIn& in)
         out.rule    = r;
         out.valueDb = -in.D;
         out.reason  = why;
-        out.discriminator = noCheck;
         return out;
     };
 
@@ -407,7 +436,7 @@ inline AttribResult attributeBandMove (const AttribIn& in)
     for (const auto& k : out.known)
         if (k.share > kAttribFaderShare + kAttribShareTolerance) overOne = true;
     if (overOne || coverage > kAttribFaderCoverage + kAttribShareTolerance)
-        return toBus (AttribRule::R3Fader, in.busInputTap ? attribFaderSentenceWithTap()
+        return toBus (AttribRule::R3Fader, in.busTap == MatchBusTap::Input ? attribFaderSentenceWithTap()
                                                           : attribFaderSentenceNoTap());
 
     // Rule 4: most of the band is not on a Link.
@@ -443,7 +472,6 @@ inline AttribResult attributeBandMove (const AttribIn& in)
         if (plural) out.combinedShare = s;
         out.reason  = placedWhy;
         out.caveat  = true;
-        out.discriminator = noCheck;
         return out;
     };
 

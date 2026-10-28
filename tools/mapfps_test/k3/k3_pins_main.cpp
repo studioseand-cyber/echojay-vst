@@ -1,4 +1,4 @@
-// K3's pins on their own: the mr and mb rows of k3_pins.h, printed the way
+// K3's pins on their own: the kr and mb rows of k3_pins.h, printed the way
 // mapfps_test prints rows, so a gate or a mutant runner reads them the same.
 //
 // usage: tools/mapfps_test/k3/build_and_run.sh   (BUILD_DIR as for ma10)

@@ -17,17 +17,18 @@
 // DESIGN_MATCH_TAB rev 7 section 3 (the report and its three tiers),
 // MATCH_SCREEN_CONTRACT section 5 (the card), C2 section 4 (the match_report
 // payload, with C4's "share" where C2 wrote "ratio": C4 section 8 Q6, K's
-// proposal) and C4 rev 3 section 9 (the card lines).
+// proposal) and C4 rev 4 sections 6 and 9 (the card lines and the crest log).
 //
 // BUILT FROM THE PROPOSAL STRUCTS, NEVER FROM A MODEL REPLY (screen contract
 // section 5). Every sentence here is written by the plugin from the figures it
 // measured, so a v1 plugin can never be shown one by the server.
 //
-// CREST IS OPEN (Kathy, 28 Oct). This header assumes no crest definition. Per
-// band it reads only "crest says peaks: yes / no / unknown"
-// (MatchReportBandIn::crestSaysPeaks), and a crest number, when the caller has
-// one, is passed through to the payload unread. So the peaks finding carries no
-// "{x} dB peakier" clause: C4 section 6's sentence, without the figure.
+// CREST DECIDES NOTHING AND REACHES NO USER (C4 rev 4 section 6, Sean, 28 Oct).
+// There is no crest finding and no band move is withheld for one. Decision 4's
+// sentence goes ONCE on the card whenever it proposes a band move, never under
+// each move. The crest figures (V0, V1 as available, the host block size and
+// frames per hop) go into the payload's crestLog for tuning, and nothing that
+// renders reads it.
 //
 // PURE. No JUCE audio type, no global, no I/O. Layout takes a text-width
 // function from the caller, so no font is read here.
@@ -81,14 +82,36 @@ struct MatchReportBandIn
     /** C4's D: mix minus reference, dB; positive means the mix is hotter.
         Absent: the band was not measured, and the report prints no line. */
     std::optional<float> mixMinusRefDb;
-    /** The crest test's answer for this band: yes, no, or unknown (nullopt). */
-    std::optional<bool> crestSaysPeaks;
-    /** A crest figure, if the caller has one. The payload carries it; nothing
-        here reads it. */
-    std::optional<float> crestDb;
     /** C4's placement. Absent: the move goes on the mix bus at -D. */
     std::optional<AttribResult> attribution;
 };
+
+/** One side's crest, for the log only (C4 rev 4 section 6). */
+struct MatchCrestLogSide
+{
+    std::array<std::optional<float>, 6> v0 {};   ///< bandCrest: p95 of bandPower over its 3 s local mean
+    std::array<std::optional<float>, 6> v1 {};   ///< bandCrestPeakOverMean: median bandPeak / bandPower
+    std::optional<float> framesPerHop;           ///< this series' mean frames per hop
+};
+
+/** The crest log: both sides over the selected window, and the host block size
+    the bias can be corrected from later. LOGGED, NEVER RENDERED. */
+struct MatchCrestLog
+{
+    MatchCrestLogSide mix, ref;
+    int hostBlockSize = 0;   ///< 0: not known
+};
+
+/** One side's log from its hop series over the window. */
+template <typename Frame>
+inline MatchCrestLogSide matchCrestLogSide (const std::vector<Frame>& frames, HopRange w)
+{
+    MatchCrestLogSide s;
+    s.v0 = bandCrest (frames, w).db;
+    s.v1 = bandCrestPeakOverMean (frames, w);
+    s.framesPerHop = meanFramesPerHop (frames, w);
+    return s;
+}
 
 struct MatchReportIn
 {
@@ -99,6 +122,10 @@ struct MatchReportIn
         read: the bands come from `bands`, sized by C4. */
     MatchProposal   proposal;
     std::array<MatchReportBandIn, 6> bands {};
+    /** Where P_bus came from (C2 section 5.1): matchBusTapOf the capture. */
+    MatchBusTap busTap = MatchBusTap::Output;
+    /** For the payload only. Absent: no log was taken. */
+    std::optional<MatchCrestLog> crestLog;
     bool hasMatchPlan = false;   ///< the build declares match_plan (C3 section 4)
     bool agentOn = false;
 };
@@ -107,7 +134,7 @@ struct MatchReportIn
 // OUTPUT
 // -----------------------------------------------------------------------------
 
-enum class MatchReportLineKind { Move, UnderFloor, Finding, PeaksFinding, Refusal };
+enum class MatchReportLineKind { Move, UnderFloor, Finding, Refusal };
 
 struct MatchReportLine
 {
@@ -125,7 +152,7 @@ struct MatchReport
     juce::String heading;
     std::vector<MatchReportLine> lines;   ///< Can do, then Just so you know, then Can't compare
     bool caveat = false;                  ///< a Can do line names a track (C4 section 9)
-    juce::String discriminator;           ///< decision 4's sentence, when any cut needs it
+    juce::String discriminator;           ///< decision 4's sentence: once, when any band move is proposed
     std::vector<juce::String> buttons;
 };
 
@@ -151,12 +178,11 @@ inline juce::String matchReportUnderFloor()
     return "(under the " + juce::String (kMatchBandFloorDb, 1) + " dB measurement floor; leaving it)";
 }
 
-/** C4 section 6's finding with the crest figure left out (crest is open). */
-inline juce::String matchReportPeaksSentence (int band, float D)
+/** Plan decision 4, C4 rev 4 section 6: once on the card, whenever it proposes
+    at least one band move. */
+inline juce::String matchReportDecision4Sentence()
 {
-    return "The " + juce::String (matchReportBandWords (band)) + " is " + juce::String (D, 1)
-         + " dB hotter than the reference, and the excess is peaks, not body. That's a dynamics job; "
-           "EQ would cut the body with it.";
+    return "These EQ moves were proposed without the check that tells body from peaks.";
 }
 
 inline juce::String matchReportMoveAction (const std::optional<AttribResult>& a, float valueDb)
@@ -180,7 +206,7 @@ namespace detail
 
 /** A directional finding's line, or an empty label when the report leaves it
     out: PSR and PLR outside the whole window or with either side unknown, and
-    the whole-file crest figure (crest is open). */
+    the whole-file crest figure (crest reaches no user, C4 rev 4 section 6). */
 inline MatchReportLine matchReportFindingLine (const MatchFinding& f, MatchWindowMode w,
                                                const MatchSide& mix, const MatchSide& ref)
 {
@@ -293,15 +319,6 @@ inline MatchReport buildMatchReport (const MatchReportIn& in)
             canDo.push_back (l);
             continue;
         }
-        const bool cut = D >= kMatchBandFloorDb;
-        if (cut && bi.crestSaysPeaks.value_or (false))
-        {
-            l.tier = MatchReportTier::JustSoYouKnow;
-            l.kind = MatchReportLineKind::PeaksFinding;
-            l.text = matchReportPeaksSentence (b, D);
-            know.push_back (l);
-            continue;
-        }
         const auto& a = bi.attribution;
         const float value = (a && a->valueDb) ? *a->valueDb : -D;
         l.moveKind = "eq";
@@ -309,11 +326,7 @@ inline MatchReport buildMatchReport (const MatchReportIn& in)
         l.text = matchReportBandGap (D) + " " + matchReportArrow() + " " + matchReportMoveAction (a, value);
         if (a && a->reason.isNotEmpty()) l.detail.add (a->reason);
         if (a && a->coverage) l.detail.add (attribCoverageSentence (*a->coverage, b));
-        if (cut && ! bi.crestSaysPeaks.has_value())
-        {
-            l.detail.add (attribNoDiscriminatorSentence());
-            r.discriminator = attribNoDiscriminatorSentence();
-        }
+        r.discriminator = matchReportDecision4Sentence();
         if (a && (a->target == AttribTarget::Track || a->target == AttribTarget::Pair)) r.caveat = true;
         canDo.push_back (l);
     }
@@ -380,6 +393,7 @@ inline juce::StringArray matchReportAllStrings (const MatchReport& r, const std:
     for (auto t : { MatchReportTier::CanDo, MatchReportTier::JustSoYouKnow, MatchReportTier::CantCompare })
         s.add (matchReportTierTitle (t));
     if (r.caveat) s.add (attribPreFaderCaveatSentence());
+    if (r.discriminator.isNotEmpty()) s.add (r.discriminator);
     for (const auto& b : r.buttons) s.add (b);
     if (offer) s.add (*offer);
     return s;
@@ -401,6 +415,7 @@ inline juce::String matchReportText (const MatchReport& r)
         }
     }
     if (r.caveat) t << "\n" << attribPreFaderCaveatSentence() << "\n";
+    if (r.discriminator.isNotEmpty()) t << "\n" << r.discriminator << "\n";
     t << "\n";
     for (const auto& b : r.buttons) t << "[" << b << "]   ";
     return t.trimEnd();
@@ -454,6 +469,7 @@ inline MatchReportLayout layoutMatchReport (const MatchReport& rep, int width,
         }
     }
     if (rep.caveat) row (attribPreFaderCaveatSentence(), MatchReportRowStyle::Caveat, kMatchReportRowH);
+    if (rep.discriminator.isNotEmpty()) row (rep.discriminator, MatchReportRowStyle::Caveat, kMatchReportRowH);
 
     // The buttons, left to right, wrapping to a new line when the next would
     // not fit.
@@ -478,7 +494,29 @@ inline MatchReportLayout layoutMatchReport (const MatchReport& rep, int width,
 // -----------------------------------------------------------------------------
 // THE CARD PAYLOAD (C2 section 4, with "share"; coverage and the caveat flag
 // per band are C4 section 8 Q7's ask). A figure not measured is ABSENT, never 0.
+// busTap is C2 section 5.1's; crestLog is C4 rev 4 section 6's, read by nothing
+// that renders. In crestLog's six-entry arrays an absent band is null, so the
+// positions stay B1's.
 // -----------------------------------------------------------------------------
+
+namespace detail
+{
+    inline juce::var crestArray (const std::array<std::optional<float>, 6>& a)
+    {
+        juce::Array<juce::var> v;
+        for (const auto& x : a) v.add (x ? juce::var ((double) *x) : juce::var());
+        return v;
+    }
+
+    inline juce::var crestLogSide (const MatchCrestLogSide& s)
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("v0", crestArray (s.v0));
+        o->setProperty ("v1", crestArray (s.v1));
+        if (s.framesPerHop) o->setProperty ("framesPerHop", (double) *s.framesPerHop);
+        return juce::var (o.get());
+    }
+}
 
 inline juce::String matchReportPayload (const MatchReportIn& in, const MatchReport& rep)
 {
@@ -516,8 +554,6 @@ inline juce::String matchReportPayload (const MatchReportIn& in, const MatchRepo
         o->setProperty ("name", juce::String (macroBandName (b)));
         if (bi.mixMinusRefDb) o->setProperty ("deltaDb", (double) *bi.mixMinusRefDb);
         o->setProperty ("tier", "bounded");
-        if (bi.crestDb) o->setProperty ("crest", (double) *bi.crestDb);
-        o->setProperty ("peaks", ! bi.crestSaysPeaks ? "unknown" : *bi.crestSaysPeaks ? "yes" : "no");
         if (bi.attribution && bi.attribution->coverage) o->setProperty ("coverage", *bi.attribution->coverage);
         bands.add (juce::var (o.get()));
 
@@ -555,7 +591,16 @@ inline juce::String matchReportPayload (const MatchReportIn& in, const MatchRepo
     }
     p->setProperty ("moves", moves);
     p->setProperty ("attribution", attribution);
-    p->setProperty ("caveat", rep.caveat);
+    p->setProperty ("preFaderCaveat", rep.caveat);   // C2 section 4's name
+    p->setProperty ("busTap", matchBusTapName (in.busTap));
+    if (in.crestLog)
+    {
+        Obj::Ptr c = new Obj();
+        if (in.crestLog->hostBlockSize > 0) c->setProperty ("hostBlockSize", in.crestLog->hostBlockSize);
+        c->setProperty ("mix", detail::crestLogSide (in.crestLog->mix));
+        c->setProperty ("ref", detail::crestLogSide (in.crestLog->ref));
+        p->setProperty ("crestLog", juce::var (c.get()));
+    }
     if (rep.discriminator.isNotEmpty()) p->setProperty ("discriminator", rep.discriminator);
     Obj::Ptr after = new Obj();
     after->setProperty ("present", false);

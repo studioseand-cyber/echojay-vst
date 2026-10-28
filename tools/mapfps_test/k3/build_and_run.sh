@@ -1,5 +1,5 @@
 #!/bin/bash
-# K3: build and run the mr / mb pins (k3_pins.h) on their own.
+# K3: build and run the kr / mb pins (k3_pins.h) on their own.
 #
 # usage: tools/mapfps_test/k3/build_and_run.sh
 #   BUILD_DIR   the configured build tree to lift flags and the SharedCode lib

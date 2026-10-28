@@ -16293,7 +16293,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
     // ======================================================================
     // ma -- MATCH ATTRIBUTION AND THE SIX-BAND CREST (C4 section 10: MA2, MA8)
     //
-    // C4 rev 2 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27), EJMatchAttribution.h
+    // C4 rev 4 (CONTRACT_MATCH_ATTRIBUTION_2026-10-27), EJMatchAttribution.h
     // and EJMatchWindow.h. One row block per line of C4 section 10, MA10 aside
     // (MA10 is an offline run on real stems, tools/mapfps_test/ma10/).
     //
@@ -16340,8 +16340,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             AttribIn in;
             in.band = band; in.busPower = 1.0; in.busHopCount = kHops; in.D = D;
-            in.crestMix = 5.0f; in.crestRef = 5.0f;   // equal: the crest test passes the move
-            in.busInputTap = tap; in.links = std::move (links);
+            in.busTap = tap ? MatchBusTap::Input : MatchBusTap::Output;
+            in.links = std::move (links);
             return in;
         };
         auto near = [] (double a, double b, double tol) { return std::abs (a - b) <= tol; };
@@ -16574,33 +16574,25 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                           "1 dB in every band", crestText (c));
         }
 
-        // ma PIN16 and ma PIN17 -- THE MARGIN: a finding at 1.0 dB, none at 0.9.
+        // ma PIN16 -- C4 rev 4: NOTHING ROUTES ON CREST. Rule 2 is off before
+        // the beta, and the strongest form of "off" is that the routing cannot
+        // be handed a crest at all. So the input struct and the routing
+        // function's code, comments stripped, name no crest. (ma PIN17 and ma
+        // PIN18, the margin and the per-move decision 4 sentence, retired with
+        // rev 4; the sentence is the card's now, once: kr PIN5 and PIN6.)
         {
-            auto in = move (2.8f, { link ("Kick", "kick", 0.8) });
-            in.crestMix = 7.0f; in.crestRef = 6.0f;
-            const auto a = attributeBandMove (in);
-            check (a.target == AttribTarget::Finding && a.rule == AttribRule::R2Peaks && ! a.valueDb
-                   && a.reason == "The low is 2.8 dB hotter than the reference and 1.0 dB peakier: the "
-                                  "excess is peaks, not body. That's a dynamics job; EQ would cut the body "
-                                  "with it.",
-                   "ma PIN16: hotter and 1.0 dB peakier is a finding with no move, in C4's words", a.reason);
-            in.crestMix = 6.9f;
-            const auto b = attributeBandMove (in);
-            check (b.target == AttribTarget::Track && b.rule == AttribRule::R6Single,
-                   "ma PIN17: 0.9 dB peakier is not a finding, and the move goes ahead");
-        }
-
-        // ma PIN18 -- A NULL CREST: the move goes ahead with decision 4's sentence.
-        {
-            auto in = move (2.8f, { link ("Kick", "kick", 0.8) });
-            in.crestMix.reset();
-            const auto a = attributeBandMove (in);
-            check (a.target == AttribTarget::Track && a.discriminator
-                   && attribNoDiscriminatorSentence()
-                      == "This EQ move was proposed without the check that tells body from peaks.",
-                   "ma PIN18: a null mix crest gives the move plus the decision 4 sentence");
-            const auto b = attributeBandMove (move (2.8f, { link ("Kick", "kick", 0.8) }));
-            check (! b.discriminator, "ma PIN18: and with both crests present the sentence is not raised");
+            std::ifstream fa ("Source/EJMatchAttribution.h");
+            const juce::String src = codeOnly (juce::String (std::string ((std::istreambuf_iterator<char> (fa)),
+                                                                          std::istreambuf_iterator<char>())));
+            const int inAt  = src.indexOf ("struct AttribIn");
+            const int inEnd = inAt < 0 ? -1 : src.indexOf (inAt, "};");
+            const int fnAt  = src.indexOf ("inline AttribResult attributeBandMove");
+            const juce::String attribIn = inAt < 0 || inEnd < 0 ? juce::String() : src.substring (inAt, inEnd);
+            const juce::String fn = fnAt < 0 ? juce::String() : src.substring (fnAt);
+            check (attribIn.isNotEmpty() && fn.isNotEmpty()
+                   && ! attribIn.containsIgnoreCase ("crest") && ! fn.containsIgnoreCase ("crest")
+                   && ! src.contains ("R2Peaks") && ! src.contains ("AttribTarget::Finding"),
+                   "ma PIN16: C4 rev 4: AttribIn and attributeBandMove name no crest, so no band move can be withheld for one");
         }
 
         // ma PIN19 -- TOO LITTLE DATA: 99 qualifying hops is null, 100 is a figure.
@@ -16685,6 +16677,31 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ma PIN24: and rule 5 does not fire for it, so the move reaches the kick by rule 6", a.reason);
         }
 
+        // ma PIN25 -- RULE 3's SENTENCE FOLLOWS THE CAPTURE'S RACK-INPUT SERIES
+        // (C2 section 5.1). A capture with hopFramesRackIn gives the tap's
+        // sentence and "input"; one without gives the bus-chain sentence and
+        // "output". The stand-in carries CaptureSnapshot's field name; kr PIN17
+        // drives the same template with the real CaptureSnapshot.
+        {
+            struct TestCapture { std::vector<TestHop> hopFrames, hopFramesRackIn; };
+            TestCapture withIn, without;
+            withIn.hopFrames.resize (10); withIn.hopFramesRackIn.resize (10);
+            without.hopFrames.resize (10);
+            auto placed = [&] (const TestCapture& c)
+            {
+                auto in = move (2.8f, { link ("Gtr", "guitar", 1.01) });
+                in.busTap = matchBusTapOf (c);
+                return attributeBandMove (in);
+            };
+            const auto a = placed (withIn), b = placed (without);
+            check (matchBusTapOf (withIn) == MatchBusTap::Input && juce::String (matchBusTapName (matchBusTapOf (withIn))) == "input"
+                   && a.rule == AttribRule::R3Fader && a.reason == attribFaderSentenceWithTap(),
+                   "ma PIN25: a capture with a rack-input series is busTap \"input\", and rule 3 says only the fader", a.reason);
+            check (matchBusTapOf (without) == MatchBusTap::Output && juce::String (matchBusTapName (matchBusTapOf (without))) == "output"
+                   && b.rule == AttribRule::R3Fader && b.reason == attribFaderSentenceNoTap(),
+                   "ma PIN25: one without it is busTap \"output\", and rule 3 names the bus chain too", b.reason);
+        }
+
         // ---- mw: C4 section 7, beyond section 10's list ----
 
         // mw PIN1 -- PSR is the median of TP minus LUFS over usable, non-silent
@@ -16735,6 +16752,54 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (! w.window && msg.contains ("29.9 s") && msg.contains ("30 s"),
                    "mw PIN4: a 29.9 s side has no loudest-30 window, and the refusal says 29.9 against 30",
                    msg);
+        }
+
+        // mw PIN5 -- A's REAL HopFrame (MeterEngine.h at k-base-2) DROPS INTO
+        // EVERY TEMPLATE. The static_asserts are the field names and types; the
+        // row is the figures: the same 400 hops as MeterEngine::HopFrame and as
+        // the local TestHop give the same crest, V1, frames per hop, PSR,
+        // loudest-30 window and window powers, and V1 reads a peak twice the
+        // mean as 10 log10 2.
+        {
+            using HF = MeterEngine::HopFrame;
+            static_assert (std::is_same_v<decltype (HF::shortTermLufs),     decltype (TestHop::shortTermLufs)>);
+            static_assert (std::is_same_v<decltype (HF::shortTermTruePeak), decltype (TestHop::shortTermTruePeak)>);
+            static_assert (std::is_same_v<decltype (HF::bandPower),         decltype (TestHop::bandPower)>);
+            static_assert (std::is_same_v<decltype (HF::bandPeak),          decltype (TestHop::bandPeak)>);
+            static_assert (std::is_same_v<decltype (HF::bandFrames),        decltype (TestHop::bandFrames)>);
+            static_assert (std::is_same_v<decltype (HF::flags),             decltype (TestHop::flags)>);
+            std::vector<HF> v (400);
+            std::vector<TestHop> t (400);
+            auto fill = [] (auto& h, size_t i)
+            {
+                h.shortTermLufs = -14.0f + (float) (i % 5);
+                h.shortTermTruePeak = h.shortTermLufs + 8.0f + (float) (i % 3);
+                for (size_t b = 0; b < 6; ++b)
+                {
+                    h.bandPower[b] = 1.0f + (i % 7 == 0 ? 9.0f : 0.0f) + 0.1f * (float) b;
+                    h.bandPeak[b] = 2.0f * h.bandPower[b];
+                }
+                h.bandFrames = (std::uint16_t) (i % 40 == 5 ? 0 : 9);
+                h.flags = (std::uint16_t) (i % 50 == 49 ? kHopFlagSilent : 0);
+            };
+            for (size_t i = 0; i < v.size(); ++i) { fill (v[i], i); fill (t[i], i); }
+            const HopRange w { 0, v.size() };
+            const auto cv = bandCrest (v, w), ct = bandCrest (t, w);
+            const auto pv = bandCrestPeakOverMean (v, w), pt = bandCrestPeakOverMean (t, w);
+            const auto fv = meanFramesPerHop (v, w), ft = meanFramesPerHop (t, w);
+            const auto sv = psrMedian (v, MatchWindowMode::Whole), st = psrMedian (t, MatchWindowMode::Whole);
+            const auto lv = loudest30Window (v), lt = loudest30Window (t);
+            const auto av = attribSeriesWindow (v, w), at = attribSeriesWindow (t, w);
+            bool same = cv.db == ct.db && pv == pt && fv == ft && sv == st && av.power == at.power
+                     && av.hopCount == at.hopCount && av.frameCoverage == at.frameCoverage
+                     && lv.window.has_value() == lt.window.has_value()
+                     && (! lv.window || lv.window->begin == lt.window->begin);
+            bool v1ok = true;
+            for (size_t b = 0; b < 6; ++b) v1ok = v1ok && pv[b] && near (*pv[b], 10.0 * std::log10 (2.0), 1e-4);
+            check (same && v1ok && fv && near (*fv, 9.0, 1e-6) && av.hopCount == 400
+                   && near (av.frameCoverage, 390.0 / 400.0, 1e-12) && cv.db[0] && sv,
+                   "mw PIN5: A's MeterEngine::HopFrame drops into the crest, V1, frames-per-hop, PSR, loudest-30 and "
+                   "window-power templates, and reads exactly as the local frame does");
         }
     }
 

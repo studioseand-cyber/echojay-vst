@@ -1,13 +1,16 @@
 #pragma once
 
 // =============================================================================
-//  K3's PINS: THE MATCH REPORT (mr) AND THE context.match BLOCK (mb).
+//  K3's PINS: THE MATCH REPORT (kr) AND THE context.match BLOCK (mb).
 // =============================================================================
 //
 // DESIGN_MATCH_TAB rev 7 section 7: MA3 (the report's sentences, one per tier)
-// and MA5 (who sees "Make a plan" and any agent wording). C3 rev 2 section 2:
+// and MA5 (who sees "Make a plan" and any agent wording). C4 rev 4 section 10's
+// crest rows: crest reaches no user and decides nothing. C3 rev 3 section 2:
 // one mb row per bound or rule, each an in-bound value kept and an out-of-bound
 // one clamped or refused as C3 (or the reading named in EJMatchBlock.h) says.
+//
+// PREFIX kr, NOT mr (28 Oct): mapfps_test.cpp's mr PIN1 to PIN31 are A's.
 //
 // A NEW FILE, so K3 commits apart from round 1. runK3Pins takes the suite's
 // check (bool, name, detail); k3_pins_main.cpp runs it alone today, and
@@ -16,6 +19,7 @@
 
 #include "EJMatchReport.h"
 #include "EJMatchBlock.h"
+#include "PluginProcessor.h"   // CaptureSnapshot, for kr PIN17
 
 namespace k3pins
 {
@@ -24,14 +28,13 @@ using namespace echojay;
 template <typename Check>
 inline void runK3Pins (Check&& check)
 {
-    // ---- mr: the report ----------------------------------------------------
+    // ---- kr: the report ----------------------------------------------------
 
     auto noBands = [] { return std::array<MatchReportBandIn, 6> {}; };
     auto busBand = [] (float D)
     {
         MatchReportBandIn b;
         b.mixMinusRefDb = D;
-        b.crestSaysPeaks = false;
         return b;
     };
     auto baseIn = [&]
@@ -50,7 +53,7 @@ inline void runK3Pins (Check&& check)
     };
     const juce::String arrow = matchReportArrow();
 
-    // mr PIN1 -- MA3, CAN DO: a bus band move, one sentence, exact.
+    // kr PIN1 -- MA3, CAN DO: a bus band move, one sentence, exact.
     {
         auto in = baseIn();
         in.bands[2] = busBand (2.8f);
@@ -58,22 +61,22 @@ inline void runK3Pins (Check&& check)
         const auto* l = lineFor (r, MatchReportTier::CanDo, "Low-mids");
         const juce::String want = "2.8 dB hotter than the reference " + arrow + " a 2.8 dB cut on the mix bus";
         check (l != nullptr && l->text == want && l->kind == MatchReportLineKind::Move,
-               "mr PIN1: MA3 Can do: \"Low-mids  2.8 dB hotter than the reference -> a 2.8 dB cut on the mix bus\"",
+               "kr PIN1: MA3 Can do: \"Low-mids  2.8 dB hotter than the reference -> a 2.8 dB cut on the mix bus\"",
                l ? l->text : juce::String ("no line"));
     }
 
-    // mr PIN2 -- MA3, JUST SO YOU KNOW: a width finding, exact.
+    // kr PIN2 -- MA3, JUST SO YOU KNOW: a width finding, exact.
     {
         auto in = baseIn();
         in.proposal.findings.push_back ({ MatchFigure::Width, 62.0f, 70.0f, -8.0f });
         const auto r = buildMatchReport (in);
         const auto* l = lineFor (r, MatchReportTier::JustSoYouKnow, "Width");
         check (l != nullptr && l->text == "narrower than the reference (62% vs 70%)",
-               "mr PIN2: MA3 Just so you know: \"Width  narrower than the reference (62% vs 70%)\"",
+               "kr PIN2: MA3 Just so you know: \"Width  narrower than the reference (62% vs 70%)\"",
                l ? l->text : juce::String ("no line"));
     }
 
-    // mr PIN3 -- MA3, CAN'T COMPARE: a too-short refusal, in its own words.
+    // kr PIN3 -- MA3, CAN'T COMPARE: a too-short refusal, in its own words.
     {
         auto in = baseIn();
         MatchRefusal x;
@@ -85,40 +88,62 @@ inline void runK3Pins (Check&& check)
         const auto r = buildMatchReport (in);
         const auto* l = lineFor (r, MatchReportTier::CantCompare, "Tone");
         check (l != nullptr && l->text == "No band proposal: the capture is 24.0 s long, and a band proposal needs at least 30 s.",
-               "mr PIN3: MA3 Can't compare: \"Tone  No band proposal: the capture is 24.0 s long, ...\"",
+               "kr PIN3: MA3 Can't compare: \"Tone  No band proposal: the capture is 24.0 s long, ...\"",
                l ? l->text : juce::String ("no line"));
     }
 
-    // mr PIN4 to PIN6 -- THE CREST FINDING READS ONLY yes / no / unknown.
+    // A crest log with the mix far peakier than the reference, every figure in
+    // it distinctive (x7.77), so a row can look for it in what renders.
+    auto peakyLog = []
     {
-        auto withPeaks = [&] (std::optional<bool> peaks)
+        MatchCrestLog c;
+        for (size_t b = 0; b < 6; ++b)
         {
-            auto in = baseIn();
-            in.bands[4].mixMinusRefDb = 2.4f;
-            in.bands[4].crestSaysPeaks = peaks;
-            in.bands[4].crestDb = 99.0f;   // a crest figure nothing may read
-            return buildMatchReport (in);
-        };
-        const auto yes = withPeaks (true), no = withPeaks (false), unk = withPeaks (std::nullopt);
-        const auto* y = lineFor (yes, MatchReportTier::JustSoYouKnow, "High-mids");
-        check (y != nullptr && y->kind == MatchReportLineKind::PeaksFinding
-               && y->text == "The high-mids is 2.4 dB hotter than the reference, and the excess is peaks, not body. "
-                             "That's a dynamics job; EQ would cut the body with it."
-               && lineFor (yes, MatchReportTier::CanDo, "High-mids") == nullptr,
-               "mr PIN4: crest says peaks: no EQ move, a Just so you know line in C4's words without a crest figure",
-               y ? y->text : juce::String ("no line"));
-        const auto* n = lineFor (no, MatchReportTier::CanDo, "High-mids");
-        check (n != nullptr && n->kind == MatchReportLineKind::Move && n->detail.isEmpty()
-               && no.discriminator.isEmpty(),
-               "mr PIN5: crest says no peaks: the move stays, with no decision 4 sentence");
-        const auto* u = lineFor (unk, MatchReportTier::CanDo, "High-mids");
-        check (u != nullptr && u->kind == MatchReportLineKind::Move
-               && u->detail.contains (attribNoDiscriminatorSentence())
-               && unk.discriminator == attribNoDiscriminatorSentence(),
-               "mr PIN6: crest unknown: the move stays, with decision 4's sentence on the line and in the payload");
+            c.mix.v0[b] = 17.77f; c.mix.v1[b] = 27.77f;
+            c.ref.v0[b] = 1.77f;  c.ref.v1[b] = 2.77f;
+        }
+        c.mix.v0[1].reset();   // one band without a figure: null in the log
+        c.mix.framesPerHop = 9.37f; c.ref.framesPerHop = 2.37f;
+        c.hostBlockSize = 512;
+        return c;
+    };
+
+    // kr PIN4 to PIN6 -- C4 rev 4: CREST DECIDES NOTHING, AND DECISION 4 IS SAID ONCE.
+    {
+        auto in = baseIn();
+        in.bands[2] = busBand (2.8f);
+        in.bands[4] = busBand (2.4f);
+        in.crestLog = peakyLog();
+        const auto r = buildMatchReport (in);
+        const auto* hm = lineFor (r, MatchReportTier::CanDo, "High-mids");
+        bool anyFinding = false;
+        for (const auto& l : r.lines) anyFinding = anyFinding || l.tier == MatchReportTier::JustSoYouKnow;
+        check (hm != nullptr && hm->kind == MatchReportLineKind::Move && lineFor (r, MatchReportTier::CanDo, "Low-mids") != nullptr
+               && ! anyFinding,
+               "kr PIN4: a mix far peakier than the reference keeps every band move, and no crest finding is written");
+        const auto all = matchReportAllStrings (r, std::nullopt);
+        int n = 0;
+        for (const auto& x : all) n += x.contains ("tells body from peaks") ? 1 : 0;
+        int rows = 0;
+        for (const auto& row : layoutMatchReport (r, 600, [] (const juce::String& x) { return x.length() * 7; }).rows)
+            rows += row.text.contains ("tells body from peaks") ? 1 : 0;
+        const auto txt = matchReportText (r);
+        check (n == 1 && rows == 1 && txt.indexOf ("tells body from peaks") == txt.lastIndexOf ("tells body from peaks")
+               && r.discriminator == "These EQ moves were proposed without the check that tells body from peaks.",
+               "kr PIN5: with two band moves, decision 4's sentence is on the card exactly once, in C4 rev 4's words",
+               juce::String (n) + " strings, " + juce::String (rows) + " rows");
+        auto in2 = baseIn();
+        MatchMove g; g.kind = MatchMoveKind::Gain; g.valueDb = 2.1f; g.measuredDb = -2.1f;
+        in2.proposal.moves.push_back (g);
+        in2.bands[5] = busBand (-1.6f);   // under the floor: a line, not a move
+        in2.crestLog = peakyLog();
+        const auto r2 = buildMatchReport (in2);
+        bool none = r2.discriminator.isEmpty() && ! matchReportText (r2).contains ("tells body from peaks");
+        for (const auto& x : matchReportAllStrings (r2, std::nullopt)) none = none && ! x.contains ("tells body from peaks");
+        check (none, "kr PIN6: with no band move (a gain move and an under-floor band), the sentence is absent");
     }
 
-    // mr PIN7 to PIN9 -- MA5: who sees "Make a plan" and any agent wording.
+    // kr PIN7 to PIN9 -- MA5: who sees "Make a plan" and any agent wording.
     {
         auto strings = [&] (bool hasPlan, bool agentOn)
         {
@@ -140,16 +165,16 @@ inline void runK3Pins (Check&& check)
             const auto s = strings (false, agentOn);
             noPlanOk = noPlanOk && ! s.contains (kMatchMakePlanLabel) && agentWords (s).isEmpty();
         }
-        check (noPlanOk, "mr PIN7: MA5: a build without match_plan shows no \"Make a plan\" and no string containing \"Agent\"");
+        check (noPlanOk, "kr PIN7: MA5: a build without match_plan shows no \"Make a plan\" and no string containing \"Agent\"");
         const auto off = agentWords (strings (true, false));
         check (off.size() == 1 && off[0] == "Turn on Agent and do it all" && strings (true, false).contains (kMatchMakePlanLabel),
-               "mr PIN8: MA5: with the agent off, the only agent wording is \"Turn on Agent and do it all\"",
+               "kr PIN8: MA5: with the agent off, the only agent wording is \"Turn on Agent and do it all\"",
                off.joinIntoString (" | "));
         check (agentWords (strings (true, true)).isEmpty(),
-               "mr PIN9: MA5: with the agent on there is no agent wording at all");
+               "kr PIN9: MA5: with the agent on there is no agent wording at all");
     }
 
-    // mr PIN10 -- PSR IS WHOLE-FILE ONLY: a line in "whole", none in "loudest30".
+    // kr PIN10 -- PSR IS WHOLE-FILE ONLY: a line in "whole", none in "loudest30".
     {
         auto psrIn = [&] (MatchWindowMode w)
         {
@@ -163,10 +188,10 @@ inline void runK3Pins (Check&& check)
         const auto* w = lineFor (whole, MatchReportTier::JustSoYouKnow, "Dynamics");
         const auto* l = lineFor (l30, MatchReportTier::JustSoYouKnow, "Dynamics");
         check (w != nullptr && w->text == "more squashed than the reference (PSR 7.1 vs 9.0)" && l == nullptr,
-               "mr PIN10: the PSR line shows in \"whole\" and never in \"loudest30\"");
+               "kr PIN10: the PSR line shows in \"whole\" and never in \"loudest30\"");
     }
 
-    // mr PIN11 -- THE PRE-FADER CAVEAT: when a line names a track, not for the bus.
+    // kr PIN11 -- THE PRE-FADER CAVEAT: when a line names a track, not for the bus.
     {
         auto in = baseIn();
         AttribResult a;
@@ -181,14 +206,20 @@ inline void runK3Pins (Check&& check)
         in2.bands[3] = busBand (2.8f);
         const auto b = buildMatchReport (in2);
         const auto* l = lineFor (t, MatchReportTier::CanDo, "Mids");
+        const juce::var pt = juce::JSON::parse (matchReportPayload (in, t));
+        const juce::var pb = juce::JSON::parse (matchReportPayload (in2, b));
         check (t.caveat && ! b.caveat && l != nullptr
                && l->text.endsWith ("a 3.9 dB cut on Lead Vox")
                && matchReportText (t).contains (attribPreFaderCaveatSentence())
-               && ! matchReportText (b).contains (attribPreFaderCaveatSentence()),
-               "mr PIN11: the pre-fader caveat shows when a Can do line names a track, and not for the bus alone");
+               && ! matchReportText (b).contains (attribPreFaderCaveatSentence())
+               && (bool) pt.getProperty ("preFaderCaveat", false) && pb.hasProperty ("preFaderCaveat")
+               && ! (bool) pb.getProperty ("preFaderCaveat", true)
+               && ! pt.hasProperty ("caveat") && ! pb.hasProperty ("caveat"),
+               "kr PIN11: the pre-fader caveat shows when a Can do line names a track, and not for the bus alone; "
+               "the payload says so as preFaderCaveat (C2 section 4)");
     }
 
-    // mr PIN12 -- THE PAYLOAD: "share", never "ratio"; a figure not measured is absent, never 0.
+    // kr PIN12 -- THE PAYLOAD: "share", never "ratio"; a figure not measured is absent, never 0.
     {
         auto in = baseIn();
         in.ref.integrated = -100.0f;   // unavailable
@@ -207,12 +238,12 @@ inline void runK3Pins (Check&& check)
         check (a0.hasProperty ("share") && ! a0.hasProperty ("ratio")
                && std::abs ((double) a0.getProperty ("share", 0) - 0.62) < 1e-9
                && ! refFig.hasProperty ("lufs") && ! b0.hasProperty ("deltaDb") && ! b2.hasProperty ("crest")
-               && b2.getProperty ("peaks", juce::var()).toString() == "no",
-               "mr PIN12: the payload says \"share\", not \"ratio\", and a figure not measured is absent, never 0",
+               && ! b2.hasProperty ("peaks"),
+               "kr PIN12: the payload says \"share\", not \"ratio\", and a figure not measured is absent, never 0",
                matchReportPayload (in, r).substring (0, 200));
     }
 
-    // mr PIN13 -- NOTHING TO PLAN, NO "Make a plan": refusals and under-floor bands only.
+    // kr PIN13 -- NOTHING TO PLAN, NO "Make a plan": refusals and under-floor bands only.
     {
         auto in = baseIn();
         in.bands[5] = busBand (-1.6f);
@@ -223,10 +254,10 @@ inline void runK3Pins (Check&& check)
         check (std::find (r.buttons.begin(), r.buttons.end(), juce::String (kMatchMakePlanLabel)) == r.buttons.end()
                && l != nullptr && l->kind == MatchReportLineKind::UnderFloor
                && l->text == "1.6 dB cooler than the reference " + arrow + " (under the 2.0 dB measurement floor; leaving it)",
-               "mr PIN13: only refusals and under-floor bands: the report offers no \"Make a plan\"");
+               "kr PIN13: only refusals and under-floor bands: the report offers no \"Make a plan\"");
     }
 
-    // mr PIN14 -- THE LAYOUT: one painted zone per button, inside the card, none overlapping.
+    // kr PIN14 -- THE LAYOUT: one painted zone per button, inside the card, none overlapping.
     {
         auto in = baseIn();
         in.bands[2] = busBand (2.8f);
@@ -242,7 +273,61 @@ inline void runK3Pins (Check&& check)
             for (size_t j = 0; ok && j < i; ++j) ok = ! z.intersects (L.zones[j].r);
             for (const auto& row : L.rows) ok = ok && ! z.intersects (row.r);
         }
-        check (ok, "mr PIN14: the layout gives one zone per button, inside the card, overlapping nothing");
+        check (ok, "kr PIN14: the layout gives one zone per button, inside the card, overlapping nothing");
+    }
+
+    // kr PIN15 -- C4 rev 4: crestLog IS IN THE PAYLOAD, AND IN NOTHING THAT RENDERS.
+    {
+        auto in = baseIn();
+        in.bands[2] = busBand (2.8f);
+        in.crestLog = peakyLog();
+        in.proposal.findings.push_back ({ MatchFigure::Crest, 17.77f, 1.77f, 16.0f });   // a crest finding from upstream
+        const auto r = buildMatchReport (in);
+        const juce::var p = juce::JSON::parse (matchReportPayload (in, r));
+        const juce::var c = p.getProperty ("crestLog", juce::var());
+        const juce::var mv0 = c.getProperty ("mix", juce::var()).getProperty ("v0", juce::var());
+        const juce::var rv1 = c.getProperty ("ref", juce::var()).getProperty ("v1", juce::var());
+        check (c.isObject() && (int) c.getProperty ("hostBlockSize", 0) == 512
+               && mv0.size() == 6 && mv0[1].isVoid() && std::abs ((double) mv0[0] - 17.77) < 1e-4
+               && rv1.size() == 6 && std::abs ((double) rv1[5] - 2.77) < 1e-4
+               && std::abs ((double) c.getProperty ("mix", juce::var()).getProperty ("framesPerHop", 0) - 9.37) < 1e-4,
+               "kr PIN15: crestLog carries V0 and V1 per band per side (null where absent), frames per hop and the host block size",
+               juce::JSON::toString (c, true));
+        juce::StringArray rendered = matchReportAllStrings (r, matchPlanCardAgentOffer (true, false));
+        rendered.add (matchReportText (r));
+        for (const auto& row : layoutMatchReport (r, 600, [] (const juce::String& x) { return x.length() * 7; }).rows)
+            rendered.add (row.text);
+        bool clean = true;
+        for (const auto& x : rendered)
+            for (auto fig : { "17.7", "17.8", "27.7", "27.8", "1.77", "2.77", "9.37", "2.37", "16.0", "crest" })
+                if (x.containsIgnoreCase (fig)) { clean = false; break; }
+        check (clean, "kr PIN15: no rendered string (the report, its text, its layout rows, the offer) holds a crest figure or the word crest",
+               rendered.joinIntoString (" | ").substring (0, 300));
+    }
+
+    // kr PIN16 -- busTap IN THE PAYLOAD (C2 sections 4 and 5.1): "input" or "output".
+    {
+        auto in = baseIn();
+        in.bands[2] = busBand (2.8f);
+        in.busTap = MatchBusTap::Input;
+        const auto r = buildMatchReport (in);
+        const auto pin = juce::JSON::parse (matchReportPayload (in, r)).getProperty ("busTap", juce::var()).toString();
+        in.busTap = MatchBusTap::Output;
+        const auto pout = juce::JSON::parse (matchReportPayload (in, r)).getProperty ("busTap", juce::var()).toString();
+        check (pin == "input" && pout == "output", "kr PIN16: the payload's busTap says \"input\" or \"output\", as the report was told",
+               pin + " / " + pout);
+    }
+
+    // kr PIN17 -- THE REAL CaptureSnapshot (PluginProcessor.h at k-base-2): no
+    // rack-input series is "output", one hop of it is "input".
+    {
+        CaptureSnapshot snap;
+        snap.hopFrames.resize (3);
+        const auto before = matchBusTapOf (snap);
+        snap.hopFramesRackIn.resize (1);
+        const auto after = matchBusTapOf (snap);
+        check (before == MatchBusTap::Output && after == MatchBusTap::Input,
+               "kr PIN17: matchBusTapOf reads CaptureSnapshot::hopFramesRackIn: empty is output, non-empty is input");
     }
 
     // ---- mb: the context.match v1 block (C3 section 2) ---------------------
@@ -392,7 +477,9 @@ inline void runK3Pins (Check&& check)
     check (read (listOf ("refusals", 8)).readable && ! read (listOf ("refusals", 9)).readable,
            "mb PIN21: 8 refusals read, 9 refuse the block");
     // mb PIN22 to PIN24 -- a move's own fields: an out-of-bound one drops the move.
-    check (movesOf (read (set (base(), "moves.0.valueDb", -30.0))) == 2 && movesOf (read (set (base(), "moves.0.valueDb", -30.1))) == 1
+    // On a bus move: a pair or track move past 12 dB drops first (mb PIN31).
+    auto busBase = [&] { return set (set (base(), "moves.0.attribution.target", "bus"), "moves.0.attribution.combinedShare", juce::var()); };
+    check (movesOf (read (set (busBase(), "moves.0.valueDb", -30.0))) == 2 && movesOf (read (set (busBase(), "moves.0.valueDb", -30.1))) == 1
            && movesOf (read (set (base(), "moves.1.valueDb", 30.0))) == 2,
            "mb PIN22: valueDb -30 and +30 keep the move, -30.1 drops it");
     check (movesOf (read (set (base(), "moves.0.measuredDb", 30.0))) == 2 && movesOf (read (set (base(), "moves.0.measuredDb", 30.1))) == 1,
@@ -414,9 +501,9 @@ inline void runK3Pins (Check&& check)
         check (attrOf (r4).isObject() && attrOf (r5).isVoid() && movesOf (r5) == 2,
                "mb PIN25: 4 links keep the attribution, 5 drop it and keep the move");
     }
-    check (attrOf (read (set (base(), "moves.0.attribution.links.0.share", 8.0))).isObject()
-           && attrOf (read (set (base(), "moves.0.attribution.links.0.share", 8.1))).isVoid(),
-           "mb PIN26: a share of 8 keeps the attribution, 8.1 drops it");
+    check (attrOf (read (set (base(), "moves.0.attribution.links.0.share", 1.0))).isObject()
+           && attrOf (read (set (base(), "moves.0.attribution.links.0.share", 1.01))).isVoid(),
+           "mb PIN26: C3 rev 3: a share of 1 keeps the attribution, 1.01 drops it");
     check (attrOf (read (set (base(), "moves.0.attribution.target", "track"))).isVoid()
            && attrOf (read (set (set (base(), "moves.0.attribution.target", "track"), "moves.0.attribution.combinedShare", juce::var()))).isObject(),
            "mb PIN27: combinedShare is for a pair only; on a track it drops the attribution");
@@ -430,6 +517,45 @@ inline void runK3Pins (Check&& check)
         auto nf = [] (const MatchBlockRead& r) { return r.block.getProperty ("findings", juce::var()).size(); };
         check (nf (bad) == 0 && nf (psrWhole) == 1 && nf (psrL30) == 0,
                "mb PIN28: a width finding at 200.1 is dropped; a psr finding stays in \"whole\" and is dropped in \"loudest30\"");
+    }
+    // mb PIN30 -- combinedShare 0..2 (reading R8: two shares of at most 1).
+    check (attrOf (read (set (base(), "moves.0.attribution.combinedShare", 2.0))).isObject()
+           && attrOf (read (set (base(), "moves.0.attribution.combinedShare", 2.01))).isVoid(),
+           "mb PIN30: a pair's combinedShare of 2 keeps the attribution, 2.01 drops it");
+    // mb PIN31 -- C3 rev 3: a track or pair move past 12 dB is dropped, never re-routed.
+    {
+        auto track = [&] (double v) { return set (set (set (base(), "moves.0.attribution.target", "track"),
+                                                       "moves.0.attribution.combinedShare", juce::var()), "moves.0.valueDb", v); };
+        const auto t12 = read (track (-12.0)), t121 = read (track (-12.1));
+        const auto p121 = read (set (base(), "moves.0.valueDb", -12.1));
+        const auto bus17 = read (set (set (set (base(), "moves.0.attribution.target", "bus"),
+                                           "moves.0.attribution.combinedShare", juce::var()), "moves.0.valueDb", -17.0));
+        const auto first = [] (const MatchBlockRead& r) { return r.block.getProperty ("moves", juce::var())[0]; };
+        check (movesOf (t12) == 2 && movesOf (t121) == 1 && movesOf (p121) == 1 && movesOf (bus17) == 2
+               && first (t121).getProperty ("kind", juce::var()).toString() == "gain",
+               "mb PIN31: a track move of 12 dB stays; 12.1 on a track or a pair is dropped, not moved to the bus; a bus move of 17 stays",
+               t121.dropped.joinIntoString ("; "));
+    }
+    // mb PIN32 -- C4 rev 4: CREST IS NEVER SENT. The writer puts bandCrest null on
+    // both sides and writes no crest finding; a crest finding that arrives is
+    // dropped (R9: crest is not a SIDE figure).
+    {
+        MatchBlockIn in;
+        in.referenceId = "ref_1"; in.referenceName = "Song X";
+        in.findings.push_back ({ "crest", 2.4, 1.3, 2.4 });
+        in.findings.push_back ({ "width", 62.0, 70.0, -8.0 });
+        const auto w = buildMatchBlock (in);
+        const juce::var fs = w.block.getProperty ("findings", juce::var());
+        bool noCrest = true;
+        for (int i = 0; i < fs.size(); ++i) noCrest = noCrest && fs[i].getProperty ("figure", juce::var()).toString() != "crest";
+        const auto arrived = read (set (set (set (set (base(), "findings.0.figure", "crest"), "findings.0.mix", 2.4),
+                                             "findings.0.ref", 1.3), "findings.0.difference", 2.4));
+        check (w.readable && field (w, "mix", "bandCrest").isVoid() && field (w, "ref", "bandCrest").isVoid()
+               && w.block.getProperty ("mix", juce::var()).hasProperty ("bandCrest")
+               && noCrest && fs.size() == 1 && w.dropped.isEmpty()
+               && arrived.block.getProperty ("findings", juce::var()).size() == 0,
+               "mb PIN32: the writer sends bandCrest null on both sides and no crest finding; one that arrives is dropped",
+               w.dropped.joinIntoString ("; "));
     }
     // mb PIN29 -- THE WRITER: C3's field names, exactly, and nothing else.
     {

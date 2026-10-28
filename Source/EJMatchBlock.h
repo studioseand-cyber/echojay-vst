@@ -11,7 +11,7 @@
 //  context.match v1: THE BLOCK THE PLUGIN SENDS, AND THE RULES IT IS HELD TO.
 // =============================================================================
 //
-// C3 (CONTRACT_MATCH_WIRE_2026-10-27, revision 2) section 2. The plugin
+// C3 (CONTRACT_MATCH_WIRE_2026-10-27, revision 3) section 2. The plugin
 // computes the comparison and the server never recomputes it; the server checks
 // every bound and drops what fails. So this header does two things:
 //   - buildMatchBlock writes the block from plain values, with C3's field names;
@@ -29,7 +29,16 @@
 //   - psr and plr are sent only when whole-file on both sides, else null on
 //     both, and a one-sided PSR is dropped;
 //   - corrSub is never sent, and refused if present;
-//   - moves, findings and refusals at most 8 each; links at most 4; share 0..8.
+//   - moves, findings and refusals at most 8 each; links at most 4; share 0..1
+//     (rev 3: the plugin routes a share over 1 to the bus, C4 section 4 rule 3);
+//   - a track or pair move past X1.trackMoveMaxDb (12 dB) is dropped, never
+//     re-routed (rev 3, Sean 28 Oct): the plugin sends those as bus moves.
+//
+// CREST IS NEVER SENT (C4 rev 4 section 6). The writer puts bandCrest null on
+// both sides, always, and writes no crest finding. The reader still applies R7
+// to a bandCrest that arrives, because that is the server's rule, and a crest
+// finding that arrives falls under R9 (crest is not a SIDE figure) and is
+// dropped.
 //
 // WHERE C3 IS SILENT, AND WHAT THIS DOES (each is K's reading, marked so):
 //   R1. A SIDE figure out of bounds. C3 names a move or a finding as what a bad
@@ -47,9 +56,11 @@
 //       because C3 calls it required there and the gain target needs it.
 //   R7. bandCrest of the wrong length or out of 0..40: that side's bandCrest
 //       becomes null (C3 allows null "on a side without it").
-//   R8. A bad attribution (more than 4 links, a share outside 0..8, a target
+//   R8. A bad attribution (more than 4 links, a share outside 0..1, a target
 //       not in C3's three, or combinedShare on anything but a pair) drops the
 //       attribution and keeps the move, as MB9 does for an unknown uid.
+//       combinedShare has no bound in C3 rev 3; it is held to 0..2, two shares
+//       of at most 1 each (K's reading, for B to confirm).
 //   R9. A finding's mix and ref are held to the bounds of the side figure of
 //       the same name; a figure C3's SIDE does not name drops the finding. A
 //       psr or plr finding is dropped whenever psr or plr is not sent.
@@ -68,7 +79,9 @@ inline constexpr int    kMatchBlockVersion     = 1;
 inline constexpr int    kMatchBlockNameMax     = 80;
 inline constexpr int    kMatchBlockListMax     = 8;    ///< moves, findings, refusals
 inline constexpr int    kMatchBlockLinksMax    = 4;
-inline constexpr double kMatchBlockShareMax    = 8.0;
+inline constexpr double kMatchBlockShareMax    = 1.0;  ///< C3 rev 3: a sent share is 0..1
+inline constexpr double kMatchBlockCombinedShareMax = 2.0;  ///< R8: two shares of at most 1
+inline constexpr double kMatchBlockTrackMoveMaxDb = 12.0;  ///< X1.trackMoveMaxDb: past it a track or pair move drops
 inline constexpr double kMatchBlockMoveDbMax   = 30.0; ///< valueDb and measuredDb, +-
 inline constexpr double kMatchBlockBandRelMax  = 30.0; ///< each bandsRel entry, +-
 inline constexpr double kMatchBlockCrestMax    = 40.0; ///< each bandCrest entry, 0..
@@ -105,7 +118,7 @@ struct MatchBlockSide
     std::optional<int>    overs;
     std::optional<double> lra, psr, plr, width, corr;
     std::array<double, 6> bandsRel {};
-    std::optional<std::array<double, 6>> bandCrest;
+    // No bandCrest: it is null on the wire, always (C4 rev 4 section 6).
 };
 
 struct MatchBlockLink { juce::String uid, name; double share = 0.0; };
@@ -347,6 +360,12 @@ inline MatchBlockRead readMatchBlock (const juce::var& in)
             { out.dropped.add (what + ": valueDb out of -30..30"); continue; }
             if (! matchBlockInRange (m.getProperty ("measuredDb", juce::var()), -kMatchBlockMoveDbMax, kMatchBlockMoveDbMax))
             { out.dropped.add (what + ": measuredDb out of -30..30"); continue; }
+            {
+                const juce::String t = m.getProperty ("attribution", juce::var()).getProperty ("target", juce::var()).toString();
+                if ((t == "track" || t == "pair")
+                    && std::abs ((double) m.getProperty ("valueDb", juce::var())) > kMatchBlockTrackMoveMaxDb)
+                { out.dropped.add (what + ": a " + t + " move past 12 dB is dropped, never re-routed"); continue; }
+            }
 
             juce::var m2 = detail::copyObject (m);
             const juce::var at = m.getProperty ("attribution", juce::var());
@@ -364,7 +383,7 @@ inline MatchBlockRead readMatchBlock (const juce::var& in)
                       && lk.getProperty ("uid", juce::var()).isString();
                 }
                 const juce::var cs = at.getProperty ("combinedShare", juce::var());
-                ok = ok && (target == "pair" ? matchBlockInRange (cs, 0.0, kMatchBlockShareMax) : cs.isVoid());
+                ok = ok && (target == "pair" ? matchBlockInRange (cs, 0.0, kMatchBlockCombinedShareMax) : cs.isVoid());
                 if (! ok)   // R8
                 {
                     m2.getDynamicObject()->setProperty ("attribution", juce::var());
@@ -431,13 +450,7 @@ namespace detail
         juce::Array<juce::var> rel;
         for (double d : s.bandsRel) rel.add (d);
         o->setProperty ("bandsRel", rel);
-        if (s.bandCrest)
-        {
-            juce::Array<juce::var> c;
-            for (double d : *s.bandCrest) c.add (d);
-            o->setProperty ("bandCrest", c);
-        }
-        else o->setProperty ("bandCrest", juce::var());
+        o->setProperty ("bandCrest", juce::var());   // always null (C4 rev 4 section 6)
         return juce::var (o.get());
     }
 }
@@ -492,6 +505,7 @@ inline MatchBlockRead buildMatchBlock (const MatchBlockIn& in)
     juce::Array<juce::var> findings;
     for (const auto& f : in.findings)
     {
+        if (f.figure == "crest") continue;   // never written (C4 rev 4 section 6)
         juce::DynamicObject::Ptr fo = new juce::DynamicObject();
         fo->setProperty ("figure", f.figure);
         fo->setProperty ("mix", f.mix);
