@@ -286,6 +286,16 @@ public:
         std::array<float, 6> bandPeak  {};   // MAX of perOct over the same frames, same units
         std::uint16_t bandFrames = 0;        // 0 = NO spectral evidence: unavailable, never a level
         std::uint16_t flags      = 0;        // bit 0: every block in this hop was silent
+        // ---- HOW MANY FRAMES THE PEAK WAS TAKEN OVER (K's MA10, 28 Oct 2026) ----------------
+        // APPENDED AT THE END, on the convention RefEntry's own note states: a mid-struct field
+        // means the gate links the PREVIOUS build's archive, so compiled code gets one offset table
+        // and the test TU another, silently, with plausible wrong answers (open list 207).
+        //
+        // bandFrames above counts the BLOCK-cadence frames, which is what bandPower's mean is over.
+        // With the fine cadence on, bandPeak is a max over a different and larger set, and a crest
+        // whose peak frame count is unknown cannot be checked - the same rule every figure in this
+        // file carries its window for. 0 means the peak came from the block cadence, as before.
+        std::uint16_t peakFrames = 0;
     };
     /** Every hop so far. Reserved in prepare() and NEVER grown on the audio thread; read on the
         message thread after the capture state has moved on, exactly as getAccumulatedBands is. */
@@ -294,6 +304,28 @@ public:
     /** 20 minutes at 10 hops a second. Past it the audio thread stops appending and says so, rather
         than decimating in place - halving 700 KB on the audio thread is a spike nobody asked for. */
     static constexpr int kMaxHopFrames = 12000;
+
+    /** ---- bandPeak's OWN CADENCE (K's MA10, 28 Oct 2026) --------------------------------------
+
+        OFF BY DEFAULT, and that is the point: with it off this engine behaves exactly as it does
+        today, so every live meter keeps its cost. The capture turns it on for the engine it reads a
+        hop series from.
+
+        ON, the band FFT that feeds bandPeak is triggered every 256 SAMPLES, counted - not once per
+        pushBlock call. bandPeak is a MAX over a hop's frames, so with the caller's block size as
+        the cadence the figure moved with the host: 34 frames per hop at a 128 block, 4 at 1024.
+
+        bandPower is UNTOUCHED - it is the mean over the hop, already near-invariant, and the
+        instruction is explicit. Nor is the WINDOW touched: 2048, because her 1024-point variant
+        gained nothing, so there is no second FFT size. */
+    void setFinePeakCadence (bool on) noexcept { finePeakOn_ = on; }
+    bool finePeakCadence() const noexcept { return finePeakOn_; }
+    /** 256 samples, sample-counted: 172 frames a second at 44.1 kHz and 187.5 at 48, whatever the
+        host's block size is. A constant because a leg has to be able to name it. */
+    static constexpr int kFinePeakHopSamples = 256;
+    /** How many fine frames this engine has run since prepare(). The cost figure Sean asked for is
+        per engine, and this is the count behind it. */
+    juce::int64 finePeakFftCount() const noexcept { return finePeakFfts_; }
 
     struct BandAccum
     {
@@ -419,6 +451,7 @@ private:
     std::array<double, 6> hopBandSum_ {};
     std::array<float,  6> hopBandMax_ {};
     int  hopBandFrames_ = 0;
+    int  hopPeakFrames_ = 0;           // K's MA10: frames the fine cadence contributed to this hop
     bool hopAllSilent_  = true;
     bool hopsTruncated_ = false;
 
@@ -461,6 +494,14 @@ private:
     std::array<float, fftSize>     fftWindow = {};
     std::vector<float> fftAccumulator;                     // ring buffer for mono samples
     int fftWritePos = 0;
+    // ---- bandPeak's fine cadence (K's MA10): its own buffer, the SAME window, the same FFT ----
+    // Its own fftData, because the one above is live for the visual spectrum and the ballistic
+    // bands; the FFT OBJECT is shared, which is safe - juce::dsp::FFT holds only twiddle tables.
+    bool  finePeakOn_ = false;
+    int   finePeakSince_ = 0;          // samples since the last fine frame: counted, never a timer
+    juce::int64 finePeakFfts_ = 0;     // how many it has run, for the cost figure
+    std::vector<float> finePeakFftData_;   // fftSize * 2, allocated in prepare(), never on audio
+    void finePeakFrame();              // one fine frame, from the accumulator as of this sample
     std::array<float, 64> smoothedSpectrum = {
         -120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,
         -120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,-120,

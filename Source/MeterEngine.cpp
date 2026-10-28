@@ -114,7 +114,7 @@ void MeterEngine::prepare(double sampleRate, int samplesPerBlock)
     hopFrames_.clear();
     hopFrames_.reserve((size_t) kMaxHopFrames);
     hopBandSum_.fill(0.0); hopBandMax_.fill(0.0f);
-    hopBandFrames_ = 0; hopAllSilent_ = true; hopsTruncated_ = false;
+    hopBandFrames_ = 0; hopPeakFrames_ = 0; hopAllSilent_ = true; hopsTruncated_ = false;
     samplesPerSpecFrame  = std::max(1, (int)(sampleRate / 25.0)); // ~25 fps frames
     computeKWeightingCoeffs(sampleRate);
     computeWidthHpfCoeffs(sampleRate);
@@ -210,6 +210,11 @@ void MeterEngine::resetState()
     fftData.fill(0.0f);
     std::fill(fftAccumulator.begin(), fftAccumulator.end(), 0.0f);
     fftWritePos = 0;
+    // The fine cadence's buffer, HERE and never on the audio thread (K's MA10). Its size is the
+    // same 2048-point window, because there is no second FFT size.
+    finePeakFftData_.assign ((size_t) fftSize * 2, 0.0f);
+    finePeakSince_ = 0;
+    finePeakFfts_  = 0;
     smoothedSpectrum.fill(-100.0f);
     smoothedMacroBands.fill(-120.0f);
     visFftData.fill(0.0f);
@@ -266,6 +271,72 @@ void MeterEngine::computeTruePeak(const float* samples, int numSamples, float& t
     }
 }
 
+/** ---- ONE DEFINITION OF A BAND'S PER-OCTAVE POWER (K's MA10, 28 Oct 2026) -------------------
+
+    Extracted because bandPeak now has a cadence of its own, and two places needed this arithmetic.
+    A band's level acquiring a second definition is exactly what the note on perOct's four consumers
+    is about, so there is one function and both callers read it.
+
+    `mags` is the magnitude array performFrequencyOnlyForwardTransform leaves behind; out is
+    per-octave-normalised linear power, six bands, exactly as before. */
+static void echojayPerOctFromMags (const float* mags, int usableBins, double binHz, double maxFreq,
+                                   float normFactor, double* outPerOct)
+{
+    const auto edges = echojay::macroBandEdges (maxFreq);
+    double bandPower[6] = {};
+    for (int k = 1; k < usableBins; ++k)
+    {
+        const double f = k * binHz;
+        if (f < 20.0 || f >= maxFreq) continue;
+        const double m = (double) mags[(size_t) k] * normFactor;
+        for (int bi = 0; bi < 6; ++bi)
+            if (f >= edges[(size_t) bi].lo && f < edges[(size_t) bi].hi)
+            { bandPower[bi] += m * m; break; }
+    }
+    for (int bi = 0; bi < 6; ++bi)
+    {
+        const double octaves = std::log2 (std::max (1.01, edges[(size_t) bi].hi / edges[(size_t) bi].lo));
+        outPerOct[bi] = bandPower[bi] / octaves;
+    }
+}
+
+/** ---- ONE FINE FRAME (K's MA10, 28 Oct 2026) -----------------------------------------------
+
+    The window is the last `fftSize` samples AS OF THE SAMPLE THIS WAS CALLED ON, which is why it is
+    called from inside the write loop: a frame taken after the block would be one frame per block
+    again, which is the dependence it exists to remove.
+
+    It feeds hopBandMax_ and nothing else. bandPower's sum and bandFrames stay on the block cadence,
+    untouched, which is the instruction. */
+void MeterEngine::finePeakFrame()
+{
+    if (finePeakFftData_.size() < (size_t) fftSize * 2) return;   // prepare() has not run
+    for (int i = 0; i < fftSize; ++i)
+    {
+        const int idx = (fftWritePos + i) % fftSize;
+        finePeakFftData_[(size_t) i] = fftAccumulator[(size_t) idx] * fftWindow[(size_t) i];
+    }
+    // The same DC removal the block path applies, for the same reason: a window's mean offset lands
+    // in bin 0 and smears the low band, and the two cadences must not differ in their conditioning.
+    double dcSum = 0.0;
+    for (int i = 0; i < fftSize; ++i) dcSum += finePeakFftData_[(size_t) i];
+    const float dcMean = (float) (dcSum / fftSize);
+    for (int i = 0; i < fftSize; ++i) finePeakFftData_[(size_t) i] -= dcMean;
+    for (int i = fftSize; i < fftSize * 2; ++i) finePeakFftData_[(size_t) i] = 0.0f;
+    fft.performFrequencyOnlyForwardTransform (finePeakFftData_.data(), true);
+    ++finePeakFfts_;
+
+    const float  normFactor = 2.0f / (float) fftSize;
+    const int    usableBins = fftSize / 2;
+    const double binHz      = currentSampleRate / (double) fftSize;
+    const double maxFreq    = std::min (currentSampleRate * 0.5, 20000.0);
+    double perOct[6] = {};
+    echojayPerOctFromMags (finePeakFftData_.data(), usableBins, binHz, maxFreq, normFactor, perOct);
+    for (int bi = 0; bi < 6; ++bi)
+        hopBandMax_[(size_t) bi] = std::max (hopBandMax_[(size_t) bi], (float) perOct[bi]);
+    ++hopPeakFrames_;
+}
+
 void MeterEngine::computeSpectrum(const float* left, const float* right, int numSamples)
 {
     for (int i = 0; i < numSamples; ++i)
@@ -273,6 +344,16 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         float mono = (left[i] + right[i]) * 0.5f;
         fftAccumulator[(size_t)fftWritePos] = mono;
         fftWritePos = (fftWritePos + 1) % fftSize;
+        // ---- bandPeak's OWN CADENCE, COUNTED IN SAMPLES (K's MA10, 28 Oct 2026) -------------
+        // INSIDE this loop, not after it, and that is the whole point: a frame taken after the
+        // block would be a frame per block again. Here the window is the last 2048 samples as of
+        // THIS sample, so the cadence is 256 samples whatever the host hands us.
+        // Off by default, so a live meter never pays for it (setFinePeakCadence).
+        if (finePeakOn_ && ++finePeakSince_ >= kFinePeakHopSamples)
+        {
+            finePeakSince_ = 0;
+            finePeakFrame();
+        }
        #if ! ECHOJAY_NO_VISUAL_FFT
         visAccumulator[(size_t)visWritePos] = mono;
         visWritePos = (visWritePos + 1) % kVisFftSize;
@@ -394,7 +475,11 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
             // cannot acquire a fourth definition. Summed and maxed within the hop; the hop boundary
             // below turns them into one frame. Ungated by silence, matching bandAccum, not macroRing.
             hopBandSum_[(size_t)bi] += perOct;
-            hopBandMax_[(size_t)bi]  = std::max(hopBandMax_[(size_t)bi], (float) perOct);
+            // bandPeak's MAX comes from the 256-sample cadence when that is on (K's MA10), and the
+            // two must never both feed it: a max over both cadences is the block-dependent one
+            // again, wearing the new name. bandPower's SUM above is untouched either way.
+            if (! finePeakOn_)
+                hopBandMax_[(size_t)bi]  = std::max(hopBandMax_[(size_t)bi], (float) perOct);
             // THE BOUNDED WINDOW, from the same perOct. Three consumers of one
             // value: the ballistic field below, the whole-run sum above, and
             // this ring. One definition, three spans.
@@ -781,12 +866,15 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
                 hf.bandPeak [(size_t)bi] = hopBandMax_[(size_t)bi];
             }
             hf.bandFrames = (std::uint16_t) juce::jlimit(0, 65535, hopBandFrames_);
+            // ...and how many frames the PEAK was over, which is a different number when the fine
+            // cadence is on and 0 when it is not (K's MA10).
+            hf.peakFrames = (std::uint16_t) juce::jlimit(0, 65535, hopPeakFrames_);
             hf.flags      = (std::uint16_t) (hopAllSilent_ ? 1u : 0u);
             hopFrames_.push_back(hf);
         }
         else hopsTruncated_ = true;
         hopBandSum_.fill(0.0); hopBandMax_.fill(0.0f);
-        hopBandFrames_ = 0; hopAllSilent_ = true;
+        hopBandFrames_ = 0; hopPeakFrames_ = 0; hopAllSilent_ = true;
 
         kWeightedL.erase(kWeightedL.begin(), kWeightedL.begin() + samplesPerBlock100ms);
         kWeightedR.erase(kWeightedR.begin(), kWeightedR.begin() + samplesPerBlock100ms);
