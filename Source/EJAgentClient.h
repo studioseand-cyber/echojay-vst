@@ -37,6 +37,7 @@
 #include <vector>
 #include "EJAgentProtocol.h"
 #include "EJAgentTools.h"
+#include "EJDialFrame.h"       // A1a: what a dial frame decides, and when it answers
 
 class EJAgentClient : private juce::Timer
 {
@@ -124,6 +125,23 @@ public:
         juce::int64 startedMs = 0;
         int    timeoutSeconds = 60;      // plan 1.4 suggests 60
         juce::String line;               // the one sentence the panel shows
+    };
+
+    /** ---- A DIAL FRAME IN FLIGHT (A1a, 28 Oct 2026) ------------------------------------
+        The same shape the playback wait has, for the same reason: a step that cannot be answered
+        when it is run. B's contract is explicit about what holds it open and what ends it -
+        *"show step_text as the current step ... if the track isn't playing, show \"Play the track
+        to set the UnFairchild\" ... wait up to 60 s for playback to start ... if it doesn't start,
+        answer not_heard and keep the dial armed for the next playback"*. */
+    struct DialStep
+    {
+        bool   active = false;
+        juce::String stepId;        ///< the frame's own tool-call id
+        juce::String plugin;        ///< the name B sent, which the step's line says
+        int    slot1 = 0;           ///< 1-based, resolved before anything was armed
+        juce::int64 startedMs = 0;
+        bool   heardAnything = false;   ///< sticky: once audio has been heard, the 60 s bound is spent
+        juce::String line;              ///< the one sentence the step shows
     };
 
     struct Listener
@@ -373,6 +391,12 @@ private:
     void beginPlayback (Step& s);
     void tickPlayback();
     void endPlayback (const juce::String& reason);
+    /** A1a: the dial frame's three moments. beginDialStep resolves the slot and arms (or answers
+        skipped without arming anything); tickDialStep watches for the result; endDialStep writes
+        the answer B's contract specifies. */
+    void beginDialStep (Step& s);
+    void tickDialStep();
+    void endDialStep (echojay::dialframe::Outcome o, const juce::String& why);
     void timerCallback() override;
 
     TransportProvider transport_;
@@ -410,6 +434,7 @@ private:
     juce::String pendingAskId_;
     Playback playback_;
     juce::String playbackStepId_;
+    DialStep dial_;
     juce::String lastPath_, lastBody_;
     /** The last error frame's code, so retry() can tell a failure the server never saw (a 500, a
         timeout - resend it) from one it saw and refused for its content (result_too_large - never

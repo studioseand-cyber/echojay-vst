@@ -1188,6 +1188,17 @@ void EJAgentClient::runStep (Step& s)
         return;
     }
     if (isPlaybackWait (call))            { beginPlayback (s); return; }
+    // ---- A DIAL IS A STEP OF THE BUILD (B's dial-step contracts, 23 and 25 Oct 2026) ----------
+    //
+    // *"a dial on playback is part of the build, not after it ... the closing and 'How's it
+    //  sounding?' come only after every dial in the run has landed or reported short."*
+    //
+    // It is a `do` on the wire and it is NOT a `do` to this client: nothing is applied to a rack,
+    // the step stays open while the user plays, and the answer is the dial's own outcome. Which is
+    // why it is intercepted HERE, beside the playback wait it behaves like, rather than being sent
+    // to the executor and answered the moment it is armed - answering early is the whole defect
+    // his test 3 found.
+    if (isDialFrame (call))               { beginDialStep (s); return; }
     if (call.name == "talk")
     {
         const auto ask = talkAskOf (call);
@@ -1598,6 +1609,185 @@ void EJAgentClient::answerAsk (const juce::String& choiceIn, bool typed)
 }
 
 // =============================================================================
+//  A DIAL FRAME - the step that waits for the rack, and NEVER hangs either
+// =============================================================================
+void EJAgentClient::beginDialStep (Step& s)
+{
+    using namespace echojay::dialframe;
+    const auto& call  = s.call;
+    const auto name   = echojay::agent::argString (call, "name").trim();
+    const auto ofId   = echojay::agent::argString (call, "of").trim();
+    const auto stepTx = echojay::agent::argString (call, "step_text");
+    const auto dial   = echojay::agent::dialOnPlaybackOf (call);
+
+    int slot1 = 0; bool haveSlot = false;
+    if (auto* o = call.args.getDynamicObject())
+    {
+        const auto v = o->getProperty ("slot");
+        if (v.isInt() || v.isInt64() || v.isDouble()) { slot1 = (int) (double) v; haveSlot = true; }
+    }
+    // `of` NAMES AN ADD, AND THE SLOT IS THE ADD'S OWN ANSWER. This client already has it - every
+    // step keeps the result that went to the server - so nothing has to be asked of the rack. And
+    // never the slot the add ASKED for: one plugin that fails to load moves every slot after it,
+    // which is the stale-pointer rule remapBlocksToIdentity exists for.
+    bool addLanded = false; int addSlot1 = 0;
+    if (ofId.isNotEmpty())
+        if (const auto* a = stepById (ofId))
+        {
+            addLanded = (a->status == Step::Status::Done);
+            const auto sv = a->result.getProperty ("slot", {});
+            if (sv.isInt() || sv.isInt64() || sv.isDouble()) addSlot1 = (int) (double) sv;
+        }
+
+    const auto inSlotNow = haveSlot ? executor_.slotPluginName (slot1) : juce::String();
+    const auto t = dialFrameTarget (ofId.isNotEmpty(), addLanded, addSlot1,
+                                    haveSlot, slot1, name, inSlotNow);
+    if (! t.ok)
+    {
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("status", "skipped");
+        r->setProperty ("reason", skipReason (t.skip));
+        if (t.skip == Skip::SlotChanged) r->setProperty ("found", t.found.isNotEmpty() ? t.found : juce::String ("nothing"));
+        const auto plain = t.skip == Skip::AddFailed
+                             ? "not set: the plugin it belongs to did not go in"
+                             : t.skip == Skip::SlotChanged
+                                 ? "not set: slot " + juce::String (slot1) + " holds "
+                                   + (t.found.isNotEmpty() ? t.found : juce::String ("nothing")) + " now"
+                                 : juce::String ("not set: there is nothing for this dial to work on");
+        log ("dial frame " + s.id + " SKIPPED (" + skipReason (t.skip) + ") - " + plain);
+        completeStep (generation_, s.id, ToolOutcome::success (juce::var (r), {}, plain));
+        return;
+    }
+    if (dial.getDynamicObject() == nullptr)
+    {
+        completeStep (generation_, s.id, ToolOutcome::failureFor ("bad_args",
+                "a dial frame carries its dial in `dial_on_playback` - the same object an add carries. "
+                "This one had none, so there was nothing to arm. Send the dial or send a value `set`.",
+                "I couldn't set the " + name + " - the instruction arrived without the dial."));
+        return;
+    }
+
+    juce::String why;
+    if (! executor_.armDialAtSlot (dial, t.slot1, why))
+    {
+        // NOT A SKIP. B's two skip reasons are both about the SUBJECT being gone; this is this
+        // build saying it could not arm, and the model needs the reason to pick what to do next.
+        log ("dial frame " + s.id + " could NOT be armed on slot " + juce::String (t.slot1) + " - " + why);
+        completeStep (generation_, s.id, ToolOutcome::failureFor ("dial_not_armed",
+                "the dial could not be armed on slot " + juce::String (t.slot1) + ": " + why
+                + ". Nothing was changed, so nothing needs undoing.",
+                "I couldn't set the " + name + " on playback."));
+        return;
+    }
+
+    dial_ = {};
+    dial_.active    = true;
+    dial_.stepId    = s.id;
+    dial_.plugin    = name;
+    dial_.slot1     = t.slot1;
+    dial_.startedMs = nowMs();
+    const auto r0 = executor_.readPlayback();
+    dial_.heardAnything = r0.heardAboveSeconds > 0.0;
+    dial_.line = dialStepLine (stepTx, name, r0.transportKnown, r0.playing);
+    s.detail = dial_.line;
+    // THE STATE DOES NOT MOVE, and that is deliberate. State::Listening is the playback WAIT's
+    // state and the card draws its own block for it - the ring, the progress arc, the "you can
+    // stop" line - all of which read playback_, which is not active here. B's contract asks for
+    // this on the STEP: *"show step_text as the current step on the card, with the usual running
+    // indicator"*. So the run stays Executing with a Running step, which is exactly what the card
+    // already draws for work in progress, and the one sentence lives on the step's own row.
+    log ("dial frame " + s.id + " ARMED on slot " + juce::String (t.slot1) + " for \"" + name
+         + "\" - the step stays open until the dial lands (B's dial-step contract); waiting up to "
+         + juce::String (kWaitForPlaybackMs / 1000) + " s for playback to start");
+    startTimer (playbackTickMs);
+    changed();
+}
+
+void EJAgentClient::tickDialStep()
+{
+    using namespace echojay::dialframe;
+    if (! dial_.active) return;
+    const auto r = executor_.readPlayback();
+    if (r.heardAboveSeconds > 0.0) dial_.heardAnything = true;
+
+    // THE FIGURES, NOT THE SENTENCE. The dial publishes both when it lands; the sentence is for the
+    // card and the report is for B, and neither is parsed out of the other.
+    const auto report = executor_.dialReport (dial_.plugin);
+    // ...AND IT MUST BE THIS SLOT'S. The rack keys dial results by the PLUGIN'S NAME, which two
+    // slots can share - two bx_optos in one rack share their name, their uid and their fingerprint
+    // (the recordRemoteAddsForUndo note says so). The report carries its own slot, so a report for
+    // the other one reads as "still working" rather than as this dial's answer. A true figure about
+    // the wrong slot is the worst kind of wrong answer.
+    const auto reportSlot = report.getProperty ("slot", {});
+    const bool thisSlot = reportSlot.isVoid()
+                       || ! (reportSlot.isInt() || reportSlot.isInt64() || reportSlot.isDouble())
+                       || (int) (double) reportSlot == dial_.slot1;
+    const bool landed = report.getDynamicObject() != nullptr && thisSlot;
+    const auto word   = landed ? report.getProperty ("outcome", {}).toString() : juce::String();
+    const auto o = dialAnswerNow (landed, word, dial_.heardAnything,
+                                  (double) (nowMs() - dial_.startedMs));
+    if (o == Outcome::Working)
+    {
+        const auto next = dialStepLine ({}, dial_.plugin, r.transportKnown, r.playing);
+        // The step's own row is the only surface a dial frame has, so the line changes when the
+        // reason it is waiting changes - and never on a tick that says the same thing again.
+        if (dial_.line != next && (r.transportKnown && ! r.playing))
+        {
+            dial_.line = next;
+            if (auto* s = stepById (dial_.stepId)) s->detail = next;
+            changed();
+        }
+        return;
+    }
+    endDialStep (o, {});
+}
+
+void EJAgentClient::endDialStep (echojay::dialframe::Outcome o, const juce::String& why)
+{
+    using namespace echojay::dialframe;
+    if (! dial_.active) return;
+    const auto stepId = dial_.stepId;
+    const auto plugin = dial_.plugin;
+    const auto slot1  = dial_.slot1;
+    const auto waited = (double) (nowMs() - dial_.startedMs) / 1000.0;
+    dial_ = {};
+    juce::ignoreUnused (why);
+
+    auto* r = new juce::DynamicObject();
+    if (o == Outcome::NotHeard)
+    {
+        // ARMED, AND STAYING ARMED. B's contract: *"answer not_heard and keep the dial armed for
+        // the next playback, as today."*  So nothing is stood down here - the rack's own loop is
+        // waiting for audio and will dial when it arrives.
+        r->setProperty ("status", "ok");
+        auto* d = new juce::DynamicObject();
+        d->setProperty ("name", plugin);
+        d->setProperty ("slot", slot1);
+        d->setProperty ("outcome", "not_heard");
+        r->setProperty ("dial", juce::var (d));
+        const auto plain = "the track wasn't playing, so the " + plugin + " isn't set yet";
+        log ("dial frame " + stepId + " answers not_heard after " + juce::String (waited, 1)
+             + " s with no audio - the dial STAYS ARMED for the next playback");
+        completeStep (generation_, stepId, ToolOutcome::success (juce::var (r), {}, plain));
+        changed();
+        return;
+    }
+    // The landed answer is the rack's own report, passed through: {name, slot, outcome, figure_db,
+    // end, control, value}. Passed through rather than rebuilt, so the figure the model quotes is
+    // the figure the dial measured.
+    const auto report = executor_.dialReport (plugin);
+    r->setProperty ("status", "ok");
+    r->setProperty ("dial", report.getDynamicObject() != nullptr ? report : juce::var());
+    const auto landedSentence = executor_.dialResults().getValue (plugin, {});
+    const auto plain = landedSentence.isNotEmpty() ? landedSentence
+                                                   : plugin + " set on playback (" + outcomeWord (o) + ")";
+    log ("dial frame " + stepId + " answers " + outcomeWord (o) + " for \"" + plugin + "\" after "
+         + juce::String (waited, 1) + " s: " + juce::JSON::toString (report, true));
+    completeStep (generation_, stepId, ToolOutcome::success (juce::var (r), {}, plain));
+    changed();
+}
+
+// =============================================================================
 //  wait_for_playback - the client runs it, and it NEVER hangs
 // =============================================================================
 void EJAgentClient::beginPlayback (Step& s)
@@ -1785,6 +1975,7 @@ void EJAgentClient::endPlayback (const juce::String& reason)
 void EJAgentClient::timerCallback()
 {
     if (playback_.active) { tickPlayback(); return; }
+    if (dial_.active)     { tickDialStep(); return; }
     if (! isActive()) { stopTimer(); return; }
     if ((state_ == State::Connecting || state_ == State::Streaming || state_ == State::Posting)
         && nowMs() - lastBytesMs_ > (juce::int64) stallTimeoutMs)

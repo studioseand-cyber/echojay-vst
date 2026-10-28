@@ -8,6 +8,7 @@
 #include "EJChainRole.h"    // round (b): the ONE channelRole composer, shared with agent off
 #include "EJSlotLevelsBlock.h"   // his 18:15 item 2: the levels block, now on the agent road too
 #include "EJSourceType.h"   // round (b): what a channel IS, and where that answer came from
+#include "EJAgentHome.h"    // A1a: armDialAtSlotOnOwnRack, the one arm an add and a dial frame share
 #include <cmath>
 
 namespace echojay::agent
@@ -934,6 +935,18 @@ juce::var ExecutorRead::startContext()
     // still has the flat grReadableOnLink below.
     const bool linkMeters = linkMetersAvailable();
     if (linkMeters) caps.add ("link_meters");
+    // ---- "dial_step" AND "dial_slot" ARE NOT HERE YET, ON PURPOSE (A1a, 28 Oct 2026) ----------
+    //
+    // B's two contracts both make the capability the switch - *"without it: today's behaviour,
+    // unchanged ... the released plugin is safe"* - and this build has only HALF the road. The
+    // client answers a dial frame, and the arm behind it reaches the OPEN RACK only
+    // (Sources::armDialAtSlot -> EJAgentHome::armDialAtSlotOnOwnRack). A run aimed at a LINK would
+    // get "the dial could not be armed", and because `dial_follows` stops the add arming its own
+    // dial, that run would end with NO dial at all - a regression on a road that works today.
+    //
+    // So the claim waits for the Link's own road (A1b). Declaring it now would be a capability that
+    // is true of one rack and false of the other, which is not what a capability says.
+    //     if (dialFramesWork) { caps.add ("dial_step"); caps.add ("dial_slot"); }
     o->setProperty ("capabilities", juce::var (caps));
     // ---- SEAN'S #8 (16 Oct 2026): WHAT CANNOT BE DONE, SAID BEFORE IT IS TRIED ------------------
     //
@@ -1673,6 +1686,27 @@ juce::StringPairArray ExecutorRead::dialResults() const
     return src_.dialResults ? src_.dialResults() : juce::StringPairArray();
 }
 
+// ---- A1a: the dial frame's three reads ------------------------------------------------------
+juce::String ExecutorRead::slotPluginName (int slot1) const
+{
+    return src_.slotName ? src_.slotName (slot1) : juce::String();
+}
+
+juce::var ExecutorRead::dialReport (const juce::String& plugin) const
+{
+    return src_.dialReport ? src_.dialReport (plugin) : juce::var();
+}
+
+bool ExecutorRead::armDialAtSlot (const juce::var& dialOnPlayback, int slot1, juce::String& why)
+{
+    if (! src_.armDialAtSlot)
+    {
+        why = "this build has no road that arms a dial on a slot";
+        return false;
+    }
+    return src_.armDialAtSlot (dialOnPlayback, slot1, why);
+}
+
 PlaybackReading ExecutorRead::readPlayback()
 {
     PlaybackReading r;
@@ -2292,6 +2326,24 @@ Sources bindToProcessor (EchoJayProcessor& proc)
     // sidecar). Neither is guessed here and nothing is cached: the answer is read at the moment
     // the client asks, because a dial lands while the user is playing.
     s.dialResults = [p] () -> juce::StringPairArray { return p->agentDialResults; };
+    // ---- A1a: WHAT STANDS IN A SLOT, THE FIGURES, AND THE ARM -----------------------------
+    //
+    // The slot name answers for THE OPEN RACK only, and a run aimed at a Link gets an empty
+    // answer - which the client reads as "the slot changed" and skips. That is the honest answer
+    // for this build: the Link's own road for a standalone dial is not written yet (A1b), and the
+    // capability that would make B send one is withheld until it is. A stub that armed nothing and
+    // said it had is the failure every line of this file is written against.
+    s.slotName = [p] (int slot1) -> juce::String
+    {
+        auto& h = p->getChainHost();
+        if (slot1 < 1 || slot1 > h.getNumSlots()) return {};
+        return h.getSlotInfo (slot1 - 1).name;
+    };
+    s.dialReport = [p] (const juce::String& plugin) -> juce::var { return p->agentDialReportFor (plugin); };
+    s.armDialAtSlot = [p] (const juce::var& dial, int slot1, juce::String& why) -> bool
+    {
+        return EJAgentHome::armDialAtSlotOnOwnRack (*p, dial, slot1 - 1, why);
+    };
     s.keepPlayingPlugin = [p] () -> juce::String
     {
         if (p->keepPlayingFor.isEmpty()) return {};

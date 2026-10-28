@@ -2069,6 +2069,19 @@ public:
         predicate both minting roads consult. Keyed by the plugin's name, which is what the dial
         step is keyed by too - one name, one row, one sentence. */
     juce::StringPairArray agentDialResults;
+    /** ---- AND THE SAME RESULT IN FIGURES (A1a, 28 Oct 2026) -----------------------------------
+        B's dial-step contract answers a dial frame with `{name, slot, outcome, figure_db, end,
+        control, value}`, and the sentence above cannot be made to yield them: parsing prose for a
+        figure is the thing this codebase refuses to do (the 18 Oct "identity, not prose" rule). So
+        the loop's own `dialReportVar()` is kept here, keyed by the same plugin name, written at the
+        same moment and cleared with it. */
+    juce::var agentDialReports { new juce::DynamicObject() };
+    /** The report for `plugin`, or void when that dial has not landed. */
+    juce::var agentDialReportFor (const juce::String& plugin) const
+    {
+        if (auto* o = agentDialReports.getDynamicObject()) return o->getProperty (plugin);
+        return {};
+    }
 
     /** Takes the calibration loop's closing line for `plugin` into the run's card when a run owns
         that dial, and returns TRUE when it did. FALSE means no run owns it and the line is an
@@ -2081,7 +2094,8 @@ public:
         numbers: the slot each one sits on is resolved at undo time (his 09:15 rule, 24 Oct 2026). */
     void recordRemoteAddsForUndo (const juce::String& linkUid, const juce::StringArray& names);
 
-    bool routeDialClosingToAgentCard (const juce::String& plugin, const juce::String& sentence);
+    bool routeDialClosingToAgentCard (const juce::String& plugin, const juce::String& sentence,
+                                      const juce::var& report = {});
 
     /** LINK MIXER per-strip rack SCROLL offset in pixels, keyed the same way
         the cache is (Link uid, or "MIX BUS" for the pinned strip). ON THE

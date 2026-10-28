@@ -144,6 +144,13 @@ public:
         own target", 18 Oct). */
     juce::String lastBuildRunKey() const { return lastBuildRunKey_; }
 
+    /** A1a (28 Oct 2026): THE ARM, FROM THE SLOT ON - the one road an add's dial and B's dial frame
+        share. Static because the dial frame reaches it through the executor's sinks, which are bound
+        to the processor and know nothing about an instance of this class. False with the reason in
+        `whyOut`, which goes to the MODEL: a dial frame that cannot arm answers with it. */
+    static bool armDialAtSlotOnOwnRack (EchoJayProcessor& proc, const juce::var& dial,
+                                        int slot0, juce::String& whyOut);
+
 private:
     void agentChanged() override;
     void agentTranscript (const juce::String& role, const juce::String& text) override;

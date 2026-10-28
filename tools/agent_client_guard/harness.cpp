@@ -119,6 +119,21 @@ struct FakeExecutor : ToolExecutor
         or empty. The product reads this from the racks; a fake only has to be able to say both. */
     juce::String keepPlaying;
     juce::String keepPlayingPlugin() const override { return keepPlaying; }
+    // ---- A1a: the dial frame's three reads, each able to answer BOTH ways ------------------
+    juce::String inSlot1;                 ///< what stands in slot 1 (empty = nothing / unreachable)
+    juce::var    report;                  ///< the landed dial's figures, void while it works
+    bool         armWorks = true;         ///< whether the arm takes
+    juce::String armRefusal = "the rack refused";
+    int          armsAsked = 0;           ///< how many times anything was armed
+    int          lastArmSlot1 = 0;
+    juce::String slotPluginName (int slot1) const override { return slot1 == 1 ? inSlot1 : juce::String(); }
+    juce::var dialReport (const juce::String&) const override { return report; }
+    bool armDialAtSlot (const juce::var&, int slot1, juce::String& why) override
+    {
+        ++armsAsked; lastArmSlot1 = slot1;
+        if (armWorks) return true;
+        why = armRefusal; return false;
+    }
     juce::StringPairArray dialsLanded;                                   // his 08:43 ruling
     juce::StringPairArray dialResults() const override { return dialsLanded; }
     juce::String captureCheckpoint (const juce::String& label) override { checkpointLabel = label; return "cp_7"; }
@@ -3186,6 +3201,221 @@ int main()
         check (! wide.rows.empty() && wide.rows[0].label.getRight() <= 520 - 76,
                "NW4 ...while a comfortable card still keeps the column clear for the word",
                juce::String (wide.rows.empty() ? 0 : wide.rows[0].label.getRight()) + " of 520");
+    }
+
+    // ======================================================================================
+    //  A DIAL IS A STEP OF THE BUILD (A1a, 28 Oct 2026; B's CONTRACT_dial_step_2026-10-23 and
+    //  CONTRACT_dial_slot_2026-10-25)
+    // ======================================================================================
+    //
+    // Sean's test 3, 16:40 on 23 Oct: *"the closing and 'How's it sounding?' arrived straight after
+    // the adds, with 'Keep it playing until the UnFairchild is set' - and the dial never reported."*
+    // So the one thing every leg here is about is WHEN the step answers. A dial frame that answers
+    // early is the defect; a dial frame that never answers is a run that hangs, which is worse.
+    {
+        using namespace echojay::dialframe;
+        // ---- the pure decisions, both directions each ------------------------------------
+        {
+            const auto viaOf = dialFrameTarget (true, true, 3, false, 0, "UnFairchild", {});
+            check (viaOf.ok && viaOf.slot1 == 3,
+                   "DF0 `of` takes the slot the ADD LANDED on, not the one it asked for",
+                   "slot " + juce::String (viaOf.slot1));
+            const auto failedAdd = dialFrameTarget (true, false, 0, false, 0, "UnFairchild", {});
+            check (! failedAdd.ok && failedAdd.skip == Skip::AddFailed,
+                   "DF0b ...and when that add failed the answer is skipped/add_failed, with nothing "
+                   "armed  (B: \"if the add failed, answer skipped/add_failed\")",
+                   skipReason (failedAdd.skip));
+            const auto same = dialFrameTarget (false, false, 0, true, 1, "Vac Attack", "Vac Attack");
+            check (same.ok && same.slot1 == 1,
+                   "DF0c a slot that still holds the plugin B named is dialled");
+            const auto moved = dialFrameTarget (false, false, 0, true, 1, "Vac Attack", "bx_opto");
+            check (! moved.ok && moved.skip == Skip::SlotChanged && moved.found == "bx_opto",
+                   "DF0d ...and one that holds something else is skipped/slot_changed, naming what it "
+                   "found  (both directions: the same call, one fact changed)",
+                   juce::String (skipReason (moved.skip)) + " found=" + moved.found);
+            const auto emptySlot = dialFrameTarget (false, false, 0, true, 1, "Vac Attack", "");
+            check (! emptySlot.ok && emptySlot.skip == Skip::SlotChanged,
+                   "DF0e an EMPTY (or unreachable) slot is a changed slot - B named a plugin and it "
+                   "is not there, which is the same fact however the slot came to be empty");
+            check (dialStepLine ("Setting the X... about 1 dB", "X", true, false)
+                     .containsIgnoreCase ("Play the track"),
+                   "DF0f with the transport stopped the step asks him to play, naming the plugin");
+            check (dialStepLine ("Setting the X... about 1 dB", "X", true, true) == "Setting the X... about 1 dB",
+                   "DF0g ...and while it plays the step is B's own step_text, unchanged");
+            check (dialAnswerNow (false, {}, false, (double) kWaitForPlaybackMs - 1.0) == Outcome::Working
+                     && dialAnswerNow (false, {}, false, (double) kWaitForPlaybackMs) == Outcome::NotHeard,
+                   "DF0h not_heard is a BOUND, not a guess: working at 59.999 s, not_heard at 60");
+            check (dialAnswerNow (false, {}, true, (double) kWaitForPlaybackMs * 10.0) == Outcome::Working,
+                   "DF0i ...and once audio HAS been heard the 60 s bound is spent - a dial that is "
+                   "working through a long phrase must not be cut off by the wait that got it started");
+            check (dialAnswerNow (true, "wandered off", false, 0.0) == Outcome::Reached,
+                   "DF0j a landed result with a word nobody recognises is FINISHED, not still working "
+                   "- holding the step open on an unknown word is how a run hangs");
+        }
+        // ---- the whole road, through the real client -------------------------------------
+        {
+            Rig w; w.round (1);
+            w.ex.reading.transportKnown = true; w.ex.reading.playing = false;
+            w.ex.reading.heardAboveSeconds = 0.0;
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","step_text":"Setting the Vac Attack... about 3 dB",)"
+                    R"("keep_playing":true,"dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (60);
+            const auto* s = w.step ("tc_dial");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Running,
+                   "DF1 a dial frame's step STAYS OPEN once armed - it is not answered when the dial "
+                   "is armed, which is exactly what his test 3 saw go wrong",
+                   s == nullptr ? "no step" : juce::String ((int) s->status));
+            check (w.ex.armsAsked == 1 && w.ex.lastArmSlot1 == 1,
+                   "DF2 ...and the dial was armed on the slot the frame named, once",
+                   juce::String (w.ex.armsAsked) + " arm(s), slot " + juce::String (w.ex.lastArmSlot1));
+            check (s != nullptr && s->detail.containsIgnoreCase ("Play the track"),
+                   "DF3 with nothing playing the step says so, naming the plugin (B's own line)",
+                   s == nullptr ? juce::String() : s->detail);
+            // ...and the figures land, so the step answers with THEM.
+            auto* rep = new juce::DynamicObject();
+            rep->setProperty ("name", "Mixland Vac Attack"); rep->setProperty ("slot", 1);
+            rep->setProperty ("outcome", "reached");        rep->setProperty ("figure_db", 2.9);
+            rep->setProperty ("control", "Left Reduction"); rep->setProperty ("value", "6.50");
+            w.ex.report = juce::var (rep);
+            w.ex.dialsLanded.set ("Mixland Vac Attack", "The Vac Attack is working about 3 dB.");
+            pumpMs (120);
+            const auto* done = w.step ("tc_dial");
+            const auto dial = done != nullptr ? done->result.getProperty ("dial", {}) : juce::var();
+            check (done != nullptr && done->status == EJAgentClient::Step::Status::Done,
+                   "DF4 when the dial lands the step FINISHES",
+                   done == nullptr ? "no step" : juce::String ((int) done->status));
+            check (dial.getProperty ("outcome", {}).toString() == "reached"
+                     && std::abs ((double) dial.getProperty ("figure_db", {}) - 2.9) < 0.001,
+                   "DF5 ...and its answer carries the dial's OWN FIGURE, not a number parsed out of a "
+                   "sentence  (B's {outcome, figure_db, end, control, value})",
+                   juce::JSON::toString (dial, true));
+            check (done != nullptr && done->detail.containsIgnoreCase ("working about 3 dB"),
+                   "DF6 ...and the row shows the dial's own sentence as its result, so nothing is "
+                   "posted outside the card (his test 4, 08:43)",
+                   done == nullptr ? juce::String() : done->detail);
+        }
+        // ---- a report for the OTHER slot of the same plugin is not this dial's answer ----
+        {
+            Rig w; w.round (1);
+            w.ex.reading.transportKnown = true; w.ex.reading.playing = true;
+            w.ex.reading.heardAboveSeconds = 3.0f;
+            w.ex.inSlot1 = "bx_opto Pedal";
+            // The rack keys dial results by NAME, and two bx_optos in one rack share name, uid and
+            // fingerprint. So a landed report that says slot 4 must not answer the frame that armed
+            // slot 1 - a true figure about the wrong slot.
+            auto* other = new juce::DynamicObject();
+            other->setProperty ("name", "bx_opto Pedal"); other->setProperty ("slot", 4);
+            other->setProperty ("outcome", "reached");   other->setProperty ("figure_db", 1.1);
+            w.ex.report = juce::var (other);
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"bx_opto Pedal","dial_on_playback":{"target_gr_db":1,"control":"Peak Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (120);
+            const auto* s = w.step ("tc_dial");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Running,
+                   "DF6b a landed report for the SAME PLUGIN on ANOTHER SLOT is not this dial's "
+                   "answer - the step is still working",
+                   s == nullptr ? "no step" : juce::String ((int) s->status));
+            auto* mine = new juce::DynamicObject();
+            mine->setProperty ("name", "bx_opto Pedal"); mine->setProperty ("slot", 1);
+            mine->setProperty ("outcome", "short");      mine->setProperty ("figure_db", 0.4);
+            mine->setProperty ("end", "hardest");
+            w.ex.report = juce::var (mine);
+            pumpMs (120);
+            const auto* done2 = w.step ("tc_dial");
+            const auto d2 = done2 != nullptr ? done2->result.getProperty ("dial", {}) : juce::var();
+            check (done2 != nullptr && done2->status == EJAgentClient::Step::Status::Done
+                     && d2.getProperty ("outcome", {}).toString() == "short"
+                     && d2.getProperty ("end", {}).toString() == "hardest",
+                   "DF6c ...and the report for ITS slot answers it, carrying short and the end it hit",
+                   juce::JSON::toString (d2, true));
+        }
+        // ---- nothing plays, for a minute ------------------------------------------------
+        {
+            Rig w; w.round (1);
+            w.ex.reading.transportKnown = true; w.ex.reading.playing = false;
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            // The bound is a minute of WALL CLOCK and the harness cannot wait one, so the client is
+            // asked the same question the tick asks, with the clock moved: the decision is pure and
+            // this is the decision, which is why it is written where a guard can reach it.
+            check (dialAnswerNow (false, {}, false, (double) kWaitForPlaybackMs + 1.0) == Outcome::NotHeard,
+                   "DF7 a minute with no audio answers not_heard - and B's contract says the dial "
+                   "STAYS ARMED for the next playback, so nothing is stood down here");
+            const auto* s = w.step ("tc_dial");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Running,
+                   "DF7b ...and until that minute is up the step is still waiting, not failed",
+                   s == nullptr ? "no step" : juce::String ((int) s->status));
+        }
+        // ---- the three refusals ---------------------------------------------------------
+        {
+            Rig w; w.round (1);
+            w.ex.inSlot1 = "bx_opto Pedal";          // not what the frame names
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (60);
+            const auto* s = w.step ("tc_dial");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Done
+                     && s->result.getProperty ("status", {}).toString() == "skipped"
+                     && s->result.getProperty ("reason", {}).toString() == "slot_changed",
+                   "DF8 a slot that has changed hands answers skipped/slot_changed",
+                   s == nullptr ? juce::String() : juce::JSON::toString (s->result, true));
+            check (w.ex.armsAsked == 0,
+                   "DF8b ...and NOTHING was armed on the way to saying so - a refusing answer that "
+                   "has already changed the rack is the fault the refusal road exists to prevent",
+                   juce::String (w.ex.armsAsked) + " arm(s)");
+        }
+        {
+            Rig w; w.round (1);
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.ex.armWorks = false; w.ex.armRefusal = "slot 1 is not a slot on this rack";
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (60);
+            const auto* s = w.step ("tc_dial");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Failed,
+                   "DF9 an arm that will not take is a FAILURE, not a skip: B's two skip reasons are "
+                   "both \"the subject is gone\", and this is this build saying it could not",
+                   s == nullptr ? "no step" : juce::String ((int) s->status));
+            check (s != nullptr && s->modelDetail.containsIgnoreCase ("not a slot on this rack"),
+                   "DF9b ...and the rack's own reason reaches the model, rather than sitting in a log",
+                   s == nullptr ? juce::String() : s->modelDetail);
+        }
+        {
+            Rig w; w.round (1);
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack"}})");
+            w.await ({ "tc_dial" });
+            pumpMs (60);
+            const auto* s = w.step ("tc_dial");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Failed && w.ex.armsAsked == 0,
+                   "DF10 a dial frame with no dial_on_playback fails out loud and arms nothing - a "
+                   "frame with nothing to arm must not read as a dial that happened");
+        }
+        // ---- and an ordinary `do` is untouched by any of it -----------------------------
+        {
+            Rig w; w.round (1);
+            // A FREE `set`, not kDoSet: that one is ask_first and would sit on the plan card, which
+            // would make this leg pass for the wrong reason (a step that never ran).
+            w.tool (R"({"id":"tc_plain","name":"do","approval":"free","args":{"op":"set","slot":1,)"
+                    R"("settings_structured":{"controls":{"Threshold":-14.5}}}})");
+            w.await ({ "tc_plain" });
+            pumpMs (60);
+            const auto* s = w.step ("tc_plain");
+            check (s != nullptr && s->status == EJAgentClient::Step::Status::Done && w.ex.armsAsked == 0,
+                   "DF11 a `do` that is not a dial frame still goes straight to the executor and "
+                   "answers as it always did  (the capability is withheld, so this is the road every "
+                   "run takes today)",
+                   s == nullptr ? "no step" : juce::String ((int) s->status));
+        }
     }
 
     std::printf ("\n==== agent_client_guard: %s (%d ok, %d failed) ====\n", failures == 0 ? "GREEN" : "RED", passes, failures);

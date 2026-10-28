@@ -293,6 +293,14 @@ struct Sources
     std::function<juce::String()> keepPlayingPlugin;
     /** The landed dials' own sentences, by plugin name (his 08:43 ruling). */
     std::function<juce::StringPairArray()> dialResults;
+    /** A1a (B's dial-step contracts): the three the dial frame needs. `slotName` answers for the
+        rack this run targets, EMPTY for an empty, out-of-range or unreachable slot - which the
+        client reads as "the slot changed", the honest reading of every one of those. `dialReport`
+        is the landed dial's figures. `armDialAtSlot` arms the dial the frame carries and says why
+        when it cannot; it takes the SAME road an add's dial takes. */
+    std::function<juce::String (int slot1)> slotName;
+    std::function<juce::var (const juce::String& plugin)> dialReport;
+    std::function<bool (const juce::var& dial, int slot1, juce::String& why)> armDialAtSlot;
     /** "Only suggest plugins EchoJay can auto-dial" - his Settings toggle, READ LIVE on every
         request (his 09:49: an unmapped plugin was added with it on, because neither agent body
         carried it). Same key the chat road uses: `autoDial`. */
@@ -355,6 +363,10 @@ public:
         it before every stop prompt (point 1) - it reads the racks and changes nothing. */
     juce::String keepPlayingPlugin() const override;
     juce::StringPairArray dialResults() const override;
+    // A1a: the dial frame's three reads - what stands in a slot, the landed figures, and the arm.
+    juce::String slotPluginName (int slot1) const override;
+    juce::var dialReport (const juce::String& plugin) const override;
+    bool armDialAtSlot (const juce::var& dialOnPlayback, int slot1, juce::String& why) override;
     juce::String captureCheckpoint (const juce::String& label) override;
     juce::String describeOtherChannel (const ToolCall& call) override;   // item 2: the track name, or "" for self
     juce::StringArray buildWouldRemove (const ToolCall& call) override;  // step 7.4: what a build takes OFF the rack

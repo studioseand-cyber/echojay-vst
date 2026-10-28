@@ -848,7 +848,32 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
                           "last slot is an index standing in for an identity (his 17:09 lesson).").toRawUTF8());
         return;
     }
-    const auto slotName = host.getSlotInfo (added).name;
+    juce::String why;
+    if (! armDialAtSlotOnOwnRack (proc_, dial, added, why))
+        EchoJay_NSLog (("EJThreshold: this own-rack batch's dial was NOT armed - " + why).toRawUTF8());
+}
+
+/** ---- THE ARM, ONCE, FOR BOTH ROADS (A1a, 28 Oct 2026) -----------------------------------------
+
+    An add's dial resolves its slot by IDENTITY from what the batch added (above); B's dial frame is
+    handed the slot and this client has already checked that the plugin B named still stands in it.
+    From the slot on, the work is identical - which is why it is one function and not two: the
+    translation (CalibLoop::blockFromDialOnPlayback), the limiter's other road, the buildHold purpose
+    and every log line are the same, and a second copy would be the third place this week that two
+    roads to one place disagreed.
+
+    STATIC, because the dial frame's road reaches it through the executor's sinks, which are bound to
+    the processor and know nothing about this class's instance. `whyOut` is for the MODEL: a dial
+    frame that cannot arm answers with the reason, rather than leaving it in a log nobody reads.  */
+bool EJAgentHome::armDialAtSlotOnOwnRack (EchoJayProcessor& proc, const juce::var& dial,
+                                          int slot0, juce::String& whyOut)
+{
+    auto* dp = dial.getDynamicObject();
+    if (dp == nullptr) { whyOut = "there is no dial_on_playback object to arm"; return false; }
+    auto& host = proc.getChainHost();
+    if (slot0 < 0 || slot0 >= host.getNumSlots())
+    { whyOut = "slot " + juce::String (slot0 + 1) + " is not a slot on this rack"; return false; }
+    const auto slotName = host.getSlotInfo (slot0).name;
 
     // ---- (a) A LIMITER'S LOUDNESS TARGET ----------------------------------------------------
     float targetLufs = 0.0f;
@@ -872,10 +897,12 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
         // heard build" mean something: the measurement is of the chain AS IT NOW STANDS, not of an
         // integrated figure that predates the limiter. His -5.7 was never measured at all; this
         // measures after the limiter on the next playback and corrects its INPUT.
-        if (proc_.loudnessLoop().armTargetFromDial (targetLufs, added, ctl, ceil, avgLim, peakLim))
+        const bool armed = proc.loudnessLoop().armTargetFromDial (targetLufs, slot0, ctl, ceil,
+                                                                             avgLim, peakLim);
+        if (armed)
             EchoJay_NSLog (("EJLoudness: the OPEN RACK armed B's limiter target - "
                             + juce::String ((double) targetLufs, 1) + " LUFS on slot "
-                            + juce::String (added + 1) + " (\"" + slotName + "\"), control \""
+                            + juce::String (slot0 + 1) + " (\"" + slotName + "\"), control \""
                             + (ctl.isNotEmpty() ? ctl : juce::String ("(none named)"))
                             + "\", ceiling " + juce::String ((double) ceil, 2) + " dBTP KEPT. It drives "
                               "that slot's INPUT and nothing after it (his correction of 20 Oct), "
@@ -887,7 +914,10 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
             EchoJay_NSLog ("EJLoudness: the open rack could NOT arm B's limiter target - see the arm "
                            "line above for the reason. The limiter keeps the input gain the build "
                            "wrote, which is what a build that does not know the field does.");
-        return;   // one road each: a limiter target is not a compressor dial
+        if (! armed)
+            whyOut = "the loudness loop would not take this limiter target - see the arm line in the "
+                     "log for which of its conditions failed";
+        return armed;   // one road each: a limiter target is not a compressor dial
     }
 
     // ---- (b) A COMPRESSOR'S GR TARGET -------------------------------------------------------
@@ -895,16 +925,17 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
     // B's own contract gives: *"Agent off already sends a target block (gr_target_db with
     // calibration), which the plugin dials during playback. No change is needed there."*
     juce::String why;
-    const auto block = echojay::CalibLoop::blockFromDialOnPlayback (dial, added, why);
+    const auto block = echojay::CalibLoop::blockFromDialOnPlayback (dial, slot0, why);
     if (block.getDynamicObject() == nullptr)
     {
         EchoJay_NSLog (("EJThreshold: this own-rack add carried dial_on_playback but it could not be "
                         "read as a calibration block - " + why + ". Nothing is dialled, and nothing "
                         "claims to have been.").toRawUTF8());
-        return;
+        whyOut = "the dial_on_playback block could not be read as a calibration block - " + why;
+        return false;
     }
     if (why.isNotEmpty())
-        EchoJay_NSLog (("EJThreshold: \"" + slotName + "\" slot " + juce::String (added + 1)
+        EchoJay_NSLog (("EJThreshold: \"" + slotName + "\" slot " + juce::String (slot0 + 1)
                         + " is DIALLED ON PLAYBACK - " + why.trim()).toRawUTF8());
     echojay::CalibLoop::Config cfg;
     juce::String whyCfg;
@@ -912,7 +943,8 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
     {
         EchoJay_NSLog (("EJThreshold: the own-rack dial_on_playback block is not usable - "
                         + whyCfg.trim()).toRawUTF8());
-        return;
+        whyOut = "the dial_on_playback block is not usable - " + whyCfg.trim();
+        return false;
     }
     if (whyCfg.isNotEmpty())
         EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED - " + whyCfg.trim()).toRawUTF8());
@@ -921,11 +953,12 @@ void EJAgentHome::armDialOnPlaybackOnOwnRack (const juce::var& dial, const juce:
     // keeps this silent (Purpose::buildHold leaves askOwed empty).
     cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
     EchoJay_NSLog (("EJThreshold: the OPEN RACK starts B's dial_on_playback hold - \"" + slotName
-                    + "\" slot " + juce::String (added + 1) + ", band " + juce::String (cfg.lo, 1)
+                    + "\" slot " + juce::String (slot0 + 1) + ", band " + juce::String (cfg.lo, 1)
                     + "-" + juce::String (cfg.hi, 1) + " dB, dialling "
                     + (cfg.params.isEmpty() ? juce::String ("the drive") : cfg.params.joinIntoString (" + "))
                     + " (his 11:5x item 1: this field was read on the Link's road only)").toRawUTF8());
-    proc_.calibStart ({}, cfg);
+    proc.calibStart ({}, cfg);
+    return true;
 }
 
 void EJAgentHome::parkLine (const juce::String& role, const juce::String& text, bool live)
@@ -1010,6 +1043,10 @@ bool EJAgentHome::newRunSinceLastKey()
     // this one's listen open, and neither road has to remember to do it.
     proc_.keepPlayingFor.clear();
     proc_.agentDialResults.clear();   // ...and what the last run's dials said (his 08:43 ruling)
+    // ...and their figures, in the same breath: a report left behind would let a new run's dial
+    // frame answer with the LAST run's figure, which is the worst kind of wrong answer - a true
+    // number about the wrong thing.
+    proc_.agentDialReports = juce::var (new juce::DynamicObject());
     return true;
 }
 

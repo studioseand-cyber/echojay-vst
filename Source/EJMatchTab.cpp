@@ -2648,7 +2648,12 @@ std::vector<echojay::MatchLink> EchoJayEditor::liveLinks() const
         // Nothing in this process holds a trustworthy role for a Link, so this leaves it empty
         // rather than inventing one from a track name.
         m.framesReceived = li.framesRead;
-        if (li.dialCapable) m.caps.add ("dial_step");
+        // "applies_settings", NOT "dial_step" (settled with B, 28 Oct, from my C1 review). The byte
+        // this reads is LinkShm's dialCapable, whose own field comment is "Link reads
+        // settings_structured and applies" - which is a different claim from "this Link arms a dial
+        // on a named slot" (B's dial-step contract). dial_step/dial_slot are declared by a build that
+        // has the dial-frame road, per Link, and that is A1b.
+        if (li.dialCapable) m.caps.add ("applies_settings");
         if (li.connected)   m.caps.add ("link_meters");
         out.push_back (std::move (m));
     }

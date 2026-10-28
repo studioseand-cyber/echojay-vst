@@ -350,6 +350,30 @@ inline bool isPlaybackWait (const ToolCall& c)
 {
     return c.name == "wait_for_playback" || (c.name == "check" && argString (c, "what") == "playback");
 }
+/** ---- A DIAL FRAME (B's dial-step contracts, 23 and 25 Oct 2026) --------------------------
+    `{ "op": "dial", "of": "<an add's id>" | "slot": 1, "name": ..., "step_text": ...,
+       "dial_on_playback": { ... } }`
+
+    A `do` like any other on the wire, and NOT a `do` to this client: nothing is applied to a rack,
+    the step stays open while the user plays, and the answer is the dial's own outcome. Told apart
+    by the op alone, the way every other op is. */
+inline bool isDialFrame (const ToolCall& c)
+{
+    return c.name == "do" && argString (c, "op").trim().equalsIgnoreCase ("dial");
+}
+/** `dial_follows: true` on an add means B is sending the dial as its own frame, so the add must NOT
+    start the dial itself. An add without it keeps today's behaviour exactly (the released plugin's
+    road), which is what makes the capability safe to withhold. */
+inline bool dialFollowsOnAdd (const ToolCall& c)
+{
+    return argFlag (c, "dial_follows");
+}
+/** The dial's own definition, the same object an add carries. Void when there is none. */
+inline juce::var dialOnPlaybackOf (const ToolCall& c)
+{
+    if (auto* o = c.args.getDynamicObject()) return o->getProperty ("dial_on_playback");
+    return {};
+}
 inline double playbackMinSeconds (const ToolCall& c, double fallback = 8.0)
 {
     return juce::jlimit (1.0, 120.0, argNumber (c, "min_seconds", fallback));

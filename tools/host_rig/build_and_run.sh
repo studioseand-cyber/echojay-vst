@@ -903,10 +903,18 @@ if [ $? -ne 0 ]; then echo "REFUSED: the rig did not compile"; exit 2; fi
 if [ -n "${EJ_RIG_NO_LINK_HOST:-}" ]; then
   echo "EJ_RIG_NO_LINK_HOST=1: no out-of-process Links in this pass (the V2 and both Links share one"
   echo "  process, which is what Logic does) - the out-of-process scenarios will SKIP loudly."
-elif bash "$ROOT/tools/link_host/build.sh" "$SCRATCH/link_host" >/dev/null 2>&1; then
+elif bash "$ROOT/tools/link_host/build.sh" "$SCRATCH/link_host" > "$SCRATCH/link_host_build.log" 2>&1; then
   echo "link_host built -> $SCRATCH/link_host (two out-of-process Links will be launched)"
 else
+  # THE REASON TRAVELS WITH THE SKIP (28 Oct 2026). This was >/dev/null 2>&1, so a failed build
+  # produced the note below and nothing else - and on 28 Oct that cost a whole pass: one line of the
+  # instrument passed a juce::String where LinkShm::resolveDir takes an int&, and the only way to
+  # find out was to run the build by hand. A skip without its reason is the fault this file's own
+  # rows are written against.
   echo "NOTE: link_host did not build; the out-of-process Link scenarios will SKIP loudly."
+  echo "      why (last lines of $SCRATCH/link_host_build.log):"
+  grep -E "error:|Error|fatal" "$SCRATCH/link_host_build.log" 2>/dev/null | head -6 | sed 's/^/      /'
+  tail -3 "$SCRATCH/link_host_build.log" 2>/dev/null | sed 's/^/      /'
 fi
 
 "$SCRATCH/host_rig" "$V2_COMP" "$LINK_COMP" "$PORT" "$V2_VST3"

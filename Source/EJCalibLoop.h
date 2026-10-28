@@ -2962,6 +2962,54 @@ struct CalibLoop
         at its LIGHTEST end and still doing more than asked, `short` when it ran out of travel the
         other way and is still under. {gr} is one decimal under 1 dB and whole dB from 1 up, which
         is B's own rule for it, and {end} comes from end_words. */
+    /** ---- WHICH OF THE THREE, ONCE (A1a, 28 Oct 2026) --------------------------------------
+        `reached` within about 0.5 dB of the target or anywhere inside the band, `over` when it is
+        doing more than asked, `short` when it is under. It was written INSIDE sayLineFilled, which
+        was fine while a sentence was the only thing that needed it; B's dial-step contract now asks
+        for the word itself (`outcome`), and a second reading of lastGr against lo/hi would be a
+        second answer to one question - the family three of this week's defects came from. */
+    enum class OutcomeWord { Reached, Over, Short };
+    static OutcomeWord outcomeWordFor (float gr, float lo, float hi) noexcept
+    {
+        const float target = 0.5f * (lo + hi);
+        if (std::abs (gr - target) <= 0.5f || (gr >= lo && gr <= hi)) return OutcomeWord::Reached;
+        return gr > hi ? OutcomeWord::Over : OutcomeWord::Short;
+    }
+    static const char* outcomeWordName (OutcomeWord w) noexcept
+    {
+        switch (w)
+        {
+            case OutcomeWord::Over:    return "over";
+            case OutcomeWord::Short:   return "short";
+            case OutcomeWord::Reached: break;
+        }
+        return "reached";
+    }
+
+    /** THE DIAL'S ANSWER TO B'S DIAL FRAME, from the facts the loop measured and nothing else
+        (CONTRACT_dial_step_2026-10-23: `{name, slot, outcome, figure_db, end, control, value}`).
+        Void when nothing was measured: a dial that never got a window has no figure, and a zero
+        would read as "it did nothing", which is a different claim. */
+    juce::var dialReportVar() const
+    {
+        if (lastGr != lastGr) return {};
+        const auto w = outcomeWordFor (lastGr, lo, hi);
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", plugin);
+        o->setProperty ("slot", slot + 1);                    // 1-BASED on the wire, as everywhere
+        o->setProperty ("outcome", outcomeWordName (w));
+        o->setProperty ("figure_db", (double) lastGr);
+        // `end` IS A TOKEN, NOT THE PROSE. B's two contracts use the same idea in two registers:
+        // CONTRACT_dial_sides_and_words sends `end_words` ("its hardest setting") to fill `{end}` in
+        // the SENTENCE, and CONTRACT_dial_step's answer carries `"end": "hardest"` for the MODEL. So
+        // the sentence keeps the prose (sayLineFilled, below) and the report carries the word.
+        if (w == OutcomeWord::Over)  o->setProperty ("end", "lightest");
+        if (w == OutcomeWord::Short) o->setProperty ("end", "hardest");
+        o->setProperty ("control", params.isEmpty() ? juce::String ("the drive") : params.joinIntoString (" + "));
+        o->setProperty ("value", juce::String (writesNamedParam() ? value : preDb, 2));
+        return juce::var (o);
+    }
+
     juce::String sayLineFilled() const
     {
         if (sayReached_.isEmpty() && sayShort_.isEmpty() && sayOver_.isEmpty()) return {};
@@ -2969,11 +3017,11 @@ struct CalibLoop
         const float gr = lastGr;
         const juce::String grText = std::abs (gr) < 1.0f ? juce::String (gr, 1)
                                                          : juce::String ((int) std::lround (gr));
-        const float target = 0.5f * (lo + hi);
+        const auto which = outcomeWordFor (gr, lo, hi);
         juce::String line, endWord;
-        if (std::abs (gr - target) <= 0.5f || (gr >= lo && gr <= hi))
+        if (which == OutcomeWord::Reached)
             line = sayReached_;
-        else if (gr > hi)
+        else if (which == OutcomeWord::Over)
         { line = sayOver_;  endWord = endLightest_; }
         else
         { line = sayShort_; endWord = endHardest_; }

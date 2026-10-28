@@ -5610,8 +5610,35 @@ int main (int argc, char* argv[])
             //  THE LEAK TEST IS THE LEASE'S OWN COUNT: with the editor kept and its view re-homed, fifty
             //  opens of one slot must still have built exactly ONE editor. That is also his "one press =
             //  one take" row, measured rather than asserted.
+            // ---- A PASS THAT CANNOT RUN THESE ROWS SAYS SO, RATHER THAN FAILING THEM --------
+            //
+            // 28 Oct 2026: the out-of-process pass failed ALL NINE of them, and not one failure was
+            // about the product. RH1's was "did every subject load on the Link's rack", RH6's was
+            // "could not identify which of the rig's tracks is that Link" - preconditions, in a
+            // configuration where they cannot hold: the rig's own Tracks are the IN-PROCESS Links,
+            // and build_and_run.sh's note says the thing these rows are about plainly - "the real
+            // editor is only ever offered for a Link in OUR process".
+            //
+            // The RE and LV rows pass in both passes, so this is not "real-editor rows need one
+            // process"; it is these rows' SUBJECT, lvUid, being a Link this run launched into its
+            // own process. gLaunchedLinkUids is the strongest fact the runner has about that.
+            //
+            // The same file already states the rule for the other direction - the T2-T4 scenarios
+            // "SKIP loudly" when there is no link_host - and nine false reds in the pass that proves
+            // those scenarios is the mirror of the fault that rule exists to prevent: a row that
+            // reports on something it never ran.
+            const bool rhLinkIsOutOfProcess = lvUid.isNotEmpty() && gLaunchedLinkUids.contains (lvUid);
+            if (rhLinkIsOutOfProcess
+                && anyRowWanted ({ "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8", "RH9" }))
+                skip ("RH1-RH9: the real editor's stress list on a Link's slot",
+                      "this pass runs its Links in their OWN processes (link_host launched "
+                      + juce::String (gLaunchedLinkUids.size()) + "), and \"" + lvUid
+                      + "\" is one of them - so there is no in-process Link for these rows to open a "
+                        "real editor on, and no rig Track that IS that Link. They are the one-process "
+                        "pass's rows (EJ_RIG_NO_LINK_HOST=1), which is the configuration Logic and Pro "
+                        "Tools provide, and they ran and passed there.");
             if (anyRowWanted ({ "RH1", "RH2", "RH3", "RH4", "RH5", "RH6", "RH7", "RH8", "RH9" })
-                && lvUid.isNotEmpty() && lvSlot > 0)
+                && lvUid.isNotEmpty() && lvSlot > 0 && ! rhLinkIsOutOfProcess)
             {
                 leg ("RH: the real editor under the stress list, per plugin");
 
@@ -12097,17 +12124,30 @@ int main (int argc, char* argv[])
         // So the plugin now has a name for that surface (`ask_chip<N>`) and publishes `askChipsUp`,
         // and this row WAITS for the chips with a bound before pressing. If they never come the row
         // says so and skips rather than measuring an order it did not create.
+        // NO ASK IS EXPECTED HERE, and 28 Oct's instrument is why (docs/B6_SUPERSEDE_2026-10-28.md).
+        // Pressing New chat stops the live run in the same millisecond - "EJAgent: STOP requested in
+        // state awaiting_ask" sits directly under "cleared by starting a new chat" in every log -
+        // because a new chat never inherits the last one's run (his item 1, 17 Oct). The supersede
+        // ask belongs to the OTHER gesture: a message typed while a run is live ELSEWHERE (21:06).
+        // So this waits a short, stated moment and expects nothing; an ask appearing here would mean
+        // the two gestures had been merged, and the row says so rather than pressing it.
         const bool askUp = rig.until ([] (const juce::var& s)
-        { return (int) s.getProperty ("askChipsUp", juce::var (0)) > 0; }, 15000);
+        { return (int) s.getProperty ("askChipsUp", juce::var (0)) > 0; }, 2500);
         if (! askUp)
         {
             rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()), 6000);
-            std::printf ("        (B6 new chat) the supersede ask never came up (askChipsUp=%s) - "
-                         "his text was not held, so the order below is measured without it\n",
-                         Rig::state().getProperty ("askChipsUp", juce::var()).toString().toRawUTF8());
+            std::printf ("        (B6 new chat) no supersede ask, as expected: New chat stopped the "
+                         "run itself (his 17 Oct item 1), so there was nothing left to offer to "
+                         "stop. The order below is the row's actual subject.\n");
         }
         else
         {
+            // AN ASK HERE IS A FINDING, not a surface to press: it would mean New chat had stopped
+            // asking and the typed-message road had taken over this gesture. Pressed anyway, so the
+            // rest of the row still runs, but named.
+            std::printf ("        (B6 new chat) A SUPERSEDE ASK CAME UP AFTER NEW CHAT - that is a "
+                         "change in behaviour: New chat is supposed to have stopped the run itself "
+                         "(his 17 Oct item 1). Pressing it so the order below still measures.\n");
             const auto chipAck = rig.send (echojay::rig::cmd::press, args1 ("button", "ask_chip0"), 12000);
             Rig::pump (1200);
             const bool pressed = (bool) chipAck.getProperty ("ok", juce::var (false));

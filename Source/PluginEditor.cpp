@@ -30174,6 +30174,9 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
     // The loop's own name for the plugin it dialled, taken BEFORE the closing is drained - the take
     // clears the loop's owed flags, and a name read after that is a name read from a cleared state.
     const auto dialledPlugin = processorRef.calibLoad (uid).plugin;
+    // ...and its FIGURES, read in the same breath and for the same reason: calibTakeClosing clears
+    // the loop's owed flags, and a report read after that is a report read from a cleared state.
+    const auto dialReport = processorRef.calibLoad (uid).dialReportVar();
     const auto closing = processorRef.calibTakeClosing (uid);
     if (closing.isNotEmpty())
     {
@@ -30181,7 +30184,7 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
         // *"the dial's result lands inside the card: the dial step finishes and shows its result
         //  ... Nothing appears outside the card."*  The run's own keepPlayingFor list decides, so
         // a hand-driven dial keeps the chat line it has always had.
-        if (! processorRef.routeDialClosingToAgentCard (dialledPlugin, closing))
+        if (! processorRef.routeDialClosingToAgentCard (dialledPlugin, closing, dialReport))
             appendLocalResultBubble (closing);
     }
     // 6 Oct 2026 (Sean's ruling for 06a): an edit the Link never confirmed is DROPPED, and the user is told once.
@@ -38865,6 +38868,30 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // retired. The meaning is unchanged - a run whose chat is a DIFFERENT, stated chat - and it no
     // longer shares a function with a decision about drawing rows.
     const auto runsChat = agentClient() != nullptr ? agentClient()->runChatId().trim() : juce::String();
+    // ---- B6'S INSTRUMENT: A GATE THAT DOES NOT FIRE SAYS SO (28 Oct 2026) --------------------
+    //
+    // Round 35b's B6 skipped with "the supersede ask never came up (askChipsUp=0)" while the log
+    // showed a run in `awaiting_approval`, two different chat ids, and this very function on the
+    // path. Every condition below looked satisfiable and the ask was still never raised - and a
+    // gate that does not fire is INVISIBLE, so the next pass would have had the same nothing to
+    // read. This prints its four inputs and which way it went, and only when a run is live, so an
+    // ordinary message adds no noise.
+    //
+    // It is an instrument and not a fix: docs/B6_SUPERSEDE_2026-10-28.md names the two candidates
+    // (the ask not firing, which would be a SILENT supersede and against his 21:06 ruling; or the
+    // window never rendering what the store received), and this is the line that tells them apart.
+    if (auto* agI = agentClient(); agI != nullptr && agI->isActive())
+        EchoJay_NSLog (("EJSupersede: a message was typed while a run is live - run's chat \""
+                        + runsChat + "\", chat on screen \"" + currentChatId + "\", active "
+                        + juce::String (agI->isActive() ? "y" : "n") + ", state "
+                        + juce::String (EJAgentClient::stateName (agI->state()))
+                        + " -> " + juce::String (runsChat.isEmpty()
+                                        ? "NO ASK: the run states no chat"
+                                        : currentChatId.isEmpty()
+                                            ? "NO ASK: this window states no chat"
+                                            : runsChat == currentChatId
+                                                ? "no ask needed: the run is in THIS chat"
+                                                : "ASKING: the run is in another chat")).toRawUTF8());
     if (auto* ag = agentClient(); ag != nullptr && ag->isActive()
         && runsChat.isNotEmpty() && currentChatId.isNotEmpty() && runsChat != currentChatId)
     {
@@ -40893,6 +40920,26 @@ void EchoJayEditor::dropProvisional(int provisionalId)
     // and then it fires loudly, in the one place that could do the damage.
     jassert(chatMessages[(size_t) idx].role == "assistant");
     jassert(chatMessages[(size_t) idx].provisionalId == provisionalId);
+    // ---- AND IT REFUSES IN RELEASE TOO (28 Oct 2026) -------------------------------------
+    //
+    // The two asserts above describe the one fault this function could cause - "a drop that takes
+    // the user's message instead of the bubble presents as 'my message vanished'" - and they are
+    // COMPILED OUT of the Release archive, which is the build the rig links and the build he runs.
+    // So the guard the comment promises did not exist where it matters. It does now: the row must
+    // be the assistant's and must carry the id that was asked for, or nothing is removed and the
+    // log says what was found. (B6's hunt ruled this out as its cause - the list went to ZERO rows
+    // and this removes one - but a guard that only holds in Debug is not a guard.)
+    {
+        const auto& victim = chatMessages[(size_t) idx];
+        if (victim.role != "assistant" || victim.provisionalId != provisionalId)
+        {
+            EchoJay_NSLog (("EJChat: dropProvisional(" + juce::String (provisionalId) + ") found a "
+                            "row that is NOT its bubble at index " + juce::String (idx)
+                            + " (role \"" + victim.role + "\", provisionalId "
+                            + juce::String (victim.provisionalId) + ") - NOTHING was removed").toRawUTF8());
+            return;
+        }
+    }
 
     chatMessages.erase(chatMessages.begin() + idx);
     resized();     // indices stamped during layout are recomputed there

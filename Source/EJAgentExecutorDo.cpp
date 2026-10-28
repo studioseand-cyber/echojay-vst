@@ -415,7 +415,27 @@ juce::var ExecutorDo::translate (const ToolCall& call, juce::String& refusal) co
                             "(B's contract of 20 Oct: the limiter sets the level, and its input gain "
                             "was computed against the measured level BEFORE any trim)").toRawUTF8());
         }
-        if (const auto dial = argVar (call, "dial_on_playback"); dial.getDynamicObject() != nullptr)
+        // ---- `dial_follows`: THE DIAL IS COMING AS ITS OWN FRAME (B, 23 Oct 2026) -------------
+        //
+        // *"The add, as today, plus dial_follows: true. It still carries dial_on_playback, the
+        //  dial's definition ... dial_follows means don't start this dial yourself; a dial frame
+        //  comes next."*
+        //
+        // ONE POINT, AND IT IS THIS ONE. What arms an add's dial is the field riding the op to the
+        // rack, so not copying it is the whole of "don't start it yourself" - no flag to plumb into
+        // two racks, no second condition for either to get wrong, and an add whose dial frame never
+        // arrives has simply not been dialled rather than dialled twice.
+        const bool dialFollows = echojay::agent::dialFollowsOnAdd (call);
+        if (const auto dial = argVar (call, "dial_on_playback");
+            dial.getDynamicObject() != nullptr && dialFollows)
+        {
+            EchoJay_NSLog (("EJAgentDo: " + op + " \"" + name + "\" carries dial_on_playback AND "
+                            "dial_follows:true - the field is NOT copied onto the op, so this add "
+                            "arms nothing. B sends the dial as its own frame next, and that frame's "
+                            "step is what waits for the playback and reports the figure (B's "
+                            "dial-step contract of 23 Oct)").toRawUTF8());
+        }
+        else if (const auto dial = argVar (call, "dial_on_playback"); dial.getDynamicObject() != nullptr)
         {
             o->setProperty ("dial_on_playback", dial);
             EchoJay_NSLog (("EJAgentDo: " + op + " \"" + name + "\" carries dial_on_playback - control \""

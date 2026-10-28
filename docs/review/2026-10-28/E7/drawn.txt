@@ -1,5 +1,5 @@
 scenario E7
-captured 2026-10-28T11:28:25.832Z
+captured 2026-10-28T16:23:23.883Z
   [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
   [assistant] Added it to this rack, with the setting you asked for.
   [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?

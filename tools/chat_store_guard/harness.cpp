@@ -38,6 +38,7 @@
 #include "EJMapSuspect.h"               // SH31: a reduction control that reduces nothing
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
+#include "EJClipDrive.h"                // A1c: the clip stage's figure, driven by the CD legs
 #include "SurgicalEqProcessor.h"   // EQG: the band-gain clamp, both directions
 #include "EJPendingClaim.h"     // PC: nothing claims "added" while the add is waiting
 #include "EJShadowRetry.h"       // SR: the copy road resuming when the rack cache arrives
@@ -4390,6 +4391,168 @@ int main()
                    "BT2b ...by the six dB that was put between them, MEASURED rather than assumed - "
                    "so a reader adding the trim back gets the other tap's figure",
                    juce::String (hi[30].shortTermLufs - ho[30].shortTermLufs, 2) + " dB apart");
+        }
+    }
+
+    // =============================================================================================
+    //  THE CLIP STAGE'S FIGURE (A1c; B's CONTRACT_clip_drive_2026-10-23, from Sean's 23 Oct testing)
+    // =============================================================================================
+    //
+    // *"the clip stage before the limiter did nothing on most builds … the plan's 'a light clip,
+    //  about 1.5 dB off the peaks' wasn't true."*  The figure is the MEDIAN, over the loud blocks, of
+    // (peak in - peak out) across the slot - and the two trims cancel, so anything the clipper does
+    // not touch reads 0 and what is left is what the clipper took off.
+    //
+    // Driven here because it is arithmetic over two arrays, and because the two bounds (8 s, 10 loud
+    // blocks) are the kind that look right either way until something drives both sides of them.
+    {
+        using namespace echojay::clipdrive;
+
+        // ---- CD0: HIS OWN WORKED EXAMPLE, END TO END ------------------------------------------
+        // The contract's example: peaks arriving at -4.3 with a ceiling of -0.1 give
+        // IN = -0.1 + 1.25 + 4.3 = +5.45, "so +5.5".
+        {
+            std::vector<Pair> ps;
+            for (int i = 0; i < 100; ++i) ps.push_back ({ -4.3, -5.6 });
+            const auto f = figureFrom (ps, 0.0);
+            check (f.enough && std::abs (f.peakReductionDb - 1.3) < 0.001,
+                   "CD0 a hundred blocks at 1.3 dB across the slot read 1.3 dB, with the window met",
+                   juce::String (f.peakReductionDb, 3) + " dB over " + juce::String (f.seconds, 1) + " s");
+            const auto in = firstGuessInDb (f.loudestInDb, -0.1, 1.25, 0.0, 12.0);
+            check (std::abs (in - 5.5) < 0.001,
+                   "CD0b ...and the first guess is HIS ARITHMETIC, rounded to the 0.5 dB step: +5.5",
+                   juce::String (in, 2));
+            check (outcomeFor (f.peakReductionDb, 1.0, 1.5, in, 0.0, 12.0, 0) == Outcome::Reached,
+                   "CD0c ...and 1.3 dB inside [1, 1.5] is reached");
+        }
+
+        // ---- CD0d: THE IN TRIM COMES BACK OUT, WHICH THE CONTRACT DOES NOT EXPECT -------------
+        //
+        // B's contract reasons that "the two trims cancel" because its `peak in` is taken BEFORE the
+        // IN trim. In this plugin the slot's `in` tally is pushed AFTER it - the Slot Pre-Trim node's
+        // own comment is "the in tally, from what the plugin is about to hear" - so the raw
+        // difference is (IN trim + what the clipper took), and at his worked example it would read
+        // 6.8 dB instead of 1.3 and stop the dial on its first window. The trim is added back by the
+        // dial that set it, and this is the leg that holds that.
+        {
+            std::vector<Pair> ps;
+            // the same signal as CD0, but measured where this plugin measures it: +5.5 of trim is in
+            // the `in` reading, and the clipper is taking 1.3 off the peaks.
+            for (int i = 0; i < 100; ++i) ps.push_back ({ -4.3 + 5.5, -5.6 });
+            const auto wrong = figureFrom (ps, 0.0);
+            const auto right = figureFrom (ps, 5.5);
+            check (std::abs (wrong.peakReductionDb - 6.8) < 0.001,
+                   "CD0d RED-FIRST: with the trim left in, the figure reads 6.8 dB - the clip stage "
+                   "looks six times harder than it is, and the dial would stop at once",
+                   juce::String (wrong.peakReductionDb, 2) + " dB");
+            check (std::abs (right.peakReductionDb - 1.3) < 0.001,
+                   "CD0e ...and with the trim added back it is 1.3 dB, which is what the clipper did",
+                   juce::String (right.peakReductionDb, 2) + " dB");
+            check (std::abs (right.inTrimDb - 5.5) < 0.001,
+                   "CD0f ...and the figure CARRIES the trim it took back, so the arithmetic can be "
+                   "checked from the answer alone");
+        }
+
+        // ---- CD1: THE MEDIAN, NOT THE MEAN ----------------------------------------------------
+        // One block where the clipper caught a stray transient must not drag the figure: the
+        // contract says median and this is why it says it.
+        {
+            std::vector<Pair> ps;
+            for (int i = 0; i < 99; ++i) ps.push_back ({ -4.0, -5.0 });   // 1.0 dB
+            ps.push_back ({ -4.0, -20.0 });                               // one 16 dB outlier
+            const auto f = figureFrom (ps, 0.0);
+            check (std::abs (f.peakReductionDb - 1.0) < 0.001,
+                   "CD1 one wild block does not move the figure - the median holds at 1.0 dB where a "
+                   "mean would read 1.15",
+                   juce::String (f.peakReductionDb, 3));
+        }
+
+        // ---- CD2: ONLY THE LOUD BLOCKS COUNT, AND "LOUD" IS WITHIN 2 dB -----------------------
+        // A quiet stretch the clipper never touches reads 0 dB; if it counted, the figure would be
+        // the song's dynamics rather than the clip stage's work.
+        {
+            std::vector<Pair> ps;
+            for (int i = 0; i < 20; ++i) ps.push_back ({ -4.0, -5.5 });    // loud: 1.5 dB
+            for (int i = 0; i < 80; ++i) ps.push_back ({ -24.0, -24.0 });  // quiet: untouched
+            const auto f = figureFrom (ps, 0.0);
+            check (f.loudBlocks == 20 && std::abs (f.peakReductionDb - 1.5) < 0.001,
+                   "CD2 the eighty quiet blocks are not in the figure - 20 loud blocks, 1.5 dB",
+                   juce::String (f.loudBlocks) + " loud of " + juce::String (f.blocks)
+                   + ", " + juce::String (f.peakReductionDb, 2) + " dB");
+            check (std::abs (f.loudThresholdDb - (-6.0)) < 0.001,
+                   "CD2b ...and the line is the loudest minus two dB, stated with the figure",
+                   juce::String (f.loudThresholdDb, 2));
+        }
+
+        // ---- CD3: BOTH BOUNDS, BOTH DIRECTIONS, AND THE REASON NAMES THE ONE THAT FAILED -------
+        {
+            std::vector<Pair> few;                                   // 5 s, plenty loud
+            for (int i = 0; i < 50; ++i) few.push_back ({ -4.0, -5.2 });
+            const auto fShort = figureFrom (few, 0.0);
+            check (! fShort.enough && fShort.why.contains ("5.0 s"),
+                   "CD3 fifty blocks is five seconds, and eight are needed - no figure, and it says "
+                   "which bound failed",
+                   fShort.why);
+            std::vector<Pair> quiet;                                 // 10 s, only 4 loud blocks
+            for (int i = 0; i < 4;  ++i) quiet.push_back ({ -4.0, -5.2 });
+            for (int i = 0; i < 96; ++i) quiet.push_back ({ -30.0, -30.0 });
+            const auto fQuiet = figureFrom (quiet, 0.0);
+            check (! fQuiet.enough && fQuiet.why.contains ("4 of 100"),
+                   "CD3b ...and ten seconds of mostly quiet fails the OTHER bound, which is answered "
+                   "by playing the chorus rather than by playing longer",
+                   fQuiet.why);
+            std::vector<Pair> enough;                                // 10 s, 10 loud: both met
+            for (int i = 0; i < 10; ++i) enough.push_back ({ -4.0, -5.2 });
+            for (int i = 0; i < 90; ++i) enough.push_back ({ -30.0, -30.0 });
+            check (figureFrom (enough, 0.0).enough,
+                   "CD3c ...and exactly ten loud blocks in ten seconds IS enough - the bound is a "
+                   "floor, not a margin");
+        }
+
+        // ---- CD4: THE CORRECTION MOVES BY THE SHORTFALL, IN STEPS, INSIDE THE RANGE ------------
+        {
+            check (std::abs (correctedInDb (5.5, 0.4, 1.25, 0.0, 12.0) - 6.5) < 0.001,
+                   "CD4 doing 0.4 dB against 1.25 raises IN by the shortfall, snapped to the step",
+                   juce::String (correctedInDb (5.5, 0.4, 1.25, 0.0, 12.0), 2));
+            check (std::abs (correctedInDb (5.5, 2.5, 1.25, 0.0, 12.0) - 4.5) < 0.001,
+                   "CD4b ...and doing too much LOWERS it, by the same arithmetic");
+            check (std::abs (correctedInDb (11.5, 0.2, 1.25, 0.0, 12.0) - 12.0) < 0.001
+                     && std::abs (correctedInDb (0.5, 3.0, 1.25, 0.0, 12.0) - 0.0) < 0.001,
+                   "CD4c ...and neither direction leaves [0, +12], so OUT stays inside [-12, 0]");
+        }
+
+        // ---- CD5: SHORT AND OVER NEED AN END, OR THEY ARE "NOT THERE YET" ---------------------
+        // *"short: IN is at +12 and the peak reduction is still under 1 dB … over: IN is at 0 and the
+        //  peak reduction is still over 1.5 dB."*  So an end is part of the test: a dial that said
+        // `short` with travel left would be giving up early, and that is a figure he would read as
+        // "the clipper cannot do this" when it has not been asked to.
+        {
+            check (outcomeFor (0.4, 1.0, 1.5, 12.0, 0.0, 12.0, 1) == Outcome::Short,
+                   "CD5 under the band AT +12 is short");
+            check (outcomeFor (0.4, 1.0, 1.5, 6.0, 0.0, 12.0, 1) == Outcome::Working,
+                   "CD5b ...but under the band with travel left is still WORKING, not short");
+            check (outcomeFor (2.0, 1.0, 1.5, 0.0, 0.0, 12.0, 1) == Outcome::Over,
+                   "CD5c over the band AT 0 is over");
+            check (outcomeFor (2.0, 1.0, 1.5, 3.0, 0.0, 12.0, 1) == Outcome::Working,
+                   "CD5d ...and over the band with room to come down is still working");
+            check (outcomeFor (0.4, 1.0, 1.5, 6.0, 0.0, 12.0, kMaxCorrections) == Outcome::Short,
+                   "CD5e ...and the FOUR-CORRECTION ceiling ends it either way - a dial that keeps "
+                   "correcting is a dial that never reports");
+        }
+
+        // ---- CD6: THE REPORT, AND OUT IS ALWAYS MINUS IN --------------------------------------
+        // *"out_follows_in: true … Never one without the other."*  OUT is not an input here, so a
+        // caller cannot report a pair the slot never held.
+        {
+            const auto r = reportVar (4, "bx_clipper", 5.5, 1.3, -0.2, Outcome::Reached);
+            check (std::abs ((double) r.getProperty ("in_db", {}) - 5.5) < 0.001
+                     && std::abs ((double) r.getProperty ("out_db", {}) + 5.5) < 0.001,
+                   "CD6 the report's OUT is minus its IN, by construction",
+                   juce::JSON::toString (r, true));
+            check (r.getProperty ("outcome", {}).toString() == "reached"
+                     && std::abs ((double) r.getProperty ("peak_reduction_db", {}) - 1.3) < 0.001
+                     && r.getProperty ("slot", {}).toString() == "4",
+                   "CD6b ...and it carries the slot, the figure and the outcome in B's own shape");
         }
     }
 

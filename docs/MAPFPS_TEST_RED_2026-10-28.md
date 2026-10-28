@@ -60,6 +60,28 @@ AU manufacturer codes the registry hands back. The installed set here is not the
 written against — and a full AU scan on this machine is itself off limits (iLok/PACE prompts and
 crashes), so these cannot be made true by rescanning.
 
+## The re-pins held: 26 -> 21, measured (round 35c, 12:17)
+
+`mapfps_test` re-run against the same archive with only the three pins changed: **21 failed**, exactly
+the 21 below, and **every one of the twelve new assertions passed** — including all four controls:
+
+```
+ok  ej PIN3: the toggles are placed FROM THE LIST, full-width (sw) and stacked
+ok  ej PIN3: ...and a toggle that is not shown takes no row
+ok  ej PIN3: and the paint walk advances by the SHOWN count from that same list, never by a literal
+ok  ej PIN3: control: a paint walk back on a literal is reported
+ok  ej PIN3: control: a count taken from the list's size rather than what is shown is reported
+ok  rs PIN15 (text pin): Escape on the Match page asks the host to go back to Compare
+ok  rs PIN15b (text pin): ...and the host answers that with the sub-tab move, so the two halves cannot drift apart
+ok  rs PIN15 (text pin): control: a Match page whose Escape goes nowhere is reported
+ok  rs PIN15b (text pin): control: a host whose goBackToCompare moves no tab is reported
+ok  ap PIN1: the press reads its slot's index, checks the card it was drawn for, and only then calls applyChainEditFromMsg
+ok  ap PIN1: control: applying the pool slot's index WITHOUT that check - the form his 09:52 ruling forbids - is reported
+```
+
+The count going exactly to 21 is the part that matters: it says the attribution below is the whole of
+what is left, rather than a guess that happened to be in the right direction.
+
 ## What round 35b does with it
 
 `mapfps_test` is **excluded from the round's verdict, in writing, here** — not skipped silently and

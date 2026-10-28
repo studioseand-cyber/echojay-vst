@@ -78,7 +78,47 @@ with **no dial at all**, a regression on a road that works today. A capability t
 rack and false of the other is not what a capability says, so it waits for:
 
 - **A1b** — the Link's own road for a dial naming a slot it did not just add, then both
-  capabilities in one commit. Where exactly: `LoudnessLoop::dialsOnPlaybackFromOps` takes only
+  capabilities in one commit. **Its wire shape, decided 28 Oct from what the file already does:**
+  the dial rides the chain-cmd as **its own top-level field**, `dialOnSlot: { slot, name,
+  dial_on_playback }`, beside `editOps` — **not** as an op inside them. Three reasons, each from the
+  code rather than from taste:
+  1. **A dial is not an edit.** `ChainHost`'s op road ends in `bad("unknown operation \"" + op.op +
+     "\"")`, so a `dial` op inside `editOps` would make an **old Link refuse the whole batch** — and
+     a new one would have to carry a no-op edit for it. An unknown top-level FIELD is simply ignored
+     by any JSON reader, old or new, which is the difference between additive and breaking.
+  2. **The file already works this way, and says so.** `wantBusyAck` is the precedent, with the
+     reason written beside it: *"ONLY FOR A SENDER THAT ASKED FOR IT, which is what keeps this
+     additive … 'absent' means 'that sender cannot understand this answer'."*  So the Link's ack
+     gains `dialArmed` (and `dialWhy` when false), and a V2 that gets neither knows it is talking to
+     a Link without the road.
+  3. **The answer comes back on the ack**, which is the only place the V2 already waits for a Link's
+     verdict. `armDialAtSlot` for a Link is then: write the command, wait for the ack (the existing
+     wait), read `dialArmed` — and the dial frame's `dial_not_armed` carries the Link's own sentence.
+
+  **And it spends the LAST spare byte of `RegistrySlot`.** The per-Link capability B gates on has to
+  come from the Link itself, and that is `LinkShm`'s registry slot: 128 bytes, with **`_pad[1]` at
+  offset 127 — one byte left**, carrying the note *"one byte left; read byte 125's note before
+  spending it"*. Byte 125 is `dialCapable`, and its note sets the rule for whoever carves the next
+  one: *"keep the fallback the SAFE answer, not the convenient one. A zero here withholds a feature;
+  a zero that meant 'capable' would hand payloads to binaries that drop them."*  So
+  `dialFrameCapable` at 127 reads 0 from every existing Link, meaning **"cannot arm a dial on a named
+  slot"** — which withholds the dial-frame shape for that channel and leaves B's old road in place.
+  That is the safe direction, and it is the one B's per-channel gating needs.
+  **After A1b there are no spare bytes**: the next per-Link capability needs a layout version bump,
+  which is a decision for Sean rather than a line in a patch.
+
+  **And the arm has to become asynchronous, which A1a's interface is not.** `armDialAtSlot` returns
+  `bool` today, and that is honest for the open rack: `calibStart` is immediate. A Link's answer is
+  not — it comes back on `chain-ack-<uid>.json`, and the V2's own road for that is
+  `awaitChainAck (uid, seq, cb, maxWaitMs = 8000)`, **a callback**. Treating "the command was
+  written" as "the dial was armed" is precisely the fault Sean's item 1 of 13 Oct is about (*"'sent'
+  is not 'applied'"*), so A1b changes the interface to answer through a callback and the client's
+  `beginDialStep` only starts its wait once the arm has answered. The step is already open at that
+  point, so there is nowhere for the extra second to leak: it is the same wait, told honestly.
+
+  The Link side is then the arming it already does, with the slot resolved by **which slot holds that
+  name** rather than by `slotTheBatchAdded`, and without the `pushIsBuild` gate — which is exactly
+  what makes it a dial on a slot nobody just added. Where that is today: `LoudnessLoop::dialsOnPlaybackFromOps` takes only
   `add`/`replace` ops (`if (op != "add" && op != "replace") continue;`), and `LinkProcessor`'s arming
   is additionally gated on `pushIsBuild` with the slot resolved by `slotTheBatchAdded` — a dial op on
   a slot the batch did not touch fails all three. So A1b is: a dial op recognised in that collector,
@@ -100,6 +140,26 @@ The plugin already measures most of it. `ChainHost::SlotLevels` carries a `Level
 each slot's **in** and **out**, and a snapshot carries `hopTruePeak[]` — the true peak of each of the
 **last 30 hops (100 ms blocks)**, with `hopTruePeakCount` saying how many are valid. So the pairing,
 the 2 dB "loud" test and the median are arithmetic over two arrays this build already publishes.
+
+**AND ONE THING THE CONTRACT ASSUMES THAT IS NOT TRUE HERE, found by reading rather than by a wrong
+figure.** B reasons that *"the two trims cancel, so anything the clipper doesn't touch reads 0"*,
+because its `peak in` is *"the sample peak of the signal arriving at the slot, BEFORE the IN trim"*.
+In this plugin the slot's `in` tally is pushed by the **Slot Pre-Trim node after it has applied the
+trim** — its own comment says so: *"the in tally, from what the plugin is about to hear"*. So with the
+IN trim at +I and the clipper taking R off the peaks:
+
+```
+in  (after IN)  = L + I
+out (after OUT) = L + I - R - I = L - R
+in - out        = I + R        <-- not R
+```
+
+At B's own worked example (+5.5 of trim, 1.3 dB of clipping) the figure would read **6.8 dB** and stop
+the dial on its first window — a true measurement of the wrong quantity, which is the worst kind. So
+`EJClipDrive.h` takes the trim back out, by the dial that set it, and the figure **carries the trim it
+removed** so the arithmetic can be checked from the answer alone. Legs CD0d–CD0f hold both
+directions (6.8 with the trim left in, 1.3 with it taken back). The alternative — a second tap before
+the trim — would be a new measurement for an arithmetic difference the dial already knows.
 
 **The gap is the window, not the measurement**: 30 hops is 3 s and the contract wants *"at least 8 s
 of playback and at least 10 loud-peak blocks before a figure counts"*. So A1c accumulates pairs

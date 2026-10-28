@@ -320,6 +320,33 @@ public:
     /** What this run's dials finally said, keyed by the plugin's name (his 08:43 ruling: the dial's
         result lands ON its step, never as a chat line below the card). Empty until one lands. */
     virtual juce::StringPairArray dialResults() const { return {}; }
+    /** ---- A DIAL FRAME'S TWO QUESTIONS (A1a, 28 Oct 2026) ---------------------------------
+        B's slot dial names a plugin that is ALREADY on the rack, so before anything is armed this
+        road has to know what actually stands in that slot - "if the slot no longer holds `name`,
+        answer skipped/slot_changed". Empty is a changed slot: B named something and it is not
+        there, which is the honest reading for an empty slot, an out-of-range one and a rack this
+        implementer cannot see.
+
+        `armDialAtSlot` arms the dial the frame carries on that slot and says whether it did. It is
+        the SAME road an add's dial takes (one translation, CalibLoop::blockFromDialOnPlayback) -
+        a second road to the same place is how two of this week's defects happened. False with the
+        reason in `why`, and the reason goes to the model rather than into a log nobody reads.
+
+        Defaulted so every stub, the read-only executor and the guards' fakes compile unchanged and
+        answer "I cannot": a client that asks and is told no answers `skipped`, which is a true
+        statement about this build. */
+    virtual juce::String slotPluginName (int slot1) const { juce::ignoreUnused (slot1); return {}; }
+    /** The landed dial's own figures for `plugin` - B's `{name, slot, outcome, figure_db, end,
+        control, value}` - or void while it is still working. The SENTENCE is dialResults(); this is
+        the same event in numbers, and neither is parsed out of the other. */
+    virtual juce::var dialReport (const juce::String& plugin) const
+    { juce::ignoreUnused (plugin); return {}; }
+    virtual bool armDialAtSlot (const juce::var& dialOnPlayback, int slot1, juce::String& why)
+    {
+        juce::ignoreUnused (dialOnPlayback, slot1);
+        why = "this build has no road that arms a dial on a slot";
+        return false;
+    }
 
     // undo
     virtual juce::String captureCheckpoint (const juce::String& label) = 0;   // "" = no checkpoint available

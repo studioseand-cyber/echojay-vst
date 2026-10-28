@@ -8365,11 +8365,17 @@ void EchoJayProcessor::recordRemoteAddsForUndo (const juce::String& linkUid,
 }
 
 bool EchoJayProcessor::routeDialClosingToAgentCard (const juce::String& plugin,
-                                                    const juce::String& sentence)
+                                                    const juce::String& sentence,
+                                                    const juce::var& report)
 {
     if (plugin.isEmpty() || sentence.trim().isEmpty()) return false;
     if (! keepPlayingFor.contains (plugin)) return false;
     agentDialResults.set (plugin, sentence.trim());
+    // ...AND THE FIGURES, for a dial frame to answer with (A1a). The sentence is for the card; the
+    // report is for B, and neither is derived from the other.
+    if (report.getDynamicObject() != nullptr)
+        if (auto* o = agentDialReports.getDynamicObject())
+            o->setProperty (plugin, report);
     EchoJay_NSLog (("EJThreshold: the dial's closing line goes ON THE RUN'S CARD for \"" + plugin
                     + "\" (his 08:43 ruling), not into the chat as a line of its own: \""
                     + sentence.trim().substring (0, 90) + "\"").toRawUTF8());

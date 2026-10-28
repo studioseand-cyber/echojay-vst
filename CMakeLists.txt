@@ -168,6 +168,13 @@ target_sources(EchoJay PRIVATE
     Source/EJShadowRetry.h
     Source/EJPendingClaim.h
     Source/EJCompareSlotState.h
+    # A1c (28 Oct 2026): the clip stage's figure - the peak reduction ACROSS the slot, from the two
+    # hop-peak arrays ChainHost already publishes. B's CONTRACT_clip_drive_2026-10-23.
+    Source/EJClipDrive.h
+    # A1a (28 Oct 2026): a dial on playback is a STEP of the build, which the server calls and this
+    # client answers. B's CONTRACT_dial_step_2026-10-23 and CONTRACT_dial_slot_2026-10-25; the
+    # decisions are here because the arming road needs a rack, a transport and eight seconds of audio.
+    Source/EJDialFrame.h
     Source/ChainHost.cpp
     Source/ChainHost.h
     Source/ChainPluginPicker.h

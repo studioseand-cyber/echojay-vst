@@ -300,6 +300,40 @@ int main (int argc, char* argv[])
         juce::Timer::callPendingTimersSynchronously();
         CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false);
 
+        // ---- WHAT THIS PROCESS SEES ON THE COMMAND ROAD (28 Oct 2026) ----------------------
+        //
+        // SCEN A4 and A4b fail with "no chain-ack-<uid>.json with seq N appeared", and that one
+        // sentence covers three different faults: the command never arrived here, it arrived and
+        // was refused, or it was applied and the ack was not written. None of them can be told
+        // from the V2's side, and the first thing to rule out is not a fault at all - the two
+        // processes resolving DIFFERENT directories, which would explain every symptom.
+        //
+        // So: the directory, and the seq of each file, printed when either changes. Once per
+        // change, because this loop runs about a hundred times a second.
+        if (host.uid.isNotEmpty())
+        {
+            // resolveDir takes an ERRNO BY REFERENCE, not a message - int&, as every other call
+            // in this file passes. (I wrote juce::String here and the rig's own build swallowed the
+            // error with >/dev/null, which cost pass 2 of round 41.)
+            int derrno = 0;
+            const auto cdir = LinkShm::resolveDir (derrno);
+            const juce::File cmdF (cdir + "chain-cmd-" + host.uid + ".json");
+            const juce::File ackF (cdir + "chain-ack-" + host.uid + ".json");
+            const int cmdSeq = cmdF.existsAsFile()
+                                 ? (int) juce::JSON::parse (cmdF.loadFileAsString()).getProperty ("seq", 0) : -1;
+            const int ackSeq = ackF.existsAsFile()
+                                 ? (int) juce::JSON::parse (ackF.loadFileAsString()).getProperty ("seq", 0) : -1;
+            static int lastCmdSeen = -2, lastAckSeen = -2;
+            if (cmdSeq != lastCmdSeen || ackSeq != lastAckSeen)
+            {
+                lastCmdSeen = cmdSeq; lastAckSeen = ackSeq;
+                std::printf ("link_host \"%s\": the command road in %s - cmd seq %d, ack seq %d%s\n",
+                             host.label.toRawUTF8(), cdir.toRawUTF8(), cmdSeq, ackSeq,
+                             derrno != 0 ? (" [resolveDir errno " + juce::String (derrno) + "]").toRawUTF8() : "");
+                std::fflush (stdout);
+            }
+        }
+
         if (host.uid.isEmpty())
         {
             host.uid = ownUid();
