@@ -154,12 +154,15 @@ ejmap::wizapp::Power readPower()
     {   const auto t = juce::File (juce::String::fromUTF8 (f)).loadFileAsString().trim().toLowerCase();
         if (t.isNotEmpty()) { p.known = true; p.onBattery = t.startsWith ("battery"); p.percent = p.onBattery ? t.fromFirstOccurrenceOf (" ", false, false).getIntValue() : 100; return p; } }
     CFTypeRef info = IOPSCopyPowerSourcesInfo(); if (info == nullptr) return p;
-    if (CFStringRef src = IOPSGetProvidingPowerSourceType (info)) { p.known = true; p.onBattery = CFStringCompare (src, CFSTR (kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo; }
+    bool providingBattery = false, anyOnAC = false;
+    if (CFStringRef src = IOPSGetProvidingPowerSourceType (info)) { p.known = true; providingBattery = CFStringCompare (src, CFSTR (kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo; }
     if (CFArrayRef list = IOPSCopyPowerSourcesList (info))
     {
         for (CFIndex i = 0; i < CFArrayGetCount (list); ++i)
         {
             CFDictionaryRef d = IOPSGetPowerSourceDescription (info, CFArrayGetValueAtIndex (list, i)); if (d == nullptr) continue;
+            if (auto state = (CFStringRef) CFDictionaryGetValue (d, CFSTR (kIOPSPowerSourceStateKey)))   // 28 Oct: "AC Power" while the adapter is attached, full or not
+                if (CFStringCompare (state, CFSTR (kIOPSACPowerValue), 0) == kCFCompareEqualTo) anyOnAC = true;
             auto type = (CFStringRef) CFDictionaryGetValue (d, CFSTR (kIOPSTypeKey));
             if (type == nullptr || CFStringCompare (type, CFSTR (kIOPSInternalBatteryType), 0) != kCFCompareEqualTo) continue;
             int cur = 0, mx = 0;
@@ -169,6 +172,7 @@ ejmap::wizapp::Power readPower()
         }
         CFRelease (list);
     }
+    p.onBattery = ejmap::wizapp::onBatteryFrom (providingBattery, anyOnAC);   // 28 Oct: an attached adapter is never "on battery"
     CFRelease (info);
     return p;
 }

@@ -10076,7 +10076,8 @@ void testWizardCategories()
         const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
         check (stepLine (false, 0) == "Step 1 of 3 - Looking for plugins" && stepLine (false, 1) == "Step 2 of 3 - Checking your plugins" && stepLine (true, 0) == "Step 3 of 3 - Measuring"
                && s1 == 0.4 && s1back == 0.4 && s2 == 0.1 && s2up == 0.2 && barPercentWords (0.43129) == "43.1%" && barPercentWords (0.43169) == "43.1%" && barPercentWords (1.0) == "100.0%"
-               && std::abs (scanBarValue (withShare (0.4312)) - 0.4312) < 1e-9 && scanBarValue (P (1, 0, 0, 3, 10)) == 0.3
+               && scanBarValue (withShare (0.4312)) == 0.3 && scanBarValue (P (1, 0, 0, 3, 10)) == 0.3   /* 28 Oct: the counts are the bar; the share only without them */
+               && [&] { auto v = P (1, 0, 0, 0, 0); v.getDynamicObject()->setProperty ("stage_share", 0.4312); return std::abs (scanBarValue (v) - 0.4312) < 1e-9; }()
                && counterWords (P (0, 312, 859, 0, 0), false) == "312 plugins looked at" && counterWords (P (1, 0, 0, 431, 1211), false) == "431 plugins checked"
                && counterWords (P (1, 0, 0, 9, 20), true) == "9 plugins re-checked" && counterWords (demoRun, true) == "30 plugins sound-checked" && counterWords (meas, true) == "43 plugins done"
                && nowWords (afterNow) == "LinEQ Lowband - checking controls 12 of 40" && nowWords (afterStart) == "LinEQ Lowband - reading its controls"
@@ -14566,6 +14567,34 @@ int main (int, char**)
                && tr.contains ("e.parts = twin->parts; e.L.why << certv1::partsWhy (e.parts);")
                && tr.contains ("if (certv1::partByPart (certv1::mapCategoryOf (r.category))) v1Parts[{ r.product, r.format }] = certv1::mergeParts (v1Parts[{ r.product, r.format }], r.parts);"),
                "cert WZ-31OCT-7: a certified de-esser / transient shaper says per part what is verified ('" + partsWhy (shown) + "')");
+    }
+    // WZ-35OCT-1 THE STEP 2 BAR IS THE REAL WORK (the STAGING 4 run, 28 Oct 16:58Z: the bar sat at 98 % - the engine's stage_share 0.9798 -
+    // while "979 plugins checked" of 1,204 kept rising; the short sound check was not in the share). Plugins checked of the total, each
+    // plugin checked now by its own fraction, never past the whole
+    {
+        using namespace ejmap::wizapp;
+        auto live = [] (int done, int total, double share, std::initializer_list<double> fractions)
+        {   auto* o = new juce::DynamicObject(); o->setProperty ("stage_index", 1); o->setProperty ("stage_share", share);
+            auto* c = new juce::DynamicObject(); c->setProperty ("done", done); c->setProperty ("total", total); o->setProperty ("stage_counts", juce::var (c));
+            juce::Array<juce::var> jobs; for (double f : fractions) { auto* j = new juce::DynamicObject(); j->setProperty ("kind", "check"); j->setProperty ("fraction", f); jobs.add (juce::var (j)); }
+            o->setProperty ("jobs_now", jobs); return juce::var (o); };
+        const double now = scanBarValue (live (979, 1204, 0.9798, { 0.0, 0.0, 0.0, 0.0 })), partial = scanBarValue (live (979, 1204, 0.9798, { 0.5, 0.25, 2.0 }));   /* a fraction past 1 counts 1 */
+        const double end = scanBarValue (live (1204, 1204, 0.9999, { 0.9, 0.9 })), next = scanBarValue (live (1100, 1204, 0.9801, {}));
+        check (std::abs (now - 979.0 / 1204.0) < 1e-9 && std::abs (partial - (979.0 + 1.75) / 1204.0) < 1e-9 && end == 1.0 && next > now && next < 0.92,
+               "wizard WZ-35OCT-1: step 2's bar follows plugins checked of the total (" + juce::String (now * 100.0, 1) + " % at 979 of 1,204, not 98 %)");
+    }
+    // WZ-35OCT-2 AN ATTACHED ADAPTER IS NEVER "ON BATTERY" (the STAGING 4 run, 28 Oct: "Please plug in your Mac" on AC at 100 %, charged / not
+    // charging - macOS can name the battery the providing source while the adapter is attached). On battery only when the battery provides
+    // and no power source reports AC
+    {
+        using namespace ejmap::wizapp;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        Power full; full.known = true; full.onBattery = onBatteryFrom (true, true); full.percent = 100;
+        check (onBatteryFrom (true, false) && ! onBatteryFrom (true, true) && ! onBatteryFrom (false, true) && ! onBatteryFrom (false, false)
+               && ! batteryStep (full, true, false).notice
+               && app.contains ("if (CFStringCompare (state, CFSTR (kIOPSACPowerValue), 0) == kCFCompareEqualTo) anyOnAC = true;")
+               && app.contains ("p.onBattery = ejmap::wizapp::onBatteryFrom (providingBattery, anyOnAC);"),
+               "wizard WZ-35OCT-2: the adapter attached and the battery full is plugged in - no plug-in notice");
     }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0

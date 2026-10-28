@@ -538,10 +538,18 @@ inline double scanBarValue (const juce::var& progress)
     if (idx <= 0)
     {   const auto lk = progress.getProperty ("looking", {}); const int lt = (int) lk.getProperty ("total", 0), ld = (int) lk.getProperty ("done", 0);
         return lt > 0 ? juce::jlimit (0.0, 1.0, (double) ld / (double) lt) : 0.0; }
-    if (progress.hasProperty ("stage_share")) return juce::jlimit (0.0, 1.0, (double) progress.getProperty ("stage_share", 0.0));
+    // 28 Oct (the STAGING 4 run: the bar sat at 98 % while "979 plugins checked" of 1,204 kept rising - the engine's stage_share weights
+    // the step by guessed seconds per kind and leaves out the short sound check). The bar is the real work: plugins checked of the total
+    // to check, each plugin being checked now counted by its own fraction (jobs_now), never past the whole; the share only without counts
     const auto sc = progress.getProperty ("stage_counts", {});
     const int total = (int) sc.getProperty ("total", 0), done = (int) sc.getProperty ("done", 0);
-    return total > 0 ? juce::jlimit (0.0, 1.0, (double) done / (double) total) : 0.0;
+    if (total > 0)
+    {   double partial = 0.0;
+        if (const auto* jobs = progress.getProperty ("jobs_now", {}).getArray())
+            for (const auto& j : *jobs) partial += juce::jlimit (0.0, 1.0, (double) j.getProperty ("fraction", 0.0));
+        return juce::jlimit (0.0, 1.0, ((double) done + partial) / (double) total); }
+    if (progress.hasProperty ("stage_share")) return juce::jlimit (0.0, 1.0, (double) progress.getProperty ("stage_share", 0.0));
+    return 0.0;
 }
 // a step's bar never goes back: the larger of what was shown in THIS step and the new value (a new step starts from its own 0)
 struct StepBar { int step = 0; double shown = 0.0; double next (int s, double v) { if (s != step) { step = s; shown = 0.0; } shown = juce::jmax (shown, juce::jlimit (0.0, 1.0, v)); return shown; } };
@@ -596,7 +604,10 @@ inline bool progressLogDue (ProgressLogClock& c, const juce::String& stageKey, d
 // On battery: a notice on every screen ("Please plug in your Mac - the run takes several hours"), the run goes on. Below
 // kBatteryPausePercent ON BATTERY while scanning or measuring: the same clean pause as the button, saying why; plugged in again, it
 // carries on by itself (a pause the battery caused, never the user's). Every change goes to the log, and each progress line says the power
-struct Power { bool known = false, onBattery = false; int percent = -1; };   // known: macOS answered; a Mac with no battery is never on it
+struct Power { bool known = false, onBattery = false; int percent = -1; };
+// 28 Oct (the STAGING 4 run: "Please plug in your Mac" on AC at 100 %, charged / not charging): macOS can name the battery as the providing
+// source while the adapter is attached and the battery full. On battery only when the battery provides AND no power source reports AC
+inline bool onBatteryFrom (bool providingIsBattery, bool anySourceOnAC) { return providingIsBattery && ! anySourceOnAC; }   // known: macOS answered; a Mac with no battery is never on it
 inline constexpr int kBatteryPausePercent = 20;
 inline juce::String plugInNotice() { return "Please plug in your Mac - the run takes several hours"; }
 inline juce::String powerWords (const Power& p) { return ! p.known ? juce::String() : p.onBattery ? "battery " + juce::String (p.percent) + "%" : juce::String ("AC"); }
