@@ -38,6 +38,7 @@
 #include "EJMapSuspect.h"               // SH31: a reduction control that reduces nothing
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
+#include "EJShadowRetry.h"       // SR: the copy road resuming when the rack cache arrives
 #include "EJLocalInstances.h"        // EL: the real editor's directory and lease (round 1, 26 Oct)
 #include "EJRealEditorSwitch.h"      // ES: which live view a Link gets, and why (his condition, 26 Oct)
 #include "EJRingDrainClaim.h"        // RD: one consumer of the value ring (his condition, 26 Oct 17:40)
@@ -4125,6 +4126,78 @@ int main()
                "RV5 under a standing revoke the automatic open is refused outright - no lease AND no "
                "copy, the pane stays empty - while his press still gets the real editor back",
                "nothing automatic, everything on a press");
+    }
+
+    // ================================================================================================
+    // SR: A COPY-ROAD REQUEST THE CACHE COULD NOT ANSWER YET (28 Oct 2026, B9's skip)
+    //
+    // shadowFollowSelection has three callers and none is periodic, so a selection made before this
+    // process's rack cache for that Link is valid asked for nothing and was never asked again - the
+    // live view never appeared, and B9 reported it as `shadowRunning=0` for days. The refusal is now
+    // remembered and retried from the view's own refresh, and this is that decision. `forget` is
+    // tested as hard as `retry`: a memo for a selection nobody is looking at any more is a way to
+    // open a copy behind the wrong cards later.
+    {
+        using echojay::shadowRetryDecision;
+        // SR0 IS THE KNOWN-BAD: what the code did before - nothing, ever, however long you waited.
+        const auto whatItDidBefore = [] (bool, bool, bool) { return echojay::ShadowRetry{}; };
+        const auto before = whatItDidBefore (true, true, true);
+        check (! before.retry && ! before.forget,
+               "SR0 the behaviour this replaced never asks again, even when the cache CAN answer and "
+               "he is still looking at the same slot - that is B9's skip in one line, and SR2 is the "
+               "same case through the new decision",
+               "known-bad reproduced");
+        const auto waiting = shadowRetryDecision (true, true, false);
+        check (! waiting.retry && ! waiting.forget,
+               "SR1 while the cache still cannot answer, the memo is KEPT and nothing is asked - the "
+               "point is to wait for the cache, not to spin against it",
+               "keep waiting");
+        const auto ready = shadowRetryDecision (true, true, true);
+        check (ready.retry && ready.forget,
+               "SR2 the moment the cache can answer, the view is asked for again - and the memo is "
+               "dropped in the same breath, so one refusal can never become two copies",
+               "ask once");
+        const auto movedOn = shadowRetryDecision (true, false, true);
+        check (! movedOn.retry && movedOn.forget,
+               "SR3 if he has moved to another rack or another slot, the memo is FORGOTTEN and nothing "
+               "is opened - a copy behind the wrong cards is the fault class this project spent a day "
+               "on, and a stale memo is a way back into it",
+               "forget it");
+        const auto nothing = shadowRetryDecision (false, true, true);
+        check (! nothing.retry && ! nothing.forget,
+               "SR4 and with no refusal remembered it does nothing at all, however ready the cache is: "
+               "this road only ever RESUMES something that was refused, it never starts one",
+               "do nothing");
+
+        // ---- SA: AN ASK IN FLIGHT, BOUNDED IN TIME (28 Oct 2026) --------------------------------
+        // "One at a time" is right and unbounded it is a latch. The ask's own poll clears the flag
+        // when it gives up after 3 s, but the code's own comment names the hole - a copy creation
+        // that never calls back leaves it set - and the guard it feeds then makes every later
+        // selection of that slot a silent no-op. SA0 holds the unbounded test.
+        using echojay::shadowAskInFlight;
+        const auto unbounded = [] (bool asking, bool same, int, int) { return asking && same; };
+        check (unbounded (true, true, 600000, echojay::kShadowAskBudgetMs),
+               "SA0 the unbounded test still calls an ask \"in flight\" ten minutes later, which is the "
+               "latch: the live view never comes back for that slot. SA2 is the same case, bounded",
+               "known-bad reproduced");
+        check (shadowAskInFlight (true, true, 500),
+               "SA1 inside the budget it IS in flight, and a second selection does not pile a second "
+               "ask on top - that is the part worth keeping",
+               "in flight");
+        check (! shadowAskInFlight (true, true, 600000),
+               "SA2 past the budget it is not: the ask is gone, and a selection may ask again rather "
+               "than returning silently for the rest of the session",
+               "ask again");
+        check (! shadowAskInFlight (true, false, 500),
+               "SA3 an ask for ANOTHER slot never blocks this one - the flag is about one target, and "
+               "treating it as global would make one slow Link freeze the live view everywhere",
+               "not this target");
+        check (! shadowAskInFlight (false, true, 500),
+               "SA4 and with nothing asked, nothing is in flight");
+        check (! shadowAskInFlight (true, true, -5),
+               "SA5 a clock that has gone BACKWARDS reads as not-in-flight, so the safe direction is "
+               "to ask again rather than to wait for ever on a negative age",
+               "ask again");
     }
 
     // ================================================================================================

@@ -165,6 +165,7 @@ target_sources(EchoJay PRIVATE
     Source/EJMatchTab.cpp
     Source/EJMatchTab.h
     Source/EJCompareMenuIds.h
+    Source/EJShadowRetry.h
     Source/ChainHost.cpp
     Source/ChainHost.h
     Source/ChainPluginPicker.h

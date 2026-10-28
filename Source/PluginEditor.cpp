@@ -2524,7 +2524,23 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // (they are hosted here, and their editors have always been real).
         const auto view = chainViewUid();
         if (view.isNotEmpty()) shadowFollowSelection (view, i);
-        else                   shadowStopIfRunning ("the main rack's own slots are already live");
+        else
+        {
+            // ---- AND THIS BRANCH SAYS SO (28 Oct 2026, B9's skip) --------------------------------
+            // B9 selects a Link, adds a plugin, presses its slot - and NOT ONE EJShadow line appears
+            // for that Link. Every refusal inside the copy road now names itself, so the only way to
+            // see nothing is for the road never to be entered: the rack in view was the V2's OWN
+            // when the press landed, and this branch was silent. One line, once per change, and the
+            // next pass can tell "the view was not on the Link" from "the copy road refused".
+            if (lastShadowWhy_ != "own-rack")
+            {
+                lastShadowWhy_ = "own-rack";
+                EchoJay_NSLog (("EJShadow: no live view for slot " + juce::String (i + 1)
+                                + " - the rack in view is the V2's OWN, so its slots are already "
+                                "live and no copy is needed").toRawUTF8());
+            }
+            shadowStopIfRunning ("the main rack's own slots are already live");
+        }
     };
     // ITEM 7 (17 Oct 2026): a slot editor only ever draws on the rack's own tab. The panel asks;
     // switchToTab is the single writer of the visible tab, so nothing else has to be re-asserted.
@@ -11452,6 +11468,43 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
                       : v.name).toUpperCase());
     chainListPanel.rackBtn.setColour(juce::TextButton::textColourOffId,
         v.borrowed ? juce::Colour(0xffFFB020) : juce::Colour(0xff22d3ee));
+
+    // ---- THE COPY ROAD COMES BACK WHEN THE CACHE DOES (28 Oct 2026, B9's skip) ----------------
+    //
+    // shadowFollowSelection has exactly three callers - his press, the switch going off, and a
+    // stale copy being rebuilt - and NONE of them is periodic. So a selection made while this
+    // process's rack cache for that Link is not valid yet asked for nothing, said nothing, and was
+    // never asked again: the live view simply never appeared. B9 has been reporting that as
+    // `shadowRunning=0` for days, and the instrument added tonight finally named it - "the rack
+    // cache for c666d0b482 is not valid yet", one line, with no tap ever asked for afterwards.
+    //
+    // The user path is plain: look at a slot on a Link whose rack this V2 has not cached yet - one
+    // just added to the session, or just after a project opens - and the copy never comes, until
+    // you click away and back. So the refusal is remembered and retried HERE, where the view is
+    // refreshed anyway, and only when the cache can actually answer now. One shot per refusal: the
+    // memo is cleared before the call, so a cache that is still short cannot spin.
+    {
+        const auto viewNow = chainViewUid();
+        const bool sameSel = (viewNow == shadowPendingUid_
+                              && chainSelectedSlot_ == shadowPendingSlot_);
+        bool canAnswer = false;
+        if (sameSel && shadowPendingSlot_ >= 0)
+            if (auto itP = processorRef.linkRackCache.find (viewNow);
+                itP != processorRef.linkRackCache.end() && itP->second.valid
+                && shadowPendingSlot_ < (int) itP->second.rack.slots.size())
+                canAnswer = itP->second.rack.slots[(size_t) shadowPendingSlot_].name.trim().isNotEmpty();
+        const auto d = echojay::shadowRetryDecision (shadowPendingUid_.isNotEmpty(), sameSel, canAnswer);
+        const int  slotAgain = shadowPendingSlot_;
+        if (d.forget) { shadowPendingUid_.clear(); shadowPendingSlot_ = -1; }
+        if (d.retry)
+        {
+            lastShadowWhy_.clear();      // a new attempt may give a new reason, and should say it
+            EchoJay_NSLog (("EJShadow: the rack cache can answer for slot "
+                            + juce::String (slotAgain + 1) + " of " + viewNow
+                            + " now, so the live view is asked for again").toRawUTF8());
+            shadowFollowSelection (viewNow, slotAgain);
+        }
+    }
     repaint();
 }
 
@@ -34690,6 +34743,25 @@ void EchoJayEditor::presentReplaceAsk(const juce::String& question,
     road to seeing a slot.                                                                        */
 void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
 {
+    // ---- WAS THIS ROAD EVEN ENTERED? (28 Oct 2026, the last ambiguity in B9) -------------------
+    //
+    // Every refusal inside this function now names itself, and for B9's own Link the log still holds
+    // NOT ONE line - while the press provably landed (its ack says "double-clicked slot 4") and the
+    // view was on that Link (select_link answered ok two seconds earlier). Each remaining
+    // explanation is about a path that cannot log, so the question is no longer "which refusal" but
+    // "was it called at all", and static reading has not settled it in two rounds.
+    //
+    // So the entry says so, keyed on the target so a refresh cannot flood it. One line per selection
+    // that reaches this road, and B9's next pass either shows it or proves the road is never entered.
+    {
+        const auto key = uid + "/" + juce::String (slot0);
+        if (key != lastShadowEntry_)
+        {
+            lastShadowEntry_ = key;
+            EchoJay_NSLog (("EJShadow: asked to follow slot " + juce::String (slot0 + 1) + " of "
+                            + (uid.isEmpty() ? juce::String ("the V2's own rack") : uid)).toRawUTF8());
+        }
+    }
     // ---- THE ONE SWITCH (his ruling of 16:4x, 23 Oct 2026) ------------------------------------
     // Off in this build after two crashes in ten minutes, both through this road. Read here, before
     // anything is asked of the Link and before any copy is made, so with it off the feature costs
@@ -34753,7 +34825,23 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
                         + "\" - rebuilding it rather than reporting \"already showing that one\", "
                           "which is what left the deleted plugin's panel up (his 12:33)").toRawUTF8());
     }
-    if (shadowAsking_ && shadowWantUid_ == uid && shadowWantSlot_ == slot0) return;
+    // ---- AN ASK IN FLIGHT IS BOUNDED (28 Oct 2026) --------------------------------------------
+    // The ask's own poll gives up after 25 x 120 ms = 3 s and clears this flag, but the code's own
+    // comment names the hole: *"a creation that never calls back leaves shadowAsking_ set and
+    // nothing else, and the next selection clears it"* - and this guard is what stops the next
+    // selection from clearing anything. Same target, flag set, silent return, for ever.
+    // So it is bounded in TIME, the way every other wait in this project had to be: inside the
+    // ask's own budget this is a real "one at a time", and past it the ask is gone and a new
+    // selection may ask again - and says that it did.
+    if (echojay::shadowAskInFlight (shadowAsking_,
+                                    shadowWantUid_ == uid && shadowWantSlot_ == slot0,
+                                    (int) (juce::Time::getMillisecondCounter() - shadowAskedAtMs_),
+                                    echojay::kShadowAskBudgetMs))
+        return;
+    if (shadowAsking_ && shadowWantUid_ == uid && shadowWantSlot_ == slot0)
+        EchoJay_NSLog (("EJShadow: the last ask for slot " + juce::String (slot0 + 1) + " of " + uid
+                        + " never came back within its budget, so this selection asks again")
+                           .toRawUTF8());
 
     shadowStopIfRunning ("he moved to another slot");
     shadowWantUid_ = uid; shadowWantSlot_ = slot0;
@@ -34761,13 +34849,50 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
     // WHICH PLUGIN? The SIDECAR's slot, which is the Link's own description of its rack - the same
     // authority the rack view draws from. Never the mirror's: that is the pair of sources his 09:59
     // fault came from, and this road would open the wrong plugin's interface under this slot.
+    // ---- AND THE SILENT RETURNS SAY WHY (28 Oct 2026, B9's skip) --------------------------------
+    //
+    // Three returns in this road said nothing at all, and B9 - the live-view row that is the last
+    // thing blocking an install - can only report `shadowRunning=0`. That is not enough to act on:
+    // its own add LANDS (its printout names slot 4 on the Link), the press correctly stops at the
+    // remote gate with the switch off, and then the copy simply never appears. Each refusal is
+    // logged once per distinct reason, so a selection that repeats does not flood the log but a new
+    // reason always lands.
+    const auto sayWhyOnce = [this] (const juce::String& why)
+    {
+        if (why == lastShadowWhy_) return;
+        lastShadowWhy_ = why;
+        EchoJay_NSLog (("EJShadow: no live view - " + why).toRawUTF8());
+    };
     auto it = processorRef.linkRackCache.find (uid);
     if (it == processorRef.linkRackCache.end() || ! it->second.valid
         || slot0 >= (int) it->second.rack.slots.size())
+    {
+        // THE CACHE, NAMED. This is the authority the rack view draws from, and for a Link that was
+        // created moments ago it can legitimately be absent, invalid or shorter than the slot being
+        // asked for - which is exactly the state B9 meets after the suite re-creates its tracks.
+        // REMEMBERED, so the refresh can try again once the cache can answer (see
+        // refreshChainPanelForView). Only for the cache's own reasons: a withheld plugin or the real
+        // road taking the slot are decisions, not delays, and must not be retried behind his back.
+        shadowPendingUid_ = uid; shadowPendingSlot_ = slot0;
+        sayWhyOnce (it == processorRef.linkRackCache.end()
+                        ? ("this process has no rack cache for " + uid + " yet")
+                        : (! it->second.valid
+                               ? ("the rack cache for " + uid + " is not valid yet")
+                               : ("the rack cache for " + uid + " holds "
+                                  + juce::String ((int) it->second.rack.slots.size())
+                                  + " slot(s), so slot " + juce::String (slot0 + 1)
+                                  + " is not in it yet")));
         return;
+    }
     const auto pName = it->second.rack.slots[(size_t) slot0].name;
     const auto pFmt  = it->second.rack.slots[(size_t) slot0].format;
-    if (pName.isEmpty()) return;
+    if (pName.isEmpty())
+    {
+        shadowPendingUid_ = uid; shadowPendingSlot_ = slot0;
+        sayWhyOnce ("slot " + juce::String (slot0 + 1) + " of " + uid + " has no plugin name in the "
+                    "rack cache, so there is nothing to make a copy of");
+        return;
+    }
 
     auto& chHost = processorRef.getChainHost();
     ChainHost::WithholdReason withheld = ChainHost::WithholdReason::None;
@@ -34812,7 +34937,12 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
     // ---- STEP 1: ASK THAT LINK TO TAP THE SLOT ------------------------------------------------
     int err = 0;
     const auto dir = LinkShm::resolveDir (err);
-    if (dir.isEmpty()) return;
+    if (dir.isEmpty())
+    {
+        sayWhyOnce ("the shared folder EchoJay talks to Links through is not available, so no "
+                    "tap can be asked for");
+        return;
+    }
     const int seq = (int) (juce::Time::currentTimeMillis() & 0x7fffffff);
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty ("v", 1);
@@ -34827,6 +34957,7 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
     juce::File (dir + "ctrl-cmd-" + uid + ".json")
         .replaceWithText (juce::JSON::toString (juce::var (cmd), true));
     shadowAsking_ = true;
+    shadowAskedAtMs_ = juce::Time::getMillisecondCounter();   // the bound above is measured from here
     EchoJay_NSLog (("EJShadow: asked " + uid + " to tap the input of slot " + juce::String (slot0 + 1)
                     + " (\"" + pName + "\") seq=" + juce::String (seq)
                     + " - a request for AUDIO and nothing else").toRawUTF8());

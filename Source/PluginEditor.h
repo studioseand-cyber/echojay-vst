@@ -9,6 +9,7 @@
 #include "EJRealEditorSwitch.h" // ...behind his switch, which is off until he turns it on
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJInlineViewIdentity.h"   // the rack-and-slot identity of what is on screen
+#include "EJShadowRetry.h"         // a copy-road request the rack cache could not answer yet
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
 #include "EJAgentHome.h"      // ITEM 0b (15 Oct 2026): the client and executor live on the PROCESSOR
@@ -2886,6 +2887,7 @@ private:
     juce::String shadowWantUid_;        // what is on screen now (empty = nothing wanted)
     int          shadowWantSlot_ = -1;
     bool         shadowAsking_   = false;   // a request is in flight; one at a time
+    juce::uint32 shadowAskedAtMs_ = 0;      // when, so "in flight" can be bounded in TIME
     /** Ask that Link to tap this slot's input, then make the copy and start the view. Does nothing
         when the same slot is already running, and takes the previous one down first. */
     void shadowFollowSelection (const juce::String& uid, int slot0);
@@ -7455,6 +7457,15 @@ private:
     // ---- THE LAST REVOKE, SO THE REFRESH DOES NOT UNDO IT (27 Oct 2026) ------------------------
     // Set by editorLeaseRevoked, cleared by a press on another slot. While it stands, the panel's
     // automatic re-open leaves that rack's slot alone - the window the user opened it in keeps it.
+    /** The last reason the copy road gave for not opening a live view, so a repeated selection does
+        not flood the log while a NEW reason always lands. See shadowFollowSelection: three of its
+        returns used to say nothing, and B9 could only report `shadowRunning=0`. */
+    juce::String lastShadowEntry_;   // the last (uid/slot) this road was asked to follow
+    juce::String lastShadowWhy_;
+    /** A copy-road request the rack cache could not answer YET, remembered so the next refresh can
+        ask again once it can. Cleared when it is retried, and when the selection moves. */
+    juce::String shadowPendingUid_;
+    int          shadowPendingSlot_ = -1;
     juce::String revokedUid_;
     int          revokedSlot1_ = 0;
     /** Slots for whichever rack chainViewUid() names, in the panel's own
