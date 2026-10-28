@@ -6197,11 +6197,21 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
         }
     if (kind == "delay" && timeCtl.index >= 0 && timeMap.size() >= 2)
     {
-        double lo = 1e9, hi = -1e9; for (const auto& [n, ms] : timeMap) { lo = std::min (lo, ms); hi = std::max (hi, ms); }
-        for (double frac : { 1.0 / 3.0, 2.0 / 3.0 })
+        // 28 Oct (Kathy, delay 56%): reverbdelay::planTimeSteps - no time step on a control that is not a time; a stepped one asked only
+        // for its own positions, at their exact norms
+        // the steps as the measuring took them (sevenNorms): a stepped control of 3..24 steps was read at every step (timeCtl.steps is not
+        // carried by ctlFrom - 28 Oct, the re-measure: CLA EchoSphere's 3-position SlapVSO came through as 0 steps)
+        const auto tcv = sweep::findControl (base, timeCtl.index); const int tst = (int) tcv.getProperty ("numSteps", 0);
+        const auto plan = reverbdelay::planTimeSteps (timeMap, sweep::isSteppedControl (tcv) && tst > 2 && tst <= 24 ? tst : 0);
+        double lo = 1e9; for (const auto& [n, ms] : timeMap) lo = std::min (lo, ms);
+        if (plan.skip.isNotEmpty())
+        {   auto* a = new juce::DynamicObject(); a->setProperty ("map", "time"); a->setProperty ("step", "-"); a->setProperty ("ran", false); a->setProperty ("pass", false);
+            a->setProperty ("why", "not asked: " + plan.skip); acc.add (juce::var (a)); say ("  acceptance time: not asked - " + plan.skip); }
+        for (const auto& step : plan.steps)
         {
-            const double target = lo + frac * (hi - lo); const auto inv = invertMap (timeMap, target, lo > 0.0);   // a time taper is exponential: log-linear between positions (bx_delay2500 missed by 7 % linearly)
-            auto* a = new juce::DynamicObject(); a->setProperty ("map", "time"); a->setProperty ("step", juce::String (target, 1) + " ms"); a->setProperty ("target_ms", target);
+            const double target = step.targetMs, frac = (double) (&step - plan.steps.data() + 1) / 3.0;
+            const auto inv = step.exact ? reverbdelay::Inverse { true, step.norm, {} } : invertMap (timeMap, target, lo > 0.0);   // a time taper is exponential: log-linear between positions (bx_delay2500 missed by 7 % linearly)
+            auto* a = new juce::DynamicObject(); a->setProperty ("map", "time"); a->setProperty ("step", juce::String (target, 1) + " ms" + (step.exact ? " (one of its own positions)" : "")); a->setProperty ("target_ms", target);
             if (! inv.ok) { a->setProperty ("ran", false); a->setProperty ("pass", false); a->setProperty ("why", "null: " + inv.why); acc.add (juce::var (a)); continue; }
             juce::StringArray sets = wetOnly; sets.add (setOf (timeCtl.index, inv.norm));
             const auto t = readTail ("accTime" + juce::String (frac, 2), tailArgs (sets), windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }

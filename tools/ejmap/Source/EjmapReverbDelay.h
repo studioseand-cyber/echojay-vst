@@ -466,4 +466,42 @@ inline juce::var spaceProfile (const juce::var& rec, const juce::var& plugin, co
     return juce::var (P);
 }
 
+// THE DELAY'S TIME STEPS (Kathy, 28 Oct: delay acceptance 56%, mostly "time N ms off"). 11 of the 13 misses on 24 Oct were a time asked
+// between two positions of a control that cannot be between them - a tempo-synced note switch (MannyM Delay: 1340.5 ms -> its 1/2D,
+// 1500.5), a 3-position tape-speed switch (CLA EchoSphere SlapVSO) - or of a control that is no time at all (Crystallizer SpliceValue:
+// times up and down; Needlepoint Noise Level: flat at 38.5 ms). The rule, for every delay:
+//   - the measured times must rise or fall steadily (each step within max(1 ms, 2 %) of never going back), and no more than half the
+//     positions may sit on one time (within 1 ms): otherwise no time step - it is not a time control (said, never a failure)
+//   - a STEPPED control whose every step was measured is asked only for times it HAS: two of its own positions (a third and two thirds
+//     along), written at their exact norms - nothing interpolated
+//   - a continuous control: as before (a third and two thirds of the span, the map inverted)
+struct TimeStep { double targetMs = 0.0, norm = -1.0; bool exact = false; };   // exact: a measured position's own norm (stepped)
+struct TimePlan { std::vector<TimeStep> steps; juce::String skip; bool stepped = false; };
+inline TimePlan planTimeSteps (std::vector<std::pair<double, double>> map, int controlSteps)
+{
+    TimePlan p;
+    if (map.size() < 2) { p.skip = "fewer than 2 measured positions"; return p; }
+    std::sort (map.begin(), map.end());
+    const bool up = map.back().second >= map.front().second;
+    for (size_t i = 1; i < map.size(); ++i)
+    {
+        const double d = map[i].second - map[i - 1].second, allow = std::max (1.0, 0.02 * std::abs (map[i - 1].second));
+        if (up ? d < -allow : d > allow)
+        { p.skip = "its times do not rise or fall steadily (" + juce::String (map[i - 1].second, 1) + " then " + juce::String (map[i].second, 1) + " ms): not a time control"; return p; }
+    }
+    for (const auto& [n, ms] : map)
+    {
+        int same = 0; for (const auto& [n2, ms2] : map) if (std::abs (ms2 - ms) <= 1.0) ++same;
+        if (same * 2 > (int) map.size()) { p.skip = juce::String (same) + " of " + juce::String ((int) map.size()) + " positions at " + juce::String (ms, 1) + " ms: the time stops moving - not a time control"; return p; }
+    }
+    if (controlSteps > 1 && (int) map.size() == controlSteps)
+    {   p.stepped = true;
+        for (double frac : { 1.0 / 3.0, 2.0 / 3.0 })
+        { const auto& pos = map[(size_t) std::lround (frac * (double) (map.size() - 1))]; p.steps.push_back ({ pos.second, pos.first, true }); }
+        if (p.steps.size() == 2 && p.steps[0].norm == p.steps[1].norm) p.steps.pop_back();
+        return p; }
+    double lo = 1e9, hi = -1e9; for (const auto& [n, ms] : map) { lo = std::min (lo, ms); hi = std::max (hi, ms); }
+    for (double frac : { 1.0 / 3.0, 2.0 / 3.0 }) p.steps.push_back ({ lo + frac * (hi - lo), -1.0, false });
+    return p;
+}
 } // namespace ejmap::reverbdelay
