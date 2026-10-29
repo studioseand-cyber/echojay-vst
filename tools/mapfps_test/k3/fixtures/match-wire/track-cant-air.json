@@ -1,0 +1,206 @@
+{
+ "request": {
+  "appVersion": "2.31.0",
+  "goal": "match the reference \"clean\"",
+  "kind": "match",
+  "scope": "session",
+  "source": "match",
+  "context": {
+   "scope": "session",
+   "capabilities": [
+    "plan_card",
+    "session_scope",
+    "match_plan"
+   ],
+   "channel": {
+    "uid": "self",
+    "name": "Mix Bus",
+    "kind": "mix_bus",
+    "rack": [
+     {
+      "slot": 1,
+      "name": "EchoJay Compressor"
+     },
+     {
+      "slot": 2,
+      "name": "EchoJay Limiter"
+     }
+    ],
+    "links": [
+     {
+      "uid": "bb411b8240",
+      "name": "Gtr L"
+     },
+     {
+      "uid": "cc522c9351",
+      "name": "Gtr R"
+     },
+     {
+      "uid": "aa1100aa11",
+      "name": "Lead Vox"
+     }
+    ]
+   }
+  },
+  "match": {
+   "v": 1,
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "track-cant-air"
+   },
+   "window": "whole",
+   "mix": {
+    "integrated": -10.2,
+    "loudest30": -8.1,
+    "truePeak": -0.8,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": 8.9,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3,
+     1.2,
+     2.9,
+     0.4,
+     -0.6,
+     -1.9
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "ref": {
+    "integrated": -8.6,
+    "loudest30": -6.9,
+    "truePeak": -0.3,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": 9.6,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3.2,
+     1,
+     0.1,
+     0.6,
+     0,
+     -0.5
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "moves": [
+    {
+     "kind": "band",
+     "band": "air",
+     "valueDb": -11,
+     "measuredDb": 5.8,
+     "attribution": {
+      "target": "track",
+      "links": [
+       {
+        "uid": "aa1100aa11",
+        "name": "Lead Vox",
+        "share": 0.8
+       }
+      ],
+      "combinedShare": null,
+      "reason": "Lead Vox holds 80% of the air."
+     }
+    }
+   ],
+   "findings": [],
+   "refusals": []
+  }
+ },
+ "status": 200,
+ "body": {
+  "plan": {
+   "v": 1,
+   "id": "pl_0c1ea0000008",
+   "heading": "Match \"Song X\"",
+   "source": "match",
+   "kind": "match",
+   "scope": "session",
+   "mode": "walk",
+   "channels": [
+    {
+     "uid": "self",
+     "name": "Mix Bus",
+     "role": "mix_bus",
+     "order": 1,
+     "caps": []
+    }
+   ],
+   "warnings": [
+    "Matched 5.8 of 5.8 dB in the air."
+   ],
+   "left_out": [],
+   "steps": [
+    {
+     "id": "ps_1",
+     "channel": "self",
+     "channelName": "Mix Bus",
+     "stage": "bus",
+     "type": "chain",
+     "op": "add",
+     "args": {
+      "name": "EchoJay EQ",
+      "role": "eq",
+      "after": 0,
+      "settings_structured": {
+       "eq_bands": [
+        {
+         "type": "highshelf",
+         "freq_hz": 10000,
+         "gain_db": -12.7
+        }
+       ]
+      }
+     },
+     "dependsOn": [],
+     "why": "the air is 5.8 dB heavier than the reference",
+     "status": "planned",
+     "undoWeak": false,
+     "detail": {
+      "text": "Planned on Lead Vox, moved to the bus: a shelf can't take 11 dB off Lead Vox's air. On the mix bus: add an EchoJay EQ first on the rack and set a high shelf at 10 kHz to -12.7 dB, to take 5.8 dB off the air",
+      "where": "a new EchoJay EQ, first on the rack",
+      "plugin": "EchoJay EQ",
+      "slotIid": null,
+      "control": null,
+      "value": null,
+      "unit": null,
+      "howTo": null,
+      "check": "slots",
+      "forYou": true
+     }
+    }
+   ]
+  },
+  "match": {
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "track-cant-air"
+   },
+   "window": "whole",
+   "findings": [],
+   "refusals": []
+  },
+  "charged": "chain_generate"
+ },
+ "_fixture_note": "C4 rev 2's one exception: Lead Vox holds 80% of the air, so the plugin sizes an 11 dB change there (C4 §5). No shelf reaches -11 on the track (10 at most), so the server moves the step to the bus as the bus case of C4 §5: -D, the 5.8 dB mix gap (measuredDb), which the shelf reaches (-12.7 dB). The bus line quotes D: \"Matched 5.8 of 5.8 dB in the air.\""
+}

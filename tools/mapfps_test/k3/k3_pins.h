@@ -284,13 +284,18 @@ inline void runK3Pins (Check&& check)
         in.proposal.findings.push_back ({ MatchFigure::Crest, 17.77f, 1.77f, 16.0f });   // a crest finding from upstream
         const auto r = buildMatchReport (in);
         const juce::var p = juce::JSON::parse (matchReportPayload (in, r));
+        // C2 section 4's shape (round 5d): { v: 1, hostBlockSize, sides: { reference, mix } }.
         const juce::var c = p.getProperty ("crestLog", juce::var());
-        const juce::var mv0 = c.getProperty ("mix", juce::var()).getProperty ("v0", juce::var());
-        const juce::var rv1 = c.getProperty ("ref", juce::var()).getProperty ("v1", juce::var());
-        check (c.isObject() && (int) c.getProperty ("hostBlockSize", 0) == 512
+        const juce::var sides = c.getProperty ("sides", juce::var());
+        const juce::var cm = sides.getProperty ("mix", juce::var());
+        const juce::var cr = sides.getProperty ("reference", juce::var());
+        const juce::var mv0 = cm.getProperty ("v0", juce::var());
+        const juce::var rv1 = cr.getProperty ("v1", juce::var());
+        check (c.isObject() && (int) c.getProperty ("v", 0) == 1 && (int) c.getProperty ("hostBlockSize", 0) == 512
+               && ! c.hasProperty ("mix") && ! c.hasProperty ("ref")
                && mv0.size() == 6 && mv0[1].isVoid() && std::abs ((double) mv0[0] - 17.77) < 1e-4
                && rv1.size() == 6 && std::abs ((double) rv1[5] - 2.77) < 1e-4
-               && std::abs ((double) c.getProperty ("mix", juce::var()).getProperty ("framesPerHop", 0) - 9.37) < 1e-4,
+               && std::abs ((double) cm.getProperty ("framesPerHop", 0) - 9.37) < 1e-4,
                "kr PIN15: crestLog carries V0 and V1 per band per side (null where absent), frames per hop and the host block size",
                juce::JSON::toString (c, true));
         juce::StringArray rendered = matchReportAllStrings (r, matchPlanCardAgentOffer (true, false));

@@ -1,0 +1,212 @@
+{
+ "request": {
+  "appVersion": "2.31.0",
+  "goal": "match the reference \"mapped-stand-in\"",
+  "kind": "match",
+  "scope": "session",
+  "source": "match",
+  "context": {
+   "scope": "session",
+   "capabilities": [
+    "plan_card",
+    "session_scope",
+    "match_plan"
+   ],
+   "channel": {
+    "uid": "self",
+    "name": "Mix Bus",
+    "kind": "mix_bus",
+    "rack": [
+     {
+      "slot": 1,
+      "name": "Pro-Q 3"
+     },
+     {
+      "slot": 2,
+      "name": "EchoJay Limiter"
+     }
+    ],
+    "links": [
+     {
+      "uid": "bb411b8240",
+      "name": "Gtr L"
+     },
+     {
+      "uid": "cc522c9351",
+      "name": "Gtr R"
+     },
+     {
+      "uid": "aa1100aa11",
+      "name": "Lead Vox"
+     }
+    ]
+   }
+  },
+  "match": {
+   "v": 1,
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "mapped-stand-in"
+   },
+   "window": "whole",
+   "mix": {
+    "integrated": -10.2,
+    "loudest30": -8.1,
+    "truePeak": -0.8,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": 8.9,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3,
+     1.2,
+     2.9,
+     0.4,
+     -0.6,
+     -1.9
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "ref": {
+    "integrated": -8.6,
+    "loudest30": -6.9,
+    "truePeak": -0.3,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": 9.6,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3.2,
+     1,
+     0.1,
+     0.6,
+     0,
+     -0.5
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "moves": [
+    {
+     "kind": "band",
+     "band": "lowMid",
+     "valueDb": -4.5,
+     "measuredDb": 4.5,
+     "attribution": {
+      "target": "bus",
+      "links": [],
+      "reason": "no one track holds most of the low-mids",
+      "combinedShare": null
+     }
+    }
+   ],
+   "findings": [
+    {
+     "figure": "width",
+     "mix": 64,
+     "ref": 70,
+     "difference": -6
+    }
+   ],
+   "refusals": []
+  }
+ },
+ "status": 200,
+ "body": {
+  "plan": {
+   "v": 1,
+   "id": "pl_0c1ea0000003",
+   "heading": "Match \"Song X\"",
+   "source": "match",
+   "kind": "match",
+   "scope": "session",
+   "mode": "walk",
+   "channels": [
+    {
+     "uid": "self",
+     "name": "Mix Bus",
+     "role": "mix_bus",
+     "order": 1,
+     "caps": []
+    }
+   ],
+   "warnings": [],
+   "left_out": [],
+   "steps": [
+    {
+     "id": "ps_1",
+     "channel": "self",
+     "channelName": "Mix Bus",
+     "stage": "bus",
+     "type": "chain",
+     "op": "add",
+     "args": {
+      "name": "EchoJay EQ",
+      "role": "eq",
+      "after": 1,
+      "settings_structured": {
+       "eq_bands": [
+        {
+         "type": "bell",
+         "freq_hz": 300,
+         "gain_db": -5.1,
+         "q": 0.7
+        }
+       ]
+      }
+     },
+     "dependsOn": [],
+     "why": "Pro-Q 3 is mapped, not certified, for more than 3 dB here, so the EchoJay EQ makes this 5.1 dB move",
+     "status": "planned",
+     "undoWeak": false,
+     "detail": {
+      "text": "Add an EchoJay EQ after the Pro-Q 3 and cut 300 Hz by 5.1 dB (Q 0.7), to take 4.5 dB off the low-mids",
+      "where": "a new EchoJay EQ after slot 1",
+      "plugin": "EchoJay EQ",
+      "slotIid": null,
+      "control": null,
+      "value": null,
+      "unit": null,
+      "howTo": null,
+      "check": "slots",
+      "forYou": true
+     }
+    }
+   ]
+  },
+  "match": {
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "mapped-stand-in"
+   },
+   "window": "whole",
+   "findings": [
+    {
+     "figure": "width",
+     "mix": 64,
+     "ref": 70,
+     "difference": -6
+    }
+   ],
+   "refusals": []
+  },
+  "charged": "chain_generate"
+ }
+}

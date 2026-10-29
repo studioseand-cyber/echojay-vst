@@ -1216,13 +1216,52 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         }
     }
 
+    // ---- 5d: THE HAND-OFF ROW, under the switch ----------------------------
+    // "Report in chat" once a press has posted the report; "Make a plan" only
+    // when C2 and C3 allow it (echojay::matchMakePlanOfferedOn); and the
+    // sentence a failed plan came back with. Nothing here sends: mouseUp does.
+    {
+        const auto hr = echojay::matchHandOffRects (R.graph);
+        const auto& props = getProperties();
+        if (! hr.planButton.isEmpty())
+        {
+            g.setFont (juce::Font (juce::FontOptions (10.5f)));
+            if ((bool) props.getWithDefault (echojay::matchPageReportInChatId(), false))
+            {
+                g.setColour (C::text3);
+                g.drawText (echojay::kMatchReportInChatLabel, hr.reportNote, juce::Justification::centredRight, true);
+            }
+            if (echojay::matchMakePlanOfferedOn (*host, view))
+            {
+                const bool busy = (bool) props.getWithDefault (echojay::matchPagePlanBusyId(), false);
+                const auto r = hr.planButton.toFloat();
+                g.setColour (C::blue.withAlpha (busy ? 0.06f : (hotZone == 22 ? 0.24f : 0.14f)));
+                g.fillRoundedRectangle (r.reduced (1.0f), 4.0f);
+                g.setColour (C::blue.withAlpha (busy ? 0.3f : 0.6f));
+                g.drawRoundedRectangle (r.reduced (1.5f), 4.0f, 1.0f);
+                g.setColour (busy ? C::text3 : C::text);
+                g.drawText (echojay::kMatchMakePlanLabel, hr.planButton, juce::Justification::centred, true);
+            }
+            const auto line = props.getWithDefault (echojay::matchPagePlanLineId(), juce::var()).toString();
+            if (line.isNotEmpty())
+            {
+                g.setColour (C::amber);
+                g.drawFittedText (line, hr.planLine, juce::Justification::centredRight, 1);
+            }
+        }
+    }
+
     if (fade < 0.999f) g.endTransparencyLayer();
 }
 
-// THE PRESS. It plays the morph, or says why it cannot; it sends nothing and
-// writes nothing (MATCH_SCREEN_CONTRACT §10). Replayable by design: a second
-// press starts from the measured curve again rather than doing nothing because
-// the first one finished.
+// THE PRESS. It plays the morph, or says why it cannot. Replayable by design: a
+// second press starts from the measured curve again rather than doing nothing
+// because the first one finished.
+//
+// AND IT POSTS THE REPORT (round 5d; DESIGN rev 7 section 7 point 1, which
+// supersedes MATCH_SCREEN_CONTRACT section 10's "sends nothing"): a press that
+// plays posts the match_report to the Whole session chat through MatchHost, and
+// the page says "Report in chat". It applies nothing and writes nothing.
 void EchoJayEditor::MatchPanel::press()
 {
     if (host == nullptr) return;
@@ -1270,6 +1309,9 @@ void EchoJayEditor::MatchPanel::press()
     morphing  = true;
     morphDone = false;
     refusedFor = 0.0f;
+    // 5d: the report, from the same view the press just read.
+    if (echojay::matchPostReport (*host, echojay::matchHandOffOf (*host, view), getProperties()))
+        getProperties().set (echojay::matchPagePlanLineId(), juce::String());
     startTimerHz (60);
     repaint();
 }
@@ -2472,6 +2514,9 @@ static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
     // inside the graph card, over the picture.
     for (int half = 0; half < 2; ++half)
         if (echojay::matchWindowSwitchHalf (R.graph, half).contains (p)) return 20 + half;
+    // 22: "Make a plan" (5d). The rect is there whether or not the button is
+    // drawn; mouseUp acts only when it is offered.
+    if (echojay::matchHandOffRects (R.graph).planButton.contains (p)) return 22;
     if (R.button .contains (p)) return 1;
     if (R.mixPick.contains (p)) return 2;
     if (R.refPick.contains (p)) return 3;
@@ -2545,8 +2590,44 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                 echojay::matchWindowMemory().set (key, next);
                 morphing = false; morphPos = 0.0f; morphDone = false; refusedFor = 0.0f;
                 tickSidesValid = false;
+                // A report or a plan answer was about the other window.
+                getProperties().remove (echojay::matchPageReportInChatId());
+                getProperties().remove (echojay::matchPagePlanLineId());
                 repaint();
             }
+            break;
+        }
+        // "MAKE A PLAN" (5d): the context.match block to draftPlan, and on ok
+        // the Whole session chat opens at the plan. The answer can come later,
+        // so it reaches the page through a SafePointer and the panel's own
+        // properties, never through a captured `this`.
+        case 22:
+        {
+            auto& props = getProperties();
+            const auto view = matchPageViewOf (*host, host->buildMatchSides(), host->matchSlots());
+            if (! echojay::matchMakePlanOfferedOn (*host, view)
+                || (bool) props.getWithDefault (echojay::matchPagePlanBusyId(), false))
+                break;
+            props.set (echojay::matchPagePlanBusyId(), true);
+            props.set (echojay::matchPagePlanLineId(), juce::String());
+            juce::Component::SafePointer<MatchPanel> safe (this);
+            juce::String whyNot;
+            const bool sent = echojay::matchSendPlan (*host, echojay::matchHandOffOf (*host, view),
+                [safe] (bool ok, juce::String planId, juce::String why)
+                {
+                    auto* panel = safe.getComponent();
+                    if (panel == nullptr || panel->host == nullptr) return;
+                    panel->getProperties().set (echojay::matchPagePlanBusyId(), false);
+                    panel->getProperties().set (echojay::matchPagePlanLineId(),
+                                                echojay::matchPlanAnswered (*panel->host, ok, planId, why));
+                    panel->repaint();
+                }, whyNot);
+            if (! sent)
+            {
+                props.set (echojay::matchPagePlanBusyId(), false);
+                props.set (echojay::matchPagePlanLineId(), whyNot);
+            }
+            repaint();
             break;
         }
         default:

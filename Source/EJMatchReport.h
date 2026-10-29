@@ -495,7 +495,8 @@ inline MatchReportLayout layoutMatchReport (const MatchReport& rep, int width,
 // THE CARD PAYLOAD (C2 section 4, with "share"; coverage and the caveat flag
 // per band are C4 section 8 Q7's ask). A figure not measured is ABSENT, never 0.
 // busTap is C2 section 5.1's; crestLog is C4 rev 4 section 6's, read by nothing
-// that renders. In crestLog's six-entry arrays an absent band is null, so the
+// that renders, in C2 section 4's shape (round 5d: it was { hostBlockSize, mix,
+// ref }, which is not the shape C2 gives). In crestLog's six-entry arrays an absent band is null, so the
 // positions stay B1's.
 // -----------------------------------------------------------------------------
 
@@ -595,10 +596,15 @@ inline juce::String matchReportPayload (const MatchReportIn& in, const MatchRepo
     p->setProperty ("busTap", matchBusTapName (in.busTap));
     if (in.crestLog)
     {
+        // C2 section 4's shape: { v: 1, hostBlockSize, sides: { reference, mix } }.
+        // hostBlockSize is absent, never 0, when the capture's is not known.
         Obj::Ptr c = new Obj();
+        c->setProperty ("v", 1);
         if (in.crestLog->hostBlockSize > 0) c->setProperty ("hostBlockSize", in.crestLog->hostBlockSize);
-        c->setProperty ("mix", detail::crestLogSide (in.crestLog->mix));
-        c->setProperty ("ref", detail::crestLogSide (in.crestLog->ref));
+        Obj::Ptr sides = new Obj();
+        sides->setProperty ("reference", detail::crestLogSide (in.crestLog->ref));
+        sides->setProperty ("mix",       detail::crestLogSide (in.crestLog->mix));
+        c->setProperty ("sides", juce::var (sides.get()));
         p->setProperty ("crestLog", juce::var (c.get()));
     }
     if (rep.discriminator.isNotEmpty()) p->setProperty ("discriminator", rep.discriminator);
