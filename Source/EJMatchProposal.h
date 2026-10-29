@@ -106,8 +106,17 @@ namespace echojay
     "exceeds" while its code tests >=, and this comment does not repeat that. */
 inline constexpr float kMatchBandFloorDb = 2.0f;
 
-/** No single band move is larger than this in one run, whatever the gap. */
+/** No single band move is larger than this in one run ON THE PAGE, whatever
+    the gap. THE PLAN IS UNCAPPED (X1, 29 Oct 2026): the plan's proposal sizes
+    each band move to its whole gap, and X1's safety limits on the steps are
+    B's, server side. See MatchProposalFor. */
 inline constexpr float kMatchBandCapDb = 3.0f;
+
+/** WHO THE PROPOSAL IS FOR (K's 4b, X1). The PAGE plays a capped move and
+    says it was capped; the PLAN carries the whole gap (no cap; the 2 dB band
+    floor and the 1 dB gain floor stay). The default is the page, so every
+    caller written before the plan existed is unchanged. */
+enum class MatchProposalFor { Page, Plan };
 
 /** Below this many seconds, on either side, no band move is proposed. */
 inline constexpr float kMatchBandMinSeconds = 30.0f;
@@ -301,12 +310,12 @@ struct MatchBandDecision
     bool  capped = false;
 };
 
-inline MatchBandDecision matchBandMove (float deltaDb) noexcept
+inline MatchBandDecision matchBandMove (float deltaDb, MatchProposalFor use = MatchProposalFor::Page) noexcept
 {
     const float mag = std::abs (deltaDb);
     if (! (mag >= kMatchBandFloorDb))
         return {};
-    const bool  capped = mag > kMatchBandCapDb;
+    const bool  capped = use == MatchProposalFor::Page && mag > kMatchBandCapDb;
     const float v      = capped ? kMatchBandCapDb : mag;
     return { true, deltaDb < 0.0f ? -v : v, capped };
 }
@@ -380,7 +389,8 @@ inline juce::String matchTooShortMessage (const juce::String& what, const juce::
 }
 
 /** The proposal. mix is the user's side, ref the reference. */
-inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide& ref)
+inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide& ref,
+                                           MatchProposalFor use = MatchProposalFor::Page)
 {
     MatchProposal p;
 
@@ -493,7 +503,7 @@ inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide
         for (int i = 0; i < 6; ++i)
         {
             const float delta = refRel[(size_t) i] - mixRel[(size_t) i];
-            const auto  d = matchBandMove (delta);
+            const auto  d = matchBandMove (delta, use);
             if (! d.propose) continue;
             MatchMove m;
             m.kind = MatchMoveKind::Band;
