@@ -38,6 +38,7 @@ inline void runExtract (juce::AudioPluginInstance& inst)
     echojay::ExtractorConfig cfg;
     cfg.settleMs = 15;   // EJ Map's own settle (a bridged AU serves the stale text without it)
     cfg.rereadSettled = true;   // 26 Oct (Kathy): read again after settling; refuse a reading that lags one position behind
+    cfg.process = echojay::silentBlockProcessor (inst);   // 29 Oct (Sean, Solid Bus Comp): a plugin that applies a write while processing
     cfg.settle = [] { const double t0 = juce::Time::getMillisecondCounterHiRes();
                       while (juce::Time::getMillisecondCounterHiRes() - t0 < 15.0) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); } };
     const auto& ps = inst.getParameters();
@@ -58,6 +59,7 @@ inline void runExtract (juce::AudioPluginInstance& inst)
                 juce::MemoryBlock state; inst.getStateInformation (state);
                 bool verified = false; auto retried = echojay::sweepSetRead (*p, cfg, verified, &refused);
                 if (state.getSize() > 0) inst.setStateInformation (state.getData(), (int) state.getSize());
+                cfg.process();   // 29 Oct: the restored state applied, so the default's display is the default's
                 setReadMs += juce::Time::getMillisecondCounterHiRes() - t1; ++setReads;
                 if (verified && ! echojay::sweepIsFlat (retried)) { points = retried; method = "setread"; } else method = "flat";
             }

@@ -79,6 +79,15 @@ struct ExtractorConfig
     */
     std::function<void()> settle;
 
+    /** THE PROCESSING PLUGIN (Kathy, 29 Oct; Sean: NI Solid Bus Comp's production map had no Threshold, Makeup, Attack, Release or Output):
+        some plugins apply a written parameter only inside processBlock, so a display read after a set with no audio processed shows the
+        old value - every position the same, "flat both ways", and the control was DECLINED. When set, set-then-read calls it after every
+        write (before the settle) and after restoring the value: the caller processes one silent block (silentBlockProcessor). Measured
+        29 Oct, Solid Bus Comp AU: Threshold / Makeup flat at 3.9 / 2.2 dB at all 21 positions without it; -20.0 .. +20.0 dB with it.
+        DEFAULT null: the corpus extractor stays byte-identical; EJ Map's sweep and the probe's extract set it.
+    */
+    std::function<void()> process;
+
     juce::String machineId;            // stamped into samples when set (provenance)
 };
 
@@ -265,6 +274,7 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
     auto readAt = [&] (float n) -> juce::String
     {
         param.setValue (n);
+        if (cfg.process != nullptr) cfg.process();   // 29 Oct: a plugin that applies the value while processing
         settle();
         auto t = read();
         if (cfg.rereadSettled)   // read again after settling, until two reads agree
@@ -285,7 +295,7 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
     juce::Array<SweepPoint> out;
     if (! verified)
     {
-        param.setValue (original);
+        param.setValue (original); if (cfg.process != nullptr) cfg.process();
         return out;
     }
 
@@ -306,8 +316,25 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
             out.add ({ n, text });
         previousText = text; previousValue = value; havePrevious = true;
     }
-    param.setValue (original);
+    param.setValue (original); if (cfg.process != nullptr) cfg.process();
     return out;
+}
+
+// THE SILENT BLOCK (29 Oct): one block of silence through the instance, so a plugin that applies a written parameter while processing
+// shows it. Prepared once, at 48 kHz / 256, the first time it is called (an instance that was never prepared processes nothing);
+// message thread only, on an instance no audio device is playing (the probe's extract, EJ Map's sweep)
+inline std::function<void()> silentBlockProcessor (juce::AudioPluginInstance& inst)
+{
+    struct State { juce::AudioBuffer<float> buffer; juce::MidiBuffer midi; bool prepared = false; };
+    auto st = std::make_shared<State>();
+    return [&inst, st]
+    {
+        if (! st->prepared)
+        {   inst.setRateAndBufferSizeDetails (48000.0, 256); inst.prepareToPlay (48000.0, 256);
+            st->buffer.setSize (juce::jmax (2, inst.getTotalNumInputChannels(), inst.getTotalNumOutputChannels()), 256); st->prepared = true; }
+        st->buffer.clear(); st->midi.clear();
+        inst.processBlock (st->buffer, st->midi);
+    };
 }
 
 // ---------------------------------------------------------------------------

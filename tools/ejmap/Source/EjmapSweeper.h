@@ -374,6 +374,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
     cfg.settleMs = 15;
     cfg.settle = [] { settleDisplayPumped(); };
     cfg.rereadSettled = true;   // 26 Oct (Kathy): read again after settling; refuse a reading that lags one position behind
+    cfg.process = echojay::silentBlockProcessor (inst);   // 29 Oct (Sean, Solid Bus Comp): a plugin that applies a write while processing
 
     // Read-only first, exactly like the extractor -- unless the caller has
     // already MEASURED that this plugin's getText lies about set positions
@@ -399,6 +400,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
 
         if (stateBefore.getSize() > 0)
             inst.setStateInformation (stateBefore.getData(), (int) stateBefore.getSize());
+        cfg.process();   // 29 Oct: the restored state applied
 
         if (! verified)
         {
