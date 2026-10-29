@@ -1,4 +1,6 @@
 #include "EchoJayWorkspace.h"
+#include <unordered_set>
+#include <unordered_map>
 #include <clocale>   // the selftest's comma-decimal leg (28 Oct 2026)
 #include "EJAgentRunView.h"   // normalisedProse: the record compares answers the way the card does
 extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm, as every other unit declares it
@@ -426,9 +428,33 @@ EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String&
     // and a match under kMinFoldChars is ignored - "Done." or "OK" can legitimately be said by a
     // step and by a later turn, and folding on those would lose a real answer.
     static constexpr int kMinFoldChars = 20;
+    // ---- HIS 09:55 FREEZE (29 Oct 2026): THIS WAS QUADRATIC, ON THE MESSAGE THREAD -----------
+    //
+    // AUHostingService's main thread, 3068 of 3068 samples, inside this function: repairChatFiling
+    // -> normalisedProse, string building in a loop. Not just the V2 - the whole AU host process,
+    // so Pro-L 2 could not open either. Logic's own main thread was idle; ours was the one holding
+    // everything.
+    //
+    // Two costs, both mine. `seen` was a juce::StringArray, whose addIfNotAlreadyThere and contains
+    // are LINEAR SCANS, so (b) was O(n^2) per chat. And (c) below recomputed normalisedProse inside
+    // its innermost loop, four levels deep. Every message's prose was normalised again and again.
+    //
+    // NORMALISE EACH MESSAGE ONCE. The keys are computed here, kept, and reused by (b) and (c), and
+    // the sets are hashed. Nothing about WHICH messages fold has changed - only how many times the
+    // same string is rebuilt.
+    const auto tStart = juce::Time::getMillisecondCounterHiRes();
+    std::vector<std::vector<std::string>> msgKey (chats.size());
+    for (size_t ci = 0; ci < chats.size(); ++ci)
+    {
+        msgKey[ci].resize (chats[ci].messages.size());
+        for (size_t mi = 0; mi < chats[ci].messages.size(); ++mi)
+            msgKey[ci][mi] = echojay::agentui::normalisedProse (chats[ci].messages[mi].content)
+                                 .toStdString();
+    }
+    size_t ciNow = 0;
     for (auto& c : chats)
     {
-        juce::StringArray seen;
+        std::unordered_set<std::string> seen;
         // EVERY card's words first, so a pulled echo is folded wherever it lands in the order -
         // the server's copy can arrive before or after the card it duplicates.
         for (const auto& m : c.messages)
@@ -438,7 +464,7 @@ EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String&
             auto note = [&seen] (const juce::String& t)
             {
                 if (t.trim().length() < kMinFoldChars) return;
-                seen.addIfNotAlreadyThere (echojay::agentui::normalisedProse (t));
+                seen.insert (echojay::agentui::normalisedProse (t).toStdString());
             };
             note (v.opening);
             note (v.closing);
@@ -450,38 +476,74 @@ EchoJayWorkspace::Repair EchoJayWorkspace::repairChatFiling (const juce::String&
         }
         std::vector<WsMessage> kept;
         kept.reserve (c.messages.size());
-        for (auto& m : c.messages)
+        for (size_t mi = 0; mi < c.messages.size(); ++mi)
         {
+            auto& m = c.messages[mi];
             if (m.role == "assistant" && m.content.isNotEmpty() && m.agentJson.isEmpty())
             {
-                const auto key = echojay::agentui::normalisedProse (m.content);
-                if (m.content.trim().length() >= kMinFoldChars && seen.contains (key))
+                const auto& key = msgKey[ciNow][mi];      // normalised once, above
+                if (m.content.trim().length() >= kMinFoldChars && seen.count (key) > 0)
                 { ++r.duplicatesDropped; continue; }
-                seen.addIfNotAlreadyThere (key);
+                seen.insert (key);
             }
             kept.push_back (m);
         }
         c.messages = std::move (kept);
+        ++ciNow;
     }
     // (c) and what CANNOT be repaired honestly: the same assistant text in two different chats.
     //     Counted and named, never deleted - a copy and a real answer read identically here.
-    for (size_t i = 0; i < chats.size(); ++i)
-        for (const auto& m : chats[i].messages)
-        {
-            if (m.role != "assistant" || m.content.length() < 40) continue;
-            const auto key = echojay::agentui::normalisedProse (m.content);
-            for (size_t j = i + 1; j < chats.size(); ++j)
-                for (const auto& n : chats[j].messages)
-                    if (n.role == "assistant"
-                        && echojay::agentui::normalisedProse (n.content) == key)
-                    {
-                        ++r.crossChatSuspects;
-                        EchoJay_NSLog (("EJStores: the same answer sits in chats " + chats[i].id
-                                        + " and " + chats[j].id + " - left alone, because a copy and "
-                                        "a real answer read identically in the record: \""
-                                        + m.content.substring (0, 60) + "...\"").toRawUTF8());
-                    }
-        }
+    //
+    // ---- THIS WAS THE FOUR-DEEP LOOP HIS FREEZE WAS INSIDE (29 Oct 2026) --------------------
+    //
+    // chat x message x later-chat x message, with normalisedProse recomputed in the INNERMOST
+    // body. Every message's prose was rebuilt once per earlier message in every earlier chat. On a
+    // history of a few thousand that is tens of millions of string builds, on the message thread,
+    // and it froze the whole AU host.
+    //
+    // ONE PASS, with the keys computed above. A map from key to the FIRST chat that said it; a
+    // second sighting in a different chat is a suspect. Same verdicts, same log line, same refusal
+    // to delete - the behaviour is untouched and only the arithmetic changed.
+    {
+        std::unordered_map<std::string, size_t> firstChatOfKey;     // key -> chat index
+        std::unordered_map<std::string, juce::String> firstTextOfKey;
+        for (size_t i = 0; i < chats.size(); ++i)
+            for (size_t mi = 0; mi < chats[i].messages.size(); ++mi)
+            {
+                const auto& m = chats[i].messages[mi];
+                if (m.role != "assistant" || m.content.length() < 40) continue;
+                const auto& key = msgKey[i][mi];
+                const auto it = firstChatOfKey.find (key);
+                if (it == firstChatOfKey.end())
+                {
+                    firstChatOfKey.emplace (key, i);
+                    firstTextOfKey.emplace (key, m.content);
+                    continue;
+                }
+                if (it->second == i) continue;          // same chat: that is (b)'s business
+                ++r.crossChatSuspects;
+                EchoJay_NSLog (("EJStores: the same answer sits in chats " + chats[it->second].id
+                                + " and " + chats[i].id + " - left alone, because a copy and "
+                                "a real answer read identically in the record: \""
+                                + firstTextOfKey[key].substring (0, 60) + "...\"").toRawUTF8());
+            }
+    }
+    // ---- AND IT SAYS WHAT IT COST, every time, so a slow one is visible before it is a freeze ---
+    {
+        const auto ms = juce::Time::getMillisecondCounterHiRes() - tStart;
+        size_t msgs = 0;
+        for (const auto& c : chats) msgs += c.messages.size();
+        if (ms > 250.0)
+            EchoJay_NSLog (("EJStores: repairChatFiling took " + juce::String (ms, 1) + " ms over "
+                            + juce::String ((int) msgs) + " message(s) in " + juce::String ((int) chats.size())
+                            + " chat(s) - OVER ITS 250 ms BUDGET. It runs on the message thread, so "
+                              "this is a freeze in waiting: say so here rather than discover it in a "
+                              "hang report, which is how his 09:55 was found").toRawUTF8());
+        else
+            EchoJay_NSLog (("EJStores: repairChatFiling " + juce::String (ms, 1) + " ms over "
+                            + juce::String ((int) msgs) + " message(s), " + juce::String ((int) chats.size())
+                            + " chat(s)").toRawUTF8());
+    }
     if (r.refiled > 0 || r.duplicatesDropped > 0)
         EchoJay_NSLog (("EJStores: chat store repaired - " + juce::String (r.refiled)
                         + " chat(s) refiled under \"" + openProject + "\", "

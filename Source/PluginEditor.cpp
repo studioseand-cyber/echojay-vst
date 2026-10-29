@@ -774,10 +774,38 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // (an em dash against a hyphen). Run ONCE per editor, before the active chat is rebuilt, so
         // what he reopens is the repaired store. What it will not do is guess at an answer that
         // appears in two chats - that is named in the log for a human, never deleted on a guess.
-        if (! repairedStore_)
+        // ---- ONCE PER STORE, NOT ONCE PER EDITOR (his 09:55 freeze, 29 Oct 2026) -------------
+        //
+        // repairedStore_ is a MEMBER, so it reset with every editor - and Logic recreates editors
+        // routinely. The full repair therefore ran on the message thread every time his V2's window
+        // opened, which is how a quadratic scan became a frozen AU host (Pro-L 2 could not open
+        // either; our thread was holding the process). It is linear now, and it should also stop
+        // being a thing that happens again and again: the clean-up is for damage one build wrote in
+        // October, and once it has been done to a store it is done.
+        //
+        // AND THE MARKER IS ONLY WRITTEN IF THERE WAS SOMETHING TO EXAMINE. onLoaded fires on a
+        // FAILED load too (doLoad sets LoadState::Error and still calls it), so an offline start
+        // would otherwise record "repaired" against a store this machine has never seen - and the
+        // real repair would then be skipped for ever. An empty store costs nothing to re-check.
+        const auto repairMarker = echojay::userAppData().getChildFile ("EchoJay")
+                                                        .getChildFile ("chat_repair_v1.done");
+        if (! repairedStore_ && ! repairMarker.existsAsFile())
         {
             repairedStore_ = true;
             const auto rep = workspace.repairChatFiling (newChatProjectName(), getCurrentAlbumId());
+            if (! workspace.getChats().empty())
+            {
+                repairMarker.getParentDirectory().createDirectory();
+                repairMarker.replaceWithText ("repaired " + juce::Time::getCurrentTime().toISO8601 (true)
+                                              + "  refiled=" + juce::String (rep.refiled)
+                                              + " dropped=" + juce::String (rep.duplicatesDropped)
+                                              + " crossChatSuspects=" + juce::String (rep.crossChatSuspects)
+                                              + "\n\nDelete this file to let the one-off chat-filing "
+                                                "repair run again (see EchoJayWorkspace::repairChatFiling).\n");
+                EchoJay_NSLog (("EJStores: the one-off chat repair is RECORDED as done - "
+                                + repairMarker.getFullPathName()
+                                + " (delete it to run the repair again)").toRawUTF8());
+            }
             if (rep.refiled > 0 || rep.duplicatesDropped > 0)
             {
                 workspace.requestMutationSync();

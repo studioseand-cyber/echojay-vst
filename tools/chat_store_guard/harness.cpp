@@ -401,6 +401,63 @@ int main()
         check (fixed != nullptr && fixed->messages.size() == 2
                && fixed->messages[0].role == "user" && fixed->messages[1].role == "assistant",
                "SP4c ...and what it keeps is the question and ONE answer, in order");
+
+        // ---- WHERE THIS BLOCK SITS IS PART OF THE TEST (29 Oct 2026) -----------------------
+        //
+        // I first put it ABOVE the SP4 checks and broke all three: `fixed` is a POINTER into the
+        // store's chat vector, and adding 200 chats reallocated it, so the assertions read freed
+        // memory ("856428220 message(s) left"). The same dangling-array rule the product follows -
+        // hold a named value, not a pointer across a mutation - applies to the harness, and a leg
+        // that corrupts the legs before it is worse than no leg.
+        // ---- HIS 09:55 FREEZE: THIS REPAIR MUST BE LINEAR AND BOUNDED (29 Oct 2026) ----------
+        //
+        // AUHostingService's main thread, 3068 of 3068 samples, inside repairChatFiling ->
+        // normalisedProse. Not only the V2: the whole AU host, so Pro-L 2 could not open either.
+        // (b) scanned a juce::StringArray linearly and (c) was four loops deep with normalisedProse
+        // rebuilt in the innermost body - tens of millions of string builds on a real history.
+        //
+        // THE LEG IS A CLOCK, because that is what went wrong - not a wrong answer, a slow one. A
+        // few thousand messages across a few hundred chats is his order of magnitude, and if this
+        // ever goes quadratic again the time will say so long before anyone sees a hang report.
+        {
+            const int kChats = 200, kPerChat = 20;        // 4,000 messages
+            for (int ci = 0; ci < kChats; ++ci)
+            {
+                WsChat big;
+                big.id = "chat_perf_" + juce::String (ci);
+                big.title = "Perf " + juce::String (ci);
+                big.trackName = "project nafe aitch";
+                big.created = juce::Time::getCurrentTime().toISO8601 (true);
+                for (int mi = 0; mi < kPerChat; ++mi)
+                {
+                    WsMessage m;
+                    m.role = (mi % 2) ? "assistant" : "user";
+                    // Long enough to pass kMinFoldChars, and SHARED across chats on purpose: this
+                    // is the cross-chat path (c), the one his sample was inside.
+                    m.content = "I cut the low-mids on the kick and brought the level back up, "
+                                "round " + juce::String (mi);
+                    big.messages.push_back (m);
+                }
+                A::store (*ed).addChat (big);
+            }
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            const auto perfRep = A::store (*ed).repairChatFiling ("project nafe aitch", {});
+            const auto ms = juce::Time::getMillisecondCounterHiRes() - t0;
+            juce::ignoreUnused (perfRep);
+            check (ms < 2000.0,
+                   "SP4perf the one-off repair over 4,000 messages in 200 chats finishes in under "
+                   "2 s - it runs ON THE MESSAGE THREAD, so a quadratic version freezes the whole "
+                   "AU host (his 09:55: 3068 of 3068 samples in normalisedProse, and Pro-L 2 could "
+                   "not open either)",
+                   juce::String (ms, 1) + " ms");
+            // AND THE BUDGET THE PRODUCT ITSELF WATCHES, so the leg and the log agree on what slow
+            // means rather than each carrying its own number.
+            check (ms < 250.0,
+                   "SP4perf2 ...and comfortably inside the 250 ms budget the repair logs against, so "
+                   "a real history does not merely scrape past a test limit",
+                   juce::String (ms, 1) + " ms");
+        }
+
     }
 #endif
 
@@ -3245,13 +3302,13 @@ int main()
             // A fake MatchHost could not test this; it would test the fake. The rule is pure now
             // (captureForSlotIn), so this tests the rule the editor actually runs.
             {
-                std::vector<CaptureSnapshot> snaps (3);
+                std::vector<::CaptureSnapshot> snaps (3);
                 snaps[0].id = "cap_a"; snaps[0].name = "first";
                 snaps[1].id = "cap_b"; snaps[1].name = "second";
                 snaps[2].id = "cap_c"; snaps[2].name = "third";
 
-                CompareSlotState mix;  mix.kind  = CompareSlotState::Kind::Snapshot; mix.index  = 0;
-                CompareSlotState other; other.kind = CompareSlotState::Kind::Snapshot; other.index = 2;
+                echojay::CompareSlotState mix;  mix.kind  = echojay::CompareSlotState::Kind::Snapshot; mix.index  = 0;
+                echojay::CompareSlotState other; other.kind = echojay::CompareSlotState::Kind::Snapshot; other.index = 2;
 
                 const auto a = echojay::captureForSlotIn (snaps, mix);
                 const auto b = echojay::captureForSlotIn (snaps, other);
@@ -3273,17 +3330,17 @@ int main()
                 check (a->id == "cap_a" && again->id == "cap_c",
                        "CS1c ...and a later lookup does not reach back and change an earlier answer: "
                        "the pointer version did exactly that through a shared cache");
-                for (auto k : { CompareSlotState::Kind::Live, CompareSlotState::Kind::Reference,
-                                CompareSlotState::Kind::WsCapture, CompareSlotState::Kind::CodecFile,
-                                CompareSlotState::Kind::Empty })
+                for (auto k : { echojay::CompareSlotState::Kind::Live, echojay::CompareSlotState::Kind::Reference,
+                                echojay::CompareSlotState::Kind::WsCapture, echojay::CompareSlotState::Kind::CodecFile,
+                                echojay::CompareSlotState::Kind::Empty })
                 {
-                    CompareSlotState s2; s2.kind = k; s2.index = 0;
+                    echojay::CompareSlotState s2; s2.kind = k; s2.index = 0;
                     check (! echojay::captureForSlotIn (snaps, s2).has_value(),
                            "CS1d a slot that is not a Snapshot resolves to NOTHING - none of them is "
                            "a capture of this session, and an empty answer is what her page refuses "
                            "on rather than a guess");
                 }
-                CompareSlotState oob; oob.kind = CompareSlotState::Kind::Snapshot; oob.index = 9;
+                echojay::CompareSlotState oob; oob.kind = echojay::CompareSlotState::Kind::Snapshot; oob.index = 9;
                 check (! echojay::captureForSlotIn (snaps, oob).has_value(),
                        "CS1e ...and an index past the end is nothing, not the last capture - a stale "
                        "slot index must not silently become whatever is newest");

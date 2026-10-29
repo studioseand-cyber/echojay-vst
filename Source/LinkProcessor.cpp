@@ -4497,8 +4497,8 @@ void LinkProcessor::pollChainCommand()
                                  : "dial frame: the hold would not start");
                 EchoJay_NSLog ((juce::String ("EJThreshold(Link): a DIAL FRAME ")
                                 + (armedGr ? "ARMED" : "could NOT arm")
-                                + " a calibration hold on slot " + juce::String (slot1) + " (""
-                                + slotName + ""), band " + juce::String (cfg.lo, 1) + "-"
+                                + " a calibration hold on slot " + juce::String (slot1) + " (\""
+                                + slotName + "\"), band " + juce::String (cfg.lo, 1) + "-"
                                 + juce::String (cfg.hi, 1) + " dB, dialling "
                                 + (cfg.params.isEmpty() ? juce::String ("the drive")
                                                         : cfg.params.joinIntoString (" + "))
