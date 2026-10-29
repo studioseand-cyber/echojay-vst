@@ -625,6 +625,13 @@ class Handler(BaseHTTPRequestHandler):
                 for d in STATE["devices"].values():
                     d["denied"] = True
                 return self._send(200, {})
+            if path == "/__mock/expire_signin":   # 29 Oct, rehearsals: the whole sign-in is gone (access 401, refresh invalid_grant) - "Please sign in again"
+                with LOCK:
+                    for a in STATE["access"].values():
+                        STATE["dead_families"].add(a["family"])
+                    for r in STATE["refresh"].values():
+                        STATE["dead_families"].add(r["family"])
+                return self._send(200, {"dead_families": len(STATE["dead_families"])})
             if path == "/__mock/expire_access":
                 for a in STATE["access"].values():
                     a["expires"] = 0

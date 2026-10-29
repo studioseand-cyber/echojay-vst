@@ -1317,7 +1317,7 @@ private:
             if (runCompletedNow)   // 27 Oct: the person must act (a new run) - B's words, and Done
             { title = "This run is finished on EchoJay"; showBar = false; primary.setButtonText ("Done"); primary.setVisible (true); primary.setEnabled (true); repaint(); return; }
             repaint(); snapAtQuarters();
-            if (signInNow) { title = "Please sign in again"; text = "Your results are kept on this Mac."; primary.setButtonText ("Sign in with EchoJay"); primary.setVisible (true); showBar = false; screen = Screen::welcome; repaint(); return; }
+            if (signInNow) { title = "Please sign in again"; text = "Your results are kept on this Mac."; primary.setButtonText ("Sign in with EchoJay"); primary.setVisible (true); showBar = false; screen = Screen::welcome; autoTicks = 0; repaint(); snap ("sign_in_again"); return; }   // 29 Oct: a rehearsal's --auto presses it too
             if (waiting == 0 && ! completing && juce::Time::getMillisecondCounterHiRes() - uploadT0 > 1500.0 && wizcontract::Outbox { outboxDir() }.pendingFiles().isEmpty()) { barLeft = "Checking it arrived"; reportRunEnd(); }
             return;
         }   // a short bar over the (stubbed) send, then the server's genuine check and the promo
