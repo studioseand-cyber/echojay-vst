@@ -1,5 +1,5 @@
 scenario A7
-captured 2026-10-29T02:55:27.724Z
+captured 2026-10-29T03:35:08.066Z
   [user] rig-nomap-marker: add that compressor
   [assistant] Added Vertigo VSM-3. Settings not confirmed.
   [user] rig-proc3-marker: add Pro-C 3 with a threshold

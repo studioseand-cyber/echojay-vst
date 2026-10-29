@@ -1,5 +1,5 @@
 scenario E1
-captured 2026-10-29T02:49:55.246Z
+captured 2026-10-29T03:29:50.824Z
   [user] rig-gr-marker: how much is it doing?
   [assistant] Read the gain reduction.
   run row: status=Done changes=1 steps=2 zones=[11:1 change,8:Undo all]

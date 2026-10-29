@@ -13631,7 +13631,20 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
             // C traced the window - an in-flight entry resolves on its ack poll, or fails after
             // 20 x 250 ms and is swept at 9 s - so this is about five seconds, not a dead button.
             // A false promise is its own fault, and a worse one than silence.
-            fail ("Not added: still adding " + pnd.addName + " to this Link - try again in a moment.");
+            // ---- AND IT SAYS WHICH KIND OF CHANGE (C's point 50, 29 Oct 2026) -------------
+            //
+            // addName is only filled for an ADD. sendBlockEdit's entries (a remove or a bypass)
+            // leave it empty, so my own sentence from twenty minutes ago read "still adding  to
+            // this Link" - a blank name and the wrong verb - for exactly the cases it was most
+            // likely to meet. The in-flight guard matches ANY pending block for that Link, so the
+            // sentence has to cover any of them.
+            const auto what = pnd.isAdd
+                                ? ((pnd.addName.isNotEmpty() ? "still adding " + pnd.addName
+                                                             : juce::String ("still adding a plugin"))
+                                   + " to this Link")
+                                : pnd.isRemove ? juce::String ("still removing a plugin from this Link")
+                                               : juce::String ("still changing this Link");
+            fail ("Not added: " + what + " - try again in a moment.");
             return;
         }
     if (!connected)
