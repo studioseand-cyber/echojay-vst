@@ -686,6 +686,7 @@ private:
                     if (p == wizcontract::Poll::ok)
                     {   // 29 Oct (Kathy): back to the SAME run where it stood; the consent only when never given (or after a deliberate Sign out)
                         logLine ("signed in as " + session->displayName()); netWords = {};
+                        signInNow = false;   // 29 Oct (the sign-in rehearsal): the uploader's last word was "sign in" - stale now; kept, the sending screen asked a second time
                         const auto st = appState();
                         const auto to = wizapp::afterSignIn (whereNow(), st.hasProperty ("signed_out_at"), kMode, wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString())));
                         logLine ("after the sign-in: " + wizapp::screenName (to) + (to == Screen::consent ? juce::String() : " - the same run (" + st.getProperty ("run_id", "").toString() + "), its consent already given"));

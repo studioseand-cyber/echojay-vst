@@ -14748,7 +14748,8 @@ int main (int, char**)
                && afterSignIn (at ({ 1, 2, 3, 4, 6 }), false, Mode::beta, some) == Screen::reward
                && app.contains ("const auto to = wizapp::afterSignIn (whereNow(), st.hasProperty (\"signed_out_at\"), kMode,")
                && ! app.contains ("netWords = {}; show (Screen::consent); return; }") && app.contains ("        auto w = whereNow();\n")
-               && app.contains ("its consent already given\"));\n                        show (to); return;\n                    }"),   // the answer is what is shown
+               && app.contains ("its consent already given\"));\n                        show (to); return;\n                    }")   // the answer is what is shown
+               && app.contains ("netWords = {};\n                        signInNow = false;"),   // the stale "sign in" never asks a second time
                "wizard WZ-36OCT-7: signed in again mid-run -> the same run where it stood (sending, measuring, the scan), never the consent once given");
     }
     // WZ-36OCT-8 A PLUGIN THAT APPLIES A WRITE WHILE PROCESSING (Sean, 29 Oct: NI Solid Bus Comp's production map had only Ratio and SC Gain;
