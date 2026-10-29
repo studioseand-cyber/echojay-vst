@@ -40,6 +40,7 @@
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include "EJClipDrive.h"                // A1c: the clip stage's figure, driven by the CD legs
 #include "EJNewChatNotice.h"            // Sean's B6 option 1: what a new chat says
+#include "EJMatchTab.h"   // C's point 55: captureForSlotIn, the slot->capture rule
 #include "EJDialFrame.h"   // C's point 54: the Link's dial-frame ack decision
 #include "SurgicalEqProcessor.h"   // EQG: the band-gain clamp, both directions
 #include "EJPendingClaim.h"     // PC: nothing claims "added" while the add is waiting
@@ -3233,6 +3234,60 @@ int main()
             check (! echojay::shouldTakeRunRack (false, true, 1, 2),
                    "LC3d control: nothing is taken while no run is active - a serial that moved "
                    "without a live run is not a run starting");
+
+            // ---- C's POINT 55: A SLOT'S CAPTURE IS ITS OWN (Kathy's R4-2, 29 Oct 2026) ------
+            //
+            // The fault this holds: captureForSlot first returned a pointer into the same cache
+            // latestCapture() writes, so calling the two in turn silently swapped the answer, and
+            // two snapshot slots aliased to the SECOND slot's data - the window would have compared
+            // a capture with itself and found it identical. A fault that looks like agreement.
+            //
+            // A fake MatchHost could not test this; it would test the fake. The rule is pure now
+            // (captureForSlotIn), so this tests the rule the editor actually runs.
+            {
+                std::vector<CaptureSnapshot> snaps (3);
+                snaps[0].id = "cap_a"; snaps[0].name = "first";
+                snaps[1].id = "cap_b"; snaps[1].name = "second";
+                snaps[2].id = "cap_c"; snaps[2].name = "third";
+
+                CompareSlotState mix;  mix.kind  = CompareSlotState::Kind::Snapshot; mix.index  = 0;
+                CompareSlotState other; other.kind = CompareSlotState::Kind::Snapshot; other.index = 2;
+
+                const auto a = echojay::captureForSlotIn (snaps, mix);
+                const auto b = echojay::captureForSlotIn (snaps, other);
+                check (a.has_value() && a->id == "cap_a",
+                       "CS1 a snapshot slot resolves to the capture at ITS index, not the newest - "
+                       "Kathy's R4-2: an older snapshot in the mix slot was giving bands from a "
+                       "different capture than the one on screen",
+                       a.has_value() ? a->id : juce::String ("(none)"));
+                check (b.has_value() && b->id == "cap_c" && a->id != b->id,
+                       "CS1b TWO snapshot slots keep their OWN captures - the aliasing version gave "
+                       "both of them the second slot's data, so the window compared a capture with "
+                       "itself AND FOUND IT IDENTICAL",
+                       (a.has_value() ? a->id : juce::String()) + " vs "
+                         + (b.has_value() ? b->id : juce::String()));
+                // AND AN ANSWER ALREADY GIVEN CANNOT BE CHANGED BY A LATER CALL. With a value this
+                // is structural rather than a rule a caller must obey - which is the whole reason
+                // for returning by value instead of documenting a lifetime.
+                const auto again = echojay::captureForSlotIn (snaps, other);
+                check (a->id == "cap_a" && again->id == "cap_c",
+                       "CS1c ...and a later lookup does not reach back and change an earlier answer: "
+                       "the pointer version did exactly that through a shared cache");
+                for (auto k : { CompareSlotState::Kind::Live, CompareSlotState::Kind::Reference,
+                                CompareSlotState::Kind::WsCapture, CompareSlotState::Kind::CodecFile,
+                                CompareSlotState::Kind::Empty })
+                {
+                    CompareSlotState s2; s2.kind = k; s2.index = 0;
+                    check (! echojay::captureForSlotIn (snaps, s2).has_value(),
+                           "CS1d a slot that is not a Snapshot resolves to NOTHING - none of them is "
+                           "a capture of this session, and an empty answer is what her page refuses "
+                           "on rather than a guess");
+                }
+                CompareSlotState oob; oob.kind = CompareSlotState::Kind::Snapshot; oob.index = 9;
+                check (! echojay::captureForSlotIn (snaps, oob).has_value(),
+                       "CS1e ...and an index past the end is nothing, not the last capture - a stale "
+                       "slot index must not silently become whatever is newest");
+            }
 
             // ---- C's POINT 54: A LINK'S DIAL-FRAME ACK, ALL FOUR OUTCOMES (29 Oct 2026) -----
             //

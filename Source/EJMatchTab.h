@@ -43,6 +43,27 @@ struct MatchLink
 struct MatchSides { MatchSide mix, ref; };
 struct MatchSlotPair { const CompareSlotState* mix = nullptr; const CompareSlotState* ref = nullptr; };
 
+/** ---- WHICH CAPTURE A SLOT MEANS, AS A PURE LOOKUP (Kathy's R4-2 / C's point 55) -----------
+
+    Extracted so it can be LEGGED. The behaviour that matters is not "the editor compiles" but:
+
+      * a Snapshot slot resolves to the capture at ITS index, never the newest one;
+      * two different snapshot slots resolve to two DIFFERENT captures;
+      * every other slot kind resolves to nothing, because none of them is a capture of this
+        session (see the table on captureForSlot below);
+      * the answer is a VALUE, so no later call can change an answer already given. That last one
+        is the property my first version broke by returning a pointer into a shared cache, and it
+        is structural here rather than a rule a caller has to obey.
+
+    A fake MatchHost could not test any of this - it would be testing the fake. This can. */
+inline std::optional<CaptureSnapshot> captureForSlotIn (const std::vector<CaptureSnapshot>& snaps,
+                                                        const CompareSlotState& slot)
+{
+    if (slot.kind != CompareSlotState::Kind::Snapshot) return std::nullopt;
+    if (slot.index < 0 || slot.index >= (int) snaps.size()) return std::nullopt;
+    return snaps[(size_t) slot.index];
+}
+
 struct MatchHost
 {
     virtual ~MatchHost() = default;

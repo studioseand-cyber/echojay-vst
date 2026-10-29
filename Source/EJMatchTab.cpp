@@ -2620,10 +2620,9 @@ std::optional<CaptureSnapshot> EchoJayEditor::captureForSlot (const CompareSlotS
     // latestCaptureCache_ and returned a pointer to it, which meant a later latestCapture() call
     // rewrote the answer under the caller and two slots fetched in turn aliased to the same data -
     // the substitution this function exists to prevent, rebuilt inside the function itself.
-    if (slot.kind != CompareSlotState::Kind::Snapshot) return std::nullopt;
-    const auto snaps = processorRef.getSnapshots();
-    if (slot.index < 0 || slot.index >= (int) snaps.size()) return std::nullopt;
-    return snaps[(size_t) slot.index];
+    // The lookup itself is pure and legged (echojay::captureForSlotIn); this supplies the session's
+    // snapshots and nothing else, so there is one place the rule lives and one place it is tested.
+    return echojay::captureForSlotIn (processorRef.getSnapshots(), slot);
 }
 
 const CaptureSnapshot* EchoJayEditor::verifyCapture() const
