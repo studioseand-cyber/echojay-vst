@@ -325,6 +325,20 @@ inline Signatures sigFromVar (const juce::var& v)
     if (v.hasProperty ("pitch_move_cents")) { s.pitchRead = true; s.pitchMoveCents = (double) v["pitch_move_cents"]; }
     return s;
 }
+// NOTHING CAME OUT (Kathy, 29 Oct: Reaktor 6 MFX with no ensemble loaded went for review with an empty signature and was refused as
+// "shape"): the reads ran, and the response found fewer than 10 readable tones, the harmonics no fundamental, the pitch no tone and the
+// tail nothing - the plugin is silent at its opening state (a host or shell with nothing loaded in it). That is not a category question:
+// it is not measurable, said why. A plugin with any reading at all (one tone, a tail) still goes for review
+inline constexpr const char* kSilentOpeningWhy = "nothing came out of it at its opening state (no readable tone, no harmonics, no pitch, no tail): a host or shell with nothing loaded is not measurable";
+inline bool nothingCameOut (const juce::var& signatures, bool readsRan)
+{
+    if (! readsRan || ! signatures.isObject()) return false;
+    const auto s = sigFromVar (signatures);
+    if (s.responseRead || s.harmRead || s.pitchRead || (s.tailRead && (s.rt60s || s.repeats > 0))) return false;
+    bool silentResponse = false;
+    if (const auto* ns = signatures.getProperty ("notes", {}).getArray()) for (const auto& n : *ns) if (n.toString().startsWith ("response: fewer than 10 readable tones")) silentResponse = true;
+    return silentResponse;
+}
 // SEVERAL SECTIONS -> CHANNEL STRIP (Kathy, 24 Oct; the 23 Oct run read Waves' signature strips as one section - reverb, saturation, a
 // compressor, even modulation). A strip is seen from both sides: the READS find two or more behaviours, one of them dynamics (the gain
 // moving with level), and the CONTROLS name a compressor (threshold / ratio / compress) and two or more of the EQ, gate and tail sections,

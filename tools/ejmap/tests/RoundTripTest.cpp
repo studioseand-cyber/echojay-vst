@@ -7461,6 +7461,36 @@ void testProfileSweepPlan()
                && ! open.pass && open.parts[0].state == "fail" && ! rev.pass && rev.parts[0].why.contains ("falls") && ! flatD.pass && flatD.parts[0].why.contains ("moves only") && ! accFails.pass && ! noRec.pass && v1Categories().contains ("deesser"),
                "cert WZ-31OCT-6: a de-esser's threshold or depth passes against its labels, frequency only where it passes ('" + rd.why() + "')");
     }
+    // WZ-36OCT-5 NOTHING CAME OUT IS NOT A CATEGORY QUESTION (the STAGING 4 run: Reaktor 6 MFX with no ensemble went for review with an empty
+    // signature and was refused "shape"). Reads ran, no tone, no harmonics, no pitch, no tail -> not measurable, said why
+    {
+        using namespace ejmap::categorise;
+        const auto reaktor = juce::JSON::parse (R"({"rt60_s": null, "repeats": 0, "notes": ["response: fewer than 10 readable tones", "harmonics: the fundamental was not read at both levels", "pitch: the output was silent or not a tone in the steady state"]})");
+        const auto oneRead = juce::JSON::parse (R"({"level_dependence_db": 0.1, "frequency_span_db": 0.2, "rt60_s": null, "repeats": 0, "notes": ["harmonics: not read at both levels"]})");
+        const auto tail = juce::JSON::parse (R"({"rt60_s": 1.2, "repeats": 0, "notes": ["response: fewer than 10 readable tones"]})");
+        const auto unread = juce::JSON::parse (R"({"notes": ["response: not read at both levels"]})");
+        check (nothingCameOut (reaktor, true) && ! nothingCameOut (reaktor, false) && ! nothingCameOut (oneRead, true) && ! nothingCameOut (tail, true) && ! nothingCameOut (unread, true)
+               && juce::String (kSilentOpeningWhy).contains ("not measurable"),
+               "wizard WZ-36OCT-5: a plugin silent at its opening state is not measurable, never an empty signature for review");
+    }
+    // WZ-36OCT-6 A TYPE SWITCH IS NEVER A SATURATOR'S DRIVE (the STAGING 4 run: Abbey Road Saturator's drive was "Saturator Type" - TG / REDD /
+    // OFF - refused "validator"). Named for a choice, or two or more words and no number (Off / -inf neither) -> out of every pool the pass probes
+    {
+        using namespace ejmap::cert;
+        auto c = [] (const char* json) { return juce::JSON::parse (json); };
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto sat = drv.fromFirstOccurrenceOf ("return c != nullptr && saturationTypeSwitch (*c); }), v.end()); return v; };", false, false).upToFirstOccurrenceOf ("o->setProperty (\"schema\", \"ej_saturation_prototype/1\"); o->setProperty (\"status\", \"PROTOTYPE - roadmap 2.5", false, false);
+        check (saturationTypeSwitch (c (R"({"name": "Saturator Type", "displayAt": {"0": "TG", "0.5": "REDD", "1": "OFF"}})"))
+               && saturationTypeSwitch (c (R"({"name": "Tube", "displayAt": {"0": "TG", "0.5": "REDD", "1": "OFF"}})"))
+               && saturationTypeSwitch (c (R"({"name": "Amp Model", "displayAt": {"0": "0", "1": "1"}})"))
+               && ! saturationTypeSwitch (c (R"({"name": "Input Gain", "displayAt": {"0": "-inf", "1": "+12.0 dB"}})"))
+               && ! saturationTypeSwitch (c (R"({"name": "Drive", "displayAt": {"0": "Off", "1": "10"}})"))
+               && ! saturationTypeSwitch (c (R"({"name": "Saturation", "displayAt": {"0": "Off", "1": "Hot"}})"))
+               && drv.contains ("|| sweep::neverTouchName (name) || saturationTypeSwitch (c)) continue;   // 29 Oct: never a type switch")
+               && sat.isNotEmpty() && ! sat.contains ("unnamedPool (base, {}, &fx.sampled)") && ! sat.contains ("unnamedPool (base, nominated, &fx.sampled)") && sat.contains ("for (const auto& pc : satPool (nominated))")
+               && sat.contains ("for (const auto& pc : satPool ({}))") && sat.contains ("for (const auto& pc : satPool ({})) pool.push_back"),
+               "cert WZ-36OCT-6: a saturator's type switch (TG / REDD / OFF, \"... Type\", \"... Model\") is never probed as its drive; a level with Off / -inf still is");
+    }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
     {
