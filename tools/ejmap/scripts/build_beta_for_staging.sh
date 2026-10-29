@@ -42,6 +42,9 @@ REQUIRED=(
   "1ac8c78d|the delay's time plan reads the control's own step count (a stepped switch asked for its own positions)"
   "ab6fbed9|an attached adapter is never on battery; step 2's bar follows plugins checked (the STAGING 4 run)"
   "f599b40b|the privacy check reads shapes, one file set aside not the bundle, Stopped shows Quit only, a ceiling-only limiter, silent plugins not measurable, no type switch as a drive (the STAGING 4 run's stop)"
+  "5712b15c|signed in again mid-run: back to the same run, never the consent once given"
+  "3ebbc73b|a plugin that applies a write while processing is read, not declined (Solid Bus Comp)"
+  "dbdbb724|signed in again: the stale sign-in prompt never asks a second time"
 )
 
 die() { echo "STOP: $*" >&2; exit 1; }
@@ -97,7 +100,10 @@ if [[ "${1:-}" == "--self-test" ]]; then
     t refused client_ok "has space"
     t refused client_ok "sk_live_abcdefghijkl"
     t refused client_ok "eyJhbGciOiJIUzI1NiJ9"
-    t ok      has_fixes "f599b40b"
+    t ok      has_fixes "dbdbb724"
+    t refused has_fixes "3ebbc73b"
+    t refused has_fixes "5712b15c"
+    t refused has_fixes "f599b40b"
     t refused has_fixes "ab6fbed9"
     t refused has_fixes "1ac8c78d"
     t refused has_fixes "76998c88"
