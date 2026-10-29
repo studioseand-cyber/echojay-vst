@@ -456,6 +456,64 @@ int main()
                    "SP4perf2 ...and comfortably inside the 250 ms budget the repair logs against, so "
                    "a real history does not merely scrape past a test limit",
                    juce::String (ms, 1) + " ms");
+
+            // ---- WHAT THE OLD ARITHMETIC COST ON THE SAME DATA (S1, 29 Oct 2026) ------------
+            //
+            // Session C's hypothesis for Sean's 28 Oct lag: this repair has existed since 18 Oct,
+            // ran on EVERY editor recreation, and grew superlinearly with his history - so it would
+            // cross from unnoticeable to seconds with no code change, which is why bisecting the
+            // BUILD against cea66b4e found nothing.
+            //
+            // Measured here rather than argued: the cross-chat scan as it was - four loops deep,
+            // normalisedProse rebuilt in the innermost body - over the SAME fixture the new one
+            // just did in a few hundred milliseconds. This is the ARITHMETIC, not the old binary,
+            // which is the fair comparison for "did the shape cost the time".
+            //
+            // Not an assertion about the product: a MEASUREMENT, reported in the detail, because the
+            // number is what decides whether S1 is explained. Its only check is that it ran at all.
+            // BEHIND A SWITCH, because the old arithmetic takes ELEVEN AND A HALF SECONDS on this
+            // fixture - that is the finding, and it is also a tax no routine gate should pay. Run it
+            // with EJ_S1_MEASURE=1 when the question is asked again.
+            if (const char* want = ::getenv ("EJ_S1_MEASURE"); want != nullptr && *want == '1')
+            {
+                const auto& chatsNow = A::store (*ed).getChats();
+                const auto t1 = juce::Time::getMillisecondCounterHiRes();
+                int suspects = 0;
+                for (size_t i = 0; i < chatsNow.size(); ++i)
+                    for (const auto& m : chatsNow[i].messages)
+                    {
+                        if (m.role != "assistant" || m.content.length() < 40) continue;
+                        const auto key = echojay::agentui::normalisedProse (m.content);
+                        for (size_t j = i + 1; j < chatsNow.size(); ++j)
+                            for (const auto& n : chatsNow[j].messages)
+                                if (n.role == "assistant"
+                                    && echojay::agentui::normalisedProse (n.content) == key)
+                                    ++suspects;
+                    }
+                const auto oldMs = juce::Time::getMillisecondCounterHiRes() - t1;
+                // PRINTED, not tucked into a check's detail: check() shows its detail only on
+                // FAILURE, so my first version measured this and showed nobody the number. A
+                // measurement whose result is invisible is not a measurement.
+                std::printf ("\n    S1 MEASUREMENT: the cross-chat scan over %d messages in %d chats\n"
+                             "      OLD arithmetic (4 loops, normalise inside): %9.1f ms\n"
+                             "      NEW arithmetic (one pass, normalise once): %9.1f ms\n"
+                             "      ratio: %.0fx  (suspects seen: %d)\n\n",
+                             kChats * kPerChat, kChats, oldMs, ms,
+                             ms > 0.0 ? oldMs / ms : 0.0, suspects);
+                // THE ANSWER, recorded where it was measured: 11,564 ms against 82.6 ms, 140x, on
+                // 4,000 messages in 200 chats (29 Oct 2026). On the message thread, on EVERY editor
+                // recreation. That is Sean's 28 Oct "slow loads after pressing a card" and the
+                // glitching with it, and it is why bisecting the BUILD against cea66b4e found
+                // nothing: the code had not changed, his history had grown.
+                check (oldMs >= 0.0,
+                       "SP4perf3 MEASUREMENT (EJ_S1_MEASURE=1): the OLD cross-chat arithmetic over the "
+                       "same history, for session C's S1 hypothesis - a quadratic repair on every "
+                       "editor recreation would cross from unnoticeable to seconds as the history "
+                       "grew, with no code change, which is why bisecting the build found nothing",
+                       "old " + juce::String (oldMs, 1) + " ms vs new " + juce::String (ms, 1)
+                         + " ms on the same " + juce::String ((int) (kChats * kPerChat))
+                         + " messages (" + juce::String (suspects) + " suspects seen)");
+            }
         }
 
     }
