@@ -4378,6 +4378,114 @@ void LinkProcessor::pollChainCommand()
         // is mistaken for a repeat of an applied one.
         auto failChain = [this, seq](const juce::String& why)
         { lastAppliedChainSeq_ = 0; writeChainAck(seq, "failed", { why }, {}); };
+        // ---- A1b: A DIAL FRAME FOR ONE SLOT, CARRIED ON THIS SAME COMMAND (29 Oct 2026) -----
+        //
+        // The V2 writes `dialOnSlot` = { slot, dial_on_playback } as an additive top-level field on
+        // the chain command (one road to a Link's rack), with an EMPTY editOps array beside it
+        // because a dial frame edits no slots. Handled here, before the ops path, and ANSWERED:
+        // the ack carries dialArmed true or false, and a false carries this Link's own reason.
+        //
+        // WHY THE ANSWER MATTERS MORE THAN THE ARM. The V2's step stays open until this ack comes
+        // back (EJAgentClient::beginDialWait), and a Link that stayed silent would leave it waiting
+        // on awaitChainAck's 8 s bound and then fail with "the rack never acknowledged it" - which
+        // is a sentence about the transport for what is really "I cannot do that kind of dial".
+        // DF12d asserts the client turns a false into a step failure carrying this reason, so this
+        // is the other half of a leg that already exists.
+        //
+        // ONE KIND TODAY, HONESTLY. This Link can arm a LIMITER's loudness target - the road at
+        // armTargetFromDial, which it already uses for a dial carried inside an add. A compressor's
+        // GR target needs calibStart, which this process does not have at all, so it is refused BY
+        // NAME rather than silently ignored. That is why dialFrameCapable (byte 127) is still not
+        // set by this build: the byte has to mean "can arm a dial on a named slot", and until the
+        // second road exists it would be a promise this handler cannot keep.
+        if (obj->hasProperty ("dialOnSlot"))
+        {
+            const auto frame = obj->getProperty ("dialOnSlot");
+            auto* fo = frame.getDynamicObject();
+            const int slot1 = fo != nullptr ? (int) (double) fo->getProperty ("slot") : 0;
+            const auto dial = fo != nullptr ? fo->getProperty ("dial_on_playback") : juce::var();
+            auto* dpo = dial.getDynamicObject();
+            const int slot0 = slot1 - 1;
+
+            auto ackDial = [this, seq] (bool armed, const juce::String& why,
+                                        const juce::String& note)   // `armed` decides the status
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("dialArmed", armed);
+                if (! armed && why.isNotEmpty()) o->setProperty ("dialWhy", why);
+                juce::Array<juce::var> one; one.add (juce::var (o));
+                // ---- THE STATUS CARRIES THE ANSWER, because the V2 reads nothing else ----------
+                //
+                // I wrote this as always "ok" first, reasoning that the status should mean "the
+                // command was understood" and dialArmed should carry the outcome. That is tidy and
+                // it is WRONG on this wire: awaitChainAck decides success on `st == "ok"` alone
+                // (PluginProcessor.cpp) and never looks inside, so an unarmed dial acked "ok" would
+                // have reported itself as armed - the exact "'sent' is not 'applied'" fault this
+                // whole road exists to prevent, rebuilt by me on the far side of it.
+                //
+                // For a dial frame the two questions are one anyway: the command's purpose IS the
+                // arm. dialArmed stays in the payload for diagnosis, and `reason` carries the words.
+                writeChainAck (seq, armed ? "ok" : "not_applied", { note }, juce::var (one), why,
+                               chainHost.getNumSlots());
+            };
+
+            if (fo == nullptr || dpo == nullptr)
+            {
+                ackDial (false, "the dial frame carried no dial_on_playback object",
+                         "dial frame: nothing to arm");
+                EchoJay_NSLog ("EJLink: a dial frame arrived with no dial_on_playback - answered, not armed");
+                return;
+            }
+            if (slot0 < 0 || slot0 >= chainHost.getNumSlots())
+            {
+                const auto why = "slot " + juce::String (slot1) + " is not a slot on this rack ("
+                               + juce::String (chainHost.getNumSlots()) + " slot(s))";
+                ackDial (false, why, "dial frame: no such slot");
+                EchoJay_NSLog (("EJLink: a dial frame named " + why + " - answered, not armed").toRawUTF8());
+                return;
+            }
+
+            float tl = 0.0f;
+            if (! LoudnessLoop::dialIsLimiterTarget (dial, &tl))
+            {
+                // NAMED, not swallowed: the model needs to know which half is missing, and "this
+                // build cannot" is a different answer from "that slot is wrong".
+                const juce::String why = "this Link can arm a limiter's loudness target on a named "
+                                         "slot; it has no road yet for that kind of dial";
+                ackDial (false, why, "dial frame: this kind is not armable here");
+                EchoJay_NSLog (("EJLink: a dial frame on slot " + juce::String (slot1)
+                                + " is not a limiter target, and this build has no other dial road - "
+                                  "answered with the reason, never silently").toRawUTF8());
+                return;
+            }
+
+            const auto ctl   = dpo->getProperty ("control").toString().trim();
+            const auto ceilV = dpo->getProperty ("ceiling");
+            const float ceil = (ceilV.isDouble() || ceilV.isInt() || ceilV.isInt64())
+                                 ? (float) (double) ceilV : -0.1f;
+            const auto numOr = [dpo] (const char* key)
+            {
+                const auto v = dpo->getProperty (key);
+                return (v.isDouble() || v.isInt() || v.isInt64())
+                         ? (float) (double) v : std::numeric_limits<float>::quiet_NaN();
+            };
+            const bool armed = loudnessLoop_.armTargetFromDial (tl, slot0, ctl, ceil,
+                                                                numOr ("avg_limit_db"),
+                                                                numOr ("peak_limit_db"));
+            ackDial (armed,
+                     armed ? juce::String()
+                           : "the target could not be armed on slot " + juce::String (slot1)
+                             + " - see this Link's log for the reason it gave",
+                     armed ? "dial frame: armed on slot " + juce::String (slot1)
+                           : "dial frame: not armed");
+            EchoJay_NSLog ((juce::String ("EJLoudness: a DIAL FRAME ")
+                            + (armed ? "armed " : "could NOT arm ")
+                            + juce::String ((double) tl, 1) + " LUFS on slot " + juce::String (slot1)
+                            + " of this Link (seq " + juce::String (seq) + ") - the V2's step is "
+                              "waiting on this ack, so it is answered either way").toRawUTF8());
+            return;
+        }
+
         if (!obj->hasProperty("editOps"))
         { failChain("v2 command without editOps"); return; }
         // A leased rack refuses STRUCTURE. The lease saved one slot's bypass
