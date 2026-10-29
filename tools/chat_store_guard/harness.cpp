@@ -3309,13 +3309,18 @@ int main()
                        "DF13b ...nor is a frame naming a slot this rack does not have, and the "
                        "refusal counts the slots so he can see why",
                        badSlot.why);
-                const auto grKind = dialFrameAck (true, true, 1, 2, /*isLimiterTarget*/ false, false);
-                check (juce::String (grKind.status) == "not_applied"
-                         && grKind.why.containsIgnoreCase ("no road yet for that kind"),
-                       "DF13c a GAIN-REDUCTION dial is refused BY NAME, not swallowed - \"this build "
-                       "cannot\" is a different answer from \"that slot is wrong\", and the step "
-                       "fails with this sentence rather than on an 8 s silence",
-                       grKind.why);
+                // DF13c MOVED ON WITH THE PRODUCT (29 Oct 2026). When piece 1 shipped, this leg
+                // said "a GAIN-REDUCTION dial is refused by name" - and piece 2 then gave the Link
+                // the GR road, so a GR dial is ARMED now and that assertion would have been a
+                // legged claim the product had stopped making. What the branch still guards is a
+                // kind NEITHER road will take: refused by name, never swallowed, because "this
+                // Link cannot" is a different answer from "that slot is wrong" and the step must
+                // fail with a sentence rather than on an 8 s silence.
+                const auto noRoadKind = dialFrameAck (true, true, 1, 2, /*any road took it*/ false, false);
+                check (juce::String (noRoadKind.status) == "not_applied"
+                         && noRoadKind.why.containsIgnoreCase ("no road that can arm that kind"),
+                       "DF13c a dial kind NEITHER road will take is refused BY NAME, not swallowed",
+                       noRoadKind.why);
                 const auto notArmed = dialFrameAck (true, true, 1, 2, true, /*armed*/ false);
                 check (juce::String (notArmed.status) == "not_applied" && ! notArmed.armed,
                        "DF13d A LIMITER TARGET THAT DID NOT ARM IS STILL NOT \"ok\" - this is the "

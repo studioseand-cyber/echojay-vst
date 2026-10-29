@@ -184,10 +184,18 @@ inline DialFrameAck dialFrameAck (bool haveDialObject,
     }
     if (! isLimiterTarget)
     {
-        // NAMED, never swallowed: "this build cannot" is a different answer from "that slot is
-        // wrong", and the model needs to know which half is missing.
-        a.why = "this Link can arm a limiter's loudness target on a named slot; it has no road yet "
-                "for that kind of dial";
+        // ---- WHAT THIS BRANCH MEANS NOW THAT PIECE 2 EXISTS (29 Oct 2026) -----------------
+        //
+        // When piece 1 shipped, this was "not a limiter target" = "no road", because the Link had
+        // only the loudness road. Piece 2 added the compressor's GR road, so a GR dial is ARMED
+        // now and never reaches here.
+        //
+        // The branch is still live and still needed: it answers a dial that NEITHER road will
+        // take. The caller passes `isLimiterTarget` false only after its own road has also
+        // declined, and a dial that fails to parse as a calibration block is refused by the
+        // handler itself, which can quote the parser's reason - richer than anything this function
+        // could say. So the wording is about the KIND, not about which road was tried.
+        a.why = "this Link has no road that can arm that kind of dial on a named slot";
         return a;
     }
     a.armed  = armed;

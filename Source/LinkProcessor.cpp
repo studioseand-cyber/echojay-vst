@@ -4438,7 +4438,79 @@ void LinkProcessor::pollChainCommand()
             const bool slotInRange = haveDial && slot0 >= 0 && slot0 < chainHost.getNumSlots();
             float tl = 0.0f;
             const bool isLimiter = haveDial && LoudnessLoop::dialIsLimiterTarget (dial, &tl);
-            if (! haveDial || ! slotInRange || ! isLimiter)
+
+            // ---- A1b PIECE 2: THE COMPRESSOR'S GR TARGET, ON THIS LINK (29 Oct 2026) ---------
+            //
+            // Piece 1 refused this kind by name because "this build has no road". That was true of
+            // the dial-frame path and NOT of this process: the Link already owns the whole
+            // calibration machinery - calibLoop_, tickOneCalib, startCalibMany - and already turns
+            // a dial carried INSIDE an add into a Config, a few hundred lines below. The only thing
+            // missing was doing it for a dial that arrives on its own, for a slot already there.
+            //
+            // So this is the same four steps that road takes, in the same order, with the same
+            // calls: blockFromDialOnPlayback, configFromBlock, buildHold, startCalibMany. Writing
+            // it any other way would be a second road to one place, which is the fault family this
+            // file has paid for most.
+            if (haveDial && slotInRange && ! isLimiter)
+            {
+                juce::String whyBlk;
+                const auto blk = echojay::CalibLoop::blockFromDialOnPlayback (dial, slot0, whyBlk);
+                if (blk.getDynamicObject() == nullptr)
+                {
+                    const auto why = "the dial could not be read as a calibration block - " + whyBlk;
+                    ackDial (false, why, "dial frame: not a readable dial");
+                    EchoJay_NSLog (("EJThreshold(Link): a DIAL FRAME on slot " + juce::String (slot1)
+                                    + " - " + why).toRawUTF8());
+                    return;
+                }
+                const auto slotName = chainHost.getSlotInfo (slot0).name;
+                echojay::CalibLoop::Config cfg;
+                juce::String whyCfg;
+                if (! echojay::CalibLoop::configFromBlock (blk, chainHost.getNumSlots(), /*bus*/ false,
+                                                           slotName, cfg, whyCfg))
+                {
+                    const auto why = "the dial's block is not usable - " + whyCfg.trim();
+                    ackDial (false, why, "dial frame: block not usable");
+                    EchoJay_NSLog (("EJThreshold(Link): a DIAL FRAME on slot " + juce::String (slot1)
+                                    + " - " + why).toRawUTF8());
+                    return;
+                }
+                if (whyCfg.isNotEmpty())
+                    EchoJay_NSLog (("EJThreshold(Link): DIAL FRAME BLOCK NOT AS CONTRACTED (slot "
+                                    + juce::String (slot1) + ") - " + whyCfg.trim()).toRawUTF8());
+                cfg.slot    = slot0;
+                cfg.plugin  = slotName;
+                // ONE WINDOW, ONE WRITE, NO QUESTION OPENED - the same purpose a build's dial gets,
+                // and the reason this is silent: buildHold leaves askOwed empty. A dial frame is
+                // B's server asking for a value, not the plugin starting a conversation.
+                cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+                // The loudness loop stands down for the same reason it does on the build road: a
+                // calibration hold owns this slot's OUT while it runs, and two owners is a fight.
+                loudnessLoop_.standDownQuietly ("a calibration hold owns this slot's OUT after a "
+                                                "dial frame");
+                const int started = startCalibMany ({ cfg });
+                const bool armedGr = started > 0;
+                ackDial (armedGr,
+                         armedGr ? juce::String()
+                                 : "the calibration hold would not start on slot " + juce::String (slot1),
+                         armedGr ? "dial frame: GR hold armed on slot " + juce::String (slot1)
+                                 : "dial frame: the hold would not start");
+                EchoJay_NSLog ((juce::String ("EJThreshold(Link): a DIAL FRAME ")
+                                + (armedGr ? "ARMED" : "could NOT arm")
+                                + " a calibration hold on slot " + juce::String (slot1) + " (""
+                                + slotName + ""), band " + juce::String (cfg.lo, 1) + "-"
+                                + juce::String (cfg.hi, 1) + " dB, dialling "
+                                + (cfg.params.isEmpty() ? juce::String ("the drive")
+                                                        : cfg.params.joinIntoString (" + "))
+                                + " - seq " + juce::String (seq)).toRawUTF8());
+                return;
+            }
+
+            // Reached only when the frame is unusable (no dial object, or a slot this rack has not
+            // got). A dial KIND that no road takes cannot arrive here any more - the GR road above
+            // either arms it or refuses it with the parser's own words - so `isLimiter` is passed as
+            // the "a road took it" fact it now is.
+            if (! haveDial || ! slotInRange)
             {
                 const auto a = echojay::dialframe::dialFrameAck (haveDial, slotInRange, slot1,
                                                                  chainHost.getNumSlots(), isLimiter,
