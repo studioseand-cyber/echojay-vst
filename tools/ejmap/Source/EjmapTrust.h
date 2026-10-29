@@ -288,6 +288,7 @@ struct Roles
 // measured: role -> controls a measurement identified (confirmed, or found on a control its name did not propose); dropped: controls a
 // measurement REFUTED for the role their name proposed - the name rule never claims them back
 struct Measured { std::map<juce::String, juce::StringArray> roles; std::set<juce::String> dropped;
+                 std::map<juce::String, juce::StringArray> passPicks;   // 29 Oct (Kathy): role -> the control(s) that category's pass CHOSE (moved the measured quantity)
                  std::map<juce::String, juce::String> section;   // control -> its known section, when a person said which (16 Oct)
                  bool pitchShift = false; };                      // 23 Oct: a pitch-shift measurement's draft was read (needsFor "pitch")
 inline juce::String ruleRoleOfMeasured (const juce::String& recordRole, const juce::String& category)
@@ -345,6 +346,55 @@ inline juce::StringArray needsFor (const juce::String& category, bool pitchShift
         { "filter",           { "cutoff|freq" } },
     };
     const auto it = k.find (category.toLowerCase()); return it != k.end() ? it->second : juce::StringArray { "__never__" };   // pitch: the tuner spec decides
+}
+// A CORE ROLE PROVEN BY MEASUREMENT (Kathy, 29 Oct, decision 1): a control fills a core role when the category's own pass CHOSE it - the
+// control that moved the measured quantity (the compressor's amount: GR onset; a saturator's drive: THD; the gain pass's makeup / output:
+// the output level, writable and level-independent; a space pass's decay: RT60; a transient pass's attack) - OR by name + unit as before.
+// No widening of the name table. The pick must be a control of this map (not declined); several picks for one role are narrowed to the
+// one in the threshold's section (a dual compressor: Discrete Gain 1 beside Discrete Threshold 1), else the name rule decides
+// ONE CONTROL, ITS SPELLINGS (29 Oct): a measurement record names a grouped parameter "Length (Globals)" where the map, from the same
+// plugin's list, names it "Globals -> Length" or "Amp - Drive" (MeldaProduction) - the same control, never a different one
+inline juce::String groupedForm (const juce::String& recordName)
+{
+    const auto t = recordName.trim();
+    if (! t.endsWithChar (')') || ! t.containsChar ('(')) return {};
+    const auto group = t.fromLastOccurrenceOf ("(", false, false).dropLastCharacters (1).trim(), name = t.upToLastOccurrenceOf ("(", false, false).trim();
+    return group.isEmpty() || name.isEmpty() ? juce::String() : group + " -> " + name;
+}
+// the words of a control's name that say WHICH channel / section it belongs to (its role and level words taken out): "Discrete Gain 1" ->
+// {discrete, 1}; "Left Reduction" -> {left}
+inline juce::StringArray placeWords (const juce::String& name)
+{
+    static const juce::StringArray drop { "threshold", "thresh", "thrsh", "gain", "level", "output", "out", "makeup", "make", "up", "reduction", "range", "depth", "input", "in", "volume", "trim", "master" };
+    juce::StringArray w; for (const auto& t : juce::StringArray::fromTokens (name.toLowerCase(), " _-/.:()[]>", "")) if (t.isNotEmpty() && ! drop.contains (t)) w.addIfNotAlreadyThere (t);
+    return w;
+}
+inline juce::StringArray meetCoreByPass (const juce::String& need, const juce::var& map, const Measured& measured, const juce::StringArray& thresholdMet)
+{
+    std::set<juce::String> declined;
+    if (const auto* d = map.getProperty ("declines", {}).getArray()) for (const auto& x : *d) declined.insert (x.getProperty ("control", x.getProperty ("name", "")).toString());
+    const auto* co = map.getProperty ("controls", {}).getDynamicObject();
+    auto mapName = [&] (const juce::String& n) -> juce::String {   // the map's own name for the measured control, "" when the map has none
+        if (co == nullptr) return {};
+        const auto g = groupedForm (n);   // "Group -> Name" (MReverb) and "Group - Name" (MAmp's "Amp - Drive")
+        for (const auto& cand : { n, g, g.replace (" -> ", " - ") }) if (cand.isNotEmpty() && co->hasProperty (cand) && ! declined.count (cand)) return cand;
+        return {}; };
+    for (const auto& alt : juce::StringArray::fromTokens (need, "|", ""))
+    {
+        if (alt.contains ("+")) continue;   // a band pair is the name rule's (an EQ's measured bands are already its roles)
+        const auto it = measured.passPicks.find (alt); if (it == measured.passPicks.end()) continue;
+        const bool levelRole = alt == "makeup" || alt == "output" || alt == "gain" || alt == "drive" || alt == "mix";
+        juce::StringArray c; for (const auto& n : it->second) if (const auto m = mapName (n); m.isNotEmpty() && ! (levelRole && sidechainNamed (m.toLowerCase()))) c.addIfNotAlreadyThere (m);   // never a sidechain's level
+        if (c.size() > 1 && ! thresholdMet.isEmpty())
+        {   // several picks: the one sharing the most place words with the measured threshold (Level 1 beside Threshold 1, Left Gain beside Left
+            // Reduction, Discrete Gain 1 beside Discrete Threshold 1), only when it is the one best
+            const auto tw = placeWords (thresholdMet[0]); int best = 0; juce::StringArray top;
+            for (const auto& n : c) { int k = 0; for (const auto& w : placeWords (n)) if (tw.contains (w)) ++k;
+                                      if (k > best) { best = k; top = { n }; } else if (k == best && k > 0) top.add (n); }
+            c = best > 0 ? top : juce::StringArray(); }
+        if (c.size() == 1) return c;
+    }
+    return {};
 }
 // THE CORE ROLES (Kathy, 29 Oct; Sean: Solid Bus Comp was "certified" while its map had no Threshold, so EchoJay turned SC Gain): what a
 // CERTIFIED plugin must have mapped and read back - every entry met (alternatives '|', "freq+gain" one band), each control proven by
@@ -958,9 +1008,12 @@ inline Level levelFor (const juce::var& map, bool certified, const juce::String&
     if (certified)
     {
         juce::StringArray coreMissing, coreUnread;
+        juce::StringArray thresholdMet;
         for (const auto& need : coreRolesFor (map.getProperty ("category", "").toString(), measured.pitchShift))
         {
-            const auto ctl = meetNeed (need, R, map.getProperty ("category", "").toString());
+            auto ctl = meetCoreByPass (need, map, measured, thresholdMet);   // 29 Oct: the pass's own choice first
+            if (ctl.isEmpty()) ctl = meetNeed (need, R, map.getProperty ("category", "").toString());
+            if (need == "threshold" && ! ctl.isEmpty()) thresholdMet = ctl;
             if (ctl.isEmpty()) { coreMissing.add (need); continue; }
             for (const auto& c : ctl) if (const auto it = rb.find (c); it == rb.end() || ! it->second.proven()) coreUnread.add (c);
         }

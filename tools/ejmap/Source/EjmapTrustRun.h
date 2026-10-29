@@ -141,6 +141,29 @@ inline void loadRecords (const juce::File& root, const juce::String& tag, std::m
                             if (f.isNotEmpty() && f != "(none)") pd.measured.roles["freq"].addIfNotAlreadyThere (f);
                         }
         }
+        {   // 29 Oct (Kathy, decision 1): the control each pass CHOSE for a role - what moved the measured quantity (EjmapTrust.h meetCoreByPass)
+            const auto schema = rec.getProperty ("schema", "").toString();
+            auto pick = [&] (const juce::String& role, const juce::String& c) { if (c.isNotEmpty() && c != "(none)") pd.measured.passPicks[role].addIfNotAlreadyThere (c); };
+            auto blockCtl = [&] (const char* part) { return rec.getProperty (part, {}).getProperty ("control", "").toString(); };
+            auto blockVerdict = [&] (const char* part) { return rec.getProperty (part, {}).getProperty ("verdict", "").toString(); };
+            if (schema == "ej_comp_profile/1") pick ("threshold", blockCtl ("amount"));                                   // GR onset
+            if (schema == "ej_saturation_profile/1" && blockVerdict ("drive") == "drive") pick ("drive", blockCtl ("drive"));   // THD
+            if (schema == "ej_gain_profile/1")                                                                              // the output level
+                if (const auto* cs = rec.getProperty ("controls", {}).getArray())
+                    for (const auto& c : *cs)
+                    {   const auto role = c.getProperty ("role", "").toString();
+                        if ((role == "output" || role == "gain" || role == "makeup") && (bool) c.getProperty ("writable", false) && (bool) c.getProperty ("level_matching", false)
+                            && ! (bool) c.getProperty ("level_dependent", true) && c.getProperty ("verdict", "").toString() != "no_effect")
+                            pick ("makeup", c.getProperty ("control", "").toString()); }
+            if (schema == "ej_space_profile/1")                                                                             // RT60, wet level, the echo time
+            {   const auto dv = blockVerdict ("decay"); if (dv == "measured" || dv == "tail_longer_than_window") pick ("decay", blockCtl ("decay"));
+                if (blockVerdict ("mix") == "measured" && (double) rec.getProperty ("mix", {}).getProperty ("worst_db", 99.0) <= 1.0) pick ("mix", blockCtl ("mix"));
+                if (blockVerdict ("time") == "measured") pick ("delay_time", blockCtl ("time")); }
+            if (schema == "ej_gate_profile/1" && rec.getProperty ("verdict", "").toString() == "measured") pick ("threshold", blockCtl ("threshold"));
+            if (schema == "ej_transient_profile/1" && blockVerdict ("attack") == "measured") pick ("attack", blockCtl ("attack"));   // the transient level
+            if (rec.getProperty ("ceiling", {}).isObject() && (bool) rec.getProperty ("ceiling", {}).getProperty ("holds_true_peak", false)) pick ("ceiling", blockCtl ("ceiling"));
+            if (const auto pc = rec.getProperty ("pickedCandidate", {}); pc.isObject()) pick ("threshold", pc.getProperty ("name", pc.getProperty ("control", "")).toString());
+        }
         if (rec.getProperty ("schema", "").toString() == "ej_comp_profile/1")   // a certification profile: its measured amount control
             if (const auto amt = rec.getProperty ("amount", {}).getProperty ("control", "").toString(); amt.isNotEmpty()) pd.measured.roles["threshold"].addIfNotAlreadyThere (amt);
         const auto pick = rec.getProperty ("pickedCandidate", {});   // a compressor fixture: the threshold its sweep certified
