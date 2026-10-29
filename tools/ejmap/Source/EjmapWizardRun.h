@@ -1174,8 +1174,11 @@ inline int runWizard (const WizardOptions& wo)
             else if (const auto mf = opt.ledger.getChildFile ("maps").getChildFile (fpOf (ir.desc) + ".json"); mf.existsAsFile()) pl = shift::pitchLabelOfMap (juce::JSON::parse (mf.loadFileAsString()), &plc);
             d = wizroute::gatePitchByName (d, true, pl, plc);
         }
+        // 29 Oct (Kathy, Reaktor 6 MFX): review, but nothing came out of it at all - not measurable, said why (never an empty signature for review)
+        const bool silentOpening = d.route == wizroute::Route::needsCategory && categorise::nothingCameOut (sig.getProperty ("signatures", {}), (bool) sig.getProperty ("reads_ran", false));
+        if (silentOpening) d.why = categorise::kSilentOpeningWhy;
         p.row->setProperty ("route", wizroute::routeName (d.route)); p.row->setProperty ("category", d.category); p.row->setProperty ("why", d.why); p.row->setProperty ("signature", sig);
-        const juce::String st = d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope"
+        const juce::String st = silentOpening ? "not_measurable" : d.route == wizroute::Route::measure ? "queued" : d.route == wizroute::Route::sendOther ? "other_category" : d.route == wizroute::Route::outOfScope ? "out_of_scope"
                               : d.route == wizroute::Route::held ? "held" : "needs_category";
         p.row->setProperty ("state", st); if (st != "queued") stampFinal (p.row);
         if (d.route == wizroute::Route::measure) enqueue (ir.desc.name, d.category, d.passes);
@@ -1457,19 +1460,42 @@ inline int runWizard (const WizardOptions& wo)
         }
         M->setProperty ("reference_votes", referenceVotes);
         const juce::var Mv (M);   // ONE owner of the manifest (a second juce::var (M) after a temporary would use a deleted object)
+        // A REFUSED PACK IS SEEN AT ONCE (Kathy, 29 Oct: 71 checkpoints refused over four hours said so only in wizard.log): the app reads
+        // pack_refused.json (when, which pack, why) and says it on screen; a pack that goes through removes it
+        auto refuse = [&] (const juce::String& logWhy, const juce::String& screenWhy) -> int
+        {
+            say ("WIZARD: the bundle is NOT made - " + logWhy);
+            auto* r = new juce::DynamicObject(); r->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true)); r->setProperty ("kind", runKind); r->setProperty ("why", screenWhy);
+            const auto rt = out.getChildFile ("pack_refused.json.tmp"); rt.replaceWithText (juce::JSON::toString (juce::var (r))); wizapp::replaceAtomically (rt, out.getChildFile ("pack_refused.json"));
+            if (! quiet) prog.finish ("Stopped: " + screenWhy + ". Nothing was made or sent.");
+            return 3;
+        };
         {   // THE BOUNDARY CHECK (12 Oct): every category the manifest carries is one of the server's 12, or nothing is packed
             const auto bad = wizserver::invalidOutgoing (Mv);
-            if (! bad.isEmpty()) { say ("WIZARD: the bundle is NOT made - categories the server does not have: " + bad.joinIntoString ("; ")); if (! quiet) prog.finish ("Stopped: the bundle would carry a category the server does not have (" + bad.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
+            if (! bad.isEmpty()) return refuse ("categories the server does not have: " + bad.joinIntoString ("; "), "the bundle would carry a category the server does not have (" + bad.joinIntoString ("; ") + ")");
         }
         M->setProperty ("note", "results only: profiles, their tone checks and this manifest - no plugin files, no audio, no account token");
-        B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (Mv) + "\n");
         char host[256] = {}; gethostname (host, sizeof host - 1);
         const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(); const auto user = juce::SystemStats::getLogonName();
-        juce::StringArray problems;
-        for (const auto& f : B.findChildFiles (juce::File::findFiles, true))
-            for (const auto& p : wizard::personalProblems (f.loadFileAsString(), home, user, juce::String (host).upToFirstOccurrenceOf (".", false, false)))
-                problems.add (f.getRelativePathFrom (B) + ": " + p);
-        if (! problems.isEmpty()) { say ("WIZARD: the bundle is NOT made - it would carry: " + problems.joinIntoString ("; ")); if (! quiet) prog.finish ("Stopped: the bundle would carry something personal (" + problems.joinIntoString ("; ") + "). Nothing was made or sent."); return 3; }
+        const auto hostShort = juce::String (host).upToFirstOccurrenceOf (".", false, false);
+        {   // ONE FILE, NOT THE BUNDLE (Kathy, 29 Oct): a file that would carry something personal is set aside in privacy_withheld/ (kept on
+            // this Mac, never sent), the entries naming it leave the manifest and its plugin goes as an outcome "not sent: privacy check";
+            // privacy_withheld.json says which for the app. Only the manifest itself tripping the check stops the pack (below)
+            std::map<juce::String, juce::StringArray> bad;
+            for (const auto& f : B.findChildFiles (juce::File::findFiles, true))
+                if (const auto pp = wizard::personalProblems (f.loadFileAsString(), home, user, hostShort); ! pp.isEmpty()) bad[f.getRelativePathFrom (B)] = pp;
+            const auto aside = out.getChildFile ("privacy_withheld");
+            for (const auto& [rel, pp] : bad) { const auto dst = aside.getChildFile (rel); dst.getParentDirectory().createDirectory(); dst.deleteFile(); B.getChildFile (rel).moveFileTo (dst); }
+            const auto withheld = wizard::withholdFiles (*M, bad);
+            juce::StringArray said; for (const auto& w : withheld) said.add (w.getProperty ("file", "").toString() + " (" + w.getProperty ("product", "").toString() + "): " + w.getProperty ("what", "").toString());
+            if (! withheld.isEmpty()) say ("WIZARD: " + juce::String (withheld.size()) + " file(s) set aside, not sent (privacy check): " + said.joinIntoString ("; "));
+            auto* pw = new juce::DynamicObject(); pw->setProperty ("at", juce::Time::getCurrentTime().toISO8601 (true)); pw->setProperty ("kind", runKind); pw->setProperty ("withheld", withheld);
+            const auto pt = out.getChildFile ("privacy_withheld.json.tmp"); pt.replaceWithText (juce::JSON::toString (juce::var (pw))); wizapp::replaceAtomically (pt, out.getChildFile ("privacy_withheld.json"));
+        }
+        B.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (Mv) + "\n");
+        if (const auto mp = wizard::personalProblems (B.getChildFile ("manifest.json").loadFileAsString(), home, user, hostShort); ! mp.isEmpty())
+            return refuse ("the manifest would carry: " + mp.joinIntoString ("; "), "the bundle's list would carry something personal (" + mp.joinIntoString ("; ") + ")");
+        out.getChildFile ("pack_refused.json").deleteFile();
         // ONE RESULT PER PLUGIN (contract v1 §4, 21 Oct): the same pack, as one document per plugin into the app's outbox - a checkpoint only
         // what is final, the last pack the rest; each once, never one with anything personal
         if (wo.resultsOutbox != juce::File())

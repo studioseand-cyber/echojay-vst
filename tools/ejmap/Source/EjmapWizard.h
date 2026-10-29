@@ -21,6 +21,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <regex>
 #include "EjmapEq.h"   // 20 Oct: eq::measuredBand (the engaged-band count) - every target that includes this header must see it
 
 namespace ejmap::wizard
@@ -249,15 +250,125 @@ inline bool eqAccepted (const juce::var& eqProfile, juce::String& why)
 
 // ---------------------------------------------------------------- 3. the bundle
 // what must never leave the Mac: the home path, the user's name, the host name, and anything that looks like a credential
+// SHAPES, NEVER WORDS (Kathy, 29 Oct: Chandler GAV19T's control display "39 SECRET SETUP" refused every pack for four hours and stopped
+// the STAGING 4 run at its very end). A plugin's display texts and names are the plugin's words, not this Mac's: a credential is a FIELD
+// NAMED like one carrying a string (token, secret, password, api_key...) or a VALUE SHAPED like one (a Bearer token, a JWT, a private key,
+// a cloud / payment / chat key, "api_key=..."); the user's and the computer's names count only where they name this Mac - in a path, or
+// in a field about the Mac (host, user, machine...) - and as whole words. Text that is not JSON (a crash report) is read the same way:
+// shapes and "key = value", never a bare word. The home path and any /Users/ path are caught anywhere, as before
+inline bool credentialKey (const juce::String& key)
+{
+    const auto k = key.trim().toLowerCase().replaceCharacter ('-', '_');
+    for (const char* c : { "token", "mapper_token", "access_token", "refresh_token", "id_token", "session_token", "device_token", "api_key", "apikey", "secret",
+                           "client_secret", "secret_key", "password", "passwd", "authorization", "bearer", "private_key" })
+        if (k == c) return true;
+    return k.endsWith ("_secret") || k.endsWith ("_password") || k.endsWith ("_api_key");
+}
+inline bool aboutThisMac (const juce::String& key)
+{
+    const auto k = key.trim().toLowerCase().replaceCharacter ('-', '_');
+    for (const char* c : { "host", "hostname", "host_name", "computer", "computer_name", "user", "username", "user_name", "logon", "login", "machine", "machine_name",
+                           "machine_id", "owner", "author", "tester_id", "email", "home" })
+        if (k == c) return true;
+    return false;
+}
+inline bool pathLike (const juce::String& v) { const auto t = v.trimStart(); return t.startsWithChar ('/') || t.startsWithChar ('~') || t.contains ("://") || t.contains (":\\"); }
+// a whole-word match, ignoring case: "Kathy" is not found in "Kathys" (a letter, digit or underscore either side is part of the word)
+inline bool wholeWordIn (const juce::String& text, const juce::String& word)
+{
+    if (word.isEmpty()) return false;
+    const auto t = text.toLowerCase(), w = word.toLowerCase();
+    auto partOfWord = [] (juce::juce_wchar c) { return juce::CharacterFunctions::isLetterOrDigit (c) || c == '_'; };
+    for (int i = t.indexOf (w); i >= 0; i = t.indexOf (i + 1, w))
+    {
+        const bool leftOk = i == 0 || ! partOfWord (t[i - 1]); const int e = i + w.length(); const bool rightOk = e >= t.length() || ! partOfWord (t[e]);
+        if (leftOk && rightOk) return true;
+    }
+    return false;
+}
+// the shapes a credential takes (the same families check_bundle_secrets.sh searches the app for); "" = none
+inline juce::String credentialShape (const std::string& s)
+{
+    static const std::vector<std::pair<std::regex, const char*>> shapes {
+        { std::regex ("-----BEGIN [A-Z ]*PRIVATE KEY-----"), "a private key" },
+        { std::regex ("sk_(live|test)_[0-9A-Za-z]{10,}"), "a payment key" },
+        { std::regex ("AKIA[0-9A-Z]{16}"), "a cloud key" },
+        { std::regex ("gh[pousr]_[0-9A-Za-z]{30,}"), "a code-host token" },
+        { std::regex ("xox[baprs]-[0-9A-Za-z-]{10,}"), "a chat token" },
+        { std::regex ("eyJ[0-9A-Za-z_-]{10,}\\.eyJ[0-9A-Za-z_-]{10,}"), "a JWT" },
+        { std::regex ("Bearer +[0-9A-Za-z._~+/=-]{20,}", std::regex::icase), "a Bearer token" },
+        { std::regex ("(token|mapper_token|access_token|refresh_token|client_secret|api[_-]?key|secret[_-]?key|secret|password|passwd|authorization)[\"']? *[:=] *[\"']?[0-9A-Za-z._~+/=-]{8,}", std::regex::icase), "a credential written as key = value" } };
+    for (const auto& [re, what] : shapes) if (std::regex_search (s, re)) return what;
+    return {};
+}
+inline void personalInValue (const juce::var& v, const juce::String& key, const juce::String& userName, const juce::String& hostName, juce::StringArray& p)
+{
+    if (const auto* o = v.getDynamicObject())
+    {
+        for (const auto& [k, x] : o->getProperties())
+        {   // a credential FIELD: named like one and carrying a string (a label dict {"Secret": 0.5} carries a number - a plugin's own word)
+            if (credentialKey (k.toString()) && x.isString() && x.toString().trim().isNotEmpty()) p.addIfNotAlreadyThere ("a credential-like field (" + k.toString() + ")");
+            personalInValue (x, k.toString(), userName, hostName, p);
+        }
+        return;
+    }
+    if (const auto* a = v.getArray()) { for (const auto& x : *a) personalInValue (x, key, userName, hostName, p); return; }
+    if (! v.isString()) return;
+    const auto s = v.toString();
+    if (s.length() >= 12) if (const auto shape = credentialShape (s.toStdString()); shape.isNotEmpty()) p.addIfNotAlreadyThere ("a credential-shaped value (" + shape + ")");
+    if (aboutThisMac (key) || pathLike (s))
+    {
+        if (userName.length() >= 3 && wholeWordIn (s, userName)) p.addIfNotAlreadyThere ("the user name");
+        if (hostName.length() >= 3 && wholeWordIn (s, hostName)) p.addIfNotAlreadyThere ("the computer's name");
+    }
+}
 inline juce::StringArray personalProblems (const juce::String& text, const juce::String& homeDir, const juce::String& userName, const juce::String& hostName)
 {
     juce::StringArray p;
     if (homeDir.isNotEmpty() && text.contains (homeDir)) p.add ("the home folder path");
     if (text.contains ("/Users/")) p.add ("a /Users/ path");
-    if (userName.length() >= 3 && text.containsIgnoreCase (userName)) p.add ("the user name");
-    if (hostName.length() >= 3 && text.containsIgnoreCase (hostName)) p.add ("the computer's name");
-    for (const char* k : { "\"token\"", "mapper_token", "api_key", "apikey", "secret", "Bearer ", "Authorization", "password" }) if (text.containsIgnoreCase (k)) p.add (juce::String ("a credential-like field (") + k + ")");
+    const auto lead = text.trimStart();
+    const auto json = lead.startsWithChar ('{') || lead.startsWithChar ('[') ? juce::JSON::parse (text) : juce::var();
+    if (json.isObject() || json.isArray()) { personalInValue (json, {}, userName, hostName, p); return p; }
+    // not JSON (a crash report): the shapes, and the names as whole words
+    if (const auto shape = credentialShape (text.toStdString()); shape.isNotEmpty()) p.add ("a credential-shaped value (" + shape + ")");
+    if (userName.length() >= 3 && wholeWordIn (text, userName)) p.add ("the user name");
+    if (hostName.length() >= 3 && wholeWordIn (text, hostName)) p.add ("the computer's name");
     return p;
+}
+// ONE FILE, NOT THE BUNDLE (Kathy, 29 Oct): a bundle file that would carry something personal (bad: its path in the bundle -> what) is
+// set aside by the caller; here every manifest entry naming it leaves the manifest (each top-level list), and each plugin it belonged to
+// is listed under "skipped" as not_measurable, "not sent: privacy check (...)" - so its result is that outcome, and the rest still go.
+// The manifest gains "privacy_withheld" (file, plugin, what). Returns those rows
+inline constexpr const char* kPrivacyWithheldWhy = "not sent: privacy check";
+inline juce::Array<juce::var> withholdFiles (juce::DynamicObject& manifest, const std::map<juce::String, juce::StringArray>& bad)
+{
+    juce::Array<juce::var> withheld; if (bad.empty()) return withheld;
+    std::map<juce::String, std::pair<juce::String, juce::StringArray>> plugins;   // plugin_id -> (product, what)
+    for (const auto& [listName, listV] : manifest.getProperties())
+    {
+        auto* list = listV.getArray(); if (list == nullptr || listName.toString() == "privacy_withheld") continue;
+        for (int i = list->size(); --i >= 0;)
+        {
+            const auto e = (*list)[i]; if (! e.isObject()) continue;
+            const auto text = juce::JSON::toString (e, true);
+            juce::StringArray files, what;
+            for (const auto& [rel, pp] : bad) if (text.contains (rel)) { files.add (rel); for (const auto& w : pp) what.addIfNotAlreadyThere (w); }
+            if (files.isEmpty()) continue;
+            const auto pid = e.getProperty ("plugin_id", "").toString(), product = e.getProperty ("product", "").toString();
+            for (const auto& f : files)
+            {   auto* w = new juce::DynamicObject(); w->setProperty ("file", f); w->setProperty ("list", listName.toString()); w->setProperty ("plugin_id", pid); w->setProperty ("product", product);
+                w->setProperty ("what", what.joinIntoString (", ")); withheld.add (juce::var (w)); }
+            if (pid.isNotEmpty()) { auto& pl = plugins[pid]; if (pl.first.isEmpty()) pl.first = product; for (const auto& w : what) pl.second.addIfNotAlreadyThere (w); }
+            list->remove (i);
+        }
+    }
+    if (auto* skipped = manifest.getProperty ("skipped").getArray())
+        for (const auto& [pid, pw] : plugins)
+        {   auto* s = new juce::DynamicObject(); s->setProperty ("product", pw.first); s->setProperty ("plugin_id", pid); s->setProperty ("state", "not_measurable");
+            s->setProperty ("why", juce::String (kPrivacyWithheldWhy) + " (" + pw.second.joinIntoString (", ") + ")"); s->setProperty ("format", formatOfPluginId (pid)); skipped->add (juce::var (s)); }
+    manifest.setProperty ("privacy_withheld", withheld);
+    return withheld;
 }
 
 // ---------------------------------------------------------------- 3b. A DEMO VERSION (Kathy, 13 Oct, beta item 2: a stranger's Mac)

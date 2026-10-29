@@ -540,6 +540,8 @@ public:
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (12.0f)); g.drawFittedText (wizapp::carryOnAnywayWarning (dawPaused), juce::Rectangle<int> (30, getHeight() - 182, getWidth() - 60, 20), juce::Justification::centred, 1); }
         if (screen == Screen::measuring && choiceLine.isNotEmpty() && ! finishing && ! pausing)
         { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (choiceLine, juce::Rectangle<int> (40, getHeight() - 150, getWidth() - 80, 20), juce::Justification::centred, 1); }
+        if (screen == Screen::measuring && packNote.isNotEmpty() && ! finishing && ! pausing && ! engineStopped)   // 29 Oct: a refused pack / a file set aside
+        { g.setColour (juce::Colour (0xffb26a00)); g.setFont (juce::FontOptions (12.0f)); g.drawFittedText (packNote, juce::Rectangle<int> (30, getHeight() - 131, getWidth() - 60, 15), juce::Justification::centred, 1, 0.8f); }
         if (pauseNote.isNotEmpty()) { g.setColour (juce::Colour (0xff6b7285)); g.setFont (juce::FontOptions (13.0f)); g.drawFittedText (pauseNote, juce::Rectangle<int> (40, getHeight() - 92, getWidth() - 80, 20), juce::Justification::centred, 1); }
     }
     void resized() override
@@ -578,6 +580,7 @@ private:
                               text = wizapp::knownWords (el.known, n) + ". " + text; } }
     }
     std::vector<wizapp::Crashed> crashed; bool quitting = false, finishing = false, pausing = false, quitAfterPause = false, forceAsk = false, lastSendKept = false; juce::String soFar, choiceLine; int lastCheckpointSeq = 0; std::unique_ptr<juce::AlertWindow> closeAsk; int autoTicks = 0, snapN = 0, resetTicks = 0; double lastSnapQuarter = -1.0;
+    bool engineStopped = false; juce::String packNote;   // 29 Oct: the engine ended on Stopped (Quit only; the progress no longer read); what the pack says
     double uploadT0 = 0.0; juce::var account, receipt; const juce::String launchTag = juce::Time::getCurrentTime().formatted ("%H%M%S");
 
     juce::File engineDir() const { return cfg.work.getChildFile ("engine"); }
@@ -820,7 +823,7 @@ private:
 
     void show (Screen s)
     {
-        screen = s; showBar = false; bigCode = {}; pauseNote = {}; primary.setVisible (false); secondary.setVisible (false); anyway.setVisible (false); email.setVisible (false); password.setVisible (false);
+        screen = s; showBar = false; bigCode = {}; pauseNote = {}; engineStopped = false; primary.setVisible (false); secondary.setVisible (false); anyway.setVisible (false); email.setVisible (false); password.setVisible (false);
         agree.setVisible (false); primary.setEnabled (true); secondary.setEnabled (true); resetTestButton.setVisible (kTest && wizapp::resetTestShownOn (s));
         autoTicks = 0; lastSnapQuarter = -1.0;
         if (wizapp::runIsOver (s) && powerNotice.isNotEmpty()) powerWatch (power);
@@ -936,6 +939,7 @@ private:
     void onPrimary()
     {
         if (diskRefused) { logLine ("quit (not enough disk space)"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); return; }
+        if (engineStopped) { logLine ("quit (stopped)"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); return; }   // 29 Oct: Stopped's one button
         switch (screen)
         {
             case Screen::welcome:
@@ -1026,6 +1030,11 @@ private:
         pausing = true; quitAfterPause = quitAfter; engine.pause(); primary.setEnabled (false); secondary.setEnabled (false);
         barLeft = "Pausing - saving what's done"; barRight = {}; pauseNote = wizapp::stoppedNote();
         logLine ("pause (" + from + "): " + soFar + "; engine stopped (SIGINT), a checkpoint follows"); repaint();
+    }
+    void refreshPackNote()
+    {
+        const auto n = wizapp::packNoteWords (juce::JSON::parse (engineDir().getChildFile ("pack_refused.json").loadFileAsString()), juce::JSON::parse (engineDir().getChildFile ("privacy_withheld.json").loadFileAsString()));
+        if (n != packNote) { packNote = n; logLine ("pack note: " + (n.isNotEmpty() ? n : juce::String ("(cleared)"))); repaint(); }
     }
     // A CHECKPOINT the engine packed (engine/checkpoint.json): beta - the Desktop file rewritten; release - a quiet partial upload (kept in the
     // outbox when offline). A final pack (sent_early / finished) goes through the upload screen instead
@@ -1161,7 +1170,7 @@ private:
     }
     void pollEngine()
     {
-        if (waitingOnServer) return;   // 27 Oct: the engine has ended; its last plugin line must not stay on screen while EchoJay is asked
+        if (waitingOnServer || engineStopped) return;   // 27 Oct: the engine has ended; its last plugin line must not stay on screen while EchoJay is asked   // 29 Oct: nor "Packing results..." once it stopped
         const auto p = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString());
         // 22 Oct (the bar flicker): an empty or partial read changes nothing on screen - the last good one stays; the engine's exit is still seen
         if (wizapp::progressUsable (p)) showProgress (p);
@@ -1188,6 +1197,7 @@ private:
             if (! finishing && ! pausing) { soFar = wizapp::measuredSoFarWords (wizapp::measuredSoFar (p)); secondary.setEnabled (wizapp::finishAvailable (p)); }
             if (kNetworked && ! pausing) choiceLine = wizapp::uploadLine (sentN, pendingN, rejectedN, offlineNow, signInNow);   // 21 Oct: what the server has, live
             handleCheckpoint();   // 13 Oct: the hourly checkpoint, as soon as the engine has packed it
+            refreshPackNote();    // 29 Oct: a refused pack, a file set aside - on screen at once
             jobsNow = wizapp::jobLines (p); heartbeatMs = (juce::int64) p.getProperty ("heartbeat_ms", (juce::int64) 0);   // 15 Oct (FEELS FROZEN)
             stepText = wizapp::stepLine (true, (int) p.getProperty ("stage_index", 0)); nowText = wizapp::nowWords (p);   // 18 Oct (NEVER LOOKS FROZEN)
             doneLine = wizapp::measuringCounterWords (stage, p);   // 18 Oct (BAR % WRONG): "19 of 389 done - 83 skipped"; 23 Oct: "Packing results..." while packing
@@ -1266,7 +1276,12 @@ private:
                 case wizapp::AfterEngine::stopped:
                 {   // the engine's own words when it said why (a low disk); else the stop note
                     const auto sum = juce::JSON::parse (engineDir().getChildFile ("progress.json").loadFileAsString()).getProperty ("summary", "").toString();
-                    title = "Stopped"; text = sum.containsIgnoreCase ("disk space") ? sum : wizapp::stoppedNote() + " - open the wizard again to carry on."; showBar = false; repaint(); break;
+                    // 29 Oct (Kathy): one button, Quit - Pause and Finish and send did nothing once the engine had ended; the progress is no
+                    // longer read (no "Packing results..." after the end); the pack's own words when it was refused
+                    refreshPackNote(); engineStopped = true; jobsNow.clear();
+                    const auto c = wizapp::stoppedCopy (sum, packNote); title = c.title; text = c.text; showBar = false;
+                    primary.setButtonText (c.primary); primary.setVisible (true); primary.setEnabled (true); secondary.setVisible (false);
+                    logLine ("stopped: the engine ended " + juce::String (*code) + " - " + text + " (Quit only)"); repaint(); snap ("stopped"); break;
                 }
             }
         }

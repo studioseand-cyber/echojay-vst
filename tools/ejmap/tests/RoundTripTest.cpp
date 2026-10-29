@@ -10278,7 +10278,7 @@ void testWizardCategories()
             const auto ch = measuringChoices (m); shown.add (ch.pause); shown.add (ch.send); shown.add (ch.line);
             shown.add (pausedText (m, false)); shown.add (pausedText (m, true)); shown.add (consentText (m));
         }
-        shown.add (measuringText()); shown.add (measuringText (504)); shown.add (measuringText (1)); shown.add (stoppedNote()); shown.add (alreadyDoneCopy().text); shown.add (measuredSoFarWords (12));
+        shown.add (measuringText()); shown.add (measuringText (504)); shown.add (measuringText (1)); shown.add (stoppedNote()); shown.add (stoppedCopy ("", "").text); shown.add (stoppedCopy ("", packNoteWords (juce::JSON::parse ("{\"why\": \"x\"}"), {})).text); shown.add (alreadyDoneCopy().text); shown.add (measuredSoFarWords (12));
         shown.add (measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")));
         juce::StringArray timed; for (const auto& x : shown) if (tellsATime (x)) timed.add (x);
         const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
@@ -10291,7 +10291,7 @@ void testWizardCategories()
                && scanDoneCopy (Mode::beta, el).text == "0 already known, 625 to measure. We found 625 plugins we haven't mapped yet. Measuring them runs by itself in the background - it's best left running overnight, and you can pause any time and carry on later."
                && measuringCount (juce::JSON::parse ("{\"measurements\": {\"done\": 3, \"total\": 649}}")) == "3 of 649"
                && ! app.contains ("eta_words") && ! app.contains ("etaWords") && ! app.contains ("\"line\"")   // 14 Oct: the engine's line (it says "under a minute left") is never read by the app
-               && app.contains ("text = sum.containsIgnoreCase (\"disk space\") ? sum :") && ! tellsATime (diskVerdict (1073741824, false).words) && ! tellsATime (diskVerdict (1073741824, true).words) && ! app.contains ("a few minutes") && readmeTimed.isEmpty(),
+               && app.contains ("const auto c = wizapp::stoppedCopy (sum, packNote);") && stoppedCopy ("Stopped: not enough disk space", "").text == "Stopped: not enough disk space" && ! tellsATime (diskVerdict (1073741824, false).words) && ! tellsATime (diskVerdict (1073741824, true).words) && ! app.contains ("a few minutes") && readmeTimed.isEmpty(),
                "wizard WZ-NOTIME-1: no user-facing time in either build (" + juce::String (shown.size()) + " strings; timed: " + timed.joinIntoString (" / ") + "; README: " + readmeTimed + "), Kathy's scan-done words, Measuring 'n of N' (read: " + juce::String ((int) read) + ")");
     }
     // WZ-REWARD (Kathy, 13 Oct): THE SERVER DECIDES, on the MERGED RUN. Each case is a fresh server (its own stub folder); the uploads are real
@@ -14596,6 +14596,139 @@ int main (int, char**)
                && app.contains ("p.onBattery = ejmap::wizapp::onBatteryFrom (providingBattery, anyOnAC);"),
                "wizard WZ-35OCT-2: the adapter attached and the battery full is plugged in - no plug-in notice");
     }
+    // WZ-36OCT-1 SHAPES, NEVER WORDS (the STAGING 4 run, 29 Oct 04:14Z: Chandler GAV19T's control display "39 SECRET SETUP" refused every pack
+    // from 23:58 and stopped the run at its end). A plugin's display texts and names never trip the check; a credential FIELD carrying a
+    // string, a credential-SHAPED value, and the user's / computer's names where they name this Mac (a path, a field about the Mac) still do
+    {
+        using namespace ejmap::wizard;
+        const juce::String home = "/Users/kathy", user = "kathy", host = "kathys-mac";
+        auto pp = [&] (const juce::String& t) { return personalProblems (t, home, user, host); };
+        const auto gav = pp (R"({"drive": {"control": "Saturation", "levels": {"-20": [{"norm": 0.5, "display": "39 SECRET SETUP"}]}}, "labels": {"Secret": 0.5, "Password": 1.0},
+                               "name": "Kathy Comp", "product": "Kathys-Mac Bus", "notes": ["token count 3", "the password stage"], "other": {"0.500000": "Secret"}})");
+        const auto field = pp (R"({"secret": "hunter2-xyz"})"), token = pp (R"({"mapper_token": "abc"})");
+        const auto bearer = pp (R"({"why": "sent with Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345"})");
+        const auto jwt = pp (R"({"x": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc"})");
+        const auto hostField = pp (R"({"host": "kathys-mac"})"), inPath = pp (R"({"file": "/Volumes/kathys-mac/x.json"})"), notWhole = pp (R"({"host": "kathys-macbook"})");
+        const auto crashWords = pp ("Thread 0 crashed in SECRET SETUP (password stage)\n"), crashHost = pp ("measured on Kathys-Mac\n"), crashKey = pp ("config: api_key = abcdef123456\n");
+        const auto homeAnywhere = pp (R"({"display": "/Users/kathy/x"})");
+        check (gav.isEmpty() && field.contains ("a credential-like field (secret)") && token.contains ("a credential-like field (mapper_token)")
+               && bearer.joinIntoString (";").contains ("a credential-shaped value (a Bearer token)") && jwt.joinIntoString (";").contains ("a JWT")
+               && hostField.contains ("the computer's name") && inPath.contains ("the computer's name") && notWhole.isEmpty()
+               && crashWords.isEmpty() && crashHost.contains ("the computer's name") && crashKey.joinIntoString (";").contains ("key = value")
+               && homeAnywhere.contains ("the home folder path") && homeAnywhere.contains ("a /Users/ path"),
+               "wizard WZ-36OCT-1: \"39 SECRET SETUP\" and a plugin's own words pass; a \"secret\" field, a Bearer token, a JWT, the computer's name in a path are still caught ("
+               + gav.joinIntoString ("; ") + ")");
+    }
+    // WZ-36OCT-2 ONE FILE, NOT THE BUNDLE (Kathy, 29 Oct): the file that would carry something personal is set aside, the entries naming it
+    // leave the manifest, its plugin goes as an outcome "not sent: privacy check", the rest still go; a refused pack is said on screen at once
+    {
+        using namespace ejmap::wizard;
+        auto obj = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (const auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+        juce::Array<juce::var> profiles, skipped, reads;
+        profiles.add (obj ({ { "product", "Chandler GAV19T" }, { "plugin_id", "AudioUnit|604f2039|1.11.1" }, { "kind", "saturation" }, { "drafts", juce::Array<juce::var> { "profiles/A.saturation_profile.draft.json" } }, { "map_file", "maps/f1.json" } }));
+        profiles.add (obj ({ { "product", "Other" }, { "plugin_id", "AudioUnit|11111111|1.0.0" }, { "kind", "saturation" }, { "drafts", juce::Array<juce::var> { "profiles/B.saturation_profile.draft.json" } }, { "map_file", "maps/f2.json" } }));
+        reads.add (obj ({ { "product", "Other" }, { "plugin_id", "VST3|22222222|1.0.0" }, { "file", "readback/bridge/c.json" } }));
+        auto* M = new juce::DynamicObject(); const juce::var Mv (M); M->setProperty ("profiles", profiles); M->setProperty ("skipped", skipped); M->setProperty ("bridge_reads", reads);
+        const std::map<juce::String, juce::StringArray> bad { { "profiles/A.saturation_profile.draft.json", { "a credential-like field (secret)" } } };
+        const auto w = withholdFiles (*M, bad);
+        const auto docs = ejmap::wizresults::fromPack (Mv, juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_none"), "run_00000000000036a2", true, {}, {});
+        int gavProfile = 0, gavOutcome = 0, otherProfile = 0; juce::String gavState, gavWhy;
+        for (const auto& d : docs) { if (d.pluginId == "AudioUnit|604f2039|1.11.1") { if (d.kind == "profile") ++gavProfile; if (d.kind == "outcome") { ++gavOutcome; gavState = d.body["payload"]["state"].toString(); gavWhy = d.body["payload"]["why"].toString(); } }
+                                     if (d.pluginId == "AudioUnit|11111111|1.0.0" && d.kind == "profile") ++otherProfile; }
+        const auto none = withholdFiles (*M, {});
+        using namespace ejmap::wizapp;
+        auto withheldOf = [&] (int n) { juce::Array<juce::var> a; for (int i = 0; i < n; ++i) a.add (obj ({ { "plugin_id", "AudioUnit|604f2039|1.11.1" }, { "file", "profiles/x" + juce::String (i) } })); return obj ({ { "withheld", a } }); };
+        const auto one = packNoteWords ({}, withheldOf (2)), refused = packNoteWords (obj ({ { "why", "the bundle's list would carry something personal (the user name)" } }), {});
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (w.size() == 1 && Mv["profiles"].size() == 1 && Mv["profiles"][0]["product"].toString() == "Other" && Mv["bridge_reads"].size() == 1 && Mv["privacy_withheld"].size() == 1
+               && Mv["skipped"].size() == 1 && Mv["skipped"][0]["state"].toString() == "not_measurable" && none.isEmpty()
+               && gavProfile == 0 && gavOutcome == 1 && gavState == "not_measurable" && gavWhy == "not sent: privacy check (a credential-like field (secret))" && otherProfile == 1
+               && one == "1 result is kept on this Mac, not sent (privacy check)" && refused.startsWith ("The latest results couldn't be packed to send (") && packNoteWords ({}, {}).isEmpty()
+               && run.contains ("const auto withheld = wizard::withholdFiles (*M, bad);") && run.contains ("B.getChildFile (rel).moveFileTo (dst); }")
+               && run.contains ("return refuse (\"the manifest would carry: \"") && run.contains ("out.getChildFile (\"pack_refused.json\").deleteFile();")
+               && run.contains ("if (! bad.isEmpty()) return refuse (\"categories the server does not have: \"")
+               && app.contains ("refreshPackNote();    // 29 Oct: a refused pack, a file set aside - on screen at once")
+               && app.contains ("g.drawFittedText (packNote, juce::Rectangle<int> (30, getHeight() - 131,"),
+               "wizard WZ-36OCT-2: one plugin's file is set aside and sent as \"not sent: privacy check\", the rest still go; a refused pack is on screen at once ('" + gavWhy + "' | '" + one + "')");
+    }
+    // WZ-36OCT-3 THE STOPPED SCREEN HAS ONE BUTTON THAT WORKS (Kathy, 29 Oct: "Stopped" kept Pause and Finish and send, which did nothing once
+    // the engine had ended, and the log said "Packing results..." every 30 s for three hours). Quit only; the progress is no longer read
+    {
+        using namespace ejmap::wizapp;
+        const auto plain = stoppedCopy ("", ""), disk = stoppedCopy ("Stopped: not enough disk space (2.1 GB free)", "x"), packed = stoppedCopy ("", "The latest results couldn't be packed to send (y) - they're kept on this Mac");
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (plain.primary == "Quit" && plain.secondary.isEmpty() && plain.title == "Stopped" && plain.text == stoppedNote() + " - open the wizard again to carry on."
+               && disk.text == "Stopped: not enough disk space (2.1 GB free)" && packed.text.startsWith ("The latest results couldn't be packed to send (y) - they're kept on this Mac. " + stoppedNote())
+               && app.contains ("if (waitingOnServer || engineStopped) return;")
+               && app.contains ("if (engineStopped) { logLine (\"quit (stopped)\"); juce::JUCEApplication::getInstance()->systemRequestedQuit(); return; }")
+               && app.contains ("refreshPackNote(); engineStopped = true; jobsNow.clear();")
+               && app.contains ("primary.setButtonText (c.primary); primary.setVisible (true); primary.setEnabled (true); secondary.setVisible (false);")
+               && app.contains ("screen = s; showBar = false; bigCode = {}; pauseNote = {}; engineStopped = false;"),
+               "wizard WZ-36OCT-3: Stopped shows Quit only and stops reading the progress ('" + packed.text + "')");
+    }
+    // WZ-36OCT-4 A LIMITER (CEILING ONLY) MEASURES IN SECONDS (the STAGING 4 run: 21 limiters refused "timestamp" - the ceiling pass alone took
+    // 5.5-66.6 s, under the compressor's 76 s). The mock (B's stand-in): a ceiling-only limiter's minimum is 2 s; a limiter with its
+    // compressor profile keeps 76; a span under the minimum is still refused
+    {
+        const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server").getFullPathName();
+        const juce::String py = "import sys, json, hashlib, datetime\nsys.path.insert(0, " + juce::JSON::toString (dir) + ")\nimport mock_server as m\n"
+            "def doc(span, schemas, cat='limiter'):\n"
+            "    rid = 'run_00000000000036a4'; pid = 'AudioUnit|46347c63|12.0.0'\n"
+            "    end = datetime.datetime.now(datetime.timezone.utc); start = end - datetime.timedelta(seconds=span)\n"
+            "    iso = lambda t: t.strftime('%Y-%m-%dT%H:%M:%S.') + '%03dZ' % (t.microsecond // 1000)\n"
+            "    files = {'map.json': {'schema': '2.4'}}\n"
+            "    for i, s in enumerate(schemas): files['f%d.json' % i] = {'schema': s}\n"
+            "    rres = 'res_' + hashlib.sha256(('%s|%s|%s' % (rid, 'profile', pid)).encode()).hexdigest()[:32]\n"
+            "    d = {'schema': 'ej_wizard_result/1', 'run_id': rid, 'result_id': rres, 'kind': 'profile', 'plugin': {'plugin_id': pid, 'name': 'L2 (m)'},\n"
+            "         'created': iso(end), 'measured_at': iso(end), 'measure_started_at': iso(start), 'payload': {'category': cat, 'state': 'measured'}, 'files': files}\n"
+            "    return d, rid, rres\n"
+            "out = []\n"
+            "for span, schemas, cat in [(5.5, ['ej_limiter_profile/1'], 'limiter'), (1.0, ['ej_limiter_profile/1'], 'limiter'), (60.0, ['ej_comp_profile/1', 'ej_limiter_profile/1'], 'limiter'), (60.0, ['ej_comp_profile/1'], 'compressor')]:\n"
+            "    d, rid, rres = doc(span, schemas, cat)\n"
+            "    out.append('%s:%s' % (m.min_measure_s(d), m.validate(d, rid, rres) == 'timestamp'))\n"
+            "print(' '.join(out))\n";
+        const auto pf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_ceiling_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()) + ".py");
+        pf.replaceWithText (py);
+        juce::ChildProcess c; juce::String got;
+        if (c.start (juce::StringArray { "/usr/bin/python3", pf.getFullPathName() }, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr)) { got = c.readAllProcessOutput().trim(); c.waitForProcessToFinish (20000); }
+        pf.deleteFile();
+        const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
+        check (got == "2:False 2:True 76:True 76:True" && mock.contains ("MIN_CEILING_ONLY_S = 2") && mock.contains ("if kind == \"profile\" and m - ms < min_measure_s(doc):"),
+               "contract WZ-36OCT-4: a limiter (ceiling only) needs 2 s, a limiter with its compressor profile 76, under it is \"timestamp\" (" + got + ")");
+    }
+    // WZ-36OCT-5 NOTHING CAME OUT IS NOT A CATEGORY QUESTION (the STAGING 4 run: Reaktor 6 MFX with no ensemble went for review with an empty
+    // signature and was refused "shape"). Reads ran, no tone, no harmonics, no pitch, no tail -> not measurable, said why
+    {
+        using namespace ejmap::categorise;
+        const auto reaktor = juce::JSON::parse (R"({"rt60_s": null, "repeats": 0, "notes": ["response: fewer than 10 readable tones", "harmonics: the fundamental was not read at both levels", "pitch: the output was silent or not a tone in the steady state"]})");
+        const auto oneRead = juce::JSON::parse (R"({"level_dependence_db": 0.1, "frequency_span_db": 0.2, "rt60_s": null, "repeats": 0, "notes": ["harmonics: not read at both levels"]})");
+        const auto tail = juce::JSON::parse (R"({"rt60_s": 1.2, "repeats": 0, "notes": ["response: fewer than 10 readable tones"]})");
+        const auto unread = juce::JSON::parse (R"({"notes": ["response: not read at both levels"]})");
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (nothingCameOut (reaktor, true) && ! nothingCameOut (reaktor, false) && ! nothingCameOut (oneRead, true) && ! nothingCameOut (tail, true) && ! nothingCameOut (unread, true)
+               && run.contains ("const bool silentOpening = d.route == wizroute::Route::needsCategory && categorise::nothingCameOut (sig.getProperty (\"signatures\", {}), (bool) sig.getProperty (\"reads_ran\", false));")
+               && run.contains ("const juce::String st = silentOpening ? \"not_measurable\" :") && juce::String (kSilentOpeningWhy).contains ("not measurable"),
+               "wizard WZ-36OCT-5: a plugin silent at its opening state is not measurable, never an empty signature for review");
+    }
+    // WZ-36OCT-6 A TYPE SWITCH IS NEVER A SATURATOR'S DRIVE (the STAGING 4 run: Abbey Road Saturator's drive was "Saturator Type" - TG / REDD /
+    // OFF - refused "validator"). Named for a choice, or two or more words and no number (Off / -inf neither) -> out of every pool the pass probes
+    {
+        using namespace ejmap::cert;
+        auto c = [] (const char* json) { return juce::JSON::parse (json); };
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto sat = drv.fromFirstOccurrenceOf ("return c != nullptr && saturationTypeSwitch (*c); }), v.end()); return v; };", false, false).upToFirstOccurrenceOf ("o->setProperty (\"schema\", \"ej_saturation_prototype/1\"); o->setProperty (\"status\", \"PROTOTYPE - roadmap 2.5", false, false);
+        check (saturationTypeSwitch (c (R"({"name": "Saturator Type", "displayAt": {"0": "TG", "0.5": "REDD", "1": "OFF"}})"))
+               && saturationTypeSwitch (c (R"({"name": "Tube", "displayAt": {"0": "TG", "0.5": "REDD", "1": "OFF"}})"))
+               && saturationTypeSwitch (c (R"({"name": "Amp Model", "displayAt": {"0": "0", "1": "1"}})"))
+               && ! saturationTypeSwitch (c (R"({"name": "Input Gain", "displayAt": {"0": "-inf", "1": "+12.0 dB"}})"))
+               && ! saturationTypeSwitch (c (R"({"name": "Drive", "displayAt": {"0": "Off", "1": "10"}})"))
+               && ! saturationTypeSwitch (c (R"({"name": "Saturation", "displayAt": {"0": "Off", "1": "Hot"}})"))
+               && drv.contains ("|| sweep::neverTouchName (name) || saturationTypeSwitch (c)) continue;   // 29 Oct: never a type switch")
+               && sat.isNotEmpty() && ! sat.contains ("unnamedPool (base, {}, &fx.sampled)") && ! sat.contains ("unnamedPool (base, nominated, &fx.sampled)") && sat.contains ("for (const auto& pc : satPool (nominated))")
+               && sat.contains ("for (const auto& pc : satPool ({}))") && sat.contains ("for (const auto& pc : satPool ({})) pool.push_back"),
+               "cert WZ-36OCT-6: a saturator's type switch (TG / REDD / OFF, \"... Type\", \"... Model\") is never probed as its drive; a level with Off / -inf still is");
+    }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
     {
@@ -14835,7 +14968,7 @@ int main (int, char**)
                && app.contains ("if (const int waiting = wizcontract::Outbox { outboxDir() }.pendingFiles().size(); waiting > 0 && ! st.hasProperty (\"server_completed\"))")
                && app.contains ("{ const juce::ScopedLock l (runLock); cachedRunId = {}; cachedConsentAt = {}; cachedStartedAt = {}; }")
                && app.contains ("{ st.getDynamicObject()->setProperty (\"signed_out_at\", juce::Time::getCurrentTime().toISO8601 (true));")
-               && app.contains ("if (waitingOnServer) return;   // 27 Oct") && app.contains ("const auto lw = waitingOnServer ? juce::String() : wizapp::liveWords")
+               && app.contains ("if (waitingOnServer || engineStopped) return;   // 27 Oct") && app.contains ("const auto lw = waitingOnServer ? juce::String() : wizapp::liveWords")
                && app.contains ("waitingOnServer = true; title = \"Checking your plugins\"; stepText = wizapp::kCheckingStep; nowText = wizapp::catalogueWaitLine (answered, chunks);"),
                "wizard WZ-32OCT-2: a finished (or signed-out) run's folder starts a fresh run at Start, its files kept; the engine's last line goes while EchoJay is asked");
     }

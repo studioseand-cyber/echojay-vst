@@ -57,6 +57,17 @@ ALLOW_S = 300   # v1.1 §4: the timestamp allowance, 5 minutes either way
 # measures 4 at a time); a span of no length overlaps nothing
 MIN_MEASURE_S = {"compressor": 76, "limiter": 76, "eq": 4, "saturation": 2, "de-esser": 6, "reverb": 6, "delay": 9, "filter": 1, "gate": 11,
                  "transient_shaper": 6, "channel_strip": 4, "pitch": 3, "amp_sim": 2}   # amp_sim: measured by the saturation pass
+# LIMITER (CEILING ONLY) (Kathy, 29 Oct; the STAGING 4 run: 21 limiters refused "timestamp"): a limiter result whose measured file is
+# only the ceiling draft (ej_limiter_profile/1, no ej_comp_profile/1 file beside it) took 5.5-66.6 s - the ceiling pass alone, under the
+# compressor's 76 s. Its minimum is half the shortest, rounded down: 2 s. A limiter sending its compressor profile keeps 76
+MIN_CEILING_ONLY_S = 2
+def min_measure_s(doc):
+    cat = (doc.get("payload") or {}).get("category")
+    if cat == "limiter":
+        schemas = [f.get("schema") for n, f in (doc.get("files") or {}).items() if n != "map.json" and isinstance(f, dict)]
+        if schemas and "ej_comp_profile/1" not in schemas and "ej_limiter_profile/1" in schemas:
+            return MIN_CEILING_ONLY_S
+    return MIN_MEASURE_S.get(cat, 0)
 MAX_OVERLAP = 4
 
 
@@ -718,7 +729,7 @@ def validate(doc, rid, result_id, run=None, acct=None):
     ms = parse_time(doc.get("measure_started_at"))
     if ms is None or ms > m:
         return "timestamp"
-    if kind == "profile" and m - ms < MIN_MEASURE_S.get((doc.get("payload") or {}).get("category"), 0):
+    if kind == "profile" and m - ms < min_measure_s(doc):
         return "timestamp"   # measured faster than that category can be
     if run is not None and m > ms and overlap_with(run.get("spans", []), ms, m) > MAX_OVERLAP:
         return "timestamp"   # more measurements at once than one Mac runs

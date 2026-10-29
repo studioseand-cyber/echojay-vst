@@ -3455,6 +3455,30 @@ inline LandingRead readAmountLanding (const SweepOptions& opt, const juce::Plugi
     return lr;
 }
 
+// A TYPE SWITCH IS NEVER A SATURATOR'S DRIVE (Kathy, 29 Oct: Abbey Road Saturator's drive was "Saturator Type" - TG / REDD / OFF - because
+// its "OFF" made it look like a level, so the measurement probed it and the switch's three models read as a THD curve). A type switch is a
+// control named for a choice (type, mode, model, algorithm, style, flavour, variant, circuit, voicing), or one whose sampled displays are
+// two or more distinct words and no number (Off / -inf count as neither: a level's own words). Left out of the saturation pass's nominees
+// and of every pool it probes
+inline bool saturationTypeSwitch (const juce::var& c)
+{
+    const auto name = c.getProperty ("name", "").toString();
+    for (const char* t : { "type", "mode", "model", "algorithm", "algo", "style", "flavour", "flavor", "variant", "circuit", "voicing" })
+        if (nametokens::controlAnswersTerm (name, t)) return true;
+    const auto* o = c.getProperty ("displayAt", {}).getDynamicObject();
+    if (o == nullptr) return false;
+    juce::StringArray words;
+    for (const auto& kv : o->getProperties())
+    {
+        const auto t = kv.value.toString().trim().toLowerCase();
+        if (t.isEmpty() || t.containsAnyOf ("0123456789")) return false;
+        if (t.startsWith ("-inf") || t.startsWith ("inf") || t == "off") continue;
+        words.addIfNotAlreadyThere (t);
+    }
+    return words.size() >= 2;
+}
+inline const juce::var* controlAt (const juce::var& base, int index)
+{ if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == index) return &c; return nullptr; }
 // NAMES PROPOSE, MEASUREMENT DECIDES (5 Oct evening): the helpers every prototype mode's role step uses.
 // unnamedPool: the numeric controls a name did not nominate (never-touch, word-valued and two-step ones out), capped.
 inline constexpr int kUnnamedCap = 40;
@@ -5606,7 +5630,7 @@ inline int runSaturation (const SweepOptions& opt)
             for (const auto& c : *cs)
             {
                 const int idx = (int) c.getProperty ("index", -1); const auto name = c.getProperty ("name", "").toString();
-                if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (name)) continue;
+                if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (name) || saturationTypeSwitch (c)) continue;   // 29 Oct: never a type switch
                 bool drive = false; for (const char* t : { "drive", "saturation", "sat", "saturate", "color", "colour", "harmonics", "warmth", "heat", "crush", "amount" }) if (nametokens::controlAnswersTerm (name, t)) drive = true;
                 if (drive && ! nametokens::controlAnswersTerm (name, "mix")) { targets.push_back ({ idx, name }); idxs.push_back (idx); }
             }
@@ -5620,6 +5644,9 @@ inline int runSaturation (const SweepOptions& opt)
     // at its two ends on the drive probe; one whose THD rises >= 3 dB (the drive signature, modulation excluded) is the nominee,
     // recorded "unnamed". A product where nothing moves the measure gets a record saying so, never an empty row to redo forever.
     std::set<int> measuredNominees;
+    // 29 Oct: every pool this pass probes leaves out the type switches (saturationTypeSwitch)
+    auto satPool = [&] (const std::vector<int>& nominated) { auto v = unnamedPool (base, nominated, &fx.sampled);
+        v.erase (std::remove_if (v.begin(), v.end(), [&] (const PoolControl& pc) { const auto* c = controlAt (base, pc.index); return c != nullptr && saturationTypeSwitch (*c); }), v.end()); return v; };
     auto endsOf = [&] (const ChildResult& r, roleevidence::Figure& a, roleevidence::Figure& b)
     {   const auto L = saturation::deriveLevel (saturation::parseHarmonics (r.cleanExit() ? r.out : juce::String()), -12.0);
         for (const auto& rd : L.readings) { roleevidence::Figure* f = rd.norm < 0.01f ? &a : rd.norm > 0.99f ? &b : nullptr; if (f && (rd.valid || rd.silent)) { f->ok = true; f->thdDb = rd.valid && rd.thdDb > -200.0 ? rd.thdDb : -200.0; f->sidebandDb = rd.valid ? rd.sidebandDb : -200.0; f->outputDb = rd.valid ? rd.outDb : -200.0; } } };
@@ -5656,7 +5683,7 @@ inline int runSaturation (const SweepOptions& opt)
     if (targets.empty())
     {
         int probed = 0;
-        for (const auto& pc : unnamedPool (base, {}, &fx.sampled))
+        for (const auto& pc : satPool ({}))
         {
             const auto r = run ("u" + juce::String (pc.index), { "--response", "ctl=" + juce::String (pc.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" }); ++probed;
             if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
@@ -5666,7 +5693,7 @@ inline int runSaturation (const SweepOptions& opt)
         }
         say ("SAT: the lexicon nominated nothing; measurement probed " + juce::String (probed) + " control(s) at their ends and nominated " + juce::String ((int) targets.size()));
         if (targets.empty())
-        {   std::vector<Target> pool; for (const auto& pc : unnamedPool (base, {}, &fx.sampled)) pool.push_back ({ pc.index, pc.name });
+        {   std::vector<Target> pool; for (const auto& pc : satPool ({})) pool.push_back ({ pc.index, pc.name });
             if (const auto t = engageSearch (pool)) { targets.push_back (*t); measuredNominees.insert (t->index); } }
         if (targets.empty())
         {
@@ -5727,7 +5754,7 @@ inline int runSaturation (const SweepOptions& opt)
         roles.push_back (roleevidence::nominee (idx, c.getProperty ("control", "").toString(), "drive", roleevidence::signatureHolds ("drive", a, b)));
     }
     for (int mi : measuredNominees) nominated.push_back (mi);
-    for (const auto& pc : unnamedPool (base, nominated, &fx.sampled))
+    for (const auto& pc : satPool (nominated))
     {
         const auto r = run ("u" + juce::String (pc.index), { "--response", "ctl=" + juce::String (pc.index), "norms=0,1", "tones=1", "lo=997", "harmonics=5", "db=-12", "hold=1.0", "discard=0.5" });
         if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }

@@ -757,6 +757,27 @@ inline bool rewriteResultsFile (const juce::File& src, const juce::File& target)
     return src.copyFileTo (tmp) && tmp.moveFileTo (target);
 }
 inline juce::String stoppedNote() { return "Stopped - it carries on next time"; }
+// THE PACK SAYS SO AT ONCE (Kathy, 29 Oct): the engine's pack_refused.json (a pack it could not make) and privacy_withheld.json (files it
+// set aside) in plain words for the measuring screen; "" when neither has anything to say
+inline juce::String packNoteWords (const juce::var& refused, const juce::var& privacy)
+{
+    juce::StringArray parts;
+    if (refused.isObject() && refused.getProperty ("why", "").toString().isNotEmpty())
+        parts.add ("The latest results couldn't be packed to send (" + refused.getProperty ("why", "").toString() + ") - they're kept on this Mac");
+    juce::StringArray products;
+    if (const auto* w = privacy.getProperty ("withheld", {}).getArray()) for (const auto& e : *w) { const auto pid = e.getProperty ("plugin_id", "").toString(); products.addIfNotAlreadyThere (pid.isNotEmpty() ? pid : e.getProperty ("file", "").toString()); }   // one per plugin
+    if (const int n = products.size(); n > 0) parts.add (juce::String (n) + (n == 1 ? " result is" : " results are") + " kept on this Mac, not sent (privacy check)");
+    return parts.joinIntoString (". ");
+}
+// THE STOPPED SCREEN (Kathy, 29 Oct: "Stopped" kept Pause and Finish and send, which did nothing once the engine had ended): one button,
+// Quit, and the reason when the engine gave one - a low disk in its own words, a pack it could not make in the pack's
+inline Copy stoppedCopy (const juce::String& engineSummary, const juce::String& packNote)
+{
+    Copy c; c.title = "Stopped"; c.primary = "Quit";
+    c.text = engineSummary.containsIgnoreCase ("disk space") ? engineSummary
+           : (packNote.isNotEmpty() ? packNote + ". " : juce::String()) + stoppedNote() + " - open the wizard again to carry on.";
+    return c;
+}
 // what the window does when the engine ends: a scan that ran to its end -> its results; a measuring run that did -> the upload; a
 // STOPPED one (130, or any other end) never counts as finished - the scan is not marked done, and the next launch carries on
 // A RUN THAT REACHED THE END WITH PLUGINS LEFT (Kathy, 15 Oct: 774fe72e's run ended "The free month needs the full run: 351 of 509" - the 158
