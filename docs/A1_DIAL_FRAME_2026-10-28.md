@@ -184,3 +184,37 @@ both sides moved. Nothing in A1a touches the loop's stepping, so this is untouch
 belongs with A1b, which is the next time that loop is opened. The leg it needs is the one the sense
 rule has never had: a `higher_is_harder` control under target must step **up**, and a
 `lower_is_harder` one must step **down**, from the same measurement.
+
+
+---
+
+## WHAT A1b ACTUALLY SHIPPED, AND WHAT IT DID NOT (29 Oct 2026, after session C's check)
+
+`159eec1d`'s subject line reads *"A1b: a dial frame can be armed on a Link's slot"*. **That
+overstates it, and this section is the correction** — the commit cannot be reworded now, so the
+record goes here, where the next person reads.
+
+**Done, gated, and safe:**
+- the arm is asynchronous end to end on the V2 side (`EJAgentTools`, `ExecutorRead`, the client's
+  `beginDialWait` split, legs DF12–DF12d);
+- the executor picks the road from `target_`;
+- the dial rides chain-cmd v2 as an additive `dialOnSlot` field;
+- `dialFrameCapable` holds `RegistrySlot`'s byte 127, zero = cannot, with `shm_layout_guard` green
+  in both directions and a `static_assert` that the struct is full.
+
+**NOT written, and therefore not true yet:**
+1. **`LinkProcessor` does not read `dialOnSlot` at all.** It is in the command this V2 writes and
+   nothing on the other side looks for it.
+2. **`setSlotDialFrameCapable` has zero callers.** No Link ever claims the capability, so byte 127
+   is always the zero it was born with.
+3. **`dial_step` / `dial_slot` are still undeclared** (see the A1a note above, which says so on
+   purpose).
+4. **No rig row exercises it on a real-host Link**, and the DF12 legs drive a *stub* executor, so
+   they cannot see 1–3. A green DF12 says the client's half is right; it says nothing about the road.
+
+**Why nothing regresses meanwhile:** a Link that does not say it is capable is never sent a dial
+frame, which is precisely what byte 125's zero-is-safe rule is for. The feature is withheld, not
+broken.
+
+**The order to finish it in** is 1 → 2 → 3 → 4: the Link must be able to do the thing before it may
+announce it, it must announce it before the V2 declares it to B, and only then can a row prove it.
