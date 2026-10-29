@@ -25847,6 +25847,27 @@ void EchoJayEditor::timerCallback()
     calibTickAndPost ({});                                      // the mix bus / own rack
         const auto leased = processorRef.borrowUid();
         if (leased.isNotEmpty()) calibTickAndPost (leased);          // the rack this instance is holding
+        // ---- AND THE RACK A DIAL FRAME IS WAITING ON (C's point 56, 29 Oct 2026) -------------
+        //
+        // A1b's dial frame goes to a Link with NO lease and no borrow session - that is the whole
+        // point of the road - so neither uid above covers it. The Link arms the dial, its own loop
+        // advances and publishes into its rack sidecar, and nothing in this process ever reads it:
+        // calibTickAndPost is what fills agentDialReports (through routeDialClosingToAgentCard),
+        // and tickDialStep reads exactly that. So the step would wait out its 60 s bound and tell
+        // him "not heard" about a dial the Link had landed. Applied, reported as not - the inverse
+        // of "'sent' is not 'applied'" and no better.
+        //
+        // Polled only WHILE A FRAME IS OPEN, and calibTick returns early for a uid it cannot
+        // measure, so this costs one early return a second during a dial and nothing at any other
+        // time.
+        if (auto* ag = agentClient())
+            if (ag->dialFrameWaiting())
+                if (auto* home = processorRef.agentHomeIfBuilt())
+                {
+                    const auto dialRack = home->runTargetUid();
+                    if (dialRack.isNotEmpty() && dialRack != leased)
+                        calibTickAndPost (dialRack);
+                }
     }
     // ---- THE COMPARE CONTROLS, RECOMPUTED RATHER THAN NOTIFIED -----------
     //

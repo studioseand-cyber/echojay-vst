@@ -441,6 +441,17 @@ private:
     Playback playback_;
     juce::String playbackStepId_;
     DialStep dial_;
+public:
+    /** ---- IS A DIAL FRAME'S WAIT OPEN? (C's point 56, 29 Oct 2026) -------------------------
+        The editor's tick needs this to know whether to poll a Link's sidecar. Without it, a dial
+        armed on a Link that this instance has NOT leased is never polled at all - calibTickAndPost
+        runs only for the own rack and the leased uid - so the step would sit out its 60 s bound and
+        report "not heard" about a dial the Link really did land. Applied, reported as not: the
+        inverse of "'sent' is not 'applied'", and just as wrong. */
+    bool dialFrameWaiting() const noexcept { return dial_.active; }
+    /** The slot that wait is on, 1-based; 0 when nothing is waiting. */
+    int  dialFrameSlot1() const noexcept { return dial_.active ? dial_.slot1 : 0; }
+private:
     juce::String lastPath_, lastBody_;
     /** The last error frame's code, so retry() can tell a failure the server never saw (a 500, a
         timeout - resend it) from one it saw and refused for its content (result_too_large - never
