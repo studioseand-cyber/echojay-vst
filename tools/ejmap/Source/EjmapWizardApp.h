@@ -817,4 +817,14 @@ inline Screen openOn (const Where& w, Mode m = Mode::normal)
 }
 // 15 Oct: an app reopened after a finished scan carries on the same way - straight into measuring when there is something to measure
 inline Screen openOn (const Where& w, Mode m, const Eligibility& e) { const auto s = openOn (w, m); return s == Screen::scanDone ? afterScan (e, m) : s; }
+// SIGNED IN AGAIN, THE SAME RUN (Kathy, 29 Oct: a sign-in that expired mid-send went to "Before we start", whose Continue made a fresh run
+// - the unsent results stranded, the run never finished). A sign-in returns to where the run stood - measuring, sending, a finished scan,
+// a stopped run reopened - and never asks the consent again once given. Only a run never consented to asks it, and a deliberate Sign out
+// (signed_out_at: the next Start is a fresh run, 27 Oct) or a run EchoJay finished (server_completed) goes to the consent's fresh Start
+inline Screen afterSignIn (const Where& w, bool signedOut, Mode m, const Eligibility& e)
+{
+    if (signedOut || ! w.consented) return Screen::consent;
+    auto in = w; in.signedIn = true;
+    return openOn (in, m, e);   // a run EchoJay finished (server_completed) -> the consent's fresh Start, as openOn says
+}
 } // namespace ejmap::wizapp

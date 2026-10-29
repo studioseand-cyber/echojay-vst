@@ -328,12 +328,9 @@ public:
         // WHERE TO OPEN: from the files alone (a crash first)
         crashed = wizapp::recover (cfg.work, engineDir().getChildFile ("inflight"), cfg.reports, juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(),
                                    juce::SystemStats::getLogonName(), hostName());
-        wizapp::Where w; const auto st = appState();
+        const auto st = appState();
         if (const auto given = cfg.only; (cfg.only = wizapp::runOnlyList (given, st)) != given) logLine ("this run's own plugin list (saved at its start): " + cfg.only.joinIntoString (", "));   // 26 Oct
-        w.signedIn = kNetworked ? (session != nullptr && session->signedIn()) : cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
-        w.measureStarted = (bool) st.getProperty ("measure_started", false); w.measureDone = (bool) st.getProperty ("measure_done", false);
-        w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
-        w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false); w.serverCompleted = st.hasProperty ("server_completed");   // 27 Oct
+        auto w = whereNow();
         logLine ("open (" + juce::String (kMode == wizapp::Mode::beta ? "beta" : "normal") + "): " + wizapp::screenName (wizapp::openOn (w, kMode)) + (crashed.empty() ? juce::String() : " (" + juce::String ((int) crashed.size()) + " plugin(s) put on the never-retry list)"));
         if (const int n = drainOutbox(); n > 0)
         {   // 13 Oct: what an offline run kept is sent now; a finished run's code arrives with it
@@ -414,6 +411,16 @@ public:
     // A FINISHED RUN NEVER RUNS AGAIN (Kathy, 27 Oct): at Start, a folder whose run is finished (or signed out of) moves that run's files to
     // previous_runs/<run id>/ and starts afresh - a new run id at the consent, nothing carried over. Results of the last run still waiting
     // to be sent are never moved away: the Start is refused, said, and they are sent when the wizard is opened signed in
+    // where the run stands, from its files alone (the launch, and a sign-in that comes back to it)
+    wizapp::Where whereNow()
+    {
+        wizapp::Where w; const auto st = appState();
+        w.signedIn = kNetworked ? (session != nullptr && session->signedIn()) : cfg.work.getChildFile ("account.json").existsAsFile(); w.scanned = (bool) st.getProperty ("scanned", false);
+        w.measureStarted = (bool) st.getProperty ("measure_started", false); w.measureDone = (bool) st.getProperty ("measure_done", false);
+        w.uploaded = (bool) st.getProperty ("uploaded", false); w.rewarded = cfg.work.getChildFile ("reward.json").existsAsFile(); w.crashed = (int) crashed.size();
+        w.consented = (bool) st.getProperty ("consented", false); w.saved = (bool) st.getProperty ("saved", false); w.serverCompleted = st.hasProperty ("server_completed");   // 27 Oct
+        return w;
+    }
     bool freshRunIfNeeded()
     {
         const auto st = appState();
@@ -676,7 +683,14 @@ private:
                 if (p == wizcontract::Poll::pending || p == wizcontract::Poll::slowDown) continue;
                 onUi ([this, p, words]
                 {
-                    if (p == wizcontract::Poll::ok) { logLine ("signed in as " + session->displayName()); netWords = {}; show (Screen::consent); return; }
+                    if (p == wizcontract::Poll::ok)
+                    {   // 29 Oct (Kathy): back to the SAME run where it stood; the consent only when never given (or after a deliberate Sign out)
+                        logLine ("signed in as " + session->displayName()); netWords = {};
+                        const auto st = appState();
+                        const auto to = wizapp::afterSignIn (whereNow(), st.hasProperty ("signed_out_at"), kMode, wizapp::eligibilityOf (juce::JSON::parse (cfg.work.getChildFile ("eligibility.json").loadFileAsString())));
+                        logLine ("after the sign-in: " + wizapp::screenName (to) + (to == Screen::consent ? juce::String() : " - the same run (" + st.getProperty ("run_id", "").toString() + "), its consent already given"));
+                        show (to); return;
+                    }
                     logLine ("sign-in did not finish: " + words); netWords = words; show (Screen::welcome);
                 });
                 return;

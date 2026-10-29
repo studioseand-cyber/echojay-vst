@@ -14729,6 +14729,28 @@ int main (int, char**)
                && sat.contains ("for (const auto& pc : satPool ({}))") && sat.contains ("for (const auto& pc : satPool ({})) pool.push_back"),
                "cert WZ-36OCT-6: a saturator's type switch (TG / REDD / OFF, \"... Type\", \"... Model\") is never probed as its drive; a level with Off / -inf still is");
     }
+    // WZ-36OCT-7 SIGNED IN AGAIN, THE SAME RUN (Kathy, 29 Oct): a sign-in mid-run (sending, measuring, a stopped run reopened, a finished
+    // scan) comes back to that run where it stood, never to the consent once given; only a run never consented to, a deliberate Sign out or a
+    // run EchoJay finished goes to the consent's fresh Start
+    {
+        using namespace ejmap::wizapp;
+        auto at = [] (std::initializer_list<int> f) { Where w; for (int k : f) switch (k) { case 1: w.consented = true; break; case 2: w.scanned = true; break; case 3: w.measureStarted = true; break;
+                                                                                          case 4: w.saved = true; break; case 5: w.serverCompleted = true; break; case 6: w.uploaded = true; break; default: break; } return w; };
+        Eligibility some; some.eligible = true; some.count = 12; const Eligibility none;
+        const auto app = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/wizard_app/WizardApp.cpp").loadFileAsString();
+        check (afterSignIn (at ({ 1, 2, 3, 4 }), false, Mode::beta, some) == Screen::upload             // sending: back to sending
+               && afterSignIn (at ({ 1, 2, 3 }), false, Mode::beta, some) == Screen::measuring          // measuring, packing, a stopped run reopened
+               && afterSignIn (at ({ 1, 2 }), false, Mode::beta, some) == Screen::measuring             // a finished scan: straight into measuring
+               && afterSignIn (at ({ 1 }), false, Mode::beta, none) == Screen::scan                     // consented, nothing scanned yet: the scan of this run
+               && afterSignIn (at ({}), false, Mode::beta, none) == Screen::consent                     // never consented: asked
+               && afterSignIn (at ({ 1, 2, 3, 4 }), true, Mode::beta, some) == Screen::consent          // a deliberate Sign out: a fresh run at Start
+               && afterSignIn (at ({ 1, 2, 3, 4, 5 }), false, Mode::beta, some) == Screen::consent       // finished on EchoJay
+               && afterSignIn (at ({ 1, 2, 3, 4, 6 }), false, Mode::beta, some) == Screen::reward
+               && app.contains ("const auto to = wizapp::afterSignIn (whereNow(), st.hasProperty (\"signed_out_at\"), kMode,")
+               && ! app.contains ("netWords = {}; show (Screen::consent); return; }") && app.contains ("        auto w = whereNow();\n")
+               && app.contains ("its consent already given\"));\n                        show (to); return;\n                    }"),   // the answer is what is shown
+               "wizard WZ-36OCT-7: signed in again mid-run -> the same run where it stood (sending, measuring, the scan), never the consent once given");
+    }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
     {
