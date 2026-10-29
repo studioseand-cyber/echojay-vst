@@ -4905,11 +4905,29 @@ int main (int argc, char* argv[])
                                      "the Link acked \"" + ackSays + "\" and linkSlots moved "
                                      + juce::String (slotsBefore) + " -> " + juce::String (slotsNow));
                             else
-                                row ("LV9e", false,
-                                     "when a Link takes a change, does the V2's view of that rack "
-                                     "follow it (S5)",
-                                     "COULD NOT JUDGE S5: the Link never acked the add, so there was "
-                                     "no change for the view to follow. The ack said: " + ackSays);
+                            {
+                                // ---- AND THE PRODUCT'S OWN ANSWER, WHICH IT NOW GIVES (29 Oct) --
+                                //
+                                // "No ack at all" has a boring explanation and the product states it
+                                // out loud as of tonight: sendRackAdd refuses a press while that Link
+                                // already has a change in flight, and says so on the panel. Reading
+                                // chainStatusText turns "the add vanished" into "the add was
+                                // refused, in these words" - which is a different row result and the
+                                // difference between a fault and a row that arrived too early.
+                                const auto said = rig.freshState()
+                                                     .getProperty ("chainStatusText", juce::var()).toString();
+                                const bool refusedInWords = said.containsIgnoreCase ("Not added");
+                                row ("LV9e", refusedInWords,
+                                     "when the V2 cannot add to a Link right now, does it SAY so - "
+                                     "rather than dropping the press in silence, which is what it did "
+                                     "until tonight and what cost an hour at 03:00",
+                                     refusedInWords
+                                       ? "refused in words: \"" + said + "\" (so there was no change "
+                                         "for the view to follow, and S5 is not judged here)"
+                                       : "NEITHER an ack NOR a sentence: the press went nowhere and "
+                                         "nothing was said. The ack said: " + ackSays
+                                         + "; the panel said: \"" + said + "\"");
+                            }
 
                             const bool setUpB = landed && viewUp && haveLinkB > idxB
                                              && (bool) movedB.getProperty ("ok", false);

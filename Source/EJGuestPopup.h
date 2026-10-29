@@ -121,4 +121,29 @@ inline void restorePopoutAfterPopup (PanelT& panel, juce::Component* popout, boo
     popout->toFront (false);
 }
 
+/** ---- WHAT A + PRESS SAYS WHILE THAT LINK IS ALREADY BUSY (29 Oct 2026) --------------------
+
+    This sentence took three passes in one night and every fault in it was mine:
+
+      1. it did not exist - the press returned in silence, which cost an hour of my own and nearly
+         put a wrong sentence about the Link in front of Sean;
+      2. then it said "it will take this one when that lands", which is a LIE - nothing queues the
+         press, it is dropped;
+      3. then it said "still adding  to this Link" for a remove or a bypass, because addName is
+         filled only for an add while the guard matches ANY pending change - a blank name and the
+         wrong verb, in the cases it was likeliest to meet.
+
+    So it is pure and legged here rather than composed inline a fourth time. It promises nothing,
+    names what is actually happening, and gets the preposition right for each kind. */
+inline juce::String inFlightRefusalLine (bool isAdd, bool isRemove, const juce::String& addName)
+{
+    const auto what = isAdd
+                        ? ((addName.isNotEmpty() ? "still adding " + addName
+                                                 : juce::String ("still adding a plugin"))
+                           + " to this Link")
+                        : isRemove ? juce::String ("still removing a plugin from this Link")
+                                   : juce::String ("still changing this Link");
+    return "Not added: " + what + " - try again in a moment.";
+}
+
 } // namespace echojay

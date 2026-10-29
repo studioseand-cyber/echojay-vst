@@ -1,5 +1,5 @@
 scenario I4
-captured 2026-10-29T03:28:10.045Z
+captured 2026-10-29T04:22:43.912Z
   [assistant] Stopped.
   [user] rig-readonly-marker: what is on this rack?
   [assistant] Had a look and changed nothing.

@@ -3302,6 +3302,37 @@ int main()
                        "GP3 a POP-OUT is only LOWERED, never closed - it is a top-level window, so "
                        "dropping always-on-top is enough and he keeps his place in the plugin",
                        juce::String (popoutUp.why));
+                // ---- THE IN-FLIGHT REFUSAL, ALL THREE KINDS (C's point 50, 29 Oct 2026) -----
+                //
+                // Three passes on one sentence in one night: silent, then a false promise, then the
+                // wrong verb with a blank name. Each was caught by someone reading it. These legs
+                // are the reading, made permanent.
+                {
+                    const auto addL = echojay::inFlightRefusalLine (true, false, "Pro-Q 3");
+                    check (addL.contains ("still adding Pro-Q 3 to this Link")
+                             && ! addL.contains ("will take"),
+                           "IF1 an add in flight names the plugin and promises NOTHING - nothing "
+                           "queues the dropped press, so a sentence that says it will be taken later "
+                           "is a lie",
+                           addL);
+                    const auto remL = echojay::inFlightRefusalLine (false, true, "");
+                    check (remL.contains ("still removing a plugin from this Link")
+                             && ! remL.contains ("adding"),
+                           "IF2 a REMOVE in flight says removing, and FROM the Link - my first two "
+                           "versions said \"still adding  to this Link\" and then \"removing a "
+                           "plugin to this Link\"",
+                           remL);
+                    const auto byL = echojay::inFlightRefusalLine (false, false, "");
+                    check (byL.contains ("still changing this Link")
+                             && ! byL.contains ("adding") && ! byL.contains ("removing"),
+                           "IF3 ...and a bypass - neither an add nor a remove - gets a sentence that "
+                           "fits it, rather than the add wording with an empty name",
+                           byL);
+                    check (! addL.contains ("  ") && ! remL.contains ("  ") && ! byL.contains ("  "),
+                           "IF4 none of the three has a doubled space, which is what a blank name "
+                           "left behind and is how a user sees a bug in a sentence");
+                }
+
                 const auto both = echojay::guestPopupPrep (true, true);
                 check (both.lowerPopout && both.closeInline,
                        "GP4 ...and both at once are both handled: a pop-out for one slot and an "

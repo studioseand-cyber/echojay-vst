@@ -13638,13 +13638,7 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
             // this Link" - a blank name and the wrong verb - for exactly the cases it was most
             // likely to meet. The in-flight guard matches ANY pending block for that Link, so the
             // sentence has to cover any of them.
-            const auto what = pnd.isAdd
-                                ? ((pnd.addName.isNotEmpty() ? "still adding " + pnd.addName
-                                                             : juce::String ("still adding a plugin"))
-                                   + " to this Link")
-                                : pnd.isRemove ? juce::String ("still removing a plugin from this Link")
-                                               : juce::String ("still changing this Link");
-            fail ("Not added: " + what + " - try again in a moment.");
+            fail (echojay::inFlightRefusalLine (pnd.isAdd, pnd.isRemove, pnd.addName));
             return;
         }
     if (!connected)

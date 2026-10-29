@@ -1,5 +1,5 @@
 scenario F2
-captured 2026-10-29T03:18:30.451Z
+captured 2026-10-29T04:43:26.033Z
   [user] rig-row-marker: set the pre gain, twice (then I close the window)
   [assistant] Stopped.
   [user] rig-row-marker: set the pre gain, twice (survive the close)
