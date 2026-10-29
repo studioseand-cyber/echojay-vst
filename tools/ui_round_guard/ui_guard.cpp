@@ -1567,8 +1567,16 @@ int main()
                 // echojay::prepareForPopupOverGuest, and logs under one prefix for both plugins -
                 // so this pin follows it rather than holding the V2 to a tag the shared rule no
                 // longer uses. The TEETH are unchanged: delete the logging and this still fails.
-                check (freshE.contains ("EJGuestPopup:") && freshE.contains ("inline editor closed"),
-                       "21t-e. ...and it says so in the log, so the path is auditable in a real session",
+                // AND THE SENTENCE GREW AGAIN (29 Oct 2026, his R7 follow-up): the editor is not
+                // only closed, it is REOPENED when the popup goes - *"the hosted plugin window is
+                // hidden to let the menu show, but it doesn't come back"* - so the line now names
+                // the slot and says it will come back. The teeth are the same and one stronger:
+                // this asserts the log says WHICH slot, because "an editor was closed" with no
+                // slot is not auditable in a rack of six.
+                check (freshE.contains ("EJGuestPopup:")
+                       && freshE.contains ("inline editor on slot")
+                       && freshE.contains ("REOPENED when the popup goes"),
+                       "21t-e. ...and it says so in the log, with the slot, so the path is auditable",
                        freshE.fromFirstOccurrenceOf ("EJGuestPopup:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 110)
                            + "  [" + howE.trim() + "]");
                 while (own.getNumSlots() > before) own.removeSlot (own.getNumSlots() - 1);

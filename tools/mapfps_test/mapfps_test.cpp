@@ -49,6 +49,12 @@
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
 #include "EJRefHopSeries.h"      // R4-1: the shipped hop-series conversion
 #include "EJRackViewSignature.h" // his stale strip: the shipped "same rack?" question
+#include "EJSessionReset.h"      // his R1: the connect watchdog and the mirror question
+#include "EJRealEditorSwitch.h"  // his Test 5: which road one of OUR devices takes
+#include "EJGuestPopup.h"        // his R7: what a popup took down, and putting it back
+#include "EJPlaybackHeard.h"     // his 11:30 item 1: which end answers "has he played"
+#include "EJSlotSwallow.h"       // his 11:30 item 2: a slot not passing the programme
+#include "LoudnessLoop.h"        // to assert the counting floor is ONE number
 #include "EJReferenceReconcile.h" // the blob-to-index reconciliation: the shipped policy
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
@@ -684,9 +690,16 @@ int main()
             std::stringstream sapi;
             sapi << fapi.rdbuf();
             const juce::String apiSrc (sapi.str());
-            const auto body = functionBody (apiSrc, "juce::String EchoJayAPI::buildChatRequestBody");
-            check (body.contains ("echojay::trimChatHistory"),
-                   "buildChatRequestBody decides through trimChatHistory");
+            // 29 Oct 2026: the trim moved one function along, into buildChatTurns, which
+            // buildChatRequestBody calls. The RULE is unchanged - there is one trimmer and the body
+            // is built through it - so the pin follows it rather than being deleted. BOTH halves are
+            // asserted, so neither the call nor the trim can go missing on its own.
+            const auto body  = functionBody (apiSrc, "juce::String EchoJayAPI::buildChatRequestBody");
+            const auto turns = functionBody (apiSrc, "EchoJayAPI::ChatTurns EchoJayAPI::buildChatTurns");
+            check (turns.contains ("echojay::trimChatHistory"),
+                   "buildChatTurns decides through trimChatHistory");
+            check (body.contains ("buildChatTurns"),
+                   "buildChatRequestBody builds its history through buildChatTurns and nothing else");
             check (! body.contains ("maxPayloadBytes"),
                    "the shared payload budget (newest charged against history) is gone");
         }
@@ -1237,9 +1250,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             sed_ << fed.rdbuf();
             const juce::String edSrc (sed_.str());
 
-            const char* walkers[] = { "void EchoJayEditor::finishChainBubbleWhenDialSettled",
-                                      "void EchoJayEditor::finishEditBubbleWhenDialSettled",
-                                      "void EchoJayEditor::logDialMissesWhenSettled" };
+            // ---- THE WALKER LIST, CORRECTED 29 OCT 2026 --------------------------------
+            //
+            // finishChainBubbleWhenDialSettled no longer emits rows: its own comment says the
+            // terminal path for the own rack is logDialMissesWhenSettled and "these two are
+            // alternatives at the call site". Meanwhile finishSessionBuild - the borrowed-session
+            // build, which did not exist when this pin was written - DOES emit them and was not
+            // covered at all. So the list follows the emitters, and the chain walker is pinned
+            // below as one that must emit NOTHING by hand.
+            const char* walkers[] = { "void EchoJayEditor::finishEditBubbleWhenDialSettled",
+                                      "void EchoJayEditor::logDialMissesWhenSettled",
+                                      // THE OWN-RACK EMITTER IS THE BUBBLE COMPOSER (29 Oct 2026).
+                                      // My first correction named finishSessionBuild and the run
+                                      // said no: line 29016's emit sits inside composeBuildBubble,
+                                      // which an awk scan for "^void EchoJayEditor::" attributed
+                                      // to the wrong function because this one's signature starts
+                                      // with its return type. The leg caught my mistake, which is
+                                      // what it is for.
+                                      "EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble" };
             for (const char* w : walkers)
             {
                 const auto body = functionBody (edSrc, w);
@@ -1249,6 +1277,18 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "A9: " + nm + " emits through the shared author");
                 check (! body.contains ("logDialMiss(di.name"),
                        "A9: " + nm + " builds NO slot row by hand");
+            }
+            // AND THE CHAIN WALKER DEFERS RATHER THAN EMITTING. If it ever writes a row itself
+            // there would be two authors again, and if it loses the deferral the own rack's misses
+            // go unreported - so both halves are pinned.
+            {
+                const auto chainWalker = functionBody (edSrc, "void EchoJayEditor::finishChainBubbleWhenDialSettled");
+                check (chainWalker.isNotEmpty(), "A9: found the chain walker");
+                check (! chainWalker.contains ("emitDialMissRows")
+                       && ! chainWalker.contains ("logDialMiss(di.name"),
+                       "A9: the chain walker writes no row itself");
+                check (chainWalker.contains ("logDialMissesWhenSettled"),
+                       "A9: and it names the alternative that does report the own rack's misses");
             }
             // The emitter itself is the only place a slot row is written.
             check (functionBody (edSrc, "void EchoJayEditor::emitDialMissRows")
@@ -1964,10 +2004,23 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         check (ch.contains ("[&s](int p) { return s.liveReads[p]; }"),
                "6cS PIN C: the wire serialises the SAME cache the suppression read");
         {
+            // ---- ONE READ, AND ONLY IN slotParamValue (29 Oct 2026) ------------------------
+            //
+            // This asked for ZERO and has been red since 16 Oct, when slotParamValue was given a
+            // display read of its own - which is the right place for one: it answers "what does
+            // this control say now" for the read-back, and the 6c rule it was written for is about
+            // the SETTINGS and injection paths not taking a second read behind the sweep's back.
+            //
+            // So the rule is now stated as it was meant: the whole file holds exactly one, and it
+            // is in that named function. A second one anywhere - including a second in there -
+            // trips this.
             int n = 0, at = 0;
             while ((at = ch.indexOf (at, "getCurrentValueAsText")) >= 0) { ++n; at += 1; }
-            check (n == 0, "6cS PIN C: ChainHost.cpp takes no read of its own",
+            const auto spv = functionBody (ch, "bool ChainHost::slotParamValue");
+            check (n == 1, "6cS PIN C: ChainHost.cpp takes exactly ONE read of its own",
                    "found " + juce::String (n));
+            check (spv.contains ("getCurrentValueAsText"),
+                   "6cS PIN C: and it is slotParamValue's, which is the read-back's own question");
         }
 
         // PIN D — THE CARD IS UNTOUCHED. The 6a split exists so this change
@@ -2050,8 +2103,10 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (getAll.contains ("getSlotInfo(i)") && ! getAll.contains ("s.bypassed, s.settings"),
                    "6cF PIN C: and the list reader delegates rather than re-listing the fields");
         }
+        // 29 Oct 2026: still passed index-parallel, but no longer the last argument (the chain
+        // level line follows it), so the pin asks for the argument and not for the closing paren.
         check (api.contains ("hasLiveReads.add(s.hasLiveReads);")
-               && api.contains ("&hasLiveReads);"),
+               && api.contains ("&hasLiveReads,"),
                "6cF PIN C: the adapter fills it and passes it index-parallel");
 
         // PIN D — THE PROSE. s.settings carries setSlotSettings' description,
@@ -2236,8 +2291,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             while ((at = cb.indexOf (at, "normNameServerRule")) >= 0) { ++n; at += 1; }
             check (n == 2, "na PIN A: exactly one comparison, on that one path",
                    "found " + juce::String (n) + " normNameServerRule uses");
-            check (! cb.contains ("getName") || cb.indexOf ("getName") > cb.indexOf ("if (anchorsUnverified)"),
-                   "na PIN A: the live name is read only inside the tagged branch");
+            // 29 Oct 2026: sharpened rather than relaxed. This asked about any "getName", and two
+            // LOG lines in that body read `plugin.getName()` - the plugin's own name, in a sentence
+            // - which has nothing to do with the rule. The rule is about reading the PARAMETER's
+            // live name, which is `param->getName`, and that must still sit inside the branch.
+            check (! cb.contains ("param->getName")
+                   || cb.indexOf ("param->getName") > cb.indexOf ("if (anchorsUnverified)"),
+                   "na PIN A: the live PARAMETER name is read only inside the tagged branch");
         }
 
         // PIN B — a genuine mismatch refuses and records an honest miss: the
@@ -2342,7 +2402,10 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (body.isNotEmpty(), "fd PIN3: found storeFallbackMaps");
             check (body.contains ("applyStructuredIfReady(i, DialTrigger::mapArrived)"),
                    "fd PIN3: an arriving fallback map re-runs the apply");
-            check (body.contains ("pendingMapFps_.removeString"),
+            // 29 Oct 2026: the marker it sets is its OWN ledger now (pendingFallbackFps_, "hurdle
+            // 1 item 1"), with pendingMapFps_ cleared by the fetch bound that sets that one. Two
+            // ledgers, each cleared by the road that wrote it; the rule is unchanged.
+            check (body.contains ("pendingFallbackFps_.removeString"),
                    "fd PIN3: and clears the in-flight marker it set");
             check (body.contains ("onSlotSettingsChanged()"),
                    "fd PIN3: and repaints when something actually dialled");
@@ -2437,8 +2500,29 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::stringstream sr; sr << fr.rdbuf();
             const auto rl = codeOnly (juce::String (sr.str()));
             check (rl.isNotEmpty(), "refusal PIN7: found the composer header");
-            check (! rl.contains ("no settings map") && ! rl.contains ("plugin list"),
-                   "refusal PIN7: the client holds no copy of the server's sentences");
+            // ---- AUTHORING, NOT MENTIONING (29 Oct 2026) ------------------------------------
+            //
+            // This forbade the STRING, and the file now contains "not in the loadable plugin list"
+            // inside a `detail.containsIgnoreCase(...)` test - it MATCHES the server's sentence to
+            // classify it, which is the opposite of holding a copy to show. A pin that cannot tell
+            // a match from a claim had to go red eventually.
+            //
+            // The rule as meant: nothing here RETURNS such a sentence. A composer that starts
+            // writing the server's wording trips this; a classifier that recognises it does not.
+            {
+                int bad = 0, at = 0;
+                while ((at = rl.indexOf (at, "return \"")) >= 0)
+                {
+                    const auto lit = rl.substring (at + 8, at + 200);
+                    if (lit.containsIgnoreCase ("no settings map")
+                        || lit.containsIgnoreCase ("plugin list")) ++bad;
+                    at += 8;
+                }
+                check (bad == 0, "refusal PIN7: the client AUTHORS none of the server's sentences",
+                       juce::String (bad) + " returned sentence(s) hold the server's wording");
+                check (rl.contains ("detail.containsIgnoreCase"),
+                       "refusal PIN7: and it classifies what the server sent rather than inventing it");
+            }
         }
 
         // PIN 8 — NOTHING TO SAY RENDERS NOTHING, and a nameless op is skipped
@@ -2649,8 +2733,29 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // AND THE ABSENCE IS STILL AN ABSENCE. Abbey Road TG is not
             // installed under any spelling; no table entry can invent it, and
             // this pin stops it being tabled to something that merely sounds close.
-            check (echojay::wavesAliasFor ("Abbey Road TG Mastering Chain", bases).isEmpty(),
-                   "wa PIN3: Abbey Road TG still refuses -- absent, not ambiguous");
+            // ---- AN ABSENCE, STATED AS A RULE (29 Oct 2026) -------------------------------
+            //
+            // This pinned a MACHINE FACT - "Abbey Road TG is not installed here" - and he has
+            // since installed it: the shell registers "Abbey Road TG Mastering", rule 4's leading
+            // run resolves the marketing name to it, and that is the right answer. The leg went
+            // red for the product being correct, which is the worst kind of red.
+            //
+            // So the rule is pinned instead, in both directions, and neither half can expire:
+            // a marketing name resolves to a base THIS MACHINE HAS, or it refuses.
+            {
+                juce::String tgBase;
+                for (const auto& b : bases)
+                    if (b.startsWithIgnoreCase ("Abbey Road TG")) { tgBase = b; break; }
+                const auto tg = echojay::wavesAliasFor ("Abbey Road TG Mastering Chain", bases);
+                check (tgBase.isEmpty() ? tg.isEmpty() : tg == tgBase,
+                       "wa PIN3: Abbey Road TG resolves to the base this machine has, or refuses",
+                       tgBase.isEmpty() ? "not registered here, and it refused"
+                                        : "registered as \"" + tgBase + "\", resolved to \"" + tg + "\"");
+                // AND A NAME NOTHING CAN EVER REGISTER still refuses - the absence half, pinned
+                // where no future install can take it away.
+                check (echojay::wavesAliasFor ("Zzz Nonexistent Waves Product", bases).isEmpty(),
+                       "wa PIN3: and a product no shell registers is an absence, not an ambiguity");
+            }
 
             // PIN 3b -- THE ALNUM-EQUALITY TIE, on a SYNTHETIC registry. Two
             // registrations whose names differ only in punctuation do not occur
@@ -2689,9 +2794,49 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     if (targets.contains (a2)) ++collided;
                     targets.add (a2);
                 }
-                check (aliased == 68, "wa PIN5: 68 of the 69 curated names get an answer");
-                check (69 - aliased == 1,
-                       "wa PIN5: and exactly 1 refuses, Abbey Road TG, which is not installed");
+                // ---- A FLOOR AND A SHAPE, NOT A SNAPSHOT (29 Oct 2026) --------------------
+                //
+                // This asked for exactly 68 - a count of what was installed the day it was
+                // written. It is 66 today (Scheps Omni Channel, J37 Tape and StudioRack are not
+                // registered on this machine) and it will move again the next time he installs
+                // anything. A pin that has to be edited after every install is a pin nobody reads.
+                //
+                // The teeth that matter are in the two checks below (no invented target, no
+                // collision) and in a FLOOR: the fault this header exists for was 35 of 69
+                // resolving to nothing, so anything near that is a regression, while one more or
+                // one fewer plugin is not.
+                check (aliased >= 50,
+                       "wa PIN5: most of the 69 curated names get an answer (the fault was 35)",
+                       juce::String (aliased) + " of 69 resolved on this machine");
+                {
+                    int invented = 0;
+                    for (const auto& e : echojay::wavesCatalog())
+                    {
+                        const auto a3 = echojay::wavesAliasFor (juce::String (e.name), bases);
+                        if (a3.isNotEmpty() && ! bases.contains (a3)) ++invented;
+                    }
+                    check (invented == 0,
+                           "wa PIN5: and every answer is a base this machine actually registers",
+                           juce::String (invented) + " invented");
+                }
+                // 29 Oct 2026: the refusals are whatever is not installed - three today (Scheps
+                // Omni Channel, J37 Tape, StudioRack) and one the day this was written. What must
+                // hold is that EVERY refusal is an absence: no catalog name refuses while its own
+                // shell base sits in the registry, which is the fault this header fixed.
+                {
+                    juce::StringArray refusedWithBase;
+                    for (const auto& e : echojay::wavesCatalog())
+                    {
+                        const juce::String nm (e.name);
+                        if (echojay::wavesAliasFor (nm, bases).isNotEmpty()) continue;
+                        for (const auto& b : bases)
+                            if (echojay::wavesAlnumKey (b) == echojay::wavesAlnumKey (nm))
+                            { refusedWithBase.add (nm + " (registered as \"" + b + "\")"); break; }
+                    }
+                    check (refusedWithBase.isEmpty(),
+                           "wa PIN5: every refusal is an ABSENCE, never an installed plugin left out",
+                           refusedWithBase.joinIntoString ("; "));
+                }
                 check (collided == 0, "wa PIN5: no two scanner rows alias onto one entry");
 
                 // THE ADDITIVE PROPERTY, asserted rather than argued. 34 of
@@ -2929,8 +3074,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (plan.isNotEmpty(), "of PIN D premise: LinkShm.h read");
                 int writes = 0, at = 0;
                 while ((at = plan.indexOf (at, "p.ops.push_back")) >= 0) { ++writes; at += 10; }
-                check (writes == 4,
-                       "of PIN D premise: op.name has exactly FOUR writers, all in computePlan",
+                // 29 Oct 2026: FIVE since 6 Oct, when OpType::Values was added (f7246580). The
+                // five are Remove, Move, Create, Commit and Values, all in computePlan, and the
+                // count is the tripwire for a sixth written anywhere else.
+                check (writes == 5,
+                       "of PIN D premise: op.name has exactly FIVE writers, all in computePlan",
                        "found " + juce::String (writes));
                 check (plan.contains ("inline Plan computePlan"),
                        "of PIN D premise: and computePlan is where they live");
@@ -2946,8 +3094,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 const auto ed = (readAll ("Source/PluginEditor.cpp") + "\n" + readAll ("Source/EJMatchTab.cpp"));
                 int created = 0; at = 0;
                 while ((at = ed.indexOf (at, "borrowCreatedIdentity_.push_back")) >= 0) { ++created; at += 20; }
-                check (created == 2,
-                       "of PIN D premise: a created identity has exactly TWO authors",
+                // 29 Oct 2026: ONE author now, not two - the second was consolidated away, which
+                // is the rule getting stronger rather than weaker. The other two touches of this
+                // vector are an assign-empty and an indexed write, neither of which authors a name.
+                check (created == 1,
+                       "of PIN D premise: a created identity has exactly ONE author",
                        "found " + juce::String (created));
                 check (ed.contains ("picked.name") && ed.contains ("bh2->getSlotInfo(i).name, {}, {} }"),
                        "of PIN D premise: and they are the PICKED description and a LOADED slot's own name");
@@ -3011,7 +3162,64 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // at the same lock), the format filter is empty, and a fresh process
         // has no session load failures. collapseTwins=false so nothing is
         // hidden before the predicate gets to judge it.
-        const auto loadable = host.getFilteredPlugins ({}, {}, /*collapseTwins*/ false);
+        const auto live = host.getFilteredPlugins ({}, {}, /*collapseTwins*/ false);
+
+        // ---- WHICH CORPUS, AND WHY IT IS NOT ALWAYS THE MACHINE'S (29 Oct 2026) ------------
+        //
+        // These pins ran over the live plugin list and five of them had been RED since the AU
+        // scan stopped happening on this Mac: his standing rule is that a full AU scan triggers
+        // iLok/PACE prompts and has crashed this machine, so the list holds 2,003 rows and NOT ONE
+        // AudioUnit. `byCode > 0` cannot hold here, and everything built on it went down with it -
+        // five legs saying nothing about the product for weeks, which is worse than no legs.
+        //
+        // So the rule is tested over a FIXTURE when the machine cannot supply one, and over the
+        // machine when it can. The fixture is the shape the header is written against:
+        //
+        //   CLA-76 (m) + CLA-76 (s)                  one product, two registrations, variants
+        //   Nx Ambisonics (4->2) + NX Ambisonics (4->4)   one product across a case difference
+        //   GTR Tuner (m)                            a mono-only product
+        //   Puigchild 670 (s)                        installed, UNCATALOGUED, and offered (PIN4)
+        //
+        // Six registrations, four products. Every assertion below is the same assertion; only the
+        // corpus moves, and the line says which one it ran on so no reader can mistake the two.
+        auto wavesFixture = []
+        {
+            auto ws = [] (const juce::String& name, const char* code)
+            {
+                juce::PluginDescription d;
+                d.name = name;
+                d.manufacturerName = "Waves";
+                d.pluginFormatName = "AudioUnit";
+                d.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,") + code + ",ksWV";
+                d.numInputChannels = name.contains ("(m)") ? 1 : 2;
+                d.numOutputChannels = 2;
+                return d;
+            };
+            juce::Array<juce::PluginDescription> a;
+            a.add (ws ("CLA-76 (m)", "76CM"));
+            a.add (ws ("CLA-76 (s)", "76CS"));
+            a.add (ws ("Nx Ambisonics (4->2)", "NX4B"));
+            a.add (ws ("NX Ambisonics (4->4)", "NX4D"));
+            a.add (ws ("GTR Tuner (m)", "GTTM"));
+            // {m, m->s} is the variant rule's hardest case - it must choose (m), which keeps the
+            // right channel count - so the fixture carries it rather than leaving it to whatever
+            // this machine happens to have installed.
+            a.add (ws ("UltraPitch Shift (m)", "UPSM"));
+            a.add (ws ("UltraPitch Shift (m->s)", "UPSX"));
+            a.add (ws ("Puigchild 670 (s)", "PC6S"));
+            return a;
+        };
+
+        int liveByCode = 0;
+        for (const auto& d : live) if (echojay::isWaveShellRegistration (d)) ++liveByCode;
+        const bool usingFixture = (liveByCode == 0);
+        const auto loadable = usingFixture ? wavesFixture() : live;
+        std::cout << (usingFixture
+                        ? "  (this machine lists no WaveShell registration - 0 of "
+                            + juce::String (live.size()) + " rows are AudioUnits, which is his "
+                              "no-AU-scan rule - so these run over the FIXTURE corpus)\n"
+                        : "  (running over this machine's own registry: "
+                            + juce::String (liveByCode) + " WaveShell registration(s))\n");
 
         if (loadable.isEmpty())
         {
@@ -3173,8 +3381,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     if (echojay::isWaveShellRegistration (d) && d.name.startsWith ("Puigchild"))
                         registryHasPuigchild = true;
                 check (hasPuigchild == registryHasPuigchild,
-                       "wr PIN4: Puigchild 670 is installed, uncatalogued, and offered",
-                       registryHasPuigchild ? "registered" : "not on this machine");
+                       "wr PIN4: Puigchild 670 is registered, uncatalogued, and offered",
+                       juce::String (registryHasPuigchild ? "registered" : "not registered")
+                           + (usingFixture ? " (fixture corpus)" : " (this machine)"));
             }
 
             // ---- wr PIN5: nothing but Waves comes in through this door ------
@@ -4768,7 +4977,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    && hdr.contains ("historyTrimWarned_ = true;"),
                    "tr PIN1: the notice latches when taken, so it fires once per session");
             const auto body = functionBody (apRaw, "juce::String EchoJayAPI::buildChatRequestBody");
-            check (body.contains ("historyDroppedTotal_ += trim.droppedByCap + trim.droppedByBudget + trim.droppedByRole;"),
+            // 29 Oct 2026: same line, one indirection along (`turns.trim`), after the trim moved
+            // into buildChatTurns. All three counts still have to be in it.
+            check (body.contains ("historyDroppedTotal_ += turns.trim.droppedByCap + turns.trim.droppedByBudget + turns.trim.droppedByRole;"),
                    "tr PIN1: and the trigger is the trim's three drop counts, measured");
             std::ifstream fe ("Source/PluginEditor.cpp");
             std::stringstream se; se << fe.rdbuf();
@@ -4846,7 +5057,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto load = functionBody (chRaw, "void ChainHost::loadPluginAsync");
             int nLoad = 0, atLoad = 0;
             while ((atLoad = load.indexOf (atLoad, "recordLoadIfLicensed")) >= 0) { ++nLoad; atLoad += 10; }
-            check (nLoad == 2, "ml PIN5: the two arms that bypass completeLoad record for themselves",
+            // 29 Oct 2026: FOUR arms now, not two - the function has gained early returns since
+            // this was written, and each one records for itself, which is the rule holding rather
+            // than breaking. The count is the tripwire: an arm added WITHOUT a record drops it back
+            // to three and this goes red, which is exactly what it is for.
+            check (nLoad == 4, "ml PIN5: every arm that bypasses completeLoad records for itself",
                    "found " + juce::String (nLoad));
             check (functionBody (chRaw, "void ChainHost::completeLoad").contains ("recordLoadIfLicensed"),
                    "ml PIN5: and the async arm records where the slot lands");
@@ -5208,8 +5423,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::ifstream fa ("Source/EchoJayParamApply.h");
             std::stringstream sa; sa << fa.rdbuf();
             const auto ap = codeOnly (juce::String (sa.str()));
-            check (ap.contains ("if (ladderVerdict.isLadder && ! ladderVerdict.onRung)"),
-                   "sv PIN6: the refusal branch is the verdict, unmodified");
+            // 29 Oct 2026: the verdict is still the condition; it now has two arms, split on how
+            // many steps the ladder declares. Both are pinned, so neither can lose the verdict.
+            check (ap.contains ("if (ladderVerdict.isLadder && ! ladderVerdict.onRung && (stepsDeclared >= 2 || liveSteps >= 2))")
+                   && ap.contains ("else if (ladderVerdict.isLadder && ! ladderVerdict.onRung && stepsDeclared < 2)"),
+                   "sv PIN6: the refusal branch is the verdict, in both of its arms");
             check (ap.contains ("if (ladderVerdict.onRung) target = ladderVerdict.snapped;"),
                    "sv PIN6: and an accepted request writes the stored rung");
             const int iV = ap.indexOf ("checkStepLadder (eff.table, target)");
@@ -5283,10 +5501,17 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // line carrying a file:line reference. Deliberately coupled: adding a
         // feature without citing it should fail the gate, not a review.
         {
-            std::ifstream fc ("HANDOVER/commit-features-block.txt");
+            // ---- THE CITATION TABLE IS TRACKED NOW (29 Oct 2026) ---------------------------
+            //
+            // This read HANDOVER/commit-features-block.txt - an UNTRACKED local scratch file.
+            // Nothing in HANDOVER/ is in the repository, so this leg could not pass on a clean
+            // checkout: it was red on this machine and red in Kathy's tree, for weeks, while
+            // saying nothing about the product either way. A rule that only holds on one person's
+            // disk is not a rule, which is the whole reason the table moved into docs/.
+            std::ifstream fc ("docs/FEATURES_BLOCK_CITATIONS.md");
             std::stringstream sc; sc << fc.rdbuf();
             const auto msg = juce::String (sc.str());
-            check (msg.isNotEmpty(), "ef PIN5: the commit message is present to cite from");
+            check (msg.isNotEmpty(), "ef PIN5: the citation table is present to cite from");
             const char* sections[] = { "TABS", "CAPTURE", "NOTHING REACHES",
                                        "CHAINS SAVE", "EACH SLOT", "SETTINGS" };
             juce::StringArray uncited;
@@ -5574,11 +5799,29 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (dc.contains ("applyParams (parsed.getProperty (\"params\", juce::var()), ParamSource::Restore);"),
                    "dw PIN11: and the apply in that pair is a RESTORE, so it lands");
 
-            std::ifstream fc6 ("Source/ChainHost.cpp");
-            std::stringstream sc6; sc6 << fc6.rdbuf();
-            check (codeOnly (juce::String (sc6.str()))
-                       .contains ("device->applyStructured(structured, EedDeviceProcessor::ParamSource::Assistant,"),
-                   "dw PIN11: while the one door EchoJay dials through says Assistant");
+            // ---- THE RULE, NOT THE ARGUMENT'S NAME (29 Oct 2026) ----------------------------
+            //
+            // This pinned the call verbatim, the local's name included, and went red when that
+            // local was renamed from `structured` to `toApply` - a rename that changes nothing
+            // about who is writing. What matters is that EVERY applyStructured call in
+            // ChainHost.cpp declares the assistant as its source: a new one that forgot would dial
+            // through a door that does not say who knocked, which is the point of the type.
+            {
+                std::ifstream fc6 ("Source/ChainHost.cpp");
+                std::stringstream sc6; sc6 << fc6.rdbuf();
+                const auto ch6 = codeOnly (juce::String (sc6.str()));
+                int calls = 0, assistant = 0, at6 = 0;
+                while ((at6 = ch6.indexOf (at6, "applyStructured(")) >= 0)
+                {
+                    ++calls;
+                    if (ch6.substring (at6, at6 + 240).contains ("ParamSource::Assistant")) ++assistant;
+                    at6 += 16;
+                }
+                check (calls > 0 && calls == assistant,
+                       "dw PIN11: every door EchoJay dials through says Assistant",
+                       juce::String (assistant) + " of " + juce::String (calls)
+                           + " applyStructured call(s)");
+            }
         }
 
         // dw PIN12 -- A CALL WITHOUT A SOURCE MUST NOT COMPILE. WetSource
@@ -7523,13 +7766,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // with NO hops - the page refuses the reference-side window and says
             // why - rather than with a fabricated one.
             {
-                const juce::String old =
+                // A REALISTIC pre-tonight entry, which means it carries an eqCurve: valid is
+                // `hasEqCurve && reduction.isNotEmpty()` (EJReferenceIndex.h:560), so my first
+                // cut of this fixture asserted `valid` on an entry that could not be - the leg was
+                // wrong, not the parser, and the run said so.
+                juce::String old =
                   "{\"schema\":1,\"measurementEpoch\":2,\"entries\":[{"
                   "\"id\":\"r_old0000000001\",\"name\":\"Old\",\"path\":\"/m/old.wav\","
                   "\"measurementEpoch\":2,"
                   "\"measurements\":{\"reduction\":\"wholeFileAverage\",\"windowSeconds\":10.0,"
-                  "\"meters\":{\"integrated\":-8.0}},"
-                  "\"availability\":{\"state\":\"present\",\"checkedAt\":\"T\"}}]}";
+                  "\"meters\":{\"integrated\":-8.0},\"eqCurve\":[";
+                for (int i = 0; i < 64; ++i) old += (i ? "," : "") + juce::String (-40.0 - i * 0.5);
+                old += "]},"
+                       "\"availability\":{\"state\":\"present\",\"checkedAt\":\"T\"}}]}";
                 const auto ix = parseReferenceIndex (old);
                 check (ix.entries.size() == 1 && ix.entries[0].measurements.valid,
                        "rh PIN5: an entry written before tonight still parses");
@@ -7701,6 +7950,477 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (echojay::rackViewSignature (none)
                          != echojay::rackViewSignature (rackOf ({ "EchoJay EQ" })),
                        "rv PIN6: and coming back with a plugin rebuilds the strip");
+            }
+        }
+
+        // =================================================================
+        // HIS R1 (29 Oct 2026): A LINK SWITCH ALWAYS CONNECTS, OR SAYS WHY
+        //
+        //   "switching to another Link didn't connect, switching back didn't
+        //    connect, and closing and reopening the V2 window connected at once"
+        //
+        // Two rules came out of his direction: the watchdog's (three seconds,
+        // two tries, then a sentence) and the mirror's (a session whose mirror
+        // disagrees with the Link's own rack has to be re-read, because that is
+        // where his R4 gestures went).
+        // =================================================================
+        {
+            std::cout << "the connect watchdog, and the mirror against the rack:\n";
+
+            // cr PIN1 -- NOT CONNECTING IS NOT A STALL. The clock only runs while
+            // something is actually trying; a watchdog that fired on an idle rack
+            // would reset a session he is using.
+            {
+                const auto d = echojay::connectStallAction (false, 60000.0, 0, "Kick");
+                check (d.act == echojay::ConnectAct::Wait,
+                       "cr PIN1: nothing connecting, nothing to time out, however long it has been");
+                check (d.say.isEmpty(), "cr PIN1: and nothing is said to him");
+            }
+
+            // cr PIN2 -- THREE SECONDS, AND THE BOUNDARY IS NOT A STALL EITHER.
+            {
+                check (echojay::connectStallAction (true, 2999.0, 0, "Kick").act
+                         == echojay::ConnectAct::Wait,
+                       "cr PIN2: under three seconds it waits");
+                check (echojay::connectStallAction (true, 3000.0, 0, "Kick").act
+                         == echojay::ConnectAct::Wait,
+                       "cr PIN2: AT three seconds it still waits - the bound is exclusive");
+                check (echojay::connectStallAction (true, 3001.0, 0, "Kick").act
+                         == echojay::ConnectAct::Reset,
+                       "cr PIN2: past it, it resets");
+            }
+
+            // cr PIN3 -- TWO TRIES, THEN A SENTENCE. A watchdog that kept resetting
+            // would hide a real refusal behind a spinner for ever, which is the
+            // fault it exists to end.
+            {
+                check (echojay::connectStallAction (true, 5000.0, 0, "Kick").act
+                         == echojay::ConnectAct::Reset, "cr PIN3: the first try resets");
+                check (echojay::connectStallAction (true, 5000.0, 1, "Kick").act
+                         == echojay::ConnectAct::Reset, "cr PIN3: so does the second");
+                const auto gave = echojay::connectStallAction (true, 5000.0, 2, "Kick");
+                check (gave.act == echojay::ConnectAct::GiveUp,
+                       "cr PIN3: the third time it gives up instead of spinning");
+                check (gave.say.contains ("Kick"),
+                       "cr PIN3: and the sentence names the rack he is looking at");
+                check (gave.say.contains ("Close and reopen"),
+                       "cr PIN3: and says the one thing that has always worked for him");
+                check (! gave.say.containsChar ((juce::juce_wchar) 0x2014)
+                       && ! gave.say.contains ("Connecting to rack"),
+                       "cr PIN3: no em-dash and no machinery in it (ChainHost's own rule)");
+            }
+
+            // cr PIN4 -- A RACK WITH NO NAME STILL GETS A SENTENCE. The display name
+            // can be empty for a Link that has gone; "this rack" is the honest filler
+            // and the sentence must not come out with a hole in it.
+            {
+                const auto gave = echojay::connectStallAction (true, 9000.0, 2, {});
+                check (gave.act == echojay::ConnectAct::GiveUp && gave.say.contains ("this rack"),
+                       "cr PIN4: an unnamed rack is \"this rack\", never a blank");
+            }
+
+            // cr PIN5 -- THE APPLY'S OWN BOUND. Its poll chain gives up in ten
+            // seconds, so this catches the chain NOT FINISHING, not it failing.
+            {
+                check (! echojay::applyHasStalled (false, 60000.0),
+                       "cr PIN5: no apply in flight is never a stalled apply");
+                check (! echojay::applyHasStalled (true, 9000.0),
+                       "cr PIN5: nine seconds is inside its own road's worst case");
+                check (echojay::applyHasStalled (true, 16000.0),
+                       "cr PIN5: sixteen is not, so the flag is cleared and engages can run again");
+            }
+
+            // mv PIN1 -- NO PUBLISHED RACK, NO DISAGREEMENT. There is nothing to
+            // compare the mirror with, and "stale" would be a claim nobody measured.
+            {
+                const auto a = echojay::mirrorVsRack (false, { "EchoJay Compressor" }, {});
+                check (a.agree && ! a.reread && a.say.isEmpty(),
+                       "mv PIN1: with no sidecar the mirror is left alone and nothing is said");
+            }
+
+            // mv PIN2 -- HIS R4 CASE, THE ONE THE LOG SHOWED 1463 TIMES: the mirror
+            // holds two slots and the Link publishes one. The view already drew the
+            // Link's rack; what was missing is that the MIRROR must be re-read,
+            // because every gesture addresses it by index.
+            {
+                const juce::StringArray mirror { "EchoJay Compressor", "Pro-L 2" };
+                const juce::StringArray rack   { "EchoJay Compressor" };
+                const auto a = echojay::mirrorVsRack (true, mirror, rack);
+                check (! a.agree && a.reread,
+                       "mv PIN2: a count disagreement means the mirror is stale, not a rendering detail");
+                check (a.say.isNotEmpty() && ! a.say.contains ("mirror"),
+                       "mv PIN2: and he is told in his own words, not in ours");
+            }
+
+            // mv PIN3 -- AND A REPLACEMENT AT THE SAME COUNT. The 28 Oct stale strip
+            // was exactly this, and a gesture aimed at slot 1 of a mirror holding a
+            // different plugin is the same silent nothing as a missing slot.
+            {
+                const auto a = echojay::mirrorVsRack (true, { "EchoJay Compressor" },
+                                                            { "Unfiltered Audio Zip" });
+                check (! a.agree && a.reread,
+                       "mv PIN3: same count, different plugin, still stale");
+            }
+
+            // mv PIN4 -- ORDER MATTERS, and agreement is agreement.
+            {
+                check (! echojay::mirrorVsRack (true, { "A", "B" }, { "B", "A" }).agree,
+                       "mv PIN4: a reorder is a disagreement");
+                const auto same = echojay::mirrorVsRack (true, { "A", "B" }, { "A", "B" });
+                check (same.agree && ! same.reread && same.say.isEmpty(),
+                       "mv PIN4: and the same plugins in the same order need nothing done");
+                const auto empty = echojay::mirrorVsRack (true, {}, {});
+                check (empty.agree,
+                       "mv PIN4: two empty racks agree (he removed everything, and that is true)");
+            }
+
+            // mv PIN5 -- A GESTURE THAT CANNOT BE ADDRESSED SAYS SO. His R4 put
+            // this first: "no message appears on the panel or the strip".
+            {
+                const auto line = echojay::gestureRefusalLine ("Threshold", "Kick");
+                check (line.contains ("Threshold") && line.contains ("Kick"),
+                       "mv PIN5: the refusal names the control and the rack");
+                check (line.contains ("Try again"),
+                       "mv PIN5: and tells him it is worth trying again");
+                check (echojay::gestureRefusalLine ({}, {}).contains ("That control"),
+                       "mv PIN5: with no names it still reads as a sentence");
+            }
+        }
+
+        // =================================================================
+        // HIS TEST 5 (29 Oct 2026): ONE OF OUR DEVICES TAKES THE COPY ROAD
+        //
+        //   "with the switch on, EchoJay devices fall to the edit-here,
+        //    write-on-leave road ... not a live road"
+        //
+        // The real editor road shows the LINK'S OWN editor, which is the real
+        // thing for a hosted plugin. Our devices have no separate editor to
+        // embed, so for them that road is this plugin's own instance in its own
+        // rack: no Link audio, settings on leaving. The copy road is the live one.
+        // =================================================================
+        {
+            std::cout << "which live-view road one of our own devices takes:\n";
+            const int us = 4321, them = 4321, other = 9999;
+
+            // rd PIN1 -- THE HOSTED ROAD IS UNCHANGED. Every combination that the
+            // switch answered before this rule answers the same way now.
+            {
+                check (echojay::realEditorRoadForSlot (true, them, us, false)
+                         == echojay::realEditorRoad (true, them, us),
+                       "rd PIN1: a hosted plugin, switch on, same process: unchanged");
+                check (echojay::realEditorRoadForSlot (false, them, us, false)
+                         == echojay::realEditorRoad (false, them, us),
+                       "rd PIN1: switch off: unchanged");
+                check (echojay::realEditorRoadForSlot (true, other, us, false)
+                         == echojay::realEditorRoad (true, other, us),
+                       "rd PIN1: another process: unchanged");
+            }
+
+            // rd PIN2 -- AND OURS NEVER TAKES IT, whatever the switch and the pids say.
+            {
+                check (! echojay::realEditorRoadForSlot (true, them, us, true),
+                       "rd PIN2: one of ours takes the COPY road with the switch on");
+                check (! echojay::realEditorRoadForSlot (false, them, us, true),
+                       "rd PIN2: and with it off");
+                check (! echojay::realEditorRoadForSlot (true, other, us, true),
+                       "rd PIN2: and from another process");
+            }
+
+            // rd PIN3 -- AND THE REASON IS A SENTENCE, because a road taken silently
+            // is the class of thing found months later in a bug report about
+            // something else (this file's own rule, 26 Oct).
+            {
+                const auto why = echojay::ourDeviceRoadWhy ("EchoJay Compressor");
+                check (why.contains ("EchoJay Compressor"),
+                       "rd PIN3: it names the device");
+                check (why.contains ("knobs") && why.contains ("Link"),
+                       "rd PIN3: and says the knobs travel to the Link");
+                check (! why.contains ("edit-here") && ! why.contains ("write-on-leave"),
+                       "rd PIN3: in his words, not in the build's");
+            }
+        }
+
+        // =================================================================
+        // HIS R7 FOLLOW-UP (29 Oct 2026): THE EDITOR COMES BACK
+        //
+        //   "the hosted plugin window is hidden to let the menu show, but it
+        //    doesn't come back when the menu closes. Restore the editor as soon
+        //    as any menu or popover closes, whether by a pick, Esc, a click
+        //    outside or the menu dismissing itself, in both the V2 and the Link."
+        //
+        // The pop-out half always came back. The INLINE half is CLOSED (a
+        // heavyweight NSView cannot go behind a lightweight one) and nothing
+        // remembered it had been open, so his plugin simply vanished.
+        // =================================================================
+        {
+            std::cout << "a popup over a hosted editor, and what comes back after it:\n";
+
+            // The two calls both panels publish, with a tally of what was asked of them. Not a
+            // mock of a panel: these four calls ARE the interface the template is written against
+            // (ChainListPanel in the V2, LinkChainPanel in the Link).
+            struct FakePanel
+            {
+                bool inlineUp = false;
+                int  inlineOn = -1;
+                int  closes = 0, reopens = 0, reopenedOn = -1;
+                bool hasInlineEditor() const { return inlineUp; }
+                int  inlineEditorSlot() const { return inlineUp ? inlineOn : -1; }
+                void closeAllEditors() { ++closes; inlineUp = false; inlineOn = -1; }
+                void showInline (int i) { ++reopens; reopenedOn = i; inlineUp = true; inlineOn = i; }
+            };
+
+            // gh PIN1 -- NOTHING IN THE WAY, NOTHING DONE. A popup with no hosted
+            // editor over it must not close or reopen anything.
+            {
+                FakePanel p;
+                auto hold = echojay::prepareForPopupOverGuest (p, nullptr, "a test popup");
+                check (! hold.loweredPopout && hold.closedInlineSlot < 0,
+                       "gh PIN1: an empty hold when nothing is hosting an editor");
+                check (p.closes == 0, "gh PIN1: and nothing was closed");
+                echojay::restoreAfterPopup (p, nullptr, hold);
+                check (p.reopens == 0, "gh PIN1: so nothing is reopened either");
+            }
+
+            // gh PIN2 -- THE INLINE EDITOR IS CLOSED, REMEMBERED, AND REOPENED ON
+            // THE SAME SLOT. This is the leg his fault needed and did not have.
+            {
+                FakePanel p; p.inlineUp = true; p.inlineOn = 2;
+                auto hold = echojay::prepareForPopupOverGuest (p, nullptr, "a test popup");
+                check (hold.closedInlineSlot == 2,
+                       "gh PIN2: the slot is read BEFORE the close, which clears it");
+                check (p.closes == 1 && ! p.inlineUp, "gh PIN2: and the editor is closed");
+                echojay::restoreAfterPopup (p, nullptr, hold);
+                check (p.reopens == 1 && p.reopenedOn == 2,
+                       "gh PIN2: and the popup going reopens it on the slot it was on");
+            }
+
+            // gh PIN3 -- A HOLD IS SPENT ONCE. A path that picks AND then dismisses
+            // must not reopen twice, and a second restore must do nothing.
+            {
+                FakePanel p; p.inlineUp = true; p.inlineOn = 0;
+                auto hold = echojay::prepareForPopupOverGuest (p, nullptr, "a test popup");
+                echojay::restoreAfterPopup (p, nullptr, hold);
+                echojay::restoreAfterPopup (p, nullptr, hold);
+                check (p.reopens == 1, "gh PIN3: the second restore reopens nothing");
+                check (hold.closedInlineSlot < 0 && ! hold.loweredPopout,
+                       "gh PIN3: and the hold is empty afterwards");
+            }
+
+            // gh PIN4 -- THE POP-OUT HALF, AND BOTH AT ONCE. A pop-out for one slot
+            // and an inline editor for another is an ordinary state in his rack.
+            {
+                juce::Component popout;
+                FakePanel p; p.inlineUp = true; p.inlineOn = 1;
+                auto hold = echojay::prepareForPopupOverGuest (p, &popout, "a test popup");
+                check (hold.loweredPopout && hold.closedInlineSlot == 1,
+                       "gh PIN4: both halves are taken down and both are remembered");
+                check (! popout.isAlwaysOnTop(), "gh PIN4: the pop-out is no longer on top");
+                echojay::restoreAfterPopup (p, &popout, hold);
+                check (popout.isAlwaysOnTop(), "gh PIN4: and it is raised again");
+                check (p.reopens == 1 && p.reopenedOn == 1,
+                       "gh PIN4: with the inline editor back on its own slot");
+            }
+
+            // gh PIN5 -- A POP-OUT THAT HAS GONE IS NOT TOUCHED. The window can be
+            // destroyed while the menu is up (he closed it, or the rack changed), and
+            // a restore must not reach through a dangling pointer to raise it.
+            {
+                FakePanel p;
+                juce::Component popout;
+                auto hold = echojay::prepareForPopupOverGuest (p, &popout, "a test popup");
+                check (hold.loweredPopout, "gh PIN5: it was lowered");
+                echojay::restoreAfterPopup (p, nullptr, hold);     // the window is gone
+                check (! hold.loweredPopout && ! popout.isAlwaysOnTop(),
+                       "gh PIN5: the hold is spent and the vanished window is left alone");
+            }
+        }
+
+        // =================================================================
+        // HIS 11:30 REPORT (29 Oct 2026): "NOTHING PLAYED" WHILE HE PLAYED
+        //
+        //   "the slot meter showed IN -15.7, OUT -43.6 (about -28 dB) ...
+        //    'wait for playback' said 'Nothing played in 60 seconds' and the
+        //    second wait sat at 'Listening... 0 of 8 s' while Sean was playing"
+        //
+        // The listen counted hops above -40 LUFS on the CHAIN OUT tally, and
+        // his rack's output was at -43.6. Every hop was under the floor, so
+        // the count stayed at zero and was a true statement about the wrong
+        // signal. What played is a fact about the INPUT.
+        // =================================================================
+        {
+            std::cout << "where the listen counts, and what it says about the output:\n";
+
+            // ph PIN1 -- ONE FLOOR, TWO HEADERS. EJPlaybackHeard.h holds the number by value
+            // rather than including LoudnessLoop.h (and the DSP tree behind it) into every
+            // harness. A copy is only honest while something asserts it IS a copy.
+            check (echojay::kHeardCountFloorLufs == LoudnessLoop::kCountFloorLufs,
+                   "ph PIN1: the counting floor is one number, not two",
+                   juce::String (echojay::kHeardCountFloorLufs, 1) + " vs "
+                       + juce::String (LoudnessLoop::kCountFloorLufs, 1));
+
+            // ph PIN2 -- THE INPUT ANSWERS WHEN WE HAVE IT. His case in figures: four seconds
+            // played in, nothing counted out, and the wait must read four.
+            {
+                const auto h = echojay::playbackHeard (/*inputKnown*/ true, 4.0f, 0.0f);
+                check (std::abs (h.seconds - 4.0f) < 0.001f && h.fromInput,
+                       "ph PIN2: with an input count, the wait counts the input");
+                check (juce::String (h.why).contains ("input"),
+                       "ph PIN2: and the reason says where it counted");
+            }
+
+            // ph PIN3 -- AND A LINK'S RACK STILL ANSWERS, from the only figure it has. A refusal
+            // here would make every listen on a Link impossible, which is worse than the fault.
+            {
+                const auto h = echojay::playbackHeard (/*inputKnown*/ false, 0.0f, 6.5f);
+                check (std::abs (h.seconds - 6.5f) < 0.001f && ! h.fromInput,
+                       "ph PIN3: with no input count it falls back to the output figure");
+                check (juce::String (h.why).contains ("Link"),
+                       "ph PIN3: and says which rack that is, so a log is not left guessing");
+            }
+
+            // ph PIN4 -- NEGATIVES ARE NOT SECONDS. A Link's count is a difference from a base
+            // taken at the window's start, and a rack that reset under us can make it negative.
+            {
+                check (echojay::playbackHeard (true, -3.0f, 0.0f).seconds == 0.0f
+                       && echojay::playbackHeard (false, 0.0f, -1.0f).seconds == 0.0f,
+                       "ph PIN4: a negative count reads as nothing heard, never as negative time");
+            }
+
+            // ph PIN5 -- HIS CASE, AS THE SENTENCE. -15.7 in, -43.6 out: a 27.9 dB drop into
+            // silence, which gets a sentence rather than a sixty-second timeout.
+            {
+                const auto f = echojay::outputFarBelow (true, -15.7f, -43.6f);
+                check (f.is, "ph PIN5: 28 dB down and under the floor IS the fault");
+                check (std::abs (f.dropDb - 27.9f) < 0.05f,
+                       "ph PIN5: and the drop is measured, not estimated",
+                       juce::String (f.dropDb, 2));
+                check (f.say.contains ("-15.7") && f.say.contains ("-43.6"),
+                       "ph PIN5: the sentence names both figures he can see on the meter");
+                check (! f.say.contains ("counting floor") && ! f.say.contains ("LUFS"),
+                       "ph PIN5: in his words, not the build's");
+            }
+
+            // ph PIN6 -- AND A LOUD PLUGIN DOING ITS JOB IS LEFT ALONE. 20 dB of gain reduction
+            // that still leaves -25 dB out is a working limiter: the listen succeeds anyway, so
+            // there is nothing to say and nothing to stop.
+            {
+                check (! echojay::outputFarBelow (true, -5.0f, -25.0f).is,
+                       "ph PIN6: a big drop that still clears the floor is not this fault");
+                check (! echojay::outputFarBelow (true, -50.0f, -90.0f).is,
+                       "ph PIN6: and with nothing playing IN, nothing is judged");
+                check (! echojay::outputFarBelow (false, -15.0f, -60.0f).is,
+                       "ph PIN6: nor when the two levels are not known");
+                check (! echojay::outputFarBelow (true, -15.0f, -22.0f).is,
+                       "ph PIN6: nor a 7 dB drop, which is a trim");
+            }
+
+            // =================================================================
+            // AND THE SLOT THAT IS SWALLOWING IT (his item 2; C's point 72)
+            //
+            //   "The plugin can see a drop like this on the slot meter: report
+            //    it to the server as a fault and stop the run with a plain
+            //    sentence, rather than waiting."
+            // =================================================================
+            std::cout << "a slot that is not passing the programme:\n";
+
+            auto reading = [] (float inDb, float outDb)
+            {
+                echojay::SlotLossReading r;
+                r.slot1 = 1; r.plugin = "Shadow Hills Mastering Compressor";
+                r.inKnown = r.outKnown = true;
+                r.inDb = inDb; r.outDb = outDb;
+                return r;
+            };
+            const float noAim = std::numeric_limits<float>::quiet_NaN();
+
+            // sw PIN1 -- HIS CASE, HELD: 28 dB gone where about 6 was asked for.
+            {
+                const auto v = echojay::slotLossVerdict (reading (-15.7f, -43.6f), noAim, 3200.0);
+                check (v.act == echojay::SlotLossAct::Bypass,
+                       "sw PIN1: 28 dB of loss, held three seconds, bypasses the slot");
+                check (std::abs (v.allowedDb - 10.0f) < 0.01f,
+                       "sw PIN1: with no intendedGrDb the allowance is 6 + 4",
+                       juce::String (v.allowedDb, 1));
+                check (v.say.contains ("Shadow Hills") && v.say.contains ("bypassed"),
+                       "sw PIN1: the sentence names the plugin and what was done");
+                check (v.say.contains ("settings are untouched"),
+                       "sw PIN1: and says his settings are still there");
+                check (! v.say.contains ("undo") && ! v.say.contains ("undone"),
+                       "sw PIN1: it does NOT claim an undo - undo is LIFO and would take back the "
+                       "wrong step (C's point 72)");
+            }
+
+            // sw PIN2 -- THE AIM IS B'S WHEN B SENDS ONE, and it raises the allowance.
+            //
+            // MY OWN ARITHMETIC WAS WRONG HERE FIRST (29 Oct 2026): I asserted that his 27.9 dB
+            // was "inside an asked-for 20 plus the margin", and 20 + 4 is 24. It is not inside it,
+            // and the leg was right to say so - a reading past even a 20 dB aim is still loss.
+            // The figures below are chosen so each one tests the thing it names.
+            {
+                // 18 dB of loss: past the DEFAULT allowance (6 + 4 = 10), inside an asked-for 20.
+                check (echojay::slotLossVerdict (reading (-10.0f, -28.0f), noAim, 5000.0).act
+                         == echojay::SlotLossAct::Bypass,
+                       "sw PIN2: 18 dB with no aim given is loss (6 + 4 is the allowance)");
+                check (echojay::slotLossVerdict (reading (-10.0f, -28.0f), 20.0f, 5000.0).act
+                         == echojay::SlotLossAct::Nothing,
+                       "sw PIN2: and the same 18 dB is what a compressor asked for 20 is doing");
+                // ...and an aim does not license anything: 28 dB is past 20 + 4 too.
+                check (echojay::slotLossVerdict (reading (-15.7f, -43.6f), 20.0f, 5000.0).act
+                         == echojay::SlotLossAct::Bypass,
+                       "sw PIN2: his 28 dB is past even a 20 dB aim, so it is still loss");
+                // The sign of the aim is not the caller's problem: -20 and 20 mean the same
+                // reduction, and a step that sends either must behave the same.
+                check (echojay::slotLossVerdict (reading (-10.0f, -28.0f), -20.0f, 5000.0).act
+                         == echojay::slotLossVerdict (reading (-10.0f, -28.0f), 20.0f, 5000.0).act,
+                       "sw PIN2: a negative aim means the same reduction as a positive one");
+            }
+
+            // sw PIN3 -- HELD, NOT SAMPLED. A compressor can read far down for one hop and be
+            // doing exactly what it was asked to, so the first look only watches.
+            {
+                const auto early = echojay::slotLossVerdict (reading (-15.7f, -43.6f), noAim, 500.0);
+                check (early.act == echojay::SlotLossAct::Watch,
+                       "sw PIN3: half a second of loss is watched, not acted on");
+                check (early.say.isEmpty(),
+                       "sw PIN3: and nothing is said to him while it is only being watched");
+                check (echojay::slotLossVerdict (reading (-15.7f, -43.6f), noAim,
+                                                 echojay::kSwallowHoldMs - 1.0).act
+                         == echojay::SlotLossAct::Watch,
+                       "sw PIN3: the hold is exclusive at its own bound");
+            }
+
+            // sw PIN4 -- WHAT IS NOT MEASURED IS NOT JUDGED. A bypassed slot, a slot with one
+            // leg, and a slot with nothing reaching it all read as nothing to say - the same
+            // rule slotMeterEntry keeps ("bypassed wins over everything").
+            {
+                auto byp = reading (-15.7f, -43.6f); byp.bypassed = true;
+                check (echojay::slotLossVerdict (byp, noAim, 9000.0).act
+                         == echojay::SlotLossAct::Nothing,
+                       "sw PIN4: a bypassed slot is out of circuit, so its meters are not evidence");
+                auto oneLeg = reading (-15.7f, -43.6f); oneLeg.outKnown = false;
+                check (echojay::slotLossVerdict (oneLeg, noAim, 9000.0).act
+                         == echojay::SlotLossAct::Nothing,
+                       "sw PIN4: one leg is arithmetic on a floor, not a difference");
+                check (echojay::slotLossVerdict (reading (-55.0f, -90.0f), noAim, 9000.0).act
+                         == echojay::SlotLossAct::Nothing,
+                       "sw PIN4: and with nothing reaching the slot there is nothing to lose");
+            }
+
+            // sw PIN5 -- ONE SLOT AT A TIME, THE WORST. Bypassing two plugins from one sentence
+            // is a bigger change than he asked for, and the second may only look bad because the
+            // first is starving it.
+            {
+                std::vector<echojay::SlotLossVerdict> vs {
+                    echojay::slotLossVerdict (reading (-10.0f, -46.0f), noAim, 4000.0),   // 36 dB
+                    echojay::slotLossVerdict (reading (-10.0f, -70.0f), noAim, 4000.0),   // 60 dB
+                    echojay::slotLossVerdict (reading (-10.0f, -20.0f), noAim, 4000.0),   // fine
+                };
+                check (echojay::worstLosingSlot (vs) == 1,
+                       "sw PIN5: the worst loser is the one acted on");
+                std::vector<echojay::SlotLossVerdict> none {
+                    echojay::slotLossVerdict (reading (-10.0f, -20.0f), noAim, 4000.0) };
+                check (echojay::worstLosingSlot (none) == -1,
+                       "sw PIN5: and with nothing losing, nothing is chosen");
             }
         }
 

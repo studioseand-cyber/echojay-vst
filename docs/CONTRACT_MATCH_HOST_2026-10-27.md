@@ -527,7 +527,7 @@ capture is worse than one that returns none:
 |---|---|
 | `Snapshot` | the capture **at that index**, by value — her case, and the fix |
 | `WsCapture` | `std::nullopt`. A workspace review carries `channels` (`WsChannelMeasurements`), **not** a `CaptureSnapshot`. Converting one is separate work and is not faked here |
-| `Live` | `std::nullopt`. The live signal is not a capture; returning `latestCapture()` here would be the exact substitution this call exists to stop |
+| `Live` | **CHANGED 29 Oct by Sean's Match ruling — see R4-3 below.** It now returns a by-value snapshot of the rolling live buffer (`std::nullopt` only while too little has played). It is still never `latestCapture()`: the substitution this call exists to stop stays stopped |
 | `Reference`, `CodecFile`, `Empty` | `std::nullopt` — none is a capture of this session |
 
 **So a caller must handle an empty optional,** and the honest response to one is the refusal her page already
@@ -537,3 +537,133 @@ a pointer into that temporary is the 18 Sep Pro Tools crash.
 
 **Not yet compiled or gated:** written while Sean was testing in Logic, with builds suspended at his
 instruction. The gate is owed before anyone builds from it.
+
+
+---
+
+## R4-3: AI MATCH works from the Live signal (29 Oct 2026, Sean's ruling)
+
+### His words
+
+> *"AI MATCH must work with the "Live signal" slot, using what has played, with no separate capture
+> needed. Build a live accumulator: while the transport plays, keep the bus's hop series (and each
+> Link's, plus the rack-input tap, the same as a capture) in a rolling buffer, capped ... reset on a
+> large jump or a new song, and skip silence. Expose it through MatchHost as a capture-shaped
+> snapshot ... with its length in seconds. If less than the minimum has played (30 s for bands, 60 s
+> for dynamics, from C7's tunables), AI MATCH says "Play at least 30 seconds of the song, then press
+> AI MATCH again"."*
+
+**Kathy wires the page to this; A builds the accumulator.** Her six requirements (DESIGN_MATCH_TAB
+rev 11.1 §11.7) are answered one by one below, because each is a promise this call has to keep for
+her page to be honest.
+
+### The calls
+
+```cpp
+// The Live slot, through the call she already uses. A BY-VALUE copy, which IS the freeze.
+virtual std::optional<CaptureSnapshot> captureForSlot (const CompareSlotState& slot) const = 0;
+
+// What has played, and what is still missing. Cheap, and safe to call on every repaint.
+struct LiveBufferState
+{
+    bool  running        = false;   // the transport is rolling and frames are being kept
+    bool  pausedAudition = false;   // the REFERENCE is audible, so nothing is being kept (req 1)
+    float playedS        = 0.0f;    // audio actually kept: stops excluded, silence skipped
+    float uniqueS        = 0.0f;    // of that, distinct song material (a loop counted once)
+    float staleS         = 0.0f;    // dropped by a marker: a plan's Go, or a chain change (req 2)
+    bool  toneReady      = false;   // playedS >= match.liveMinToneS      (30 s by default)
+    bool  dynamicsReady  = false;   // playedS >= match.liveMinDynamicsS  (60 s by default)
+    juce::StringArray missing;      // plain names of what is not ready yet, for her message
+    juce::String      why;          // why nothing is being kept, when nothing is
+};
+virtual LiveBufferState liveBufferState() const = 0;
+
+// Drop everything kept. The page never needs this; the processor calls it on a source change, and
+// it is here so a test can put the buffer in a known state.
+virtual void clearLiveBuffer() = 0;
+```
+
+### Her six requirements, answered
+
+**1. The reference is never recorded as the mix.** The accumulator is fed from the chain output tap
+**before** the A/B audition substitution, and when the reference is made audible on a channel where
+that is not possible, the accumulator **pauses on every channel** and `pausedAudition` says so.
+`playedS` therefore never contains reference audio. The substitution happens at
+`PluginProcessor.cpp:1197`, before `meterEngine.processBlock` at `:1602` — so a tap taken at the
+meter engine without this rule would record the reference as the mix, which is C's point (1) and the
+reason this is stated as a promise rather than left as an implementation detail. Leg **MA14**.
+
+**2. A marker, so "after" means after.** `markLiveBuffer (reason)` is called by the plugin when a
+plan's **Go** is pressed, when a step lands, and when any channel's chain changes. Frames before the
+marker are **not returned** by `captureForSlot(Live)`; they are counted in `staleS` so the page can
+say "the first 40 s were before the change". The "after" curve and the verify therefore read only
+post-marker audio.
+
+**3. The press freezes the audio it describes.** `captureForSlot(Live)` returns a **value**. The
+report and its plan are built from that one value while the buffer goes on rolling, so a report
+cannot shift under its own plan. The snapshot carries `tunablesVersion` (see `matchTunables()`
+below) for the same reason. Leg **MA16**.
+
+**4. What was played, described as played.** Frames are kept **in play order**, transport stops are
+left out entirely, and a replayed passage is kept as the newer frames with the repeat recorded:
+
+```cpp
+struct LiveRepeat { float fromS, toS; int times; };   // host-timeline description of a loop
+```
+
+`uniqueS` is distinct material, `playedS` is everything kept, and `repeats` lets the report say "the
+1:40 you played, with the chorus three times". The host position **describes** repeats; it does not
+key the buffer, which is C's reversal of his earlier position key and is right: a key by position
+would make a loop overwrite itself and lose the weight of what he actually heard.
+
+**5. Partial results, not an all-or-nothing refusal.** At 40 s the bands are real and the dynamics
+are not. `toneReady` and `dynamicsReady` are separate, `missing` names what is not ready in plain
+words, and `captureForSlot(Live)` returns a snapshot as soon as **tone** is ready — with the
+dynamics fields marked unavailable in the usual way (never zeroed). Below the tone minimum it
+returns `std::nullopt` and the page shows his sentence, which comes from the server's wording when
+there is a feed and from this default otherwise:
+
+> Play at least 30 seconds of the song, then press AI MATCH again.
+
+**6. One hop grid for every channel, with counts.** Every Link and the bus input tap roll on the
+**bus's** hop grid, with a hop count per channel, exactly as §7.3 promises for a capture. A channel
+whose frames fall outside `hopTolerance`, or a Link inserted or removed mid-play, is reported
+**unknown** for that window rather than aligned by force — so Live attribution is either sound or
+says it is not. Legs **MA15**, **MA17**. **This call guarantees that grid**; her page does not have
+to check it.
+
+### The cap, and the resets
+
+`match.liveBufferMaxS` (a new C7 tunable, default **600 s**, memory only, on the processor; it reuses
+A12's cap for the same reason). Full means the oldest frames go. The buffer is cleared on a source
+change, a sample-rate change, and a large transport jump; a marker (requirement 2) is not a clear.
+
+---
+
+## C7: `matchTunables()` (29 Oct 2026, Sean's ask)
+
+> *"Kathy needs a MatchHost call, matchTunables(), since fetching is yours. It returns the Match
+> tunables (version, values, and which ones fell back to defaults), read once per Match press and
+> held for that report and its plan. Use the last cached feed when offline, else built-in defaults;
+> it never blocks."*
+
+```cpp
+struct MatchTunables
+{
+    juce::String version;          // the feed's version, or "builtin" when no feed was ever seen
+    bool         fromCache = false;// true = the last cached feed, not a fresh fetch
+    juce::StringArray fellBack;    // the names that are built-in defaults, so the report can say so
+    float minToneS = 30.0f, minDynamicsS = 60.0f, liveBufferMaxS = 600.0f;
+    float hopToleranceMs = 50.0f;
+    // ...the remaining match.* rows land here as B's C7 contract names them.
+};
+virtual MatchTunables matchTunables() const = 0;
+```
+
+**It never blocks and never fetches.** Fetching is the plugin's, on its own schedule; this call
+answers from what is in hand: the live feed, else the last cached feed (`fromCache`), else built-in
+defaults (`version == "builtin"`). **Read it once per Match press** and hold that value for the
+report and its plan, so a feed arriving mid-report cannot change the rules under it — the same
+freeze rule as R4-3 requirement 3, for the same reason.
+
+`fellBack` exists so a report can be honest about which numbers are ours rather than the account's.

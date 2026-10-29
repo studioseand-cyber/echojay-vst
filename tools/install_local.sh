@@ -167,6 +167,44 @@ install_one() {
         return 0
     fi
 
+    # ---- AND NO INSTALL CLAIMS GREEN ON ITS OWN (C's point 80, 29 Oct 2026) -----------------
+    #
+    # mapfps_test was RED for thirteen days unseen, because every round since 16 Oct ran "touched
+    # guards only" and that suite was never touched - so "touched guards: GREEN" stood in for "the
+    # build is green" at every install in between. C's shape for it is exact: a green leg against
+    # a stub.
+    #
+    # So the bundles must be accompanied by a verdict written by the round that gated them
+    # (tools/gate_verdict.sh): GREEN, naming its suites, and NEWER than the binary it is about. A
+    # verdict about an earlier build is about an earlier build.
+    #
+    # EJ_INSTALL_NO_VERDICT=1 is the deliberate override and it SAYS SO in the output, so an
+    # install without a gate behind it is visible in the record rather than indistinguishable from
+    # one with.
+    local vfile="$BUILD_DIR/GATE_VERDICT.txt"
+    if [[ "${EJ_INSTALL_NO_VERDICT:-0}" == "1" ]]; then
+        note "         (NO VERDICT CHECKED: EJ_INSTALL_NO_VERDICT=1 - this install has no gate behind it)"
+    elif [[ ! -f "$vfile" ]]; then
+        note "REFUSED: no GATE_VERDICT.txt beside these bundles"
+        note "         the round that built them must write one: tools/gate_verdict.sh $BUILD_DIR GREEN \"<suite>: <result>\"..."
+        note "         (C's point 80: \"touched guards green\" stood in for \"the build is green\" for 13 days)"
+        fail=1
+        return 0
+    elif ! grep -q "^verdict: GREEN" "$vfile"; then
+        note "REFUSED: the gate verdict beside these bundles is not GREEN"
+        sed 's/^/         /' "$vfile" | head -12 | while IFS= read -r l; do note "$l"; done
+        fail=1
+        return 0
+    elif [[ "$vfile" -ot "$src_bin" ]]; then
+        note "REFUSED: the gate verdict is OLDER than the bundle it is supposed to be about"
+        note "         verdict: $(date -r "$vfile" '+%d %b %H:%M')   bundle: $(date -r "$src_bin" '+%d %b %H:%M')"
+        note "         re-run the gate for this build, or write its verdict after it"
+        fail=1
+        return 0
+    else
+        note "         gate: $(grep '^verdict:' "$vfile" | head -1), written $(date -r "$vfile" '+%d %b %H:%M'), $(grep -c '^  ' "$vfile") suite line(s)"
+    fi
+
     local want
     want="$(uuid_of "$src_bin")"
 

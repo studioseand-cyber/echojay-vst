@@ -2218,7 +2218,22 @@ static bool rowWanted (const juce::String& id)
 {
     if (! gRowsFiltered) return true;
     for (const auto& want : gOnlyRows)
-        if (id.equalsIgnoreCase (want.trim())) return true;
+    {
+        const auto w = want.trim();
+        if (id.equalsIgnoreCase (w)) return true;
+        // ---- A GROUP WANTS ITS MEMBERS (29 Oct 2026) ---------------------------------------
+        //
+        // LV9f asks the same question of four devices and reports as LV9f-eq, LV9f-lim, LV9f-gain
+        // and LV9f-on. With exact matching only, EJ_RIG_ONLY="...,LV9f,..." gated the BLOCK in
+        // (rowWanted("LV9f") is what guards it) and then threw away all four results at the door:
+        // the rows placed plugins on a Link, turned knobs and measured, and the run printed
+        // nothing. Twenty minutes of host time for no evidence, which is the one thing a gate must
+        // not quietly do.
+        //
+        // The dash is the discriminator and no existing id carries one, so this widens nothing
+        // else: "LV9" still does not match "LV9b".
+        if (id.startsWithIgnoreCase (w + "-")) return true;
+    }
     return false;
 }
 
@@ -4797,6 +4812,28 @@ int main (int argc, char* argv[])
                             livePump (400);
                             const auto before = rig.freshState();
                             const int slotsBefore = (int) before.getProperty ("linkSlots", -1);
+                            // ---- AND THE LINK'S OWN COUNT, FROM ITS SIDECAR (29 Oct 2026) ------
+                            //
+                            // LV9e judged "did the Link take it" from the ack FILE, and that file
+                            // is deleted by design: the V2 removes a stale chain-ack before every
+                            // command and the poll consumes the live one. So a perfectly good add
+                            // read as "no ack file at all", LV9e took its silence branch and
+                            // FAILED a product that had just worked - which LV9b, on the same add,
+                            // passed. Two rows, one add, opposite verdicts: the instrument was
+                            // wrong, not the rack.
+                            //
+                            // The rack's own sidecar is the authority (the Link is the one
+                            // publisher of it) and it is always on disk. The ack stays in the
+                            // REPORT as supporting detail, where it belongs.
+                            auto linkOwnSlots = [&] () -> int
+                            {
+                                int eS = 0;
+                                const auto dS = LinkShm::resolveDir (eS);
+                                if (dS.isEmpty()) return -1;
+                                const auto rc = LinkShm::readRackSidecar (dS, bUid);
+                                return rc.valid ? (int) rc.slots.size() : -1;
+                            };
+                            const int linkBefore = linkOwnSlots();
                             const auto sentAtMs = juce::Time::currentTimeMillis();
                             rig.send (echojay::rig::cmd::addSlot,
                                       args2 ("name", "EchoJay Compressor", "uid", bUid), 20000);
@@ -4905,27 +4942,34 @@ int main (int argc, char* argv[])
                             const int ackSlots = ackSays.fromFirstOccurrenceOf ("slotsAfter ", false, false)
                                                         .upToFirstOccurrenceOf (")", false, false)
                                                         .trim().getIntValue();
-                            const bool linkItselfGrew = ackOk && ackSlots > slotsBefore;
+                            // THE RACK, NOT THE RECEIPT: the Link's own published count is what says
+                            // whether it took the add. The ack agrees when it is still on disk, and
+                            // says nothing when it is not - which is not the same as "it refused".
+                            const int linkAfter = linkOwnSlots();
+                            const bool linkItselfGrew = (linkBefore >= 0 && linkAfter > linkBefore)
+                                                     || (ackOk && ackSlots > slotsBefore);
+                            const auto rackSays = "the Link's own sidecar: "
+                                                + juce::String (linkBefore) + " -> "
+                                                + juce::String (linkAfter) + "; its ack: " + ackSays;
                             if (ackOk && ! linkItselfGrew)
                                 row ("LV9e", false,
                                      "a remote add that the Link ACKS but does not perform - the "
                                      "picker's own road (sendRackAdd), so this is what his + does too",
-                                     "the Link acked \"" + ackSays + "\" and its OWN count did not "
-                                     "move either (" + juce::String (slotsBefore) + " before). Nothing "
-                                     "is stale here: the V2's view agrees with the Link. The add "
-                                     "itself did not happen.");
+                                     rackSays + " - its own count did not move either ("
+                                     + juce::String (slotsBefore) + " in the V2's view). Nothing is "
+                                     "stale here: the V2 agrees with the Link. The add did not happen.");
                             else if (linkItselfGrew && ! landed)
                                 row ("LV9e", false,
                                      "when a Link takes a change, does the V2's view of that rack "
                                      "FOLLOW it - his removed-plugin strip (S5), caught here for the "
                                      "first time rather than reported from a session",
-                                     "the Link acked \"" + ackSays + "\" and linkSlots stayed at "
+                                     rackSays + ", while the V2's linkSlots stayed at "
                                      + juce::String (slotsBefore) + " for 12 s");
                             else if (linkItselfGrew && landed)
                                 row ("LV9e", true,
                                      "when a Link takes a change, the V2's view of that rack follows "
                                      "it without a reopen (S5)",
-                                     "the Link acked \"" + ackSays + "\" and linkSlots moved "
+                                     rackSays + ", and the V2's linkSlots moved "
                                      + juce::String (slotsBefore) + " -> " + juce::String (slotsNow));
                             else
                             {
@@ -4947,8 +4991,8 @@ int main (int argc, char* argv[])
                                      refusedInWords
                                        ? "refused in words: \"" + said + "\" (so there was no change "
                                          "for the view to follow, and S5 is not judged here)"
-                                       : "NEITHER an ack NOR a sentence: the press went nowhere and "
-                                         "nothing was said. The ack said: " + ackSays
+                                       : "NEITHER a change NOR a sentence: the press went nowhere "
+                                         "and nothing was said. " + rackSays
                                          + "; the panel said: \"" + said + "\"");
                             }
 
@@ -4974,6 +5018,143 @@ int main (int argc, char* argv[])
                                        + juce::String (linkAfterB, 3) + " a second and a half later, the copy "
                                        + juce::String (copyAfterB, 3) + " - " + movedNoteB);
                         }
+                            }
+                        }
+
+                        // ---- LV9f: THE SAME ROAD, FOR EVERY ONE OF OUR DEVICES AND BOTH ROADS --
+                        //
+                        // Sean's Test 5 and R4, 29 Oct 2026, together:
+                        //
+                        //     *"Make EchoJay devices on a Link live and controllable on both roads:
+                        //     gestures reach the Link immediately (heard at once), the meter follows
+                        //     the Link, nothing waits for leaving the rack. Prove it in the host with
+                        //     LV9b actually running, for the Compressor, EQ (bands), Limiter and
+                        //     Gain."*
+                        //
+                        // LV9b above proves the Compressor with the switch OFF. This proves the
+                        // other three, and then the Compressor again with the switch ON - which is
+                        // the half his Test 5 failed on, where the device used to fall to the
+                        // edit-here, write-on-leave road and nothing was live at all.
+                        //
+                        // THE EQ'S INDEX IS PAST ITS GLOBALS ON PURPOSE. Its schema is four globals
+                        // with every band OUTSIDE it, and C's point 40 is that a mirror built from
+                        // the schema alone moved the output trim and not one band. So the EQ's row
+                        // moves index 4, which is the first BAND control in mirroredParams - the
+                        // exact control that fix exists for.
+                        if (rowWanted ("LV9f"))
+                        {
+                            if (linkProcWhy.isNotEmpty())
+                            {
+                                skip ("LV9f: every one of our devices, on both live-view roads",
+                                      "a Link hosted IN THIS PROCESS does not service chain commands, "
+                                      "so the add cannot land - this row runs in the out-of-process "
+                                      "pass. " + linkProcWhy);
+                            }
+                            else
+                            {
+                                juce::String fUid = uid;
+                                if (fUid.isEmpty())
+                                    fUid = rig.freshState().getProperty ("firstLinkUid", juce::var()).toString();
+
+                                // ONE BODY FOR EVERY DEVICE, so a row cannot drift from its siblings
+                                // and the only difference between them is what it says in its result.
+                                auto ourDeviceRow = [&] (const char* tag, const juce::String& device,
+                                                         int idx, bool switchOn)
+                                {
+                                    if (fUid.isEmpty())
+                                    {
+                                        row (tag, false,
+                                             "does a knob on " + device + "'s copy reach the device on the Link",
+                                             "COULD NOT RUN: no Link uid to address, so it refused to "
+                                             "measure the own rack and call that an answer");
+                                        return;
+                                    }
+                                    const auto valueAt = [] (const juce::String& line, int i) -> double
+                                    {
+                                        for (const auto& bit : juce::StringArray::fromTokens (line, "|", ""))
+                                            if (bit.upToFirstOccurrenceOf (":", false, false).getIntValue() == i
+                                                && bit.contains (":"))
+                                                return bit.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                                        return -1.0;
+                                    };
+                                    rig.send (echojay::rig::cmd::selectLink, args1 ("uid", fUid), 8000);
+                                    rig.send (echojay::rig::cmd::press,
+                                              args1 ("button", switchOn ? "real_editor_on" : "real_editor_off"),
+                                              8000);
+                                    livePump (400);
+                                    const int slotsWas = (int) rig.freshState().getProperty ("linkSlots", -1);
+                                    rig.send (echojay::rig::cmd::addSlot,
+                                              args2 ("name", device, "uid", fUid), 20000);
+                                    int slotsIs = slotsWas;
+                                    for (int tries = 0; tries < 40 && slotsIs <= slotsWas; ++tries)
+                                    {
+                                        livePump (300);
+                                        slotsIs = (int) rig.freshState().getProperty ("linkSlots", -1);
+                                    }
+                                    const bool landed = slotsIs > slotsWas && slotsWas >= 0;
+                                    const int ourSlot = juce::jmax (1, slotsIs);
+                                    rig.send (echojay::rig::cmd::press, args1 ("button", "tab_chain"), 8000);
+                                    livePump (400);
+                                    rig.send (echojay::rig::cmd::openSlot, args1 ("n", ourSlot), 10000);
+                                    livePump (2500);
+                                    const auto st = rig.freshState();
+                                    const bool viewUp = (bool) st.getProperty ("shadowRunning", false);
+                                    const int  have   = (int) st.getProperty ("shadowLinkValCount", 0);
+                                    // AND ON THE REAL-EDITOR ROAD, THE COPY IS WHAT MUST BE UP: his
+                                    // Test 5 failed because the device took the lent-editor road and
+                                    // nothing was live. A lent editor here is the fault itself.
+                                    const bool lent = (bool) st.getProperty ("inlineIsLent", false);
+                                    const double from = valueAt (st.getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                                    const double want = from > 0.5 ? 0.20 : 0.80;
+                                    const auto moved = rig.send (echojay::rig::cmd::liveParam,
+                                                                 args2 ("i", idx, "v", want), 10000);
+                                    const auto note = moved.getProperty ("note", juce::var()).toString();
+                                    double linkNow = -1.0;
+                                    for (int tries = 0; tries < 20 && std::abs (linkNow - want) > 0.02; ++tries)
+                                    {
+                                        livePump (100);
+                                        linkNow = valueAt (rig.freshState().getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                                    }
+                                    livePump (1500);
+                                    const auto stLate = rig.freshState();
+                                    const double linkLate = valueAt (stLate.getProperty ("shadowLinkVals", juce::var()).toString(), idx);
+                                    const double copyLate = valueAt (stLate.getProperty ("shadowCopyVals", juce::var()).toString(), idx);
+                                    const bool setUp = landed && viewUp && have > idx
+                                                    && (bool) moved.getProperty ("ok", false);
+                                    row (tag, setUp && ! lent
+                                                  && std::abs (linkNow  - want) <= 0.02
+                                                  && std::abs (linkLate - want) <= 0.02
+                                                  && std::abs (copyLate - want) <= 0.02,
+                                         "does a knob on " + device + "'s copy reach the device on the Link "
+                                         "and stay there, with the real-editor switch "
+                                         + juce::String (switchOn ? "ON" : "OFF")
+                                         + " (control " + juce::String (idx) + ")",
+                                         ! setUp
+                                             ? "COULD NOT RUN, which is a FAIL and not a skip: it "
+                                               + juce::String (landed ? "landed" : "did NOT land")
+                                               + " (slots " + juce::String (slotsWas) + " -> "
+                                               + juce::String (slotsIs) + "), the view was "
+                                               + juce::String (viewUp ? "up" : "DOWN") + ", the Link published "
+                                               + juce::String (have) + " value(s), and the move answered \"" + note + "\""
+                                             : lent
+                                                 ? "the LENT real editor came up for one of our own devices, "
+                                                   "so nothing was live - this is his Test 5 exactly"
+                                                 : "asked for " + juce::String (want, 3) + " (from "
+                                                   + juce::String (from, 3) + "): the Link reached "
+                                                   + juce::String (linkNow, 3) + ", still "
+                                                   + juce::String (linkLate, 3) + " later, the copy "
+                                                   + juce::String (copyLate, 3) + " - " + note);
+                                };
+
+                                ourDeviceRow ("LV9f-eq",   "EchoJay EQ",       4, false);
+                                ourDeviceRow ("LV9f-lim",  "EchoJay Limiter",  0, false);
+                                ourDeviceRow ("LV9f-gain", "EchoJay Gain",     0, false);
+                                // ...and the road his Test 5 failed on.
+                                ourDeviceRow ("LV9f-on",   "EchoJay Compressor", 0, true);
+                                // The switch goes back off, so no later row inherits it (a row
+                                // measures whatever the row before it left behind).
+                                rig.send (echojay::rig::cmd::press, args1 ("button", "real_editor_off"), 8000);
+                                livePump (300);
                             }
                         }
 
@@ -7370,7 +7551,19 @@ int main (int argc, char* argv[])
                 {
                     const auto st2 = sv.getProperty ("status", juce::var()).toString();
                     statuses << st2 << " ";
-                    if (st2 == "skipped" || st2 == "not_run") anySkipped = true;
+                    // ---- AND "declined" IS THE WORD NOW (29 Oct 2026) ----------------------
+                    //
+                    // My own 9e4f4e74 renamed this status at Sean's ask - *"the word he reads for
+                    // a declined step is 'declined' too, not the one E2 retired"* - and I did not
+                    // update this row with it. So the statuses read "done declined", the row was
+                    // looking for "skipped", and it reported a line left correctly alone as a
+                    // failure. The rename should have carried its rows; the rig caught that it
+                    // did not.
+                    //
+                    // All three spellings are accepted on purpose: the old ones still read back
+                    // from stored runs (that commit kept them readable), so a row that took only
+                    // the new word would go red on a restored session instead.
+                    if (st2 == "skipped" || st2 == "not_run" || st2 == "declined") anySkipped = true;
                 }
             check (awaiting && offering >= 2 && std::abs (pg - 4.0) < 0.3 && anySkipped,
                    "ITEM 0 / item 2: a LINE's own [Apply] runs THAT line and leaves the other waiting line "
