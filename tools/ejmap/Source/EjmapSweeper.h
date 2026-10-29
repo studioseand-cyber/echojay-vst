@@ -346,6 +346,17 @@ inline bool settleDisplayPumped (int ms = 50)
     return true;
 }
 
+// A METER IS NOT A CONTROL (Kathy, 29 Oct): with the silent block after each write (3ebbc73b) a meter's display follows the audio, so a
+// meter swept as a control came out "anchored" - 42 of 128 recovered controls were readouts (bx_clipper's Meter Peak In L, bx_delay2500's
+// Input VU L, TOMO LISA's Dynamics Meter / Level LED ...). A parameter NAMED as a meter (meter / metering / vu / readout / led, as words) is
+// declined before anything is written to it. The AU's own read-only-meter flag would be better evidence; JUCE does not pass it on
+inline constexpr const char* kMeterWhy = "a meter: not a control (its display follows the audio, not a setting)";
+inline bool meterNamed (const juce::String& name)
+{
+    const auto t = juce::StringArray::fromTokens (name.toLowerCase(), " _-/.:()[]>", "");
+    for (const auto& w : t) if (w == "meter" || w == "meters" || w == "metering" || w == "vu" || w == "readout" || w == "led" || w == "leds") return true;
+    return false;
+}
 inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
                                    int index,
                                    Watchdog& watchdog,
@@ -361,6 +372,7 @@ inline SweepOutcome sweepOneIndex (juce::AudioPluginInstance& inst,
         return out;
     }
     auto* p = params[index];
+    if (meterNamed (p->getName (128))) { out.reason = kMeterWhy; return out; }   // 29 Oct: never written, never a control
 
     Watchdog::Scope guard (watchdog, "sweep index " + juce::String (index),
                            pluginId, {}, {}, "sweep", Watchdog::kEditorCreateDeadlineMs);

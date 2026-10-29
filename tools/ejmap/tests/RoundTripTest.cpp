@@ -14781,12 +14781,16 @@ int main (int, char**)
             juce::StringArray s; for (const auto& x : pts) s.add (juce::String (x.n, 2) + "=" + x.t); return s.joinIntoString (" "); };
         AppliedOnProcess a, b; bool okA = false, okB = false;
         const auto with = sweep (a, true, okA), without = sweep (b, false, okB);
+        // a READOUT: its display follows processing, but the value written never stays (a meter: back to -60 dB on every block)
+        struct Readout : AppliedOnProcess { void setValue (float x) override { v = x; } float getValue() const override { return 0.37f; } void process() { applied = (float) juce::Random::getSystemRandom().nextFloat(); } };
+        Readout ro; bool okR = true; echojay::ExtractorConfig rc; rc.setReadPoints = 5; rc.settle = [] {}; rc.process = [&ro] { ro.process(); };
+        int refusedR = 0; const auto roPts = echojay::sweepSetRead (ro, rc, okR, &refusedR);
         const auto gt = echojay::sweepContinuous (b, echojay::ExtractorConfig());
         const auto ex = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejextract/EchoJayParamExtractor.h").loadFileAsString();
         const auto sw = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSweeper.h").loadFileAsString();
         const auto px = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_extract.h").loadFileAsString();
         check (okA && with == "0.00=-20.0 dB 0.25=-10.0 dB 0.50=0.0 dB 0.75=10.0 dB 1.00=20.0 dB" && a.applied == 0.6f && a.v == 0.6f
-               && ! okB && without.isEmpty() && echojay::sweepIsFlat (gt)
+               && ! okB && without.isEmpty() && echojay::sweepIsFlat (gt) && ! okR && roPts.isEmpty() && refusedR >= 4
                && ex.contains ("        param.setValue (n);\n        if (cfg.process != nullptr) cfg.process();")
                && sw.contains ("    cfg.process = echojay::silentBlockProcessor (inst);") && sw.contains ("        cfg.process();   // 29 Oct: the restored state applied")
                && px.contains ("    cfg.process = echojay::silentBlockProcessor (inst);") && px.contains ("                cfg.process();   // 29 Oct: the restored state applied"),
@@ -14823,6 +14827,19 @@ int main (int, char**)
                && sidechainNamed ("sc gain") && sidechainNamed ("s/c level") && sidechainNamed ("key input") && sidechainNamed ("sidechain hpf") && ! sidechainNamed ("scale") && ! sidechainNamed ("output")
                && roleOf (sbc9aug.getProperty ("controls", {}).getProperty ("SC Gain", {})).role.isEmpty(),
                "trust WZ-36OCT-9: certified needs its core roles mapped and read back (Solid Bus Comp's 9 Aug map: '" + a.why.substring (0, 90) + "'); short of them, at most mapped");
+    }
+    // WZ-36OCT-10 A METER IS NOT A CONTROL (Kathy, 29 Oct): with the silent block after each write a meter's display moves, and 42 of the 128
+    // recovered controls were readouts (bx_clipper's Meter Peak In L, bx_delay2500's Input VU L, TOMO LISA's Dynamics Meter High 1). Named
+    // as a meter (meter / metering / vu / readout, as words) -> declined in both map builders, never written in EJ Map's sweep
+    {
+        using namespace ejmap;
+        const auto sw = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSweeper.h").loadFileAsString();
+        const auto fm = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapFullMap.h").loadFileAsString();
+        check (meterNamed ("Meter Peak In L") && meterNamed ("Input VU L") && meterNamed ("Dynamics Meter High 1") && meterNamed ("VU Output R") && meterNamed ("GR Readout")
+               && meterNamed ("Metering Mode") && meterNamed ("Level LED In L") && ! meterNamed ("Diameter") && ! meterNamed ("Ledge") && ! meterNamed ("Output") && ! meterNamed ("Volume") && ! meterNamed ("Peak Reduction") && ! meterNamed ("Vulcan Drive") && ! meterNamed ("Metric")
+               && sw.contains ("    if (meterNamed (p->getName (128))) { out.reason = kMeterWhy; return out; }")
+               && fm.contains ("        if (meterNamed (p.name)) { b.declines.add ({ p.index, p.name, kMeterWhy }); continue; }"),
+               "wizard WZ-36OCT-10: a parameter named as a meter is declined, never swept as a control");
     }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0

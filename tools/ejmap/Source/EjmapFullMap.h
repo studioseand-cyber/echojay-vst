@@ -81,6 +81,7 @@ inline Built buildControls (const Extract& x)
             for (const auto& o : x.params) if (o.name == p.name) c.indices.add (o.index);
             b.controls.add (c); continue;
         }
+        if (meterNamed (p.name)) { b.declines.add ({ p.index, p.name, kMeterWhy }); continue; }   // 29 Oct: a readout, whatever its display did
         if (! p.swept) { b.declines.add ({ p.index, p.name, "not swept (the extract ended before it)" }); continue; }
         if (p.method == "flat" || p.method == "flat_unretried")
         { b.declines.add ({ p.index, p.name, p.method == "flat" ? "flat both ways - unbuildable (the display carries no value information)" : "flat by getText; set-then-read not tried (the extract's time budget)" }); continue; }
