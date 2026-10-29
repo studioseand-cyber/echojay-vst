@@ -293,9 +293,14 @@ inline juce::String bundleDraftName (const juce::String& rel)
 // ceiling block, and nothing it sends may claim a ceiling (a profile carrying one is not sent on this path)
 inline bool limiterWithoutCeiling (const juce::String& pass, const juce::String& outcome, bool nothingMeasured, bool limiterDraft)
 { return pass == "limiter" && outcome == "ok" && nothingMeasured && ! limiterDraft; }
+// A CEILING DRAFT THAT NAMES NO CEILING IS NO LIMITER DRAFT (Kathy, 29 Oct; OneKnob Louder (m) / (s) were refused by B's limiter validator):
+// the ceiling pass found no ceiling control ("nothing_measured") yet still wrote a draft whose ceiling block has control null and no
+// positions - and that draft went as ej_limiter_profile/1. Only a ceiling block that names its control is a limiter draft
+inline bool ceilingDraftUsable (const juce::var& draft)
+{ const auto c = draft.getProperty ("ceiling", {}); return c.isObject() && c.getProperty ("control", juce::var()).toString().trim().isNotEmpty(); }
 inline bool claimsCeiling (const juce::var& profile)
 { return profile.hasProperty ("ceiling") || profile.hasProperty ("ceiling_db") || profile.getProperty ("roles", {}).toString().contains ("ceiling"); }
-inline constexpr const char* kNoCeilingWhy = "a limiter with no ceiling control: its compressor profile is sent alone, with no ceiling block";
+inline constexpr const char* kNoCeilingWhy = "a limiter with no ceiling control: its compressor profile is sent alone, as a compressor, with no ceiling block";
 
 // THE FIRST-SOUND CHECK (Kathy, 25 Oct; the 24 Oct run). A plugin routed on a KNOWN category skips the signature reads, and those reads
 // were where a licence window first showed: the UAD strips loaded silently for their maps, then crashed or showed a window once audio ran

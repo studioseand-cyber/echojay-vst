@@ -12154,8 +12154,8 @@ void testWizardRoute()
         check (limiterWithoutCeiling ("limiter", "ok", true, false) && ! limiterWithoutCeiling ("limiter", "ok", true, true) && ! limiterWithoutCeiling ("limiter", "crashed", true, false)
                && ! limiterWithoutCeiling ("limiter", "ok", false, false) && ! limiterWithoutCeiling ("saturation", "ok", true, false)
                && claimsCeiling (juce::JSON::parse (R"({"schema": "ej_comp_profile/1", "ceiling": {"control": "Out Ceiling"}})")) && ! claimsCeiling (juce::JSON::parse (R"({"schema": "ej_comp_profile/1", "amount": {}})"))
-               && run.contains ("&& wizroute::limiterWithoutCeiling (pbs[0], r.getProperty (\"outcome\", \"\").toString(), (bool) r.getProperty (\"nothing_measured\", false), ! draftsL.isEmpty());")
-               && run.contains ("if (compressorAlone) { st = \"measured\"; why = wizroute::kNoCeilingWhy; }")
+               && run.contains ("&& wizroute::limiterWithoutCeiling (pbs[0], r.getProperty (\"outcome\", \"\").toString(), (bool) r.getProperty (\"nothing_measured\", false), ceilingDraft);")   // 29 Oct: an empty ceiling draft is none
+               && run.contains ("{ st = \"measured\"; why = wizroute::kNoCeilingWhy; draftsL.clear(); row->setProperty (\"category\", \"compressor\"); }")
                && run.contains ("if (compressorAlone && wizroute::claimsCeiling (juce::JSON::parse (f.loadFileAsString()))) continue;")
                && run.contains ("if (compressorAlone && draftsL.isEmpty()) { st = \"not_measurable\";"),
                "wizard WZ-28OCT-2: a limiter with no ceiling control sends its compressor profile alone, never a ceiling ('" + juce::String (kNoCeilingWhy) + "')");
@@ -14840,6 +14840,68 @@ int main (int, char**)
                && sw.contains ("    if (meterNamed (p->getName (128))) { out.reason = kMeterWhy; return out; }")
                && fm.contains ("        if (meterNamed (p.name)) { b.declines.add ({ p.index, p.name, kMeterWhy }); continue; }"),
                "wizard WZ-36OCT-10: a parameter named as a meter is declined, never swept as a control");
+    }
+    // WZ-36OCT-11 A CORE ROLE PROVEN BY MEASUREMENT (Kathy, 29 Oct, decision 1): the control the category's pass CHOSE fills the core role
+    // (THD for a drive, GR onset for an amount, the output level for a makeup, RT60 for a decay, the transient level for an attack), or name +
+    // unit as before - never a widened name table. PRS V9's measurement confirms five THD movers (ambiguous by name); its saturation pass chose
+    // Input. Shadow Hills' gain pass moves the level with Optical Gain 1 and Discrete Gain 1; the one beside the measured Discrete Threshold 1
+    {
+        using namespace ejmap::trust;
+        auto J = [] (const char* s) { return juce::JSON::parse (s); };
+        const auto prs = J (R"({"category":"amp_sim","controls":{"Input":{"name":"Input","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},
+            "Treble":{"name":"Treble","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]}}})");
+        const auto sh = J (R"({"category":"compressor","controls":{"Discrete Threshold 1":{"name":"Discrete Threshold 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},
+            "Optical Threshold 1":{"name":"Optical Threshold 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},
+            "Discrete Gain 1":{"name":"Discrete Gain 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},"Optical Gain 1":{"name":"Optical Gain 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},
+            "SC Gain":{"name":"SC Gain","kind":"anchored","unit":"db","anchors":[[-20,0],[20,1]]}}, "declines":[{"name":"Out Trim","reason":"flat"}]})");
+        std::map<juce::String, ControlReadback> rb; for (const char* n : { "Input", "Treble", "Discrete Threshold 1", "Optical Threshold 1", "Discrete Gain 1", "Optical Gain 1", "SC Gain" }) rb[n].judged = 3;
+        Measured mp; mp.roles["drive"] = { "Input", "Treble" };
+        Measured mpPick = mp; mpPick.passPicks["drive"] = { "Input" };
+        Measured ms; ms.roles["threshold"] = { "Discrete Threshold 1" }; ms.passPicks["threshold"] = { "Discrete Threshold 1" }; ms.passPicks["makeup"] = { "Optical Gain 1", "Discrete Gain 1" };
+        Measured msSc = ms; msSc.passPicks["makeup"] = { "SC Gain", "Out Trim" };   // a sidechain's level and a declined control never fill it
+        auto rbWithout = [&] (const char* n) { auto r = rb; r.erase (n); return r; };
+        const auto a = levelFor (prs, true, "", rb, mp), b = levelFor (prs, true, "", rb, mpPick), c = levelFor (sh, true, "", rb, ms),
+                   c2 = levelFor (sh, true, "", rbWithout ("Discrete Gain 1"), ms), c3 = levelFor (sh, true, "", rbWithout ("Optical Gain 1"), ms), d = levelFor (sh, true, "", rb, msSc);
+        // two channels: the level beside the measured threshold (TCL-2's Level 1 / Threshold 1); a tie names nothing; Melda's two spellings
+        const auto tcl = J (R"({"category":"compressor","controls":{"Threshold 1":{"name":"Threshold 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},
+            "Level 1":{"name":"Level 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},"Level 2":{"name":"Level 2","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]}}})");
+        const auto mrev = J (R"({"category":"reverb","controls":{"Globals -> Length":{"name":"Globals -> Length","kind":"anchored","unit":"ms","anchors":[[100,0],[9000,1]]}}})");
+        std::map<juce::String, ControlReadback> rb2; for (const char* n : { "Threshold 1", "Level 1", "Level 2", "Globals -> Length" }) rb2[n].judged = 3;
+        Measured mt; mt.passPicks["threshold"] = { "Threshold 1" }; mt.passPicks["makeup"] = { "Level 1", "Level 2" };
+        Measured mtTie; mtTie.passPicks["threshold"] = { "Threshold 1" }; mtTie.passPicks["makeup"] = { "Level 2" , "Level 1" }; mtTie.passPicks["threshold"] = { "Threshold 1" };
+        Measured mr; mr.passPicks["decay"] = { "Length (Globals)" };
+        const auto t1 = levelFor (tcl, true, "", rb2, mt), t2 = levelFor (tcl, true, "", [&] { auto r = rb2; r.erase ("Level 1"); return r; }(), mt), r1 = levelFor (mrev, true, "", rb2, mr);
+        const auto tie = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Out A":{"name":"Out A"},"Out B":{"name":"Out B"}}})"), [] { Measured m; m.passPicks["makeup"] = { "Out A", "Out B" }; return m; }(), { "Threshold" });
+        const auto tie1 = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Out 1 A":{"name":"Out 1 A"},"Out 1 B":{"name":"Out 1 B"}}})"), [] { Measured m; m.passPicks["makeup"] = { "Out 1 A", "Out 1 B" }; return m; }(), { "Threshold 1" });
+        const auto declinedToo = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Output":{"name":"Output"}},"declines":[{"name":"Output","reason":"flat"}]})"), [] { Measured m; m.passPicks["makeup"] = { "Output" }; return m; }(), {});
+        const auto amp = meetCoreByPass ("drive|gain", J (R"({"controls":{"Amp - Drive":{"name":"Amp - Drive"}}})"), [] { Measured m; m.passPicks["drive"] = { "Drive (Amp)" }; return m; }(), {});
+        const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
+        check (t1.level == "certified" && t2.level != "certified" && t2.why.contains ("not read back: Level 1") && r1.level == "certified" && tie.isEmpty() && tie1.isEmpty() && declinedToo.isEmpty() && amp == juce::StringArray { "Amp - Drive" }
+               && groupedForm ("Length (Globals)") == "Globals -> Length" && groupedForm ("Length").isEmpty() && placeWords ("Discrete Gain 1") == juce::StringArray { "discrete", "1" }
+               && a.level != "certified" && a.why.contains ("core role not mapped: drive|gain") && b.level == "certified"
+               && c.level == "certified" && c2.level != "certified" && c2.why.contains ("not read back: Discrete Gain 1") && c3.level == "certified"
+               && d.level != "certified" && d.why.contains ("core role not mapped: makeup|output|gain")
+               && tr.contains ("if (schema == \"ej_saturation_profile/1\" && blockVerdict (\"drive\") == \"drive\") pick (\"drive\", blockCtl (\"drive\"));")
+               && tr.contains ("pick (\"makeup\", c.getProperty (\"control\", \"\").toString()); }") && tr.contains ("pick (\"attack\", blockCtl (\"attack\"));")
+               && tr.contains ("if (dv == \"measured\" || dv == \"tail_longer_than_window\") pick (\"decay\", blockCtl (\"decay\"));"),
+               "trust WZ-36OCT-11: the pass's own choice fills a core role (PRS V9's Input; Shadow Hills' Discrete Gain 1 beside its threshold); a sidechain or a declined control never does");
+    }
+    // WZ-36OCT-12 A LIMITER WITH NO CEILING GOES AS A COMPRESSOR, AND NEVER HALF-SENT (the STAGING 4 run: OneKnob Louder (m) / (s) refused by
+    // B's limiter validator - a ceiling draft naming no control went as ej_limiter_profile/1; L2's ceiling half went at a checkpoint 54 min
+    // before its compressor half, and a result goes once). An empty ceiling draft is no limiter draft: the compressor profile goes alone, as a
+    // compressor, the empty draft dropped; a limiter row is final only once its compressor pass landed; its span is the compressor pass's
+    {
+        using namespace ejmap::wizroute;
+        const auto empty = juce::JSON::parse (R"({"schema":"ej_limiter_profile/1","ceiling":{"control":null,"found_by":"measurement","positions":[]}})");
+        const auto real = juce::JSON::parse (R"({"schema":"ej_limiter_profile/1","ceiling":{"control":"Out Ceiling","positions":[{"norm":0.5}]}})");
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (! ceilingDraftUsable (empty) && ceilingDraftUsable (real) && ! ceilingDraftUsable (juce::JSON::parse ("{}"))
+               && limiterWithoutCeiling ("limiter", "ok", true, false) && ! limiterWithoutCeiling ("limiter", "ok", true, true)
+               && run.contains ("for (const auto& rel : draftsL) if (wizroute::ceilingDraftUsable (juce::JSON::parse (out.getChildFile (\"phaseb\").getChildFile (rel).loadFileAsString()))) ceilingDraft = true;")
+               && run.contains ("{ st = \"measured\"; why = wizroute::kNoCeilingWhy; draftsL.clear(); row->setProperty (\"category\", \"compressor\"); }")
+               && run.contains ("if (pbs.contains (\"limitercomp\") && st == \"measured\" && ! landedRow (\"limitercomp\", row->getProperty (\"product\").toString()).isObject() && ! finishing)\n                    st = \"measuring\";")
+               && run.contains ("stampFinal (row, spanOf (r2.isObject() && row->getProperty (\"drafts\").toString().contains (\"limitercomp/\") ? r2 : r)); }"),
+               "wizard WZ-36OCT-12: a limiter with no ceiling goes as its compressor profile alone; a limiter waits for its compressor half; its span is that pass's");
     }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0

@@ -1276,9 +1276,16 @@ inline int runWizard (const WizardOptions& wo)
                         juce::Array<juce::var> also; for (int k = 1; k < keptRoles.size(); ++k) also.add (keptRoles[k]); row->setProperty ("space_roles_also", also);
                         if (either) why = "measured as reverb and as delay: kept " + keptRoles.joinIntoString (" and ") + (failed.isEmpty() ? juce::String() : " (" + failed.joinIntoString (", ") + " did not pass its acceptance)"); }
                 }
+                bool ceilingDraft = false;   // 29 Oct: a draft whose ceiling names no control is no limiter draft (OneKnob Louder)
+                for (const auto& rel : draftsL) if (wizroute::ceilingDraftUsable (juce::JSON::parse (out.getChildFile ("phaseb").getChildFile (rel).loadFileAsString()))) ceilingDraft = true;
                 const bool compressorAlone = r.isObject() && pbs.contains ("limitercomp")
-                    && wizroute::limiterWithoutCeiling (pbs[0], r.getProperty ("outcome", "").toString(), (bool) r.getProperty ("nothing_measured", false), ! draftsL.isEmpty());
-                if (compressorAlone) { st = "measured"; why = wizroute::kNoCeilingWhy; }   // 25 Oct (Kathy): decided below by the profile itself
+                    && wizroute::limiterWithoutCeiling (pbs[0], r.getProperty ("outcome", "").toString(), (bool) r.getProperty ("nothing_measured", false), ceilingDraft);
+                if (compressorAlone)   // 25 Oct (Kathy): decided below by the profile itself; 29 Oct: AS A COMPRESSOR, the empty ceiling draft dropped
+                { st = "measured"; why = wizroute::kNoCeilingWhy; draftsL.clear(); row->setProperty ("category", "compressor"); }
+                // 29 Oct (the STAGING 4 run): a limiter is final only once its compressor pass has landed - a checkpoint sent L2's ceiling half 54
+                // minutes before its compressor half, and a result goes once
+                if (pbs.contains ("limitercomp") && st == "measured" && ! landedRow ("limitercomp", row->getProperty ("product").toString()).isObject() && ! finishing)
+                    st = "measuring";
                 if (pbs.contains ("limitercomp") && st == "measured")
                 {   // the limiter's compressor pass: its exported profile + tone check travel with the limiter draft (sent like any compressor)
                     const auto r2 = landedRow ("limitercomp", row->getProperty ("product").toString()); const auto stem2 = r2.getProperty ("_stem", "").toString();
@@ -1300,7 +1307,10 @@ inline int runWizard (const WizardOptions& wo)
                 if (why.isEmpty() && ! wizard::keepsRoutingWhy (st)) why = wizard::reasonFor (r.getProperty ("outcome", "").toString());   // 15 Oct: never the routing reason
                 row->setProperty ("state", st); row->setProperty ("outcome", r.getProperty ("outcome", {})); row->setProperty ("drafts", draftsL.joinIntoString (","));
                 if (why.isNotEmpty()) row->setProperty ("why", why); ++counts[st];
-                if (r.isObject() && st != "measuring") stampFinal (row, spanOf (r));   // v1.1: when it began and finished measuring
+                if (r.isObject() && st != "measuring")   // v1.1: when it began and finished measuring
+                {   // 29 Oct: a result carrying the limiter's compressor half (or that half alone) is measured by the compressor pass - its span
+                    const auto r2 = landedRow ("limitercomp", row->getProperty ("product").toString());
+                    stampFinal (row, spanOf (r2.isObject() && row->getProperty ("drafts").toString().contains ("limitercomp/") ? r2 : r)); }
                 if (r.hasProperty ("reference_vote")) { row->setProperty ("reference_vote", r.getProperty ("reference_vote", {})); row->setProperty ("reference_stem", r.getProperty ("_stem", {})); }   // 12 Oct: this Mac's vote travels
                 continue;
             }
