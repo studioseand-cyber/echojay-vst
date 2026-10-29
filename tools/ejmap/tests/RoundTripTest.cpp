@@ -14813,7 +14813,7 @@ int main (int, char**)
         const auto tuner = J (R"({"category":"pitch","controls":{}})");
         std::map<juce::String, ControlReadback> rb; for (const char* n : { "Ratio", "SC Gain", "Threshold", "Makeup", "Gain", "Band 1 Freq", "Band 1 Gain" }) rb[n].judged = 3;
         auto rbWithout = [&] (const char* n) { auto r = rb; r.erase (n); return r; };
-        Measured amount; amount.roles["threshold"] = { "Peak Reduction" };   // the certification measured the amount
+        ejmap::trust::Measured amount; amount.roles["threshold"] = { "Peak Reduction" };   // the certification measured the amount
         std::map<juce::String, ControlReadback> rbLa = rb; rbLa["Peak Reduction"].judged = 3;
         const auto a = levelFor (sbc9aug, true, "", rb), b = levelFor (sbcNow, true, "", rb), b2 = levelFor (sbcNow, true, "", rbWithout ("Makeup")),
                    c = levelFor (la2a, true, "", rbLa, amount), d = levelFor (eq, true, "", rb), d2 = levelFor (eq, true, "", rbWithout ("Band 1 Gain")),
