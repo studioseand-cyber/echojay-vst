@@ -2960,6 +2960,25 @@ private:
     // on this rack since my window opened?" without observing one - see echojay::windowHasHadRack.
     std::map<juce::String, int> sessionsStartedAtOpen_;
     juce::String                rackLiveAtOpen_;
+
+    // ---- THE CONNECT WATCHDOG (his R1 direction, 11:43 on 29 Oct 2026) ---------------------
+    //
+    // *"if 'Getting this rack ready / Connecting to rack' lasts more than about 3 seconds, do that
+    // reset automatically and log why, with at most 2 tries, then a plain sentence saying it
+    // couldn't connect and what to try."*
+    //
+    // The clock is a WALL CLOCK and not a tick count, because a count measures the tick rate
+    // (liveness in time, not counts). The uid travels with both so a stall on one rack cannot
+    // spend another's tries, and `connectGaveUpFor_` is what stops the spinner becoming permanent.
+    juce::String connectingUid_;          // which rack the clock below is running for
+    juce::int64  connectingSinceMs_ = 0;  // when it started trying; 0 = not trying
+    juce::String connectResetsUid_;       // which rack the count below belongs to
+    int          connectResets_     = 0;  // resets spent on it (max echojay::kConnectResetTries)
+    juce::String connectGaveUpFor_;       // said the plain sentence for this rack; say it once
+    /** The clean reset a reopen does, without reopening: release every session, lease and engage
+        state, then engage `uid` fresh. Called by a Link switch, a Chain tab click and the
+        watchdog. `reason` goes in the log line, so the record says which of the three it was. */
+    void resetSessionAndEngage (const juce::String& uid, const char* reason);
     bool windowHasHadRack (const juce::String& uid) const;
     int agentRunZoneMsg_ = -1;                    // the last card painted (the live row's ticker)
 
@@ -3217,7 +3236,10 @@ private:
     // watches ChainHost::isScanning go false and rebuilds the feed THEN,
     // and tells the user "rescanned, N plugins" where they can see it.
     bool prevChainScanning_      = false;
-    bool pickerLoweredPopout_    = false;
+    // WHAT A POPUP TOOK DOWN, so every death path can put it back (his R7 follow-up, 29 Oct 2026):
+    // the pop-out that was lowered AND the inline editor that was closed. It was a bare bool, which
+    // is why the inline half never came back - nothing remembered it had been open.
+    echojay::GuestPopupHold pickerHold_;
     friend struct EchoJayRosterTestAccess;   // 21m ruling 1: the links-tick guard   // 22 Sep 2026 (item 7): the hosted editor pop-out is lowered while the picker is open
 
     // Holder for the currently-selected slot's editor
@@ -3571,6 +3593,10 @@ private:
             "blank, not zero"). Assigned by the editor; the strips poll it on their own 20 Hz timer
             for the reason GainReadout does, which is written out above. */
         std::function<bool(int slot, echojay::SlotMeterOne& out)> onSlotMeterGet;
+        /** Does the rack in view hold one of EchoJay's own devices in that slot? (his Test 5,
+            29 Oct 2026.) One reader for all three real-editor roads, because a device has no
+            editor of its own to borrow and its live road is the copy. */
+        std::function<bool(int slot)> slotHoldsOurDevice;
         std::function<float(int slot, bool isIn)>              onSlotGainGet;
         std::function<void(int slot, bool isIn, float db)>     onSlotGainSet;
         std::vector<std::unique_ptr<Block>> blocks;
@@ -4206,6 +4232,11 @@ private:
         }
         /** 21t-e: is a hosted editor open INLINE in the rack (an NSView that composites over everything)? */
         bool hasInlineEditor() const { return inlineEditor != nullptr; }
+        /** WHICH slot it is on, or -1. The other half of hasInlineEditor, added for his R7
+            follow-up: a popup that closes this editor has to know what to reopen, and the two
+            panels spell the member differently (inlineSlot here, inlineModelIdx on the Link), so
+            the ONE name both publish is this call. */
+        int inlineEditorSlot() const { return inlineEditor != nullptr ? inlineSlot : -1; }
         /** The NAME of the slot whose editor is on screen, whichever road it came by - our own
             rack's real editor, a copy, or a Link's lent one - and empty when nothing is open. The
             road cannot answer "is the pane showing the right plugin": "copy" is the correct road for

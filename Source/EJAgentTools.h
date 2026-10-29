@@ -160,6 +160,16 @@ struct PlaybackReading
     bool  transportKnown = false;    // the host publishes a transport at all (LoudnessLoop's rule: unknown never blocks)
     bool  playing        = false;    // the transport says it is running (meaningful only when transportKnown)
     float heardAboveSeconds = 0.0f;  // gated audio counted SINCE beginPlaybackWindow()
+    // ---- THE SAME COUNT AT THE RACK'S INPUT (Sean's 11:30 report, 29 Oct 2026) ----------------
+    // `heardAboveSeconds` is measured AFTER the rack, and his Shadow Hills add dropped the output
+    // 28 dB - under the -40 LUFS counting floor - so "Listening... 0 of 8 s" was a true statement
+    // about the wrong signal while he was playing. The wait asks this one instead; it is false for
+    // a Link, whose frame carries no gated input count, and the decision says which it used
+    // (echojay::playbackHeard).
+    bool  inputKnown = false;
+    float heardAboveInputSeconds = 0.0f;
+    float inputLevelDb  = std::numeric_limits<float>::quiet_NaN();
+    float outputLevelDb = std::numeric_limits<float>::quiet_NaN();
     float integratedLufs    = std::numeric_limits<float>::quiet_NaN();
     float loudestShortTermLufs = std::numeric_limits<float>::quiet_NaN();
     float truePeakDbtp      = std::numeric_limits<float>::quiet_NaN();

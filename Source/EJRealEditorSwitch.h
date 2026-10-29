@@ -53,6 +53,41 @@ inline bool realEditorRoad (bool switchOn, int linkPublisherPid, int ourPid) noe
     return switchOn && echojay::embedAllowed (linkPublisherPid, ourPid);
 }
 
+/** ---- AND OUR OWN DEVICES TAKE THE COPY ROAD WHATEVER THE SWITCH SAYS (his Test 5, 29 Oct) ---
+
+    *"Test 5 (switch ON, EchoJay Compressor on the Kick Link, opened in the V2): the meter doesn't
+    move, the knob turns but nothing changes in the sound while the V2 is open, and when Sean
+    closed the V2 the compression appeared ... So with the switch on, EchoJay devices fall to the
+    edit-here, write-on-leave road."*
+
+    THE REASON IS STRUCTURAL, not a bug in that fallback. The real-editor road shows the LINK'S OWN
+    editor, embedded from the other instance in this process - and for a hosted plugin that is the
+    real thing, live, because the audio is the Link's. An EchoJay device has no separate editor to
+    embed: its view is OUR code either way, so the "real editor" for one is just this plugin's own
+    instance of it, which is a different device in a different rack - no Link audio, and settings
+    that land when he leaves.
+
+    The copy road is the live one for our devices, and it is live in both directions now: the Link
+    publishes their values through their schema (item 2b) and applies ours through it (his R4). So
+    this is not a downgrade, it is the road that does what the switch was turned on to get.
+
+    `slotIsOneOfOurs` is ChainHost::isBuiltinName of what the rack says is in that slot. */
+inline bool realEditorRoadForSlot (bool switchOn, int linkPublisherPid, int ourPid,
+                                   bool slotIsOneOfOurs) noexcept
+{
+    if (slotIsOneOfOurs) return false;
+    return realEditorRoad (switchOn, linkPublisherPid, ourPid);
+}
+
+/** The sentence for that case, so a road taken for this reason is never a silent one. */
+inline juce::String ourDeviceRoadWhy (const juce::String& name)
+{
+    return "\"" + name + "\" is one of EchoJay's own devices, so the live view is its copy on this "
+           "rack, fed by that Link's audio, with its knobs travelling to the Link as you turn them. "
+           "The real-editor switch applies to hosted plugins, which have an editor of their own to "
+           "show.";
+}
+
 /** Why that road, in words, for the log and for the card. Never silent, and it names WHICH of the
     two tests said no - "the switch is off" and "that Link is in another process" are different
     facts and he must not have to guess which he is looking at. */

@@ -125,6 +125,10 @@ public:
         juce::int64 startedMs = 0;
         int    timeoutSeconds = 60;      // plan 1.4 suggests 60
         juce::String line;               // the one sentence the panel shows
+        /** Said once per wait, not per tick: which END the count came from (his 11:30 report of
+            29 Oct 2026 - the whole fault was a figure measured in the wrong place, so the log
+            states the place). */
+        bool saidWhereCounted = false;
     };
 
     /** ---- A DIAL FRAME IN FLIGHT (A1a, 28 Oct 2026) ------------------------------------

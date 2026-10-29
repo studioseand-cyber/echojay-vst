@@ -76,42 +76,94 @@ inline GuestPopupPrep guestPopupPrep (bool hasPopout, bool hasInlineEditor)
     return p;
 }
 
+/** ---- WHAT A POPUP TOOK DOWN, SO IT CAN BE PUT BACK (Sean's R7 follow-up, 29 Oct 2026) -----
+
+    *"the hosted plugin window is hidden to let the menu show, but it doesn't come back when the
+    menu closes. Restore the editor as soon as any menu or popover closes, whether by a pick, Esc,
+    a click outside or the menu dismissing itself, in both the V2 and the Link."*
+
+    The pop-out half always came back - `onGone` fires from the picker's destructor, every death
+    path. The INLINE half never did: it is CLOSED (see above: there is no sending a heavyweight
+    NSView behind a lightweight one) and nothing remembered that it had been open, so his plugin
+    simply vanished and he had to double-click the card again.
+
+    So the prepare now RETURNS what it took down, as one value the caller holds for the life of the
+    popup, and the restore puts both halves back. A hold with nothing in it restores nothing. */
+struct GuestPopupHold
+{
+    bool loweredPopout   = false;   ///< a pop-out window was lowered: raise it again
+    int  closedInlineSlot = -1;     ///< the slot whose inline editor was closed, or -1
+};
+
 /** Do it, over either editor's panel.
 
     A TEMPLATE because the two panels are different types - ChainListPanel in the V2,
-    LinkChainPanel in the Link - that publish the same two calls (`hasInlineEditor()` and
-    `closeAllEditors()`). A template keeps one body for both without either plugin's panel having
-    to learn about the other's.
+    LinkChainPanel in the Link - that publish the same four calls (`hasInlineEditor()`,
+    `inlineEditorSlot()`, `closeAllEditors()` and `showInline()`). A template keeps one body for
+    both without either plugin's panel having to learn about the other's.
 
-    `popout` is the panel's pop-out editor window or nullptr. Returns TRUE when a pop-out was
-    lowered, which is the one thing the caller has to undo when its popup goes away: an editor
-    window left behind the main window is its own fault report.
+    `popout` is the panel's pop-out editor window or nullptr. The returned hold is what the caller
+    passes back to restoreAfterPopup when the popup dies - by ANY route, which is why every call
+    site hangs it on the one callback that fires on all of them rather than on the pick.
 
     NOTE the asymmetry, which is deliberate and explained at the top of this file: the pop-out is
-    lowered (recoverable, and the caller restores it) while the inline editor is CLOSED (there is
-    no way to put a heavyweight view behind a lightweight one). */
+    lowered (recoverable in place) while the inline editor is CLOSED and REOPENED, because there is
+    no way to put a heavyweight view behind a lightweight one for the few seconds a menu is up. */
 template <typename PanelT>
-inline bool prepareForPopupOverGuest (PanelT& panel, juce::Component* popout, const char* tag)
+inline GuestPopupHold prepareForPopupOverGuest (PanelT& panel, juce::Component* popout, const char* tag)
 {
     const auto prep = guestPopupPrep (popout != nullptr, panel.hasInlineEditor());
-    bool lowered = false;
+    GuestPopupHold hold;
     if (prep.lowerPopout && popout != nullptr)
     {
         popout->setAlwaysOnTop (false);
         popout->toBack();
-        lowered = true;
+        hold.loweredPopout = true;
     }
     if (prep.closeInline)
+    {
+        // READ IT BEFORE CLOSING: closeAllEditors clears the slot it is being asked for.
+        hold.closedInlineSlot = panel.inlineEditorSlot();
         panel.closeAllEditors();
+    }
     if (prep.lowerPopout || prep.closeInline)
         EchoJay_NSLog ((juce::String ("EJGuestPopup: ") + tag + " - " + prep.why
-                        + (lowered ? "; pop-out lowered" : "")
-                        + (prep.closeInline ? "; inline editor closed" : "")).toRawUTF8());
-    return lowered;
+                        + (hold.loweredPopout ? "; pop-out lowered" : "")
+                        + (prep.closeInline ? "; inline editor on slot "
+                                              + juce::String (hold.closedInlineSlot + 1)
+                                              + " closed, and it is REOPENED when the popup goes"
+                                            : juce::String())).toRawUTF8());
+    return hold;
 }
 
-/** Put a lowered pop-out back, if one was lowered. The counterpart of the return above, so a
-    caller never has to remember which two calls make a restore. */
+/** Put back whatever that popup took down. Safe to call more than once: the hold is cleared as it
+    is spent, so a path that both picks and then dismisses does not reopen twice.
+
+    CALLED ON EVERY DEATH PATH, which is the whole of his R7 follow-up: a PopupMenu's async
+    callback fires with 0 when it is dismissed, a picker's onGone fires from its destructor, and a
+    CallOutBox's content component is deleted when the box goes - so each call site has one place
+    that cannot be skipped by Esc or by a click outside. */
+template <typename PanelT>
+inline void restoreAfterPopup (PanelT& panel, juce::Component* popout, GuestPopupHold& hold)
+{
+    if (hold.loweredPopout && popout != nullptr)
+    {
+        popout->setAlwaysOnTop (true);
+        popout->toFront (false);
+    }
+    hold.loweredPopout = false;
+    if (hold.closedInlineSlot >= 0)
+    {
+        const int slot = hold.closedInlineSlot;
+        hold.closedInlineSlot = -1;          // spent BEFORE the call, so a reentrant path cannot loop
+        panel.showInline (slot);
+        EchoJay_NSLog (("EJGuestPopup: the popup has gone, so the inline editor on slot "
+                        + juce::String (slot + 1) + " is reopened (his R7 follow-up: it was hidden "
+                        "to let the menu show and never came back)").toRawUTF8());
+    }
+}
+
+/** The old shape, kept for the pop-out-only callers that have no hold to carry. */
 template <typename PanelT>
 inline void restorePopoutAfterPopup (PanelT& panel, juce::Component* popout, bool wasLowered)
 {

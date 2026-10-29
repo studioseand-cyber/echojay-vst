@@ -1,4 +1,5 @@
 #include "EJAgentClient.h"
+#include "EJPlaybackHeard.h"   // his 11:30 report: which end answers "has he played"
 #include "EJRefusalLine.h"   // the one refusal composer (20 Oct)
 #include "EJAgentFraming.h"
 #include "EJParamPlainNames.h"   // plainifyLine: a line the user reads carries words, not ids
@@ -1847,9 +1848,33 @@ void EJAgentClient::tickPlayback()
 {
     if (! playback_.active) return;
     const auto r = executor_.readPlayback();
-    const double heard = r.heardAboveSeconds;
+    // ---- WHICH FIGURE ANSWERS "HAS HE PLAYED" (his 11:30 report, 29 Oct 2026) ----------------
+    // The input, when this rack is ours: a plugin cannot turn down what reached it. The reason is
+    // logged once per wait so a log says which end the count came from rather than leaving it to
+    // be inferred - the whole fault was a figure measured in the wrong place.
+    const auto hd = echojay::playbackHeard (r.inputKnown, r.heardAboveInputSeconds,
+                                            r.heardAboveSeconds);
+    const double heard = hd.seconds;
+    if (! playback_.saidWhereCounted)
+    {
+        playback_.saidWhereCounted = true;
+        log (juce::String ("the listen is ") + hd.why);
+    }
     const double elapsed = (double) (nowMs() - playback_.startedMs) / 1000.0;
     playback_.heardSeconds = heard;
+    // ---- AND IF NOTHING IS COMING OUT, THAT IS A SENTENCE, NOT A TIMEOUT --------------------
+    // His case exactly: the input was playing and the rack's output sat below the floor the listen
+    // counts against. Waiting sixty seconds to say "nothing played" is the wrong answer to a
+    // question nobody asked; the right one names both levels and stops.
+    if (const auto far = echojay::outputFarBelow (r.inputKnown, r.inputLevelDb, r.outputLevelDb);
+        far.is && elapsed > 2.0)
+    {
+        playback_.line = far.say;
+        log ("the rack's output is " + juce::String (far.dropDb, 1) + " dB below its input and under "
+             "the counting floor, so the listen is ended with a sentence rather than a 60 s timeout");
+        endPlayback ("output far below input");
+        return;
+    }
 
     if (heard >= playback_.minSeconds)
     {

@@ -571,8 +571,8 @@ void LinkEditor::showChainPluginPicker()
     // half. The rule now lives in echojay::prepareForPopupOverGuest so a third call site cannot
     // be written without it - see EJGuestPopup.h for why the pop-out is lowered and the inline
     // editor is closed.
-    pickerLoweredPopout_ = echojay::prepareForPopupOverGuest (chainPanel, chainPanel.popout.get(),
-                                                              "the + picker");
+    pickerHold_ = echojay::prepareForPopupOverGuest (chainPanel, chainPanel.popout.get(),
+                                                     "the + picker");
     ChainPluginPicker::show(chainPanel.addBlock, *this, avail,
         [safeThis](const juce::PluginDescription& desc)
         {
@@ -602,11 +602,11 @@ void LinkEditor::showChainPluginPicker()
         {   // EVERY DEATH PATH of the picker, from its destructor: picked, dismissed, or the
             // window going. A pop-out left behind the main window is the fix causing its own
             // fault, so the restore cannot hang off the "he chose something" branch.
-            if (safeThis == nullptr || ! safeThis->pickerLoweredPopout_) return;
-            safeThis->pickerLoweredPopout_ = false;
-            echojay::restorePopoutAfterPopup (safeThis->chainPanel,
-                                              safeThis->chainPanel.popout.get(), true);
-            EchoJay_NSLog ("EJGuestPopup: the + picker has gone - pop-out editor raised again");
+            if (safeThis == nullptr) return;
+            // AND THE INLINE EDITOR COMES BACK TOO (his R7 follow-up, 29 Oct 2026): it was closed
+            // to let the picker be read and nothing reopened it, so his plugin simply vanished.
+            echojay::restoreAfterPopup (safeThis->chainPanel,
+                                        safeThis->chainPanel.popout.get(), safeThis->pickerHold_);
         });
 }
 
@@ -709,13 +709,39 @@ void LinkEditor::showPlacementHelp()
     // Parented, never desktop: the foreground watchdog kills desktop
     // CallOutBoxes in the AU hosting XPC process (the picker's bug).
     // A CallOutBox is lightweight too, so it loses to a hosted editor the same way (EJGuestPopup.h).
-    // Nothing is restored here: this popover has no completion callback, and the pop-out comes back
-    // the next time the panel lays out or he reopens the slot.
-    echojay::prepareForPopupOverGuest (chainPanel, chainPanel.popout.get(), "the Placement help popover");
-    juce::CallOutBox::launchAsynchronously(std::make_unique<HelpText>(),
-                                           getLocalArea(&placementHelp,
-                                                        placementHelp.getLocalBounds()),
-                                           this);
+    // ---- AND THIS ONE RESTORES TOO, WHICH IT DID NOT (his R7 follow-up, 29 Oct 2026) --------
+    //
+    // The comment here used to say "nothing is restored: this popover has no completion callback",
+    // and that was the whole fault he reported: the editor went and came back only if something
+    // else happened to lay the panel out again.
+    //
+    // A CallOutBox in this JUCE has no dismissalCallback, so the signal every close path DOES
+    // share is the death of its content component - the box owns it and deletes it whether he
+    // picked, pressed Esc, clicked outside, or the box dismissed itself. So the restore hangs on
+    // that destructor, through the editor's SafePointer, and cannot be skipped by any of them.
+    {
+        auto hold = std::make_shared<echojay::GuestPopupHold>
+                        (echojay::prepareForPopupOverGuest (chainPanel, chainPanel.popout.get(),
+                                                            "the Placement help popover"));
+        auto safeThis = juce::Component::SafePointer<LinkEditor> (this);
+        struct HelpTextWithRestore : HelpText
+        {
+            juce::Component::SafePointer<LinkEditor> owner;
+            std::shared_ptr<echojay::GuestPopupHold> hold;
+            ~HelpTextWithRestore() override
+            {
+                if (owner == nullptr || hold == nullptr) return;
+                echojay::restoreAfterPopup (owner->chainPanel, owner->chainPanel.popout.get(), *hold);
+            }
+        };
+        auto content = std::make_unique<HelpTextWithRestore>();
+        content->owner = safeThis;
+        content->hold  = hold;
+        juce::CallOutBox::launchAsynchronously (std::move (content),
+                                                getLocalArea (&placementHelp,
+                                                              placementHelp.getLocalBounds()),
+                                                this);
+    }
 }
 
 // Subtle inline "?" glyph — dim, brightens on hover; no border.
@@ -740,8 +766,9 @@ void LinkEditor::HelpGlyph::paint(juce::Graphics& g)
 void LinkEditor::showPlacementChooser()
 {
     // Same rule as the picker: a hosted editor composites over a PopupMenu too (EJGuestPopup.h).
-    const bool loweredForMenu = echojay::prepareForPopupOverGuest (chainPanel, chainPanel.popout.get(),
-                                                                   "the Placement menu");
+    auto menuHold = std::make_shared<echojay::GuestPopupHold>
+                        (echojay::prepareForPopupOverGuest (chainPanel, chainPanel.popout.get(),
+                                                            "the Placement menu"));
     juce::PopupMenu m;
     m.addSectionHeader("Where is this Link?");
     const int cur = proc.getPlacement();
@@ -820,13 +847,14 @@ void LinkEditor::showPlacementChooser()
 
     auto safeThis = juce::Component::SafePointer<LinkEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&placementBtn).withParentComponent(this),
-        [safeThis, loweredForMenu](int r)
+        [safeThis, menuHold](int r)
         {
-            // THE RESTORE RUNS ON EVERY EXIT, including r == 0 (dismissed without choosing): a
-            // pop-out editor left behind the main window would be this fix causing its own fault.
+            // THE RESTORE RUNS ON EVERY EXIT, including r == 0 (dismissed without choosing, which
+            // is Esc and a click outside): a pop-out left behind the main window, or an inline
+            // editor that never comes back, would be this fix causing its own fault (his R7).
             if (safeThis != nullptr)
-                echojay::restorePopoutAfterPopup (safeThis->chainPanel,
-                                                  safeThis->chainPanel.popout.get(), loweredForMenu);
+                echojay::restoreAfterPopup (safeThis->chainPanel,
+                                            safeThis->chainPanel.popout.get(), *menuHold);
             if (safeThis == nullptr || r == 0) return;
             if (r == 999) { safeThis->proc.setSourceTypeFromUser ({}, {}); return; }
             if (r >= 1000)

@@ -3895,6 +3895,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
         return;
     }
     borrowApplyInFlight_ = true;
+    borrowApplyStartedMs_ = juce::Time::currentTimeMillis();   // his R1: the strand gets a clock
     borrowApplyReleaseOnFail_ = releaseLockOnFail;
     std::weak_ptr<bool> alive = aliveToken_;
     auto poll = std::make_shared<std::function<void(int)>>();
@@ -3965,6 +3966,7 @@ void EchoJayProcessor::borrowApplyFinish(bool applied, const juce::String& why,
                                          bool restored)
 {
     borrowApplyInFlight_ = false;
+    borrowApplyStartedMs_ = 0;
     const juce::String uid  = borrowSession_.uid;
     const juce::String name = resolveLinkDisplayName(uid);
     if (applied)
@@ -4798,39 +4800,13 @@ void EchoJayProcessor::shadowFollowTick()
 
     // ---- AND THE OTHER DIRECTION, FOR OUR OWN DEVICES (item 2b, 29 Oct 2026) ----------------
     //
-    // A hosted plugin's copy tells us about a knob through its AudioProcessorListener. An EchoJay
-    // device has no juce parameters, so that listener is silent for every one of them - which is
-    // the half of his "no knob can be turned" that publishing values does not fix.
-    //
-    // THE BASELINE IS WHAT THE MIRROR JUST WROTE, which is why this sits here and not in a timer of
-    // its own: `shadowValRead_` IS the frame the copy now holds, so seeding from it closes the echo
-    // loop that would otherwise send every mirrored value straight back to the Link. Anything that
-    // differs from that baseline on a later tick came from the copy's own editor - his hand - or
-    // from the device itself, and both are things the Link should be told.
-    if (const int nb = shadowView_.readBuiltinCopyValues (builtinPollNow_.data(),
-                                                          (int) builtinPollNow_.size()); nb > 0)
-    {
-        if ((int) builtinPollSeen_.size() < nb)
-            builtinPollSeen_.assign ((size_t) nb, echojay::kShadowValNever);
-        for (int i = 0; i < nb; ++i)
-        {
-            const float now = builtinPollNow_[(size_t) i];
-            const float was = builtinPollSeen_[(size_t) i];
-            // The frame the mirror just applied is the baseline for anything it wrote.
-            const float base = (i < count) ? juce::jlimit (0.0f, 1.0f, shadowValRead_[(size_t) i])
-                                           : was;
-            const float ref  = (was == echojay::kShadowValNever) ? base : was;
-            builtinPollSeen_[(size_t) i] = now;
-            if (was == echojay::kShadowValNever) continue;           // first look: nothing to compare
-            if (std::abs (now - base) <= echojay::kShadowValEps) continue;   // it is what we wrote
-            if (std::abs (now - ref)  <= echojay::kShadowValEps) continue;   // unchanged since last look
-            // Through the SAME door a hosted plugin's knob uses, so the gesture framing, the undo
-            // step, the refusal policy and the "the Link is newer" record are all the existing ones.
-            liveControlParamChanged (i, now);
-        }
-    }
-    else if (! builtinPollSeen_.empty())
-        builtinPollSeen_.clear();        // the view came down, or it is a hosted plugin after all
+    // It was HERE, inside this frame handler, and that placement is the rest of his R4: a gesture
+    // on one of our devices was noticed only when a frame arrived FROM the Link, so a Link that
+    // published nothing left his knobs dead AND silent - no refusal line either, because the
+    // refusal is composed by the gesture road this sweep feeds. It runs on its own tick now
+    // (pollBuiltinCopyForGestures, from shadowControlTick), and this frame's values are its
+    // baseline, which is why the count is remembered.
+    shadowValReadCount_ = count;
 
     if (shadowFollowFrames_ == 1)
         EchoJay_NSLog (("EJShadow: the live view is FOLLOWING slot " + juce::String (h.slot + 1)
@@ -5215,8 +5191,54 @@ void EchoJayProcessor::liveControlEndGesture (int index, const char* why)
 /** A plugin that never frames a gesture still has to produce ONE change per drag, so a gesture
     with no movement for kLiveControlQuietMs is closed here. The figure and the reasoning behind it
     are in EJLiveControl.h, stated rather than buried. */
+// ---- HIS HAND ON ONE OF OUR DEVICES, LOOKED FOR ON OUR OWN TICK (his R4, 29 Oct 2026) -------
+//
+// *"the knob turns but nothing changes ... and no message appears on the panel or the strip"*.
+//
+// An EchoJay device has no juce::AudioProcessorParameter, so its copy's editor fires no listener
+// and there is nothing to subscribe to: the only way to see his hand is to look. This looked, but
+// only when a frame arrived from the Link - so with the Link publishing nothing (which is what the
+// publish half's own silent return left it doing for our devices until this morning) his gestures
+// were never even considered, and the refusal road that would have SAID so was never reached.
+//
+// Thirty times a second, over at most a couple of dozen floats. The baseline is the last frame the
+// mirror applied, so a value the mirror itself wrote is never sent back as a gesture.
+void EchoJayProcessor::pollBuiltinCopyForGestures()
+{
+    const int nb = shadowView_.readBuiltinCopyValues (builtinPollNow_.data(),
+                                                      (int) builtinPollNow_.size());
+    if (nb <= 0)
+    {
+        if (! builtinPollSeen_.empty()) builtinPollSeen_.clear();   // the view came down, or it is hosted
+        return;
+    }
+    if ((int) builtinPollSeen_.size() < nb)
+        builtinPollSeen_.assign ((size_t) nb, echojay::kShadowValNever);
+    const int fromFrame = juce::jmin (shadowValReadCount_, (int) shadowValRead_.size());
+    for (int i = 0; i < nb; ++i)
+    {
+        const float now = builtinPollNow_[(size_t) i];
+        const float was = builtinPollSeen_[(size_t) i];
+        // The frame the mirror last applied is the baseline for anything it wrote.
+        const float base = (i < fromFrame) ? juce::jlimit (0.0f, 1.0f, shadowValRead_[(size_t) i])
+                                           : was;
+        const float ref  = (was == echojay::kShadowValNever) ? base : was;
+        builtinPollSeen_[(size_t) i] = now;
+        if (was == echojay::kShadowValNever) continue;            // first look: nothing to compare
+        if (std::abs (now - base) <= echojay::kShadowValEps) continue;    // it is what we wrote
+        if (std::abs (now - ref)  <= echojay::kShadowValEps) continue;    // unchanged since last look
+        // Through the SAME door a hosted plugin's knob uses, so the gesture framing, the undo step,
+        // the refusal policy and the "the Link is newer" record are all the existing ones - and the
+        // refusal, when there is one, reaches the card by the road that was already written.
+        liveControlParamChanged (i, now);
+    }
+}
+
 void EchoJayProcessor::shadowControlTick()
 {
+    // OUR OWN DEVICES FIRST, so a gesture seen on this tick is sent on this tick (the hosted road's
+    // own C2 rule below: an acknowledgement a tick late is a knob that springs back for 33 ms).
+    pollBuiltinCopyForGestures();
     if (liveGestures_.empty()) return;
     const auto nowMs = juce::Time::getMillisecondCounterHiRes();
     // Collected first: ending a gesture erases from the map we would be walking.

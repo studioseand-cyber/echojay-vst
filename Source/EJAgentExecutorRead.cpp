@@ -1750,6 +1750,17 @@ PlaybackReading ExecutorRead::readPlayback()
     if (target_.isEmpty())
     {
         const auto out = src_.chainOut ? src_.chainOut() : echojay::LevelTally::Snapshot();
+        // ---- WHAT REACHED THE PLUGINS, BESIDE WHAT CAME OUT (his 11:30 report, 29 Oct 2026) ----
+        // The wait counts the input: a plugin that is turned down, or set wrong, must not be able
+        // to make "nothing played" true. The output stays in the reading because the OTHER question
+        // - is anything coming out - is answered from it, and is worth its own sentence.
+        const auto in = src_.chainInLoop ? src_.chainInLoop() : echojay::LevelTally::Snapshot();
+        r.inputKnown            = src_.chainInLoop != nullptr;
+        r.heardAboveInputSeconds = in.heardAboveSeconds;
+        if (finiteLevel (in.shortTermDb))  r.inputLevelDb  = in.shortTermDb;
+        else if (finiteLevel (in.rmsDb))   r.inputLevelDb  = in.rmsDb;
+        if (finiteLevel (out.shortTermDb)) r.outputLevelDb = out.shortTermDb;
+        else if (finiteLevel (out.rmsDb))  r.outputLevelDb = out.rmsDb;
         r.heardAboveSeconds = out.heardAboveSeconds;
         if (out.known && finiteLevel (out.levelDb)) r.integratedLufs = out.levelDb;
         if (std::isfinite (out.maxShortTermDb)) r.loudestShortTermLufs = out.maxShortTermDb;
@@ -2345,6 +2356,10 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         // integrated reading, getChainInLevels) and resetAllLevels() are NOT called - Sean's 13:22 rule, 08c F2-3.
         auto& h = p->getChainHost();
         h.setChainOutCountFloor (LoudnessLoop::kCountFloorLufs);
+        // AND THE INPUT'S, so the wait can ask what reached the plugins (his 11:30 report, 29 Oct).
+        // One number for both, from the loop, so the two cannot drift apart - and a leg asserts it
+        // against echojay::kHeardCountFloorLufs, which is the copy EJPlaybackHeard.h holds.
+        h.setChainInLoopCountFloor (LoudnessLoop::kCountFloorLufs);
         h.resetChainOutLevels();
         h.resetChainInLoopLevels();
         h.resetChainOutShortTermMax();

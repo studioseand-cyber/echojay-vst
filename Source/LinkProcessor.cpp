@@ -5463,6 +5463,50 @@ void LinkProcessor::applyStagedSetParams()
                            .toRawUTF8());
             continue;
         }
+        // ---- OUR OWN DEVICES TAKE THE VALUE THROUGH THEIR SCHEMA (his R4, 29 Oct 2026) -------
+        //
+        // *"an EchoJay Compressor on a Link's rack, opened in the V2 ... The gain reduction meter
+        // moves, but no knob can be moved from the V2, and no message appears on the panel or the
+        // strip."*
+        //
+        // THIS IS WHERE THE KNOB DIED. An EchoJay device has no juce::AudioProcessorParameter at
+        // all - every control goes through setParamValue against an ordered ParamSchema - so
+        // `params.size()` is 0 for every one of them and the guard below dropped EVERY frame with
+        // "that plugin has 0". The publish half of FOLLOW learnt about our devices this morning
+        // (item 2b); the CONTROL half had not, so the view followed and the gestures went nowhere.
+        //
+        // THE INDEX MEANS THE SAME THING AT BOTH ENDS: echojay::builtinMirrorOf is what the
+        // publisher sweeps and what the V2 reads back from its copy, so frame index i is
+        // mirroredParams()[i] here - the same list the schema digest covers, which is what makes
+        // an index safe to send at all.
+        if (auto* dev = dynamic_cast<EedDeviceProcessor*> (proc))
+        {
+            const auto mirror = echojay::builtinMirrorOf (*proc);
+            if ((int) m.paramId >= (int) mirror.size())
+            {
+                EchoJay_NSLog (("EJControl: a value for parameter " + juce::String ((int) m.paramId)
+                                + " of slot " + juce::String (m.slot + 1) + " could not be applied - "
+                                "this EchoJay device mirrors " + juce::String ((int) mirror.size())
+                                + " control(s). The V2 and this Link disagree about the list, which "
+                                "FOLLOW's digest is supposed to catch before a frame is sent")
+                               .toRawUTF8());
+                continue;
+            }
+            const auto& mp = mirror[(size_t) m.paramId];
+            // Through the device's OWN range, by the same conversion the mirror reads with, so a
+            // round trip cannot drift and the device's own clamp has the last word.
+            const double real = echojay::builtinValueFromRing (mp.min, mp.max,
+                                                               (float) juce::jlimit (0.0, 1.0, m.value));
+            dev->setParamValue (mp.id, real);
+            ++stagedParamApplied_;
+            if (m.sawEnd)
+                EchoJay_NSLog (("EJControl: slot " + juce::String (m.slot + 1) + " \"" + mp.id
+                                + "\" set to " + juce::String (real, 4) + " (its own units, from "
+                                + juce::String (m.value, 4) + " mirrored) from the V2's live view, "
+                                "gesture " + juce::String ((int) m.gesture) + " - this EchoJay "
+                                "device on this Link now holds it").toRawUTF8());
+            continue;
+        }
         const auto& params = proc->getParameters();
         if ((int) m.paramId >= params.size())
         {
@@ -5616,7 +5660,24 @@ void LinkProcessor::publishShadowValuesTick()
     const int have = ! builtinMirror.empty() ? (int) builtinMirror.size()
                                              : params.size();
     const int n    = juce::jmin (have, echojay::kShadowValMax);
-    if (n <= 0) return;
+    if (n <= 0)
+    {
+        // ---- AND THIS RETURN SAYS WHY (his R4, 29 Oct 2026) --------------------------------
+        // It was silent, and a silent return here is invisible at BOTH ends: the V2 gets no frame,
+        // concludes it is not following, and puts a shield over knobs he is trying to turn - with
+        // no line anywhere saying what happened. Once per slot, not per tick.
+        if (shadowValSaidNothing_ != slot)
+        {
+            shadowValSaidNothing_ = slot;
+            EchoJay_NSLog (("EJShadow: slot " + juce::String (slot + 1) + " (\""
+                            + chainHost.getSlotInfo (slot).name + "\") publishes NO values for the "
+                            "live view - it has no juce parameters and it is not one of our own "
+                            "devices either, so there is nothing the V2 can follow or write. The "
+                            "view stays a picture and the V2 says so").toRawUTF8());
+        }
+        return;
+    }
+    shadowValSaidNothing_ = -1;
 
     // THE DIGEST IS RECOMPUTED WHEN THE SLOT, THE RACK'S STRUCTURE OR THE PARAMETER COUNT MOVES,
     // never every tick: it walks every parameter's name, which is the one genuinely dear thing

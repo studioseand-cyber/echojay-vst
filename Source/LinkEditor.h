@@ -397,6 +397,11 @@ public:
             same meaning, so one template serves both. */
         bool hasInlineEditor() const { return inlineEditor != nullptr; }
 
+        /** WHICH model index it is on, or -1 (his R7 follow-up, 29 Oct 2026). The V2's panel calls
+            its own member inlineSlot and this one calls it inlineModelIdx; this is the one name
+            both publish, so echojay::restoreAfterPopup can reopen what it closed on either. */
+        int inlineEditorSlot() const { return inlineEditor != nullptr ? inlineModelIdx : -1; }
+
         void attachNative(bool log)
         {
             if (inlineIsBuiltin) return;   // no foreign view to clip
@@ -1167,7 +1172,10 @@ private:
     void showPlacementHelp();                       // "?" popover (CallOutBox)
     /** Remembers that the + picker lowered a pop-out editor, so its onGone can raise it again.
         The V2 has carried the same flag since 22 Sep; this is its counterpart here. */
-    bool pickerLoweredPopout_ = false;
+    // WHAT A POPUP TOOK DOWN, so every death path can put it back (his R7 follow-up, 29 Oct 2026):
+    // the pop-out that was lowered AND the inline editor that was closed. It was a bare bool, which
+    // is why the inline half never came back - nothing remembered it had been open.
+    echojay::GuestPopupHold pickerHold_;
     void updatePlacementBtn();
     void applyPlacement(int p);                    // set + refresh
 

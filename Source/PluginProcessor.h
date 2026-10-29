@@ -722,6 +722,7 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     // read last time (or what the mirror wrote, which is the same thing when the mirror wrote it).
     std::vector<float> builtinPollNow_  = std::vector<float> ((size_t) echojay::kShadowValMax, 0.0f);
     std::vector<float> builtinPollSeen_;
+    int                shadowValReadCount_ = 0;   // how many of shadowValRead_ the last frame filled
     // ---- WHAT HIS HAND HAS JUST LEFT (his overnight item 1a, 26 Oct 2026) ------------------
     // parameter index -> the clock when its gesture ended. Kept because the undo road reads it.
     std::map<int, double> liveGestureEndedMs_;
@@ -846,6 +847,9 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** Closes any gesture the plugin never closed, so a drag is ONE change even on a plugin that
         reports no boundaries at all. Called from the editor's timer beside shadowFollowTick. */
     void shadowControlTick();
+    /** His hand on one of OUR devices' copies, looked for on our own tick rather than only when a
+        frame arrives from the Link (his R4, 29 Oct 2026). */
+    void pollBuiltinCopyForGestures();
     /** Empty when a gesture may travel; otherwise the one line saying why it may not. */
     juce::String liveControlRefusal() const { return liveControlRefusal_; }
     int liveControlSent() const noexcept { return liveControlSent_; }
@@ -1468,6 +1472,11 @@ public:
             && r.hostPid == me.pid && r.hostStartSec == me.startSec && r.hostStartUsec == me.startUsec;
     }
     bool borrowApplyInFlight_ = false;
+    /** WHEN it started, so a strand can be bounded (his R1, 29 Oct 2026). The engage tick's first
+        line is `if (p.borrowApplyInFlight_) return;`, so an apply whose poll chain never reaches
+        borrowApplyFinish stalls every later engage for the life of the window - which is exactly
+        what closing and reopening the V2 cured for him. 0 = not in flight. */
+    juce::int64 borrowApplyStartedMs_ = 0;
 
     // ---- Mute/solo layer (27 Aug 2026, MUTE_SOLO_SPEC) -------------------
     // Per-Link snapshot of the published mute/solo bits, refreshed by the

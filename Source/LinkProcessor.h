@@ -486,6 +486,9 @@ private:
     bool shadowValSaidTruncated_ = false;      // the "more than we can carry" line, said once
     bool shadowValSaidCost_ = false;           // the measured sweep cost, said once per tap
     void publishShadowValuesTick();
+    /** WHICH slot was last reported as publishing nothing, so the line is said once per slot and
+        not thirty times a second (his R4, 29 Oct 2026: the return there was silent at both ends). */
+    int shadowValSaidNothing_ = -1;
     // ---- PER-SLOT METERS, published at 30 Hz (his 25 Oct ask; EJSlotMeters.h says why) --------
     // A THIRD tiny file, and unlike the values file it is NOT tied to a tap: he wants the figures on
     // every slot card whenever the rack is on screen, so this is mapped lazily the first time there

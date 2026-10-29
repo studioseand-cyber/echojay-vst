@@ -1827,6 +1827,12 @@ public:
     echojay::LevelTally::Snapshot getChainInLoopLevels() const { return chainInLoopTally_.snapshot(); }
     void resetChainInLoopLevels() { chainInLoopTally_.reset(); }
     void setChainOutCountFloor (float lufs) { chainOutTally_.setCountFloor (lufs); }
+    /** ---- AND THE INPUT TALLY, WHICH HAD NONE (Sean's 11:30 report, 29 Oct 2026) ----------
+        Without a floor, heardAboveSeconds counts NOTHING on this tally - LevelTally only counts a
+        hop when the floor is finite - so the playback wait could not have asked the input even if
+        it had wanted to. The same number as the output's, because "has he played anything" must
+        not have two thresholds. */
+    void setChainInLoopCountFloor (float lufs) { chainInLoopTally_.setCountFloor (lufs); }
     void resetChainOutShortTermMax() { chainOutTally_.resetShortTermMax(); }   // 18e: the loop's measurement window
     void resetChainInShortTermMax()  { chainInTally_.resetShortTermMax(); }
     SlotLevels getSlotLevels(int i) const;

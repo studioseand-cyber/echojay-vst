@@ -27,6 +27,7 @@
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "EJRackViewSignature.h"   // is the rack in view still the same rack?
+#include "EJSessionReset.h"       // his R1: a switch always connects, or says why
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
@@ -2393,6 +2394,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                  + " - which a press is supposed to have cleared before this was asked";
         const int pubPid = publisherPidFor (uid);
         const bool sw = echojay::realEditorSwitchOn();
+        if (chainListPanel.slotHoldsOurDevice && chainListPanel.slotHoldsOurDevice (slot0))
+        {
+            juce::String nm;
+            if (auto it = processorRef.linkRackCache.find (uid);
+                it != processorRef.linkRackCache.end() && it->second.valid
+                && slot0 < (int) it->second.rack.slots.size())
+                nm = it->second.rack.slots[(size_t) slot0].name.trim();
+            return echojay::ourDeviceRoadWhy (nm);
+        }
         if (! echojay::realEditorRoad (sw, pubPid, (int) ::getpid()))
             return "the real-editor road says no: " + echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
         if (echojay::LocalInstances::find (uid) == nullptr)
@@ -2404,6 +2414,22 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
              + juce::String (processorRef.shadowSlot()) + ", not this one";
     };
 
+    // ---- IS WHAT THE RACK HOLDS IN THAT SLOT ONE OF OURS? (his Test 5, 29 Oct 2026) --------
+    // Asked by all three real-editor roads below, because an EchoJay device has no editor of its
+    // own to borrow and its live road is the copy (the reasoning is in EJRealEditorSwitch.h). One
+    // reader, so the three answers cannot disagree with each other or with the view.
+    chainListPanel.slotHoldsOurDevice = [this](int slot0) -> bool
+    {
+        const auto uid = chainViewUid();
+        if (uid.isEmpty() || slot0 < 0) return false;
+        auto it = processorRef.linkRackCache.find (uid);
+        if (it == processorRef.linkRackCache.end() || ! it->second.valid
+            || slot0 >= (int) it->second.rack.slots.size())
+            return false;
+        const auto nm = it->second.rack.slots[(size_t) slot0].name.trim();
+        return nm.isNotEmpty() && ChainHost::isBuiltinName (nm);
+    };
+
     chainListPanel.canShowSlotEditorHere = [this](int slot0) -> bool
     {
         if (slot0 < 0) return false;
@@ -2412,7 +2438,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // A REVOKE STANDS UNTIL HE ASKS AGAIN (see editorLeaseRevoked).
         if (revokedSlot1_ == slot0 + 1 && revokedUid_ == uid) return false;
         const int pubPid = publisherPidFor (uid);
-        if (echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid, (int) ::getpid())
+        const bool oursHere = chainListPanel.slotHoldsOurDevice
+                           && chainListPanel.slotHoldsOurDevice (slot0);
+        if (echojay::realEditorRoadForSlot (echojay::realEditorSwitchOn(), pubPid,
+                                            (int) ::getpid(), oursHere)
             && echojay::LocalInstances::find (uid) != nullptr)
             return true;
         return processorRef.shadowRunning() && processorRef.shadowUid() == uid
@@ -2428,9 +2457,23 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (uid.isEmpty()) return nullptr;                    // the own rack: nothing to borrow
         const bool sw = echojay::realEditorSwitchOn();
         const int pubPid = publisherPidFor (uid);
-        if (! echojay::realEditorRoad (sw, pubPid, (int) ::getpid()))
+        const bool oursHere = chainListPanel.slotHoldsOurDevice
+                           && chainListPanel.slotHoldsOurDevice (slot0);
+        if (! echojay::realEditorRoadForSlot (sw, pubPid, (int) ::getpid(), oursHere))
         {
-            whyOut = echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
+            // AND THE SENTENCE NAMES WHICH TEST SAID NO: "it is one of ours" and "the switch is
+            // off" are different facts and the card must not make him guess (his Test 5).
+            if (oursHere)
+            {
+                juce::String nm;
+                if (auto it = processorRef.linkRackCache.find (uid);
+                    it != processorRef.linkRackCache.end() && it->second.valid
+                    && slot0 < (int) it->second.rack.slots.size())
+                    nm = it->second.rack.slots[(size_t) slot0].name.trim();
+                whyOut = echojay::ourDeviceRoadWhy (nm);
+            }
+            else
+                whyOut = echojay::realEditorRoadWhy (sw, pubPid, (int) ::getpid());
             return nullptr;
         }
         auto* lender = echojay::LocalInstances::find (uid);
@@ -11569,15 +11612,37 @@ void EchoJayEditor::showChainRackMenu()
     // below) is a lightweight component, and a hosted editor's NSView
     // composites OVER it — the rack list drew BEHIND the plugin box. Close
     // the hosted editors first: choosing a rack replaces the view anyway.
-    chainListPanel.closeAllEditors();
+    // ---- AND IT COMES BACK IF HE CHOSE NOTHING (his R7 follow-up, 29 Oct 2026) -------------
+    // The close above is right and stays; what was missing is the other end. A PICK here replaces
+    // the rack in view, so there is nothing to reopen - the new rack's cards are not the old
+    // rack's slots, and reopening by index would be "a slot index is not a rack" again. A DISMISS
+    // (Esc, a click outside, the menu going by itself: r == 0) changes nothing, so his editor must
+    // be exactly where he left it.
+    auto rackMenuHold = std::make_shared<echojay::GuestPopupHold>
+                            (echojay::prepareForPopupOverGuest (chainListPanel,
+                                                                chainListPanel.popout.get(),
+                                                                "the rack menu"));
     // withParentComponent: same foreground-watchdog defect as the picker's
     // CallOutBox — a desktop-parented menu inside the background AU hosting
     // process dismisses on its own. Embedded menus do not.
     m.showMenuAsync(juce::PopupMenu::Options()
                         .withTargetComponent(chainListPanel.rackBtn)
                         .withParentComponent(this),
-        [safeThis, uids](int r)
+        [safeThis, uids, rackMenuHold](int r)
         {
+            if (safeThis != nullptr)
+            {
+                if (r == 0)
+                    echojay::restoreAfterPopup (safeThis->chainListPanel,
+                                                safeThis->chainListPanel.popout.get(), *rackMenuHold);
+                else
+                {   // he chose a rack: the pop-out still goes back up, the inline one is not
+                    // reopened on a rack that is about to be replaced.
+                    rackMenuHold->closedInlineSlot = -1;
+                    echojay::restoreAfterPopup (safeThis->chainListPanel,
+                                                safeThis->chainListPanel.popout.get(), *rackMenuHold);
+                }
+            }
             if (safeThis == nullptr || r <= 0) return;
             // EVERY arm logs, including the silent ones (21 Aug 2026): the
             // hands-on stuck-lock repro showed a rack selection that never
@@ -11673,6 +11738,30 @@ void EchoJayEditor::handleBorrowSelectionChange(const juce::String& newUid,
                                                 bool userInitiated)
 {
     auto& p = processorRef;
+    // ---- A USER SWITCH IS THE CLEAN RESET (his R1 direction, 11:43 on 29 Oct 2026) -----------
+    //
+    // *"switching to another Link didn't connect, switching back didn't connect, and closing and
+    // reopening the V2 window connected at once ... make a Link switch do the same clean reset
+    // that reopening the window does."*
+    //
+    // The road below is right about the SESSION (apply, then pend the new one) and the reset keeps
+    // that road - what it adds is the editor-side half a reopen throws away, which is what
+    // switching away and back could not win back: the window's one ask per rack, the stall
+    // memories, and anything stranded in flight. So a user switch goes through the reset and the
+    // road below serves the programmatic callers it was written for.
+    //
+    // ONLY A USER SWITCH, and only to a rack that is not already the live one: a programmatic move
+    // (chat activation, a deep link, a card's target) moves the VIEW and must not touch a session,
+    // which is his 20 Oct ruling and is why decideSelection exists at all.
+    if (userInitiated && ! (p.borrowActive() && p.borrowUid() == newUid))
+    {
+        resetSessionAndEngage (newUid, newUid.isEmpty()
+                                           ? "he selected this plugin's own rack"
+                                           : "he selected another Link's rack");
+        syncAgentTarget();            // the agent is told at the moment it changes, as below
+        borrowSelectionTick();
+        return;
+    }
     // The PURE decision (§3f in §5a-R terms): a live session's uid is
     // authoritative — programmatic writers (chat activation, deep links,
     // card target switches) move the VIEW only; only a USER selection
@@ -11739,6 +11828,115 @@ bool EchoJayEditor::windowHasHadRack (const juce::String& uid) const
                                       windowEngageAskedFor_ == uid);
 }
 
+// ---- THE CLEAN RESET, WITHOUT REOPENING THE WINDOW (his R1 direction, 29 Oct 2026) ----------
+//
+// *"make a Link switch and a click on the Chain tab do the same clean reset that reopening the
+// window does (release every session, lease and engage state, then engage the selected rack
+// fresh)."*
+//
+// SO THIS FUNCTION IS A LIST OF WHAT A REOPEN THROWS AWAY, and every item on it is a state that
+// has stalled an engage for him at least once:
+//
+//   the live view        a copy still streaming from the rack he is leaving
+//   the session          released, with its edits applied by the normal road or dropped by it
+//   the rack lock        a lock held for a session that is going
+//   the read in flight   bounded since 20 Oct, but a reset must not wait out the bound
+//   the apply in flight  UNBOUNDED until today, and the first thing the engage tick returns on
+//   the window's ask     spent once per rack, which is why switching away and back did not help
+//
+// The ask is the subtle one. `sessionsStartedAtOpen_` is the baseline the one-ask-per-window rule
+// is measured against (EJEngageDemand.h), and it is taken when the window is BUILT. Re-taking it
+// here is precisely what a reopen does to it, and it is what lets this rack be connected to again.
+void EchoJayEditor::resetSessionAndEngage (const juce::String& uid, const char* reason)
+{
+    auto& p = processorRef;
+    EchoJay_NSLog (("EJReset: " + (uid.isEmpty() ? juce::String ("(no rack)") : uid) + " - " + reason
+                    + ": releasing every session, lease and engage state and engaging fresh, which "
+                      "is what closing and reopening the window does (his R1, 29 Oct)").toRawUTF8());
+
+    // ---- 1. WHAT WAS ALREADY STUCK IS LET GO OF FIRST -------------------------------------
+    //
+    // Captured and cleared BEFORE anything new is started, because an apply this function itself
+    // starts below is legitimate and must not be cleared with the strand. Order is the whole of
+    // the difference between a reset and a reset that cancels its own work.
+    if (borrowReadInFlightUid_.isNotEmpty())
+    {
+        EchoJay_NSLog (("EJReset: a rack read for " + borrowReadInFlightUid_ + " was in flight and "
+                        "is let go of - its callback finds the view moved on and does nothing")
+                       .toRawUTF8());
+        borrowReadInFlightUid_.clear();
+        borrowReadStartedMs_ = 0;
+    }
+    if (p.borrowApplyInFlight_)
+    {
+        EchoJay_NSLog ("EJReset: an apply was already in flight and is let go of - the engage tick "
+                       "returns on this flag before it does anything else, which is the stall he hit");
+        p.borrowApplyInFlight_  = false;
+        p.borrowApplyStartedMs_ = 0;
+    }
+
+    // ---- 2. the live view goes with the session it was taken for --------------------------
+    if (p.shadowRunning()) shadowStopIfRunning ("the session is being reset");
+
+    // ---- 3. THE SESSION, BY THE ROAD THAT KEEPS HIS WORK ----------------------------------
+    //
+    // "Release every session" cannot mean "drop what he edited". A session holds uncommitted
+    // bypass, wet and parameter edits, and the road that keeps them is the one a switch and a
+    // closing window already take: apply, THEN release. borrowRelease on its own is the second
+    // half of that road with the first half thrown away.
+    //
+    // The apply is asynchronous and can strand, which is half of what he hit - so the bound in the
+    // tick covers it, and the watchdog's next try comes back here with the flag already cleared.
+    // Two tries, and then he is told in words.
+    if (p.borrowActive())
+    {
+        const auto was = p.borrowUid();
+        if (p.borrowStructureCapable_)
+        {
+            EchoJay_NSLog (("EJReset: a session is live on " + was + " - applying it and releasing "
+                            "(the road a switch already takes; his edits are not the price of a "
+                            "reset)").toRawUTF8());
+            p.borrowApplyAndRelease (/*releaseLockOnFail=*/false);
+        }
+        else
+        {
+            EchoJay_NSLog (("EJReset: a session is live on " + was + " and this Link takes the "
+                            "legacy per-slot road - applying it the same way a deselection does")
+                           .toRawUTF8());
+            runBorrowApply();
+        }
+    }
+
+    // ---- 4. THE EDITOR'S OWN MEMORY OF WHAT IT HAS ALREADY TRIED --------------------------
+    //
+    // This is the half a reopen throws away and nothing else did. The subtle one is the window's
+    // ONE ASK PER RACK: `sessionsStartedAtOpen_` is the baseline that rule is measured against
+    // (EJEngageDemand.h) and it is taken when the window is BUILT, so once the ask was spent,
+    // switching away and back could not win it again - which is exactly what he reported at 11:43.
+    // Re-taking the baseline is precisely what a reopen does to it.
+    windowEngageAskedFor_.clear();
+    runReclaimArmedFor_.clear();
+    borrowStallSaid_.clear();
+    borrowStallWhy_.clear();
+    shadowAsking_ = false;
+    rackLiveAtOpen_.clear();
+    sessionsStartedAtOpen_ = p.borrowSessionsStartedSnapshot();
+
+    // ---- 5. and now engage the rack he is actually looking at -----------------------------
+    if (uid.isNotEmpty())
+    {
+        p.pendingAutoEngage_ = uid;
+        p.setRackLockWant (uid);
+        EchoJay_NSLog (("EJReset: engaging " + uid + " fresh").toRawUTF8());
+    }
+    else
+    {
+        p.pendingAutoEngage_.clear();
+        p.setRackLockWant ({});
+    }
+    chainListPanel.repaint();
+}
+
 void EchoJayEditor::borrowSelectionTick()
 {
     auto& p = processorRef;
@@ -11758,6 +11956,96 @@ void EchoJayEditor::borrowSelectionTick()
     // borrow's, so it runs FIRST, before any of this function's returns.
     if (p.shadowRunning() && p.shadowUid() != chainViewUid())
         shadowStopIfRunning ("the rack in view is no longer that Link's");
+    // ---- AND NOTHING MAY SIT ON "CONNECTING" (his R1 direction, 11:43 on 29 Oct 2026) --------
+    //
+    // *"Add a watchdog: if 'Getting this rack ready / Connecting to rack' lasts more than about 3
+    // seconds, do that reset automatically and log why, with at most 2 tries, then a plain sentence
+    // saying it couldn't connect and what to try."*
+    //
+    // THE STATE IS READ AS FACTS, NOT AS THE PANEL'S WORDS. "Connecting" is what the gate SAYS
+    // about this set of facts (ChainEditGate.h), and a watchdog that read the sentence would be
+    // taking a decision on a rendering - the mistake the measurement-tap rule names. The facts:
+    // the view is a Link's rack, no session is live on THAT rack, and something is nevertheless
+    // supposed to be bringing one up.
+    //
+    // The clock is a wall clock kept per rack, so moving to another rack starts its own, and the
+    // tries are per rack too: two stalls an hour apart each get two tries rather than sharing them.
+    {
+        const auto view = chainViewUid();
+        const bool sessionOnView = p.borrowActive() && p.borrowUid() == view;
+        const bool bringingUp = p.pendingAutoEngage_ == view
+                             || borrowReadInFlightUid_ == view
+                             || p.borrowApplyInFlight_
+                             || p.rackLockHeldFor (view)
+                             || p.rackLockWantUid() == view;
+        const bool connectingNow = view.isNotEmpty() && ! sessionOnView && bringingUp;
+        const auto nowMs = juce::Time::currentTimeMillis();
+
+        if (! connectingNow || view != connectingUid_)
+        {   // the clock belongs to one rack and one attempt; a change of either restarts it
+            connectingUid_     = connectingNow ? view : juce::String();
+            connectingSinceMs_ = connectingNow ? nowMs : 0;
+        }
+        if (sessionOnView || view != connectResetsUid_)
+        {   // CONNECTED, or he moved: the tries are given back. A rack that connects and later
+            // stalls again is a new stall, not the continuation of an old one.
+            if (connectResets_ != 0 && (sessionOnView || view != connectResetsUid_))
+                EchoJay_NSLog (("EJReset: " + connectResetsUid_ + " is connected (or he has moved "
+                                "to " + view + "), so its watchdog tries are given back").toRawUTF8());
+            connectResetsUid_ = view;
+            connectResets_    = 0;
+            if (sessionOnView) connectGaveUpFor_.clear();
+        }
+
+        const auto d = echojay::connectStallAction (connectingNow,
+                                                    connectingSinceMs_ > 0
+                                                        ? (double) (nowMs - connectingSinceMs_) : 0.0,
+                                                    connectResets_,
+                                                    p.resolveLinkDisplayName (view));
+        if (d.act == echojay::ConnectAct::Reset)
+        {
+            ++connectResets_;
+            connectResetsUid_ = view;
+            EchoJay_NSLog (("EJReset: WATCHDOG on " + view + " (try " + juce::String (connectResets_)
+                            + " of " + juce::String (echojay::kConnectResetTries) + ") - "
+                            + d.why).toRawUTF8());
+            connectingSinceMs_ = nowMs;        // the new attempt gets its own three seconds
+            resetSessionAndEngage (view, "the connect watchdog fired");
+            return;                            // the reset has just rearranged everything below
+        }
+        if (d.act == echojay::ConnectAct::GiveUp && connectGaveUpFor_ != view)
+        {
+            connectGaveUpFor_ = view;
+            // AND THE SPINNER STOPS. Leaving the want set would go on saying "Connecting" under a
+            // sentence that says it could not - the one thing worse than either on its own.
+            p.pendingAutoEngage_.clear();
+            p.setRackLockWant ({});
+            chainListPanel.statusText = d.say;
+            chainListPanel.repaint();
+            EchoJay_NSLog (("EJReset: GIVING UP on " + view + " - " + d.why
+                            + ". He is told: \"" + d.say + "\"").toRawUTF8());
+        }
+    }
+    // ---- AN APPLY THAT NEVER FINISHED IS THE OTHER HALF (his R1, 29 Oct 2026) ----------------
+    //
+    // The tick's own first line is `if (p.borrowApplyInFlight_) return;`, forty lines down. The
+    // apply's poll chain gives up after 40 turns of 250 ms, so ten seconds is its honest worst
+    // case - but a path that returns without reaching borrowApplyFinish leaves this flag set for
+    // the life of the window, and then NOTHING engages, for ever. That is the shape he hit, and
+    // the twin of the read bound written on 20 Oct for exactly the same reason.
+    if (p.borrowApplyInFlight_ && p.borrowApplyStartedMs_ > 0
+        && echojay::applyHasStalled (true, (double) (juce::Time::currentTimeMillis()
+                                                     - p.borrowApplyStartedMs_)))
+    {
+        const auto ageMs = juce::Time::currentTimeMillis() - p.borrowApplyStartedMs_;
+        p.borrowApplyInFlight_ = false;
+        p.borrowApplyStartedMs_ = 0;
+        EchoJay_NSLog (("EJBorrow: an apply has been in flight for " + juce::String ((int) (ageMs / 1000))
+                        + " s and is CLEARED - its own poll chain gives up in ten, so this is a path "
+                          "that returned without finishing, and while the flag stands no rack can be "
+                          "engaged at all (his R1 of 29 Oct; the read bound of 20 Oct is its twin)")
+                       .toRawUTF8());
+    }
     // ---- A READ IN FLIGHT HAS A DEADLINE (Sean's 21:05 / 21:09 / 21:11, 20 Oct 2026) ----------
     //
     // *"Clicking another rack hangs on 'connecting to rack'. Something is stuck in the Link command
@@ -16199,7 +16487,24 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
     if (currentView == View::Settings) hideSettingsView();
     // Close any hosted plugin editor (inline or pop-out) when leaving Chain tab
     if (t != Tab::Chain) chainListPanel.closeAllEditors();
-    else                 refreshChainPanelForView(true);   // enter: adopt the current rack at once
+    else
+    {
+        refreshChainPanelForView(true);   // enter: adopt the current rack at once
+        // ---- AND A CHAIN TAB CLICK CONNECTS, OR RESETS UNTIL IT DOES (his R1, 29 Oct 2026) ----
+        //
+        // *"make a Link switch and a click on the Chain tab do the same clean reset that reopening
+        // the window does."*
+        //
+        // NOT WHEN IT IS ALREADY CONNECTED, which is the one qualification his sentence needs: a
+        // healthy session re-applied and re-engaged on every tab click would write to the Link
+        // every time he looked at it, and his edits would ride a tab click. So the gesture is a
+        // reset only from the state he was complaining about - a Link's rack in view with no
+        // session on it, which is the state that says "Connecting to rack..." for ever.
+        const auto view = chainViewUid();
+        const bool sessionOnView = processorRef.borrowActive() && processorRef.borrowUid() == view;
+        if (view.isNotEmpty() && ! sessionOnView && connectGaveUpFor_ != view)
+            resetSessionAndEngage (view, "he clicked the Chain tab with this rack not connected");
+    }
     // Note: the first addChildComponent(chainListPanel) is in the constructor
 
     // (Link tab has no persistent child components — all painted)
@@ -28769,7 +29074,30 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
         }
     }
 
-    const int n = ch.getNumSlots();
+    // ---- WHAT "LOADED" MEANS IN THIS SENTENCE (Sean's R8, 29 Oct 2026) --------------------
+    //
+    // *"The build bubble said 'Chain built - 6 plugins loaded.' while the rack held 3 plugins
+    // before the Zip was added."*
+    //
+    // It counted ch.getNumSlots() - every slot in the rack, whether its plugin is in the graph or
+    // not. A slot whose plugin failed to load, or which is standing in as a placeholder, has no
+    // node, and counting it says something that is not true in the one line he reads after a build.
+    //
+    // slotHasLoadedPlugin is the GRAPH's own answer (the node is set when the instance is in it and
+    // cleared with it), which is the same fact the shadow tap's slotCanStream asks for - so the
+    // bubble and the tap cannot disagree about whether a slot holds a plugin.
+    //
+    // AND WHEN THE TWO NUMBERS DIFFER, THE SENTENCE SAYS SO. Reporting the smaller number alone
+    // would leave him wondering where the others went, which is the same fault in a quieter voice.
+    const int slots = ch.getNumSlots();
+    int loadedCount = 0;
+    for (int i = 0; i < slots; ++i)
+        if (ch.slotHasLoadedPlugin (i)) ++loadedCount;
+    const int n = loadedCount;
+    const juce::String loadedPhrase = (loadedCount == slots)
+        ? juce::String (n) + (n == 1 ? " plugin loaded." : " plugins loaded.")
+        : juce::String (n) + " of " + juce::String (slots) + " loaded ("
+            + juce::String (slots - n) + (slots - n == 1 ? " did not load)." : " did not load).");
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
         && zeroOorParts.empty() && pendingParts.isEmpty() && notDialableParts.empty())
@@ -28777,13 +29105,11 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
         // Clean full build+dial: the FACTUAL line, never the model's result
         // (9 Aug 2026, same rule as the edit composer - a filter the model
         // can phrase around is not a floor, and the composer knows).
-        bubble = "Chain built - " + juce::String(n)
-               + (n == 1 ? " plugin loaded." : " plugins loaded.");
+        bubble = "Chain built - " + loadedPhrase;
     }
     else
     {
-        bubble = "Chain built - " + juce::String(n)
-               + (n == 1 ? " plugin loaded." : " plugins loaded.");
+        bubble = "Chain built - " + loadedPhrase;
         if (!appliedNames.isEmpty())
             bubble += " Settings applied to " + appliedNames.joinIntoString(", ") + ".";
         for (const auto& p : partialParts)
@@ -34940,12 +35266,29 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
     // The pid comes from the Link's own sidecar, the same number echojay::embedAllowed asks for.
     {
         const int pubPid = publisherPidFor (uid);
-        if (echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid, (int) ::getpid()))
+        // WHAT THE RACK SAYS IS IN THAT SLOT, because the road for one of OUR devices is the copy
+        // road whatever the switch says (his Test 5, 29 Oct - the reasoning is in
+        // EJRealEditorSwitch.h beside the rule).
+        juce::String slotName;
+        if (auto it = processorRef.linkRackCache.find (uid);
+            it != processorRef.linkRackCache.end() && it->second.valid
+            && slot0 < (int) it->second.rack.slots.size())
+            slotName = it->second.rack.slots[(size_t) slot0].name.trim();
+        const bool oursInThatSlot = slotName.isNotEmpty() && ChainHost::isBuiltinName (slotName);
+        if (echojay::realEditorRoadForSlot (echojay::realEditorSwitchOn(), pubPid,
+                                            (int) ::getpid(), oursInThatSlot))
         {
             shadowStopIfRunning ("the live view is showing the Link's own plugin editor, so no copy "
                                  "is needed");
             return;
         }
+        if (oursInThatSlot && echojay::realEditorRoad (echojay::realEditorSwitchOn(), pubPid,
+                                                       (int) ::getpid()))
+            EchoJay_NSLog (("EJShadow: the real-editor switch is on and this Link is in our process, "
+                            "but slot " + juce::String (slot0 + 1) + " holds \"" + slotName
+                            + "\" - one of ours - so the LIVE COPY road is taken instead: its knobs "
+                              "travel to the Link as he turns them and its meter is the Link's "
+                              "(his Test 5, 29 Oct)").toRawUTF8());
     }
     // ---- "ALREADY SHOWING THAT ONE" IS ABOUT THE PLUGIN, NOT THE SLOT NUMBER (26 Oct 2026) ---
     //
@@ -38643,6 +38986,14 @@ void EchoJayEditor::publishRigState()
     // the row could not tell the difference because the state did not carry it. A claim about one
     // rack needs the rack's name in the reading.
     o->setProperty ("borrowUid",     processorRef.borrowUid());
+    // ---- WHAT THE CONNECT WATCHDOG HAS HAD TO DO (his R1, 29 Oct 2026) ----------------------
+    // Published so a row can say whether a switch connected on its own or needed the reset, and so
+    // "it gave up and told him" is a readable state rather than a log line. The ROW's pass
+    // condition is the user-visible promise (the rack in view is connected); these two are the
+    // evidence beside it.
+    o->setProperty ("connectResets",  connectResets_);
+    o->setProperty ("connectGaveUp",  connectGaveUpFor_.isNotEmpty());
+    o->setProperty ("connectingFor",  connectingUid_);
     // WHICH RACK AND SLOT THE EDIT SESSION IS ON (27 Oct 2026). Published because the real editor's
     // rows were resting on it without saying so: it opened only where a session was already engaged,
     // and nothing in the state let a row notice. RE16 asserts the opposite case out loud.
@@ -41648,14 +41999,15 @@ void EchoJayEditor::showChainPluginPicker()
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     // 22 Sep 2026 (item 7): the picker is EMBEDDED in this editor, a hosted editor pop-out is a top-level always-on-top
     // window - so the pop-out is LOWERED while the picker is open (always-on-top off, sent back) and raised again on
-    // every picker death path (onGone fires from the destructor). pickerLoweredPopout_ remembers what to restore.
+    // every picker death path (onGone fires from the destructor). pickerHold_ remembers BOTH halves:
+    // the pop-out that was lowered and the inline editor that was closed (his R7 follow-up).
     // 28 Oct 2026: BOTH HALVES NOW LIVE IN ONE PLACE (echojay::prepareForPopupOverGuest). They
     // were written inline here, and that is exactly how the Link's editor came to be missing them
     // - his 21:20 fault tonight, the picker behind a Tube-Tech CL 1B. The behaviour here is
     // unchanged: pop-out lowered, inline editor closed, for the reasons EJGuestPopup.h records.
-    pickerLoweredPopout_ = echojay::prepareForPopupOverGuest (chainListPanel,
-                                                              chainListPanel.popout.get(),
-                                                              "the + picker");
+    pickerHold_ = echojay::prepareForPopupOverGuest (chainListPanel,
+                                                     chainListPanel.popout.get(),
+                                                     "the + picker");
     // 21t-e (25 Sep 2026): AND THE INLINE ONE. The pop-out is a top-level window and lowering it is enough; an
     // INLINE hosted editor is an NSView inside this window, and a heavyweight NSView composites OVER every
     // lightweight component no matter what the z-order says - which is why the rack menu has closed the inline
@@ -41828,11 +42180,13 @@ void EchoJayEditor::showChainPluginPicker()
             });
         },
         [safeThis]
-        {   // item 7: raise the pop-out again (the picker is gone)
-            if (safeThis == nullptr || ! safeThis->pickerLoweredPopout_) return;
-            safeThis->pickerLoweredPopout_ = false;
-            if (safeThis->chainListPanel.popout != nullptr) { safeThis->chainListPanel.popout->setAlwaysOnTop(true); safeThis->chainListPanel.popout->toFront(false); }
-            EchoJay_NSLog("EJPicker: hosted editor pop-out raised again");
+        {   // EVERY DEATH PATH OF THE PICKER COMES THROUGH HERE (onGone fires from its destructor),
+            // which is why his R7 follow-up is fixed by putting the restore in this one place: a
+            // pick, Esc, a click outside and the picker dismissing itself all end up here.
+            if (safeThis == nullptr) return;
+            echojay::restoreAfterPopup (safeThis->chainListPanel,
+                                        safeThis->chainListPanel.popout.get(),
+                                        safeThis->pickerHold_);
         });
 }
 
