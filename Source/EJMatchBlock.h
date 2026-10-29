@@ -60,7 +60,14 @@
 //       not in C3's three, or combinedShare on anything but a pair) drops the
 //       attribution and keeps the move, as MB9 does for an unknown uid.
 //       combinedShare has no bound in C3 rev 3; it is held to 0..2, two shares
-//       of at most 1 each (K's reading, for B to confirm).
+//       of at most 1 each. K's reading first; B's staging bounds it the same
+//       way (b43c4a3, per the round 5 brief).
+//
+// combinedShare IS NULL, NOT 0, FOR A TRACK OR A BUS MOVE (round 5c). C3 says
+// "null for one track or the bus", and a 0 there is a figure: the reader above
+// drops a whole attribution for it. So the WRITER decides by the target, not
+// by what it was handed: a track or bus move goes out with null whatever its
+// input carried, and only a pair carries the figure.
 //   R9. A finding's mix and ref are held to the bounds of the side figure of
 //       the same name; a figure C3's SIDE does not name drops the finding. A
 //       psr or plr finding is dropped whenever psr or plr is not sent.
@@ -127,7 +134,7 @@ struct MatchBlockAttribution
 {
     juce::String target;                  ///< "track", "pair" or "bus"
     std::vector<MatchBlockLink> links;
-    std::optional<double> combinedShare;  ///< a pair only
+    std::optional<double> combinedShare;  ///< a pair only: written as null for any other target
     juce::String reason;
 };
 
@@ -493,7 +500,10 @@ inline MatchBlockRead buildMatchBlock (const MatchBlockIn& in)
                 links.add (juce::var (lo.get()));
             }
             ao->setProperty ("links", links);
-            ao->setProperty ("combinedShare", detail::opt (m.attribution->combinedShare));
+            // null for a track or the bus, whatever was handed in (5c)
+            ao->setProperty ("combinedShare", m.attribution->target == "pair"
+                                                  ? detail::opt (m.attribution->combinedShare)
+                                                  : juce::var());
             ao->setProperty ("reason", m.attribution->reason);
             mo->setProperty ("attribution", juce::var (ao.get()));
         }
