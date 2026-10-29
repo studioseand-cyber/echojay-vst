@@ -4820,6 +4820,80 @@ int main (int argc, char* argv[])
                             // THE LINK PUBLISHING AT ALL is half of what this row is for: before the
                             // bridge it published NOTHING for one of our devices, so shadowLinkValCount
                             // was 0 and the V2 refused every gesture with "not following".
+                            // ---- TWO QUESTIONS, REPORTED SEPARATELY (C's point 48, 29 Oct) -----
+                            //
+                            // "The add did not land" has two readings and they need different rows,
+                            // because one of them is Sean's S5:
+                            //
+                            //   (a) the Link never took the command  -> the remote add is broken;
+                            //   (b) the Link TOOK it and linkSlots did not move -> the V2's view of
+                            //       a Link's rack went stale, which is S5 (his removed-plugin strip)
+                            //       caught in the rig for the first time.
+                            //
+                            // A row that judged this on the chain-ack alone would go GREEN under (b)
+                            // and hide the only reproduction of S5 we have. So the ack is read HERE,
+                            // from the Link's own file, and reported beside linkSlots rather than
+                            // instead of it.
+                            juce::String ackSays;
+                            {
+                                int eDir = 0;
+                                const auto dirB = LinkShm::resolveDir (eDir);
+                                const juce::File ackF (dirB + "chain-ack-" + bUid + ".json");
+                                if (ackF.existsAsFile())
+                                {
+                                    const auto v = juce::JSON::parse (ackF.loadFileAsString());
+                                    if (auto* o = v.getDynamicObject())
+                                        ackSays = o->getProperty ("status").toString()
+                                                + " (slotsAfter " + o->getProperty ("slotsAfter").toString() + ")";
+                                    else
+                                        ackSays = "an ack file that did not parse";
+                                }
+                                else
+                                    ackSays = "no ack file at all";
+                            }
+                            // ---- AND A THIRD READING, WHICH THE FIRST RUN FOUND (29 Oct 2026) --
+                            //
+                            // The ack came back "ok (slotsAfter 1)" with linkSlots also 1. Neither
+                            // of the two readings fits that: the V2's picture AGREES with the Link's
+                            // own count, so nothing is stale - the Link said ok and added nothing.
+                            //
+                            // So S5 is only judged when the Link's OWN count moved and ours did not.
+                            // Judging it on "ok and unmoved" would have blamed the view for a change
+                            // that never happened, which is the same class of mistake as the "older
+                            // build" sentence: a true observation with the wrong cause attached.
+                            const bool ackOk = ackSays.startsWithIgnoreCase ("ok");
+                            const int ackSlots = ackSays.fromFirstOccurrenceOf ("slotsAfter ", false, false)
+                                                        .upToFirstOccurrenceOf (")", false, false)
+                                                        .trim().getIntValue();
+                            const bool linkItselfGrew = ackOk && ackSlots > slotsBefore;
+                            if (ackOk && ! linkItselfGrew)
+                                row ("LV9e", false,
+                                     "a remote add that the Link ACKS but does not perform - the "
+                                     "picker's own road (sendRackAdd), so this is what his + does too",
+                                     "the Link acked \"" + ackSays + "\" and its OWN count did not "
+                                     "move either (" + juce::String (slotsBefore) + " before). Nothing "
+                                     "is stale here: the V2's view agrees with the Link. The add "
+                                     "itself did not happen.");
+                            else if (linkItselfGrew && ! landed)
+                                row ("LV9e", false,
+                                     "when a Link takes a change, does the V2's view of that rack "
+                                     "FOLLOW it - his removed-plugin strip (S5), caught here for the "
+                                     "first time rather than reported from a session",
+                                     "the Link acked \"" + ackSays + "\" and linkSlots stayed at "
+                                     + juce::String (slotsBefore) + " for 12 s");
+                            else if (linkItselfGrew && landed)
+                                row ("LV9e", true,
+                                     "when a Link takes a change, the V2's view of that rack follows "
+                                     "it without a reopen (S5)",
+                                     "the Link acked \"" + ackSays + "\" and linkSlots moved "
+                                     + juce::String (slotsBefore) + " -> " + juce::String (slotsNow));
+                            else
+                                row ("LV9e", false,
+                                     "when a Link takes a change, does the V2's view of that rack "
+                                     "follow it (S5)",
+                                     "COULD NOT JUDGE S5: the Link never acked the add, so there was "
+                                     "no change for the view to follow. The ack said: " + ackSays);
+
                             const bool setUpB = landed && viewUp && haveLinkB > idxB
                                              && (bool) movedB.getProperty ("ok", false);
                             row ("LV9b", setUpB
@@ -4830,7 +4904,8 @@ int main (int argc, char* argv[])
                                  "Link and stay there - the road his locked Compressor had no row for, "
                                  "and which no juce-parameter row can reach",
                                  ! setUpB
-                                     ? "COULD NOT RUN, which is a FAIL and not a skip: the device "
+                                     ? "COULD NOT RUN, which is a FAIL and not a skip: the Link acked \""
+                                       + ackSays + "\" and the device "
                                        + juce::String (landed ? "landed" : "did NOT land")
                                        + " (slots " + juce::String (slotsBefore) + " -> " + juce::String (slotsNow)
                                        + "), the view was " + juce::String (viewUp ? "up" : "DOWN")
