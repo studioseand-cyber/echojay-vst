@@ -360,7 +360,13 @@ inline const char* statusToken (int s) noexcept
         case S::Running:          return "running";
         case S::Done:             return "done";
         case S::Failed:           return "failed";
-        case S::Declined:         return "skipped";
+        // ---- "declined" IS NOT "skipped" (C's point 45, 29 Oct 2026) ----------------------
+        //
+        // C1 now carries both, and B's b/declined-words adds `declined` to plan_result's status
+        // set. Until this line, a step HE declined on a plan card went out as "skipped" - so once
+        // that branch merges the server would say "...was skipped, because its step waited...",
+        // which is a false reason for a choice he made deliberately. He did not skip it; he said no.
+        case S::Declined:         return "declined";
         case S::NotRun:           return "not_run";
         case S::Undone:           return "undone";
         case S::Stopped:          return "stopped";
@@ -375,6 +381,10 @@ inline int statusFromToken (const juce::String& t) noexcept
     if (t == "running")  return (int) S::Running;
     if (t == "done")     return (int) S::Done;
     if (t == "failed")   return (int) S::Failed;
+    // BOTH SPELLINGS COME BACK, because this token is also what a stored run record holds: every
+    // record written before today says "skipped", and a reader that only knew "declined" would
+    // silently turn every one of those steps into Pending on reload. New records say "declined".
+    if (t == "declined") return (int) S::Declined;
     if (t == "skipped")  return (int) S::Declined;
     if (t == "not_run")  return (int) S::NotRun;
     if (t == "undone")   return (int) S::Undone;

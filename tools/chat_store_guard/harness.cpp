@@ -3233,6 +3233,28 @@ int main()
                    "LC3d control: nothing is taken while no run is active - a serial that moved "
                    "without a live run is not a run starting");
 
+            // ---- C's POINT 45: A DECLINED STEP IS NOT A SKIPPED ONE (29 Oct 2026) -----------
+            //
+            // C1 carries both words and B's branch adds `declined` to plan_result. While this said
+            // "skipped", a step he declined on a plan card would have been explained back to him as
+            // "...was skipped, because its step waited..." - a false reason for a choice he made.
+            {
+                using S = EJAgentClient::Step::Status;
+                check (juce::String (echojay::agentui::statusToken ((int) S::Declined)) == "declined",
+                       "DC1 a step he DECLINED goes out as \"declined\", not \"skipped\" - he did "
+                       "not skip it, he said no, and the server's sentence is built from this word",
+                       echojay::agentui::statusToken ((int) S::Declined));
+                check (echojay::agentui::statusFromToken ("declined") == (int) S::Declined,
+                       "DC1b ...and comes back as Declined");
+                check (echojay::agentui::statusFromToken ("skipped") == (int) S::Declined,
+                       "DC1c ...AND SO DOES THE OLD SPELLING: every run record written before today "
+                       "holds \"skipped\", and a reader that only knew the new word would turn each "
+                       "of those steps into Pending on reload");
+                check (echojay::agentui::statusFromToken ("done") == (int) S::Done
+                         && echojay::agentui::statusFromToken ("not_run") == (int) S::NotRun,
+                       "DC1d control: the other tokens are untouched by the rename");
+            }
+
             // ---- C's POINT 43: THE SPARING RULE TONIGHT'S SWEEP FIX DEPENDS ON ---------------
             //
             // reapDeadUidFiles deliberately does NOT reap rack-<uid>.json - "a SIDECAR is spared
