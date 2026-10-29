@@ -16388,7 +16388,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.59) }));
             check (a.target == AttribTarget::Bus && a.rule == AttribRule::R4LowCoverage
-                   && a.reason == "Most of the low comes from tracks without an EchoJay Link.",
+                   && a.reason == "Most of the lows come from tracks without an EchoJay Link.",
                    "ma PIN3: a coverage of 0.59 goes on the bus by rule 4, with its sentence", a.reason);
             const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.61) }));
             check (b.rule == AttribRule::R6Single,
@@ -16430,13 +16430,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.50),
                                                             link ("Bass", "bass", 0.15) }));
             check (a.target == AttribTarget::Track && a.rule == AttribRule::R6Single
-                   && a.reason == "Kick holds 50% of the low." && a.caveat,
+                   && a.reason == "Kick holds 50% of the lows." && a.caveat,
                    "ma PIN6: a share of 0.50 puts the move on that track, with its sentence and the caveat",
                    a.reason);
             const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.49),
                                                             link ("Bass", "bass", 0.20) }));
             check (b.target == AttribTarget::Bus && b.rule == AttribRule::R8Spread
-                   && b.reason == "The low is spread across several tracks." && ! b.caveat,
+                   && b.reason == "The lows are spread across several tracks." && ! b.caveat,
                    "ma PIN6: 0.49 does not, and with no pair it is rule 8 on the bus", b.reason);
         }
 
@@ -16445,7 +16445,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto a = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.25),
                                                             link ("Bass", "bass", 0.45) }));
             check (a.target == AttribTarget::Pair && a.rule == AttribRule::R7Pair
-                   && a.reason == "Bass and Kick hold 70% of the low between them."
+                   && a.reason == "Bass and Kick hold 70% of the lows between them."
                    && a.combinedShare && near (*a.combinedShare, 0.70, 1e-12) && a.links.size() == 2,
                    "ma PIN7: 0.25 and 0.45 get the move between them, with the pair's sentence", a.reason);
             const auto b = attributeBandMove (move (2.2f, { link ("Kick", "kick", 0.24),
@@ -16492,7 +16492,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto d = attributeBandMove (move (3.5f, { link ("Kick", "kick", 0.50),
                                                             link ("Hat", "drums", 0.15) }));
             check (d.target == AttribTarget::Bus && d.rule == AttribRule::S5Infeasible
-                   && d.reason == "Kick holds 50% of the low; cutting it can take at most 3.0 dB off the "
+                   && d.reason == "Kick holds 50% of the lows; cutting it can take at most 3.0 dB off the "
                                   "mix, and the gap is 3.5 dB.",
                    "ma PIN12: one track at 0.50 and D +3.5 is infeasible and goes on the bus with its "
                    "sentence", d.reason);

@@ -5,7 +5,7 @@
 #include <optional>
 #include <vector>
 #include "EJMatchProposal.h"   // kMatchBandFloorDb (X1's 2 dB), juce::String
-#include "EJBandScheme.h"      // macroBandName
+#include "EJBandScheme.h"      // the band masks' order (B1)
 #include "EJMatchWindow.h"     // HopRange, for the window powers read off a hop series
 
 // =============================================================================
@@ -167,7 +167,7 @@ inline AttribSizing attribSizeTrackMove (double s, float D)
 
 inline juce::String attribPct (double share)  { return juce::String (juce::roundToInt (share * 100.0)); }
 inline juce::String attribDb (double db)      { return juce::String (db, 1); }
-inline juce::String attribBand (int band)     { return juce::String (macroBandName (band)); }
+inline juce::String attribBand (int band)     { return matchBandName (band); }   // "the low-mids" (6a)
 
 /** Rule 3, WITH the bus input tap: a share over 1 can only be a fader. */
 inline juce::String attribFaderSentenceWithTap()
@@ -185,28 +185,29 @@ inline juce::String attribFaderSentenceNoTap()
 
 inline juce::String attribLowCoverageSentence (int band)
 {
-    return "Most of the " + attribBand (band) + " comes from tracks without an EchoJay Link.";
+    return "Most of " + attribBand (band) + " " + matchBandVerb (band, "comes", "come")
+         + " from tracks without an EchoJay Link.";
 }
 
 inline juce::String attribUnknownSentence (const juce::String& name, int band)
 {
-    return name + " didn't give a full reading in this window and may hold the "
+    return name + " didn't give a full reading in this window and may hold "
          + attribBand (band) + ".";
 }
 
 inline juce::String attribSingleSentence (const juce::String& name, double s, int band)
 {
-    return name + " holds " + attribPct (s) + "% of the " + attribBand (band) + ".";
+    return name + " holds " + attribPct (s) + "% of " + attribBand (band) + ".";
 }
 
 inline juce::String attribPairSentence (const juce::String& a, const juce::String& b, double s, int band)
 {
-    return a + " and " + b + " hold " + attribPct (s) + "% of the " + attribBand (band) + " between them.";
+    return a + " and " + b + " hold " + attribPct (s) + "% of " + attribBand (band) + " between them.";
 }
 
 inline juce::String attribSpreadSentence (int band)
 {
-    return "The " + attribBand (band) + " is spread across several tracks.";
+    return matchBandNameCap (band) + " " + matchBandVerb (band, "is", "are") + " spread across several tracks.";
 }
 
 /** Section 5, infeasible. For a pair the subject is "{a} and {b}" and the verb
@@ -214,7 +215,7 @@ inline juce::String attribSpreadSentence (int band)
 inline juce::String attribInfeasibleSentence (const juce::String& subject, bool plural, double s,
                                               int band, float maxDb, float D)
 {
-    return subject + (plural ? " hold " : " holds ") + attribPct (s) + "% of the " + attribBand (band)
+    return subject + (plural ? " hold " : " holds ") + attribPct (s) + "% of " + attribBand (band)
          + "; cutting it can take at most " + attribDb (maxDb) + " dB off the mix, and the gap is "
          + attribDb (D) + " dB.";
 }
@@ -234,7 +235,7 @@ inline juce::String attribPreFaderCaveatSentence()
 /** Section 9: the coverage line. */
 inline juce::String attribCoverageSentence (double coverage, int band)
 {
-    return "Linked tracks hold " + attribPct (coverage) + "% of the " + attribBand (band) + ".";
+    return "Linked tracks hold " + attribPct (coverage) + "% of " + attribBand (band) + ".";
 }
 
 // -----------------------------------------------------------------------------

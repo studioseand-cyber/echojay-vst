@@ -5,7 +5,6 @@
 #include <functional>
 #include <optional>
 #include <vector>
-#include "EJBandScheme.h"         // macroBandName
 #include "EJMatchProposal.h"      // MatchSide, MatchProposal, the floors
 #include "EJMatchWindow.h"        // MatchWindowMode
 #include "EJMatchAttribution.h"   // AttribResult and C4's sentences
@@ -50,19 +49,9 @@ inline const char* matchReportTierTitle (MatchReportTier t) noexcept
     return "";
 }
 
-/** The band labels the report prints (design section 3), and the words its
-    sentences use for the same band. */
-inline const char* matchReportBandLabel (int b) noexcept
-{
-    static const char* n[6] = { "Sub", "Low", "Low-mids", "Mids", "High-mids", "Air" };
-    return (b >= 0 && b < 6) ? n[b] : "";
-}
-
-inline const char* matchReportBandWords (int b) noexcept
-{
-    static const char* n[6] = { "sub", "lows", "low-mids", "mids", "high-mids", "air" };
-    return (b >= 0 && b < 6) ? n[b] : "";
-}
+/** The band labels the report prints (design section 3): the one table's
+    (EJMatchProposal.h, 6a). */
+inline juce::String matchReportBandLabel (int b) { return matchBandLabel (b); }
 
 inline juce::String matchReportArrow() { return juce::String (juce::CharPointer_UTF8 ("\xe2\x86\x92")); }
 
@@ -552,7 +541,7 @@ inline juce::String matchReportPayload (const MatchReportIn& in, const MatchRepo
     {
         const auto& bi = in.bands[(size_t) b];
         Obj::Ptr o = new Obj();
-        o->setProperty ("name", juce::String (macroBandName (b)));
+        o->setProperty ("name", matchBandLabel (b));   // a label, never B1's id (6a)
         if (bi.mixMinusRefDb) o->setProperty ("deltaDb", (double) *bi.mixMinusRefDb);
         o->setProperty ("tier", "bounded");
         if (bi.attribution && bi.attribution->coverage) o->setProperty ("coverage", *bi.attribution->coverage);

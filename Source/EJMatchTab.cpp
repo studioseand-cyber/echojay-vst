@@ -1826,7 +1826,7 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
 
                 std::vector<echojay::MatchReadoutCell> cells;
                 for (int b = 0; b < 6; ++b)
-                    cells.push_back ({ juce::String (echojay::macroBandName (b)),
+                    cells.push_back ({ echojay::matchBandLabel (b),
                                        echojay::matchReadoutValue (mOk, mRel[(size_t) b], 1, {}),
                                        echojay::matchReadoutValue (rOk, rRel[(size_t) b], 1, {}) });
 

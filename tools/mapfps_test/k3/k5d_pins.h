@@ -335,8 +335,8 @@ inline void runK5dPins (Check&& check)
     //   every fixture  mix.bandCrest, ref.bandCrest (numbers there; null here,
     //                  C4 rev 4);
     //   clean          findings[1] (a crest finding; none is written, C4 rev 4);
-    //   attribution-pair  both reasons (C4's sentence prints the band's code
-    //                  name, "lowMid"; B's prints "low-mids");
+    //   attribution-pair  NONE since 6a: the reasons name the band from the
+    //                  one table ("the low-mids"), as B's do;
     //   track-near-limit  the move itself: a share of 0.85 cannot take 9.1 dB
     //                  off the mix (C4 section 5 reaches 8.24), so C4 sends it
     //                  to the bus at -9.1, where the fixture has -12 on the track.
@@ -345,7 +345,7 @@ inline void runK5dPins (Check&& check)
         struct Expect { const char* file; juce::StringArray extra; };
         const std::vector<Expect> expect {
             { "air-shelf.json", {} },
-            { "attribution-pair.json", { "moves[0].attribution.reason", "moves[1].attribution.reason" } },
+            { "attribution-pair.json", {} },
             { "bus-partial.json", {} },
             { "bus-widened.json", {} },
             { "clean.json", { "findings[1]" } },
