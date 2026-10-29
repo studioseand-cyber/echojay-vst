@@ -27,6 +27,7 @@
 #include "EJBandScheme.h"
 #include "EJCompareMenuIds.h"   // the menu id bands the mix picker decodes
 #include "EJMatchWindowSides.h" // K1: the window switch, its memory, and the sides over the window
+#include "EJMatchHandOff.h"    // 5a: the page over MatchHost, the mix from its own slot
 using echojay::kCompareMenuBandSize;
 using echojay::kCompareMenuRefNameLen;
 #include <cmath>
@@ -396,36 +397,13 @@ inline constexpr float kMatchTraceGlow    = 1.0f;
     for the same reason: the trace glow in paint places its lines through it. */
 static std::pair<float, float> matchTraceRange (echojay::MatchAxis a);
 
-// ---- K1: THE PAGE OVER ITS WINDOW (29 Oct 2026) ---------------------------------------------------
+// ---- K1: THE PAGE OVER ITS WINDOW (29 Oct 2026; 5a the same day) -------------------------------
 //
-// ONE PLACE TURNS THE HOST'S SIDES INTO THE PAGE'S, so paint and the press cannot disagree about
-// which window they are on. The window is the reference's own (matchWindowMemory, whole song by
-// default); the mix's series is latestCapture()'s and the reference's is selectedReference()'s
-// (C2 section 5.2). A Live mix side is never windowed, and the line asks for a capture.
-struct MatchPageView
-{
-    echojay::MatchWindowedSides w;
-    echojay::MatchReadinessContext ctx;
-    juce::String refKey;
-};
-
-static MatchPageView matchPageViewOf (echojay::MatchHost& host, const echojay::MatchSides& sides,
-                                      const echojay::MatchSlotPair& slots)
-{
-    MatchPageView v;
-    const auto* ref = host.selectedReference();
-    v.refKey = ref != nullptr ? ref->path : juce::String();
-    const auto mode = echojay::matchWindowMemory().get (v.refKey);
-    const bool live = slots.mix != nullptr && slots.mix->kind == echojay::CompareSlotState::Kind::Live;
-    const auto* cap = host.latestCapture();
-    v.w = echojay::matchSidesForWindow<MeterEngine::HopFrame> (sides.mix, sides.ref,
-                                                               cap != nullptr ? &cap->hopFrames : nullptr,
-                                                               ref != nullptr ? &ref->hopFrames : nullptr,
-                                                               mode, live);
-    v.ctx.mixIsLive = live;
-    if (mode == echojay::MatchWindowMode::Loudest30 && ! live) v.ctx.windowWhy = v.w.why;
-    return v;
-}
+// echojay::matchPageViewOf (EJMatchHandOff.h) turns the host's sides into the page's, so paint and
+// the press cannot disagree about which window they are on. The mix's series is the mix SLOT's own
+// capture (MatchHost::captureForSlot), never latestCapture()'s.
+using echojay::MatchPageView;
+using echojay::matchPageViewOf;
 
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {

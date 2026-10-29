@@ -16,9 +16,10 @@
 // =============================================================================
 //
 // DESIGN_MATCH_TAB rev 3, D4 and K1; C4 rev 4 section 7; C3 rev 3 section 2.
-// The page reads MatchHost::latestCapture()'s hop series for the mix and
-// MatchHost::selectedReference()'s for the reference (C2 section 5.2), and this
-// header turns the two whole-file sides into the window's.
+// The page reads the mix slot's own capture (MatchHost::captureForSlot, round
+// 5a) for the mix's hop series and MatchHost::selectedReference()'s for the
+// reference (C2 section 5.2), and this header turns the two whole-file sides
+// into the window's. EJMatchHandOff.h is where the page asks.
 //
 // WHAT THE WINDOW CHANGES, AND WHAT IT LEAVES (C3 rev 2 point 1). In "loudest30"
 // the six bands come from the window's hops on each side. integrated stays the

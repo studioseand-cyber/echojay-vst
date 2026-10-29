@@ -20,6 +20,23 @@
  #include "k4c_pins.h"
  #define EJ_K4C 1
 #endif
+// ROUND 5's PINS, the same way: one header per part.
+#if __has_include("k5a_pins.h")
+ #include "k5a_pins.h"
+ #define EJ_K5A 1
+#endif
+#if __has_include("k5b_pins.h")
+ #include "k5b_pins.h"
+ #define EJ_K5B 1
+#endif
+#if __has_include("k5c_pins.h")
+ #include "k5c_pins.h"
+ #define EJ_K5C 1
+#endif
+#if __has_include("k5d_pins.h")
+ #include "k5d_pins.h"
+ #define EJ_K5D 1
+#endif
 
 int main()
 {
@@ -43,6 +60,18 @@ int main()
 #endif
 #ifdef EJ_K4C
     k4cpins::runK4cPins (check);
+#endif
+#ifdef EJ_K5A
+    k5apins::runK5aPins (check);
+#endif
+#ifdef EJ_K5B
+    k5bpins::runK5bPins (check);
+#endif
+#ifdef EJ_K5C
+    k5cpins::runK5cPins (check);
+#endif
+#ifdef EJ_K5D
+    k5dpins::runK5dPins (check);
 #endif
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
