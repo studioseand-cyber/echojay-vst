@@ -205,4 +205,55 @@ inline MatchWindowedSides matchSidesForWindow (const MatchSide& mix, const Match
     return out;
 }
 
+// -----------------------------------------------------------------------------
+// THE PICTURE'S CAPTION (round 5b): which window each part of the picture is
+// -----------------------------------------------------------------------------
+//
+// THE TWO PARTS OF THE PICTURE ARE NOT THE SAME WINDOW, AND THE CAPTION SAYS
+// WHICH IS WHICH. The 64-bin curves are each slot's SpectralEvidence, and that
+// is whole-file only (a reference's eqCurve, a capture's whole-capture average)
+// or a live rolling reading; no 64-bin curve is measured over the loudest 30 s.
+// The six band steps the morph walks come from the proposal over the windowed
+// sides, so in "loudest30" they are the window's.
+//
+// So the rule: a curve is called "whole song" only when both curves really are
+// whole-file averages, and a window's name is NEVER put on a curve. The band
+// steps take the window's name only when both sides were windowed.
+
+/** A slot's 64-bin curve is a whole-file (or whole-capture) average. */
+inline bool matchCurveIsWholeSong (bool valid, SpectralReduction r) noexcept
+{
+    return valid && reductionIsAverage (r);
+}
+
+/** The caption, or "" when the picture makes no claim worth one.
+      "whole"      "Whole song", when both curves are whole-file averages;
+      "loudest30"  "Curves: whole song. Band steps: loudest 30 s." when both
+                   sides were windowed; without the curves' clause when a
+                   curve is not whole-file; without the steps' clause when a
+                   side could not be windowed (the one line says why). */
+inline juce::String matchPictureCaption (MatchWindowMode mode, bool curvesWholeSong, bool stepsWindowed)
+{
+    const juce::String curves = curvesWholeSong ? "Curves: whole song." : "";
+    if (mode == MatchWindowMode::Whole) return curvesWholeSong ? "Whole song" : "";
+    const juce::String steps = stepsWindowed ? "Band steps: loudest 30 s." : "";
+    return (curves + " " + steps).trim();
+}
+
+/** Where the caption goes: the switch's row, from the card's left edge to just
+    short of the switch. Empty when the switch is not drawn or the room left is
+    too narrow for a word. */
+inline constexpr int kMatchPictureCaptionGap  = 8;
+inline constexpr int kMatchPictureCaptionMinW = 60;
+
+inline juce::Rectangle<int> matchPictureCaptionRect (juce::Rectangle<int> graph)
+{
+    const auto sw = matchWindowSwitchRect (graph);
+    if (sw.isEmpty()) return {};
+    const auto inner = graph.reduced (kMatchWindowSwitchPad);
+    const int w = sw.getX() - kMatchPictureCaptionGap - inner.getX();
+    if (w < kMatchPictureCaptionMinW) return {};
+    return { inner.getX(), sw.getY(), w, sw.getHeight() };
+}
+
 } // namespace echojay

@@ -1198,6 +1198,24 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         g.drawText (echojay::matchWindowLabel (m), r.toNearestInt(), juce::Justification::centred, true);
     }
 
+    // ---- 5b: THE CAPTION, left of the switch, on the spectrum only ----------
+    // The curves are whole-file (or live) whatever the switch says, and the
+    // band steps are the window's: the caption says which is which, and never
+    // puts the window's name on a curve (echojay::matchPictureCaption).
+    if (axis == echojay::MatchAxis::Spectrum)
+    {
+        const bool curvesWhole = echojay::matchCurveIsWholeSong (evMix.valid, evMix.reduction)
+                              && echojay::matchCurveIsWholeSong (evRef.valid, evRef.reduction);
+        const auto text = echojay::matchPictureCaption (view.w.mode, curvesWhole, view.w.windowed);
+        const auto cr   = echojay::matchPictureCaptionRect (R.graph);
+        if (text.isNotEmpty() && ! cr.isEmpty())
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (10.5f)));
+            g.drawFittedText (text, cr, juce::Justification::centredLeft, 1);
+        }
+    }
+
     if (fade < 0.999f) g.endTransparencyLayer();
 }
 
