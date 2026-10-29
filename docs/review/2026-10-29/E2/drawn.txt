@@ -1,5 +1,5 @@
 scenario E2
-captured 2026-10-29T04:24:24.856Z
+captured 2026-10-29T04:54:40.569Z
   [user] The gain I was levelling with is no longer there - level loop stopped.
 The chain changed after the level was matched - re-measuring from whatever is playing.
   [assistant] Read the gain reduction.

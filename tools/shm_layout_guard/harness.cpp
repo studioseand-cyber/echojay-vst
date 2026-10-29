@@ -61,6 +61,7 @@ int main()
     golden[124] = 2;    // placement: insert
     golden[125] = 1;    // dialCapable
     golden[126] = 1;    // busyFlag (18 Oct 2026, carved from _pad)
+    golden[127] = 1;    // dialFrameCapable (28 Oct 2026, A1b - the LAST byte of the slot)
 
     // Read it through the CURRENT struct, at the 64-byte-aligned offset the mapping produces.
     std::vector<uint8_t> map ((size_t) sizeof (RegistryHeader) + 4u * 128u, 0);
@@ -84,6 +85,8 @@ int main()
     check (slot0->placement == 2, "placement reads back", juce::String ((int) slot0->placement));
     check (slot0->dialCapable == 1, "dialCapable reads back", juce::String ((int) slot0->dialCapable));
     check (slot0->busyFlag == 1, "busyFlag reads back", juce::String ((int) slot0->busyFlag));
+    check (slot0->dialFrameCapable == 1, "dialFrameCapable reads back (byte 127, the slot's last)",
+           juce::String ((int) slot0->dialFrameCapable));
     // ---- AND THE OTHER DIRECTION, which is what the carving convention actually promises ---------------
     // Every Link built before 18 Oct 2026 leaves byte 126 as the zero it was born with. The fallback has to be
     // the SAFE answer (byte 125's own note): a zero must read as "this writer cannot say", which readers treat
@@ -101,6 +104,26 @@ int main()
                "a slot written by a binary that has never heard of busyFlag reads as NOT busy, with every "
                "field before it unmoved",
                read ? juce::String ("busy=") + (snap.busy ? "1" : "0") : juce::String ("readSlot refused"));
+    }
+
+    // ---- AND THE SAME, FOR THE BYTE A1b SPENT (28 Oct 2026) --------------------------------------------
+    // Every Link ever shipped leaves byte 127 at zero, and that zero must read as "cannot arm a dial on a
+    // named slot" - the direction that WITHHOLDS the feature. The other reading would send dial frames to
+    // binaries that drop them, and the person would watch for a dial that never arrives. This is the leg
+    // that would catch a sense inversion, which is the one mistake a capability byte actually suffers.
+    {
+        uint8_t oldWriter[128];
+        std::memcpy (oldWriter, golden, sizeof (oldWriter));
+        oldWriter[127] = 0;   // a binary that has never heard of the dial frame
+        std::vector<uint8_t> m3 ((size_t) sizeof (RegistryHeader) + 128u, 0);
+        std::memcpy (m3.data() + sizeof (RegistryHeader), oldWriter, sizeof (oldWriter));
+        LinkShm::SlotSnapshot snap;
+        const bool read = LinkShm::readSlot (m3.data(), 0, snap);
+        check (read && ! snap.dialFrameCapable && snap.busy && snap.dialCapable && snap.placement == 2,
+               "a slot written before the dial frame existed reads as NOT dial-frame-capable, with every "
+               "field before it unmoved - the zero withholds the road rather than promising it",
+               read ? juce::String ("dialFrameCapable=") + (snap.dialFrameCapable ? "1" : "0")
+                    : juce::String ("readSlot refused"));
     }
 
     // ---- the stride: slot N is at 64 + N*128, which is what regSlots() + N must produce ------------------

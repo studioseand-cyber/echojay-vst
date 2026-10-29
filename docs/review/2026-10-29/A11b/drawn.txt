@@ -1,5 +1,5 @@
 scenario A11b
-captured 2026-10-29T04:29:45.158Z
+captured 2026-10-29T05:00:00.565Z
   [assistant] A new chat doesn't carry the last one's run, so the run on 88_7even Kick_2_02 was stopped.
   [user] cl1b  [rig-replay:rp_cp_4]
   [assistant] I added a Tube-Tech CL 1B compressor to the kick with threshold around -15 dB, ratio 4:1, attack 3 and release 5 on its dial.

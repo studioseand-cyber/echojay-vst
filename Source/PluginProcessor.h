@@ -990,9 +990,15 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         Link arm its post-build level match, exactly as the borrow push's own intent does (item 4,
         14 Oct). Additive and ignorable - an older Link reads no intent and behaves as it does
         today. Empty for an ordinary edit, which must never re-level a rack. */
+    /** A1b (28 Oct 2026): `dialOnSlot` is a dial frame for ONE slot of this Link - { slot,
+        dial_on_playback } - carried on the same command every other structural edit takes, because
+        one road to a Link's rack is a rule that cost three bugs on 19 Oct. Additive and ignorable
+        on the `intent` convention: an older Link reads no dialOnSlot, acks without `dialArmed`, and
+        the caller reads that as NOT armed. Pass an EMPTY editOps array with it - a dial frame edits
+        no slots, and a void editOps is refused. */
     int  writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
                                const juce::String& sourceNote, const juce::String& leaseId,
-                               const juce::String& intent = {});
+                               const juce::String& intent = {}, const juce::var& dialOnSlot = {});
     // ---- ITEM 1 (Sean, 13 Oct 2026): "SENT" IS NOT "APPLIED" --------------------------------------------
     // The agent's apply sink reported success on `seq >= 0`, which is the return of a FILE WRITE. Sean
     // approved a build for the Kick, was told it landed, and the Kick's Link had nothing on it - then the

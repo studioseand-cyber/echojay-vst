@@ -3161,7 +3161,7 @@ bool EchoJayProcessor::ringEndGestureWithUndo (const juce::String& linkUid, uint
 
 int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
                                              const juce::String& sourceNote, const juce::String& leaseId,
-                                             const juce::String& intent)
+                                             const juce::String& intent, const juce::var& dialOnSlot)
 {
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
@@ -3186,6 +3186,10 @@ int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const j
     // refusal - so a Link that answered "busy" unasked would turn a queued command into a reported failure in
     // every older build. awaitChainAck below is the half that waits on it.
     cmd->setProperty("wantBusyAck", true);
+    // A1b (28 Oct 2026): a dial frame for one slot, when there is one. Set only when present, on
+    // the same convention as `intent` above - a field that is absent cannot change how an older
+    // Link behaves, and an older Link that cannot arm it says so by acking without `dialArmed`.
+    if (dialOnSlot.getDynamicObject() != nullptr) cmd->setProperty("dialOnSlot", dialOnSlot);
     // 21n ruling 1a (22 Sep 2026): ONE sender. The lease id is resolved HERE from whichever session holds this Link's
     // lease - the borrow session (a borrowed rack) or the edit session (one slot's hosted editor) - so no caller can
     // omit it. The chat-card apply (sendChainEditToLink) passed "" and the Link refused the lease holder's own edit

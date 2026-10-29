@@ -329,7 +329,13 @@ public:
 
         `armDialAtSlot` arms the dial the frame carries on that slot and says whether it did. It is
         the SAME road an add's dial takes (one translation, CalibLoop::blockFromDialOnPlayback) -
-        a second road to the same place is how two of this week's defects happened. False with the
+        a second road to the same place is how two of this week's defects happened.
+
+        IT ANSWERS THROUGH A CALLBACK, and a Link is why: the open rack's arm is immediate
+        (calibStart), but a Link's comes back on its chain ack, through awaitChainAck's own 8 s
+        bound. A bool return there could only mean "the command was written", and "'sent' is not
+        'applied'" is Sean's item 1 of 13 Oct - he approved a build, was told it landed, and the
+        Link had nothing on it. The caller's step is already open while this waits. False with the
         reason in `why`, and the reason goes to the model rather than into a log nobody reads.
 
         Defaulted so every stub, the read-only executor and the guards' fakes compile unchanged and
@@ -341,11 +347,11 @@ public:
         the same event in numbers, and neither is parsed out of the other. */
     virtual juce::var dialReport (const juce::String& plugin) const
     { juce::ignoreUnused (plugin); return {}; }
-    virtual bool armDialAtSlot (const juce::var& dialOnPlayback, int slot1, juce::String& why)
+    virtual void armDialAtSlot (const juce::var& dialOnPlayback, int slot1,
+                                std::function<void (bool armed, juce::String why)> done)
     {
         juce::ignoreUnused (dialOnPlayback, slot1);
-        why = "this build has no road that arms a dial on a slot";
-        return false;
+        if (done) done (false, "this build has no road that arms a dial on a slot");
     }
 
     // undo

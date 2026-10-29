@@ -1697,14 +1697,35 @@ juce::var ExecutorRead::dialReport (const juce::String& plugin) const
     return src_.dialReport ? src_.dialReport (plugin) : juce::var();
 }
 
-bool ExecutorRead::armDialAtSlot (const juce::var& dialOnPlayback, int slot1, juce::String& why)
+void ExecutorRead::armDialAtSlot (const juce::var& dialOnPlayback, int slot1,
+                                  std::function<void (bool armed, juce::String why)> done)
 {
-    if (! src_.armDialAtSlot)
+    // WHICH RACK IS THE RUN'S, not the window's: target_ is what every other call on this executor
+    // addresses, and a dial frame that armed the open rack while the run was aimed at a Link would
+    // be the "self means the run's target" conflation in a new place (C1 §1, settled 28 Oct).
+    if (target_.isEmpty())
     {
-        why = "this build has no road that arms a dial on a slot";
-        return false;
+        // THE OPEN RACK ANSWERS NOW. calibStart is immediate, so the callback is called before this
+        // returns rather than deferred: inventing a delay would slow every leg and prove nothing.
+        if (! src_.armDialOnOwnRack)
+        {
+            if (done) done (false, "this build has no road that arms a dial on a slot");
+            return;
+        }
+        juce::String why;
+        const bool ok = src_.armDialOnOwnRack (dialOnPlayback, slot1, why);
+        if (done) done (ok, why);
+        return;
     }
-    return src_.armDialAtSlot (dialOnPlayback, slot1, why);
+    // A LINK ANSWERS ON ITS ACK. The capability is per-Link and the Link publishes it itself
+    // (RegistrySlot::dialFrameCapable, byte 127): a Link that does not say it can arm a dial on a
+    // named slot is not sent one, and the zero every older Link leaves there is that answer.
+    if (! src_.armDialOnLink)
+    {
+        if (done) done (false, "this build has no road that arms a dial on a Link's slot");
+        return;
+    }
+    src_.armDialOnLink (target_, dialOnPlayback, slot1, std::move (done));
 }
 
 PlaybackReading ExecutorRead::readPlayback()
@@ -2340,9 +2361,44 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         return h.getSlotInfo (slot1 - 1).name;
     };
     s.dialReport = [p] (const juce::String& plugin) -> juce::var { return p->agentDialReportFor (plugin); };
-    s.armDialAtSlot = [p] (const juce::var& dial, int slot1, juce::String& why) -> bool
+    s.armDialOnOwnRack = [p] (const juce::var& dial, int slot1, juce::String& why) -> bool
     {
         return EJAgentHome::armDialAtSlotOnOwnRack (*p, dial, slot1 - 1, why);
+    };
+    // ---- A1b: A LINK'S OWN ROAD ----------------------------------------------------------------
+    //
+    // ONE ROAD TO A LINK'S RACK, which is a rule paid for three times on 19 Oct: the dial rides the
+    // chain-cmd v2 command every other structural edit takes, as its own additive top-level field.
+    // That is the `intent` precedent of 14 Oct exactly - "additive and ignorable: an older Link
+    // reads no intent and behaves as it does today" - and it is why the capability byte exists: an
+    // older Link ignores `dialOnSlot`, acks without `dialArmed`, and that reads as NOT armed with
+    // its own reason rather than as a silent success.
+    //
+    // editOps IS AN EMPTY ARRAY, NOT A VOID: writeChainEditCommand refuses anything that is not an
+    // array (`! editOps.isArray()` -> -1), and a dial frame changes no slots. An empty ops list is
+    // the honest statement of that - the rack is not edited, the dial is armed.
+    s.armDialOnLink = [p] (const juce::String& uid, const juce::var& dial, int slot1,
+                           std::function<void (bool, juce::String)> done)
+    {
+        auto* frame = new juce::DynamicObject();
+        frame->setProperty ("slot", slot1);
+        frame->setProperty ("dial_on_playback", dial);
+        const int seq = p->writeChainEditCommand (uid, juce::var (juce::Array<juce::var>()), juce::var(),
+                                                  "a dial frame (A1b)", {}, {}, juce::var (frame));
+        if (seq < 0)
+        {
+            if (done) done (false, "the dial could not be sent to " + uid);
+            return;
+        }
+        p->awaitChainAck (uid, seq,
+                          [done] (bool ok, juce::String sentence, juce::String technical, int)
+                          {
+                              // THE ACK'S OWN WORDS EITHER WAY. "Sent" is not "applied" (his item 1
+                              // of 13 Oct), and a Link that ignored the field acks without
+                              // dialArmed, which arrives here as not-ok carrying its reason.
+                              if (done) done (ok, ok ? juce::String()
+                                                     : (sentence.isNotEmpty() ? sentence : technical));
+                          });
     };
     s.keepPlayingPlugin = [p] () -> juce::String
     {

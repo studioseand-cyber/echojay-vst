@@ -209,7 +209,29 @@ struct alignas(64) RegistrySlot
                                //     0, which reads as "not busy", which is the answer every reader has
                                //     always assumed - so a zero withholds the new distinction and promises
                                //     nothing. It is NOT "never busy"; it is "this writer cannot say".
-    uint8_t  _pad[1];          //  1  → total 128 (one byte left; read byte 125's note before spending it)
+    uint8_t  dialFrameCapable; //  1  THIS LINK CAN ARM A DIAL ON A NAMED SLOT (v0.9.2, 28 Oct 2026,
+                               //     A1b). B's dial-frame road is per-CHANNEL, and the only honest
+                               //     source for "can this one do it" is the Link itself: a version
+                               //     number would be the inference byte 125's note forbids.
+                               //     THE ZERO IS THE SAFE ANSWER, as that note demands. Every Link
+                               //     shipped before today leaves this byte at the zero it was born
+                               //     with, and zero reads as "cannot arm a dial on a named slot" -
+                               //     which withholds the dial-frame shape for that channel and
+                               //     leaves B's existing road in place. A zero meaning "capable"
+                               //     would send dial frames to binaries that drop them, and the
+                               //     person would sit watching for a dial that never arrives.
+                               //     ---- AND IT IS THE LAST ONE. RegistrySlot IS FULL. ----
+                               //     Sean ruled on 28 Oct 2026 that A1b may spend it, with the
+                               //     condition that goes with it: THE NEXT PER-LINK CAPABILITY
+                               //     NEEDS A LAYOUT VERSION BUMP. That means a version in the
+                               //     header, both sides refusing a slot they do not understand,
+                               //     and a decision about what an old V2 reading a new Link does -
+                               //     a design pass, not a line in a patch. DO NOT quietly widen
+                               //     this struct: a reader compiled against 128 bytes and a writer
+                               //     compiled against more is silent corruption of every field
+                               //     after the seam, which is the one failure the frozen offsets
+                               //     below exist to prevent.
+                               //  → total 128, no bytes left
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
 // THE FROZEN OFFSETS (21t-g item 1d). Every field, against the value it has had in every shipped binary.
@@ -225,10 +247,16 @@ static_assert(offsetof(RegistrySlot, gainDb)      == 120, "RegistrySlot::gainDb 
 static_assert(offsetof(RegistrySlot, placement)   == 124, "RegistrySlot::placement moved");
 static_assert(offsetof(RegistrySlot, dialCapable) == 125, "RegistrySlot::dialCapable moved");
 static_assert(offsetof(RegistrySlot, busyFlag)    == 126, "RegistrySlot::busyFlag moved");
-static_assert(offsetof(RegistrySlot, _pad)        == 127, "RegistrySlot::_pad moved");
+static_assert(offsetof(RegistrySlot, dialFrameCapable) == 127, "RegistrySlot::dialFrameCapable moved");
 static_assert(sizeof(RegistrySlot::displayName) == 40 && sizeof(RegistrySlot::audioFile) == 48
-              && sizeof(RegistrySlot::instanceUid) == 12 && sizeof(RegistrySlot::_pad) == 1,
+              && sizeof(RegistrySlot::instanceUid) == 12,
               "a RegistrySlot char field changed width - the file is no longer what is in the field");
+// THE STRUCT IS FULL (28 Oct 2026). This is not decoration: it fails the build for whoever tries to
+// carve byte 128 out of a struct that has none, and sends them to dialFrameCapable's note, which
+// says what a new capability owes instead. sizeof is already asserted above; this says WHY.
+static_assert(offsetof(RegistrySlot, dialFrameCapable) + sizeof(RegistrySlot::dialFrameCapable) == 128,
+              "RegistrySlot has no spare bytes: the next per-Link capability needs a LAYOUT VERSION "
+              "bump (Sean's ruling, 28 Oct 2026) - see dialFrameCapable's comment");
 
 
 struct alignas(64) RegistryHeader
@@ -1174,6 +1202,10 @@ inline int claimSlot(void* regMap,
                                            // re-publishes its real gain at once)
             slots[i].placement   = 0;      // recycled slot: unknown until owner republishes
             slots[i].dialCapable = 0;      // and INCAPABLE until the new owner says otherwise
+            slots[i].dialFrameCapable = 0; // same rule, same reason (A1b): a recycled slot must
+                                           // never serve the previous owner's capability - the new
+                                           // owner publishes its own, and until it does the answer
+                                           // is the safe one
             // Reset the slot's meter frame: a recycled slot must NEVER serve
             // the previous owner's last values — the receiver would see an
             // unfamiliar seq, treat it as a fresh frame, and style frozen
@@ -1254,6 +1286,16 @@ inline void setSlotDialCapable(void* regMap, int slotIdx, bool capable)
 // Publish "this rack is being rebuilt". Written the moment a build starts and cleared the moment it ends, by
 // the Link itself - the one process that knows. Plain byte store, like placement and dialCapable: a single
 // byte is never torn, and a reader that catches the previous value is one poll behind at worst.
+// Publish "I can arm a dial on a named slot" (A1b, 28 Oct 2026). Written by the Link that HAS that
+// road, so a 1 here is proof by the writer. Same plain byte store as placement, dialCapable and
+// busyFlag: one byte is never torn, and a reader one poll behind withholds a feature for a moment -
+// which is the safe direction.
+inline void setSlotDialFrameCapable(void* regMap, int slotIdx, bool capable)
+{
+    if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
+    regSlots(regMap)[slotIdx].dialFrameCapable = capable ? 1 : 0;
+}
+
 inline void setSlotBusy(void* regMap, int slotIdx, bool busy)
 {
     if (!regMap || slotIdx < 0 || slotIdx >= kRegMaxSlots) return;
@@ -1263,6 +1305,10 @@ inline void setSlotBusy(void* regMap, int slotIdx, bool busy)
 struct SlotSnapshot {
     int          idx;
     bool         dialCapable = false;   // 0 from every existing Link; see the field
+    // A1b: this Link can arm a dial on a NAMED SLOT (B's dial-frame road). FALSE from every Link
+    // shipped before 28 Oct 2026, and false is the answer that withholds the road - never read a
+    // false here as "this Link refused", only as "this Link does not say it can".
+    bool         dialFrameCapable = false;
     juce::String instanceUid;    // per-instance address ("" from old writers)
     juce::String displayName;
     juce::String audioFilename;  // filename only, e.g. "audio_drums.bin"
@@ -1293,6 +1339,7 @@ inline bool readSlot(void* regMap, int i, SlotSnapshot& out)
     out.gainDb        = slot->gainDb;
     out.placement     = slot->placement;
     out.dialCapable   = slot->dialCapable != 0;   // 0 from every old Link
+    out.dialFrameCapable = slot->dialFrameCapable != 0;   // 0 from every Link before 28 Oct 2026
     out.busy          = slot->busyFlag != 0;      // 0 from every old Link (= "cannot say", read as not busy)
     return true;
 }

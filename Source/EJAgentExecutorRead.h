@@ -300,7 +300,13 @@ struct Sources
         when it cannot; it takes the SAME road an add's dial takes. */
     std::function<juce::String (int slot1)> slotName;
     std::function<juce::var (const juce::String& plugin)> dialReport;
-    std::function<bool (const juce::var& dial, int slot1, juce::String& why)> armDialAtSlot;
+    // A1b: ONE CAPABILITY PER ROAD, because the two answer on different clocks. The executor picks
+    // between them from target_ - the same field targetRack() and targetAnalysis() branch on - so
+    // the decision lives where every other per-target decision already does, and the processor is
+    // never asked a question it cannot answer (which rack is this RUN on).
+    std::function<bool (const juce::var& dial, int slot1, juce::String& why)> armDialOnOwnRack;
+    std::function<void (const juce::String& linkUid, const juce::var& dial, int slot1,
+                        std::function<void (bool armed, juce::String why)> done)> armDialOnLink;
     /** "Only suggest plugins EchoJay can auto-dial" - his Settings toggle, READ LIVE on every
         request (his 09:49: an unmapped plugin was added with it on, because neither agent body
         carried it). Same key the chat road uses: `autoDial`. */
@@ -366,7 +372,8 @@ public:
     // A1a: the dial frame's three reads - what stands in a slot, the landed figures, and the arm.
     juce::String slotPluginName (int slot1) const override;
     juce::var dialReport (const juce::String& plugin) const override;
-    bool armDialAtSlot (const juce::var& dialOnPlayback, int slot1, juce::String& why) override;
+    void armDialAtSlot (const juce::var& dialOnPlayback, int slot1,
+                        std::function<void (bool armed, juce::String why)> done) override;
     juce::String captureCheckpoint (const juce::String& label) override;
     juce::String describeOtherChannel (const ToolCall& call) override;   // item 2: the track name, or "" for self
     juce::StringArray buildWouldRemove (const ToolCall& call) override;  // step 7.4: what a build takes OFF the rack

@@ -395,6 +395,12 @@ private:
         skipped without arming anything); tickDialStep watches for the result; endDialStep writes
         the answer B's contract specifies. */
     void beginDialStep (Step& s);
+    /** A1b: what runs once the arm has ANSWERED - the wait itself. Split out of beginDialStep
+        because a Link's arm answers on its chain ack rather than inside the call, so this half
+        happens later. It takes the step's ID and re-finds it: a reference into steps_ does not
+        survive a step being appended while a Link thinks. */
+    void beginDialWait (const juce::String& stepId, const juce::String& plugin,
+                        const juce::String& stepText, int slot1);
     void tickDialStep();
     void endDialStep (echojay::dialframe::Outcome o, const juce::String& why);
     void timerCallback() override;

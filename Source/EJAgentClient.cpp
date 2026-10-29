@@ -1667,36 +1667,68 @@ void EJAgentClient::beginDialStep (Step& s)
         return;
     }
 
-    juce::String why;
-    if (! executor_.armDialAtSlot (dial, t.slot1, why))
-    {
-        // NOT A SKIP. B's two skip reasons are both about the SUBJECT being gone; this is this
-        // build saying it could not arm, and the model needs the reason to pick what to do next.
-        log ("dial frame " + s.id + " could NOT be armed on slot " + juce::String (t.slot1) + " - " + why);
-        completeStep (generation_, s.id, ToolOutcome::failureFor ("dial_not_armed",
-                "the dial could not be armed on slot " + juce::String (t.slot1) + ": " + why
-                + ". Nothing was changed, so nothing needs undoing.",
-                "I couldn't set the " + name + " on playback."));
-        return;
-    }
+    // ---- A1b: THE ARM ANSWERS WHEN IT ANSWERS, AND THE STEP STAYS OPEN UNTIL IT DOES --------
+    //
+    // The open rack answers inside this call (calibStart is immediate). A LINK does not: its answer
+    // comes back on chain-ack-<uid>.json, inside awaitChainAck's own 8 s bound. A bool return could
+    // then only have meant "the command was written", and "'sent' is not 'applied'" is Sean's item 1
+    // of 13 Oct - he approved a build, was told it landed, and the Link had nothing on it.
+    //
+    // Nothing is lost by waiting: the step is already Running and the card already draws work in
+    // progress, which is true of both roads. What the person sees does not change; what the server
+    // is told does.
+    const auto gen    = generation_;
+    const auto stepId = s.id;
+    const auto armSlot = t.slot1;
+    executor_.armDialAtSlot (dial, t.slot1,
+        [this, gen, stepId, name, stepTx, armSlot] (bool armed, juce::String why)
+        {
+            // THE RUN MAY HAVE MOVED ON while the Link was thinking - stopped, superseded, or
+            // ended by a new chat (B6). A callback that lands after that must do nothing.
+            if (gen != generation_) return;
+            if (! armed)
+            {
+                // NOT A SKIP. B's two skip reasons are both about the SUBJECT being gone; this is
+                // this build - or the Link itself - saying it could not arm, and the model needs
+                // the reason to pick what to do next.
+                log ("dial frame " + stepId + " could NOT be armed on slot " + juce::String (armSlot)
+                     + " - " + why);
+                completeStep (gen, stepId, ToolOutcome::failureFor ("dial_not_armed",
+                        "the dial could not be armed on slot " + juce::String (armSlot) + ": " + why
+                        + ". Nothing was changed, so nothing needs undoing.",
+                        "I couldn't set the " + name + " on playback."));
+                return;
+            }
+            beginDialWait (stepId, name, stepTx, armSlot);
+        });
+}
+
+void EJAgentClient::beginDialWait (const juce::String& stepId, const juce::String& plugin,
+                                   const juce::String& stepText, int slot1)
+{
+    using namespace echojay::dialframe;
+    const auto name   = plugin;
+    const auto stepTx = stepText;
 
     dial_ = {};
     dial_.active    = true;
-    dial_.stepId    = s.id;
+    dial_.stepId    = stepId;
     dial_.plugin    = name;
-    dial_.slot1     = t.slot1;
+    dial_.slot1     = slot1;
     dial_.startedMs = nowMs();
     const auto r0 = executor_.readPlayback();
     dial_.heardAnything = r0.heardAboveSeconds > 0.0;
     dial_.line = dialStepLine (stepTx, name, r0.transportKnown, r0.playing);
-    s.detail = dial_.line;
+    // RE-FOUND, not held: see the note on the declaration. If the step has gone (the run was torn
+    // down between the arm answering and this line) there is nothing to draw and nothing to fix.
+    if (auto* st = stepById (stepId)) st->detail = dial_.line;
     // THE STATE DOES NOT MOVE, and that is deliberate. State::Listening is the playback WAIT's
     // state and the card draws its own block for it - the ring, the progress arc, the "you can
     // stop" line - all of which read playback_, which is not active here. B's contract asks for
     // this on the STEP: *"show step_text as the current step on the card, with the usual running
     // indicator"*. So the run stays Executing with a Running step, which is exactly what the card
     // already draws for work in progress, and the one sentence lives on the step's own row.
-    log ("dial frame " + s.id + " ARMED on slot " + juce::String (t.slot1) + " for \"" + name
+    log ("dial frame " + stepId + " ARMED on slot " + juce::String (slot1) + " for \"" + name
          + "\" - the step stays open until the dial lands (B's dial-step contract); waiting up to "
          + juce::String (kWaitForPlaybackMs / 1000) + " s for playback to start");
     startTimer (playbackTickMs);

@@ -4730,6 +4730,29 @@ int main (int argc, char* argv[])
                         // prompt on his Mac, which is his standing rule for the rig.
                         if (rowWanted ("LV9b"))
                         {
+                            // ---- A LINK IN THIS PROCESS DOES NOT SERVICE CHAIN COMMANDS --------
+                            //
+                            // Four runs of this row looked like product faults and were not. The
+                            // log of the fourth settles it: the command WAS written
+                            // ("chain-cmd v2 -> 58a13ea83f seq=1793249114"), and the line before it
+                            // reads "EJBorrow: slot 1 (AUDelay) of 58a13ea83f unanswered after
+                            // 5.0 s". The in-process Links this pass creates never answer a command
+                            // at all, which is exactly why SCEN A2, G1 and G2 - every row about a
+                            // Link TAKING a change - already skip here for the out-of-process
+                            // reason. A row that cannot be served by the configuration it is in
+                            // must say so, not fail as though the product were at fault: that is
+                            // the two-configurations rule, and this row has now cost four runs for
+                            // want of obeying it.
+                            if (linkProcWhy.isNotEmpty())
+                            {
+                                skip ("LV9b/LV9e: a knob on an EchoJay device's copy reaches the Link",
+                                      "a Link hosted IN THIS PROCESS does not service chain commands - "
+                                      "the add is written and never answered - so this row and LV9e "
+                                      "run in the out-of-process pass, where the Link is a real host. "
+                                      + linkProcWhy);
+                            }
+                            else
+                            {
                             // Put one of ours on the LINK, the way the agent's add does it.
                             // ---- HOW ONE OF OURS GETS ONTO THE LINK, AFTER TWO FAILED WAYS -----
                             //
@@ -4952,6 +4975,7 @@ int main (int argc, char* argv[])
                                        + juce::String (copyAfterB, 3) + " - " + movedNoteB);
                         }
                             }
+                        }
 
                         // ---- LV9c: A STOPPED RUN LETS GO OF THE RACK AT ONCE (29 Oct 2026) -----
                         //

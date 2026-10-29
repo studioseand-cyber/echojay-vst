@@ -128,11 +128,25 @@ struct FakeExecutor : ToolExecutor
     int          lastArmSlot1 = 0;
     juce::String slotPluginName (int slot1) const override { return slot1 == 1 ? inSlot1 : juce::String(); }
     juce::var dialReport (const juce::String&) const override { return report; }
-    bool armDialAtSlot (const juce::var&, int slot1, juce::String& why) override
+    // ---- A1b: THE ARM ANSWERS THROUGH A CALLBACK, AND A LINK ANSWERS LATER ---------------
+    // Default: it answers inside the call, which is the open rack (calibStart is immediate) - so
+    // every leg written before A1b behaves exactly as it did. With `armHolds` set, the callback is
+    // KEPT instead, the client runs on while the arm is still out, and releaseArm() is the Link's
+    // ack arriving. A fake that could only answer immediately could not test the gap at all.
+    bool armHolds = false;
+    std::function<void (bool, juce::String)> heldArm;
+    void armDialAtSlot (const juce::var&, int slot1,
+                        std::function<void (bool armed, juce::String why)> done) override
     {
         ++armsAsked; lastArmSlot1 = slot1;
-        if (armWorks) return true;
-        why = armRefusal; return false;
+        if (armHolds) { heldArm = std::move (done); return; }
+        if (done) done (armWorks, armWorks ? juce::String() : armRefusal);
+    }
+    /** The Link's ack arriving, with the answer it carried. */
+    void releaseArm (bool armed)
+    {
+        auto cb = std::move (heldArm); heldArm = nullptr;
+        if (cb) cb (armed, armed ? juce::String() : armRefusal);
     }
     juce::StringPairArray dialsLanded;                                   // his 08:43 ruling
     juce::StringPairArray dialResults() const override { return dialsLanded; }
@@ -3415,6 +3429,96 @@ int main()
                    "answers as it always did  (the capability is withheld, so this is the road every "
                    "run takes today)",
                    s == nullptr ? "no step" : juce::String ((int) s->status));
+        }
+        // ---- A1b: THE GAP. A LINK'S ARM ANSWERS ON ITS ACK, NOT IN THE CALL ---------------
+        //
+        // This is the leg the change exists for. Everything above arms inside the call, so none of
+        // it can tell "the command was written" from "the dial was armed" - and that distinction is
+        // Sean's item 1 of 13 Oct, where he approved a build, was told it landed, and the Link had
+        // nothing on it.
+        {
+            Rig w; w.round (1);
+            w.ex.reading.transportKnown = true; w.ex.reading.playing = true;
+            w.ex.reading.heardAboveSeconds = 2.0;
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.ex.armHolds = true;                       // a Link: the ack has not come back yet
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","step_text":"Setting the Vac Attack... about 3 dB",)"
+                    R"("keep_playing":true,"dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (120);
+            const auto* mid = w.step ("tc_dial");
+            check (mid != nullptr && mid->status == EJAgentClient::Step::Status::Running
+                     && w.ex.armsAsked == 1,
+                   "DF12 while a Link's arm is still out the step is OPEN and asked once - not "
+                   "finished, not failed, and not armed twice by a timer that got impatient",
+                   mid == nullptr ? "no step" : juce::String ((int) mid->status)
+                                              + ", arms " + juce::String (w.ex.armsAsked));
+            // AND THE WAIT HAS NOT STARTED. The dial's own line is what the wait writes on the
+            // step; its absence is how we know the second half has not run on a maybe.
+            check (mid != nullptr && ! mid->detail.containsIgnoreCase ("Vac Attack")
+                     && ! mid->detail.containsIgnoreCase ("Play the track"),
+                   "DF12b ...and the dial WAIT has not started: no dial line on the step while the "
+                   "arm is unanswered, because a wait begun before the arm answered would be a wait "
+                   "for something that may never have been armed",
+                   mid == nullptr ? juce::String ("no step") : ("detail=\"" + mid->detail + "\""));
+            w.ex.releaseArm (true);                     // the ack lands: dialArmed
+            pumpMs (120);
+            const auto* after = w.step ("tc_dial");
+            check (after != nullptr && after->status == EJAgentClient::Step::Status::Running
+                     && after->detail.containsIgnoreCase ("Vac Attack"),
+                   "DF12c ...and when the ack says it armed, the wait begins and the step carries "
+                   "B's step_text - still open, which is DF1's claim on the Link's road",
+                   after == nullptr ? juce::String ("no step") : ("detail=\"" + after->detail + "\""));
+        }
+        // ---- an ack that says it did NOT arm is a failure with the Link's own reason ------
+        {
+            Rig w; w.round (1);
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.ex.armHolds = true;
+            w.ex.armRefusal = "this Link's build has no road that arms a dial on a slot";
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","step_text":"Setting it","keep_playing":true,)"
+                    R"("dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (60);
+            w.ex.releaseArm (false);                    // an OLDER Link: it ignored the field
+            pumpMs (60);
+            const auto* s2 = w.step ("tc_dial");
+            check (s2 != nullptr && s2->status == EJAgentClient::Step::Status::Failed,
+                   "DF12d an ack that did not arm is a FAILURE, not a skip and not a success - and "
+                   "an older Link that ignores the dial field acks without it, which arrives here",
+                   s2 == nullptr ? "no step" : juce::String ((int) s2->status));
+            const auto why = s2 != nullptr ? juce::JSON::toString (s2->result, true) : juce::String();
+            check (why.containsIgnoreCase ("no road that arms a dial"),
+                   "DF12e ...carrying the LINK'S OWN reason to the model, rather than a sentence "
+                   "this client made up about a build it cannot see",
+                   why);
+        }
+        // ---- and an ack that lands after the run has gone does nothing at all -------------
+        //
+        // A new chat now STOPS a live run (B6, his ruling tonight), and a Link can answer after
+        // that. The generation check is what makes that safe, and this is the leg for it.
+        {
+            Rig w; w.round (1);
+            w.ex.inSlot1 = "Mixland Vac Attack";
+            w.ex.armHolds = true;
+            w.tool (R"({"id":"tc_dial","name":"do","approval":"free","args":{"op":"dial","slot":1,)"
+                    R"("name":"Mixland Vac Attack","step_text":"Setting it","keep_playing":true,)"
+                    R"("dial_on_playback":{"target_gr_db":3,"control":"Left Reduction"}}})");
+            w.await ({ "tc_dial" });
+            pumpMs (60);
+            w.client.stop();                            // the run ends while the Link is thinking
+            pumpMs (60);
+            w.ex.releaseArm (true);                     // ...and then its ack arrives
+            pumpMs (120);
+            check (! w.client.isActive(),
+                   "DF12f an arm answering after the run was stopped does not bring it back to life");
+            const auto* s3 = w.step ("tc_dial");
+            check (s3 == nullptr || s3->status != EJAgentClient::Step::Status::Running,
+                   "DF12g ...and leaves no step running behind it, which is what a dial wait started "
+                   "on a dead generation would have done",
+                   s3 == nullptr ? "no step" : juce::String ((int) s3->status));
         }
     }
 
