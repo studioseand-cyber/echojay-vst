@@ -11125,13 +11125,17 @@ void testWizardCategories()
                && two.proven() && ! one.proven() && ! bad.proven() && bad.failed == 1 && pr ("Band 1 Freq") && pr ("Band 1 Gain") && pr ("Shape") && ! pr ("Curve") && credit.at ("Curve").failed == 1,
                "wizard WZ-TRUST-2: a reading passes within one display step, fails off it, needs a number; read back = 2+ readings, no failure; the credit reads fixtures and Phase B positions by their control");
     }
-    // WZ-TRUST-3 THE LEVEL: certified wins; held is unsure whatever else; mapped needs the dial target identified AND read back
+    // WZ-TRUST-3 THE LEVEL: certified wins (29 Oct: with its core roles mapped and read back - WZ-36OCT-9); held is unsure whatever else;
+    // mapped needs the dial target identified AND read back
     {
         using namespace ejmap::trust;
         const auto m = juce::JSON::parse (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]}}})");
+        const auto mc = juce::JSON::parse (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-60,0],[0,1]]},
+            "Output":{"name":"Output","kind":"anchored","unit":"db","anchors":[[-20,0],[20,1]]}}})");
         std::map<juce::String, ControlReadback> rb; rb["Threshold"].judged = 3;
+        std::map<juce::String, ControlReadback> rbCore = rb; rbCore["Output"].judged = 3;
         std::map<juce::String, ControlReadback> rbFail; rbFail["Threshold"].judged = 3; rbFail["Threshold"].failed = 1; rbFail["Threshold"].worst = "off";
-        const auto c = levelFor (m, true, "", {}), h = levelFor (m, false, "needs_licence", rb), ok = levelFor (m, false, "", rb), none = levelFor (m, false, "", {}), failed = levelFor (m, false, "", rbFail);
+        const auto c = levelFor (mc, true, "", rbCore), h = levelFor (m, false, "needs_licence", rb), ok = levelFor (m, false, "", rb), none = levelFor (m, false, "", {}), failed = levelFor (m, false, "", rbFail);
         check (c.level == "certified" && h.level == "unsure" && h.why.startsWith ("held") && ok.level == "mapped" && ok.dialable == juce::StringArray { "Threshold" }
                && none.level == "unsure" && none.why.contains ("no read-back yet") && failed.level == "unsure" && failed.why.contains ("read-back failed"),
                "wizard WZ-TRUST-3: certified > mapped (identified + read back) > unsure; held is unsure; no read-back or a failed one is unsure, said");
@@ -14787,6 +14791,38 @@ int main (int, char**)
                && sw.contains ("    cfg.process = echojay::silentBlockProcessor (inst);") && sw.contains ("        cfg.process();   // 29 Oct: the restored state applied")
                && px.contains ("    cfg.process = echojay::silentBlockProcessor (inst);") && px.contains ("                cfg.process();   // 29 Oct: the restored state applied"),
                "wizard WZ-36OCT-8: a control applied only while processing is read by set-then-read with a silent block (" + with + "); without it, flat and declined");
+    }
+    // WZ-36OCT-9 CERTIFIED NEEDS ITS CORE ROLES (Kathy, 29 Oct; Sean: Solid Bus Comp was certified while its map had only Ratio and SC Gain,
+    // and EchoJay turned SC Gain for the amount). A certification counts only with the category's core roles mapped AND read back; without
+    // them the level is what the ordinary rule gives (mapped at most), and the why says what held it back
+    {
+        using namespace ejmap::trust;
+        auto J = [] (const char* s) { return juce::JSON::parse (s); };
+        const auto sbc9aug = J (R"({"category":"compressor","controls":{"Ratio":{"name":"Ratio","kind":"anchored","unit":"ratio","anchors":[[1.5,0.1],[10,0.9]]},
+            "SC Gain":{"name":"SC Gain","kind":"anchored","unit":"db","anchors":[[-20,0],[20,1]]}}})");
+        const auto sbcNow = J (R"({"category":"compressor","controls":{"Threshold":{"name":"Threshold","kind":"anchored","unit":"db","anchors":[[-20,0],[20,1]]},
+            "Makeup":{"name":"Makeup","kind":"anchored","unit":"db","anchors":[[-5,0],[15,1]]},"SC Gain":{"name":"SC Gain","kind":"anchored","unit":"db","anchors":[[-20,0],[20,1]]}}})");
+        const auto la2a = J (R"({"category":"compressor","controls":{"Peak Reduction":{"name":"Peak Reduction","kind":"anchored","unit":"db","anchors":[[0,0],[100,1]]},
+            "Gain":{"name":"Gain","kind":"anchored","unit":"db","anchors":[[0,0],[40,1]]}}})");
+        const auto eq = J (R"({"category":"eq","controls":{"Band 1 Freq":{"name":"Band 1 Freq","kind":"anchored","unit":"hz","anchors":[[20,0],[20000,1]]},
+            "Band 1 Gain":{"name":"Band 1 Gain","kind":"anchored","unit":"db","anchors":[[-18,0],[18,1]]}}})");
+        const auto tuner = J (R"({"category":"pitch","controls":{}})");
+        std::map<juce::String, ControlReadback> rb; for (const char* n : { "Ratio", "SC Gain", "Threshold", "Makeup", "Gain", "Band 1 Freq", "Band 1 Gain" }) rb[n].judged = 3;
+        auto rbWithout = [&] (const char* n) { auto r = rb; r.erase (n); return r; };
+        Measured amount; amount.roles["threshold"] = { "Peak Reduction" };   // the certification measured the amount
+        std::map<juce::String, ControlReadback> rbLa = rb; rbLa["Peak Reduction"].judged = 3;
+        const auto a = levelFor (sbc9aug, true, "", rb), b = levelFor (sbcNow, true, "", rb), b2 = levelFor (sbcNow, true, "", rbWithout ("Makeup")),
+                   c = levelFor (la2a, true, "", rbLa, amount), d = levelFor (eq, true, "", rb), d2 = levelFor (eq, true, "", rbWithout ("Band 1 Gain")),
+                   e = levelFor (tuner, true, "", {}), f = levelFor (sbcNow, true, "UAD", rbWithout ("Threshold"));
+        check (a.level == "unsure" && a.why.startsWith ("certification held back - core role not mapped: threshold; makeup|output|gain")
+               && b.level == "certified" && b2.level == "mapped" && b2.why.startsWith ("certification held back - core role not read back: Makeup. roles identified and read back: Threshold")
+               && c.level == "certified" && d.level == "certified" && d2.level == "unsure" && d2.why.contains ("core role not read back: Band 1 Gain")
+               && e.level == "certified" && f.level == "unsure" && f.why.contains ("not read back: Threshold. held: UAD")
+               && coreRolesFor ("compressor") == juce::StringArray { "threshold", "makeup|output|gain" } && coreRolesFor ("limiter") == juce::StringArray { "ceiling" } && coreRolesFor ("pitch").isEmpty()
+               && coreRolesFor ("pitch", true) == juce::StringArray { "shift" } && coreRolesFor ("saturation") == juce::StringArray { "drive" }
+               && sidechainNamed ("sc gain") && sidechainNamed ("s/c level") && sidechainNamed ("key input") && sidechainNamed ("sidechain hpf") && ! sidechainNamed ("scale") && ! sidechainNamed ("output")
+               && roleOf (sbc9aug.getProperty ("controls", {}).getProperty ("SC Gain", {})).role.isEmpty(),
+               "trust WZ-36OCT-9: certified needs its core roles mapped and read back (Solid Bus Comp's 9 Aug map: '" + a.why.substring (0, 90) + "'); short of them, at most mapped");
     }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
