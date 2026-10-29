@@ -1,5 +1,5 @@
 scenario D2
-captured 2026-10-29T01:14:40.207Z
+captured 2026-10-29T02:43:54.087Z
   [user] rig-undo-marker: set the pre gain to 3 dB, then undo it
   [assistant] Set the pre-gain to 3 dB, then undid it.
   [user] rig-undo-marker: set the pre gain to 3 dB, then undo it

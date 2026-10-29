@@ -158,7 +158,7 @@ namespace cmd
     // plugin on a known slot in two seconds, not a 120 s agent turn that depends on a model
     // answering. It goes through ChainHost::loadByRecommendedName with LoadOrigin::User - the same
     // road the picker's choice takes - so the rack it produces is one the product itself built.
-    inline constexpr const char* addSlot     = "add_slot";         // { name } - appended to the own rack
+    inline constexpr const char* addSlot     = "add_slot";         // { name, uid? } - uid = a Link, added over the wire (the picker's road); no uid = the own rack
     // ---- "+ NEW CHAT", THROUGH THE PRODUCT'S OWN DOOR (17 Oct 2026) ------------------------------
     // Sean's item 1 this round: "New chat" aimed at the Mix Bus brought back the previous Kick-Link
     // run, drew its closing and failed step, appended his answer to it and answered about the old

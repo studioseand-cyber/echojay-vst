@@ -4731,19 +4731,51 @@ int main (int argc, char* argv[])
                         if (rowWanted ("LV9b"))
                         {
                             // Put one of ours on the LINK, the way the agent's add does it.
-                            rig.send (echojay::rig::cmd::workOn, args1 ("uid", uid), 8000);
-                            // THE CHIP HAS TO BE ON AUTO or the scripted plan waits for an approval
-                            // nobody gives and the device never lands - which is exactly how this
-                            // row failed its first run (slots 1 -> 1, and it then moved a THIRD
-                            // PARTY's "Dry/Wet Mix" instead of one of ours). The no-window build row
-                            // sets the same thing first, for the same reason.
-                            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
+                            // ---- HOW ONE OF OURS GETS ONTO THE LINK, AFTER TWO FAILED WAYS -----
+                            //
+                            // First try: a scripted "build a compressor on this rack" through the
+                            // agent. It landed nothing, twice (slots 1 -> 1), and the row then moved
+                            // a third party's "Dry/Wet Mix" and called itself a failure - correctly,
+                            // but for the wrong reason. The cause is simple and worth writing down:
+                            // THERE IS NO AGENT IN A RIG RUN WITHOUT A LIVE SERVER ("CAPABILITIES:
+                            // skipped - no live server"), so no plan is ever built.
+                            //
+                            // Second: add_slot, which until tonight only ever added to the OWN rack.
+                            // It honours the rack IN VIEW now and sends a Link's add over the wire
+                            // through sendRackAdd - the exact line the picker runs when he clicks an
+                            // item with a Link's rack open. So this row drives the product's remote
+                            // add by name, with no agent and no server.
+                            // ---- THE ROW ADDRESSES THE LINK ITSELF, AND SAYS SO IF IT CANNOT ---
+                            //
+                            // Third failed run, and this time the row's own fault entirely: after I
+                            // moved this block below LV11, `uid` resolves to an outer variable that
+                            // is EMPTY here, so `select_link` logged "ok (the own rack)" twice and
+                            // every step addressed the V2's own chain. The row then dutifully moved
+                            // a third party's Dry/Wet Mix and failed - measuring nothing, twice over.
+                            //
+                            // So it takes the uid from the live state rather than from whatever is
+                            // in scope, and if there is no Link to address it FAILS with that as the
+                            // reason instead of quietly testing the wrong rack. A row that cannot
+                            // name its own subject has no business reporting on one.
+                            juce::String bUid = uid;
+                            if (bUid.isEmpty())
+                                bUid = rig.freshState().getProperty ("firstLinkUid", juce::var()).toString();
+                            if (bUid.isEmpty())
+                            {
+                                row ("LV9b", false,
+                                     "does a knob turned on an ECHOJAY DEVICE'S copy reach the device "
+                                     "on the Link and stay there",
+                                     "COULD NOT RUN: this row had no Link uid to address - neither its "
+                                     "enclosing scope nor the published state named one, so it refused "
+                                     "to measure the own rack and call that an answer");
+                            }
+                            else {
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", bUid), 8000);
                             livePump (400);
                             const auto before = rig.freshState();
                             const int slotsBefore = (int) before.getProperty ("linkSlots", -1);
-                            rig.send (echojay::rig::cmd::sendChat,
-                                      args1 ("text", "rig-lv9b-marker: build a compressor on this rack"),
-                                      20000);
+                            rig.send (echojay::rig::cmd::addSlot,
+                                      args2 ("name", "EchoJay Compressor", "uid", bUid), 20000);
                             int slotsNow = slotsBefore;
                             for (int tries = 0; tries < 40 && slotsNow <= slotsBefore; ++tries)
                             {
@@ -4753,7 +4785,7 @@ int main (int argc, char* argv[])
                             const bool landed = slotsNow > slotsBefore && slotsBefore >= 0;
                             // The new slot is the last one, which is where an append puts it.
                             const int ourSlot = juce::jmax (1, slotsNow);
-                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", uid), 8000);
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", bUid), 8000);
                             rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
                             livePump (600);
                             rig.send (echojay::rig::cmd::openSlot,   args1 ("n", ourSlot), 10000);
@@ -4809,6 +4841,7 @@ int main (int argc, char* argv[])
                                        + juce::String (linkAfterB, 3) + " a second and a half later, the copy "
                                        + juce::String (copyAfterB, 3) + " - " + movedNoteB);
                         }
+                            }
 
                         // ---- LV9c: A STOPPED RUN LETS GO OF THE RACK AT ONCE (29 Oct 2026) -----
                         //

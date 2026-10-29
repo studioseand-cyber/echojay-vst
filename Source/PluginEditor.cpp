@@ -37913,7 +37913,32 @@ void EchoJayEditor::serviceRigHook()
         // the note says it was ASKED and the row waits for the rack to show it - never a note that
         // claims a slot exists because a call returned.
         const auto name = c.args.getProperty ("name", juce::var()).toString();
-        if (name.isEmpty())
+        // ---- AND IT HONOURS THE RACK IN VIEW (29 Oct 2026) ------------------------------------
+        //
+        // This only ever added to the OWN rack, and that gap is why two of the rows Sean asked for
+        // on 29 Oct could not be written at all: there was no way for the rig to put a plugin on a
+        // LINK. The agent road cannot stand in for it - without a live server there is no agent, so
+        // a scripted "build a compressor on this rack" lands nothing (LV9b failed exactly that way,
+        // twice, and then moved a third party's Dry/Wet Mix instead of one of ours).
+        //
+        // THE PICKER'S OWN ROAD, not a test-only one: sendRackAdd is the line
+        // showChainPluginPicker runs when a Link's rack is in view and he clicks an item, so a row
+        // built on this is driving the product's remote add by name and nothing else.
+        //
+        // AND THE uid IS EXPLICIT, never taken from the view. I wrote it the other way first and it
+        // would have broken LV7: that row calls clearOwnRack and add_slot expecting its OWN rack,
+        // while the view is still the LINK the LV rows selected - so an implicit "whatever is in
+        // view" would have sent its AUDelay over the wire and measured nothing. A command whose
+        // target depends on what some earlier row left selected is the same defect as a row that
+        // does, and this file has paid for that one twice.
+        const auto rackUid = c.args.getProperty ("uid", juce::var()).toString();
+        if (name.isNotEmpty() && rackUid.isNotEmpty())
+        {
+            sendRackAdd (rackUid, name);
+            note = "asked " + rackUid + " for \"" + name + "\" over the wire, the picker's own road "
+                   "(remote adds are asynchronous - read linkSlots for the answer, never this note)";
+        }
+        else if (name.isEmpty())
             note = "add_slot needs a name";
         else
         {
@@ -38451,6 +38476,14 @@ void EchoJayEditor::publishRigState()
     // linkSlots: how many slots the rack IN VIEW has. procSlots is the own rack's and answers a
     // different question; a row that adds a device to a Link and waits for it needs this one.
     o->setProperty ("inlineIsLent", chainListPanel.inlineIsLent);
+    // The first registered Link, so a row can address one without depending on what some outer
+    // variable happens to hold (LV9b spent three runs measuring the own rack for want of this).
+    {
+        juce::String firstLink;
+        for (const auto& li : processorRef.getLinkSlotInfos())
+            if (li.uid.isNotEmpty()) { firstLink = li.uid; break; }
+        o->setProperty ("firstLinkUid", firstLink);
+    }
     // The rack IN VIEW, counted from the processor's own cache of that Link's sidecar - the same
     // place line 537 and 10853 read it. procSlots answers the own rack and is a different question.
     {
