@@ -1132,7 +1132,9 @@ void EJAgentClient::runStep (Step& s)
 
     if (s.status == Step::Status::AwaitingApproval && ! s.approved)
     {
-        s.status = Step::Status::Declined; s.detail = "skipped";
+        // The detail follows the row word, not the retired one (C's point 53): one event, one
+        // word, and that word is his decision rather than something that happened to him.
+        s.status = Step::Status::Declined; s.detail = "declined";
         s.result = juce::var();
         log ("step " + id + " declined by the user");
         changed();

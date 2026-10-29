@@ -3253,6 +3253,22 @@ int main()
                 check (echojay::agentui::statusFromToken ("done") == (int) S::Done
                          && echojay::agentui::statusFromToken ("not_run") == (int) S::NotRun,
                        "DC1d control: the other tokens are untouched by the rename");
+                // ---- AND THE WORD HE READS (C's point 53) -----------------------------------
+                // The wire token changed first and the ROW WORD did not, so for a while the plugin
+                // said "skipped" while its own server said "you chose not to". "skipped" is also
+                // the word E2 retired: it reads as something that happened TO him rather than a
+                // choice he made, and those are different events.
+                {
+                    EJAgentClient::Step d; d.status = S::Declined; d.id = "tc_d";
+                    const auto word = echojay::agentui::rightWordFor (d, false);
+                    check (word != "skipped",
+                           "DC2 the row word for a DECLINED step is never \"skipped\" - he did not "
+                           "skip it, he said no, and the server's closing says so too",
+                           word);
+                    check (word == "declined",
+                           "DC2b ...it is \"declined\", the same word the wire and the record use, "
+                           "so one event has one word everywhere", word);
+                }
             }
 
             // ---- C's POINT 43: THE SPARING RULE TONIGHT'S SWEEP FIX DEPENDS ON ---------------

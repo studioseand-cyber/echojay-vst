@@ -436,7 +436,13 @@ inline juce::String rightWordFor (const EJAgentClient::Step& s, bool askPendingH
         // read gets no word at all, and "applied" means what it says.
         case St::Done:             return s.isDo() ? (s.autoApplied ? "auto-applied" : "applied") : juce::String();
         case St::Failed:           return "not applied";
-        case St::Declined:         return "skipped";
+        // ---- HE DID NOT SKIP IT, HE SAID NO (C's point 53, 29 Oct 2026) -------------------
+        //
+        // This row word stayed "skipped" after the wire token became "declined", so the plugin
+        // contradicted its own server: the closing now says "you chose not to" while the row said
+        // "skipped". Worse, "skipped" is the word E2 retired - it reads as something that happened
+        // TO him rather than a decision he made, and the two are not the same event.
+        case St::Declined:         return "declined";
         case St::NotRun:           return "not applied";
         case St::Undone:           return "undone";
         case St::Stopped:          return "stopped";
