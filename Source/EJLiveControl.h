@@ -90,6 +90,64 @@ inline bool runBlocksUsersKnobs (bool runIsActive, bool undoAllStillLive)
     return runIsActive;
 }
 
+/** Is a run working on THIS rack? (his 21:22 fault, 28 Oct 2026.)
+
+    The two inputs are different facts and the bug was conflating them with a third. `runRackUid` is
+    the rack the RUN is on - captured when the run started, EJAgentHome::runTargetUid() - and NOT the
+    agent's live target, which syncAgentTarget() moves whenever the view changes. His log:
+
+      21:18:03  a run parks in awaiting_ask (waiting on HIM)
+      21:21:43  working target -> 4814a16004   (he opened that Link to look at it)
+      21:22:56  "an agent is working on this rack - stop it, or wait"  x10, on 4814a16004
+
+    A run that had nothing to do with that rack locked every knob on it. So the comparison is here,
+    where a leg can hold it both ways, and the caller supplies two facts it cannot confuse.
+
+    THE OWN RACK IS A RACK TOO: an empty runRackUid means the run is on this instance's own chain,
+    which is never the same subject as a Link's rack, so it blocks nothing here. */
+/** Should this run take (or re-take) the rack it is working on? (C's point 42, 29 Oct 2026.)
+
+    THE SECOND RUN INHERITED THE FIRST ONE'S RACK. `taken` was cleared only when no run needed the
+    rack any more - and a FINISHED run still needs it while its Undo all is live, which is the
+    ordinary state after any run that changed something. EJAgentClient::start() clears its steps and
+    takes a new checkpoint without calling the listener, so the next run's first notification
+    already saw "active and taken" and never re-took. Sean's normal order walks straight into it:
+
+      1. run 1 on Link 2 finishes, Undo all showing;
+      2. run 2 on the own track parks on a question;
+      3. he drags a knob on Link 2 - refused, and Link 2 stays held.
+
+    So the question is keyed on the run's own SERIAL (EJAgentClient::runSerial, "one per START: the
+    only honest 'this is a new run' before a sessionId"), not on whether anything has been taken. */
+inline bool shouldTakeRunRack (bool runIsActive, bool alreadyTaken, int takenSerial, int runSerial)
+{
+    if (! runIsActive) return false;
+    return ! alreadyTaken || takenSerial != runSerial;
+}
+
+/** Which rack is the run's, given what was taken at its start and what the view is pointing at now.
+
+    THE WHOLE POINT IS THAT EMPTY IS AN ANSWER (C's point 37, 29 Oct 2026). A run on this instance's
+    own rack takes an EMPTY uid, so code that treats empty as "nothing taken yet" falls back to the
+    live target - which follows the mouse - and the run then claims whatever rack the person opens
+    next. That is Sean's 21:22 fault, and it survived the first fix because his run was an own-rack
+    run. The flag is the fact; the uid is just a value. */
+inline juce::String runRackAnswer (bool taken,
+                                   const juce::String& takenUid,
+                                   const juce::String& liveTarget)
+{
+    return taken ? takenUid : liveTarget;
+}
+
+inline bool runWorkingOnThisRack (bool runIsWorking,
+                                  const juce::String& runRackUid,
+                                  const juce::String& thisRackUid)
+{
+    if (! runIsWorking)          return false;
+    if (thisRackUid.isEmpty())   return false;   // no rack in view is not a rack to block
+    return runRackUid == thisRackUid;
+}
+
 inline LiveControlPolicy liveControlPolicy (bool following, bool runHoldsRack)
 {
     if (runHoldsRack)

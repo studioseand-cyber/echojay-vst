@@ -412,7 +412,30 @@ public:
     int copyParamCount()
     {
         const juce::SpinLock::ScopedLockType sl (lock_);
-        return inst_ != nullptr ? inst_->getParameters().size() : 0;
+        if (inst_ == nullptr) return 0;
+        // OUR OWN DEVICES COUNT THEIR SCHEMA (item 2b, 29 Oct 2026). This returned
+        // getParameters().size(), which is ZERO for every EchoJay device - and
+        // shadowMirrorDecision refuses on `copyParamCount <= 0`, so the view would have gone on
+        // saying "not following" even once the Link started publishing. Half a bridge is no bridge.
+        if (const auto mirror = echojay::builtinMirrorOf (*inst_); ! mirror.empty())
+            return (int) mirror.size();
+        return inst_->getParameters().size();
+    }
+
+    /** ---- HIS HAND ON ONE OF OUR OWN DEVICES (item 2b, 29 Oct 2026) ----------------------
+        An EchoJay device has no juce parameter to listen to, so the AudioProcessorListener that
+        carries CONTROL for a hosted plugin hears nothing at all from one of ours - which is the
+        other half of "no knob can be turned". Their editors write straight through setParamValue
+        on about fifteen devices, so there is no single place to hook; this is read on the follow
+        tick instead, exactly as the Link publishes its own, and the Link's 8-parameter sweep
+        measures 0.014 ms so the cost is not the question.
+
+        Returns how many values were written, 0 for a hosted plugin (which has its listener). */
+    int readBuiltinCopyValues (float* out, int max)
+    {
+        const juce::SpinLock::ScopedLockType sl (lock_);
+        if (inst_ == nullptr || out == nullptr) return 0;
+        return echojay::shadowReadBuiltinValues (*inst_, out, max);
     }
 
     /** ---- WHAT THE COPY'S OWN EDITOR IS DRAWING (his 26 Oct ruling, the real-host test) -----
@@ -423,6 +446,19 @@ public:
     {
         const juce::SpinLock::ScopedLockType sl (lock_);
         if (inst_ == nullptr) return {};
+        // OUR OWN DEVICES AGAIN (item 2b, 29 Oct 2026): a built-in has no juce parameters, so this
+        // returned an EMPTY line for every one of them - and the rig reads this line to tell whether
+        // a value landed on the copy. A row cannot judge a picture it is handed blank.
+        if (const auto mirror = echojay::builtinMirrorOf (*inst_); ! mirror.empty())
+        {
+            const int nb = juce::jmin (juce::jmax (0, maxN), (int) mirror.size());
+            std::vector<float> vals ((size_t) juce::jmax (1, nb), 0.0f);
+            const int got = echojay::shadowReadBuiltinValues (*inst_, vals.data(), nb);
+            juce::String outB;
+            for (int i = 0; i < got; ++i)
+                outB << (i > 0 ? "|" : "") << i << ":" << juce::String (vals[(size_t) i], 4);
+            return outB;
+        }
         const auto& params = inst_->getParameters();
         const int n = juce::jmin (juce::jmax (0, maxN), params.size());
         juce::String out;

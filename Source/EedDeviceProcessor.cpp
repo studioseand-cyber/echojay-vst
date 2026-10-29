@@ -82,6 +82,18 @@ juce::String EedDeviceProcessor::applyStructured (const juce::var& structured,
                         src, appliedOut, skippedOut);
 }
 
+std::vector<EedDeviceProcessor::MirroredParam> EedDeviceProcessor::mirroredParams() const
+{
+    // THE SCHEMA, WHICH IS THE WHOLE TRUTH FOR EVERY DEVICE BUT THE EQ. Its own ranges, so a
+    // mirror normalises against exactly what the device clamps to.
+    std::vector<MirroredParam> out;
+    const auto& specs = paramSchema().params();
+    out.reserve (specs.size());
+    for (const auto& sp : specs)
+        out.push_back ({ juce::String (sp.id), sp.min, sp.max });
+    return out;
+}
+
 juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
                                               ParamSource src,
                                               int* appliedOut, int* skippedOut)

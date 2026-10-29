@@ -4,6 +4,7 @@
 #include "LinkProcessor.h"
 #include "ChainWetKnob.h"
 #include "NativeClip.h"
+#include "EJGuestPopup.h"   // one rule for a popup drawn over a hosted editor (28 Oct 2026)
 
 // EchoJay Link editor — resizable window hosting the received chain inline.
 //
@@ -389,6 +390,12 @@ public:
         }
 
         void closeAllEditors() { closeInline(); closePopout(); }
+
+        /** Is a hosted editor inline in this window right now? (28 Oct 2026, Sean's 21:20 fault.)
+            The V2's panel has published this since September and the Link's had not, which is why
+            echojay::prepareForPopupOverGuest could not be given both panels until now. Same name,
+            same meaning, so one template serves both. */
+        bool hasInlineEditor() const { return inlineEditor != nullptr; }
 
         void attachNative(bool log)
         {
@@ -1158,6 +1165,9 @@ private:
 
     void showPlacementChooser();                   // dropdown: Bus / Channel
     void showPlacementHelp();                       // "?" popover (CallOutBox)
+    /** Remembers that the + picker lowered a pop-out editor, so its onGone can raise it again.
+        The V2 has carried the same flag since 22 Sep; this is its counterpart here. */
+    bool pickerLoweredPopout_ = false;
     void updatePlacementBtn();
     void applyPlacement(int p);                    // set + refresh
 

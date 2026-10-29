@@ -4791,6 +4791,42 @@ void EchoJayProcessor::shadowFollowTick()
     if (moved > 0) shadowFollowWrites_ += moved;
     shadowFollowNote_.clear();
 
+    // ---- AND THE OTHER DIRECTION, FOR OUR OWN DEVICES (item 2b, 29 Oct 2026) ----------------
+    //
+    // A hosted plugin's copy tells us about a knob through its AudioProcessorListener. An EchoJay
+    // device has no juce parameters, so that listener is silent for every one of them - which is
+    // the half of his "no knob can be turned" that publishing values does not fix.
+    //
+    // THE BASELINE IS WHAT THE MIRROR JUST WROTE, which is why this sits here and not in a timer of
+    // its own: `shadowValRead_` IS the frame the copy now holds, so seeding from it closes the echo
+    // loop that would otherwise send every mirrored value straight back to the Link. Anything that
+    // differs from that baseline on a later tick came from the copy's own editor - his hand - or
+    // from the device itself, and both are things the Link should be told.
+    if (const int nb = shadowView_.readBuiltinCopyValues (builtinPollNow_.data(),
+                                                          (int) builtinPollNow_.size()); nb > 0)
+    {
+        if ((int) builtinPollSeen_.size() < nb)
+            builtinPollSeen_.assign ((size_t) nb, echojay::kShadowValNever);
+        for (int i = 0; i < nb; ++i)
+        {
+            const float now = builtinPollNow_[(size_t) i];
+            const float was = builtinPollSeen_[(size_t) i];
+            // The frame the mirror just applied is the baseline for anything it wrote.
+            const float base = (i < count) ? juce::jlimit (0.0f, 1.0f, shadowValRead_[(size_t) i])
+                                           : was;
+            const float ref  = (was == echojay::kShadowValNever) ? base : was;
+            builtinPollSeen_[(size_t) i] = now;
+            if (was == echojay::kShadowValNever) continue;           // first look: nothing to compare
+            if (std::abs (now - base) <= echojay::kShadowValEps) continue;   // it is what we wrote
+            if (std::abs (now - ref)  <= echojay::kShadowValEps) continue;   // unchanged since last look
+            // Through the SAME door a hosted plugin's knob uses, so the gesture framing, the undo
+            // step, the refusal policy and the "the Link is newer" record are all the existing ones.
+            liveControlParamChanged (i, now);
+        }
+    }
+    else if (! builtinPollSeen_.empty())
+        builtinPollSeen_.clear();        // the view came down, or it is a hosted plugin after all
+
     if (shadowFollowFrames_ == 1)
         EchoJay_NSLog (("EJShadow: the live view is FOLLOWING slot " + juce::String (h.slot + 1)
                         + " of " + shadowView_.uid() + " - " + juce::String ((int) h.paramCount)
@@ -4816,8 +4852,12 @@ bool EchoJayProcessor::agentRunHoldsRack (const juce::String& uid) const
 
 bool EchoJayProcessor::agentRunIsWorkingOnRack (const juce::String& uid) const
 {
-    if (uid.isEmpty() || agentHome_ == nullptr) return false;
-    return agentHome_->runIsWorking() && agentHome_->runTargetUid() == uid;
+    if (agentHome_ == nullptr) return false;
+    // THE COMPARISON IS PURE AND LEGGED (echojay::runWorkingOnThisRack, 28 Oct 2026). runTargetUid()
+    // is now the rack the RUN is on rather than whatever the view last moved to - which is what made
+    // a question waiting in a chat lock every knob on a rack he had merely opened.
+    return echojay::runWorkingOnThisRack (agentHome_->runIsWorking(),
+                                          agentHome_->runTargetUid(), uid);
 }
 
 /** ---- CONTROL, STAGE C2: A KNOB ON THE COPY REACHES THE REAL PLUGIN (24 Oct 2026) ---------
@@ -7844,7 +7884,37 @@ void EchoJayProcessor::serviceLinkMapRequests()
     const juce::File d (dir);
     if (! d.isDirectory()) return;
 
-    for (const auto& f : d.findChildFiles (juce::File::findFiles, false, "maps-wanted-*.json"))
+    // ---- ASKED OF THE LIVE LINKS, NOT OF THE DIRECTORY (his 21:25 overload, 28 Oct 2026) -----
+    //
+    // This swept the whole shared directory with a wildcard, once a second, on the MESSAGE THREAD.
+    // That is fine while the directory is small and it is not small: rack-<uid>.json sidecars are
+    // written per Link instance and never cleaned, so his had **6,479** of them, going back to
+    // 21 Oct. A sample of his hosting process while Logic was glitching put 303 of the main
+    // thread's 1,470 samples inside this one call - 21% of the thread - in
+    // NSAllDescendantPathsEnumerator and lstat. Measured on his own machine, warm cache:
+    //
+    //     6,580 entries:  wildcard match 9.5 ms, lstat of every entry 34.5 ms   PER TICK
+    //       101 entries:  wildcard match 0.75 ms, lstat of every entry 1.37 ms
+    //
+    // Cold, after Logic has just loaded a project, it is far worse - and this thread is the one
+    // that also draws the UI and instantiates plugins, which is exactly what he reported: "Disk is
+    // too slow or System Overload", glitching, and slow plugin loads after pressing a card. It was
+    // smooth on 27 Oct because the directory was smaller, not because the code was different.
+    //
+    // THE REQUEST IS ADDRESSED, SO ASK IT BY NAME. The Link writes
+    // maps-wanted-<instanceUid>.json (LinkProcessor.cpp:93), and the registry already tells this
+    // instance every live Link's uid - at most kMaxLinkSlots of them. So this is now a bounded
+    // number of existsAsFile() probes instead of a walk whose cost is the size of a directory
+    // nobody sweeps. A Link that is not in the registry cannot be waiting for a map: it is not
+    // running.
+    juce::Array<juce::File> wanted;
+    for (const auto& li : getLinkSlotInfos())
+        if (li.uid.isNotEmpty())
+        {
+            const juce::File f (dir + "maps-wanted-" + li.uid + ".json");
+            if (f.existsAsFile()) wanted.add (f);
+        }
+    for (const auto& f : wanted)
     {
         const auto v = juce::JSON::parse (f.loadFileAsString());
         auto* o = v.getDynamicObject();

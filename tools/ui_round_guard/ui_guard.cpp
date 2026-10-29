@@ -1561,9 +1561,15 @@ int main()
                        "stood: only a popped-OUT editor was handled)");
                 juce::String howE;
                 const auto freshE = ejtest::logSince (logMarkE, howE);
-                check (freshE.contains ("EJPicker: inline hosted editor closed"),
+                // THE SENTENCE MOVED WITH THE RULE (28 Oct 2026). Sean's 21:20 fault was the LINK's
+                // picker drawing behind a Tube-Tech CL 1B: this editor had the rule and the Link's
+                // did not, because it was written inline at this call site. It now lives once, in
+                // echojay::prepareForPopupOverGuest, and logs under one prefix for both plugins -
+                // so this pin follows it rather than holding the V2 to a tag the shared rule no
+                // longer uses. The TEETH are unchanged: delete the logging and this still fails.
+                check (freshE.contains ("EJGuestPopup:") && freshE.contains ("inline editor closed"),
                        "21t-e. ...and it says so in the log, so the path is auditable in a real session",
-                       freshE.fromFirstOccurrenceOf ("EJPicker:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 110)
+                       freshE.fromFirstOccurrenceOf ("EJGuestPopup:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 110)
                            + "  [" + howE.trim() + "]");
                 while (own.getNumSlots() > before) own.removeSlot (own.getNumSlots() - 1);
                 A::knownState (*ed, proc);

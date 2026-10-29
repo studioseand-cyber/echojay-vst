@@ -5436,8 +5436,16 @@ void LinkProcessor::publishShadowValuesTick()
     auto* proc = chainHost.getSlotProcessor (slot);
     if (proc == nullptr) return;
 
+    // ---- OUR OWN DEVICES PUBLISH FROM THEIR SCHEMA (item 2b, 29 Oct 2026) ----------------
+    //
+    // This read getParameters() and returned when it was empty, which is EVERY EchoJay device:
+    // they have no juce parameters at all. So the V2 got no frame, decided it was not following,
+    // and put the shield up over a Compressor he was trying to turn. The schema is the ordered,
+    // stable list these devices do have.
+    const auto builtinMirror = echojay::builtinMirrorOf (*proc);
     const auto& params = proc->getParameters();
-    const int have = params.size();
+    const int have = ! builtinMirror.empty() ? (int) builtinMirror.size()
+                                             : params.size();
     const int n    = juce::jmin (have, echojay::kShadowValMax);
     if (n <= 0) return;
 
@@ -5470,8 +5478,11 @@ void LinkProcessor::publishShadowValuesTick()
     if ((int) shadowValScratch_.size() < n) shadowValScratch_.resize ((size_t) n, 0.0f);
 
     const auto t0 = juce::Time::getMillisecondCounterHiRes();
-    for (int i = 0; i < n; ++i)
-        shadowValScratch_[(size_t) i] = params[i]->getValue();
+    if (! builtinMirror.empty())
+        echojay::shadowReadBuiltinValues (*proc, shadowValScratch_.data(), n);
+    else
+        for (int i = 0; i < n; ++i)
+            shadowValScratch_[(size_t) i] = params[i]->getValue();
     const auto sweepMs = juce::Time::getMillisecondCounterHiRes() - t0;
 
     echojay::ShadowValueHeader h {};

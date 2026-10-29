@@ -729,6 +729,21 @@ inline int reapDeadUidFiles (const juce::String& dir,
                              juce::int64 nowMs, juce::int64 graceMs)
 {
     int reaped = 0;
+    // WHY rack-*.json IS NOT IN THIS LIST, so the next reader does not "fix" it (28 Oct 2026).
+    //
+    // It looks like an omission - racklock- is here, rack- is not, and LinkProcessor deletes its
+    // own rack-<uid>.json on a clean teardown saying "the main's sweep is the backstop". It is not
+    // an omission: borrowhost_test asserts the sparing, with its reason, "a SIDECAR is spared
+    // however dead - uids return". A sidecar is how the V2 can show a Link's rack BEFORE that Link
+    // has registered, so deleting one costs a rack view at project load.
+    //
+    // THE COST OF SPARING THEM IS REAL AND WAS PAID ON 28 OCT: Sean's directory held 6,479 of
+    // them, back to 21 Oct, and the V2's 1 Hz timer was sweeping that directory with a wildcard -
+    // 21% of his main thread in lstat, which he saw as "Disk is too slow or System Overload".
+    // THAT was fixed where it belonged, in serviceLinkMapRequests, which now asks the registry for
+    // the handful of live uids by name instead of walking a directory nobody bounds. Whether
+    // ANCIENT sidecars should age out as well is Sean's call, not a line to slip in here, and the
+    // question is in his report.
     static const char* uidPatterns[] = { "racklock-*.json",
         "lease-*.json", "ctrl-cmd-*.json", "ctrl-ack-*.json",
         "chain-cmd-*.json", "chain-ack-*.json" };

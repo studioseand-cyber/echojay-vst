@@ -116,6 +116,8 @@ public:
         V2's borrow tick asks both: his 08:44 ruling is that opening a Link's window must not take
         the rack from a live run, and that closing it hands control straight back. */
     juce::String runTargetUid() const;
+    /** Release the run's rack once neither a live run nor an Undo all needs it. */
+    void forgetRunRackIfDone();
     bool runNeedsItsRack() const;
     /** Is a run WORKING on its rack right now - as opposed to finished with its Undo all still
         live? The shield and the panel's lock ask this one; the engage asks runNeedsItsRack.
@@ -205,6 +207,17 @@ private:
         somebody wrote it down when the run began. -1 = no run has started since this object did. */
     int checkpointDepth_ = -1;
     juce::String lastCheckpoint_;   // so the depth is taken once per run, not on every change
+    // ---- THE RACK THIS RUN IS ON, taken when it starts (his 21:22 fault, 28 Oct 2026) --------
+    // NOT the executor's live target: syncAgentTarget() moves that whenever he changes what he is
+    // LOOKING AT, so a run parked on a question claimed to be "working on" whatever rack he
+    // happened to open. Held for the run's life, cleared when no run needs the rack any more.
+    juce::String runRackUid_;
+    // HAS it been taken? Empty is a real answer (the own rack), so emptiness cannot also mean
+    // "not taken yet" - that conflation is C's point 37 and it reinstated the whole fault.
+    bool         runRackTaken_ = false;
+    // WHICH run took it (EJAgentClient::runSerial). Without this, a second run inherited the
+    // first one's rack for as long as the first one's Undo all was live - C's point 42.
+    int          runRackSerial_ = -1;
     /** AN ALIVE FLAG, NOT AN ADDRESS (fix 6's rule, 15 Oct). Every deferred poll this object
         starts captures it, so a poll that fires after the plugin has gone returns instead of
         reading a dead object - and an address that happened to be reused could not pretend to

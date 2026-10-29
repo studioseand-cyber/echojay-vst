@@ -73,15 +73,39 @@ struct EngageAsk
 /** Should this window ask to engage the rack it is showing? Every input is a fact the caller
     already has; nothing here reads the world, so the guard can hold both directions. */
 inline EngageAsk windowOpenEngageAsk (bool viewIsALinkRack,
-                                      bool sessionActive,
+                                      const juce::String& viewUid,
+                                      const juce::String& sessionUid,
                                       bool somethingPending,
                                       bool readInFlight,
                                       bool applyInFlight,
                                       bool linkPublishesAnEditableRack,
                                       bool windowHasAlreadyHadThisRack)
 {
+    // ---- THE TWO UIDs, NOT A BOOL (his 21:00 fault, 28 Oct 2026) -----------------------------
+    //
+    // This took `sessionActive` and read it as "THIS rack is already engaged". The call site had
+    // only a global fact to give it - borrowActive() - which is "SOME rack is engaged", and the
+    // two differ exactly when a session is live on one rack and the window is looking at another.
+    // His 21:00, with the uids from his own log:
+    //
+    //   21:00:33.490  session ACTIVE <- true (engage begin, uid=4814a16004)
+    //   21:00:37.055  EJRackSel: row=3 resolved=bb411b8240 -> viewing it   (the LOCK moves...
+    //   21:00:37.058  EJRackLock: acquired uid=bb411b8240                   ...the SESSION does not)
+    //   21:00:37 - 21:01:45   lock held for bb411b8240, session still on 4814a16004:
+    //                         this function answered "this rack is already engaged" about a rack
+    //                         that was not engaged, so nothing asked, pendingAutoEngage_ stayed
+    //                         empty, and the rack area sat on "Getting this rack ready to edit..."
+    //   21:01:45      he closed the window (the stale session released with it)
+    //   21:01:50.564  session ACTIVE <- true (engage begin, uid=bb411b8240)  - the reopen connected
+    //
+    // Reopening "fixed" it only because closing released the session that was blocking the ask.
+    //
+    // SO THE MISTAKE IS NOT EXPRESSIBLE ANY MORE: the uids come in and the comparison is made
+    // here. A bool cannot be passed by accident, and a caller that has no session passes an empty
+    // string, which is the honest shape of "nothing is engaged".
     if (! viewIsALinkRack)   return { false, "the view is not a Link's rack" };
-    if (sessionActive)       return { false, "this rack is already engaged" };
+    if (sessionUid.isNotEmpty() && sessionUid == viewUid)
+                             return { false, "this rack is already engaged" };
     if (somethingPending)    return { false, "an engage is already pending" };
     if (readInFlight)        return { false, "a rack read is in flight" };
     if (applyInFlight)       return { false, "an apply is in flight" };
@@ -91,6 +115,11 @@ inline EngageAsk windowOpenEngageAsk (bool viewIsALinkRack,
         return { false, "this window has already had this rack - one connection per window per "
                         "rack, so a released session is not taken back by itself (his 20 Oct "
                         "ruling: viewing is not asking)" };
+    // A SESSION ON ANOTHER RACK DOES NOT BLOCK THIS ONE'S ASK. It is not this window's doing that
+    // one is live elsewhere - a row click moves the view and leaves the session where it is, which
+    // is his 20 Oct ruling working as written - and a window that opens on a rack has always been
+    // allowed its one ask. Whether the OTHER session should end is the selection road's business
+    // (decideSelection: a USER selection applies and moves it), never this function's.
     return { true, "a window is open on this Link's rack with no session - ASKING TO ENGAGE, once "
                    "for this window, because opening the V2 on a rack is what connects to it (his "
                    "06:55 fault: the first window to open engaged it and every later one did not)" };

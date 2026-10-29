@@ -63,6 +63,35 @@ public:
     static const echojay::ParamSchema& schema();
 
     const echojay::ParamSchema& paramSchema() const override { return schema(); }
+
+    /** ---- C's POINT 40 (29 Oct 2026): THE BANDS ARE WHAT A LIVE VIEW HAS TO MIRROR -------
+        This device's schema is four globals; the bands sit outside it and are reached by dotted
+        name. Walking the schema alone mirrored the output trim and nothing a person turns, so a
+        Link's EchoJay EQ followed nothing and took no gesture in the V2.
+
+        THE CONTINUOUS THREE PER BAND, which is what his test turns: gain, frequency and Q. The
+        discrete fields (type, enabled, slope, and the dynamic quartet) are deliberately NOT here
+        yet - each needs its own range decided and a leg, and a wrong range on a discrete control
+        would land on the wrong detent rather than merely be imprecise. They are named in the
+        night's report as owed.
+
+        THE RANGES ARE THE MIRROR'S, and they only have to agree between the two ends, which they
+        do because both read this list. Frequency is carried linearly over 20 Hz .. 20 kHz, so its
+        resolution in a 0..1 float is about 2 Hz - fine for a view that follows, and the reason a
+        band's frequency is not the control to judge a dial by. */
+    std::vector<MirroredParam> mirroredParams() const override
+    {
+        auto out = EedDeviceProcessor::mirroredParams();          // the four globals first
+        out.reserve (out.size() + (size_t) kNumBands * 3);
+        for (int b = 1; b <= kNumBands; ++b)
+        {
+            const auto pre = "band" + juce::String (b) + ".";
+            out.push_back ({ pre + "gain_db", -(double) kBandGainMaxDb, (double) kBandGainMaxDb });
+            out.push_back ({ pre + "freq_hz", 20.0, 20000.0 });
+            out.push_back ({ pre + "q",        0.1,    18.0 });
+        }
+        return out;
+    }
     bool   setParamValue (const juce::String& id, double value) override;
     double getParamValue (const juce::String& id) const override;
     /** SEAN'S #4 (16 Oct 2026): the bands are readable BY NAME now - band1.freq_hz, band1.gain_db,

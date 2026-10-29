@@ -63,6 +63,32 @@ public:
     EedDeviceProcessor();
     ~EedDeviceProcessor() override = default;
 
+    // ---- WHAT A LIVE VIEW MIRRORS (C's point 40, 29 Oct 2026) ------------
+    //
+    // The live-view bridge first walked paramSchema(), and for most devices that is right. It is
+    // WRONG for the EQ, whose schema publishes four globals (output_db, auto_gain, phase_mode,
+    // ms_mode) while every band lives outside it, reached by dotted name through
+    // ownsUnpublishedParam - so a Link's EchoJay EQ would have mirrored its output trim and not one
+    // band. The bands are the whole instrument.
+    //
+    // (id, min, max) RATHER THAN AN id: the ring carries normalised floats so that one convention
+    // serves hosted plugins and ours alike, and a band id has no ParamSpec to take a range from.
+    // The range only has to AGREE between the two ends, and it does by construction - both read
+    // this same list.
+    struct MirroredParam
+    {
+        juce::String id;
+        double       min = 0.0;
+        double       max = 1.0;
+    };
+
+    /** Every parameter a live view should mirror, in a STABLE order (the order is the ring's index,
+        and the digest hashes the ids, so a reorder is detected rather than mis-applied).
+
+        The default is the schema, which is right for every device whose controls are all published
+        there. A device with controls outside its schema overrides this - see SurgicalEqProcessor. */
+    virtual std::vector<MirroredParam> mirroredParams() const;
+
     // ---- the dialable contract (each device publishes its own) ------------
     virtual const echojay::ParamSchema& paramSchema() const = 0;
 

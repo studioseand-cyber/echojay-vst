@@ -54,6 +54,7 @@
 //  exists the honest statement is that this mirror follows PARAMETERS. It is not a claim to follow
 //  everything.
 #include <JuceHeader.h>
+#include "EedDeviceProcessor.h"   // item 2b: our own devices carry a ParamSchema, not juce params
 #include <functional>
 #include "LinkShm.h"
 #include <cstring>
@@ -113,6 +114,65 @@ inline juce::String shadowValuesFileNameFor (const juce::String& uid)
     return "shadowval_" + safe + ".bin";
 }
 
+// ---- OUR OWN DEVICES SPEAK A DIFFERENT CONTRACT (item 2b, 29 Oct 2026) --------------------
+//
+// An EchoJay device has no juce::AudioProcessorParameter at all - every control goes through
+// setParamValue/getParamValue against an ordered ParamSchema. These four helpers are the whole
+// bridge, and they are here rather than beside the Link or the V2 so that BOTH ends use the same
+// ones: the publisher reads with them and the follow writes with them.
+
+/** Is this one of ours, and if so what does it mirror? Empty for a hosted plugin.
+
+    C's POINT 40 (29 Oct 2026): this asked for the SCHEMA, and the EQ's schema is four globals with
+    every band outside it - so a Link's EchoJay EQ mirrored its output trim and not one band. The
+    device answers for itself now (EedDeviceProcessor::mirroredParams), and every call site below
+    goes through this one function so no half of the bridge can disagree with another. */
+inline std::vector<EedDeviceProcessor::MirroredParam> builtinMirrorOf (const juce::AudioProcessor& p)
+{
+    if (auto* d = dynamic_cast<const EedDeviceProcessor*> (&p)) return d->mirroredParams();
+    return {};
+}
+
+/** Our own device, or nullptr. */
+inline const EedDeviceProcessor* builtinDeviceOf (const juce::AudioProcessor& p)
+{
+    return dynamic_cast<const EedDeviceProcessor*> (&p);
+}
+
+/** A real value (dB, Hz, ms, an enum index) to the ring's 0..1. The ring keeps ONE convention for
+    every plugin, hosted or ours, so nothing downstream has to ask which kind it is holding. */
+inline float builtinValueToRing (double lo, double hi, double v)
+{
+    if (! (hi > lo)) return 0.0f;                     // a degenerate range carries no information
+    return (float) juce::jlimit (0.0, 1.0, (v - lo) / (hi - lo));
+}
+
+/** ...and back, through the spec's own clamp, so a frame can never put a device out of range. */
+inline double builtinValueFromRing (double lo, double hi, float n)
+{
+    if (! (hi > lo)) return lo;
+    return juce::jlimit (lo, hi, lo + (double) juce::jlimit (0.0f, 1.0f, n) * (hi - lo));
+}
+
+/** Kept for the ParamSpec callers: the spec's own range, and its own clamp. */
+inline float  builtinValueToRing   (const echojay::ParamSpec& s, double v) { return builtinValueToRing (s.min, s.max, v); }
+inline double builtinValueFromRing (const echojay::ParamSpec& s, float n)  { return s.clamp (builtinValueFromRing (s.min, s.max, n)); }
+
+/** Read a built-in's values into the ring's convention, in schema order. Returns how many. */
+inline int shadowReadBuiltinValues (const juce::AudioProcessor& p, float* out, int max)
+{
+    const auto* dev = builtinDeviceOf (p);
+    if (dev == nullptr || out == nullptr) return 0;
+    const auto mirror = dev->mirroredParams();
+    const int n = juce::jmin ((int) mirror.size(), max);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto& m = mirror[(size_t) i];
+        out[i] = builtinValueToRing (m.min, m.max, dev->getParamValue (m.id));
+    }
+    return n;
+}
+
 // ---- THE DIGEST ------------------------------------------------------------------------------
 
 /** The count and the names, in one number. FNV-1a over each parameter's name with a separator, so
@@ -125,6 +185,24 @@ inline juce::uint32 shadowSchemaDigest (const juce::AudioProcessor& p)
 {
     juce::uint32 h = 2166136261u;
     auto eat = [&h] (juce::uint8 b) { h ^= b; h *= 16777619u; };
+    // ---- ONE FUNCTION, BOTH KINDS (item 2b, 29 Oct 2026) ----------------------------------
+    // An EchoJay device has no juce parameters, so the loop below would hash "zero parameters"
+    // for every one of them - the EQ and the Limiter would share a digest, which is precisely the
+    // mis-apply this digest exists to prevent. Its schema ids are compile-time constants, so they
+    // hash to something stable across processes and builds. Taught HERE so the Link's answer and
+    // the V2's answer come from the same code and cannot drift.
+    if (const auto* dev = builtinDeviceOf (p))
+    {
+        const auto mirror = dev->mirroredParams();
+        const juce::uint32 nb = (juce::uint32) mirror.size();
+        for (int i = 0; i < 4; ++i) eat ((juce::uint8) ((nb >> (i * 8)) & 0xffu));
+        for (const auto& m : mirror)
+        {
+            for (auto c : m.id) eat ((juce::uint8) (((int) c) & 0xff));
+            eat ((juce::uint8) 0x1f);
+        }
+        return h;
+    }
     const auto& params = p.getParameters();
     const juce::uint32 n = (juce::uint32) params.size();
     for (int i = 0; i < 4; ++i) eat ((juce::uint8) ((n >> (i * 8)) & 0xffu));
@@ -232,8 +310,15 @@ inline ShadowMirrorDecision shadowMirrorDecision (bool frameRead,
                                                   int copyParamCount)
 {
     if (! frameRead)
-        return { ShadowMirror::Refuse, "the view is not following the Link's knobs - this Link is "
-                                       "an older build and does not publish them yet" };
+        // HIS 21:02 FAULT WAS THIS SENTENCE AS MUCH AS THE SILENCE. It said "an older build" about
+        // a Link installed 41 minutes earlier, and sent me looking for a version problem that did
+        // not exist. No frame read means exactly one thing - no values arrived for that slot - and
+        // an old Link is only ONE of its causes; the other, until item 2b, was one of our own
+        // devices, which published nothing however new the build was. Say what is true and name
+        // both roads out of it.
+        return { ShadowMirror::Refuse, "the view is not following the Link's knobs - no parameter "
+                                       "values have arrived for that slot yet. Give it a moment, or "
+                                       "change it on the Link's own window" };
 
     if (linkDigest != copyDigest)
         return { ShadowMirror::Refuse, "the view is not following the Link's knobs - the plugin "
@@ -275,6 +360,36 @@ inline int shadowApplyExternalValues (juce::AudioProcessor& copy, const float* v
                                       std::vector<float>& lastApplied,
                                       const std::function<bool(int, float)>& mayWrite)
 {
+    // ---- OUR OWN DEVICES, FIRST (item 2b): no juce parameters to write through ------------
+    //
+    // Symmetric with the publisher: the same schema, the same order, the same normalised floats,
+    // and the same lastApplied/mayWrite rules - so the copy-leads rule of 26 Oct and the echo
+    // test keep working unchanged. setParamValue is the device's own road, which its editor is
+    // already driven through, so the knob he is looking at moves.
+    if (auto* dev = dynamic_cast<EedDeviceProcessor*> (&copy))
+    {
+        const auto mirror = dev->mirroredParams();
+        const int nb = juce::jmin (count, (int) mirror.size());
+        if (nb <= 0) return 0;
+        if ((int) lastApplied.size() < nb) lastApplied.resize ((size_t) nb, kShadowValNever);
+        int movedB = 0;
+        for (int i = 0; i < nb; ++i)
+        {
+            const float want = juce::jlimit (0.0f, 1.0f, values[i]);
+            const float had  = lastApplied[(size_t) i];
+            if (had != kShadowValNever && std::abs (want - had) <= kShadowValEps) continue;
+            if (mayWrite && ! mayWrite (i, want)) continue;
+            lastApplied[(size_t) i] = want;
+            // RESTORE, not Assistant: this is the Link's own current value being mirrored into a
+            // view, not EchoJay dialling. Assistant would be refused outright under do-not-dial,
+            // which would make the mirror stop working the moment he turned that switch on.
+            const auto& m = mirror[(size_t) i];
+            if (dev->setParamValue (m.id, builtinValueFromRing (m.min, m.max, want)))
+                ++movedB;
+        }
+        return movedB;
+    }
+
     const auto& params = copy.getParameters();
     const int n = juce::jmin (count, params.size());
     if (n <= 0) return 0;

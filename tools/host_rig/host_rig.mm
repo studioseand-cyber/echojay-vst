@@ -4704,6 +4704,206 @@ int main (int argc, char* argv[])
                                        "nothing");
                         }
 
+                        // ---- THE THREE 29 OCT ROWS RUN HERE, AFTER LV11, AND THAT IS DELIBERATE --
+                        //
+                        // They were written ABOVE LV11 and it cost a red. LV9c starts and stops a
+                        // run ("make this louder"), LV9b asks for a build, LV9d toggles the
+                        // real-editor switch - and LV11 renders the V2's OWN output against a
+                        // reference taken before all of that. Its delta went from 4.17e-7 (the
+                        // floor, in round 41) to 2.5e-3 with these three in front of it, and the
+                        // product had not changed in any way that touches the V2's own path.
+                        //
+                        // My own note of 18 Oct says it plainly: a row measures whatever the row
+                        // before it left behind. So rows that CHANGE things go after the row that
+                        // measures the untouched path.
+                        // ---- LV9b: THE SAME ROAD, ON ONE OF OUR OWN DEVICES (29 Oct 2026) ------
+                        //
+                        // His 21:02 fault, and the one that had NO row watching it: an EchoJay
+                        // Compressor on a Link showed moving gain reduction in the V2 and not one
+                        // knob could be turned. LV9 above could never have caught it, because it
+                        // drives the copy through juce::AudioProcessorParameter - and an EchoJay
+                        // device has none. Everything about our devices goes through a ParamSchema
+                        // and setParamValue, so a row that only knows about juce parameters tests
+                        // the third-party road twice and ours not at all.
+                        //
+                        // OURS BY CHOICE OF SUBJECT, as well: no PACE, no iLok, nothing that can
+                        // prompt on his Mac, which is his standing rule for the rig.
+                        if (rowWanted ("LV9b"))
+                        {
+                            // Put one of ours on the LINK, the way the agent's add does it.
+                            rig.send (echojay::rig::cmd::workOn, args1 ("uid", uid), 8000);
+                            // THE CHIP HAS TO BE ON AUTO or the scripted plan waits for an approval
+                            // nobody gives and the device never lands - which is exactly how this
+                            // row failed its first run (slots 1 -> 1, and it then moved a THIRD
+                            // PARTY's "Dry/Wet Mix" instead of one of ours). The no-window build row
+                            // sets the same thing first, for the same reason.
+                            rig.send (echojay::rig::cmd::agentChip, args1 ("mode", "auto"), 8000);
+                            livePump (400);
+                            const auto before = rig.freshState();
+                            const int slotsBefore = (int) before.getProperty ("linkSlots", -1);
+                            rig.send (echojay::rig::cmd::sendChat,
+                                      args1 ("text", "rig-lv9b-marker: build a compressor on this rack"),
+                                      20000);
+                            int slotsNow = slotsBefore;
+                            for (int tries = 0; tries < 40 && slotsNow <= slotsBefore; ++tries)
+                            {
+                                livePump (300);
+                                slotsNow = (int) rig.freshState().getProperty ("linkSlots", -1);
+                            }
+                            const bool landed = slotsNow > slotsBefore && slotsBefore >= 0;
+                            // The new slot is the last one, which is where an append puts it.
+                            const int ourSlot = juce::jmax (1, slotsNow);
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", uid), 8000);
+                            rig.send (echojay::rig::cmd::press,      args1 ("button", "tab_chain"), 8000);
+                            livePump (600);
+                            rig.send (echojay::rig::cmd::openSlot,   args1 ("n", ourSlot), 10000);
+                            livePump (2500);
+                            const auto stB = rig.freshState();
+                            const bool viewUp   = (bool) stB.getProperty ("shadowRunning", false);
+                            const int  haveLinkB = (int) stB.getProperty ("shadowLinkValCount", 0);
+                            const auto valueOfB = [] (const juce::String& line, int idx) -> double
+                            {
+                                for (const auto& bit : juce::StringArray::fromTokens (line, "|", ""))
+                                    if (bit.upToFirstOccurrenceOf (":", false, false).getIntValue() == idx
+                                        && bit.contains (":"))
+                                        return bit.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                                return -1.0;
+                            };
+                            const int    idxB  = 0;
+                            const double fromB = valueOfB (stB.getProperty ("shadowLinkVals", juce::var()).toString(), idxB);
+                            const double wantB = fromB > 0.5 ? 0.20 : 0.80;
+                            const auto movedB = rig.send (echojay::rig::cmd::liveParam,
+                                                          args2 ("i", idxB, "v", wantB), 10000);
+                            const auto movedNoteB = movedB.getProperty ("note", juce::var()).toString();
+                            double linkNowB = -1.0;
+                            for (int tries = 0; tries < 20 && std::abs (linkNowB - wantB) > 0.02; ++tries)
+                            {
+                                livePump (100);
+                                linkNowB = valueOfB (rig.freshState().getProperty ("shadowLinkVals", juce::var()).toString(), idxB);
+                            }
+                            livePump (1500);
+                            const auto stD = rig.freshState();
+                            const double linkAfterB = valueOfB (stD.getProperty ("shadowLinkVals", juce::var()).toString(), idxB);
+                            const double copyAfterB = valueOfB (stD.getProperty ("shadowCopyVals", juce::var()).toString(), idxB);
+                            // THE LINK PUBLISHING AT ALL is half of what this row is for: before the
+                            // bridge it published NOTHING for one of our devices, so shadowLinkValCount
+                            // was 0 and the V2 refused every gesture with "not following".
+                            const bool setUpB = landed && viewUp && haveLinkB > idxB
+                                             && (bool) movedB.getProperty ("ok", false);
+                            row ("LV9b", setUpB
+                                             && std::abs (linkNowB - wantB) <= 0.02
+                                             && std::abs (linkAfterB - wantB) <= 0.02
+                                             && std::abs (copyAfterB - wantB) <= 0.02,
+                                 "does a knob turned on an ECHOJAY DEVICE'S copy reach the device on the "
+                                 "Link and stay there - the road his locked Compressor had no row for, "
+                                 "and which no juce-parameter row can reach",
+                                 ! setUpB
+                                     ? "COULD NOT RUN, which is a FAIL and not a skip: the device "
+                                       + juce::String (landed ? "landed" : "did NOT land")
+                                       + " (slots " + juce::String (slotsBefore) + " -> " + juce::String (slotsNow)
+                                       + "), the view was " + juce::String (viewUp ? "up" : "DOWN")
+                                       + ", the Link published " + juce::String (haveLinkB)
+                                       + " value(s), and the move answered \"" + movedNoteB + "\""
+                                     : "asked for " + juce::String (wantB, 3) + " (from " + juce::String (fromB, 3)
+                                       + "): the Link reached " + juce::String (linkNowB, 3) + ", still "
+                                       + juce::String (linkAfterB, 3) + " a second and a half later, the copy "
+                                       + juce::String (copyAfterB, 3) + " - " + movedNoteB);
+                        }
+
+                        // ---- LV9c: A STOPPED RUN LETS GO OF THE RACK AT ONCE (29 Oct 2026) -----
+                        //
+                        // His item 3: *"after 'Stopped.', the rack still said an agent is working on
+                        // this rack and stayed locked."* And its real cost was his item 2 - every
+                        // knob on every copy dead, CL 1B included, with no banner showing - because
+                        // the live-control policy refuses on that one fact.
+                        //
+                        // THE OBSERVABLE IS THE CONTROL ROAD ITSELF, not a sentence: after Stop, a
+                        // move must REACH THE LINK. A row that read the banner could pass while the
+                        // knobs stayed dead, which is exactly the gap that let this through.
+                        if (rowWanted ("LV9c"))
+                        {
+                            rig.send (echojay::rig::cmd::workOn, args1 ("uid", uid), 8000);
+                            livePump (300);
+                            rig.send (echojay::rig::cmd::sendChat,
+                                      args1 ("text", "rig-lv9c-marker: make this louder"), 15000);
+                            // Let it get as far as a state that holds the rack, then stop it.
+                            livePump (2500);
+                            rig.send (echojay::rig::cmd::press, args1 ("button", "stop"), 10000);
+                            livePump (600);
+                            const auto stS = rig.freshState();
+                            const bool stillActive = (bool) stS.getProperty ("agentActive", false);
+                            // AND NOW THE KNOB, through the same road LV9 uses.
+                            const auto valueOfC = [] (const juce::String& line, int idx) -> double
+                            {
+                                for (const auto& bit : juce::StringArray::fromTokens (line, "|", ""))
+                                    if (bit.upToFirstOccurrenceOf (":", false, false).getIntValue() == idx
+                                        && bit.contains (":"))
+                                        return bit.fromFirstOccurrenceOf (":", false, false).getDoubleValue();
+                                return -1.0;
+                            };
+                            const int    idxC  = 0;
+                            const double fromC = valueOfC (stS.getProperty ("shadowLinkVals", juce::var()).toString(), idxC);
+                            const double wantC = fromC > 0.5 ? 0.25 : 0.75;
+                            const auto movedC = rig.send (echojay::rig::cmd::liveParam,
+                                                          args2 ("i", idxC, "v", wantC), 10000);
+                            const auto noteC = movedC.getProperty ("note", juce::var()).toString();
+                            double linkC = -1.0;
+                            for (int tries = 0; tries < 20 && std::abs (linkC - wantC) > 0.02; ++tries)
+                            {
+                                livePump (100);
+                                linkC = valueOfC (rig.freshState().getProperty ("shadowLinkVals", juce::var()).toString(), idxC);
+                            }
+                            row ("LV9c", ! stillActive && std::abs (linkC - wantC) <= 0.02,
+                                 "after Stop, is the rack editable AT ONCE - a knob on the live view "
+                                 "reaches the Link with no wait and no second gesture",
+                                 "agentActive " + juce::String (stillActive ? "STILL TRUE" : "false")
+                                 + "; asked " + juce::String (wantC, 3) + " (from " + juce::String (fromC, 3)
+                                 + "), the Link reached " + juce::String (linkC, 3) + " - " + noteC);
+                        }
+
+                        // ---- LV9d: HIS 21:20 SEQUENCE - THE ROAD SWITCHED UNDER AN OPEN WINDOW --
+                        //
+                        // *"the CL 1B lock and the bad lag only started AFTER he ran rm on
+                        //  real_editor_live_view and then added CL 1B, AUDelay and Vac Attack."*
+                        //
+                        // His log shows what that produced: at 21:20:53 the LINK'S OWN window opened
+                        // the real Tube-Tech CL 1B inline, and at 21:21:54 the V2 started ITS OWN
+                        // COPY of the same plugin on the same slot, with no close in between. Two
+                        // instances of one heavy emulation and two native editors in one process.
+                        //
+                        // This row drives that exact gesture order - switch ON, open a Link slot,
+                        // switch OFF, open it again - and asserts the thing that must not happen:
+                        // the real editor must be let go before a copy is started, so only ONE
+                        // instance of that plugin is ever live in this process.
+                        if (rowWanted ("LV9d"))
+                        {
+                            rig.send (echojay::rig::cmd::selectLink, args1 ("uid", uid), 8000);
+                            rig.send (echojay::rig::cmd::press, args1 ("button", "real_editor_on"), 8000);
+                            livePump (400);
+                            rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen), 10000);
+                            livePump (2500);
+                            const auto stOn = rig.freshState();
+                            const bool lentOn = (bool) stOn.getProperty ("inlineIsLent", false);
+                            // ...and now the switch goes OFF with that editor still on screen.
+                            rig.send (echojay::rig::cmd::press, args1 ("button", "real_editor_off"), 8000);
+                            livePump (600);
+                            rig.send (echojay::rig::cmd::openSlot, args1 ("n", slotToOpen), 10000);
+                            livePump (3000);
+                            const auto stOff = rig.freshState();
+                            const bool lentOff  = (bool) stOff.getProperty ("inlineIsLent", false);
+                            const bool copyUp   = (bool) stOff.getProperty ("shadowRunning", false);
+                            // THE FAULT IS BOTH AT ONCE: a lent real editor AND a running copy means
+                            // two instances of the same plugin, which is what his lag was made of.
+                            row ("LV9d", ! (lentOff && copyUp),
+                                 "switching the real-editor switch OFF with a Link's editor on screen "
+                                 "lets that editor GO before a copy starts - never both at once, which "
+                                 "is two instances of one plugin in this process (his 21:20 sequence)",
+                                 "with the switch on, lent=" + juce::String (lentOn ? "y" : "n")
+                                 + "; after switching off, lent=" + juce::String (lentOff ? "y" : "n")
+                                 + " and a copy " + juce::String (copyUp ? "RUNNING" : "not running"));
+                        }
+
+
                         // ---- LV10: A CHANGE WITH NO AUDIO RUNNING (his 16:35 fault, 26 Oct) -----
                         //
                         // The log's answer to *"changing settings no longer carries over"* was that

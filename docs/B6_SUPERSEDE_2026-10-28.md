@@ -86,7 +86,44 @@ his call:
    currently instant.
 3. **Leave it** — the stop is implied by "a new chat is a new conversation", and the log is enough.
 
-I have not chosen. Option 1 is what I would build if asked.
+### RULED AND BUILT: option 1 (Sean, 28 Oct 2026, this evening)
+
+> *"B6, build option 1 (the new chat's first line says the run was stopped)."*
+
+Built the same evening, in `Source/EJNewChatNotice.h`:
+
+```cpp
+inline juce::String newChatStoppedLine (bool wasLive, const juce::String& target)
+{
+    if (! wasLive) return {};
+    const auto t = target.trim();
+    return t.isNotEmpty()
+             ? "A new chat doesn't carry the last one's run, so the run on " + t + " was stopped."
+             : "A new chat doesn't carry the last one's run, so the run that was going was stopped.";
+}
+```
+
+Four things about it that are decisions rather than code:
+
+- **`wasLive` is passed in, not re-derived.** It is the same boolean the stop is made on, two lines
+  above. A sentence that decided for itself whether a run had been live would be a second answer to
+  that question, and the two answers would disagree the first time the condition moved.
+- **It names the target from `agentTargetLast_`**, the uid last handed to the executor — *not*
+  `workingOnUid()`, which by that line has already moved to the new chat's binding (the lines above
+  clear `chatTargetLinkUid`). The sentence has to name what the run that was **stopped** was working
+  on, and at that point that uid survives in exactly one place.
+- **It names it only if the name is real.** `channelDisplayLabel` degrades to a uid passthrough when
+  a Link is gone or unnamed, so the label goes through `echojay::channelLabelUsable` and the second
+  form — *"the run that was going was stopped"* — is used otherwise. A sentence is better with no
+  name in it than with a uid in it.
+- **It is empty when nothing was stopped**, so the ordinary new chat gains no line at all. That is
+  the leg that matters most: a notice about a run that never existed would be worse than silence.
+
+Legged both ways in `tools/chat_store_guard` (NC1–NC3): the live case says it on the named target,
+the not-live case returns empty, and the unnamed-target case falls to the second form.
+
+Option 2 (asking first) stays rejected for the reason given above — it puts a question in front of a
+gesture that is instant — and option 3 is what his 21:06 ruling forbids.
 
 ## The two candidates, as they stood before the instrument answered
 

@@ -620,13 +620,63 @@ void EJAgentHome::buildChain (const juce::String& uid, const juce::var& chainArr
     rack it would walk back is not held. */
 juce::String EJAgentHome::runTargetUid() const
 {
-    return executor_ != nullptr ? executor_->targetUid() : juce::String();
+    // ---- THE RUN'S OWN RACK, NOT WHAT HE IS LOOKING AT (his 21:22 fault, 28 Oct 2026) --------
+    //
+    // This returned the executor's LIVE target, and syncAgentTarget() rewrites that every time the
+    // view moves. From his log, with the clock:
+    //
+    //   21:18:03.587  state executing -> awaiting_ask (round 3)   - a run waiting on HIM
+    //   21:21:43.021  working target -> 4814a16004 (a Link)        - he opened another rack
+    //   21:22:56.661  EJControl: a move on the live view was NOT sent -
+    //                 "an agent is working on this rack - stop it, or wait"   x10
+    //
+    // The run was never about 4814a16004. It became "working on" that rack the moment he looked at
+    // it, and every knob on every copy on that rack locked - which is his item 2 (no knob can be
+    // turned, CL 1B included) and his item 3 (the rack still says an agent is working) as ONE
+    // cause. The copy was following perfectly: the log says "8 parameter(s), 8 carried, 8 written"
+    // six milliseconds before the refusal.
+    //
+    // So the run's rack is taken when the run STARTS and held for its life. A run that needs a
+    // rack needs the one it is working on; nothing about that answer may follow the mouse.
+    // ---- AND THE EMPTY UID IS AN ANSWER, NOT A MISS (C's point 37, 29 Oct 2026) -------------
+    //
+    // The first cut fell back to the live target whenever runRackUid_ was empty - and empty is
+    // exactly what a run on THIS INSTANCE'S OWN RACK captures. Sean's run was one of those:
+    //
+    //   21:17:32.727  working target -> (this instance's own rack)
+    //   21:17:32.775  state stopped -> connecting        <- the run starts, on the own rack
+    //   21:18:03.587  state executing -> awaiting_ask    <- parks on a question
+    //   21:21:43.021  working target -> 4814a16004       <- he opens a Link to look at it
+    //   21:22:56.661  "an agent is working on this rack" x10
+    //
+    // So the fallback put the fault straight back for the commonest kind of run, and the fix would
+    // have been a fix in name only. A FLAG says whether the rack has been taken; once it has, the
+    // uid is the answer whatever it is, and "" means the own rack - which is never the same subject
+    // as a Link and so blocks nothing there.
+    return echojay::runRackAnswer (runRackTaken_, runRackUid_,
+                                   executor_ != nullptr ? executor_->targetUid() : juce::String());
 }
 
 bool EJAgentHome::runNeedsItsRack() const
 {
     if (client_ == nullptr) return false;
     return client_->isActive() || client_->canUndoAll();
+}
+
+void EJAgentHome::forgetRunRackIfDone()
+{
+    // The run's rack is released the moment no run needs it - neither working nor undoable. Called
+    // from agentChanged(), so it follows the client's own state rather than a timer.
+    if (! runNeedsItsRack() && runRackTaken_)
+    {
+        EchoJay_NSLog (("EJAgent: this run's rack ("
+                        + (runRackUid_.isEmpty() ? juce::String ("this instance's own rack") : runRackUid_)
+                        + ") is released - no run is working on it and no Undo all is waiting on it")
+                           .toRawUTF8());
+        runRackUid_.clear();
+        runRackTaken_  = false;
+        runRackSerial_ = -1;
+    }
 }
 
 /** ---- AND WHO IS WORKING, WHICH IS A DIFFERENT QUESTION (his 17:25 fault, 25 Oct 2026) -------
@@ -645,6 +695,25 @@ bool EJAgentHome::runIsWorking() const
 
 void EJAgentHome::agentChanged()
 {
+    // ---- THE RACK THIS RUN IS ON, TAKEN THE MOMENT IT BECOMES LIVE (C's point 37) -----------
+    //
+    // At START, not at the checkpoint: the checkpoint arrives from the server a moment after the
+    // run begins, and a run that parks on a question before it would never have taken a rack at
+    // all - the second half of the same hole. One author, one instant, and a flag so that an empty
+    // uid (the own rack) is an answer rather than a miss.
+    if (client_ != nullptr
+        && echojay::shouldTakeRunRack (client_->isActive(), runRackTaken_,
+                                       runRackSerial_, client_->runSerial()))
+    {
+        runRackTaken_  = true;
+        runRackSerial_ = client_->runSerial();
+        runRackUid_    = executor_ != nullptr ? executor_->targetUid() : juce::String();
+        EchoJay_NSLog (("EJAgent: this run's rack is "
+                        + (runRackUid_.isEmpty() ? juce::String ("this instance's own rack")
+                                                 : runRackUid_)
+                        + " - held for the run's life, so a rack he merely LOOKS at while this run "
+                          "waits is never called \"busy with an agent\"").toRawUTF8());
+    }
     // ---- WHERE THE RUN STARTED, WRITTEN DOWN ONCE (16 Oct 2026) --------------------------------
     // The checkpoint arrives from the server a moment after the run begins. The history's depth at
     // that moment is what "undo everything this run did" means on this side, and it has to be taken
@@ -660,8 +729,10 @@ void EJAgentHome::agentChanged()
             EchoJay_NSLog (("EJAgent: run checkpoint " + cp + " - the undo history is "
                             + juce::String (checkpointDepth_) + " deep, which is where \"undo all\" "
                             "walks back to").toRawUTF8());
+
         }
     }
+    forgetRunRackIfDone();
     writeSnapshot();
 }
 

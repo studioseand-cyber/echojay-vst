@@ -104,8 +104,14 @@ rack and false of the other is not what a capability says, so it waits for:
   `dialFrameCapable` at 127 reads 0 from every existing Link, meaning **"cannot arm a dial on a named
   slot"** — which withholds the dial-frame shape for that channel and leaves B's old road in place.
   That is the safe direction, and it is the one B's per-channel gating needs.
-  **After A1b there are no spare bytes**: the next per-Link capability needs a layout version bump,
-  which is a decision for Sean rather than a line in a patch.
+  **SEAN RULED, 28 Oct 2026: A1b may spend it.** So `dialFrameCapable` takes offset 127 and
+  `RegistrySlot` has **no spare bytes left**. His ruling came with the condition, which is this
+  paragraph's reason for existing: **the next per-Link capability needs a layout version bump** —
+  a new `kRegistryLayoutVersion`, both sides refusing a slot they do not understand, and a decision
+  about what an old V2 reading a new Link does. That is a design pass, not a line in a patch, and
+  whoever needs the capability after A1b owns it. Do not quietly widen the struct: a reader compiled
+  against 128 bytes and a writer against more is silent corruption, which is the one failure mode
+  this file's whole byte-by-byte accounting exists to prevent.
 
   **And the arm has to become asynchronous, which A1a's interface is not.** `armDialAtSlot` returns
   `bool` today, and that is honest for the open rack: `calibStart` is immediate. A Link's answer is

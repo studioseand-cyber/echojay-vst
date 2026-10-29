@@ -717,6 +717,11 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         bool   framedByPlugin = false;  // the plugin told us it began; we must not close it early
     };
     std::map<int, LiveGesture> liveGestures_;
+    // ---- item 2b: his hand on one of OUR devices, which has no juce parameters to listen to ----
+    // Two fixed buffers so the follow tick never allocates: what the copy reads now, and what it
+    // read last time (or what the mirror wrote, which is the same thing when the mirror wrote it).
+    std::vector<float> builtinPollNow_  = std::vector<float> ((size_t) echojay::kShadowValMax, 0.0f);
+    std::vector<float> builtinPollSeen_;
     // ---- WHAT HIS HAND HAS JUST LEFT (his overnight item 1a, 26 Oct 2026) ------------------
     // parameter index -> the clock when its gesture ended. Kept because the undo road reads it.
     std::map<int, double> liveGestureEndedMs_;

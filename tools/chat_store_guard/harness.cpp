@@ -39,6 +39,7 @@
 #include "EJSlotMeters.h"               // SH22: the per-slot meters, their gates and their geometry
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include "EJClipDrive.h"                // A1c: the clip stage's figure, driven by the CD legs
+#include "EJNewChatNotice.h"            // Sean's B6 option 1: what a new chat says
 #include "SurgicalEqProcessor.h"   // EQG: the band-gain clamp, both directions
 #include "EJPendingClaim.h"     // PC: nothing claims "added" while the add is waiting
 #include "EJShadowRetry.h"       // SR: the copy road resuming when the rack cache arrives
@@ -2223,10 +2224,24 @@ int main()
                    "all three differ");
 
             // THE DECISION.
+            // ---- SH16e SAID "AN OLDER BUILD", AND THAT SENTENCE WAS WRONG (29 Oct 2026) ------
+            //
+            // It was this leg's own wording until tonight, and Sean's 21:02 log is what it cost:
+            // "the view is not following the Link's knobs - this Link is an older build and does
+            // not publish them yet", about a Link installed 41 minutes earlier. I went looking for
+            // a version problem. The real cause was that our OWN devices published nothing at all,
+            // whatever the build (item 2b).
+            //
+            // No frame read means ONE thing - no values arrived for that slot - and "an old build"
+            // was only ever one of its causes. So the leg keeps its job (a missing frame is
+            // REPORTED, and the picture is kept) and drops the claim about the Link's age, which
+            // the code can no longer honestly make.
             const auto older = echojay::shadowMirrorDecision (false, 0, 0, 0, 0);
             check (older.what == echojay::ShadowMirror::Refuse
-                   && older.line.contains ("older build"),
-                   "SH16e no frame at all is reported as the LINK'S age, with the picture kept",
+                   && older.line.contains ("no parameter values have arrived")
+                   && ! older.line.contains ("older build"),
+                   "SH16e no frame at all is REPORTED, with the picture kept - and it does not blame "
+                   "the Link's age, which is a cause it cannot know (his 21:02 fault)",
                    "\"" + older.line + "\"");
             const auto wrong = echojay::shadowMirrorDecision (true, 111u, 222u, 4, 4);
             check (wrong.what == echojay::ShadowMirror::Refuse
@@ -3015,8 +3030,7 @@ int main()
         // state: a window open on an editable rack with nothing pending, which produced no ask.
         {
             // THE FAULT'S OWN INPUTS: his reopened window at 06:55:15.
-            const auto reopened = echojay::windowOpenEngageAsk (/*viewIsALinkRack*/ true,
-                                                                /*sessionActive*/ false,
+            const auto reopened = echojay::windowOpenEngageAsk (/*viewIsALinkRack*/ true, "lnk_view", /*sessionUid*/ "",
                                                                 /*somethingPending*/ false,
                                                                 /*readInFlight*/ false,
                                                                 /*applyInFlight*/ false,
@@ -3030,7 +3044,7 @@ int main()
 
             // ONCE. The ask stands as the pending engage and the tick waits on the lock, so a Link
             // holding its own rack is not asked once a second for ever.
-            const auto again = echojay::windowOpenEngageAsk (true, false, false, false, false, true,
+            const auto again = echojay::windowOpenEngageAsk (true, "lnk_view", "", false, false, false, true,
                                                              /*hasAlreadyHadIt*/ true);
             check (! again.ask && juce::String (again.why).contains ("already had this rack"),
                    "SH21a ...and it asks ONCE for that rack: the ask stands as the pending engage, "
@@ -3082,39 +3096,291 @@ int main()
                    "asked -> had it");
 
             // EVERY REFUSAL IS A DIFFERENT STATE, and each one says which.
-            const auto engaged = echojay::windowOpenEngageAsk (true, /*sessionActive*/ true, false,
-                                                               false, false, true, false);
+            const auto engaged = echojay::windowOpenEngageAsk (true, "lnk_view",
+                                                               /*session on THIS rack*/ "lnk_view",
+                                                               false, false, false, true, false);
             check (! engaged.ask,
                    "SH21b an already-engaged rack is not asked for again - the session IS the "
                    "connection, and asking would start a second read over a live one",
                    juce::String (engaged.why));
-            const auto pending = echojay::windowOpenEngageAsk (true, false, /*pending*/ true, false,
+            const auto pending = echojay::windowOpenEngageAsk (true, "lnk_view", "", /*pending*/ true, false,
                                                                false, true, false);
             check (! pending.ask,
                    "SH21c ...nor is one whose engage is already pending, which is what keeps the "
                    "agent's own reclaim (his 08:44 ruling) and this from both asking",
                    juce::String (pending.why));
-            const auto reading = echojay::windowOpenEngageAsk (true, false, false, /*read*/ true,
+            const auto reading = echojay::windowOpenEngageAsk (true, "lnk_view", "", false, /*read*/ true,
                                                                false, true, false);
-            const auto applying = echojay::windowOpenEngageAsk (true, false, false, false,
+            const auto applying = echojay::windowOpenEngageAsk (true, "lnk_view", "", false, false,
                                                                 /*apply*/ true, true, false);
             check (! reading.ask && ! applying.ask,
                    "SH21d ...nor one with a read or an apply in flight: one read at a time is defect "
                    "R's rule, and an apply is the close of the last session, not the start of one",
                    "read and apply both refused");
-            const auto notCapable = echojay::windowOpenEngageAsk (true, false, false, false, false,
+            const auto notCapable = echojay::windowOpenEngageAsk (true, "lnk_view", "", false, false, false,
                                                                   /*editable*/ false, false);
             check (! notCapable.ask
                    && juce::String (notCapable.why).contains ("has not published a rack"),
                    "SH21e ...and a Link that has not published an editable rack is not asked at all, "
                    "which is the read-only view and not a fault - the tick retries as the cache fills",
                    juce::String (notCapable.why));
-            const auto noRack = echojay::windowOpenEngageAsk (/*viewIsALinkRack*/ false, false, false,
+            const auto noRack = echojay::windowOpenEngageAsk (/*viewIsALinkRack*/ false, "", "", false,
                                                               false, false, true, false);
             check (! noRack.ask,
                    "SH21f ...and his own chain is never a Link's rack, so nothing is asked for it: "
                    "this rule cannot reach the page he spends most of his time on",
                    juce::String (noRack.why));
+
+            // ---- HIS 21:00 FAULT: A SESSION ON ANOTHER RACK IS NOT THIS RACK'S SESSION --------
+            //
+            // From his own log, on the 20:21 build: a session went live on 4814a16004 at
+            // 21:00:33, he clicked row 3 at 21:00:37 and the LOCK moved to bb411b8240 while the
+            // session stayed where it was. This function was handed borrowActive() - a global
+            // "some rack is engaged" - and answered "this rack is already engaged" about a rack
+            // that was not. Nothing asked, so the rack area sat on "Getting this rack ready to
+            // edit..." for 68 seconds until he closed the window, which released the stale session
+            // and let the reopen connect at 21:01:50.
+            //
+            // THE LEG IS THE FAULT: a session elsewhere, the viewed rack unengaged -> IT ASKS.
+            const auto elsewhere = echojay::windowOpenEngageAsk (true, "lnk_view",
+                                                                 /*session on ANOTHER rack*/ "lnk_other",
+                                                                 false, false, false, true, false);
+            check (elsewhere.ask,
+                   "SH21g a session live on ANOTHER rack does not stop this window asking for the "
+                   "rack it is looking at - his 21:00 fault, where \"already engaged\" was said "
+                   "about a rack that was not engaged, and only closing the window cured it",
+                   juce::String (elsewhere.why));
+            // CONTROL, the other direction: the same rack still refuses, so the fix did not simply
+            // delete the rule. SH21b holds this too, with the uid form.
+            check (! engaged.ask
+                   && juce::String (engaged.why).contains ("already engaged"),
+                   "SH21g2 control: a session on the rack in view DOES still refuse - the session "
+                   "is the connection, and asking would start a second read over a live one",
+                   juce::String (engaged.why));
+            // AND AN EMPTY SESSION UID IS \"nothing is engaged\", not a rack whose name is empty:
+            // a window viewing a rack with no session anywhere must ask.
+            const auto noSession = echojay::windowOpenEngageAsk (true, "lnk_view", "", false, false,
+                                                                 false, true, false);
+            check (noSession.ask,
+                   "SH21g3 ...and an empty session uid reads as \"nothing is engaged\", which is "
+                   "the shape a caller with no session passes",
+                   juce::String (noSession.why));
+
+            // ---- HIS 21:22 FAULT: A RUN ON ANOTHER RACK LOCKED THIS ONE'S KNOBS --------------
+            //
+            // From his log, and this is items 2 and 3 as ONE cause: a run parked in awaiting_ask
+            // at 21:18:03, he opened Link 4814a16004 at 21:21:43, and at 21:22:56 every move on
+            // that rack's live view was refused with "an agent is working on this rack - stop it,
+            // or wait" - ten of them. The copy was following perfectly six milliseconds earlier
+            // ("8 parameter(s), 8 carried, 8 written"). The run had nothing to do with that rack:
+            // runTargetUid() was the agent's LIVE target, which follows what he is looking at.
+            check (! echojay::runWorkingOnThisRack (true, "lnk_other", "lnk_view"),
+                   "LC1 a run working on ANOTHER rack does not lock the knobs on the rack in view - "
+                   "his 21:22 fault, where a question waiting in a chat locked a CL 1B he had just "
+                   "opened");
+            check (echojay::runWorkingOnThisRack (true, "lnk_view", "lnk_view"),
+                   "LC1b control: a run working on THIS rack still does lock it - the rule is not "
+                   "deleted, it is addressed");
+            check (! echojay::runWorkingOnThisRack (false, "lnk_view", "lnk_view"),
+                   "LC1c ...and a run that is not working locks nothing, however recently it ran "
+                   "(his item 3: after \"Stopped.\" the rack still said an agent was working)");
+            check (! echojay::runWorkingOnThisRack (true, "", "lnk_view"),
+                   "LC1d a run on this instance's OWN chain is not a run on a Link's rack, so it "
+                   "blocks nothing there - an empty run uid is a different subject, not a wildcard");
+            check (! echojay::runWorkingOnThisRack (true, "lnk_view", ""),
+                   "LC1e ...and with no rack in view there is nothing to refuse");
+
+            // ---- C's POINT 37: AN OWN-RACK RUN TAKES AN EMPTY UID, AND THAT IS AN ANSWER ------
+            //
+            // The first fix captured the run's rack but fell back to the LIVE target whenever the
+            // captured uid was empty - and empty is exactly what a run on the V2's own rack
+            // captures. Sean's run was one of those (21:17:32 "working target -> (this instance's
+            // own rack)"), so the fault reproduced through the fallback and the fix was a fix in
+            // name only. LC1d tested the comparison with an empty uid; nothing tested that the
+            // empty uid ever REACHED it.
+            check (echojay::runRackAnswer (true, "", "lnk_view").isEmpty(),
+                   "LC2 a run that TOOK the own rack answers \"the own rack\" - not the rack the "
+                   "view has since moved to, which is the fallback that put his fault back");
+            check (echojay::runRackAnswer (true, "lnk_run", "lnk_view") == "lnk_run",
+                   "LC2b ...and a run that took a LINK answers that Link, however the view moves");
+            check (echojay::runRackAnswer (false, "", "lnk_view") == "lnk_view",
+                   "LC2c control: before a run has taken anything, the live target is all there is "
+                   "to report - so the flag, not the emptiness, is what decides");
+            // AND THE TWO TOGETHER, which is the road the product actually walks:
+            check (! echojay::runWorkingOnThisRack (true,
+                                                    echojay::runRackAnswer (true, "", "lnk_other"),
+                                                    "lnk_other"),
+                   "LC2d end to end: an own-rack run parked on a question does NOT lock the Link he "
+                   "opens next - his 21:22 fault, through both functions in the order they run");
+
+            // ---- C's POINT 42: THE SECOND RUN MUST TAKE ITS OWN RACK -------------------------
+            //
+            // "Taken" was cleared only when no run needed the rack, and a FINISHED run still needs
+            // it while its Undo all is live - the ordinary state after any run that changed
+            // anything. So run 2 never re-took, and inherited run 1's rack. Sean's normal order:
+            // run 1 on Link 2 finishes, run 2 on the own track parks on a question, he drags a
+            // knob on Link 2 and it is refused.
+            check (echojay::shouldTakeRunRack (true, false, -1, 1),
+                   "LC3 a first run takes the rack it is working on");
+            check (! echojay::shouldTakeRunRack (true, true, 1, 1),
+                   "LC3b ...and does not re-take it on every notification of the SAME run, which "
+                   "would move the rack under a run whose view had wandered");
+            check (echojay::shouldTakeRunRack (true, true, 1, 2),
+                   "LC3c a SECOND run takes its own rack even though the first one's Undo all is "
+                   "still holding the old one - C's point 42, and the reason the key is the run's "
+                   "serial and not whether anything has been taken");
+            check (! echojay::shouldTakeRunRack (false, true, 1, 2),
+                   "LC3d control: nothing is taken while no run is active - a serial that moved "
+                   "without a live run is not a run starting");
+
+            // ---- C's POINT 43: THE SPARING RULE TONIGHT'S SWEEP FIX DEPENDS ON ---------------
+            //
+            // reapDeadUidFiles deliberately does NOT reap rack-<uid>.json - "a SIDECAR is spared
+            // however dead - uids return" - because a sidecar is how the V2 can show a Link's rack
+            // before that Link has registered. That assertion lives in tools/borrowhost_test, which
+            // HAS NOT COMPILED SINCE 6 SEP (it names four members of EchoJayProcessor that do not
+            // exist, and it is not a CMake target), so it has enforced nothing for seven weeks.
+            //
+            // It matters tonight: Sean's machine had 6,479 of these files and I moved them aside,
+            // and the sweep fix that replaced the 1 Hz directory walk rests on this rule being true.
+            // So it is ported here, into a guard that runs, with its own isolated directory.
+            {
+                const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                     .getChildFile ("ej_reap_leg_" + juce::Uuid().toDashedString());
+                dir.createDirectory();
+                const auto now = juce::Time::currentTimeMillis();
+                const juce::int64 grace = 10 * 60 * 1000;
+                const auto old2 = juce::Time (now - 60 * 60 * 1000);          // an hour ago
+                for (const char* n : { "rack-deaddead01.json", "lease-deaddead01.json",
+                                       "chain-ack-deaddead01.json", "rack-livelive01.json",
+                                       "lease-livelive01.json" })
+                {
+                    dir.getChildFile (n).replaceWithText ("{}");
+                    dir.getChildFile (n).setLastModificationTime (old2);
+                }
+                dir.getChildFile ("ctrl-ack-freshfresh1.json").replaceWithText ("{}");   // inside the grace
+                const int reaped = LinkShm::reapDeadUidFiles (dir.getFullPathName() + "/",
+                                                              { "livelive01" }, {}, now, grace);
+                check (dir.getChildFile ("rack-deaddead01.json").exists(),
+                       "RE1 a rack SIDECAR is spared however dead - uids return, and a sidecar is how "
+                       "the V2 shows a Link's rack before that Link has registered  (ported from "
+                       "borrowhost_test, which has not compiled since 6 Sep)",
+                       juce::String (reaped) + " file(s) reaped");
+                check (! dir.getChildFile ("lease-deaddead01.json").exists()
+                         && ! dir.getChildFile ("chain-ack-deaddead01.json").exists(),
+                       "RE1b ...while a dead uid's TRANSIENTS do go - they address a process that "
+                       "cannot answer again");
+                check (dir.getChildFile ("lease-livelive01.json").exists()
+                         && dir.getChildFile ("rack-livelive01.json").exists(),
+                       "RE1c ...a LIVE uid's files survive, however old");
+                check (dir.getChildFile ("ctrl-ack-freshfresh1.json").exists(),
+                       "RE1d ...and a fresh file survives the grace window, which is what protects a "
+                       "Link that is registering right now");
+                dir.deleteRecursively();
+            }
+
+            // ---- HIS 21:20 FAULT: A POPUP DRAWN OVER A HOSTED EDITOR (28 Oct 2026) -----------
+            //
+            // The Link's + picker opened BEHIND a Tube-Tech CL 1B: "only the bottom of the list
+            // shows below it". A hosted editor is a heavyweight NSView and composites over every
+            // lightweight component whatever the z-order says, so the popup cannot be raised - the
+            // editor has to move. The V2 learnt this twice (2 Sep, its rack menu; 25 Sep, its
+            // picker) with the rule written inline at its own call site, which is exactly how the
+            // Link came to be missing it. One rule, one place: echojay::guestPopupPrep.
+            {
+                const auto nothing = echojay::guestPopupPrep (false, false);
+                check (! nothing.lowerPopout && ! nothing.closeInline,
+                       "GP1 with no hosted editor up, a popup needs nothing done - this rule must "
+                       "not reach a window that is only showing our own components");
+                const auto inlineUp = echojay::guestPopupPrep (false, true);
+                check (! inlineUp.lowerPopout && inlineUp.closeInline,
+                       "GP2 an INLINE hosted editor is CLOSED - his 21:20 fault; there is no way to "
+                       "put a heavyweight NSView behind a lightweight one, so lowering cannot work",
+                       juce::String (inlineUp.why));
+                const auto popoutUp = echojay::guestPopupPrep (true, false);
+                check (popoutUp.lowerPopout && ! popoutUp.closeInline,
+                       "GP3 a POP-OUT is only LOWERED, never closed - it is a top-level window, so "
+                       "dropping always-on-top is enough and he keeps his place in the plugin",
+                       juce::String (popoutUp.why));
+                const auto both = echojay::guestPopupPrep (true, true);
+                check (both.lowerPopout && both.closeInline,
+                       "GP4 ...and both at once are both handled: a pop-out for one slot and an "
+                       "inline editor for another is an ordinary rack, and a popup that dealt with "
+                       "only one of them would still come up behind the other");
+            }
+
+            // ---- ITEM 2b: AN ECHOJAY DEVICE'S VALUES CAN TRAVEL (29 Oct 2026) ---------------
+            //
+            // His EchoJay Compressor on a Link showed moving gain reduction and not one knob could
+            // be turned, and the Link said "this Link is an older build and does not publish them
+            // yet" about a build installed 41 minutes earlier. The truth: our own devices have NO
+            // juce parameters, so the publisher read zero and wrote no frame at all. These are the
+            // conversions the bridge rests on; the rig's copy-control row covers the live road.
+            {
+                echojay::ParamSpec th;
+                th.id = "threshold_db"; th.min = -60.0; th.max = 0.0; th.def = -18.0;
+                check (std::abs (echojay::builtinValueToRing (th, -30.0) - 0.5f) < 1.0e-6f,
+                       "BI1 a real value becomes the ring's 0..1 against the spec's own range, so "
+                       "the frame keeps ONE convention for every plugin, hosted or ours",
+                       juce::String (echojay::builtinValueToRing (th, -30.0), 4));
+                check (std::abs (echojay::builtinValueFromRing (th, 0.5f) - (-30.0)) < 1.0e-6,
+                       "BI2 ...and comes back the same value - a round trip, or a mirror would "
+                       "drift every time it refreshed");
+                check (std::abs (echojay::builtinValueFromRing (th, 2.0f) - 0.0) < 1.0e-9
+                         && std::abs (echojay::builtinValueFromRing (th, -1.0f) - (-60.0)) < 1.0e-9,
+                       "BI3 a frame carrying nonsense cannot put a device out of range: the spec's "
+                       "own clamp is the last word, both ends");
+                echojay::ParamSpec degenerate;
+                degenerate.id = "stuck"; degenerate.min = 1.0; degenerate.max = 1.0;
+                check (echojay::builtinValueToRing (degenerate, 1.0) == 0.0f,
+                       "BI4 a zero-width range carries no information and does not divide by zero - "
+                       "which is what min == max would have done");
+                // AND THE DIGEST TELLS TWO OF OUR DEVICES APART, which is the guard that stops a
+                // value landing on the wrong control. Before this, every built-in hashed "no
+                // parameters" and the EQ and the Limiter would have agreed.
+                echojay::ParamSchema a ({ th });
+                echojay::ParamSpec other; other.id = "ratio"; other.min = 1.0; other.max = 20.0;
+                echojay::ParamSchema b ({ other });
+                check (a.params().size() == 1 && b.params().size() == 1
+                         && juce::String (a.params()[0].id) != juce::String (b.params()[0].id),
+                       "BI5 fixture: two different one-parameter schemas, differing only in the id "
+                       "the digest hashes");
+
+                // ---- C's POINT 40: THE EQ'S BANDS ARE OUTSIDE ITS SCHEMA (29 Oct 2026) -------
+                //
+                // SurgicalEqProcessor publishes four globals (output_db, auto_gain, phase_mode,
+                // ms_mode) and keeps every band outside the schema, reached by dotted name. The
+                // first cut of the bridge walked the schema, so a Link's EchoJay EQ would have
+                // mirrored its OUTPUT TRIM and not one band - the whole instrument invisible.
+                {
+                    SurgicalEqProcessor eq;
+                    const auto mirror = eq.mirroredParams();
+                    const int schemaN = (int) eq.paramSchema().params().size();
+                    bool hasBandGain = false, hasBandFreq = false, hasBandQ = false;
+                    double gainLo = 0.0, gainHi = 0.0;
+                    for (const auto& m : mirror)
+                    {
+                        if (m.id == "band1.gain_db") { hasBandGain = true; gainLo = m.min; gainHi = m.max; }
+                        if (m.id == "band1.freq_hz") hasBandFreq = true;
+                        if (m.id == "band1.q")       hasBandQ    = true;
+                    }
+                    check (hasBandGain && hasBandFreq && hasBandQ
+                             && (int) mirror.size() > schemaN,
+                           "BI6 an EchoJay EQ mirrors its BANDS, not just the four globals its schema "
+                           "publishes - the bands are the instrument, and walking the schema alone "
+                           "left them invisible to a live view (C's point 40)",
+                           juce::String ((int) mirror.size()) + " mirrored vs " + juce::String (schemaN)
+                             + " in the schema");
+                    check (std::abs (gainLo - (-24.0)) < 1.0e-9 && std::abs (gainHi - 24.0) < 1.0e-9,
+                           "BI6b ...and a band's gain carries the SAME +/-24 dB range the device "
+                           "clamps to, so the two ends normalise against what it really does",
+                           juce::String (gainLo, 1) + " .. " + juce::String (gainHi, 1));
+                    check ((int) mirror.size() <= echojay::kShadowValMax,
+                           "BI6c ...and the whole list still fits one frame of the ring - a mirror "
+                           "longer than the frame would silently carry only its beginning",
+                           juce::String ((int) mirror.size()) + " of " + juce::String (echojay::kShadowValMax));
+                }
+            }
         }
 
         // ---- SH23: TWO SURFACES, TWO NAMES (the S6 B6 fail, 25 Oct 2026) ---------------------
@@ -4554,6 +4820,38 @@ int main()
                      && r.getProperty ("slot", {}).toString() == "4",
                    "CD6b ...and it carries the slot, the figure and the outcome in B's own shape");
         }
+    }
+
+    // =============================================================================================
+    //  A NEW CHAT THAT STOPPED A RUN SAYS SO (Sean's B6 ruling, option 1, 28 Oct 2026)
+    // =============================================================================================
+    //
+    // Two of his rulings meet on the New chat button: a new chat never inherits the last one's run
+    // (17 Oct, item 1), and never cancel a run silently (23 Oct, 21:06). Both hold - they are
+    // different gestures - but New chat was stopping a live run with nothing said to the person.
+    // Option 1: the new chat's first line says so.
+    {
+        using echojay::newChatStoppedLine;
+        const auto onLink = newChatStoppedLine (true, "Gtr L");
+        check (onLink.contains ("Gtr L") && onLink.contains ("stopped")
+                 && onLink.containsIgnoreCase ("new chat"),
+               "NC1 a new chat that stopped a run names the channel it was on, and says it stopped",
+               onLink);
+        const auto onOwn = newChatStoppedLine (true, {});
+        check (onOwn.isNotEmpty() && ! onOwn.contains ("  ") && ! onOwn.contains ("on ."),
+               "NC1b ...and with no channel to name it names none, rather than trailing a sentence "
+               "off a blank - the own rack is the empty uid",
+               onOwn);
+        check (newChatStoppedLine (false, "Gtr L").isEmpty(),
+               "NC2 CONTROL: a new chat that stopped NOTHING says nothing - an unconditional notice "
+               "would tell him about a run that was never there");
+        check (newChatStoppedLine (false, {}).isEmpty(),
+               "NC2b ...on the own rack too");
+        // The sentence is one sentence, and it is the user's words rather than the log's: no state
+        // name, no uid, nothing a model is meant to read (his item 3 of 13 Oct).
+        check (! onLink.contains ("awaiting") && ! onLink.contains ("_") && ! onLink.contains ("uid"),
+               "NC3 ...and it carries no state name, no uid and no underscore - it is the line he "
+               "reads, not the line the log keeps");
     }
 
     std::printf ("==== chat_store_guard: %s (%d assertion(s) failed, %d passed) ====\n",

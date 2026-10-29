@@ -1,0 +1,10 @@
+scenario E7
+captured 2026-10-29T01:20:43.623Z
+  [user] rig-tpown-marker: add Renaissance Axx (s) to this rack and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  [user] rig-grtp-marker: how much is Renaissance Axx (s) doing?
+  [assistant] Had a look at that one.
+  run row: status=Done changes=0 steps=1 zones=[3,11:1 step]
+  opening: Had a look at that one.
+  closing: Had a look at that one.
+    step "gain reduction on the third-party slot" [failed] right="not applied" detail="Press play and I'll measure that." chips=[]

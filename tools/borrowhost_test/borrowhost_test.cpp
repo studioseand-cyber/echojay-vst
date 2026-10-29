@@ -1,3 +1,21 @@
+// =============================================================================================
+//  THIS HARNESS DOES NOT COMPILE, AND HAS NOT SINCE 6 SEP 2026 - WRITTEN EXCLUSION (29 Oct 2026)
+// =============================================================================================
+//  It is not a CMake target and `tools/borrowhost_test/build_and_run.sh` fails with 20 errors: it
+//  names `kBorrowAlignBudgetFrames`, `borrowInContextOk_`, `setBorrowBudgetWanted` and
+//  `commitBorrowBudget` on EchoJayProcessor, none of which exist on this tree.
+//
+//  SO IT MUST NOT BE COUNTED AS COVERAGE. The house rule is that every test in the repo is in the
+//  gate or has a written exclusion; this is the exclusion, and it is here rather than in a report
+//  because the next person to reach for this file is reading this file.
+//
+//  WHAT WAS LOST WITH IT, and what has been done about it: this harness held the assertion that
+//  `reapDeadUidFiles` SPARES rack-<uid>.json ("a SIDECAR is spared however dead - uids return").
+//  That rule is live and load-bearing - the 29 Oct sweep fix depends on it - so it has been ported
+//  to tools/chat_store_guard (legs RE1-RE1d), which does build and does run. Repairing or deleting
+//  the rest of this file is still owed; nothing else in here is currently enforced.
+// =============================================================================================
+
 /*  borrowhost_test — RACK_BORROW_IMPLEMENTATION_SPEC §6, step 1's gate.
 
     Proves, by content:

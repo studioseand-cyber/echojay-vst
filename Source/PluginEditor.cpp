@@ -1,4 +1,5 @@
 #include "EJDialWrites.h"
+#include "EJNewChatNotice.h"   // what a new chat says about the run it stopped (28 Oct 2026)
 #include "EJLocalInstances.h"   // real-editor round 1: the directory and the lease (rig-driven for now)
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginEditor.h"
@@ -11892,8 +11893,14 @@ void EchoJayEditor::borrowSelectionTick()
             bool capable = false;
             if (auto it = p.linkRackCache.find (view); it != p.linkRackCache.end())
                 capable = it->second.rack.borrowCapable;
+            // THE SESSION'S UID, NOT borrowActive() (his 21:00 fault, 28 Oct 2026): a session live
+            // on ANOTHER rack used to answer "this rack is already engaged" about the rack in view,
+            // so a window that opened on it never spent its one ask and the rack area sat on
+            // "Getting this rack ready to edit..." until he closed and reopened. The reasoning, with
+            // his own uids and timings, is in EJEngageDemand.h.
             const auto d = echojay::windowOpenEngageAsk (view.isNotEmpty(),
-                                                         p.borrowActive(),
+                                                         view,
+                                                         p.borrowActive() ? p.borrowUid() : juce::String(),
                                                          p.pendingAutoEngage_.isNotEmpty(),
                                                          borrowReadInFlightUid_.isNotEmpty(),
                                                          p.borrowApplyInFlight_,
@@ -11970,9 +11977,23 @@ void EchoJayEditor::borrowSelectionTick()
     };
     if (want.isEmpty() || want != chainViewUid())
     {
-        if (! chainViewUid().isEmpty() && ! p.borrowActive())
+        // ---- AND IT IS NEVER SILENT ABOUT THE RACK IN VIEW (his 21:00 fault, 28 Oct 2026) -----
+        //
+        // The guard here was `! p.borrowActive()`, which skipped the sentence whenever ANY session
+        // was live - including the one state he actually sat in, a session on 4814a16004 while he
+        // looked at bb411b8240. So the tick ran once a second for 68 seconds and said nothing,
+        // while the rack area promised it was getting his rack ready. The silence was the reason I
+        // could find no "not engaging" line anywhere in his log for that minute.
+        //
+        // What is skipped now is only the case where the session IS the rack in view, which needs
+        // no explanation because there is nothing wrong with it.
+        const bool sessionIsThisRack = p.borrowActive() && p.borrowUid() == chainViewUid();
+        if (! chainViewUid().isEmpty() && ! sessionIsThisRack)
             sayStallOnce (chainViewUid(), want.isEmpty()
-                              ? juce::String ("nothing has asked to engage this rack yet")
+                              ? (p.borrowActive()
+                                     ? "nothing has asked to engage this rack yet, and the live "
+                                       "session is on " + p.borrowUid()
+                                     : juce::String ("nothing has asked to engage this rack yet"))
                               : "a different rack (" + want + ") is waiting to engage");
         return;
     }
@@ -18600,9 +18621,22 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
     // with it - otherwise the next typed line is read as an answer to a question nobody can see any
     // more. The agent's target follows the new chat's binding, so the fresh run works on what the
     // person is looking at rather than on what the last one happened to hold.
+    // ---- AND IT IS NOT SILENT ANY MORE (Sean's ruling, 28 Oct 2026: option 1) ---------------
+    //
+    // His 17 Oct item 1 stops the run; his 21:06 of 23 Oct says never cancel one silently. Both
+    // hold - they are different gestures - but until today this one stopped a live run with nothing
+    // said to the person: there was a log line, and a log line is not telling him. Option 1 of
+    // docs/B6_SUPERSEDE_2026-10-28.md is what he chose: the new chat's FIRST LINE says so, which
+    // keeps the gesture instant and stops it being silent.
+    //
+    // The sentence is echojay::newChatStoppedLine, pure and legged both ways; `wasLive` is the same
+    // condition the stop is made on, passed in rather than re-derived, because a sentence that
+    // decides for itself whether a run existed is a second answer to that question.
+    juce::String newChatNotice;
     if (auto* ag = agentClient())
     {
-        if (ag->isActive() || ag->askPending())
+        const bool wasLive = ag->isActive() || ag->askPending();
+        if (wasLive)
         {
             EchoJay_NSLog (("EJAgent: New chat pressed while a run was live (state "
                             + juce::String (EJAgentClient::stateName (ag->state()))
@@ -18611,6 +18645,24 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
                               "(Sean's item 1, 17 Oct)").toRawUTF8());
             ag->stop();
         }
+        // WHICH target the stopped run was on: agentTargetLast_, the uid last handed to the
+        // executor - NOT workingOnUid(), because the lines above have already moved the chat's
+        // binding to the new one (chatTargetLinkUid cleared, so: this instance's own rack). The
+        // sentence has to name what the run that was STOPPED was working on, and by this point
+        // that uid survives in exactly one place.
+        //
+        // And only when the name is REAL: channelDisplayLabel degrades to a uid passthrough when
+        // the Link is gone or unnamed, and "the run on 7A10-3FED-... was stopped" is a worse
+        // sentence than the one that names nothing. "(unset)", the member's value before any
+        // target was ever handed over, is not a uid either and is refused the same way.
+        juce::String stoppedTarget;
+        if (agentTargetLast_.isNotEmpty() && agentTargetLast_ != "(unset)")
+        {
+            const auto label = channelDisplayLabel (agentTargetLast_);
+            if (echojay::channelLabelUsable (agentTargetLast_.toStdString(), label.toStdString()))
+                stoppedTarget = label;
+        }
+        newChatNotice = echojay::newChatStoppedLine (wasLive, stoppedTarget);
     }
     // The agent's target follows the chat's binding, through the one function that owns it - the
     // same call every other target change goes through, so the log line reads the same.
@@ -18627,7 +18679,17 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
         chatSidebar.updateContent();
     }
 
-    layoutChatMessages();
+    // ...AND THE NEW CHAT'S FIRST LINE, when it stopped a run (Sean's option 1, 28 Oct 2026).
+    // LAST, after the clear and the layout: a line appended before clearChatMessages would be the
+    // thing the clear takes, which is how a notice about a disappearing row disappears.
+    if (newChatNotice.isNotEmpty())
+    {
+        appendLocalResultBubble (newChatNotice);
+        EchoJay_NSLog (("EJAgent: the new chat opens by saying it: \"" + newChatNotice
+                        + "\" (his option 1 - a stop nobody is told about is a stop that reads as a "
+                          "freeze)").toRawUTF8());
+        layoutChatMessages();
+    }
     chatInput.grabKeyboardFocus();
     repaint();
 }
@@ -37904,15 +37966,42 @@ void EchoJayEditor::serviceRigHook()
         }
         else
         {
-            const auto& params = copy->getParameters();
-            if (i < 0 || i >= params.size())
+            // ---- ONE OF OUR OWN DEVICES MOVES THROUGH ITS OWN ROAD (item 2b, 29 Oct 2026) ----
+            //
+            // A built-in has no juce parameter to gesture, so this answered "the copy has 0
+            // parameter(s)" and the control road could not be tested on an EchoJay device at all -
+            // which is why his locked Compressor knobs had no row watching them. Its editor writes
+            // through setParamValue, so that is what a hand does here, and the follow tick's poll
+            // then carries it to the Link exactly as it carries his.
+            if (const auto mirror = echojay::builtinMirrorOf (*copy); ! mirror.empty())
+            {
+                auto* dev = dynamic_cast<EedDeviceProcessor*> (copy);
+                if (dev == nullptr || i < 0 || i >= (int) mirror.size())
+                {
+                    ok = false;
+                    note = "this built-in mirrors " + juce::String ((int) mirror.size())
+                         + " parameter(s), not " + juce::String (i);
+                }
+                else
+                {
+                    const auto& m = mirror[(size_t) i];
+                    const double was  = dev->getParamValue (m.id);
+                    const double want = echojay::builtinValueFromRing (m.min, m.max, juce::jlimit (0.0f, 1.0f, v));
+                    dev->setParamValue (m.id, want);
+                    note = "moved " + movedWhat + "'s mirrored parameter " + juce::String (i) + " (\""
+                         + m.id + "\") from " + juce::String (was, 4) + " to "
+                         + juce::String (dev->getParamValue (m.id), 4)
+                         + " through setParamValue, which is the road its own editor uses";
+                }
+            }
+            else if (const auto& params = copy->getParameters(); i < 0 || i >= params.size())
             {
                 ok = false;
                 note = "the copy has " + juce::String (params.size()) + " parameter(s), not " + juce::String (i);
             }
             else
             {
-                auto* prm = params[i];
+                auto* prm = copy->getParameters()[i];
                 const float was = prm->getValue();
                 prm->beginChangeGesture();
                 prm->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, v));
@@ -38352,6 +38441,26 @@ void EchoJayEditor::publishRigState()
     // would pass against a static one. framesPumped is the only honest proof that it is live.
     o->setProperty ("shadowRunning", processorRef.shadowRunning());
     o->setProperty ("shadowUid",     processorRef.shadowUid());
+    // ---- TWO FACTS THE 29 OCT ROWS NEED AND COULD NOT SEE (LV9b, LV9d) -----------------------
+    //
+    // inlineIsLent: is the editor on screen the LINK'S OWN, lent to this window (the real-editor
+    // road), rather than a copy? LV9d exists because his 21:20 sequence had BOTH at once - a lent
+    // CL 1B editor and a running copy of the same plugin - and no row could say so, because this
+    // fact lived only inside the panel.
+    //
+    // linkSlots: how many slots the rack IN VIEW has. procSlots is the own rack's and answers a
+    // different question; a row that adds a device to a Link and waits for it needs this one.
+    o->setProperty ("inlineIsLent", chainListPanel.inlineIsLent);
+    // The rack IN VIEW, counted from the processor's own cache of that Link's sidecar - the same
+    // place line 537 and 10853 read it. procSlots answers the own rack and is a different question.
+    {
+        int inView = 0;
+        const auto vUid = chainViewUid();
+        if (vUid.isNotEmpty())
+            if (auto it = processorRef.linkRackCache.find (vUid); it != processorRef.linkRackCache.end())
+                inView = (int) it->second.rack.slots.size();
+        o->setProperty ("linkSlots", inView);
+    }
     o->setProperty ("shadowSlot",    processorRef.shadowSlot() + 1);     // 1-based, 0 = none
     o->setProperty ("shadowPlugin",  processorRef.shadowPluginName());
     o->setProperty ("shadowFrames",  (double) processorRef.shadowFramesPumped());
@@ -41423,23 +41532,18 @@ void EchoJayEditor::showChainPluginPicker()
     // 22 Sep 2026 (item 7): the picker is EMBEDDED in this editor, a hosted editor pop-out is a top-level always-on-top
     // window - so the pop-out is LOWERED while the picker is open (always-on-top off, sent back) and raised again on
     // every picker death path (onGone fires from the destructor). pickerLoweredPopout_ remembers what to restore.
-    if (chainListPanel.popout != nullptr)
-    {
-        chainListPanel.popout->setAlwaysOnTop(false);
-        chainListPanel.popout->toBack();
-        pickerLoweredPopout_ = true;
-        EchoJay_NSLog("EJPicker: hosted editor pop-out lowered while the picker is open");
-    }
+    // 28 Oct 2026: BOTH HALVES NOW LIVE IN ONE PLACE (echojay::prepareForPopupOverGuest). They
+    // were written inline here, and that is exactly how the Link's editor came to be missing them
+    // - his 21:20 fault tonight, the picker behind a Tube-Tech CL 1B. The behaviour here is
+    // unchanged: pop-out lowered, inline editor closed, for the reasons EJGuestPopup.h records.
+    pickerLoweredPopout_ = echojay::prepareForPopupOverGuest (chainListPanel,
+                                                              chainListPanel.popout.get(),
+                                                              "the + picker");
     // 21t-e (25 Sep 2026): AND THE INLINE ONE. The pop-out is a top-level window and lowering it is enough; an
     // INLINE hosted editor is an NSView inside this window, and a heavyweight NSView composites OVER every
     // lightweight component no matter what the z-order says - which is why the rack menu has closed the inline
     // editors since 2 Sep. The picker only ever handled the pop-out, so with a plugin open in the rack (Sean's
     // UnFairchild) the picker drew behind it. Same remedy, same reason, now on this path too.
-    if (chainListPanel.hasInlineEditor())
-    {
-        chainListPanel.closeAllEditors();
-        EchoJay_NSLog("EJPicker: inline hosted editor closed - a heavyweight NSView composites over the picker");
-    }
     ChainPluginPicker::show(chainListPanel.addBlock, *this, plugins,
         [safeThis](const juce::PluginDescription& picked)
         {

@@ -6,6 +6,7 @@
 #include "EJGainReadout.h"   // 06d item 5: the per-slot IN/OUT readout, shared with the Link editor
 #include "EJSlotMeters.h"    // his 25 Oct ask: per-slot IN / OUT / GR, fed from the Link at 30 Hz
 #include "EJLocalInstances.h" // round 2: this window can borrow a Link's own slot editor
+#include "EJGuestPopup.h"       // one rule for a popup drawn over a hosted editor (28 Oct 2026)
 #include "EJRealEditorSwitch.h" // ...behind his switch, which is off until he turns it on
 #include "EJAgentClient.h"    // HOOK E1 (agent mode, Session A2)
 #include "EJInlineViewIdentity.h"   // the rack-and-slot identity of what is on screen

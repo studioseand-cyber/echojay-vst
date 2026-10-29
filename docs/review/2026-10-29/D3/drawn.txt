@@ -1,0 +1,8 @@
+scenario D3
+captured 2026-10-29T01:26:01.992Z
+  [user] rig-undoadd-marker: add a gate
+  [assistant] Added an EchoJay Gate.
+  run row: status=Done changes=0 steps=1 zones=[11:1 step]
+  opening: Added an EchoJay Gate.
+  closing: Everything this run changed has been undone, so what it said above no longer describes the rack.
+    step "add an EchoJay Gate" [undone] right="undone" detail="undone" chips=[]

@@ -171,6 +171,10 @@ target_sources(EchoJay PRIVATE
     # A1c (28 Oct 2026): the clip stage's figure - the peak reduction ACROSS the slot, from the two
     # hop-peak arrays ChainHost already publishes. B's CONTRACT_clip_drive_2026-10-23.
     Source/EJClipDrive.h
+    # Sean's B6 ruling, option 1 (28 Oct 2026): a new chat that stopped a run says so on its first
+    # line. The sentence is pure and legged both ways; the stop site owns when it is called.
+    Source/EJNewChatNotice.h
+    Source/EJGuestPopup.h
     # A1a (28 Oct 2026): a dial on playback is a STEP of the build, which the server calls and this
     # client answers. B's CONTRACT_dial_step_2026-10-23 and CONTRACT_dial_slot_2026-10-25; the
     # decisions are here because the arming road needs a rack, a transport and eight seconds of audio.
