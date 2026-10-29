@@ -4774,6 +4774,7 @@ int main (int argc, char* argv[])
                             livePump (400);
                             const auto before = rig.freshState();
                             const int slotsBefore = (int) before.getProperty ("linkSlots", -1);
+                            const auto sentAtMs = juce::Time::currentTimeMillis();
                             rig.send (echojay::rig::cmd::addSlot,
                                       args2 ("name", "EchoJay Compressor", "uid", bUid), 20000);
                             int slotsNow = slotsBefore;
@@ -4839,15 +4840,31 @@ int main (int argc, char* argv[])
                                 int eDir = 0;
                                 const auto dirB = LinkShm::resolveDir (eDir);
                                 const juce::File ackF (dirB + "chain-ack-" + bUid + ".json");
-                                if (ackF.existsAsFile())
+                                // ---- AND IT MUST BE *THIS* COMMAND'S ACK (29 Oct 2026) --------
+                                //
+                                // The first cut read whatever ack file was on disk, with no check
+                                // that it belonged to the add this row had just sent. It then
+                                // reported "the Link acked ok (slotsAfter 1)" - from an EARLIER
+                                // command - and I nearly told Sean the Link acked an add it had not
+                                // performed. An ack with the wrong seq is not weak evidence; it is
+                                // evidence about something else.
+                                //
+                                // The file is deleted by writeChainEditCommand before each command,
+                                // so an ack older than this row's send is by definition not ours.
+                                if (ackF.existsAsFile()
+                                    && ackF.getLastModificationTime().toMilliseconds() >= sentAtMs)
                                 {
                                     const auto v = juce::JSON::parse (ackF.loadFileAsString());
                                     if (auto* o = v.getDynamicObject())
                                         ackSays = o->getProperty ("status").toString()
-                                                + " (slotsAfter " + o->getProperty ("slotsAfter").toString() + ")";
+                                                + " (slotsAfter " + o->getProperty ("slotsAfter").toString()
+                                                + ", seq " + o->getProperty ("seq").toString() + ")";
                                     else
                                         ackSays = "an ack file that did not parse";
                                 }
+                                else if (ackF.existsAsFile())
+                                    ackSays = "no ack for THIS add (the file on disk is older than the "
+                                              "press, so it answers an earlier command)";
                                 else
                                     ackSays = "no ack file at all";
                             }

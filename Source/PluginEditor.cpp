@@ -13600,8 +13600,6 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
     // refused; that string is carried back in perPluginResults and shown
     // verbatim, so the failure says WHY rather than doing nothing.
     if (uid.isEmpty() || pluginName.isEmpty()) return;
-    for (const auto& pnd : linkBlockPending_)
-        if (pnd.uid == uid && !pnd.failed) return;
 
     bool connected = false;
     for (const auto& e : processorRef.getLinkDisplayList())
@@ -13616,6 +13614,26 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
         linkBlockPending_.push_back(p2);
         repaint();
     };
+    // ---- ONE AT A TIME, BUT NEVER IN SILENCE (29 Oct 2026) ---------------------------------
+    //
+    // This stood above, before `fail` existed, as a bare `return`: a press that did nothing, with
+    // nothing said, whenever this Link already had a block in flight. It cost me an hour at 03:00 -
+    // the rig's add vanished and I read a stale ack and nearly told Sean the Link had acked an add
+    // it did not perform. A user gets no log to misread; they get nothing at all.
+    //
+    // Moved below `fail` so it can speak. The rule is unchanged (one write per rack in flight) and
+    // the wording is its own, because two causes must never share one sentence.
+    for (const auto& pnd : linkBlockPending_)
+        if (pnd.uid == uid && ! pnd.failed)
+        {
+            // THE WORDING PROMISES NOTHING, because nothing queues this press. My first cut said
+            // "it will take this one when that lands", which is a lie: the pick is dropped. Session
+            // C traced the window - an in-flight entry resolves on its ack poll, or fails after
+            // 20 x 250 ms and is swept at 9 s - so this is about five seconds, not a dead button.
+            // A false promise is its own fault, and a worse one than silence.
+            fail ("Not added: still adding " + pnd.addName + " to this Link - try again in a moment.");
+            return;
+        }
     if (!connected)
     {
         fail("Not added: this Link is not connected right now - nothing was changed.");
@@ -13634,8 +13652,14 @@ void EchoJayEditor::sendRackAdd(const juce::String& uid, const juce::String& plu
         return;
     }
 
+    // AND THE SAME FOR A RACK WE HAVE NOT READ YET, which was the other silent return here.
     auto it = processorRef.linkRackCache.find(uid);
-    if (it == processorRef.linkRackCache.end() || !it->second.valid) return;
+    if (it == processorRef.linkRackCache.end() || !it->second.valid)
+    {
+        fail ("Not added: this rack has not published its contents to this window yet - give it a "
+              "moment and press again.");
+        return;
+    }
 
     juce::Array<juce::var> baseSlots;
     for (const auto& rs : it->second.rack.slots)
