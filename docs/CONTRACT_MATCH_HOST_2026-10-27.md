@@ -502,20 +502,35 @@ loudest-30 and the plan when the slot is not the latest capture, which is the co
 reason this call is needed rather than a workaround.
 
 ```cpp
-virtual const CaptureSnapshot* captureForSlot (const CompareSlotState& slot) const = 0;
+virtual std::optional<CaptureSnapshot> captureForSlot (const CompareSlotState& slot) const = 0;
 ```
+
+**It returns BY VALUE, and that is the point.** The first version returned
+`const CaptureSnapshot*` into `latestCaptureCache_` — the same mutable member `latestCapture()`
+writes — which rebuilt the very fault R4-2 exists to remove, one layer down:
+
+- `captureForSlot(mix)` then `latestCapture()` silently turned the first pointer into the **newest**
+  capture;
+- two snapshot slots fetched in turn gave two **equal** pointers to the second slot's data, so the
+  window would have compared a capture with itself and found it identical.
+
+Caching by value avoided the 18 Sep crash and bought a silent wrong answer instead — the worse trade.
+An optional by value has no aliasing, no lifetime rule for a caller to obey, and no shared cache to
+interfere with. The copy costs one snapshot at UI rate, and `getSnapshots()` already returns its
+vector by value for the same reason. **Kathy: no need to copy before other `MatchHost` calls any
+more — the value is yours.**
 
 **What it answers, and what it deliberately does not** — a host that quietly returns the wrong
 capture is worse than one that returns none:
 
 | slot kind | answer |
 |---|---|
-| `Snapshot` | the capture **at that index** — her case, and the fix |
-| `WsCapture` | `nullptr`. A workspace review carries `channels` (`WsChannelMeasurements`), **not** a `CaptureSnapshot`. Converting one is separate work and is not faked here |
-| `Live` | `nullptr`. The live signal is not a capture; returning `latestCapture()` here would be the exact substitution this call exists to stop |
-| `Reference`, `CodecFile`, `Empty` | `nullptr` — none is a capture of this session |
+| `Snapshot` | the capture **at that index**, by value — her case, and the fix |
+| `WsCapture` | `std::nullopt`. A workspace review carries `channels` (`WsChannelMeasurements`), **not** a `CaptureSnapshot`. Converting one is separate work and is not faked here |
+| `Live` | `std::nullopt`. The live signal is not a capture; returning `latestCapture()` here would be the exact substitution this call exists to stop |
+| `Reference`, `CodecFile`, `Empty` | `std::nullopt` — none is a capture of this session |
 
-**So a caller must handle `nullptr`,** and the honest response to one is the refusal her page already
+**So a caller must handle an empty optional,** and the honest response to one is the refusal her page already
 has, never a guess. The implementation follows `slotDisplayName`'s shape so the two cannot disagree
 about which snapshot a slot means, and it caches by value because `getSnapshots()` returns a copy —
 a pointer into that temporary is the 18 Sep Pro Tools crash.

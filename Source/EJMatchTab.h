@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <optional>
 #include "PluginProcessor.h"      // CaptureSnapshot, ChannelMeterData
 #include "EJMatchPage.h"          // MatchAxis, MatchRefSide, MatchSide, the page's geometry and words
 #include "ReferenceAnalyser.h"    // ReferenceResult - the MEASURED reference, see selectedReference
@@ -68,9 +69,25 @@ struct MatchHost
                            here would be the very substitution this function exists to stop;
           Reference / CodecFile / Empty   NULLPTR - none of them is a capture of this session.
 
-        So a caller must handle nullptr, and when it gets one the honest move is her existing
-        refusal rather than a guess. */
-    virtual const CaptureSnapshot* captureForSlot (const CompareSlotState& slot) const = 0;
+        So a caller must handle an empty answer, and when it gets one the honest move is her
+        existing refusal rather than a guess.
+
+        ---- IT RETURNS BY VALUE, AND THAT IS THE WHOLE POINT (C's point 55, 29 Oct 2026) -------
+
+        My first version returned `const CaptureSnapshot*` into `latestCaptureCache_` - the SAME
+        mutable member latestCapture() writes - which reintroduced the exact fault this function
+        exists to remove, one layer down:
+
+          * captureForSlot(mix) then latestCapture() silently turned the first pointer into the
+            NEWEST capture - the substitution R4-2 is about;
+          * two snapshot slots fetched in turn gave two equal pointers to the second slot's data,
+            so the window would have compared a capture with itself and found it identical.
+
+        Caching by value avoided the 18 Sep crash and bought a silent wrong answer instead, which is
+        the worse trade. An optional BY VALUE has no aliasing, no lifetime rule for a caller to
+        obey, and no shared cache to interfere with - the copy costs one snapshot at UI rate, and
+        getSnapshots() already returns its vector by value for the same reason. */
+    virtual std::optional<CaptureSnapshot> captureForSlot (const CompareSlotState& slot) const = 0;
     virtual const CaptureSnapshot* verifyCapture() const = 0;
     /** THE REFERENCE AS MEASURED, not as filed. Two types in this codebase could answer "which
         reference": echojay::RefEntry is the LIBRARY RECORD (id, path, availability, the measurements
