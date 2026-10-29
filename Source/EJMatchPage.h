@@ -1186,6 +1186,48 @@ inline MatchReadiness matchReadiness (const MatchProposal& p)
     return r;
 }
 
+/** The one line's precedence-1 sentence for a Live mix side (DESIGN_MATCH_TAB
+    rev 3, D4). One definition: EJMatchWindowSides.h uses it too. */
+inline juce::String matchLiveNeedsCaptureLine()
+{
+    return "Capture at least 30 s of the chorus to make a plan.";
+}
+
+/** WHAT THE ONE LINE KNOWS BEYOND THE PROPOSAL (K1, 29 Oct 2026): whether the
+    mix side is Live, and why the selected window could not be taken. */
+struct MatchReadinessContext
+{
+    bool         mixIsLive = false;
+    juce::String windowWhy;   ///< "" when the window was taken, or none was asked for
+};
+
+/** THE LINE WITH ITS NEW TOP ENTRY (contract section 2A, precedence 1).
+
+    A LIVE MIX SIDE OUTRANKS EVERYTHING. A plan needs a capture (DESIGN_MATCH_TAB
+    rev 3, D4: a Live side cannot be windowed), so the line asks for one first.
+    It changes WHICH SENTENCE LEADS and nothing else: `playable` is the
+    proposal's, set by the one-argument form, so the page still shows and plays
+    what the two sides hold (MA9). A window that could not be taken comes next,
+    for the same reason: it removes the bands, so it explains the rest. */
+inline MatchReadiness matchReadiness (const MatchProposal& p, const MatchReadinessContext& c)
+{
+    auto r = matchReadiness (p);
+    if (c.mixIsLive)
+    {
+        r.possible = false;
+        r.goodNews = false;
+        r.line = matchLiveNeedsCaptureLine();
+        return r;
+    }
+    if (c.windowWhy.isNotEmpty())
+    {
+        r.possible = false;
+        r.goodNews = false;
+        r.line = c.windowWhy;
+    }
+    return r;
+}
+
 /** What the press says when there is nothing to play. A refused proposal
     cannot animate, and the press must SAY so rather than playing nothing. */
 /** THE SECOND STRING USED TO POINT AT A LINE THAT NO LONGER EXISTS.

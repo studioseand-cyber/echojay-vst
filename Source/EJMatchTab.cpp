@@ -26,6 +26,7 @@
 #include "EJMatchTab.h"
 #include "EJBandScheme.h"
 #include "EJCompareMenuIds.h"   // the menu id bands the mix picker decodes
+#include "EJMatchWindowSides.h" // K1: the window switch, its memory, and the sides over the window
 using echojay::kCompareMenuBandSize;
 using echojay::kCompareMenuRefNameLen;
 #include <cmath>
@@ -395,6 +396,37 @@ inline constexpr float kMatchTraceGlow    = 1.0f;
     for the same reason: the trace glow in paint places its lines through it. */
 static std::pair<float, float> matchTraceRange (echojay::MatchAxis a);
 
+// ---- K1: THE PAGE OVER ITS WINDOW (29 Oct 2026) ---------------------------------------------------
+//
+// ONE PLACE TURNS THE HOST'S SIDES INTO THE PAGE'S, so paint and the press cannot disagree about
+// which window they are on. The window is the reference's own (matchWindowMemory, whole song by
+// default); the mix's series is latestCapture()'s and the reference's is selectedReference()'s
+// (C2 section 5.2). A Live mix side is never windowed, and the line asks for a capture.
+struct MatchPageView
+{
+    echojay::MatchWindowedSides w;
+    echojay::MatchReadinessContext ctx;
+    juce::String refKey;
+};
+
+static MatchPageView matchPageViewOf (echojay::MatchHost& host, const echojay::MatchSides& sides,
+                                      const echojay::MatchSlotPair& slots)
+{
+    MatchPageView v;
+    const auto* ref = host.selectedReference();
+    v.refKey = ref != nullptr ? ref->path : juce::String();
+    const auto mode = echojay::matchWindowMemory().get (v.refKey);
+    const bool live = slots.mix != nullptr && slots.mix->kind == echojay::CompareSlotState::Kind::Live;
+    const auto* cap = host.latestCapture();
+    v.w = echojay::matchSidesForWindow<MeterEngine::HopFrame> (sides.mix, sides.ref,
+                                                               cap != nullptr ? &cap->hopFrames : nullptr,
+                                                               ref != nullptr ? &ref->hopFrames : nullptr,
+                                                               mode, live);
+    v.ctx.mixIsLive = live;
+    if (mode == echojay::MatchWindowMode::Loudest30 && ! live) v.ctx.windowWhy = v.w.why;
+    return v;
+}
+
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {
     // THE INSTRUMENT. Started before anything is drawn, stopped at every
@@ -446,11 +478,14 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
     // the first paint of an opening has no tick behind it yet and builds its
     // own, because a default-constructed pair would draw -100 LUFS and no bands
     // as though they were measurements.
-    const auto sides = tickSidesValid ? tickSides : host->buildMatchSides();
+    const auto sidesWhole = tickSidesValid ? tickSides : host->buildMatchSides();
+    // K1: everything below reads the sides OVER THE REFERENCE'S WINDOW.
+    const auto view  = matchPageViewOf (*host, sidesWhole, slots);
+    const echojay::MatchSides sides { view.w.mix, view.w.ref };
     const auto evMix = host->slotSpectralEvidence (*slots.mix);
     const auto evRef = host->slotSpectralEvidence (*slots.ref);
     const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
-    const auto ready = echojay::matchReadiness (prop);
+    const auto ready = echojay::matchReadiness (prop, view.ctx);
     const auto moves = echojay::matchBandMoves (prop);
 
     std::array<float, 6> deltas {};
@@ -1166,6 +1201,25 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         juce::ignoreUnused (evMix, evRef);
     }
 
+    // ---- K1: THE WINDOW SWITCH, in the graph card's top-right corner -------
+    // Two halves, the selected one filled. Drawn last so the picture never
+    // covers it; it moves no rect of MatchPageRects.
+    for (int half = 0; half < 2; ++half)
+    {
+        const auto r = echojay::matchWindowSwitchHalf (R.graph, half).toFloat();
+        if (r.isEmpty()) break;
+        const auto m   = half == 0 ? echojay::MatchWindowMode::Whole : echojay::MatchWindowMode::Loudest30;
+        const bool on  = view.w.mode == m;
+        const bool hot = hotZone == 20 + half;
+        g.setColour (juce::Colours::white.withAlpha (on ? 0.16f : (hot ? 0.08f : 0.03f)));
+        g.fillRoundedRectangle (r.reduced (1.0f), 4.0f);
+        g.setColour (juce::Colours::white.withAlpha (on ? 0.35f : 0.15f));
+        g.drawRoundedRectangle (r.reduced (1.5f), 4.0f, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (on ? 0.92f : 0.55f));
+        g.setFont (juce::Font (juce::FontOptions (10.5f)));
+        g.drawText (echojay::matchWindowLabel (m), r.toNearestInt(), juce::Justification::centred, true);
+    }
+
     if (fade < 0.999f) g.endTransparencyLayer();
 }
 
@@ -1178,8 +1232,8 @@ void EchoJayEditor::MatchPanel::press()
     if (host == nullptr) return;
     // ONE read of the sides, not two: they are read from live slots, and two
     // reads could disagree about what the press was for.
-    const auto sides = host->buildMatchSides();
-    const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (sides.mix, sides.ref));
+    const auto view  = matchPageViewOf (*host, host->buildMatchSides(), host->matchSlots());
+    const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (view.w.mix, view.w.ref), view.ctx);
 
     // TWO OF THE FOUR AXES CANNOT BE MATCHED, AND THE PRESS SAYS SO. The
     // proposal emits Gain, Ceiling and Band moves and nothing else, so dynamics
@@ -2418,6 +2472,10 @@ void EchoJayEditor::MatchPanel::advanceTrail (juce::Rectangle<int> plot,
 static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
 {
     const auto R = echojay::matchPageLayout (bounds);
+    // 20 and 21: the window switch's two halves (K1). Checked first: they sit
+    // inside the graph card, over the picture.
+    for (int half = 0; half < 2; ++half)
+        if (echojay::matchWindowSwitchHalf (R.graph, half).contains (p)) return 20 + half;
     if (R.button .contains (p)) return 1;
     if (R.mixPick.contains (p)) return 2;
     if (R.refPick.contains (p)) return 3;
@@ -2475,6 +2533,24 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                 host->seekCompareStream (slotIdx,
                                           echojay::matchWaveSeekFraction (wave, e.getPosition().x));
             repaint();
+            break;
+        }
+        // THE WINDOW SWITCH (K1): remembered for this reference, whole song by
+        // default. A morph in flight was computed over the other window, so it
+        // is dropped, as an axis change drops it.
+        case 20:
+        case 21:
+        {
+            const auto* ref  = host->selectedReference();
+            const auto  key  = ref != nullptr ? ref->path : juce::String();
+            const auto  next = z == 20 ? echojay::MatchWindowMode::Whole : echojay::MatchWindowMode::Loudest30;
+            if (echojay::matchWindowMemory().get (key) != next)
+            {
+                echojay::matchWindowMemory().set (key, next);
+                morphing = false; morphPos = 0.0f; morphDone = false; refusedFor = 0.0f;
+                tickSidesValid = false;
+                repaint();
+            }
             break;
         }
         default:
