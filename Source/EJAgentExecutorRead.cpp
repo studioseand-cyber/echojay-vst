@@ -938,14 +938,28 @@ juce::var ExecutorRead::startContext()
     // ---- "dial_step" AND "dial_slot" ARE NOT HERE YET, ON PURPOSE (A1a, 28 Oct 2026) ----------
     //
     // B's two contracts both make the capability the switch - *"without it: today's behaviour,
-    // unchanged ... the released plugin is safe"* - and this build has only HALF the road. The
-    // client answers a dial frame, and the arm behind it reaches the OPEN RACK only
-    // (Sources::armDialAtSlot -> EJAgentHome::armDialAtSlotOnOwnRack). A run aimed at a LINK would
-    // get "the dial could not be armed", and because `dial_follows` stops the add arming its own
-    // dial, that run would end with NO dial at all - a regression on a road that works today.
+    // unchanged ... the released plugin is safe"*.
     //
-    // So the claim waits for the Link's own road (A1b). Declaring it now would be a capability that
-    // is true of one rack and false of the other, which is not what a capability says.
+    // ---- WHAT HAS CHANGED SINCE THIS WAS WRITTEN, AND WHAT HAS NOT (29 Oct 2026) -------------
+    //
+    // The original reason was that the arm reached the OPEN RACK only. A1b has retired that: the
+    // executor picks the road from target_, a Link gets the frame on its chain command, and the
+    // Link arms BOTH of the dial kinds the open rack does (a limiter's loudness target and a
+    // compressor's GR hold). An old Link is safe too - a dial frame's empty editOps makes it refuse
+    // in words rather than ack a dial it ignored.
+    //
+    // WHAT STILL STOPS THE CLAIM is narrower and worth stating exactly, because it is the thing to
+    // check off rather than a vague "not ready":
+    //   1. no Link SETS RegistrySlot::dialFrameCapable yet (byte 127), so there is no per-Link fact
+    //      to gate a send on, and a capability true of one rack and false of another is not what a
+    //      capability says;
+    //   2. two writers on one rack sidecar are unverified: the V2's calibTakeClosing(uid) and the
+    //      Link's publishCalibState both read-modify-write it, and whether the V2 can overwrite a
+    //      newer loop state the Link wrote in between is an open question (session C's point 56b),
+    //      in BOTH the leased and un-leased states;
+    //   3. none of it has run on a real-host Link in the rig.
+    //
+    // So the claim waits on 1-3, not on the road.
     //     if (dialFramesWork) { caps.add ("dial_step"); caps.add ("dial_slot"); }
     o->setProperty ("capabilities", juce::var (caps));
     // ---- SEAN'S #8 (16 Oct 2026): WHAT CANNOT BE DONE, SAID BEFORE IT IS TRIED ------------------
@@ -2396,8 +2410,22 @@ Sources bindToProcessor (EchoJayProcessor& proc)
                               // THE ACK'S OWN WORDS EITHER WAY. "Sent" is not "applied" (his item 1
                               // of 13 Oct), and a Link that ignored the field acks without
                               // dialArmed, which arrives here as not-ok carrying its reason.
-                              if (done) done (ok, ok ? juce::String()
-                                                     : (sentence.isNotEmpty() ? sentence : technical));
+                              auto why = sentence.isNotEmpty() ? sentence : technical;
+                              // ---- WHAT AN OLD LINK'S REFUSAL REALLY MEANS (29 Oct 2026) --------
+                              //
+                              // A dial frame carries an EMPTY editOps array, because it edits no
+                              // slots. A Link built before A1b does not look for dialOnSlot, falls
+                              // through to the ops path and answers "editOps empty or malformed" -
+                              // which is safe (it is a refusal, not a false "armed") and useless to
+                              // read. His standing rule is that a refusal reads as words, never as
+                              // "op 1 invalid", so it is translated HERE, at the one place that
+                              // knows the command was a dial frame. Any other reason is passed
+                              // through untouched: a sentence this side invents is worse than a
+                              // blunt one the Link really gave.
+                              if (! ok && why.containsIgnoreCase ("editOps empty"))
+                                  why = "this Link's build does not understand a dial frame yet - "
+                                        "its rack is unchanged";
+                              if (done) done (ok, ok ? juce::String() : why);
                           });
     };
     s.keepPlayingPlugin = [p] () -> juce::String
