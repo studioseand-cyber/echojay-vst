@@ -7491,6 +7491,42 @@ void testProfileSweepPlan()
                && sat.contains ("for (const auto& pc : satPool ({}))") && sat.contains ("for (const auto& pc : satPool ({})) pool.push_back"),
                "cert WZ-36OCT-6: a saturator's type switch (TG / REDD / OFF, \"... Type\", \"... Model\") is never probed as its drive; a level with Off / -inf still is");
     }
+    // WZ-36OCT-8 A PLUGIN THAT APPLIES A WRITE WHILE PROCESSING (Sean, 29 Oct: NI Solid Bus Comp's production map had only Ratio and SC Gain;
+    // Threshold and Makeup read 3.9 / 2.2 dB at every position, "flat both ways", and were declined). Set-then-read processes a silent
+    // block after each write (cfg.process): the display then follows the value; without it, flat as before
+    {
+        struct AppliedOnProcess : juce::AudioProcessorParameter
+        {
+            float v = 0.6f, applied = 0.6f;
+            float getValue() const override { return v; }
+            void setValue (float x) override { v = x; }   // held until the next block
+            float getDefaultValue() const override { return 0.5f; }
+            juce::String getName (int) const override { return "Threshold"; }
+            juce::String getLabel() const override { return "dB"; }
+            float getValueForText (const juce::String& s) const override { return s.getFloatValue(); }
+            juce::String fmt (float x) const { return juce::String (-20.0f + 40.0f * x, 1) + " dB"; }
+            juce::String getText (float, int) const override { return fmt (applied); }   // the liar: always the applied value
+            juce::String getCurrentValueAsText() const override { return fmt (applied); }
+            void process() { applied = v; }
+        };
+        auto sweep = [] (AppliedOnProcess& p, bool withProcess, bool& verified)
+        {   echojay::ExtractorConfig cfg; cfg.setReadPoints = 5; cfg.rereadSettled = true; cfg.settle = [] {};
+            if (withProcess) cfg.process = [&p] { p.process(); };
+            verified = false; auto pts = echojay::sweepSetRead (p, cfg, verified);
+            juce::StringArray s; for (const auto& x : pts) s.add (juce::String (x.n, 2) + "=" + x.t); return s.joinIntoString (" "); };
+        AppliedOnProcess a, b; bool okA = false, okB = false;
+        const auto with = sweep (a, true, okA), without = sweep (b, false, okB);
+        const auto gt = echojay::sweepContinuous (b, echojay::ExtractorConfig());
+        const auto ex = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejextract/EchoJayParamExtractor.h").loadFileAsString();
+        const auto sw = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapSweeper.h").loadFileAsString();
+        const auto px = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_extract.h").loadFileAsString();
+        check (okA && with == "0.00=-20.0 dB 0.25=-10.0 dB 0.50=0.0 dB 0.75=10.0 dB 1.00=20.0 dB" && a.applied == 0.6f && a.v == 0.6f
+               && ! okB && without.isEmpty() && echojay::sweepIsFlat (gt)
+               && ex.contains ("        param.setValue (n);\n        if (cfg.process != nullptr) cfg.process();")
+               && sw.contains ("    cfg.process = echojay::silentBlockProcessor (inst);") && sw.contains ("        cfg.process();   // 29 Oct: the restored state applied")
+               && px.contains ("    cfg.process = echojay::silentBlockProcessor (inst);") && px.contains ("                cfg.process();   // 29 Oct: the restored state applied"),
+               "wizard WZ-36OCT-8: a control applied only while processing is read by set-then-read with a silent block (" + with + "); without it, flat and declined");
+    }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
     {
