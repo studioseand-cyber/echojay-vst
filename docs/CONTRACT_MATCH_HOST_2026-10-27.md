@@ -490,3 +490,35 @@ That makes C4 §2's fallback unnecessary: **`loudest30` keeps track attribution*
 ### 7.4 The FFT frame length and hop — in §6 above
 
 2048-sample Hann frame (42.7 ms at 48 kHz), hop = **the caller's block size**, with the table of consequences in §6. One addition that matters here: for the **per-Link** engines the caller is the V2's capture loop, so **every channel in a capture shares one hop**, which is the other half of why §7.3 aligns. The reference side moves to a 512-sample feed so its hop matches the common live case.
+
+
+---
+
+## R4-2: `captureForSlot (const CompareSlotState&)` (29 Oct 2026, Kathy's round 4)
+
+**Why it exists.** The window read `latestCapture()`, so an **older snapshot in the mix slot gave
+bands from a different capture than the one on screen** — two moments shown as one. Her page refuses
+loudest-30 and the plan when the slot is not the latest capture, which is the correct refusal and the
+reason this call is needed rather than a workaround.
+
+```cpp
+virtual const CaptureSnapshot* captureForSlot (const CompareSlotState& slot) const = 0;
+```
+
+**What it answers, and what it deliberately does not** — a host that quietly returns the wrong
+capture is worse than one that returns none:
+
+| slot kind | answer |
+|---|---|
+| `Snapshot` | the capture **at that index** — her case, and the fix |
+| `WsCapture` | `nullptr`. A workspace review carries `channels` (`WsChannelMeasurements`), **not** a `CaptureSnapshot`. Converting one is separate work and is not faked here |
+| `Live` | `nullptr`. The live signal is not a capture; returning `latestCapture()` here would be the exact substitution this call exists to stop |
+| `Reference`, `CodecFile`, `Empty` | `nullptr` — none is a capture of this session |
+
+**So a caller must handle `nullptr`,** and the honest response to one is the refusal her page already
+has, never a guess. The implementation follows `slotDisplayName`'s shape so the two cannot disagree
+about which snapshot a slot means, and it caches by value because `getSnapshots()` returns a copy —
+a pointer into that temporary is the 18 Sep Pro Tools crash.
+
+**Not yet compiled or gated:** written while Sean was testing in Logic, with builds suspended at his
+instruction. The gate is owed before anyone builds from it.

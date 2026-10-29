@@ -2612,6 +2612,20 @@ const CaptureSnapshot* EchoJayEditor::latestCapture() const
     return &latestCaptureCache_;
 }
 
+const CaptureSnapshot* EchoJayEditor::captureForSlot (const CompareSlotState& slot) const
+{
+    // KATHY'S R4-2. The contract and the reasons are on the declaration in EJMatchTab.h; this is
+    // the one lookup, following slotDisplayName's shape so the two cannot disagree about which
+    // snapshot a slot means.
+    if (slot.kind != CompareSlotState::Kind::Snapshot) return nullptr;
+    const auto snaps = processorRef.getSnapshots();
+    if (slot.index < 0 || slot.index >= (int) snaps.size()) return nullptr;
+    // Cached by value for the caller, exactly as latestCapture does: getSnapshots returns a copy
+    // and a pointer into a temporary is the 18 Sep Pro Tools crash.
+    latestCaptureCache_ = snaps[(size_t) slot.index];
+    return &latestCaptureCache_;
+}
+
 const CaptureSnapshot* EchoJayEditor::verifyCapture() const
 {
     // K6's closed loop takes a SECOND capture after the plan has been applied, and nothing takes one

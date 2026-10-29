@@ -48,6 +48,29 @@ struct MatchHost
 
     // ---- what there is to compare -------------------------------------------------------------
     virtual const CaptureSnapshot* latestCapture() const = 0;
+
+    /** ---- THE CAPTURE THE SLOT IS ACTUALLY SHOWING (Kathy's R4-2, 29 Oct 2026) -------------
+
+        Her fault: the window reads `latestCapture()`, so an OLDER snapshot sitting in the mix slot
+        gives bands from a different capture than the one on screen - two pictures of two different
+        moments, presented as one. Her page refuses loudest-30 and the plan rather than show that,
+        which is the right refusal and the reason this exists.
+
+        WHAT IT CAN ANSWER, and what it cannot, because a host that quietly returns the wrong
+        capture is worse than one that returns none:
+
+          Kind::Snapshot   the capture at that index - this is her case, and it is the fix;
+          Kind::WsCapture  NULLPTR. A workspace review carries `channels`
+                           (WsChannelMeasurements), not a CaptureSnapshot, so there is nothing of
+                           this type to return. Converting one is a separate piece of work and must
+                           not be faked here;
+          Kind::Live       NULLPTR. The live signal is not a capture. Returning latestCapture()
+                           here would be the very substitution this function exists to stop;
+          Reference / CodecFile / Empty   NULLPTR - none of them is a capture of this session.
+
+        So a caller must handle nullptr, and when it gets one the honest move is her existing
+        refusal rather than a guess. */
+    virtual const CaptureSnapshot* captureForSlot (const CompareSlotState& slot) const = 0;
     virtual const CaptureSnapshot* verifyCapture() const = 0;
     /** THE REFERENCE AS MEASURED, not as filed. Two types in this codebase could answer "which
         reference": echojay::RefEntry is the LIBRARY RECORD (id, path, availability, the measurements

@@ -40,6 +40,7 @@
 #include "EJRigHook.h"                  // SH23: the ask shelf's own press name
 #include "EJClipDrive.h"                // A1c: the clip stage's figure, driven by the CD legs
 #include "EJNewChatNotice.h"            // Sean's B6 option 1: what a new chat says
+#include "EJDialFrame.h"   // C's point 54: the Link's dial-frame ack decision
 #include "SurgicalEqProcessor.h"   // EQG: the band-gain clamp, both directions
 #include "EJPendingClaim.h"     // PC: nothing claims "added" while the add is waiting
 #include "EJShadowRetry.h"       // SR: the copy road resuming when the rack cache arrives
@@ -3232,6 +3233,45 @@ int main()
             check (! echojay::shouldTakeRunRack (false, true, 1, 2),
                    "LC3d control: nothing is taken while no run is active - a serial that moved "
                    "without a live run is not a run starting");
+
+            // ---- C's POINT 54: A LINK'S DIAL-FRAME ACK, ALL FOUR OUTCOMES (29 Oct 2026) -----
+            //
+            // The rule these hold: awaitChainAck decides success on `status == "ok"` ALONE and never
+            // looks inside the payload. I first wrote the Link's handler to ack "ok" always, with
+            // dialArmed carrying the outcome - tidy, and it would have reported an unarmed dial as
+            // ARMED. That is "'sent' is not 'applied'" rebuilt on the far side of the wire, and C
+            // pointed out the fix had no leg, so a regression to always-"ok" would pass in silence.
+            {
+                using echojay::dialframe::dialFrameAck;
+                const auto noDial = dialFrameAck (false, false, 1, 2, false, false);
+                check (juce::String (noDial.status) == "not_applied" && ! noDial.armed
+                         && noDial.why.containsIgnoreCase ("no dial_on_playback"),
+                       "DF13 a frame with no dial object is NOT \"ok\" - and says what was missing",
+                       juce::String (noDial.status) + ": " + noDial.why);
+                const auto badSlot = dialFrameAck (true, false, 7, 2, true, false);
+                check (juce::String (badSlot.status) == "not_applied"
+                         && badSlot.why.containsIgnoreCase ("not a slot on this rack"),
+                       "DF13b ...nor is a frame naming a slot this rack does not have, and the "
+                       "refusal counts the slots so he can see why",
+                       badSlot.why);
+                const auto grKind = dialFrameAck (true, true, 1, 2, /*isLimiterTarget*/ false, false);
+                check (juce::String (grKind.status) == "not_applied"
+                         && grKind.why.containsIgnoreCase ("no road yet for that kind"),
+                       "DF13c a GAIN-REDUCTION dial is refused BY NAME, not swallowed - \"this build "
+                       "cannot\" is a different answer from \"that slot is wrong\", and the step "
+                       "fails with this sentence rather than on an 8 s silence",
+                       grKind.why);
+                const auto notArmed = dialFrameAck (true, true, 1, 2, true, /*armed*/ false);
+                check (juce::String (notArmed.status) == "not_applied" && ! notArmed.armed,
+                       "DF13d A LIMITER TARGET THAT DID NOT ARM IS STILL NOT \"ok\" - this is the "
+                       "leg that would have caught my own first version, which acked \"ok\" always "
+                       "and would have reported an unarmed dial as armed",
+                       juce::String (notArmed.status));
+                const auto armed = dialFrameAck (true, true, 1, 2, true, /*armed*/ true);
+                check (juce::String (armed.status) == "ok" && armed.armed && armed.why.isEmpty(),
+                       "DF13e ...and one that DID arm is \"ok\", with nothing to explain",
+                       juce::String (armed.status));
+            }
 
             // ---- C's POINT 45: A DECLINED STEP IS NOT A SKIPPED ONE (29 Oct 2026) -----------
             //

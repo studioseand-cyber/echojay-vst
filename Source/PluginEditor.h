@@ -1252,6 +1252,9 @@ private:
     // WORDS rather than doing nothing quietly: a stub that silently succeeds is how a caller comes
     // to believe something happened.
     const CaptureSnapshot* latestCapture() const override;
+    /** Kathy's R4-2: the capture the SLOT shows, not the newest one. See EJMatchTab.h for what it
+        can and cannot answer - a nullptr is a real answer and her page refuses on it. */
+    const CaptureSnapshot* captureForSlot (const CompareSlotState& slot) const override;
     const CaptureSnapshot* verifyCapture() const override;
     const ReferenceResult*   selectedReference() const override;
     std::vector<echojay::MatchLink> liveLinks() const override;

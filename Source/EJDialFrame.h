@@ -142,4 +142,59 @@ inline Outcome dialAnswerNow (bool landed, const juce::String& landedWord,
     return Outcome::Working;
 }
 
+
+// ---- WHAT A LINK'S ACK FOR A DIAL FRAME MUST SAY (C's point 54, 29 Oct 2026) ----------------
+//
+// The Link's handler decides this inline, and C pointed out the rule had NO LEG: the gate cited S5
+// and chat_store_guard, neither of which drives that handler, so a regression to always-"ok" would
+// pass in silence and re-create the fault it was written to avoid.
+//
+// THE FAULT IT AVOIDS, because the next reader needs to know why this looks over-careful:
+// awaitChainAck decides success on `status == "ok"` ALONE and never looks inside the payload. So a
+// dial that did not arm, acked "ok", reports itself as ARMED - "'sent' is not 'applied'", rebuilt
+// on the far side of the wire. The status has to carry the answer; dialArmed is for diagnosis.
+struct DialFrameAck
+{
+    const char*  status = "not_applied";   ///< what awaitChainAck will read, and the ONLY thing it reads
+    juce::String why;                      ///< the Link's own words, for a refusal
+    bool         armed = false;            ///< the payload's dialArmed, for diagnosis
+};
+
+/** Pure, so all four outcomes can be held by a leg rather than by reading the handler.
+
+    `slot1` and `rackSlots` are only used to word the out-of-range refusal. */
+inline DialFrameAck dialFrameAck (bool haveDialObject,
+                                  bool slotInRange,
+                                  int slot1,
+                                  int rackSlots,
+                                  bool isLimiterTarget,
+                                  bool armed)
+{
+    DialFrameAck a;
+    if (! haveDialObject)
+    {
+        a.why = "the dial frame carried no dial_on_playback object";
+        return a;
+    }
+    if (! slotInRange)
+    {
+        a.why = "slot " + juce::String (slot1) + " is not a slot on this rack ("
+              + juce::String (rackSlots) + " slot(s))";
+        return a;
+    }
+    if (! isLimiterTarget)
+    {
+        // NAMED, never swallowed: "this build cannot" is a different answer from "that slot is
+        // wrong", and the model needs to know which half is missing.
+        a.why = "this Link can arm a limiter's loudness target on a named slot; it has no road yet "
+                "for that kind of dial";
+        return a;
+    }
+    a.armed  = armed;
+    a.status = armed ? "ok" : "not_applied";
+    if (! armed)
+        a.why = "the target could not be armed on slot " + juce::String (slot1)
+              + " - see this Link's log for the reason it gave";
+    return a;
+}
 } // namespace echojay::dialframe

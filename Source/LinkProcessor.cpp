@@ -10,6 +10,7 @@
 #include "LinkEditor.h"
 #include "LinkShm.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
+#include "EJDialFrame.h"   // A1b: the dial-frame ack decision, pure and legged
 #include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
 #include "EedKeyDetectorProcessor.h"   // hosted-detector frame preference (Tier 1)
 #include "EedKeyFeed.h"   // COMMIT 4: KeyDisplayPrefs (keyShowRelative)
@@ -4426,36 +4427,25 @@ void LinkProcessor::pollChainCommand()
                 // For a dial frame the two questions are one anyway: the command's purpose IS the
                 // arm. dialArmed stays in the payload for diagnosis, and `reason` carries the words.
                 writeChainAck (seq, armed ? "ok" : "not_applied", { note }, juce::var (one), why,
-                               chainHost.getNumSlots());
+                               chainHost.getNumSlots());   // status from dialFrameAck, never invented here
             };
 
-            if (fo == nullptr || dpo == nullptr)
-            {
-                ackDial (false, "the dial frame carried no dial_on_playback object",
-                         "dial frame: nothing to arm");
-                EchoJay_NSLog ("EJLink: a dial frame arrived with no dial_on_playback - answered, not armed");
-                return;
-            }
-            if (slot0 < 0 || slot0 >= chainHost.getNumSlots())
-            {
-                const auto why = "slot " + juce::String (slot1) + " is not a slot on this rack ("
-                               + juce::String (chainHost.getNumSlots()) + " slot(s))";
-                ackDial (false, why, "dial frame: no such slot");
-                EchoJay_NSLog (("EJLink: a dial frame named " + why + " - answered, not armed").toRawUTF8());
-                return;
-            }
-
+            // ---- THE DECISION IS PURE AND LEGGED (echojay::dialframe::dialFrameAck) ---------
+            // C's point 54: the status-carries-the-answer rule had no leg, and a regression to
+            // always-"ok" would have passed in silence. All four outcomes come from one function
+            // now, which the guard holds directly.
+            const bool haveDial   = (fo != nullptr && dpo != nullptr);
+            const bool slotInRange = haveDial && slot0 >= 0 && slot0 < chainHost.getNumSlots();
             float tl = 0.0f;
-            if (! LoudnessLoop::dialIsLimiterTarget (dial, &tl))
+            const bool isLimiter = haveDial && LoudnessLoop::dialIsLimiterTarget (dial, &tl);
+            if (! haveDial || ! slotInRange || ! isLimiter)
             {
-                // NAMED, not swallowed: the model needs to know which half is missing, and "this
-                // build cannot" is a different answer from "that slot is wrong".
-                const juce::String why = "this Link can arm a limiter's loudness target on a named "
-                                         "slot; it has no road yet for that kind of dial";
-                ackDial (false, why, "dial frame: this kind is not armable here");
-                EchoJay_NSLog (("EJLink: a dial frame on slot " + juce::String (slot1)
-                                + " is not a limiter target, and this build has no other dial road - "
-                                  "answered with the reason, never silently").toRawUTF8());
+                const auto a = echojay::dialframe::dialFrameAck (haveDial, slotInRange, slot1,
+                                                                 chainHost.getNumSlots(), isLimiter,
+                                                                 false);
+                ackDial (a.armed, a.why, "dial frame: not armed");
+                EchoJay_NSLog (("EJLink: a dial frame was answered and NOT armed - " + a.why
+                                + " (seq " + juce::String (seq) + ")").toRawUTF8());
                 return;
             }
 
@@ -4472,10 +4462,9 @@ void LinkProcessor::pollChainCommand()
             const bool armed = loudnessLoop_.armTargetFromDial (tl, slot0, ctl, ceil,
                                                                 numOr ("avg_limit_db"),
                                                                 numOr ("peak_limit_db"));
-            ackDial (armed,
-                     armed ? juce::String()
-                           : "the target could not be armed on slot " + juce::String (slot1)
-                             + " - see this Link's log for the reason it gave",
+            const auto a = echojay::dialframe::dialFrameAck (true, true, slot1,
+                                                             chainHost.getNumSlots(), true, armed);
+            ackDial (a.armed, a.why,
                      armed ? "dial frame: armed on slot " + juce::String (slot1)
                            : "dial frame: not armed");
             EchoJay_NSLog ((juce::String ("EJLoudness: a DIAL FRAME ")
