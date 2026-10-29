@@ -85,6 +85,7 @@ inline constexpr const char* kMatchReportInChatLabel = "Report in chat";
 inline juce::Identifier matchPageReportInChatId() { return "ejMatchReportInChat"; }
 inline juce::Identifier matchPagePlanLineId()     { return "ejMatchPlanLine"; }
 inline juce::Identifier matchPagePlanBusyId()     { return "ejMatchPlanBusy"; }
+inline juce::Identifier matchPageLastReportId()   { return "ejMatchLastReport"; }
 
 // -----------------------------------------------------------------------------
 // FIGURES THE BLOCK NEEDS THAT THE SIDES DO NOT CARRY
@@ -260,6 +261,86 @@ inline bool matchPostReport (MatchHost& host, const MatchHandOff& h, juce::Named
     host.postToSessionChat (kMatchReportKind, payload);
     page.set (matchPageReportInChatId(), true);
     return true;
+}
+
+// -----------------------------------------------------------------------------
+// ONE REPORT PER COMPARISON (round 6b)
+// -----------------------------------------------------------------------------
+//
+// A comparison is the mix slot's capture (its id, as captureForSlot returns
+// it), the reference, the window and the capture's hop count. A press whose
+// comparison is the one this page last posted plays the morph again and points
+// at the report already in the chat instead of posting a second. Any of the
+// four changed is a new comparison, and a new report.
+//
+// A LIVE MIX HAS NO IDENTITY. Its slot holds no capture, so nothing says two
+// presses compared the same audio, and every such press posts.
+//
+// NO LINK. postToSessionChat returns no message id and MatchHost cannot open
+// the chat at a message, so "Report in chat" is plain text (REQUESTS_FOR_A_6).
+
+struct MatchReportIdentity
+{
+    juce::String captureId, referencePath;
+    MatchWindowMode mode = MatchWindowMode::Whole;
+    int hops = 0;
+};
+
+/** The comparison a press is about; nullopt when the mix slot holds no capture. */
+inline std::optional<MatchReportIdentity> matchReportIdentityOf (const MatchPageView& v)
+{
+    if (! v.mixCapture) return std::nullopt;
+    return MatchReportIdentity { v.mixCapture->id, v.refKey, v.w.mode, v.mixCapture->hopFramesHops };
+}
+
+/** One string per comparison, for the page's properties. JSON, so no field
+    can run into the next. */
+inline juce::String matchReportIdentityKey (const MatchReportIdentity& i)
+{
+    juce::Array<juce::var> a { juce::var (i.captureId), juce::var (i.referencePath),
+                               juce::var (i.mode == MatchWindowMode::Whole ? "whole" : "loudest30"),
+                               juce::var (i.hops) };
+    return juce::JSON::toString (juce::var (a), true);
+}
+
+inline bool matchReportAlreadyPosted (const std::optional<MatchReportIdentity>& id,
+                                      const juce::NamedValueSet& page)
+{
+    if (! id) return false;
+    const auto* last = page.getVarPointer (matchPageLastReportId());
+    return last != nullptr && last->isString() && last->toString() == matchReportIdentityKey (*id);
+}
+
+struct MatchPressActs { bool morph = false, post = false; };
+
+/** What a press does. The morph plays whenever the proposal is playable, on
+    every press; the report posts only for a comparison not already posted. */
+inline MatchPressActs matchPressActs (bool playable, const std::optional<MatchReportIdentity>& id,
+                                      const juce::NamedValueSet& page)
+{
+    MatchPressActs a;
+    a.morph = playable;
+    a.post  = playable && ! matchReportAlreadyPosted (id, page);
+    return a;
+}
+
+enum class MatchReportPost { Posted, AlreadyInChat, NotBuilt };
+
+/** The press's report half, after the morph has started: post a new report, or
+    note the one already in the chat. */
+inline MatchReportPost matchPressReport (MatchHost& host, const MatchHandOff& h,
+                                         const std::optional<MatchReportIdentity>& id,
+                                         juce::NamedValueSet& page)
+{
+    if (matchReportAlreadyPosted (id, page))
+    {
+        page.set (matchPageReportInChatId(), true);
+        return MatchReportPost::AlreadyInChat;
+    }
+    if (! matchPostReport (host, h, page)) return MatchReportPost::NotBuilt;
+    if (id) page.set (matchPageLastReportId(), matchReportIdentityKey (*id));
+    else    page.remove (matchPageLastReportId());
+    return MatchReportPost::Posted;
 }
 
 // -----------------------------------------------------------------------------

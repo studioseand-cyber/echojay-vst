@@ -1262,6 +1262,9 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 // supersedes MATCH_SCREEN_CONTRACT section 10's "sends nothing"): a press that
 // plays posts the match_report to the Whole session chat through MatchHost, and
 // the page says "Report in chat". It applies nothing and writes nothing.
+//
+// ONCE PER COMPARISON (6b): a press whose comparison this page last posted
+// plays the morph and points at that report; it does not post another.
 void EchoJayEditor::MatchPanel::press()
 {
     if (host == nullptr) return;
@@ -1292,7 +1295,9 @@ void EchoJayEditor::MatchPanel::press()
     // move, which is what this test has always meant; `possible` now answers
     // the narrower question of whether the LINE is the optimistic one, and
     // gating the press on that would refuse a move the proposal is holding.
-    if (! ready.playable)
+    const auto id   = echojay::matchReportIdentityOf (view);
+    const auto acts = echojay::matchPressActs (ready.playable, id, getProperties());
+    if (! acts.morph)
     {
         // A REFUSED PROPOSAL CANNOT ANIMATE, so the press SAYS so rather than
         // playing nothing and leaving the user to guess whether it worked.
@@ -1309,9 +1314,15 @@ void EchoJayEditor::MatchPanel::press()
     morphing  = true;
     morphDone = false;
     refusedFor = 0.0f;
-    // 5d: the report, from the same view the press just read.
-    if (echojay::matchPostReport (*host, echojay::matchHandOffOf (*host, view), getProperties()))
-        getProperties().set (echojay::matchPagePlanLineId(), juce::String());
+    // 5d: the report, from the same view the press just read; 6b: once per comparison.
+    if (acts.post)
+    {
+        if (echojay::matchPressReport (*host, echojay::matchHandOffOf (*host, view), id, getProperties())
+                == echojay::MatchReportPost::Posted)
+            getProperties().set (echojay::matchPagePlanLineId(), juce::String());
+    }
+    else
+        getProperties().set (echojay::matchPageReportInChatId(), true);   // already in the chat
     startTimerHz (60);
     repaint();
 }
