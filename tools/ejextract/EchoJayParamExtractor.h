@@ -303,11 +303,18 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
     if (param.isDiscrete())
         pts = juce::jlimit (2, 256, param.getNumSteps());
     juce::String previousText; float previousValue = 0.0f; bool havePrevious = false;
+    // A WRITE THAT NEVER LANDS IS A READOUT (Kathy, 29 Oct: with the silent block a meter's display moves - Maag MAGNUM-K's "Input 1",
+    // bx_digital's "Output Level 1" snapped back to -60 dB at every write): with cfg.process set, a point counts only when the parameter
+    // still holds the value written (within half a step); none landed -> not verified, the control is declined as flat
+    const float landTol = param.isDiscrete() && pts > 1 ? 0.5f / (float) (pts - 1) : 0.02f;
+    int landed = 0;
     for (int i = 0; i < pts; ++i)
     {
         const float n = (float) i / (float) (pts - 1);
         const auto text = readAt (n);
         const float value = param.getValue();
+        if (cfg.process != nullptr && std::abs (value - n) > landTol) { if (refused != nullptr) ++*refused; continue; }   // 29 Oct: not landed
+        ++landed;
         if (refusedAsLagging (cfg.rereadSettled, havePrevious, text, previousText, value, previousValue))
         {
             if (refused != nullptr) ++*refused;
@@ -317,6 +324,7 @@ inline juce::Array<SweepPoint> sweepSetRead (juce::AudioProcessorParameter& para
         previousText = text; previousValue = value; havePrevious = true;
     }
     param.setValue (original); if (cfg.process != nullptr) cfg.process();
+    if (cfg.process != nullptr && landed == 0) { verified = false; out.clear(); }   // 29 Oct: no write landed - a readout, not a control
     return out;
 }
 

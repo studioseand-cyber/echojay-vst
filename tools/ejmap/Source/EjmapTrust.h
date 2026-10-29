@@ -241,12 +241,22 @@ inline bool wordsMatch (const juce::String& lowerName, const char* words)
     return false;
 }
 struct RoleHit { juce::String role; bool unitOk = false; };
+// A SIDECHAIN'S LEVEL IS NOT THE SIGNAL'S (Kathy, 29 Oct; Sean: EchoJay turned Solid Bus Comp's "SC Gain" for its amount): a control named
+// for the sidechain / key (SC, S/C, sidechain, side chain, key) never takes a level role - gain, makeup, output, drive, mix
+inline bool sidechainNamed (const juce::String& lowerName)
+{
+    const auto t = " " + lowerName.replaceCharacters ("-/._()", "      ") + " ";
+    for (const char* w : { " sc ", " s c ", " sidechain ", " side chain ", " key " }) if (t.contains (w)) return true;
+    return false;
+}
 inline RoleHit roleOf (const juce::var& c)
 {
     const auto name = c.getProperty ("name", "").toString().toLowerCase().replaceCharacters ("_", " ");
+    const bool sidechain = sidechainNamed (name);
     for (const auto& r : roleTable())
         if (wordsMatch (name, r.words))
         {
+            if (sidechain) for (const char* lv : { "gain", "makeup", "output", "drive", "mix" }) if (juce::String (r.role) == lv) return {};   // 29 Oct
             const auto u = unitOf (c);
             return { r.role, u.isNotEmpty() && juce::StringArray::fromTokens (r.units, "|", "").contains (u) };
         }
@@ -335,6 +345,31 @@ inline juce::StringArray needsFor (const juce::String& category, bool pitchShift
         { "filter",           { "cutoff|freq" } },
     };
     const auto it = k.find (category.toLowerCase()); return it != k.end() ? it->second : juce::StringArray { "__never__" };   // pitch: the tuner spec decides
+}
+// THE CORE ROLES (Kathy, 29 Oct; Sean: Solid Bus Comp was "certified" while its map had no Threshold, so EchoJay turned SC Gain): what a
+// CERTIFIED plugin must have mapped and read back - every entry met (alternatives '|', "freq+gain" one band), each control proven by
+// read-back. A certification without them is at most what the ordinary rule gives (mapped, else unsure). A compressor's amount is its
+// threshold role (a measured amount: the measurement's threshold); its makeup may be named Makeup, Output or Gain (LA-2A's Gain). Empty:
+// no role-based core (a tuner: the tuner spec decides)
+inline juce::StringArray coreRolesFor (const juce::String& category, bool pitchShift = false)
+{
+    const auto c = category.toLowerCase();
+    if (c == "pitch") return pitchShift ? juce::StringArray { "shift" } : juce::StringArray();
+    static const std::map<juce::String, juce::StringArray> k {
+        { "compressor",       { "threshold", "makeup|output|gain" } },
+        { "limiter",          { "ceiling" } },
+        { "eq",               { "freq+gain" } },
+        { "saturation",       { "drive" } },
+        { "amp_sim",          { "drive|gain" } },
+        { "reverb",           { "decay|mix" } },
+        { "delay",            { "delay_time|mix" } },
+        { "de-esser",         { "threshold|depth|freq" } },
+        { "gate",             { "threshold" } },
+        { "transient_shaper", { "attack|release|mix" } },
+        { "channel_strip",    { "threshold|freq+gain" } },
+        { "filter",           { "cutoff|freq" } },
+    };
+    const auto it = k.find (c); return it != k.end() ? it->second : juce::StringArray();
 }
 // 26 Oct (Kathy): a measured AMOUNT control is a threshold unless its name says it is a depth (range / depth / reduction): a de-esser's
 // compressor-shaped profile takes its Range as the amount, and that is how much it reduces, not where it starts
@@ -918,9 +953,22 @@ inline Level levelFor (const juce::var& map, bool certified, const juce::String&
                        const Measured& measured = {})
 {
     Level L;
-    if (certified) { L.level = "certified"; L.why = "passed its category's v1 certification"; return L; }
-    if (heldWhy.isNotEmpty()) { L.level = "unsure"; L.why = "held: " + heldWhy; return L; }
     const auto R = rolesOf (map, measured);
+    juce::String coreShort;   // 29 Oct: why a certification was held back (a core role not mapped, or not read back)
+    if (certified)
+    {
+        juce::StringArray coreMissing, coreUnread;
+        for (const auto& need : coreRolesFor (map.getProperty ("category", "").toString(), measured.pitchShift))
+        {
+            const auto ctl = meetNeed (need, R, map.getProperty ("category", "").toString());
+            if (ctl.isEmpty()) { coreMissing.add (need); continue; }
+            for (const auto& c : ctl) if (const auto it = rb.find (c); it == rb.end() || ! it->second.proven()) coreUnread.add (c);
+        }
+        if (coreMissing.isEmpty() && coreUnread.isEmpty()) { L.level = "certified"; L.why = "passed its category's v1 certification"; return L; }
+        coreShort = "certification held back - core role " + (! coreMissing.isEmpty() ? "not mapped: " + coreMissing.joinIntoString ("; ") : juce::String())
+                  + (! coreMissing.isEmpty() && ! coreUnread.isEmpty() ? "; " : juce::String()) + (! coreUnread.isEmpty() ? "not read back: " + coreUnread.joinIntoString (", ") : juce::String()) + ". ";
+    }
+    if (heldWhy.isNotEmpty()) { L.level = "unsure"; L.why = coreShort + "held: " + heldWhy; return L; }
     // the role a control met: the part of the need ("threshold|freq", "freq+gain") whose identified controls hold it - never the need string
     auto roleIn = [&R] (const juce::String& need, const juce::String& c) -> juce::String {
         for (const auto& alt : juce::StringArray::fromTokens (need, "|", "")) for (const auto& part : juce::StringArray::fromTokens (alt, "+", ""))
@@ -933,9 +981,9 @@ inline Level levelFor (const juce::var& map, bool certified, const juce::String&
         if (ctl.isEmpty()) { missing.add (need); continue; }
         for (const auto& c : ctl) { const auto it = rb.find (c); if (it == rb.end() || ! it->second.proven()) unread.add (c + (it != rb.end() && it->second.failed > 0 ? " (read-back failed: " + it->second.worst + ")" : " (no read-back yet)")); else { if (L.dialable.addIfNotAlreadyThere (c)) L.roles.push_back ({ roleIn (need, c), c }); } }
     }
-    if (! missing.isEmpty()) { L.level = "unsure"; L.why = "role not identified: " + missing.joinIntoString ("; ") + (R.ambiguous.isEmpty() ? juce::String() : " (ambiguous: " + R.ambiguous.joinIntoString ("; ") + ")"); L.dialable.clear(); L.roles.clear(); return L; }
-    if (! unread.isEmpty()) { L.level = "unsure"; L.why = "not read back: " + unread.joinIntoString ("; "); L.dialable.clear(); L.roles.clear(); return L; }
-    L.level = "mapped"; L.why = "roles identified and read back: " + L.dialable.joinIntoString (", "); return L;
+    if (! missing.isEmpty()) { L.level = "unsure"; L.why = coreShort + "role not identified: " + missing.joinIntoString ("; ") + (R.ambiguous.isEmpty() ? juce::String() : " (ambiguous: " + R.ambiguous.joinIntoString ("; ") + ")"); L.dialable.clear(); L.roles.clear(); return L; }
+    if (! unread.isEmpty()) { L.level = "unsure"; L.why = coreShort + "not read back: " + unread.joinIntoString ("; "); L.dialable.clear(); L.roles.clear(); return L; }
+    L.level = "mapped"; L.why = coreShort + "roles identified and read back: " + L.dialable.joinIntoString (", "); return L;
 }
 
 } // namespace ejmap::trust
