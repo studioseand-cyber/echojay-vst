@@ -15,6 +15,7 @@
 #include "EJCompareFigures.h"     // CompareFig + computeCompareFig, moved out of this file
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
+#include "EJRefHopSeries.h"   // Kathy's R4-1: a stored reference keeps its hop series
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
 #include "EJAgentHome.h"   // ITEM 0b: the agent lives here now, not on the editor
 #include "EchoJayWorkspace.h"   // runRoundTripSelfTest (C1/C3 verify)
@@ -6668,6 +6669,17 @@ void EchoJayProcessor::ensureReferenceLibraryLoaded()
         r.data.peakL         = e.measurements.peakL;
         r.data.peakR         = e.measurements.peakR;
         r.data.oversCount    = e.measurements.oversCount;
+        // ---- THE HOP SERIES, BACK FROM THE INDEX (Kathy's R4-1, 29 Oct 2026) ---------------
+        //
+        // This is the whole point of storing it: a reference rebuilt here is NOT re-analysed, and
+        // one whose file has moved cannot be. Until now hopFrames stayed empty, so the Match page
+        // could not take a loudest-30 window on the reference side - it said so rather than
+        // falling back to the whole file, which is the refusal she wanted kept.
+        //
+        // An entry written before the field, or one whose series is not a whole number of hops,
+        // yields an EMPTY vector and that refusal stands. No series is a fine answer; a wrong one
+        // is not.
+        r.hopFrames = echojay::refHopSeriesFromFloats (e.measurements.hopSeries);
         seeds.push_back (std::move (r));
     }
     refAnalyser.seedFromStored (seeds);
@@ -6917,6 +6929,11 @@ void EchoJayProcessor::commitReferenceLibrary (const juce::String& path, bool re
         m.peakL         = src->data.peakL;
         m.peakR         = src->data.peakR;
         m.oversCount    = src->data.oversCount;
+        // ---- AND ITS HOP SERIES GOES IN WITH IT (Kathy's R4-1, 29 Oct 2026) ----------------
+        // Written by the SAME call that writes the rest of the measurements, so a reference cannot
+        // end up in the index with figures but no series. ~70 KB of JSON for a two-minute
+        // reference, which is the cost Sean weighed when he chose this shape.
+        m.hopSeries     = echojay::refHopSeriesToFloats (src->hopFrames);
         m.eqCurve       = src->eqCurve;
         m.hasEqCurve    = true;
         m.macroBandDb   = src->macroBandAccum;

@@ -167,6 +167,27 @@ struct RefMeasurements
 
         ABSENT, NULL AND ANY NEGATIVE VALUE ALL READ AS -1. */
     int                   oversCount = -1;
+
+    /** ---- THE HOP SERIES, KEPT SO A RESTORED OR MOVED REFERENCE STILL HAS ONE -------------
+        (Kathy's R4-1, open list 162 / pin MA4; Sean chose her shape 1 on 29 Oct 2026.)
+
+        A reference restored from this index is rebuilt with NO re-analysis, and a reference whose
+        file has moved cannot be re-analysed at all. Until this field, `hopFrames` was neither
+        written nor read back, so the Match page could not take a loudest-30 window on the
+        reference side - it said so rather than falling back to the whole file, which is the right
+        refusal and the reason this is here.
+
+        A FLAT FLOAT SERIES, not a vector of HopFrame: this header is a FILE FORMAT and must not
+        start depending on MeterEngine.h. The layout and both conversions live in
+        EJRefHopSeries.h (kRefHopFloats = 16 per hop), named once so the two ends cannot drift.
+
+        APPENDED AT THE END, as `RefEntry::folderId` was, for open list 207's reason - an older
+        reader skips a key it does not know, and an entry written before this field simply has no
+        series, which reads as "no window on this side" rather than as a wrong one.
+
+        Roughly 70 KB of JSON for a two-minute reference, which was the cost Sean weighed when he
+        chose this shape over storing today's figures and paying a schema change for each new one. */
+    std::vector<float>    hopSeries;
 };
 
 struct RefWaveform
@@ -510,6 +531,16 @@ inline RefEntry refEntryFromVar (const juce::var& v)
             const int  oc = ov.isVoid() ? -1 : (int) ov;
             m.oversCount  = oc < 0 ? -1 : oc;
         }
+        // ---- AND THE HOP SERIES BACK (Kathy's R4-1) -----------------------------------------
+        // A length that is not a whole number of hops is dropped by refHopSeriesFromFloats rather
+        // than truncated - half a hop read as a whole one is a wrong figure, and no series at all
+        // makes the page refuse the window, which is the outcome she asked for.
+        if (auto* hs = rdV (tv, "hopSeries").getArray())
+        {
+            m.hopSeries.clear();
+            m.hopSeries.reserve ((size_t) hs->size());
+            for (const auto& v : *hs) m.hopSeries.push_back ((float) (double) v);
+        }
 
         if (auto* a = rdV (mv, "eqCurve").getArray())
         {
@@ -660,6 +691,17 @@ inline juce::var refEntryToVar (const RefEntry& e)
     // word the absent key says it, so a reader never has to guess which kind of
     // silence it is looking at.
     t->setProperty ("oversCount", mm.oversCount);
+    // ---- THE HOP SERIES (Kathy's R4-1) ------------------------------------------------------
+    // Written only when there IS one, so an entry analysed before this field - or one whose
+    // analysis produced no hops - carries no key at all rather than an empty array. An absent key
+    // and an empty one read identically here, and the shorter document is the honest one (4A.2).
+    if (! mm.hopSeries.empty())
+    {
+        juce::Array<juce::var> hs;
+        hs.ensureStorageAllocated ((int) mm.hopSeries.size());
+        for (const auto f : mm.hopSeries) hs.add ((double) f);
+        t->setProperty ("hopSeries", juce::var (hs));
+    }
     m->setProperty ("meters", juce::var (t.get()));
 
     if (mm.hasEqCurve)

@@ -47,6 +47,7 @@
 #include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
 #include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
+#include "EJRefHopSeries.h"      // R4-1: the shipped hop-series conversion
 #include "EJRackViewSignature.h" // his stale strip: the shipped "same rack?" question
 #include "EJReferenceReconcile.h" // the blob-to-index reconciliation: the shipped policy
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
@@ -7382,6 +7383,191 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    && back.entries[0].measurements.hasEqCurve
                    && ! back.entries[0].measurements.hasMacroBands,
                    "ri PIN6: and it parses again identically");
+        }
+
+        // =================================================================
+        // THE HOP SERIES IN THE INDEX (Kathy's R4-1, 29 Oct 2026)
+        //
+        // Her fault: a reference restored from the index is rebuilt with NO
+        // re-analysis, and hopFrames was neither written nor read back - so a
+        // restored (or MOVED, hence unanalysable) reference had no series and
+        // the Match page could not take a loudest-30 window on the reference
+        // side. Sean chose her shape 1: store the series itself.
+        //
+        // What these legs hold is the pair of properties that make such a
+        // store trustworthy: a hop that comes back is the hop that went in,
+        // and a series that cannot be read EXACTLY is not read at all.
+        // =================================================================
+        {
+            std::cout << "the reference's hop series, through the index and back:\n";
+
+            auto hopAt = [] (int i)
+            {
+                MeterEngine::HopFrame h;
+                h.shortTermLufs     = -14.0f - (float) i * 0.25f;
+                h.shortTermTruePeak = -1.0f  - (float) i * 0.125f;
+                for (int b = 0; b < 6; ++b)
+                {
+                    h.bandPower[(size_t) b] = 0.001f * (float) (b + 1) * (float) (i + 1);
+                    h.bandPeak [(size_t) b] = 0.010f * (float) (b + 1) * (float) (i + 1);
+                }
+                h.bandFrames = (std::uint16_t) (3 + i);
+                h.flags      = (std::uint16_t) (i % 2);      // bit 0: the hop was silent
+                return h;
+            };
+
+            std::vector<MeterEngine::HopFrame> hops;
+            for (int i = 0; i < 7; ++i) hops.push_back (hopAt (i));
+
+            // rh PIN1 -- THE ROUND TRIP IS EXACT. Every field, not just the two
+            // loudness figures: bandFrames carries the spectral PROVENANCE
+            // ("0 = NO spectral evidence: unavailable, never a level"), so a
+            // restore that dropped it would read as evidence nobody measured.
+            {
+                const auto f = echojay::refHopSeriesToFloats (hops);
+                check ((int) f.size() == 7 * echojay::kRefHopFloats,
+                       "rh PIN1: sixteen floats a hop, and no padding");
+
+                const auto back = echojay::refHopSeriesFromFloats (f);
+                check (back.size() == hops.size(), "rh PIN1: every hop comes back");
+
+                bool same = back.size() == hops.size();
+                for (size_t i = 0; same && i < back.size(); ++i)
+                {
+                    same = back[i].shortTermLufs     == hops[i].shortTermLufs
+                        && back[i].shortTermTruePeak == hops[i].shortTermTruePeak
+                        && back[i].bandFrames        == hops[i].bandFrames
+                        && back[i].flags             == hops[i].flags;
+                    for (int b = 0; same && b < 6; ++b)
+                        same = back[i].bandPower[(size_t) b] == hops[i].bandPower[(size_t) b]
+                            && back[i].bandPeak [(size_t) b] == hops[i].bandPeak [(size_t) b];
+                }
+                check (same, "rh PIN1: and every field in it is bit-identical, bandFrames included");
+
+                // AND THE ORDER IS KEPT. A series read back in the wrong order
+                // is a wrong window, not a missing one.
+                check (back.front().shortTermLufs == hops.front().shortTermLufs
+                       && back.back().shortTermLufs == hops.back().shortTermLufs
+                       && back.front().shortTermLufs != back.back().shortTermLufs,
+                       "rh PIN1: in the order it was measured in");
+            }
+
+            // rh PIN2 -- A SERIES THAT IS NOT A WHOLE NUMBER OF HOPS IS REFUSED
+            // ENTIRELY. Half a hop read as a whole one is a WRONG figure, and the
+            // page refuses a missing series while it cannot refuse a wrong one.
+            {
+                auto f = echojay::refHopSeriesToFloats (hops);
+                f.pop_back();                                  // one float short
+                check (echojay::refHopSeriesFromFloats (f).empty(),
+                       "rh PIN2: a truncated series yields NO hops, not six and a half");
+
+                f.push_back (0.0f); f.push_back (0.0f);        // one float over
+                check (echojay::refHopSeriesFromFloats (f).empty(),
+                       "rh PIN2: and neither does a series with a stray float on the end");
+
+                std::vector<float> one (echojay::kRefHopFloats - 1, 0.0f);
+                check (echojay::refHopSeriesFromFloats (one).empty(),
+                       "rh PIN2: nor does a single short hop");
+            }
+
+            // rh PIN3 -- EMPTY IS EMPTY, BOTH WAYS. An unanalysed reference has no
+            // series; that must not become one hop of zeroes, which would read as
+            // a measured -0 dB hop with no spectral evidence.
+            {
+                check (echojay::refHopSeriesToFloats ({}).empty(),
+                       "rh PIN3: no hops writes nothing");
+                check (echojay::refHopSeriesFromFloats ({}).empty(),
+                       "rh PIN3: and nothing reads back as no hops");
+            }
+
+            // rh PIN4 -- THROUGH THE REAL INDEX WRITER AND PARSER. This is the leg
+            // that would have caught the original fault: the series has to survive
+            // the FILE, not just the conversion.
+            {
+                ReferenceIndex ix;
+                RefEntry e;
+                e.id = "r_hop0000000001"; e.name = "Ref"; e.path = "/m/ref.wav";
+                e.measurementEpoch = 2;
+                e.availability = RefAvailability::Present;
+                e.measurements.valid         = true;
+                e.measurements.reduction     = "wholeFileAverage";
+                e.measurements.windowSeconds = 0.7f;
+                e.measurements.integrated    = -9.4f;
+                e.measurements.oversCount    = 0;
+                e.measurements.hopSeries     = echojay::refHopSeriesToFloats (hops);
+                ix.entries.push_back (e);
+
+                const auto out = writeReferenceIndex (ix, "2026-10-29T00:00:00Z", "2.26.4");
+                check (out.contains ("hopSeries"), "rh PIN4: the entry is written with its series");
+
+                const auto back = parseReferenceIndex (out);
+                check (back.entries.size() == 1, "rh PIN4: and it parses");
+                const auto& m = back.entries[0].measurements;
+                check ((int) m.hopSeries.size() == 7 * echojay::kRefHopFloats,
+                       "rh PIN4: with the whole series, no hop lost to the file");
+                check (m.oversCount == 0 && std::abs (m.integrated + 9.4f) < 0.01f,
+                       "rh PIN4: and the figures beside it are untouched");
+
+                // AND THE HOPS THE RESTORE WILL HAND THE MATCH PAGE ARE THE HOPS
+                // THE ANALYSIS MEASURED. This is exactly what PluginProcessor's
+                // restore does: refHopSeriesFromFloats over the stored series.
+                const auto restored = echojay::refHopSeriesFromFloats (m.hopSeries);
+                check (restored.size() == hops.size()
+                       && restored[3].bandFrames == hops[3].bandFrames
+                       && std::abs (restored[6].shortTermLufs - hops[6].shortTermLufs) < 0.0001f,
+                       "rh PIN4: and a restore rebuilds the same hops from the file");
+            }
+
+            // rh PIN5 -- AN OLD FILE HAS NO SERIES, AND SAYS SO. Every reference
+            // already in Sean's library was written before tonight. It must restore
+            // with NO hops - the page refuses the reference-side window and says
+            // why - rather than with a fabricated one.
+            {
+                const juce::String old =
+                  "{\"schema\":1,\"measurementEpoch\":2,\"entries\":[{"
+                  "\"id\":\"r_old0000000001\",\"name\":\"Old\",\"path\":\"/m/old.wav\","
+                  "\"measurementEpoch\":2,"
+                  "\"measurements\":{\"reduction\":\"wholeFileAverage\",\"windowSeconds\":10.0,"
+                  "\"meters\":{\"integrated\":-8.0}},"
+                  "\"availability\":{\"state\":\"present\",\"checkedAt\":\"T\"}}]}";
+                const auto ix = parseReferenceIndex (old);
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.valid,
+                       "rh PIN5: an entry written before tonight still parses");
+                check (ix.entries[0].measurements.hopSeries.empty(),
+                       "rh PIN5: with an EMPTY series, not a default-built one");
+                check (echojay::refHopSeriesFromFloats (ix.entries[0].measurements.hopSeries).empty(),
+                       "rh PIN5: so the restore gives no hops and the page refuses the window");
+
+                // ...and rewriting it does not invent one.
+                const auto out = writeReferenceIndex (ix, "T", "2.26.4");
+                check (! out.contains ("hopSeries"),
+                       "rh PIN5: and a rewrite of an old entry writes no series key");
+            }
+
+            // rh PIN6 -- A DAMAGED SERIES IN THE FILE IS REFUSED, NOT REPAIRED.
+            // The file is the one input nobody here controls: an interrupted write
+            // or an edit by hand can leave a part-hop in it.
+            {
+                juce::String src =
+                  "{\"schema\":1,\"measurementEpoch\":2,\"entries\":[{"
+                  "\"id\":\"r_cut0000000001\",\"name\":\"Cut\",\"path\":\"/m/cut.wav\","
+                  "\"measurementEpoch\":2,"
+                  "\"measurements\":{\"reduction\":\"wholeFileAverage\",\"windowSeconds\":1.0,"
+                  // NOTE the series lives INSIDE meters, beside oversCount, which is where
+                  // writeReferenceIndex puts it - a leg that wrote it anywhere else would pass
+                  // while the shipped parser read nothing.
+                  "\"meters\":{\"integrated\":-8.0,\"hopSeries\":[";
+                for (int i = 0; i < echojay::kRefHopFloats + 3; ++i)      // a hop and a bit
+                    src += (i ? "," : "") + juce::String (i);
+                src += "]}},\"availability\":{\"state\":\"present\",\"checkedAt\":\"T\"}}]}";
+
+                const auto ix = parseReferenceIndex (src);
+                check (ix.entries.size() == 1, "rh PIN6: a part-hop series still parses as an entry");
+                check (echojay::refHopSeriesFromFloats (ix.entries[0].measurements.hopSeries).empty(),
+                       "rh PIN6: and yields NO hops, so no window is taken from a part-hop");
+                check (! ix.entries[0].measurements.hopSeries.empty(),
+                       "rh PIN6: the floats are kept as they were found, not silently trimmed");
+            }
         }
 
         // =================================================================
