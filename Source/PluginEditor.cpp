@@ -26,6 +26,7 @@
 #include "ChainJsonView.h"    // hurdle 1 item 3: the words + the built-in alternative by role
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
+#include "EJRackViewSignature.h"   // is the rack in view still the same rack?
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
 #include "EchoJayLogo.h"  // embedded logo PNG — Settings orb card glyph source
 #include "EchoJayVisualiserTexture.h"  // shared SPECTRUM/SPECTROGRAM texture
@@ -10746,22 +10747,22 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
     //
     // A trim signature of the rack IN VIEW, compared across ticks. Cheap, and it asks the DATA rather
     // than hoping a notification arrives.
-    const auto trimSignature = [] (const LinkShm::RackSidecar& r)
-    {
-        double sig = 0.0;
-        for (size_t i = 0; i < r.slots.size(); ++i)
-            sig += (double) r.slots[i].outGainDb * 41.0
-                 + (double) r.slots[i].preTrimDb * 43.0
-                 + (double) (i + 1);          // position IS the slot index here (no n field)
-        return sig;
-    };
+    // ---- HIS STALE STRIP (28 Oct 2026): THIS ASKED ONLY ABOUT TRIMS ------------------------
+    //
+    // It was a sum of out gain, pre-trim and position - no plugin NAME anywhere - so a device
+    // REPLACED in the same slot gave the identical number and the panel was never rebuilt. That is
+    // exactly what he saw: an EchoJay Compressor out, Unfiltered Audio Zip in at slot 1, both at
+    // 0 dB, and the strip went on drawing the Compressor until he reopened the window.
+    //
+    // The question is "is this the same rack", not "have the trims moved", and it lives in
+    // echojay::rackViewSignature where a leg can hold it.
     const auto viewUid = chainViewUid();
-    double trimSigBefore = 0.0;
+    juce::String trimSigBefore;
     bool   haveSigBefore = false;
     if (viewUid.isNotEmpty())
         if (auto itV = processorRef.linkRackCache.find (viewUid);
             itV != processorRef.linkRackCache.end() && itV->second.valid)
-        { trimSigBefore = trimSignature (itV->second.rack); haveSigBefore = true; }
+        { trimSigBefore = echojay::rackViewSignature (itV->second.rack); haveSigBefore = true; }
 
     for (const auto& e : processorRef.getLinkDisplayList())
     {
@@ -10777,11 +10778,14 @@ void EchoJayEditor::refreshLinkRackCache(bool force)
         if (auto itA = processorRef.linkRackCache.find (viewUid);
             itA != processorRef.linkRackCache.end() && itA->second.valid)
         {
-            const double after = trimSignature (itA->second.rack);
-            if (std::abs (after - trimSigBefore) > 1.0e-6)
+            const auto after = echojay::rackViewSignature (itA->second.rack);
+            if (after != trimSigBefore)
             {
-                EchoJay_NSLog (("EJPanel: a trim on " + viewUid + " moved on the Link itself (the level "
-                                "match writes it), so the rows in view are rebuilt - his 17:04 item 2").toRawUTF8());
+                EchoJay_NSLog (("EJPanel: the rack in view (" + viewUid + ") CHANGED on the Link "
+                                "itself - a trim, a bypass, or a slot coming or going - so the rows "
+                                "in view are rebuilt (his 17:04 item 2, and his stale strip of "
+                                "28 Oct, where a plugin replaced in the same slot changed no trim "
+                                "and the strip went on drawing the one that had gone)").toRawUTF8());
                 refreshChainPanelForView (true);
             }
         }

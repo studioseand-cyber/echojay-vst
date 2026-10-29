@@ -47,6 +47,7 @@
 #include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
 #include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
+#include "EJRackViewSignature.h" // his stale strip: the shipped "same rack?" question
 #include "EJReferenceReconcile.h" // the blob-to-index reconciliation: the shipped policy
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
@@ -7381,6 +7382,140 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    && back.entries[0].measurements.hasEqCurve
                    && ! back.entries[0].measurements.hasMacroBands,
                    "ri PIN6: and it parses again identically");
+        }
+
+        // =================================================================
+        // HIS STALE RACK STRIP (28 Oct 2026): "IS THIS THE SAME RACK?"
+        //
+        //   "After he removed an EchoJay Compressor from the Kick Link and the
+        //    agent added Unfiltered Audio Zip there, the V2's rack strip still
+        //    showed EchoJay C... in slot 1 ... Reopening the window showed the
+        //    Zip correctly."
+        //
+        // The data was never stale - refreshLinkRackCache re-reads every sidecar
+        // on the tick. The PANEL was, because it was rebuilt only when the old
+        // trim signature moved, and that signature was
+        //
+        //     outGainDb * 41 + preTrimDb * 43 + (i + 1)
+        //
+        // with no plugin NAME in it. rv PIN2 below holds the exact collision.
+        // =================================================================
+        {
+            std::cout << "the rack in view, and whether a change in it is noticed:\n";
+
+            // The signature it REPLACED, kept here as the thing being disproved. A leg that
+            // only tested the new function would pass just as happily on the old one.
+            auto oldTrimSig = [] (const LinkShm::RackSidecar& r)
+            {
+                double sig = 0.0;
+                for (size_t i = 0; i < r.slots.size(); ++i)
+                    sig += (double) r.slots[i].outGainDb * 41.0
+                         + (double) r.slots[i].preTrimDb * 43.0
+                         + (double) (i + 1);
+                return sig;
+            };
+
+            auto rackOf = [] (std::initializer_list<const char*> names)
+            {
+                LinkShm::RackSidecar r;
+                r.valid = true;
+                for (const auto* n : names)
+                {
+                    LinkShm::RackSidecarSlot s;
+                    s.name = n;
+                    r.slots.push_back (s);
+                }
+                return r;
+            };
+
+            // rv PIN1 -- THE SAME RACK IS THE SAME SIGNATURE. A signature that
+            // changed on its own would rebuild the panel every tick, which is a
+            // different fault with the same cause (nobody can trust it).
+            {
+                const auto a = rackOf ({ "EchoJay Compressor", "Pro-L 2" });
+                const auto b = rackOf ({ "EchoJay Compressor", "Pro-L 2" });
+                check (echojay::rackViewSignature (a) == echojay::rackViewSignature (b),
+                       "rv PIN1: the same rack twice gives the same signature");
+                check (echojay::rackViewSignature (a) == echojay::rackViewSignature (a),
+                       "rv PIN1: and it does not move when nothing does");
+            }
+
+            // rv PIN2 -- HIS CASE. One device out, another in, same slot, both at
+            // 0 dB. THE OLD SIGNATURE DOES NOT MOVE; this one does.
+            {
+                const auto before = rackOf ({ "EchoJay Compressor" });
+                const auto after  = rackOf ({ "Unfiltered Audio Zip" });
+
+                check (std::abs (oldTrimSig (before) - oldTrimSig (after)) < 1.0e-9,
+                       "rv PIN2: the OLD trim signature is identical across the swap - the defect");
+                check (echojay::rackViewSignature (before) != echojay::rackViewSignature (after),
+                       "rv PIN2: and the rack signature CHANGES, so the strip is rebuilt");
+            }
+
+            // rv PIN3 -- AND IT STILL NOTICES WHAT THE OLD ONE DID (his 17:04
+            // item 2: the level match writes a trim on the Link itself).
+            {
+                auto before = rackOf ({ "Pro-C 2" });
+                auto after  = before;
+                after.slots[0].outGainDb = -2.5f;
+                check (echojay::rackViewSignature (before) != echojay::rackViewSignature (after),
+                       "rv PIN3: an out gain moving on the Link still rebuilds the rows");
+
+                auto trim = before;
+                trim.slots[0].preTrimDb = 1.5f;
+                check (echojay::rackViewSignature (before) != echojay::rackViewSignature (trim),
+                       "rv PIN3: and so does a pre-trim");
+
+                // A trim small enough to draw differently must count. The old test's
+                // threshold was 1e-6 on a weighted sum; this is three decimals of dB,
+                // which is finer than anything the rows show.
+                auto tiny = before;
+                tiny.slots[0].outGainDb = 0.01f;
+                check (echojay::rackViewSignature (before) != echojay::rackViewSignature (tiny),
+                       "rv PIN3: including one of a hundredth of a dB");
+            }
+
+            // rv PIN4 -- A BYPASS IS A VISIBLE CHANGE. A bypassed row is drawn
+            // differently, and a bypass toggled ON THE LINK is exactly the kind of
+            // change the window must not sleep through.
+            {
+                auto before = rackOf ({ "EchoJay EQ" });
+                auto after  = before;
+                after.slots[0].bypassed = true;
+                check (echojay::rackViewSignature (before) != echojay::rackViewSignature (after),
+                       "rv PIN4: a bypass toggled on the Link rebuilds the rows");
+            }
+
+            // rv PIN5 -- SLOTS COMING, GOING, AND CHANGING PLACES. The ORDER case is
+            // the second collision in the old sum: two plugins swapped keep every
+            // trim and every position, so the weighted total is unchanged.
+            {
+                const auto one   = rackOf ({ "EchoJay EQ" });
+                const auto two   = rackOf ({ "EchoJay EQ", "Pro-L 2" });
+                const auto swapd = rackOf ({ "Pro-L 2", "EchoJay EQ" });
+
+                check (echojay::rackViewSignature (one) != echojay::rackViewSignature (two),
+                       "rv PIN5: a slot ARRIVING changes it");
+                check (echojay::rackViewSignature (two) != echojay::rackViewSignature (one),
+                       "rv PIN5: and a slot LEAVING changes it");
+                check (std::abs (oldTrimSig (two) - oldTrimSig (swapd)) < 1.0e-9,
+                       "rv PIN5: the old sum could not see a REORDER either");
+                check (echojay::rackViewSignature (two) != echojay::rackViewSignature (swapd),
+                       "rv PIN5: this one can");
+            }
+
+            // rv PIN6 -- AN INVALID SIDECAR IS NOT AN EMPTY RACK. A Link that has
+            // gone quiet publishes nothing; drawing that as "no plugins" is a claim
+            // nobody measured, and the panel has to rebuild when it comes back.
+            {
+                LinkShm::RackSidecar none;                  // valid = false
+                LinkShm::RackSidecar empty; empty.valid = true;
+                check (echojay::rackViewSignature (none) != echojay::rackViewSignature (empty),
+                       "rv PIN6: no sidecar and an EMPTY rack are different signatures");
+                check (echojay::rackViewSignature (none)
+                         != echojay::rackViewSignature (rackOf ({ "EchoJay EQ" })),
+                       "rv PIN6: and coming back with a plugin rebuilds the strip");
+            }
         }
 
         // =================================================================
