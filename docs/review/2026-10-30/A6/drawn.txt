@@ -1,0 +1,8 @@
+scenario A6
+captured 2026-10-30T01:48:09.107Z
+  [user] rig-nomap-marker: add that compressor
+  [assistant] Added Vertigo VSM-3. Settings not confirmed.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added Vertigo VSM-3. Settings not confirmed.
+  closing: Added Vertigo VSM-3. Settings not confirmed.
+    step "add a plugin this build has no map for, with a setting" [done] right="applied" detail="Added it in slot 3. Settings not confirmed: this build cannot read that plugin's values back (the drive), so there is no evidence they were applied." chips=[]

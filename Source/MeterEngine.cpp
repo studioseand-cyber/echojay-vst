@@ -91,6 +91,7 @@ void MeterEngine::prepare(double sampleRate, int samplesPerBlock)
     // does not otherwise clear state, which is why this is stated here as well
     // as in resetState().
     bandAccum = BandAccum();
+    subCorrAccum = SubCorrAccum();   // Kathy's 4d: reset with the band sum, by her spec
     // THE BOUNDED WINDOW, SIZED TO THE SPECTRUM'S. kSpecHistFrames frames at
     // 25 fps is 12.000 s at any sample rate, and the live spectrum reports that
     // span, so the live side of a comparison has one window story. Expressed in
@@ -223,7 +224,8 @@ void MeterEngine::resetState()
     specFrameCount = 0;
     specAccumSamples = 0;
     specAccum.fill(-120.0f);
-    bandAccum = BandAccum();          // the whole-run band sum starts again
+    bandAccum = BandAccum();
+    subCorrAccum = SubCorrAccum();   // Kathy's 4d: reset with the band sum, by her spec          // the whole-run band sum starts again
     for (auto& r : boundedRings) r.clear();   // and so does the bounded window
     // specFrameCounter stays monotonic across resets so UI fetches stay valid
     wfMinAccum = wfMaxAccum = 0.0f;
@@ -641,6 +643,14 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         double subR = applyBiquad(sR, corrSubLpf, subLpxR1, subLpxR2, subLpyR1, subLpyR2);
         subCorrSum += subL * subR;
         subEnL += subL * subL; subEnR += subR * subR;
+        // ---- AND THE WHOLE-RUN SUMS, FROM THE SAME TWO VALUES (Kathy's 4d, 29 Oct 2026) ------
+        // The block sums above feed the DISPLAY figure (an EMA per block); these feed the
+        // whole-file one her reference needs. The same subL and subR, so the two cannot be two
+        // definitions of the quantity - which is the thing her spec is written to avoid.
+        subCorrAccum.sumLR += subL * subR;
+        subCorrAccum.sumLL += subL * subL;
+        subCorrAccum.sumRR += subR * subR;
+        ++subCorrAccum.samples;
         // Mid (HPF 120Hz then LPF 5kHz, cascaded)
         double midL = applyBiquad(sL, corrMidHpf, midHpxL1, midHpxL2, midHpyL1, midHpyL2);
         midL = applyBiquad(midL, corrMidLpf, midLpxL1, midLpxL2, midLpyL1, midLpyL2);
@@ -761,6 +771,11 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         // Everything it needs is in hand at this exact point: the 3 s short-term window above, the
         // 3 s true-peak window beside it, and this hop's band accumulation. Appended into reserved
         // capacity, so no allocation on the audio thread; past the cap it stops and sets the flag.
+        // THE ROLLING READER'S RESET, honoured HERE because this is where this thread owns the
+        // vector (item 4, 29 Oct 2026). clear() keeps the reserved capacity, so the push_back
+        // below still cannot allocate - which is the only reason the audio thread may append.
+        if (hopResetRequested_.exchange (false, std::memory_order_relaxed))
+        { hopFrames_.clear(); hopsTruncated_ = false; }
         if ((int) hopFrames_.size() < kMaxHopFrames)
         {
             HopFrame hf;
@@ -1154,6 +1169,27 @@ MeterEngine::SpectrumWindow MeterEngine::reduceSpectrumWindow(bool useMean) cons
 
     w.valid = true;
     return w;
+}
+
+// ---- THE WHOLE-RUN SUB CORRELATION (Kathy's 4d, her SPEC_corrSub_for_A, 29 Oct 2026) -------
+//
+// ABSENT, NOT ZERO, when nothing was measured or when either side carries no energy: 0 is a real
+// correlation (a perfectly decorrelated sub) and a reader that cannot tell it from "unavailable"
+// would publish one as the other. Her spec asks for exactly this, and it is the same discipline
+// the overs count (-1) and the hop series (empty) keep.
+//
+// THE GATE IS THE ENGINE'S OWN (bandEnergyGate, ~-70 dBFS RMS in the band), so "silent" means
+// here what it means everywhere else in this file.
+std::optional<float> MeterEngine::getAccumulatedCorrSub() const
+{
+    if (subCorrAccum.samples <= 0) return std::nullopt;
+    const double gate = 1e-7;      // bandEnergyGate, as processBlock spells it
+    const double meanLL = subCorrAccum.sumLL / (double) subCorrAccum.samples;
+    const double meanRR = subCorrAccum.sumRR / (double) subCorrAccum.samples;
+    if (meanLL <= gate || meanRR <= gate) return std::nullopt;
+    const double denom = std::sqrt (subCorrAccum.sumLL * subCorrAccum.sumRR);
+    if (! (denom > 0.0)) return std::nullopt;
+    return (float) juce::jlimit (-1.0, 1.0, subCorrAccum.sumLR / denom);
 }
 
 MeterEngine::BandAccumResult MeterEngine::getAccumulatedBands() const

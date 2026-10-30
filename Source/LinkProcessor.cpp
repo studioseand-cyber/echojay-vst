@@ -5888,8 +5888,17 @@ void LinkProcessor::writeChainAck(int seq, const juce::String& status,
                                   int slotsAfter)
 {
     // PHASE 1b instrumentation: every chain ack says what it answered.
-    EchoJay_NSLog(("EJChainAck[" + juce::String(seq) + "] link: status="
-                   + status).toRawUTF8());
+    //
+    // ---- AND WHY, IN THE LOG (29 Oct 2026) --------------------------------------------------
+    // This line carried the status alone. So a refusal that DID travel with its reason - the
+    // sequencer always sends one - read in the log as a bare "status=not_applied", and tonight a
+    // rig row that failed to pick the reason out of the ack file left me with a refused replace
+    // and no way to tell which of eight guards had refused it. The reason is already composed;
+    // printing it costs nothing and is the difference between a fault and a mystery.
+    EchoJay_NSLog(("EJChainAck[" + juce::String(seq) + "] link: status=" + status
+                   + (reason.isNotEmpty() ? " reason=" + reason : juce::String())
+                   + (results.isEmpty() ? juce::String()
+                                        : " results=[" + results.joinIntoString ("; ") + "]")).toRawUTF8());
     if (resolvedDir.isEmpty()) return;
     auto id = chainInstanceId();
     if (id.isEmpty()) return;

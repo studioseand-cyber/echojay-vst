@@ -209,6 +209,23 @@ private:
         applied (read back and matching), not_applied (read back and wrong, or the rack says it dialled
         nothing), or not_confirmed (this build cannot read that plugin's values). It never reports the
         settings as applied without having read them. */
+    /** ---- ONE CONTROL, AS A FACT RATHER THAN AS PROSE (C's point 84, fixed 29 Oct 2026) -----
+        What `appliedParamsV` carries to the server. It exists because the first cut of that field
+        was built by splitting the `matched` lines below back apart on their first space, and those
+        lines read "slot 1 Discrete Threshold 1 8.00": control came out as "slot" and value as 1.
+        Every control whose id has a space in it - which is most of them - was wrong on the wire.
+
+        `haveValue` is false where there is no one number to give: a control confirmed by the knob's
+        position (its display cannot be read at all) and an eq_bands entry (many figures). Absent is
+        the honest answer there, and a 0 would have been a figure the plugin never reported. */
+    struct AppliedFact
+    {
+        juce::String control;
+        double value = 0.0;
+        bool   haveValue = false;
+        bool   byPosition = false;      ///< how: "position" rather than "readback"
+    };
+
     struct SettingsCheck
     {
         /** The human-readable lines: "slot 1 attack_db 6.00", "slot 1 attack_db is 0.00 (asked 6.00)". */
@@ -220,6 +237,8 @@ private:
             other without parsing, and parsing a sentence back into its parts is how the raw ids got into
             a sentence in the first place. */
         juce::StringArray matchedIds, missedIds;
+        /** The same matches as AppliedFact, parallel to matchedIds: what went on the wire. */
+        std::vector<AppliedFact> facts;
         /** SEAN'S #6 (16 Oct 2026): the SAME figures, as a person reads them - "threshold -14 dB,
             ratio 4:1". `matched` keeps the slot-and-id form the model is given; this is the row's. */
         juce::StringArray matchedPlain, missedPlain;

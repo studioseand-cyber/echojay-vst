@@ -128,6 +128,23 @@ void ChainHost::clearLoadFailure(const juce::String& name, const juce::String& f
                    "reading of now, never a judgement about ownership").toRawUTF8());
 }
 
+// ---- AND IT EXPIRES (Sean's Test 6 ruling, 29 Oct 2026) -------------------------------------
+//
+//  "Only a real load failure, with the host's error, may be remembered ... and the memory expires
+//   and never blocks 'Try anyway'."
+//
+//  It already self-clears when the plugin loads (clearLoadFailure), which is the better half of
+//  this: a mark that survives the thing working would be a judgement. But a plugin that simply is
+//  never tried again keeps its mark for ever, and tonight's file proves the shape - kHs Transient
+//  Shaper has been withheld from every pick since 17 Oct on one "OS error (-1)" twelve days ago,
+//  across an iLok update and two reboots. Nothing in the old code could ever take that off.
+//
+//  THE EXPIRY LIVES IN THE READER, not in a sweeper and not in the writer. A writer can forget to
+//  age an entry and a sweeper has to be called; a reader cannot be bypassed, because every road to
+//  this list (the inventory, the picks, installedButCannotLoad) comes through here. The file is
+//  rewritten only when something actually aged out, so a read stays free.
+inline constexpr double kLoadFailureExpiryMs = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0;
+
 juce::StringArray ChainHost::loadFailedPluginNames()
 {
     juce::StringArray out;
@@ -136,13 +153,37 @@ juce::StringArray ChainHost::loadFailedPluginNames()
     auto v = juce::JSON::parse(f.loadFileAsString());
     auto* root = v.getDynamicObject();
     if (root == nullptr) return out;
+    const double nowMs = (double) juce::Time::currentTimeMillis();
+    juce::StringArray expired;
     if (auto* failed = root->getProperty("failed").getDynamicObject())
+    {
         for (const auto& kv : failed->getProperties())
             if (auto* e = kv.value.getDynamicObject())
             {
                 const auto n = e->getProperty("name").toString().trim();
-                if (n.isNotEmpty()) out.addIfNotAlreadyThere(n);
+                if (n.isEmpty()) continue;
+                // An entry with no atMs is from before this field existed: aged out rather than
+                // kept for ever, because an undated mark cannot be shown to be current.
+                const auto atV = e->getProperty("atMs");
+                const double atMs = atV.isVoid() ? 0.0 : (double) atV;
+                if (atMs <= 0.0 || nowMs - atMs > kLoadFailureExpiryMs)
+                {
+                    expired.add (kv.name.toString());
+                    EchoJay_NSLog (("EJLoad: \"" + n + "\" was marked as not loading "
+                                    + juce::String ((nowMs - atMs) / 86400000.0, 1)
+                                    + " day(s) ago, which is past the "
+                                    + juce::String ((int) (kLoadFailureExpiryMs / 86400000.0))
+                                    + "-day expiry - the mark is dropped and it is offered again").toRawUTF8());
+                    continue;
+                }
+                out.addIfNotAlreadyThere(n);
             }
+        if (! expired.isEmpty())
+        {
+            for (const auto& k : expired) failed->removeProperty (juce::Identifier (k));
+            f.replaceWithText(juce::JSON::toString(v, true));
+        }
+    }
     return out;
 }
 
@@ -2636,7 +2677,26 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
             // has to exist is `o.slot`, on the ops that act on a slot already there.
             for (const auto& o : ops)
             {
-                if (o.op == "add" || o.slot < 0) continue;      // an add's slot is where it is going, not what is there
+                // ---- AND A REPLACE NAMES WHAT IS COMING, NOT WHAT IS THERE (his Test 4, 29 Oct) --
+                //
+                // *"replace the compressor with Unfiltered Audio Zip"* was refused twice on the
+                // Kick Link, and the Link's own line says why:
+                //
+                //   preflight REFUSED guard=touched-slot-identity slot=0
+                //   op names "Unfiltered Audio Zip" live="EchoJay Compressor"
+                //
+                // Which is the one thing that MUST be true of a replace. The guard above compares
+                // `o.name` with the live slot because for a set, a bypass, a remove or a move that
+                // name describes WHAT IS THERE - and for a replace it describes what is coming, so
+                // the comparison is guaranteed to fail and every such edit was refused
+                // deterministically, for ever, with no base list stated.
+                //
+                // An `add` was already excluded for exactly this reason; `replace` is the same
+                // shape and was missed. The slot-exists check above still runs on it, and when a
+                // base list IS stated the proper comparison happens below - so what is given up
+                // here is only the fallback, on the one op kind where the fallback was never
+                // capable of being right.
+                if (! opNameDescribesLiveSlot (o.op) || o.slot < 0) continue;
                 if (o.slot >= n)
                 {
                     EchoJay_NSLog(("EJEdit: preflight REFUSED guard=touched-slot-gone slot=" + juce::String(o.slot)

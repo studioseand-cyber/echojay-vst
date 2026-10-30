@@ -1255,6 +1255,9 @@ private:
     /** Kathy's R4-2: the capture the SLOT shows, not the newest one. See EJMatchTab.h for what it
         can and cannot answer - a nullptr is a real answer and her page refuses on it. */
     std::optional<CaptureSnapshot> captureForSlot (const CompareSlotState& slot) const override;
+    // item 4 (Sean's Match ruling, 29 Oct 2026): what has played, and dropping it
+    echojay::LiveBufferState liveBufferState() const override;
+    void clearLiveBuffer() override;
     const CaptureSnapshot* verifyCapture() const override;
     const ReferenceResult*   selectedReference() const override;
     std::vector<echojay::MatchLink> liveLinks() const override;
@@ -2975,6 +2978,21 @@ private:
     juce::String connectResetsUid_;       // which rack the count below belongs to
     int          connectResets_     = 0;  // resets spent on it (max echojay::kConnectResetTries)
     juce::String connectGaveUpFor_;       // said the plain sentence for this rack; say it once
+
+    // ---- A SESSION WHOSE RACK MOVED UNDER IT (C's point 81, 29 Oct 2026) -------------------
+    //
+    // The disagreement between the borrowed MIRROR and the Link's own sidecar was being handled
+    // by re-rendering the view and logging - which is why his cards looked right while every
+    // gesture went to a mirror of a rack that no longer existed. The view is not where gestures
+    // live: they address the mirror BY INDEX.
+    //
+    // So the disagreement is remembered here, per rack, and three things follow from it: the edit
+    // gate refuses in words, the session is re-read once per episode, and the flag clears itself
+    // when the two agree again. `mirrorStaleRev_` is the sidecar revision the episode began at,
+    // so one disagreement produces one reset rather than one per tick.
+    juce::String mirrorStaleFor_;
+    int          mirrorStaleRev_ = -1;
+    bool         mirrorStaleResetDone_ = false;
     /** The clean reset a reopen does, without reopening: release every session, lease and engage
         state, then engage `uid` fresh. Called by a Link switch, a Chain tab click and the
         watchdog. `reason` goes in the log line, so the record says which of the three it was. */
@@ -3735,6 +3753,9 @@ private:
         int  maintPasses = 0;
         static constexpr int kMaintPassesAfterSettle = 5;    // 5 x 400 ms = 2 s, then silence
         bool shieldOn_ = false;
+        /** The last read-only sentence this pane wrote into statusText, so it can take ITS OWN
+            words back out and leave anybody else's alone. */
+        juce::String shieldLineWas_;
         juce::String shieldLine_;
         /** The plugin resizing its OWN editor, which is the one late change a stopped timer would
             otherwise miss. Event-driven and exact, where the poll was neither. */
@@ -4523,6 +4544,11 @@ private:
                 inlineHolder.setVisible(true);
                 inlineHolder.addAndMakeVisible(*inlineEditor);
                 layoutInline();            // fills the display area (see below)
+                // AND THE LOCK IS DECIDED NOW, not on the next tick whose "has it moved" test would
+                // compare the policy to shieldOn_'s initial false and do nothing - which would
+                // leave EJShadowView's birth block on for the life of the view. `force`, because
+                // the first application is never a change.
+                maintainShieldIfPolicyMoved(/*force*/ true);
                 repaint();
                 return;
             }
@@ -4700,17 +4726,80 @@ private:
             the answer has moved: three bool reads, a string compare, and an AppKit call only if the
             shield's words or presence are actually wrong. Everything else about that view is left
             alone until something happens to it. */
-        void maintainShieldIfPolicyMoved()
+        /** WOULD A CLICK REACH THE EDITOR ON SCREEN? The user's own question, answered from the
+            product's state rather than from a rule a row would have to keep in step. For a
+            built-in that is JUCE's interception (its only possible lock); for a hosted plugin it
+            is whether the shield is up. False with no editor at all, because there is nothing to
+            click. */
+        bool inlineTakesClicks() const
         {
-            if (!inlineEditor || inlineIsBuiltin) return;
+            if (inlineEditor == nullptr) return false;
+            if (inlineIsBuiltin)
+            {
+                bool self = false, kids = false;
+                inlineEditor->getInterceptsMouseClicks (self, kids);
+                // BOTH, because a knob is a CHILD of the editor: allowing clicks on the editor
+                // while refusing them to its children is still a knob that cannot be grabbed.
+                return self && kids;
+            }
+            return ! shieldOn_;
+        }
+
+        /** The sentence standing between him and that knob, empty when nothing is. */
+        juce::String inlineLockLine() const { return shieldOn_ ? shieldLine_ : juce::String(); }
+
+        void maintainShieldIfPolicyMoved(bool force = false)
+        {
+            if (!inlineEditor) return;
             const bool liveCopy = inlineSlot >= 0 && isLiveViewSlot && isLiveViewSlot(inlineSlot);
             const bool following = liveCopy && liveViewFollowing && liveViewFollowing();
             const bool runHolds  = liveCopy && liveViewRunHoldsRack && liveViewRunHoldsRack();
             const auto policy = echojay::liveViewInputPolicy(liveCopy,
                                                              echojay::kLiveViewControlBuilt,
                                                              following, runHolds);
-            if (policy.blockInput == shieldOn_ && policy.line == shieldLine_) return;
+            if (!force && policy.blockInput == shieldOn_ && policy.line == shieldLine_) return;
             shieldOn_ = policy.blockInput; shieldLine_ = policy.line;
+            // ---- ONE OF OUR OWN DEVICES IS LOCKED BY JUCE, NOT BY THE SHIELD ------------------
+            //
+            // HIS TEST 1, 29 Oct 2026: *"EchoJay devices on a Link: the knobs are still locked
+            // from the V2 (switch off, meter moves)."*  Here is why, and it is the pair of locks,
+            // not either one:
+            //
+            //   * EJShadowView gives every live-view editor a BIRTH BLOCK -
+            //     setInterceptsMouseClicks(false, false) - written on 23 Oct when the view was
+            //     read-only by ruling. JUCE's interception covers a JUCE-drawn editor completely,
+            //     which is exactly what one of our devices has.
+            //   * The road that LIFTS that lock when control is allowed is the native shield, and
+            //     every one of its sites began `if (inlineIsBuiltin) return;` - attachNative, this
+            //     function, the lot - because a built-in has no guest NSView to clip or shield.
+            //
+            // So a third-party plugin's knobs worked (its own NSView never saw JUCE's block, and
+            // the shield road ran for it) and ours could never be moved by anybody, in any build,
+            // with no message - because the thing that would have spoken is a shield that was
+            // never put up. The meter moved throughout, because rendering was never the question.
+            //
+            // The decision still has ONE owner, liveViewInputPolicy. What changes here is that it
+            // now reaches both surfaces: the shield for a guest view, and JUCE's own interception
+            // for ours, which is the only lock a JUCE-drawn editor can have.
+            if (inlineIsBuiltin)
+            {
+                inlineEditor->setInterceptsMouseClicks(!policy.blockInput, !policy.blockInput);
+                // AND IT SAYS SO, because a built-in has no shield to draw the sentence ON and
+                // JUCE's interception lets the click fall THROUGH rather than swallowing it. A
+                // knob that does nothing and explains nothing is the fault he reported; the card's
+                // own status line is the surface this road has. Only this reason is written and
+                // only this reason is cleared, so nothing else that writes there is stamped on.
+                if (policy.blockInput) statusText = policy.line;
+                else if (statusText == shieldLineWas_) statusText.clear();
+                shieldLineWas_ = policy.line;
+                EchoJay_NSLog(("EJPane(main): one of our own devices on slot "
+                               + juce::String(inlineSlot + 1) + " is "
+                               + juce::String(policy.blockInput ? "HELD read-only (" + policy.line + ")"
+                                                                : juce::String("open, so his knobs move"))
+                               + " - a built-in has no guest view, so JUCE's interception is its "
+                                 "lock and the shield never applied to it").toRawUTF8());
+                return;
+            }
             NativeClip::setShield(this, policy.blockInput, policy.line);
             EchoJay_NSLog(("EJPane(main): the shield changed - "
                            + juce::String(policy.blockInput ? "UP: " + policy.line

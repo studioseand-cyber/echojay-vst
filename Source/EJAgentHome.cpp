@@ -239,6 +239,10 @@ sinks.applyChainOps = [this, intentForOps] (const juce::String& uid, const juce:
                 anyAdd = true;
                 addedNamesForUndo.add (oo->getProperty ("name").toString().trim());
             }
+    // The rack this edit is based on is attached by writeChainEditCommand itself, so EVERY road
+    // that sends an edit carries one - the agent's, the Build button's and a rig row's alike (his
+    // Test 4, 29 Oct: this road passed none, and the Link then fell back to comparing the op's own
+    // name, which a replace can never satisfy).
     const int seq = proc_.writeChainEditCommand (uid, ops, juce::var(), "agent", {}, intent);
     if (seq < 0) { if (cb) cb (false, "that rack would not take the change", {}); return; }
     proc_.awaitChainAck (uid, seq, [this, uid, cb, addedNamesForUndo, anyAdd]

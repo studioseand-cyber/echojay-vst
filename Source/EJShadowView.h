@@ -500,6 +500,19 @@ public:
             // that view - the plan's note on guest NSViews - so the report says "clicks are not
             // wired to anything" rather than "clicks are impossible", and stage C is where the
             // road is actually built.
+            // ---- AND THIS IS THE BIRTH STATE ONLY (29 Oct 2026) ----------------------------
+            //
+            // It stays, because a view must not take a gesture before anybody has decided whether
+            // one can travel. What was WRONG for six days is that nothing ever took it off one of
+            // our own devices: the lift road is the native shield, and every site of it returned
+            // early for a built-in because a built-in has no guest NSView. So a JUCE-drawn editor -
+            // which is what an EchoJay device has, and the one kind this call blocks completely -
+            // was locked for the life of the view, which is his Test 1.
+            //
+            // The owner of the decision is echojay::liveViewInputPolicy, and the panel now applies
+            // it to this component as well as to the shield: see
+            // ChainListPanel::maintainShieldIfPolicyMoved, which is forced once the moment the
+            // editor is shown so this block comes off immediately when a gesture may travel.
             ed->setInterceptsMouseClicks (false, false);
         }
         return ed;

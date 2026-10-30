@@ -131,6 +131,21 @@ namespace cmd
     // setPreGain is the KNOB'S OWN gesture, not the agent's op: fix 4 is about a HAND move being undoable,
     // so a row that used the agent op would prove the wrong thing. `press: undo` is the chain bar's Undo.
     inline constexpr const char* setPreGain   = "set_pre_gain";    // { db }  - as if dragged by hand
+    // ---- A SLOT'S OWN BYPASS, BY HAND (C's point 81, 29 Oct 2026) ------------------------------------
+    // There was no per-SLOT gesture in this vocabulary at all, which is why the session/borrow road had
+    // no row: every slot-level command here drives the live view's COPY (liveParam) or the rack as a
+    // whole. A bypass is the cheapest gesture that addresses the borrowed MIRROR BY INDEX, which is the
+    // thing that goes wrong when the Link's rack moves under a session - so LV9g presses this, and it
+    // runs onBypassSlot, the panel's own callback, rather than a copy of it.
+    inline constexpr const char* slotBypass   = "slot_bypass";     // { n }   - a slot's bypass button (1-based)
+    // ---- AN EDIT TO A LINK, DOWN THE ROAD THE AGENT USES (his Test 4, 29 Oct 2026) ------------------
+    // His replace was refused on BOTH Links for three weeks and no row could have found it: every
+    // slot-level command here either drives the live view's copy or adds through the picker, and the
+    // AGENT's edit road - editOps over chain-cmd v2, where the missing base list was - had none at all.
+    // A row sends real ops down it now, so a replace, an add, a remove and a bypass are all testable
+    // without a server (there is no agent in a rig run: "CAPABILITIES: skipped - no live server").
+    //   { uid, ops: "[{\"op\":\"replace\",\"slot\":1,\"name\":\"EchoJay Gain\"}]" }
+    inline constexpr const char* editOps      = "edit_ops";        // { uid, ops (JSON array as text) }
     // ---- EVIDENCE (16 Oct 2026, the matrix's section 6) ------------------------------------------
     // *"Evidence per scenario: a PNG of the editor's final state (chat + rack)."* The host cannot take
     // it: an AU's editor is a native view the host wraps, so a snapshot taken out there is a blank

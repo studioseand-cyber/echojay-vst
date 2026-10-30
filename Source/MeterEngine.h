@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <optional>
 #include "EJBandScheme.h"   // BandPowerRing, the band edges and the ballistics
 #include <array>
 #include <atomic>
@@ -291,6 +292,17 @@ public:
         message thread after the capture state has moved on, exactly as getAccumulatedBands is. */
     const std::vector<HopFrame>& hopFrames() const noexcept { return hopFrames_; }
     bool hopFramesTruncated() const noexcept { return hopsTruncated_; }
+    /** ---- START THE SERIES AGAIN, FOR A ROLLING READER (item 4, 29 Oct 2026) --------------
+        A live buffer must drop its oldest hop for ever, and this series deliberately does not:
+        past kMaxHopFrames it STOPS appending and says so, because decimating 700 KB on the audio
+        thread is a spike nobody asked for. So the rolling ring (EJLiveBuffer.h) copies hops off
+        and asks for the series to start again before it reaches that ceiling.
+
+        A FLAG, NOT A CALL: prepare() clears and RESERVES, which would race the audio thread's
+        push_back and allocate besides. The audio thread honours this at a hop boundary, where it
+        already owns the vector - the same idiom LevelTally uses for its short-term reset. clear()
+        keeps the capacity, so nothing allocates. */
+    void requestHopFramesReset() noexcept { hopResetRequested_.store (true, std::memory_order_relaxed); }
     /** 20 minutes at 10 hops a second. Past it the audio thread stops appending and says so, rather
         than decimating in place - halving 700 KB on the audio thread is a spike nobody asked for. */
     static constexpr int kMaxHopFrames = 12000;
@@ -312,6 +324,30 @@ public:
         std::array<float, 6> db { -120, -120, -120, -120, -120, -120 };
     };
     BandAccumResult getAccumulatedBands() const;
+
+    // ===== THE WHOLE-RUN SUB CORRELATION (Kathy's 4d, her SPEC_corrSub_for_A, 29 Oct 2026) =====
+    //
+    // Her reasoning, which is why this is here and not in her code: corrSub is the L/R correlation
+    // under 120 Hz and it exists in ONE place - this engine's own 120 Hz biquad and the three
+    // per-sample sums inside processBlock. `data.corrSub` is a DISPLAY value (an EMA of each
+    // block's correlation), so averaging it would not give a whole-file figure; and computing it
+    // in ReferenceAnalyser would be a second definition of a quantity the mix side already reads,
+    // which is what this file's own band-accumulator note refuses.
+    //
+    // NO SILENCE GATE, exactly as bandAccum: the choice is recorded in RESULTS_PHASE1B.md and the
+    // sample count is stored so it can be revisited without re-measuring.
+    struct SubCorrAccum
+    {
+        double sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
+        juce::int64 samples = 0;
+    };
+    /** Whole-run correlation under 120 Hz: sumLR / sqrt(sumLL * sumRR).
+
+        ABSENT, NOT ZERO, when there are no samples or when either side's energy is under the
+        engine's own band gate - because 0 IS a real correlation (a perfectly decorrelated sub),
+        and a reader that cannot tell it from "nothing was measured" would report one as the
+        other. The same -1 / nullopt discipline the overs count and the hop series keep. */
+    std::optional<float> getAccumulatedCorrSub() const;
 
     // ===== THE BOUNDED BAND WINDOW (Phase 1c) =====
     // The same statistic as getAccumulatedBands over a BOUNDED span, so a Live
@@ -416,6 +452,7 @@ private:
     };
     // A12: the hop series, plus this hop's band accumulation (reset at every boundary).
     std::vector<HopFrame> hopFrames_;
+    std::atomic<bool>     hopResetRequested_ { false };   // item 4: the rolling reader asked for a fresh series
     std::array<double, 6> hopBandSum_ {};
     std::array<float,  6> hopBandMax_ {};
     int  hopBandFrames_ = 0;
@@ -500,6 +537,8 @@ private:
     // Cleared in prepare() AND resetState(), so a re-prepare cannot carry a
     // previous run's sum into a new one.
     BandAccum bandAccum;
+    // Kathy's 4d: the whole-run sub correlation, beside the band sum it is fed with and reset with
+    SubCorrAccum subCorrAccum;
 
     // The bounded window: six rings of raw per-block band power. Capacity is a
     // compile-time maximum sized for the smallest plausible block at the highest

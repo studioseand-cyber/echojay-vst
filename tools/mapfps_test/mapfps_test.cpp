@@ -54,6 +54,7 @@
 #include "EJGuestPopup.h"        // his R7: what a popup took down, and putting it back
 #include "EJPlaybackHeard.h"     // his 11:30 item 1: which end answers "has he played"
 #include "EJSlotSwallow.h"       // his 11:30 item 2: a slot not passing the programme
+#include "EJLiveBuffer.h"        // item 4: what has played, kept rolling
 #include "LoudnessLoop.h"        // to assert the counting floor is ONE number
 #include "EJReferenceReconcile.h" // the blob-to-index reconciliation: the shipped policy
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
@@ -169,18 +170,42 @@ static juce::String codeOnly (const juce::String& source)
     return out;
 }
 
+/** EVERY SIGNATURE THIS COULD NOT FIND (30 Oct 2026). An empty body makes every
+    `! body.contains (...)` assertion pass, so a miss here does not go red - it goes GREEN, about a
+    function nobody read. That happened to four ik legs tonight. The misses are counted and one
+    assertion at the end of the run reports them, so a signature that stops matching can never
+    again be mistaken for a rule that holds. */
+static juce::StringArray gFnBodyMisses;
+
 static juce::String functionBody (const juce::String& source, const juce::String& signature)
 {
     const int start = source.indexOf (signature);
-    if (start < 0) return {};
+    if (start < 0) { gFnBodyMisses.addIfNotAlreadyThere (signature); return {}; }
+    // "\n}\n" is a closing brace in column ONE, so this only works for an out-of-line definition
+    // or a namespace-scope function. For a member of a nested class in a header, use textAfter.
     const int end = source.indexOf (start, "\n}\n");
-    if (end < 0) return {};
+    if (end < 0) { gFnBodyMisses.addIfNotAlreadyThere (signature + " (no closing brace in column 1)"); return {}; }
     return source.substring (start, end + 2);
+}
+
+/** THE TEXT AFTER A SIGNATURE, BOUNDED (30 Oct 2026).
+
+    functionBody looks for "\n}\n" - a closing brace in column ONE - so it only ever worked for a
+    free function or an out-of-line method. Asked for a member of a nested class in a header, whose
+    closing brace is indented, it returns an EMPTY STRING: and an empty string makes every
+    `! body.contains (...)` assertion pass, so four of my ik legs reported green about a function
+    they had never read. Hence this, and hence every caller asserting the window is non-empty. */
+static juce::String textAfter (const juce::String& source, const juce::String& signature,
+                               int chars = 3000)
+{
+    const int start = source.indexOf (signature);
+    if (start < 0) return {};
+    return source.substring (start, juce::jmin (source.length(), start + chars));
 }
 
 int main()
 {
-    std::cout << "fpForIdentity join + wiring self-test\n";
+    std::cout << "fpForIdentity self-test\n";
 
     const int uidA = 0x1234abcd, uidB = 0x22224444;
 
@@ -8425,6 +8450,590 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
 
         // =================================================================
+        // ITEM 4: WHAT HAS PLAYED, KEPT ROLLING (Sean's Match ruling, 29 Oct)
+        //
+        //   "AI MATCH must work with the "Live signal" slot, using what has
+        //    played, with no separate capture needed."
+        //
+        // Kathy's six requirements are the rules; these legs hold the five of
+        // them that are pure (the sixth, one hop grid for every channel, is a
+        // rig row because it needs more than one channel running).
+        // =================================================================
+        {
+            std::cout << "the live buffer: what has played, and what it is ready for:\n";
+
+            auto hop = [] (float lufs)
+            {
+                MeterEngine::HopFrame h;
+                h.shortTermLufs = lufs;
+                h.bandFrames = 4;
+                return h;
+            };
+            // An engine's series as the message thread finds it: n hops, newest last.
+            auto series = [&] (int n, float from = -14.0f)
+            {
+                std::vector<MeterEngine::HopFrame> v;
+                for (int i = 0; i < n; ++i) v.push_back (hop (from - (float) i * 0.01f));
+                return v;
+            };
+
+            // lb PIN1 -- IT TAKES ONLY WHAT IT HAS NOT SEEN. The tick reads the whole engine
+            // vector every time; taking it all again would count every hop twice a second.
+            {
+                echojay::LiveHopRing r;
+                r.take (series (10), 1.0);
+                check (r.hopCount() == 10, "lb PIN1: ten hops in");
+                r.take (series (10), 1.0);
+                check (r.hopCount() == 10, "lb PIN1: the same ten are not taken twice");
+                r.take (series (25), 2.5);
+                check (r.hopCount() == 25, "lb PIN1: and a grown series contributes only its new hops");
+                check (std::abs (r.playedS() - 2.5f) < 0.001f,
+                       "lb PIN1: 25 hops is 2.5 s on MeterEngine's own 100 ms grid",
+                       juce::String (r.playedS(), 3));
+            }
+
+            // lb PIN2 -- THE ENGINE IS RESET NEAR ITS CEILING AND NOTHING IS LOST. The ring keeps
+            // what it has; the next take starts from the engine's first hop again.
+            {
+                echojay::LiveHopRing r;
+                r.take (series (30), 3.0);
+                r.noteEngineReset();
+                r.take (series (12), 4.2);
+                check (r.hopCount() == 42,
+                       "lb PIN2: an engine reset loses nothing and double-counts nothing",
+                       juce::String ((int) r.hopCount()));
+            }
+
+            // lb PIN3 -- THE CAP DROPS THE OLDEST, which is the whole reason this is not a
+            // MeterEngine: that one stops appending at its ceiling and says so, because dropping
+            // on the audio thread is a spike nobody asked for.
+            {
+                echojay::LiveHopRing r;
+                r.setMaxSeconds (2.0f);                   // 20 hops
+                r.take (series (50), 5.0);
+                check (r.hopCount() == 20, "lb PIN3: the cap holds, oldest first out",
+                       juce::String ((int) r.hopCount()));
+                check (std::abs (r.playedS() - 2.0f) < 0.001f,
+                       "lb PIN3: so playedS is the cap, not the song");
+            }
+
+            // lb PIN4 -- A MARKER MAKES "AFTER" MEAN AFTER (requirement 2). The hops before a
+            // plan's Go are not returned, and they are COUNTED so the page can say how much was
+            // before the change rather than silently shortening the window.
+            {
+                echojay::LiveHopRing r;
+                r.take (series (40), 4.0);
+                r.mark ("the plan's Go");
+                check (std::abs (r.staleS() - 4.0f) < 0.001f,
+                       "lb PIN4: everything before the marker is stale, and counted");
+                check (r.hopCount() == 0 && r.snapshot().empty(),
+                       "lb PIN4: and nothing before it is returned");
+                r.take (series (55), 5.5);               // 15 new hops after the mark
+                check (r.hopCount() == 15 && (int) r.snapshot().size() == 15,
+                       "lb PIN4: only what played after the marker comes back",
+                       juce::String ((int) r.hopCount()));
+                check (r.markReason() == "the plan's Go",
+                       "lb PIN4: and the reason travels, so a log says which marker it was");
+            }
+
+            // lb PIN5 -- THE SNAPSHOT IS A VALUE, which IS the freeze (requirement 3): the report
+            // and its plan describe that audio while the buffer goes on rolling.
+            {
+                echojay::LiveHopRing r;
+                r.take (series (30), 3.0);
+                const auto frozen = r.snapshot();
+                r.take (series (60), 6.0);
+                check (frozen.size() == 30 && r.hopCount() == 60,
+                       "lb PIN5: the frozen copy does not grow when the buffer does",
+                       juce::String ((int) frozen.size()) + " vs " + juce::String ((int) r.hopCount()));
+            }
+
+            // lb PIN6 -- A LOOP IS DESCRIBED, NOT MERGED (requirement 4). The same passage played
+            // twice is kept twice (it is what he heard) and reported as a repeat, so the report
+            // can say "the 1:40 you played, with the chorus twice".
+            {
+                echojay::LiveHopRing r;
+                // ten hops of new material...
+                r.take (series (10), 1.0);
+                // ...then the same ten host positions again, which is a replay of 0.1-1.0 s.
+                r.noteEngineReset();
+                r.take (series (10), 1.0);
+                std::vector<echojay::LiveRepeat> reps;
+                const float uniq = r.uniqueS (&reps);
+                check (r.playedS() > uniq,
+                       "lb PIN6: a replay adds to what was PLAYED",
+                       juce::String (r.playedS(), 2) + " played vs " + juce::String (uniq, 2) + " unique");
+                check (std::abs (uniq - 1.0f) < 0.15f,
+                       "lb PIN6: but not to what is DISTINCT", juce::String (uniq, 2));
+                check (! reps.empty(), "lb PIN6: and the repeat is described rather than merged");
+            }
+
+            // lb PIN7 -- A HOST WITH NO POSITION CANNOT SPOT A LOOP, and says every hop is unique
+            // rather than guessing. An honest overcount beats an invented repeat.
+            {
+                echojay::LiveHopRing r;
+                r.take (series (20), -1.0);              // no position published
+                r.noteEngineReset();
+                r.take (series (20), -1.0);
+                check (std::abs (r.uniqueS() - r.playedS()) < 0.001f,
+                       "lb PIN7: with no host position, nothing is called a repeat");
+            }
+
+            // lb PIN8 -- TONE AT 30 s, DYNAMICS AT 60 (requirement 5), separately, with the
+            // missing one NAMED in words her page can show.
+            {
+                const auto early = echojay::liveBufferState (true, false, 12.0f, 12.0f, 0.0f);
+                check (! early.toneReady && ! early.dynamicsReady,
+                       "lb PIN8: twelve seconds is ready for neither");
+                check (early.missing.contains ("tone")
+                       && early.missing.contains ("dynamics and loudness"),
+                       "lb PIN8: and both are named");
+                const auto mid = echojay::liveBufferState (true, false, 40.0f, 40.0f, 0.0f);
+                check (mid.toneReady && ! mid.dynamicsReady,
+                       "lb PIN8: at forty, the bands are real and the dynamics are not");
+                check (mid.missing.size() == 1 && mid.missing[0].contains ("dynamics"),
+                       "lb PIN8: so only the dynamics are named");
+                const auto full = echojay::liveBufferState (true, false, 75.0f, 75.0f, 0.0f);
+                check (full.toneReady && full.dynamicsReady && full.missing.isEmpty(),
+                       "lb PIN8: past sixty, both");
+            }
+
+            // lb PIN9 -- THE REFERENCE IS NEVER THE MIX (requirement 1). While it is audible the
+            // buffer is paused, the state SAYS so, and `running` is false however the transport is.
+            {
+                const auto aud = echojay::liveBufferState (true, true, 90.0f, 90.0f, 0.0f);
+                check (aud.pausedAudition && ! aud.running,
+                       "lb PIN9: with the reference audible nothing is being kept");
+                check (aud.why.contains ("not the mix"),
+                       "lb PIN9: and the reason says why, in his terms");
+                check (aud.toneReady && aud.dynamicsReady,
+                       "lb PIN9: what was kept BEFORE it still counts - a pause is not a reset");
+                const auto stopped = echojay::liveBufferState (false, false, 5.0f, 5.0f, 0.0f);
+                check (! stopped.running && stopped.why.contains ("transport"),
+                       "lb PIN9: and a stopped transport says that instead");
+            }
+
+            // lb PIN10 -- THE SENTENCE IS HIS (requirement 5's other half).
+            {
+                const auto line = echojay::liveTooShortLine();
+                check (line == "Play at least 30 seconds of the song, then press AI MATCH again.",
+                       "lb PIN10: word for word as he wrote it", line);
+                check (echojay::liveTooShortLine (45.0f).contains ("45 seconds"),
+                       "lb PIN10: and it follows the tunable when the feed moves it");
+            }
+        }
+
+        // =================================================================
+        // KATHY'S 4d: THE WHOLE-FILE SUB CORRELATION (her SPEC_corrSub_for_A)
+        //
+        // She stopped without writing code because the quantity lives inside
+        // MeterEngine's processBlock, and anything there is mine. These are the
+        // four pins her spec says she would add once it landed, written here so
+        // they arrive WITH the code rather than after it - a figure nobody has
+        // driven is a figure nobody has checked.
+        //
+        // DRIVEN THROUGH THE REAL ENGINE, at a real sample rate, with real
+        // audio: a fake would be testing the fake, and the whole point of her
+        // spec is that this quantity has ONE definition.
+        // =================================================================
+        {
+            std::cout << "the whole-file sub correlation (Kathy's 4d):\n";
+            const double sr = 48000.0;
+            const int    blk = 512;
+
+            // A 60 Hz tone, which is under the 120 Hz filter, written into both channels with a
+            // caller-chosen relationship. 2 s of it, so the accumulator has real samples.
+            auto run = [&] (float rightGain, bool silent = false) -> std::optional<float>
+            {
+                MeterEngine eng;
+                eng.prepare (sr, blk);
+                std::vector<float> L ((size_t) blk), R ((size_t) blk);
+                double ph = 0.0;
+                const double step = 2.0 * juce::MathConstants<double>::pi * 60.0 / sr;
+                for (int b = 0; b < (int) (sr * 2.0 / blk); ++b)
+                {
+                    for (int i = 0; i < blk; ++i)
+                    {
+                        const float v = silent ? 0.0f : (float) (0.5 * std::sin (ph));
+                        L[(size_t) i] = v;
+                        R[(size_t) i] = v * rightGain;
+                        ph += step;
+                    }
+                    eng.processBlock (L.data(), R.data(), blk);
+                }
+                return eng.getAccumulatedCorrSub();
+            };
+
+            // cs PIN1 -- A MONO SUB READS 1.0 (her first pin).
+            {
+                const auto c = run (1.0f);
+                check (c.has_value(), "cs PIN1: a mono sub HAS a correlation");
+                check (c.has_value() && std::abs (*c - 1.0f) < 0.02f,
+                       "cs PIN1: and it is 1.0", c.has_value() ? juce::String (*c, 4) : "absent");
+            }
+
+            // cs PIN2 -- AN INVERTED SUB READS -1.0 (her second pin). This is the one that would
+            // catch a sign dropped anywhere between the filter and the read-out.
+            {
+                const auto c = run (-1.0f);
+                check (c.has_value() && std::abs (*c + 1.0f) < 0.02f,
+                       "cs PIN2: an inverted sub reads -1.0",
+                       c.has_value() ? juce::String (*c, 4) : "absent");
+            }
+
+            // cs PIN3 -- A SILENT FILE READS ABSENT, NOT ZERO (her third pin, and the reason the
+            // return type is an optional at all: 0 is a real correlation).
+            {
+                const auto c = run (1.0f, /*silent*/ true);
+                check (! c.has_value(),
+                       "cs PIN3: a silent file has NO correlation, and does not read 0",
+                       c.has_value() ? juce::String (*c, 4) : "absent");
+                MeterEngine fresh; fresh.prepare (sr, blk);
+                check (! fresh.getAccumulatedCorrSub().has_value(),
+                       "cs PIN3: and neither does an engine nothing has been played through");
+            }
+
+            // cs PIN4 -- ONE SIDE SILENT IS ALSO ABSENT. Her spec's rule is "no energy on either
+            // side", and the denominator would be zero: a correlation with one leg missing is not
+            // a small correlation, it is no measurement.
+            {
+                const auto c = run (0.0f);
+                check (! c.has_value(),
+                       "cs PIN4: with one side silent there is no correlation to report",
+                       c.has_value() ? juce::String (*c, 4) : "absent");
+            }
+
+            // cs PIN5 -- AND IT IS NEITHER SENT NOR WRITTEN (her fourth pin, in two files).
+            // C3 rev 3 §2 refuses corrSub on the wire and her block writer never writes it, so a
+            // future hand that adds it to either has to pass this.
+            {
+                std::ifstream fb ("Source/EJMatchBlock.h");
+                std::stringstream sb_; sb_ << fb.rdbuf();
+                const auto blkSrc = codeOnly (juce::String (sb_.str()));
+                // ---- THE SUBJECT ARRIVES WITH HER PR (29 Oct 2026) -----------------------
+                // EJMatchBlock.h is Kathy's, on k/match (PR 1), and is not on this branch yet.
+                // A FAIL here would read as "the block writes corrSub" - the opposite of what
+                // is true - so this says out loud that the file is absent and why. It is not a
+                // pass: the run counts it as a skip, and it starts testing the moment PR 1 is
+                // merged, which is the point of leaving it pinned here.
+                if (blkSrc.isEmpty())
+                {
+                    std::cout << "  SKIP  cs PIN5 (Source/EJMatchBlock.h is on k/match, Kathy's "
+                                 "PR 1, and not on this branch - the pin runs once it is merged)\n";
+                }
+                else
+                {
+                check (! blkSrc.contains ("corrSub"),
+                       "cs PIN5: the match block never writes corrSub (C3 rev 3 section 2 refuses it)");
+                }
+                std::ifstream fp ("Source/EJMatchProposal.h");
+                std::stringstream sp_; sp_ << fp.rdbuf();
+                check (! codeOnly (juce::String (sp_.str())).contains ("corrSub"),
+                       "cs PIN5: and the proposal does not compare it - that needs the same "
+                       "accumulator on the capture side first, or it would be two definitions");
+            }
+        }
+
+        // =================================================================
+        // WHAT MAY BE REMEMBERED AS "THIS PLUGIN DOES NOT LOAD" (his Tests 4
+        // and 6, 29 Oct 2026)
+        //
+        //   "Shadow Hills Mastering Compressor didn't load. ... didn't load
+        //    last time. Try it anyway, or use one of these?"  - and Try anyway
+        //    loaded it at once.
+        //
+        // His instruction: only a real load failure, with the host's error, may
+        // be remembered; it must expire; and it must never block Try anyway.
+        // The plugin's side already behaves that way and his evidence proves
+        // it - the failure file was untouched by tonight's refusals (348 bytes,
+        // mtime 18:24, holding only kHs Transient Shaper and C6 (m)). These
+        // pins are what keep it that way, because the next hand to add a
+        // "remember this failed" call will not know any of the above.
+        // =================================================================
+        {
+            std::cout << "what may be remembered as a plugin that does not load:\n";
+            std::ifstream fch2 ("Source/ChainHost.cpp");
+            std::stringstream sch2; sch2 << fch2.rdbuf();
+            const auto chSrc = codeOnly (juce::String (sch2.str()));
+            check (chSrc.isNotEmpty(), "lf PIN1: found ChainHost.cpp");
+
+            // lf PIN1 -- ONE WRITER, and it is the load path. A refusal, an ack, a step result or a
+            // preflight guard must never be able to mark a plugin unloadable - which is exactly what
+            // happened on the SERVER's side tonight, and the reason this side needs holding.
+            {
+                int writers = 0, at = 0;
+                while ((at = chSrc.indexOf (at, "recordLoadFailure(")) >= 0) { ++writers; at += 18; }
+                // one definition + one call site
+                check (writers == 2,
+                       "lf PIN1: recordLoadFailure has exactly ONE caller, beside its definition",
+                       juce::String (writers) + " occurrence(s)");
+                const auto loader = functionBody (juce::String (sch2.str()),
+                                                  "void ChainHost::completeLoad");
+                check (loader.isEmpty() || loader.contains ("recordLoadFailure")
+                       || chSrc.contains ("recordLoadFailure(fullDesc.name, fullDesc.pluginFormatName,"),
+                       "lf PIN1: and it is called with the description and the host's own reason");
+            }
+
+            // lf PIN2 -- A SUCCESSFUL LOAD CLEARS IT. Better than an expiry, which is what he asked
+            // for: a mark that survives the plugin working is a judgement, and this one is "a
+            // reading of now" in the code's own words.
+            check (chSrc.contains ("clearLoadFailure(desc.name, desc.pluginFormatName)"),
+                   "lf PIN2: a plugin that loads has its does-not-load mark cleared");
+
+            // lf PIN3 -- THE EDIT ROAD CANNOT MARK ANYTHING. The executor may TRANSLATE a load
+            // failure's wording (plainLoadFailureText) and must never record one: a `not_applied`
+            // from a preflight guard is not a load failure, which is the whole of tonight's false
+            // block.
+            {
+                std::ifstream fdo ("Source/EJAgentExecutorDo.cpp");
+                std::stringstream sdo; sdo << fdo.rdbuf();
+                const auto doSrc = codeOnly (juce::String (sdo.str()));
+                check (doSrc.isNotEmpty(), "lf PIN3: found the executor");
+                check (! doSrc.contains ("recordLoadFailure"),
+                       "lf PIN3: the edit road records no load failure, however an edit ends");
+                check (doSrc.contains ("plainLoadFailureText"),
+                       "lf PIN3: it only translates one the LOAD path already recorded");
+            }
+
+            // lf PIN4 -- AND THE MARK ONLY SUPPRESSES AN OFFER. It is read by
+            // installedButCannotLoad, which feeds the model's inventory - so a deliberate attempt
+            // ("Try anyway", the picker, a saved chain) is never blocked by it. That is why his Try
+            // anyway loaded Shadow Hills at once, and it is a property worth keeping.
+            {
+                int readers = 0, at = 0;
+                while ((at = chSrc.indexOf (at, "loadFailedPluginNames()")) >= 0) { ++readers; at += 20; }
+                check (readers >= 2, "lf PIN4: the mark is read where the offers are built",
+                       juce::String (readers) + " reader(s)");
+                const auto cannot = functionBody (juce::String (sch2.str()),
+                                                  "std::vector<std::pair<juce::String, juce::String>> ChainHost::installedButCannotLoad");
+                check (cannot.contains ("loadFailedPluginNames"),
+                       "lf PIN4: ...which is installedButCannotLoad, the inventory's own list");
+                check (! chSrc.contains ("if (loadFailedPluginNames().contains (desc.name)) return"),
+                       "lf PIN4: and nothing refuses a deliberate load because of it");
+            }
+
+            // lf PIN5 -- AND IT EXPIRES, IN THE READER. His words: "the memory expires and never
+            // blocks Try anyway". tonight's file is the case for it: kHs Transient Shaper has been
+            // withheld from every pick since 17 Oct on one OS error twelve days ago, across an iLok
+            // update and two reboots, and nothing in the old code could take that off. The expiry
+            // is in loadFailedPluginNames because every road to the list comes through there - a
+            // sweeper has to be called and a writer can forget.
+            {
+                const auto reader = functionBody (juce::String (sch2.str()),
+                                                  "juce::StringArray ChainHost::loadFailedPluginNames");
+                check (reader.isNotEmpty(), "lf PIN5: found the one reader");
+                check (reader.contains ("kLoadFailureExpiryMs"),
+                       "lf PIN5: the expiry is applied by the READER, so no caller can skip it");
+                check (reader.contains ("atMs <= 0.0"),
+                       "lf PIN5: an undated entry ages out too - it cannot be shown to be current");
+                check (reader.contains ("replaceWithText"),
+                       "lf PIN5: and an aged entry leaves the file, so the mark really is gone");
+                check (chSrc.contains ("kLoadFailureExpiryMs = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0"),
+                       "lf PIN5: seven days, in days-hours-minutes so the number can be read");
+                // The arithmetic the entries will actually meet, with tonight's two for figures.
+                const double day = 86400000.0, expiry = 7.0 * day;
+                const double kHsAgeMs = 1793301932738.0 - 1792221918947.0;   // marked 17 Oct, read 19:25
+                const double c6AgeMs  = 1793301932738.0 - 1793298247181.0;   // marked 18:24 tonight
+                check (kHsAgeMs > expiry,
+                       "lf PIN5: kHs Transient Shaper, marked 12.5 days ago, is past it and is offered again",
+                       juce::String (kHsAgeMs / day, 1) + " days");
+                check (c6AgeMs < expiry,
+                       "lf PIN5: C6 (m), marked tonight, is inside it and stays withheld",
+                       juce::String (c6AgeMs / day, 3) + " days");
+            }
+        }
+
+        // =================================================================
+        // WHAT appliedParamsV CARRIES (C's point 84; his item 5, 29 Oct 2026)
+        //
+        //   "The closing says 'not confirmed' when the read-back matched."
+        //
+        // The 17:25 build posted the read-back only as prose - applied_params
+        // "Discrete Threshold 1 8.00, Discrete Threshold 2 8.00" - so the
+        // server had to parse a sentence to learn what was confirmed, and
+        // closed "not confirmed" over a read-back that had matched.
+        //
+        // The structured field fixes that, and MY FIRST CUT OF IT had the same
+        // disease it was treating: it built the list by splitting those display
+        // strings on their FIRST SPACE. The add road's strings read "slot 1
+        // Discrete Threshold 1 8.00", so control came out as "slot" and value
+        // as 1; on the set road, control "Discrete" and value 0. Every control
+        // with a space in its name - most of them - was wrong on the wire, and
+        // B would have built against it. These pins are why neither road may go
+        // back to reading its own prose.
+        // =================================================================
+        {
+            std::cout << "what appliedParamsV carries:\n";
+            std::ifstream fdo2 ("Source/EJAgentExecutorDo.cpp");
+            std::stringstream sdo2; sdo2 << fdo2.rdbuf();
+            const auto doRaw = juce::String (sdo2.str());
+            const auto doSrc = codeOnly (doRaw);
+            std::ifstream fdh ("Source/EJAgentExecutorDo.h");
+            std::stringstream sdh; sdh << fdh.rdbuf();
+            const auto dhSrc = codeOnly (juce::String (sdh.str()));
+            check (doSrc.isNotEmpty() && dhSrc.isNotEmpty(), "av PIN1: found the executor and its header");
+
+            // av PIN1 -- NEITHER ROAD PARSES A DISPLAY STRING. The bug, stated as the rule it broke.
+            check (! doSrc.contains ("upToFirstOccurrenceOf (\" \""),
+                   "av PIN1: nothing recovers a control id by splitting a line on its first space");
+            check (! doSrc.contains ("m.fromFirstOccurrenceOf (\" \""),
+                   "av PIN1: and nothing recovers its value that way either");
+            {
+                int emits = 0, at = 0;
+                while ((at = doSrc.indexOf (at, "setProperty (\"appliedParamsV\"")) >= 0) { ++emits; at += 24; }
+                check (emits == 2, "av PIN1: both roads emit it - set and add/replace",
+                       juce::String (emits) + " emit(s)");
+            }
+
+            // av PIN2 -- ONE TYPE, SHARED. Two roads with two private copies of this struct is how
+            // they come to disagree about a field name, which is the whole reason the field exists.
+            check (dhSrc.contains ("struct AppliedFact"),
+                   "av PIN2: the fact type is declared ONCE, in the header both roads include");
+            check (dhSrc.contains ("std::vector<AppliedFact> facts;"),
+                   "av PIN2: and SettingsCheck carries them, parallel to matchedIds");
+            check (! doSrc.contains ("struct AppliedFact {"),
+                   "av PIN2: with no second copy in the .cpp");
+
+            // av PIN3 -- RECORDED AT THE BRANCH THAT DECIDES IT. Four sites: bands and a numeric
+            // match on each road, plus the by-position branch which only the set road has.
+            {
+                int pushes = 0, at = 0;
+                while ((at = doSrc.indexOf (at, "facts.push_back")) >= 0) { ++pushes; at += 15; }
+                check (pushes == 5, "av PIN3: five recording sites, one per branch that can match",
+                       juce::String (pushes) + " site(s)");
+                check (doSrc.contains ("facts.push_back ({ \"eq_bands\", 0.0, false, false })"),
+                       "av PIN3: an eq_bands entry records NO value - there is no one number");
+                check (doSrc.contains ("facts.push_back ({ id, 0.0, false, true })"),
+                       "av PIN3: a by-position entry records no value either, and how=position");
+                check (doSrc.contains ("facts.push_back ({ id, got, true, false })"),
+                       "av PIN3: a read-back entry records the id and the value the plugin GAVE");
+            }
+
+            // av PIN4 -- ABSENT, NOT ZERO. A 0 would be a figure the plugin never reported, and B
+            // cannot tell an absent reading from a real zero once it is written as one.
+            {
+                int guards = 0, at = 0;
+                while ((at = doSrc.indexOf (at, "if (fa.haveValue) e->setProperty (\"value\"")) >= 0)
+                { ++guards; at += 20; }
+                check (guards == 2, "av PIN4: both roads omit `value` where there is none",
+                       juce::String (guards) + " guard(s)");
+                check (doSrc.contains ("fa.byPosition ? \"position\" : \"readback\""),
+                       "av PIN4: and `how` names which kind of evidence it is, on both");
+            }
+
+            // av PIN5 -- AND NO SECOND BOOLEAN ON THE SET ROAD. `confirmed` keeps that job there;
+            // `settings_confirmed` is the add/replace road's and still exists, which is the thing I
+            // got wrong twice in one evening. The pin states both halves so neither drifts.
+            // codeOnly, because confirmValues' own COMMENT says why it has no settings_confirmed -
+            // so reading the raw body found the word it exists to assert is absent. A leg that
+            // greps its own explanation is testing the comment.
+            check (! codeOnly (functionBody (doRaw, "void ExecutorDo::confirmValues"))
+                        .contains ("settings_confirmed"),
+                   "av PIN5: the set road has no settings_confirmed - `confirmed` is its word");
+            {
+                int sc = 0, at = 0;
+                while ((at = doSrc.indexOf (at, "setProperty (\"settings_confirmed\"")) >= 0) { ++sc; at += 28; }
+                check (sc == 3, "av PIN5: and the add/replace road still has its own, in three places",
+                       juce::String (sc) + " site(s)");
+            }
+        }
+
+        // =================================================================
+        // WHETHER HIS KNOB CAN BE GRABBED (his Test 1, 29 Oct 2026)
+        //
+        //   "EchoJay devices on a Link: the knobs are still locked from the
+        //    V2 (switch off, meter moves)."
+        //
+        // THE CAUSE WAS A PAIR OF LOCKS, not either one alone:
+        //
+        //   * EJShadowView gives every live-view editor a birth block,
+        //     setInterceptsMouseClicks(false, false), written on 23 Oct when
+        //     the view was read-only by ruling. JUCE's interception covers a
+        //     JUCE-DRAWN editor completely - which is what one of our devices
+        //     has, and the only kind it can block.
+        //   * The road that LIFTS it once control is allowed is the native
+        //     shield, and every site of it began `if (inlineIsBuiltin) return;`
+        //     because a built-in has no guest NSView to shield.
+        //
+        // So a third-party plugin's knobs worked and ours could never be moved
+        // by anyone, in any build, with nothing said - the message would have
+        // been drawn ON the shield that was never raised. Nine control rows
+        // passed throughout, because every one of them moved a VALUE through
+        // setParamValue and none asked whether a mouse could reach the knob.
+        // =================================================================
+        {
+            std::cout << "whether one of our devices' knobs can be grabbed:\n";
+            std::ifstream fpe ("Source/PluginEditor.h");
+            std::stringstream spe; spe << fpe.rdbuf();
+            const auto peRaw = juce::String (spe.str());
+            const auto peSrc = codeOnly (peRaw);
+            std::ifstream fsv ("Source/EJShadowView.h");
+            std::stringstream ssv; ssv << fsv.rdbuf();
+            const auto svSrc = codeOnly (juce::String (ssv.str()));
+            check (peSrc.isNotEmpty() && svSrc.isNotEmpty(),
+                   "ik PIN1: found the panel and the shadow view");
+
+            // ik PIN1 -- THE BIRTH BLOCK IS STILL THERE. It is not the defect and removing it would
+            // be one: a view must not take a gesture before anything has decided one can travel.
+            check (svSrc.contains ("ed->setInterceptsMouseClicks (false, false)"),
+                   "ik PIN1: the live view's editor is still born blocked");
+
+            // ik PIN2 -- AND THE LIFT ROAD NO LONGER EXCLUDES OUR DEVICES. This is the whole bug in
+            // one line: the maintainer used to begin `if (!inlineEditor || inlineIsBuiltin) return;`.
+            {
+                const auto maint = textAfter (peRaw, "void maintainShieldIfPolicyMoved(bool force", 4200);
+                check (maint.isNotEmpty(), "ik PIN2: found the maintainer");
+                const auto maintCode = codeOnly (maint);
+                check (! maintCode.contains ("if (!inlineEditor || inlineIsBuiltin) return;"),
+                       "ik PIN2: it no longer returns early for one of our own devices");
+                check (maintCode.contains ("inlineEditor->setInterceptsMouseClicks(!policy.blockInput"),
+                       "ik PIN2: a built-in's lock is JUCE's interception, driven by the policy");
+                check (maintCode.contains ("NativeClip::setShield"),
+                       "ik PIN2: and a hosted plugin's is still the shield - one decision, two surfaces");
+                check (maintCode.contains ("liveViewInputPolicy"),
+                       "ik PIN2: both read the ONE owner of the decision");
+            }
+
+            // ik PIN3 -- THE FIRST APPLICATION IS FORCED. The maintainer only acts when the answer
+            // MOVED, and shieldOn_ starts false: with an unforced first call, a policy of "open"
+            // compares equal to the initial state, nothing is applied, and the birth block stays on
+            // for the life of the view - the original bug, rebuilt inside its own fix.
+            // peRAW, not peSrc: the call is written `maintainShieldIfPolicyMoved(/*force*/ true)` and
+            // codeOnly strips that comment, so the stripped text reads "...( true)".
+            check (peRaw.contains ("maintainShieldIfPolicyMoved(/*force*/ true)"),
+                   "ik PIN3: showing a built-in's editor applies the policy at once, forced");
+            check (peSrc.contains ("void maintainShieldIfPolicyMoved(bool force = false)"),
+                   "ik PIN3: and `force` exists for exactly that reason");
+
+            // ik PIN4 -- A HELD DEVICE STILL SAYS WHY. JUCE's interception lets the click fall
+            // THROUGH rather than swallowing it, and there is no shield to draw a caption on, so
+            // the card's status line is this road's only surface. His rule: never a silent refusal.
+            check (peSrc.contains ("if (policy.blockInput) statusText = policy.line;"),
+                   "ik PIN4: a built-in held read-only writes the reason to the card");
+            check (peSrc.contains ("else if (statusText == shieldLineWas_) statusText.clear();"),
+                   "ik PIN4: and takes back ONLY its own words, leaving other writers alone");
+
+            // ik PIN5 -- AND A ROW CAN SEE IT. The question the user meets, published, so the gate
+            // never again has nine green control rows over a knob nobody could touch.
+            {
+                std::ifstream fpc ("Source/PluginEditor.cpp");
+                std::stringstream spc; spc << fpc.rdbuf();
+                const auto pcSrc = codeOnly (juce::String (spc.str()));
+                check (pcSrc.contains ("setProperty (\"inlineTakesClicks\""),
+                       "ik PIN5: the rig state answers \"would a click reach this editor\"");
+                check (pcSrc.contains ("setProperty (\"inlineIsBuiltin\""),
+                       "ik PIN5: and says which kind of editor answered, so a row cannot mix them");
+                const auto takes = codeOnly (textAfter (peRaw, "bool inlineTakesClicks() const", 900));
+                check (takes.isNotEmpty(), "ik PIN5: found inlineTakesClicks");
+                check (takes.contains ("return self && kids;"),
+                       "ik PIN5: a knob is a CHILD, so both flags must allow the click");
+                check (takes.contains ("return ! shieldOn_;"),
+                       "ik PIN5: and a hosted plugin answers from the shield");
+            }
+        }
+
+
+        // =================================================================
         // COMMIT 2: WRITING. Every one of these drives the REAL load, merge and
         // commit against a REAL temporary directory. None resolves its own path,
         // which is why they are safe to run at all: ECHOJAY_STATE_HOME does not
@@ -16285,6 +16894,20 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "mr PIN19: and a side with no spectrum at all says that rather than drawing nothing "
                    "and explaining nothing");
         }
+    }
+
+    // ---- AND NO SIGNATURE WENT UNREAD (30 Oct 2026) ------------------------------------------
+    // See gFnBodyMisses. A functionBody that finds nothing returns "", and every negative
+    // assertion against "" passes - so a renamed or moved function turns its legs GREEN instead of
+    // red. One check, at the end, over the whole run.
+    {
+        std::cout << "every signature the legs asked for was found:\n";
+        check (gFnBodyMisses.isEmpty(),
+               "sg PIN1: functionBody found every signature a leg asked for - a miss returns an "
+               "empty body, and an empty body makes every `does not contain` leg pass",
+               gFnBodyMisses.isEmpty() ? juce::String ("none missed")
+                                       : juce::String (gFnBodyMisses.size()) + " missed: "
+                                         + gFnBodyMisses.joinIntoString ("; "));
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";

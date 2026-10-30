@@ -11074,6 +11074,49 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
                     v.slots[k].outGainDb = it->second.rack.slots[k].outGainDb;
                     v.slots[k].preTrimDb = it->second.rack.slots[k].preTrimDb;
                 }
+            // ---- AND THE MIRROR IS NOT JUST RE-RENDERED (C's point 81, 29 Oct 2026) -------
+            //
+            // Everything below this comment fixes the PICTURE. The mirror itself is what bypass,
+            // wet and every parameter write address, by index, and until now nothing re-read it:
+            // his cards were right while his gestures went to a rack that no longer existed. That
+            // is the second half of my own R1/R4 diagnosis and it was left undone.
+            //
+            // echojay::mirrorVsRack compares the plugins IN ORDER, not the count - a replacement
+            // at the same count is the same silent nothing (his 28 Oct stale strip). The flag it
+            // sets makes the edit gate refuse in words, and the reset below re-reads the session
+            // once per episode rather than once per tick.
+            if (haveSidecar)
+            {
+                juce::StringArray mine, theirs;
+                for (const auto& sl : v.slots) mine.add (sl.name.trim());
+                for (const auto& rs : it->second.rack.slots) theirs.add (rs.name.trim());
+                const auto agree = echojay::mirrorVsRack (true, mine, theirs);
+                auto* self = const_cast<EchoJayEditor*> (this);
+                if (! agree.agree)
+                {
+                    const int rev = it->second.rack.revision;
+                    if (self->mirrorStaleFor_ != uid || self->mirrorStaleRev_ != rev)
+                    {
+                        self->mirrorStaleFor_ = uid;
+                        self->mirrorStaleRev_ = rev;
+                        self->mirrorStaleResetDone_ = false;
+                        EchoJay_NSLog (("EJBorrow: this session's mirror of " + uid + " does not "
+                                        "describe that rack any more (mine: " + mine.joinIntoString (", ")
+                                        + " | the Link's: " + theirs.joinIntoString (", ")
+                                        + ") - " + juce::String (agree.why)
+                                        + ". Gestures are REFUSED until it agrees, and the session is "
+                                          "re-read once (C's point 81)").toRawUTF8());
+                    }
+                }
+                else if (self->mirrorStaleFor_ == uid)
+                {
+                    self->mirrorStaleFor_.clear();
+                    self->mirrorStaleRev_ = -1;
+                    self->mirrorStaleResetDone_ = false;
+                    EchoJay_NSLog (("EJBorrow: this session's mirror of " + uid + " describes that "
+                                    "rack again - gestures are live").toRawUTF8());
+                }
+            }
             if (haveSidecar && it->second.rack.slots.size() != v.slots.size())
             {
                 const auto mirrorCount = (int) v.slots.size();
@@ -11361,7 +11404,21 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
                             + chainViewUid() + " from the sidecar, so the sentence has done its job "
                             "(his 11:32: it sat over a working rack for minutes because the read had "
                             "already finished and nothing else ever wrote to the line)").toRawUTF8());
-            chainListPanel.statusText = chainListPanel.restingHint_;
+            // ---- AND IT RETIRES ITS OWN SENTENCE, NOT WHATEVER IS THERE (point 81, 30 Oct) ----
+            //
+            // This wrote restingHint_ over statusText unconditionally, which is the one thing the
+            // sticky-status rule ten lines above ChainListPanel::restingHint_ forbids: *"rebuild
+            // only replaces text IT wrote: a flow message survives until the flow itself replaces
+            // it."*  The sibling branch below (lastAddLine_) already obeys it.
+            //
+            // What that cost: LV9g. The edit gate REFUSED a bypass in words at 00:10:25.747 -
+            // "Catching up with <Link>'s rack... that change wasn't sent." - and this line replaced
+            // that sentence on the next refresh, about a second later. So the product did exactly
+            // what his R4 ruling asks and the user still saw a gesture do nothing and say nothing,
+            // which is the same fault wearing the fix's clothes. The refusal was never the problem;
+            // keeping it on screen was.
+            if (chainListPanel.statusText == line)
+                chainListPanel.statusText = chainListPanel.restingHint_;
             if (line == readNoticeText_) { readNoticeText_.clear(); readNoticeUid_.clear(); }
             chainListPanel.repaint();
         }
@@ -35354,6 +35411,18 @@ void EchoJayEditor::shadowFollowSelection (const juce::String& uid, int slot0)
         if (why == lastShadowWhy_) return;
         lastShadowWhy_ = why;
         EchoJay_NSLog (("EJShadow: no live view - " + why).toRawUTF8());
+        // ---- AND IT REACHES HIM AND THE RIG, NOT ONLY THE LOG (his Test 1, 18:18 on 29 Oct) ---
+        //
+        // His 17:25 test failed and the log could not tell me WHICH of these refusals fired: the
+        // entry line is once per (rack, slot), his session drops messages under 45 Links' meter
+        // lines, and every candidate guard logs the same way. A reason I cannot read is a reason
+        // that costs a round to find.
+        //
+        // So it goes on the card, where he can read it to me in one line, and into the rig state,
+        // where a row can assert it. The card already shows the seed and follow notes; this is the
+        // third of the same kind and it was the one missing.
+        chainListPanel.statusText = "No live view of this slot: " + why;
+        chainListPanel.repaint();
     };
     auto it = processorRef.linkRackCache.find (uid);
     if (it == processorRef.linkRackCache.end() || ! it->second.valid
@@ -38265,6 +38334,39 @@ void EchoJayEditor::serviceRigHook()
         processorRef.setBusGainDb ((float) c.num ("db"));
         note = "rack OUT " + juce::String (processorRef.getBusGainDb(), 1) + " dB";
     }
+    else if (c.name == echojay::rig::cmd::editOps)
+    {
+        // THE PRODUCT'S OWN ROAD: writeChainEditCommand, which is what the agent's edit and the
+        // Build button both call - including the base list it attaches (his Test 4). A row that
+        // wrote the chain-cmd file itself would bypass exactly the half that was broken.
+        const auto uidArg = c.str ("uid");
+        const auto opsTxt = c.str ("ops");
+        const auto parsed = juce::JSON::parse (opsTxt);
+        if (uidArg.isEmpty() || ! parsed.isArray())
+            note = "edit_ops needs a uid and an ops ARRAY (as JSON text)";
+        else
+        {
+            const int seq = processorRef.writeChainEditCommand (uidArg, parsed, juce::var(),
+                                                                "rig edit_ops", {}, {});
+            note = seq >= 0 ? "sent " + juce::String (parsed.getArray()->size()) + " op(s) to "
+                                + uidArg + " as seq " + juce::String (seq)
+                            : "writeChainEditCommand refused it (no uid, no ops, or no shared folder)";
+        }
+    }
+    else if (c.name == echojay::rig::cmd::slotBypass)
+    {
+        // THE PANEL'S OWN CALLBACK, not a copy of it: the point of this command is to travel the
+        // road his hand travels, through chainEditGateRefuses and the borrowed mirror, so a row can
+        // see what a gesture does when that mirror is stale (C's point 81).
+        const int n1 = (int) c.num ("n");
+        if (n1 < 1 || ! chainListPanel.onBypassSlot)
+            note = "no slot " + juce::String (n1) + " to bypass, or no callback";
+        else
+        {
+            chainListPanel.onBypassSlot (n1 - 1);
+            note = "pressed slot " + juce::String (n1) + "'s bypass, the panel's own road";
+        }
+    }
     else if (c.name == echojay::rig::cmd::setPreGain)
     {
         // SHIP 1, FIX 4: the knob's own path, including the undo record - a row that called the agent's
@@ -38903,6 +39005,21 @@ void EchoJayEditor::publishRigState()
     // linkSlots: how many slots the rack IN VIEW has. procSlots is the own rack's and answers a
     // different question; a row that adds a device to a Link and waits for it needs this one.
     o->setProperty ("inlineIsLent", chainListPanel.inlineIsLent);
+    // ---- CAN HIS KNOB BE GRABBED AT ALL (his Test 1, 29 Oct 2026) -------------------------
+    //
+    // Every row about control so far moved a VALUE - cmd::liveParam, which calls setParamValue the
+    // way a device's own editor does - and then checked that it reached the Link. All of them
+    // passed while his Test 1 failed, because the fault was one step earlier than any of them
+    // looked: the editor on screen did not accept a mouse click, so no knob could be taken hold
+    // of. A row cannot press a JUCE knob through this hook, but it CAN read the product's own
+    // answer to "would a click reach this editor", which is the decision the user meets.
+    //
+    // Published for a built-in and a hosted plugin alike: the hosted one answers through the
+    // shield, the built-in through JUCE's interception, and a row should not have to know which.
+    o->setProperty ("inlineIsBuiltin",   chainListPanel.inlineIsBuiltin);
+    o->setProperty ("inlineTakesClicks", chainListPanel.inlineTakesClicks());
+    o->setProperty ("inlineLockLine",    chainListPanel.inlineLockLine());
+    o->setProperty ("inlineEditorFrom",  processorRef.lastSlotEditorSource());
     // The first registered Link, so a row can address one without depending on what some outer
     // variable happens to hold (LV9b spent three runs measuring the own rack for want of this).
     {
@@ -38978,6 +39095,13 @@ void EchoJayEditor::publishRigState()
     // following" from "it is up and refusing every frame" (his 11:20 fault, where the Link kept
     // publishing a replaced plugin's digest and the view said so for ever).
     o->setProperty ("shadowFollowNote", processorRef.shadowFollowNote());
+    // WHY THERE IS NO LIVE VIEW, when there is none (his Test 1, 29 Oct 2026). shadowFollowNote
+    // says why a RUNNING view is not following; this says why one never started, which is the
+    // state his Logic test was in and the one no row could see.
+    o->setProperty ("shadowWhyNone", lastShadowWhy_);
+    o->setProperty ("shadowWantUid", shadowWantUid_);
+    o->setProperty ("shadowWantSlot", shadowWantSlot_ + 1);
+    o->setProperty ("shadowAsking", shadowAsking_);
     o->setProperty ("tickMaxMs",      juce::String (tickMaxMs_, 2).getDoubleValue());
     o->setProperty ("tickMeanMs",     juce::String (tickMeanMs_, 2).getDoubleValue());
     o->setProperty ("borrowActive",  processorRef.borrowActive());
@@ -42203,6 +42327,31 @@ bool EchoJayEditor::chainEditGateRefusesFor(const juce::String& uid)
 {
     const bool remote = uid.isNotEmpty();
     if (remote && uid != chainViewUid()) return false;
+    // ---- A MIRROR THAT NO LONGER DESCRIBES THAT RACK TAKES NO GESTURES (C's point 81) -------
+    //
+    // Twelve paths come through this gate, which is why the refusal belongs here and not at each
+    // of them. A bypass, a wet change or a knob sent while the mirror disagrees lands on whatever
+    // is at that INDEX now - his own R4, on the session road - so it is refused in words instead,
+    // and the words say it is temporary because it is: the re-read below clears it.
+    if (remote && uid == mirrorStaleFor_)
+    {
+        const auto name = processorRef.resolveLinkDisplayName (uid);
+        chainListPanel.statusText = "Catching up with " + (name.isNotEmpty() ? name : juce::String ("this Link"))
+                                  + "'s rack... that change wasn't sent.";
+        chainListPanel.repaint();
+        EchoJay_NSLog (("EJEditGate: refused - this session's mirror of " + uid + " does not describe "
+                        "that rack yet (C's point 81; a gesture now would land on whatever is at that "
+                        "index)").toRawUTF8());
+        // ONE RE-READ PER EPISODE, started from the gesture that found it. The reset applies his
+        // session by the normal road first, so nothing he edited is the price of catching up.
+        if (! mirrorStaleResetDone_ && ! processorRef.borrowApplyInFlight_
+            && borrowReadInFlightUid_.isEmpty())
+        {
+            mirrorStaleResetDone_ = true;
+            resetSessionAndEngage (uid, "the Link's rack changed under this session");
+        }
+        return true;
+    }
     // COMMIT 2c: `borrowed` is the pill's fact - the borrow session engaged for THIS uid.
     const bool borrowed = remote && processorRef.borrowHostIfActiveFor(uid) != nullptr;
     if (chainEditableFor(remote, processorRef.rackLockState(), borrowed)) return false;

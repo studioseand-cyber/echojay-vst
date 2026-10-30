@@ -2309,6 +2309,28 @@ public:
     static bool isBuiltinDescription (const juce::PluginDescription& d) noexcept;
     static bool isBuiltinName        (const juce::String& rawName);
 
+    /** ---- DOES THIS OP'S `name` DESCRIBE WHAT IS IN THE SLOT NOW? (his Test 4, 29 Oct 2026) --
+
+        The edit preflight, with no base list stated, falls back to comparing `op.name` with the
+        live slot - which is right only for the ops whose name describes WHAT IS THERE:
+
+          set, bypass, remove, move, values   the name is the plugin being acted ON   -> true
+          add                                 the name is what is COMING              -> false
+          replace                             the name is what is COMING              -> false
+
+        `replace` was missing from that second group, so every replace sent without a base list was
+        refused deterministically: *"this edit expected "Unfiltered Audio Zip" at slot 1, but the
+        rack has "EchoJay Compressor""* - which is the one thing that must be true of a replace.
+        `add` had been excluded for exactly this reason; this is the same shape, missed.
+
+        A FUNCTION, SO THE TABLE IS LEGGED. The decision was one condition inside a ten-thousand
+        line file and nothing could call it; a new op kind whose name means "what is coming" now
+        has one place to be added and a leg that fails until it is. */
+    static bool opNameDescribesLiveSlot (const juce::String& op) noexcept
+    {
+        return ! (op == "add" || op == "replace");
+    }
+
     // True when slot i holds ANY built-in device (used to route exact apply).
     bool isBuiltinSlot (int i) const;
 

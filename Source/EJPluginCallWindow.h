@@ -96,6 +96,23 @@ struct PluginCallWindow
     that an ordering decision belongs where a guard can ask it directly. */
 enum class SlotEditorSource { None, LiveView, Borrowed, EditSession, LocalRack };
 
+/** The name of one, for a log line or a rig row. NOT for a decision: a row that must know which
+    editor it is looking at has to be TOLD, because "a built-in editor is on screen" is true of the
+    live view's copy and of the own rack's own slot alike - and a control row pointed at the wrong
+    one passes while the road it names is broken (29 Oct 2026, LV9j's first cut). */
+inline const char* slotEditorSourceName (SlotEditorSource s) noexcept
+{
+    switch (s)
+    {
+        case SlotEditorSource::LiveView:    return "live_view";
+        case SlotEditorSource::Borrowed:    return "borrowed";
+        case SlotEditorSource::EditSession: return "edit_session";
+        case SlotEditorSource::LocalRack:   return "local_rack";
+        case SlotEditorSource::None:        break;
+    }
+    return "none";
+}
+
 inline SlotEditorSource slotEditorSource (bool viewIsRemote,
                                           bool liveViewOnThisSlot,
                                           bool borrowActiveForView,

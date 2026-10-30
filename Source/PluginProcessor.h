@@ -6,6 +6,7 @@
 #include <atomic>
 #include "EJSlotMeters.h"   // per-slot meters published by a Link at 30 Hz (25 Oct 2026)
 #include "MeterEngine.h"
+#include "EJLiveBuffer.h"   // item 4: the rolling live series and its rules
 #include "EedLatencyLog.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
@@ -214,6 +215,19 @@ struct CaptureSnapshot {
     float keyConfidence   = 0.0f;   // 0..1
     float keyTuningHz     = 0.0f;   // detected reference pitch
     float keyTuningCents  = 0.0f;   // same offset in cents from A=440
+
+    // ---- IS THIS THE LIVE SIGNAL RATHER THAN A CAPTURE HE TOOK? (item 4, 29 Oct 2026) -------
+    //
+    // AI MATCH can now work from the rolling live series (Sean's ruling), and the snapshot it
+    // builds is capture-SHAPED so her page needs no second type. That makes it indistinguishable
+    // from a capture unless something says otherwise - and a report that called what was playing
+    // "your capture" would be wrong in the one way the Match page cannot afford.
+    //
+    // APPENDED AT THE END, as RefEntry::folderId was and for the same reason (open list 207): the
+    // gate links the previous build's archive, so a field spliced into the middle gives compiled
+    // code one offset table and a test TU another. Default false, so every existing capture and
+    // every restored one reads as what it is.
+    bool isLive = false;
     std::array<float, 12> keyChroma {};   // for the Meters wheel
     int   keyAltRoot      = -1;     // best alternate (-1 = none)
     bool  keyAltMinor     = false;
@@ -847,9 +861,13 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
     /** Closes any gesture the plugin never closed, so a drag is ONE change even on a plugin that
         reports no boundaries at all. Called from the editor's timer beside shadowFollowTick. */
     void shadowControlTick();
+    /** Which road last answered a request to open a slot's editor ("live_view", "local_rack", ...).
+        For a log line and for a rig row; never for a decision. */
+    juce::String lastSlotEditorSource() const { return lastSlotEditorSource_; }
     /** His hand on one of OUR devices' copies, looked for on our own tick rather than only when a
         frame arrives from the Link (his R4, 29 Oct 2026). */
     void pollBuiltinCopyForGestures();
+    juce::String lastSlotEditorSource_ { "none" };
     /** Empty when a gesture may travel; otherwise the one line saying why it may not. */
     juce::String liveControlRefusal() const { return liveControlRefusal_; }
     int liveControlSent() const noexcept { return liveControlSent_; }
@@ -2356,6 +2374,43 @@ private:
     // to the bus for a reason that has nothing to do with the tracks. Idle cost is zero - it is
     // prepared with the others and never fed outside the capture branch.
     MeterEngine captureInEngine;
+
+    // ---- ITEM 4: WHAT HAS PLAYED, KEPT ROLLING (Sean's Match ruling, 29 Oct 2026) ----------
+    //
+    // *"AI MATCH must work with the "Live signal" slot, using what has played, with no separate
+    // capture needed."*  Two more engines, fed at the SAME taps the capture uses - the bus's
+    // output beside meterEngine, and the rack input beside captureInEngine - so the figures are
+    // the capture's figures and C2 §7.3's promise about where each is measured still holds.
+    //
+    // THEY ARE NOT FED WHILE THE REFERENCE IS AUDIBLE. The A/B substitution happens earlier in
+    // processBlock than these taps, so without that gate the buffer would record the reference as
+    // the mix - Kathy's requirement 1, and C's own point (1). `liveFeeding_` is the one fact, set
+    // on the audio thread and read by the tick, so the state he sees and the hops kept cannot
+    // disagree about whether anything is being kept.
+    MeterEngine liveEngine;        // the bus, post-chain: the same tap as meterEngine
+    MeterEngine liveInEngine;      // the rack input: the same tap as captureInEngine (A13)
+    std::atomic<bool> liveFeeding_ { false };
+    echojay::LiveHopRing liveRing_, liveInRing_;
+    float liveBufferMaxS_ = echojay::kLiveBufferMaxSDefault;   // C7's match.liveBufferMaxS
+    double liveRateAt_ = 0.0;                              // the rate the kept hops were measured at; 0 = none yet
+    int  liveMarkedRev_ = -1;                              // the rack revision the last marker was at
+    std::map<juce::String, int> liveMarkedLinkRev_;        // and each Link's, for the same reason
+public:
+    /** Take the hops the engines have made since the last tick, and reset an engine that is near
+        its ceiling (MeterEngine stops appending there rather than dropping, which is right for a
+        capture and useless for a rolling buffer). Message thread, 1 Hz. */
+    void liveBufferTick();
+    /** A plan's Go, a step landing, or any chain change: everything kept so far is BEFORE it, so
+        "after" means after and the verify reads only post-marker audio (requirement 2). */
+    void markLiveBuffer (const juce::String& reason);
+    /** Everything kept, gone. A source change, a sample-rate change, or a large transport jump. */
+    void clearLiveBuffer();
+    /** What has played and what it is ready for - the page's own question (requirement 5). */
+    echojay::LiveBufferState liveBufferState() const;
+    /** The frozen series for the Live slot, by value, or empty when too little has played. */
+    std::vector<MeterEngine::HopFrame> liveSnapshot() const { return liveRing_.snapshot(); }
+    std::vector<MeterEngine::HopFrame> liveSnapshotRackIn() const { return liveInRing_.snapshot(); }
+private:
     MeterEngine abMeterEngine;     // AB playback spectrum only (used by Compare playing-slot panel)
     MeterEngine cmpMeter[2];       // Compare stream meters (one per slot)
     PluginScanner pluginScanner;

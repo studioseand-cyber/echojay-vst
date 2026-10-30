@@ -2612,6 +2612,16 @@ const CaptureSnapshot* EchoJayEditor::latestCapture() const
     return &latestCaptureCache_;
 }
 
+echojay::LiveBufferState EchoJayEditor::liveBufferState() const
+{
+    return processorRef.liveBufferState();
+}
+
+void EchoJayEditor::clearLiveBuffer()
+{
+    processorRef.clearLiveBuffer();
+}
+
 std::optional<CaptureSnapshot> EchoJayEditor::captureForSlot (const CompareSlotState& slot) const
 {
     // KATHY'S R4-2. The contract and the reasons are on the declaration in EJMatchTab.h.
@@ -2622,6 +2632,20 @@ std::optional<CaptureSnapshot> EchoJayEditor::captureForSlot (const CompareSlotS
     // the substitution this function exists to prevent, rebuilt inside the function itself.
     // The lookup itself is pure and legged (echojay::captureForSlotIn); this supplies the session's
     // snapshots and nothing else, so there is one place the rule lives and one place it is tested.
+    // ---- THE LIVE SLOT ANSWERS FROM WHAT PLAYED (Sean's ruling, 29 Oct 2026) --------------
+    //
+    // Her page asks this one question for every slot, so the Live slot is answered here rather
+    // than through a second call she would have to know about. The snapshot is built BY VALUE from
+    // the rolling series, which is the freeze: the report and its plan describe that audio while
+    // the buffer goes on rolling (requirement 3).
+    if (slot.kind == CompareSlotState::Kind::Live)
+    {
+        const auto st = processorRef.liveBufferState();
+        return echojay::liveCaptureFrom (processorRef.liveSnapshot(),
+                                         processorRef.liveSnapshotRackIn(),
+                                         st.playedS,
+                                         st.toneReady);
+    }
     return echojay::captureForSlotIn (processorRef.getSnapshots(), slot);
 }
 

@@ -202,7 +202,34 @@ install_one() {
         fail=1
         return 0
     else
-        note "         gate: $(grep '^verdict:' "$vfile" | head -1), written $(date -r "$vfile" '+%d %b %H:%M'), $(grep -c '^  ' "$vfile") suite line(s)"
+        # ---- AND IT MUST BE ABOUT THESE SOURCES (C's point 82, 29 Oct 2026) -----------------
+        #
+        # GREEN and newer are not enough: a verdict written from a gate run on a DIFFERENT tree
+        # passes both and says nothing true about the bytes in this bundle. The 15:42 verdict
+        # recorded "tree: 31 file(s) uncommitted", which is exactly the shape of that risk.
+        #
+        # So the verdict carries a fingerprint of every compiled source by CONTENT, and this
+        # compares it with the tree as it stands. A mismatch is not necessarily a stale verdict -
+        # it can equally be a source edited after the gate - and either way the honest answer is
+        # the same: the gate has not judged what is about to be installed.
+        local vfp tfp
+        vfp="$(grep '^sources:' "$vfile" | awk '{print $2}')"
+        tfp="$(cd "$ROOT" && find Source -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.mm' \) \
+                 -print0 2>/dev/null | sort -z | xargs -0 shasum -a 256 2>/dev/null \
+                 | shasum -a 256 | cut -c1-16)"
+        if [[ -z "$vfp" ]]; then
+            note "         (this verdict predates the source fingerprint - it is accepted, and the"
+            note "          next gate run will carry one; C's point 82)"
+        elif [[ "$vfp" != "$tfp" ]]; then
+            note "REFUSED: the gate verdict is about DIFFERENT sources than the tree holds now"
+            note "         verdict's sources: $vfp"
+            note "         this tree's:       $tfp"
+            note "         either a source changed after the gate, or that verdict came from another"
+            note "         tree. Re-gate this tree; GREEN has to mean green for these bytes."
+            fail=1
+            return 0
+        fi
+        note "         gate: $(grep '^verdict:' "$vfile" | head -1), written $(date -r "$vfile" '+%d %b %H:%M'), $(grep -c '^  ' "$vfile") suite line(s)$([[ -n "$vfp" ]] && echo ", sources $vfp")"
     fi
 
     local want

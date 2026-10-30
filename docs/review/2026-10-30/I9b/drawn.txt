@@ -1,0 +1,9 @@
+scenario I9b
+captured 2026-10-30T01:47:33.699Z
+  [assistant] The gain I was levelling with is no longer there - level loop stopped.
+  [user] rig-tpown-marker: add Renaissance Axx (s) and set its Threshold
+  [assistant] Added it to this rack, with the setting you asked for.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added it to this rack, with the setting you asked for.
+  closing: Added it to this rack, with the setting you asked for.
+    step "add a real third-party plugin to THIS rack, with a setting" [done] right="applied" detail="Added Renaissance Axx (s) in slot 1. Read back: threshold -30." chips=[]

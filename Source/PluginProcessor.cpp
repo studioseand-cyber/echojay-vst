@@ -403,7 +403,21 @@ EchoJayProcessor::EchoJayProcessor()
                 EchoJay_NSLog ("EJChat: the interrupted row was already there - not writing it twice");
                 return;
             }
-            appendChatEntry ("assistant", line, {});   // stage B: no chat is stated on this road
+            // ---- THE TURN'S OWN CHAT, WHICH IS IN THE PARAMETER LIST (his Test 5 fault 1) -----
+            //
+            // *"The "Stopped." from the stopped run on the Aitch_4_01 Link chat appeared at the top
+            // of the Mix Bus chat. A message must only ever land in the chat its run belongs to."*
+            //
+            // This passed `{}` - "stage B: no chat is stated on this road" - and appendChatEntry
+            // then addresses the chat ON SCREEN. But the chat IS stated: `chatId` is the first
+            // argument of this very lambda (onChatTurnFinalised), and it is the chat the turn was
+            // sent from. A Stop cancels the in-flight turn, the turn arrives here as interrupted,
+            // and the row went wherever he happened to be looking.
+            //
+            // The editor's own transcript bridge has refused to write to the view since 22 Oct
+            // ("THE RUN'S CHAT DECIDES"), and the agent home addresses its record by runChatId_ -
+            // so this was the one writer on this road still deciding by what is open.
+            appendChatEntry ("assistant", line, chatId);
             chatRoles.add ("assistant");
             chatContents.add (line);
             markStateDirty();
@@ -956,6 +970,16 @@ bool EchoJayProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 
 void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    // ---- A RATE CHANGE IS A NEW SONG AS FAR AS THE LIVE BUFFER IS CONCERNED (item 4) --------
+    // The hop grid is 100 ms of THIS sample rate, so hops measured at another one cannot sit in
+    // the same series. Cleared before anything is prepared, so nothing carries across.
+    // ITS OWN SENTINEL, because hostSamplesPerBlock_ defaults to 512 and hostSampleRate_ to 44100:
+    // either would make the FIRST prepare look like a change and log about clearing an empty
+    // buffer on every load. Zero means "nothing has been kept yet", which is the only state that
+    // needs no clearing.
+    if (liveRateAt_ > 0.0 && std::abs (sampleRate - liveRateAt_) > 1.0)
+        clearLiveBuffer();
+    liveRateAt_ = sampleRate;
     EJ_LAT_LOG ("top: prepareToPlay fs %.0f block %d (reported latency before: %d)", sampleRate, samplesPerBlock, getLatencySamples());
     // Bus trim smoothing: the Link's 30ms ramp, same feel both sides
     busGainSmoothed_.reset(sampleRate, 0.030);
@@ -1572,6 +1596,10 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         const float* inL = buffer.getReadPointer(0);
         const float* inR = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : inL;
         captureInEngine.processBlock(inL, inR, buffer.getNumSamples());
+        // and the live series' input half, on the same tap and the same gate (A13's figures are
+        // measured here, which is what C2 §7.3 promises about where each one comes from)
+        if (liveFeeding_.load (std::memory_order_relaxed))
+            liveInEngine.processBlock (inL, inR, buffer.getNumSamples());
     }
 
     // CHAIN: pass audio through hosted plugin (graph handles passthrough if none loaded)
@@ -1600,6 +1628,23 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     left  = buffer.getReadPointer(0);
     right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
     meterEngine.processBlock(left, right, buffer.getNumSamples());
+
+    // ---- ITEM 4: THE LIVE SERIES, AT THIS SAME TAP (Sean's Match ruling, 29 Oct 2026) -------
+    //
+    // Fed only while the transport is rolling and the REFERENCE IS NOT AUDIBLE. The A/B
+    // substitution happens hundreds of lines above this tap, so without that second test the
+    // buffer would keep the reference and call it the mix - Kathy's requirement 1, which is the
+    // one that makes every figure after it a lie rather than a gap.
+    //
+    // Silence is skipped by the engine itself: its hop accumulator gates on the absolute floor,
+    // so a stopped passage adds no hops rather than adding quiet ones.
+    {
+        const bool auditioning = abActive.load (std::memory_order_relaxed)
+                              && abPlayingRef.load (std::memory_order_relaxed);
+        const bool feed = transportPlaying.load (std::memory_order_relaxed) && ! auditioning;
+        liveFeeding_.store (feed, std::memory_order_relaxed);
+        if (feed) liveEngine.processBlock (left, right, buffer.getNumSamples());
+    }
 
     // ---- THE SHADOW VIEW, ONE BLOCK (stage B, 23 Oct 2026) ---------------------------------
     //
@@ -2006,8 +2051,96 @@ void EchoJayProcessor::applyPendingBorrowRestores()
     }
 }
 
+// ---- ITEM 4: THE HOPS COME ACROSS ON THE MESSAGE THREAD (29 Oct 2026) ----------------------
+//
+// MeterEngine keeps its hops in a vector reserved in prepare() and never grown on the audio
+// thread, and at its ceiling it STOPS APPENDING and says so - the right design for a capture,
+// and useless for a rolling buffer, which must drop its oldest hop for ever. So the ring lives
+// here: this tick copies the hops the engine has made since the last one, and resets the engine
+// when it nears that ceiling. `noteEngineReset` is what keeps the two in step across the reset,
+// so nothing is lost and nothing is counted twice (legs lb PIN1 and lb PIN2).
+void EchoJayProcessor::liveBufferTick()
+{
+    // ---- A CHAIN THAT MOVED IS A MARKER (Kathy's requirement 2, 29 Oct 2026) ----------------
+    //
+    // *"A marker or reset when a plan is applied, and when the chain changes mid-play, so the
+    // "after" curve and the verify use only audio played after Go."*
+    //
+    // WATCHED HERE RATHER THAN HOOKED AT EVERY CALL SITE. A rack changes by a Go, a step landing,
+    // the picker, an X, the agent, a restore and a Link's own window - seven roads, and a marker
+    // missing from any one of them is a window that silently spans a change. The REVISION is the
+    // one fact all seven move, so one reader cannot miss a road the way seven hooks can.
+    {
+        const int rev = getChainHost().getChainRevision();
+        if (liveMarkedRev_ < 0) liveMarkedRev_ = rev;
+        else if (rev != liveMarkedRev_)
+        {
+            liveMarkedRev_ = rev;
+            markLiveBuffer ("this rack changed (revision " + juce::String (rev) + ")");
+        }
+        // ...and a LINK's rack moving counts too: a plan's steps land there, and the "after" curve
+        // for a Link's channel is as wrong as the bus's if it spans the change.
+        for (const auto& [uid, v] : linkRackCache)
+        {
+            if (! v.valid) continue;
+            const int lr = v.rack.revision;
+            auto it = liveMarkedLinkRev_.find (uid);
+            if (it == liveMarkedLinkRev_.end()) { liveMarkedLinkRev_[uid] = lr; continue; }
+            if (it->second != lr)
+            {
+                it->second = lr;
+                markLiveBuffer (resolveLinkDisplayName (uid) + "'s rack changed (revision "
+                                + juce::String (lr) + ")");
+            }
+        }
+    }
+    liveRing_.setMaxSeconds (liveBufferMaxS_);
+    liveInRing_.setMaxSeconds (liveBufferMaxS_);
+    const double posS = transportTimeS_.load (std::memory_order_relaxed);
+    liveRing_.take (liveEngine.hopFrames(), posS);
+    liveInRing_.take (liveInEngine.hopFrames(), posS);
+    // NEAR THE CEILING, NOT AT IT: a reset at the exact ceiling would race the audio thread's
+    // next hop, and a hop lost there is a hop nobody can account for.
+    const int nearCeiling = (int) ((double) MeterEngine::kMaxHopFrames * 0.9);
+    if ((int) liveEngine.hopFrames().size() >= nearCeiling)
+    { liveEngine.requestHopFramesReset(); liveRing_.noteEngineReset(); }
+    if ((int) liveInEngine.hopFrames().size() >= nearCeiling)
+    { liveInEngine.requestHopFramesReset(); liveInRing_.noteEngineReset(); }
+}
+
+void EchoJayProcessor::markLiveBuffer (const juce::String& reason)
+{
+    liveRing_.mark (reason);
+    liveInRing_.mark (reason);
+    EchoJay_NSLog (("EJLive: a marker - " + reason + ". Everything kept so far is BEFORE it, so "
+                    "the \"after\" curve and the verify read only what plays from now "
+                    "(Kathy's requirement 2)").toRawUTF8());
+}
+
+void EchoJayProcessor::clearLiveBuffer()
+{
+    liveRing_.clear();
+    liveInRing_.clear();
+    liveEngine.requestHopFramesReset();
+    liveInEngine.requestHopFramesReset();
+    EchoJay_NSLog ("EJLive: the live buffer is cleared - a source change, a sample-rate change, or "
+                   "a jump big enough that what came before is a different song");
+}
+
+echojay::LiveBufferState EchoJayProcessor::liveBufferState() const
+{
+    const bool auditioning = abActive.load (std::memory_order_relaxed)
+                          && abPlayingRef.load (std::memory_order_relaxed);
+    return echojay::liveBufferState (transportPlaying.load (std::memory_order_relaxed),
+                                     auditioning,
+                                     liveRing_.playedS(),
+                                     liveRing_.uniqueS(),
+                                     liveRing_.staleS());
+}
+
 void EchoJayProcessor::timerCallback()
 {
+    liveBufferTick();             // item 4: what has played, kept rolling
     publishRigProcessorState();   // 15 Oct: the one fact the rig cannot get from a window that is shut
     serviceLinkMapRequests();     // Sean's #1 (16 Oct): a Link cannot reach the server; the V2 serves it
     applyHostTrackNameIfDirty();
@@ -3172,7 +3305,36 @@ int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const j
     cmd->setProperty("v",          2);
     cmd->setProperty("seq",        seq);
     cmd->setProperty("editOps",    editOps);
-    cmd->setProperty("baseSlots",  baseSlots);
+    // ---- THE RACK THIS EDIT IS BASED ON, ALWAYS (his Test 4, 29 Oct 2026) --------------------
+    //
+    // Every agent edit to a Link went out with NO base list (EJAgentHome passed juce::var()), and
+    // the Link's preflight then falls back to comparing the op's own name against the live slot -
+    // which a REPLACE can never satisfy, because its name is the plugin that is coming. So every
+    // replace on a Link was refused, deterministically, since 6 Oct: *"this edit expected
+    // Unfiltered Audio Zip at slot 4, but the rack has Tube-Tech CL 1B"*.
+    //
+    // ATTACHED HERE so no road can forget it: the agent's, the Build button's and a rig row's all
+    // come through this function. A caller that states its own base keeps it (the borrow push
+    // knows the mirror it edited); a caller that states none gets the LINK'S OWN SIDECAR, which is
+    // the one publisher of its rack (the 11 Oct ruling) and never the mirror, which is the thing
+    // that goes stale.
+    juce::var base = baseSlots;
+    if (! base.isArray())
+    {
+        juce::Array<juce::var> names;
+        const auto rc = LinkShm::readRackSidecar(dir, linkUid);
+        if (rc.valid)
+            for (const auto& sl : rc.slots) names.add(sl.name.trim());
+        if (! names.isEmpty())
+        {
+            base = juce::var(names);
+            EchoJay_NSLog(("EJEdit: this edit carries the rack it is based on ("
+                           + juce::String(names.size()) + " slot(s) from " + linkUid
+                           + "'s own sidecar), so the Link judges it against that rather than "
+                             "against the op's own name (his Test 4, 29 Oct)").toRawUTF8());
+        }
+    }
+    cmd->setProperty("baseSlots",  base);
     cmd->setProperty("sourceNote", sourceNote);
     // ---- THE COMMAND'S PURPOSE, WHEN IT HAS ONE (19 Oct 2026) -------------------------------------
     // Sean, 12:27: a dbx-160 built first press down the edit-cmd road and *"no level matching
@@ -4053,6 +4215,11 @@ juce::AudioProcessorEditor* EchoJayProcessor::createSlotEditorForView(
                            && editSession_.slot0 == slot;
     const auto from = echojay::slotEditorSource (viewUid.isNotEmpty(), liveViewHere,
                                                  bh != nullptr, editHere);
+    // WHICH ROAD ANSWERED, recorded for the log and for a row. A control row that cannot tell the
+    // live view's COPY from the own rack's own slot will pass on the wrong one: LV9j's first cut
+    // did exactly that, and reported "his knobs can be grabbed" about an editor that was never
+    // under the lock it was testing (29 Oct 2026).
+    lastSlotEditorSource_ = echojay::slotEditorSourceName (from);
 
     if (from == echojay::SlotEditorSource::LocalRack) return getChainHost().createEditorForSlot (slot);
     if (from == echojay::SlotEditorSource::None)      return nullptr;

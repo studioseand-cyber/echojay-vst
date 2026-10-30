@@ -112,6 +112,11 @@ public:
 
     /** The run's key and session, so a reopened window can find the row it owns. */
     juce::String runKey() const { return runKey_; }
+    /** WHICH CHAT THIS RUN BELONGS TO (his Test 5 fault 1, 29 Oct 2026). The run's own writer has
+        always used it; the editor's transcript bridge had no way to ask, so when the row was not in
+        the chat ON SCREEN it fell back to writing there - and the Aitch Link's "Stopped." landed at
+        the top of the Mix Bus chat. A message belongs to its run's chat, never to the view. */
+    juce::String runChatId() const { return runChatId_; }
     /** The rack this run is working on ("" = the open rack), and whether it still needs it. The
         V2's borrow tick asks both: his 08:44 ruling is that opening a Link's window must not take
         the rack from a live run, and that closing it hands control straight back. */

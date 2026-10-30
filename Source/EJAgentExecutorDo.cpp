@@ -966,6 +966,18 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     }
     juce::StringArray matched, missed, unreadable, matchedPlain, missedPlain;
 
+    // ---- THE FACTS, RECORDED WHERE THEY ARE KNOWN (29 Oct 2026) ------------------------------
+    //
+    // appliedParamsV below used to be built by splitting each `matched` string back apart on its
+    // first space. Every control whose id has a space in it - which is most of them - came out as
+    // control="Discrete", value=0, and an eq_bands entry came out as control="slot". A display
+    // string is composed FOR A PERSON; re-parsing one to recover what the code already had is the
+    // same mistake in miniature that this field exists to fix on the server's side.
+    //
+    // So each branch records its own fact as it decides it. `value` is absent for a control
+    // confirmed by position (there is no readable number) and for bands (there is no one number).
+    std::vector<AppliedFact> facts;
+
     // ---- AN EQ BAND IS A SETTING ON THE SET PATH TOO (19 Oct 2026, his 15:36 run) --------------
     //
     // *"'set slot 1: bell 300 Hz -3 dB Q 1.2, highshelf 8000 Hz +3 dB Q 0.7' on an existing EchoJay
@@ -988,6 +1000,7 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
             {
                 matched.add ("slot " + juce::String (slot1) + " eq_bands: " + slotSettingsText);
                 matchedPlain.add (slotSettingsText);
+                facts.push_back ({ "eq_bands", 0.0, false, false });
             }
             else
                 unreadable.add ("eq_bands");
@@ -1010,6 +1023,7 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
             if (src_.slotControlConfirmed && src_.slotControlConfirmed (applyTo, slot1, id))
             {
                 matched.add (id + " (set, confirmed by its position)");
+                facts.push_back ({ id, 0.0, false, true });
                 matchedPlain.add (echojay::semanticLabel (id) + " (set; this plugin's display cannot "
                                   "be read, so it was confirmed by the knob's position)");
                 continue;
@@ -1024,6 +1038,7 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
         {
             matched.add (id + " " + juce::String (got, 2));
             matchedPlain.add (echojay::params::plainValuePhrase (id, got));   // Sean's #6
+            facts.push_back ({ id, got, true, false });
         }
         else
         {
@@ -1038,6 +1053,47 @@ void ExecutorDo::confirmValues (const ToolCall& call, const juce::String& applyT
     r->setProperty ("applied_params",    matched.joinIntoString (", "));
     r->setProperty ("unapplied_params",  missed.joinIntoString (", "));
     r->setProperty ("unreadable_params", unreadable.joinIntoString (", "));
+    // ---- AND THE SAME FACTS AS STRUCTURE (C's point 84, 29 Oct 2026) -----------------------
+    //
+    // A `set` reply carried ONLY the strings above - no settings_state, no settings_confirmed -
+    // so the server had to PARSE "slot 1 THRESHOLD -9.70" to decide whether the read-back matched.
+    // That is how his 19:13 Test 5 closed "not confirmed" over a read-back that had matched, and
+    // it is also how I came to send B the add road's field list for this road: I read
+    // confirmSettings and this is confirmValues. Two roads, two shapes, one of them unstated.
+    //
+    // ADDITIVE, so B keeps the string parse for builds already out there:
+    //   appliedParamsV: [{ slot, control, value, how: "readback" | "position" }]
+    //   settings_confirmed: true only when everything asked read back and nothing was unreadable
+    //
+    // `how` matters because the two are different evidence: "readback" is the plugin stating what
+    // it holds; "position" is a norm round-trip on a plugin whose display cannot be read, which is
+    // weaker and which the limiter's ceiling check already refuses to accept (ChainHost.h's
+    // `verified` list). A server that cannot tell them apart cannot honour that distinction.
+    {
+        juce::Array<juce::var> structured;
+        for (const auto& fa : facts)
+        {
+            auto* e = new juce::DynamicObject();
+            e->setProperty ("slot", slot1);
+            e->setProperty ("control", fa.control);
+            if (fa.haveValue) e->setProperty ("value", fa.value);
+            e->setProperty ("how", fa.byPosition ? "position" : "readback");
+            structured.add (juce::var (e));
+        }
+        r->setProperty ("appliedParamsV", juce::var (structured));
+        // ---- AND NO SECOND BOOLEAN (29 Oct 2026) ------------------------------------------
+        //
+        // My first cut added `settings_confirmed` here beside the `confirmed` this road has always
+        // written. Two booleans a word apart, on one reply, is the avgLimitDb / limitAvgDb trap
+        // again - B and I have already paid for one pair of near-identical names meaning different
+        // things, and the whole reason this field exists is that the server could not tell what was
+        // confirmed. So the structure above carries the EVIDENCE (which control, which value, read
+        // back or by position) and `confirmed` keeps its own meaning, stated below.
+        EchoJay_NSLog (("EJAgentDo: set result -> applied=[" + matched.joinIntoString (", ")
+                        + "] unapplied=[" + missed.joinIntoString ("; ")
+                        + "] unreadable=[" + unreadable.joinIntoString (", ")
+                        + "] (appliedParamsV carries which, and how each was confirmed)").toRawUTF8());
+    }
 
     if (! missed.isEmpty())
     {
@@ -1284,6 +1340,7 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
         {
             out.matched.add ("slot " + juce::String (slot1) + " eq_bands: " + fromTheSlot);
             out.matchedIds.add ("eq_bands");
+            out.facts.push_back ({ "eq_bands", 0.0, false, false });
             out.matchedPlain.add (fromTheSlot);
         }
         else
@@ -1312,6 +1369,7 @@ ExecutorDo::SettingsCheck ExecutorDo::checkSlotValues (const juce::String& apply
         {
             out.matched.add ("slot " + juce::String (slot1) + " " + id + " " + juce::String (got, 2));
             out.matchedIds.add (id);
+            out.facts.push_back ({ id, got, true, false });
             // SEAN'S #6: the same fact, in words. The model keeps the line above.
             out.matchedPlain.add (echojay::params::plainValuePhrase (id, got));
         }
@@ -1591,6 +1649,7 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         all.missed.addArray (c.missed);
         all.unreadable.addArray (c.unreadable);
         all.matchedIds.addArray (c.matchedIds);
+        all.facts.insert (all.facts.end(), c.facts.begin(), c.facts.end());
         all.missedIds.addArray (c.missedIds);
         all.matchedPlain.addArray (c.matchedPlain);
         all.missedPlain.addArray (c.missedPlain);
@@ -1776,11 +1835,30 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     if (unreadablePlain.isNotEmpty()) r->setProperty ("settings_unreadable_plain", unreadablePlain);
     if (askedPlain.isNotEmpty())      r->setProperty ("settings_unapplied_plain", askedPlain);
     if (landedPlain.isNotEmpty())     r->setProperty ("settings_applied_plain", landedPlain);
+    // ...and the same structured list as the set road (C's point 84), so one parser serves both.
+    {
+        juce::Array<juce::var> structured;
+        for (const auto& fa : all.facts)
+        {
+            auto* e = new juce::DynamicObject();
+            if (landedAt >= 1) e->setProperty ("slot", landedAt);
+            e->setProperty ("control", fa.control);
+            if (fa.haveValue) e->setProperty ("value", fa.value);
+            e->setProperty ("how", fa.byPosition ? "position" : "readback");
+            structured.add (juce::var (e));
+        }
+        r->setProperty ("appliedParamsV", juce::var (structured));
+    }
 
     if (! all.missed.isEmpty())
     {
         r->setProperty ("settings_state", "not_applied");
         r->setProperty ("settings_confirmed", false);
+        EchoJay_NSLog (("EJAgentDo: value step result -> settings_state=not_applied "
+                        "settings_confirmed=false applied=[" + all.matched.joinIntoString (", ")
+                        + "] unapplied=[" + all.missed.joinIntoString ("; ")
+                        + "] unreadable=[" + all.unreadable.joinIntoString (", ")
+                        + "] asked=" + juce::String (all.askedCount)).toRawUTF8());
         finish (juce::var (r),
                 // Same rule: the add landed, the SETTINGS did not. Lead with the part that is true.
                 "Added it" + (landedAt >= 1 ? " in slot " + juce::String (landedAt) : juce::String())
@@ -1806,6 +1884,10 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
         // Sean's own wording, and it is the only honest thing to say.
         r->setProperty ("settings_state", "not_confirmed");
         r->setProperty ("settings_confirmed", false);
+        EchoJay_NSLog (("EJAgentDo: value step result -> settings_state=not_confirmed "
+                        "settings_confirmed=false applied=[] unapplied=[] unreadable=["
+                        + all.unreadable.joinIntoString (", ") + "] asked="
+                        + juce::String (all.askedCount)).toRawUTF8());
         // ---- WHY IT CANNOT BE CONFIRMED, AND THE TWO REASONS ARE NOT THE SAME (16 Oct 2026) ----
         // "this build cannot read that plugin's values back" is a claim about the BUILD, and it was
         // being made over a dial that was simply still running - the live pass caught it on a Link,
@@ -1857,6 +1939,22 @@ void ExecutorDo::confirmSettings (const ToolCall& call, const juce::String& appl
     }
     r->setProperty ("settings_state", all.unreadable.isEmpty() ? "applied" : "partly_confirmed");
     r->setProperty ("settings_confirmed", all.unreadable.isEmpty());
+    // ---- AND THE RESULT IS LOGGED, SO A CONTRADICTION IS DECIDABLE (his Test 5 fault 2) ------
+    //
+    // *"Settings not confirmed. The change to slot 1: THRESHOLD -9.7 was sent but not confirmed by
+    // the plugin's read-back", while the step showed "read back threshold -9.7" (applied).*
+    //
+    // Twice now a closing has said "not confirmed" over a read-back that matched, and both times
+    // the answer needed the ack this executor POSTED - which was nowhere on disk, so the question
+    // cost a round trip to B and still was not settled. One line per value step, naming the four
+    // fields that decide it, so the next occurrence is read rather than discussed.
+    EchoJay_NSLog (("EJAgentDo: value step result -> settings_state="
+                    + r->getProperty ("settings_state").toString()
+                    + " settings_confirmed=" + juce::String ((bool) r->getProperty ("settings_confirmed") ? "true" : "false")
+                    + " applied=[" + all.matched.joinIntoString (", ") + "]"
+                    + " unapplied=[" + all.missed.joinIntoString ("; ") + "]"
+                    + " unreadable=[" + all.unreadable.joinIntoString (", ") + "]"
+                    + " asked=" + juce::String (all.askedCount)).toRawUTF8());
     // ...AND THE MARK CLEARS ITSELF (B's contract of 23 Oct). Something read back, so whatever was
     // wrong before is not wrong now - usually a parameter map that had not arrived yet. A mark that
     // outlived its reason would hold a readable plugin back from every value step it could carry.

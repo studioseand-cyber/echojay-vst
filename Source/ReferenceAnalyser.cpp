@@ -289,6 +289,10 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
             if (acc.valid)
             {
                 ref.macroBandAccum     = acc.db;
+                // Kathy's 4d: the whole-file sub correlation, from the engine that owns the
+                // 120 Hz filter and the three sums - read here, beside the bands, because both
+                // are whole-run figures of the same pass.
+                ref.corrSub            = engine.getAccumulatedCorrSub();
                 ref.hasMacroBandAccum  = true;
                 ref.macroAccumSeconds  = acc.seconds;
                 ref.macroAccumBlocks   = acc.blocks;

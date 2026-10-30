@@ -1,0 +1,9 @@
+scenario G7b
+captured 2026-10-30T01:42:34.533Z
+  [assistant] The gain I was levelling with is no longer there - level loop stopped.
+  [user] rig-onesentence-marker: add a gate
+  [assistant] Added an EchoJay Gate to this rack.
+  run row: status=Done changes=1 steps=1 zones=[11:1 change,8:Undo all]
+  opening: Added an EchoJay Gate to this rack.
+  closing: Added an EchoJay Gate to this rack.
+    step "add an EchoJay Gate" [done] right="applied" detail="Added EchoJay Gate in slot 1." chips=[]

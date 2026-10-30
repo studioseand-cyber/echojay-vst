@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <JuceHeader.h>
 #include "MeterEngine.h"
 #include "EJSpectralEvidence.h"
@@ -45,6 +46,23 @@ struct ReferenceResult {
     std::vector<MeterEngine::HopFrame> hopFrames;
     int                   hops = 0;
     echojay::SpectralReduction macroAccumReduction = echojay::SpectralReduction::Unknown;
+
+    /** ---- THE WHOLE-FILE SUB CORRELATION (Kathy's 4d, 29 Oct 2026) ------------------------
+        The L/R correlation under 120 Hz over the whole file, from the engine's own accumulator
+        (MeterEngine::getAccumulatedCorrSub) - never a second definition of it, which is what her
+        spec is written to prevent.
+
+        OPTIONAL, AND ABSENT MEANS ABSENT: a silent file, or one with no energy on a side, has no
+        correlation to report, and 0 is a real figure (a decorrelated sub) that must not stand in
+        for it.
+
+        NOT SENT AND NOT COMPARED YET. C3 rev 3 §2 refuses it on the wire and her EJMatchBlock
+        writer never writes it (mb PIN5 and mb PIN29 pin both directions). The eventual use is
+        DESIGN_MATCH_TAB's "Low end" row, and that needs the SAME accumulator on the capture engine
+        first - until then a comparison would be two definitions again.
+
+        APPENDED AT THE END (open list 207), as her spec asks. */
+    std::optional<float> corrSub;
 };
 
 class ReferenceAnalyser

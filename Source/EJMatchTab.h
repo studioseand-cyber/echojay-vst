@@ -64,6 +64,39 @@ inline std::optional<CaptureSnapshot> captureForSlotIn (const std::vector<Captur
     return snaps[(size_t) slot.index];
 }
 
+/** ---- AND THE LIVE SLOT, WHICH IS NOW AN ANSWER (Sean's Match ruling, 29 Oct 2026) ---------
+
+    *"AI MATCH must work with the "Live signal" slot, using what has played, with no separate
+    capture needed ... If less than the minimum has played ... AI MATCH says "Play at least 30
+    seconds of the song, then press AI MATCH again"."*
+
+    A capture-SHAPED snapshot, built from the rolling series rather than from a capture: the hops
+    are what played, `hopFramesHops` is their count, and the figures a capture gets from its own
+    engines are deliberately left at their defaults here - this carries the SERIES, which is what
+    her loudest-30 window and every band figure are computed from.
+
+    IT RETURNS NOTHING BELOW THE TONE MINIMUM, which is requirement 5's floor: with less than
+    thirty seconds there is no honest band answer, and her page shows his sentence instead. Above
+    it, the dynamics may still be unready, and `liveBufferState().dynamicsReady` is what says so -
+    this function does not pretend to answer that question by returning or withholding a snapshot.
+
+    PURE, so a leg can hold it without audio, a transport or a rack. */
+inline std::optional<CaptureSnapshot> liveCaptureFrom (const std::vector<MeterEngine::HopFrame>& hops,
+                                                       const std::vector<MeterEngine::HopFrame>& hopsRackIn,
+                                                       float playedS,
+                                                       bool toneReady)
+{
+    if (! toneReady || hops.empty()) return std::nullopt;
+    CaptureSnapshot s;
+    s.hopFrames           = hops;
+    s.hopFramesRackIn     = hopsRackIn;
+    s.hopFramesHops       = (int) hops.size();
+    s.hopFramesRackInHops = (int) hopsRackIn.size();
+    s.durationSeconds     = playedS;   // what PLAYED, which is this snapshot's window
+    s.isLive              = true;      // so nothing downstream reads it as a capture he took
+    return s;
+}
+
 struct MatchHost
 {
     virtual ~MatchHost() = default;
@@ -86,8 +119,12 @@ struct MatchHost
                            (WsChannelMeasurements), not a CaptureSnapshot, so there is nothing of
                            this type to return. Converting one is a separate piece of work and must
                            not be faked here;
-          Kind::Live       NULLPTR. The live signal is not a capture. Returning latestCapture()
-                           here would be the very substitution this function exists to stop;
+          Kind::Live       THE ROLLING LIVE SERIES, by value, once the tone minimum has played
+                           (Sean's ruling of 29 Oct 2026; C2 §R4-3). Below that minimum it is
+                           still nullopt and her page shows "Play at least 30 seconds...". It is
+                           NEVER latestCapture(): the substitution this function exists to stop
+                           stays stopped, and the snapshot carries isLive so nothing downstream
+                           calls what was playing "your capture";
           Reference / CodecFile / Empty   NULLPTR - none of them is a capture of this session.
 
         So a caller must handle an empty answer, and when it gets one the honest move is her
@@ -109,6 +146,20 @@ struct MatchHost
         obey, and no shared cache to interfere with - the copy costs one snapshot at UI rate, and
         getSnapshots() already returns its vector by value for the same reason. */
     virtual std::optional<CaptureSnapshot> captureForSlot (const CompareSlotState& slot) const = 0;
+
+    /** ---- WHAT HAS PLAYED, AND WHAT IT IS READY FOR (Sean's Match ruling, 29 Oct 2026) -----
+
+        C2 §R4-3. `captureForSlot(Kind::Live)` answers with a snapshot of the rolling series once
+        the TONE minimum has played, and this says how much that is, what is still missing, and why
+        nothing is being kept when nothing is - which is what her page shows instead of refusing
+        everything (requirement 5).
+
+        Safe on every repaint: it reads two counters and a flag. */
+    virtual echojay::LiveBufferState liveBufferState() const = 0;
+
+    /** Drop everything kept. Her page never needs this; the processor calls it on a source change,
+        and it is on the boundary so a test can put the buffer in a known state. */
+    virtual void clearLiveBuffer() = 0;
     virtual const CaptureSnapshot* verifyCapture() const = 0;
     /** THE REFERENCE AS MEASURED, not as filed. Two types in this codebase could answer "which
         reference": echojay::RefEntry is the LIBRARY RECORD (id, path, availability, the measurements
