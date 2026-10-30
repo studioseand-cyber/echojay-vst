@@ -62,6 +62,19 @@ inline std::vector<Doc> fromPack (const juce::var& manifest, const juce::File& b
             const auto s0 = startedAtOf.find (pid);
             d->setProperty ("measure_started_at", kind == "profile" && known && s0 != startedAtOf.end() && s0->second.isNotEmpty() ? s0->second : d->getProperty ("measured_at").toString()); }
         d->setProperty ("payload", payload != nullptr ? juce::var (payload) : juce::var (new juce::DynamicObject()));
+        // 29 Oct (Kathy; wizcollect): what only the run can collect, from the manifest's "collected" - the program file's stamp, and on a
+        // measured result (a profile, or a "measured, but ..." outcome whose drafts are never sent) the display check and the readings.
+        // In the payload, never as files: a file of a schema the server does not know holds the whole result
+        if (const auto col = manifest.getProperty ("collected", {}).getProperty (juce::Identifier (pid), {}); col.isObject())
+            if (auto* po = d->getProperty ("payload").getDynamicObject(); po != nullptr && kind != "reference_vote" && kind != "bridge_read" && kind != "crash" && kind != "out_of_scope")
+            {
+                if (col.hasProperty ("binary")) po->setProperty ("binary", col.getProperty ("binary", {}));
+                if (kind == "profile" || (kind == "outcome" && po->getProperty ("state").toString() == "not_measurable"))
+                {
+                    if (col.hasProperty ("display_check")) po->setProperty ("display_check", col.getProperty ("display_check", {}));
+                    if (const auto rel = col.getProperty ("readings", "").toString(); rel.isNotEmpty()) if (const auto rv = fileJson (bundle, rel); rv.isObject()) po->setProperty ("readings", rv);
+                }
+            }
         d->setProperty ("files", files != nullptr ? juce::var (files) : juce::var (new juce::DynamicObject()));
         // THE MEASUREMENT IDENTITY (Kathy, 24 Oct): every measured file of a profile carries the run and result it was measured for and a
         // random nonce - a file copied from another tester's result carries the wrong run's identity (refused as "identity"). map.json is the
@@ -161,8 +174,16 @@ inline Emitted emit (const std::vector<Doc>& docs, wizcontract::Outbox& box, con
     Emitted em;
     for (const auto& d : docs)
     {
-        const auto text = juce::JSON::toString (d.body, true);
-        if (personal) if (const auto p = personal (text); ! p.isEmpty()) { ++em.refused; em.refusedWhy.add (d.kind + " " + d.pluginId + ": " + p.joinIntoString (", ")); continue; }
+        auto text = juce::JSON::toString (d.body, true);
+        if (personal) if (auto p = personal (text); ! p.isEmpty())
+        {   // 29 Oct: the readings are the bulk of a result and the likeliest to carry a stray detail - a result that would be refused only
+            // for them goes without them, said so in its payload, rather than not at all
+            auto* po = d.body.getProperty ("payload", {}).getDynamicObject();
+            if (po != nullptr && po->getProperty ("readings").isObject())
+            {   auto* w = new juce::DynamicObject(); w->setProperty ("schema", "ej_readings/1"); w->setProperty ("withheld", "privacy check"); po->setProperty ("readings", juce::var (w));
+                text = juce::JSON::toString (d.body, true); p = personal (text); }
+            if (! p.isEmpty()) { ++em.refused; em.refusedWhy.add (d.kind + " " + d.pluginId + ": " + p.joinIntoString (", ")); continue; }
+        }
         if (box.put (d.resultId, text)) ++em.added; else ++em.already;
     }
     return em;

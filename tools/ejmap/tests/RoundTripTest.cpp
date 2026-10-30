@@ -14855,10 +14855,10 @@ int main (int, char**)
             "Discrete Gain 1":{"name":"Discrete Gain 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},"Optical Gain 1":{"name":"Optical Gain 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},
             "SC Gain":{"name":"SC Gain","kind":"anchored","unit":"db","anchors":[[-20,0],[20,1]]}}, "declines":[{"name":"Out Trim","reason":"flat"}]})");
         std::map<juce::String, ControlReadback> rb; for (const char* n : { "Input", "Treble", "Discrete Threshold 1", "Optical Threshold 1", "Discrete Gain 1", "Optical Gain 1", "SC Gain" }) rb[n].judged = 3;
-        Measured mp; mp.roles["drive"] = { "Input", "Treble" };
-        Measured mpPick = mp; mpPick.passPicks["drive"] = { "Input" };
-        Measured ms; ms.roles["threshold"] = { "Discrete Threshold 1" }; ms.passPicks["threshold"] = { "Discrete Threshold 1" }; ms.passPicks["makeup"] = { "Optical Gain 1", "Discrete Gain 1" };
-        Measured msSc = ms; msSc.passPicks["makeup"] = { "SC Gain", "Out Trim" };   // a sidechain's level and a declined control never fill it
+        ejmap::trust::Measured mp; mp.roles["drive"] = { "Input", "Treble" };
+        ejmap::trust::Measured mpPick = mp; mpPick.passPicks["drive"] = { "Input" };
+        ejmap::trust::Measured ms; ms.roles["threshold"] = { "Discrete Threshold 1" }; ms.passPicks["threshold"] = { "Discrete Threshold 1" }; ms.passPicks["makeup"] = { "Optical Gain 1", "Discrete Gain 1" };
+        ejmap::trust::Measured msSc = ms; msSc.passPicks["makeup"] = { "SC Gain", "Out Trim" };   // a sidechain's level and a declined control never fill it
         auto rbWithout = [&] (const char* n) { auto r = rb; r.erase (n); return r; };
         const auto a = levelFor (prs, true, "", rb, mp), b = levelFor (prs, true, "", rb, mpPick), c = levelFor (sh, true, "", rb, ms),
                    c2 = levelFor (sh, true, "", rbWithout ("Discrete Gain 1"), ms), c3 = levelFor (sh, true, "", rbWithout ("Optical Gain 1"), ms), d = levelFor (sh, true, "", rb, msSc);
@@ -14867,14 +14867,14 @@ int main (int, char**)
             "Level 1":{"name":"Level 1","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]},"Level 2":{"name":"Level 2","kind":"anchored","unit":null,"anchors":[[0,0],[10,1]]}}})");
         const auto mrev = J (R"({"category":"reverb","controls":{"Globals -> Length":{"name":"Globals -> Length","kind":"anchored","unit":"ms","anchors":[[100,0],[9000,1]]}}})");
         std::map<juce::String, ControlReadback> rb2; for (const char* n : { "Threshold 1", "Level 1", "Level 2", "Globals -> Length" }) rb2[n].judged = 3;
-        Measured mt; mt.passPicks["threshold"] = { "Threshold 1" }; mt.passPicks["makeup"] = { "Level 1", "Level 2" };
-        Measured mtTie; mtTie.passPicks["threshold"] = { "Threshold 1" }; mtTie.passPicks["makeup"] = { "Level 2" , "Level 1" }; mtTie.passPicks["threshold"] = { "Threshold 1" };
-        Measured mr; mr.passPicks["decay"] = { "Length (Globals)" };
+        ejmap::trust::Measured mt; mt.passPicks["threshold"] = { "Threshold 1" }; mt.passPicks["makeup"] = { "Level 1", "Level 2" };
+        ejmap::trust::Measured mtTie; mtTie.passPicks["threshold"] = { "Threshold 1" }; mtTie.passPicks["makeup"] = { "Level 2" , "Level 1" }; mtTie.passPicks["threshold"] = { "Threshold 1" };
+        ejmap::trust::Measured mr; mr.passPicks["decay"] = { "Length (Globals)" };
         const auto t1 = levelFor (tcl, true, "", rb2, mt), t2 = levelFor (tcl, true, "", [&] { auto r = rb2; r.erase ("Level 1"); return r; }(), mt), r1 = levelFor (mrev, true, "", rb2, mr);
-        const auto tie = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Out A":{"name":"Out A"},"Out B":{"name":"Out B"}}})"), [] { Measured m; m.passPicks["makeup"] = { "Out A", "Out B" }; return m; }(), { "Threshold" });
-        const auto tie1 = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Out 1 A":{"name":"Out 1 A"},"Out 1 B":{"name":"Out 1 B"}}})"), [] { Measured m; m.passPicks["makeup"] = { "Out 1 A", "Out 1 B" }; return m; }(), { "Threshold 1" });
-        const auto declinedToo = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Output":{"name":"Output"}},"declines":[{"name":"Output","reason":"flat"}]})"), [] { Measured m; m.passPicks["makeup"] = { "Output" }; return m; }(), {});
-        const auto amp = meetCoreByPass ("drive|gain", J (R"({"controls":{"Amp - Drive":{"name":"Amp - Drive"}}})"), [] { Measured m; m.passPicks["drive"] = { "Drive (Amp)" }; return m; }(), {});
+        const auto tie = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Out A":{"name":"Out A"},"Out B":{"name":"Out B"}}})"), [] { ejmap::trust::Measured m; m.passPicks["makeup"] = { "Out A", "Out B" }; return m; }(), { "Threshold" });
+        const auto tie1 = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Out 1 A":{"name":"Out 1 A"},"Out 1 B":{"name":"Out 1 B"}}})"), [] { ejmap::trust::Measured m; m.passPicks["makeup"] = { "Out 1 A", "Out 1 B" }; return m; }(), { "Threshold 1" });
+        const auto declinedToo = meetCoreByPass ("makeup|output|gain", J (R"({"controls":{"Output":{"name":"Output"}},"declines":[{"name":"Output","reason":"flat"}]})"), [] { ejmap::trust::Measured m; m.passPicks["makeup"] = { "Output" }; return m; }(), {});
+        const auto amp = meetCoreByPass ("drive|gain", J (R"({"controls":{"Amp - Drive":{"name":"Amp - Drive"}}})"), [] { ejmap::trust::Measured m; m.passPicks["drive"] = { "Drive (Amp)" }; return m; }(), {});
         const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTrustRun.h").loadFileAsString();
         check (t1.level == "certified" && t2.level != "certified" && t2.why.contains ("not read back: Level 1") && r1.level == "certified" && tie.isEmpty() && tie1.isEmpty() && declinedToo.isEmpty() && amp == juce::StringArray { "Amp - Drive" }
                && groupedForm ("Length (Globals)") == "Globals -> Length" && groupedForm ("Length").isEmpty() && placeWords ("Discrete Gain 1") == juce::StringArray { "discrete", "1" }
@@ -14902,6 +14902,209 @@ int main (int, char**)
                && run.contains ("if (pbs.contains (\"limitercomp\") && st == \"measured\" && ! landedRow (\"limitercomp\", row->getProperty (\"product\").toString()).isObject() && ! finishing)\n                    st = \"measuring\";")
                && run.contains ("stampFinal (row, spanOf (r2.isObject() && row->getProperty (\"drafts\").toString().contains (\"limitercomp/\") ? r2 : r)); }"),
                "wizard WZ-36OCT-12: a limiter with no ceiling goes as its compressor profile alone; a limiter waits for its compressor half; its span is that pass's");
+    }
+    // WZ-37OCT-1 THE DISPLAY CHECK (Kathy, 29 Oct, the coverage audit: only a run can collect it). Per control, did the display tell the truth
+    // about the sound - from the acceptance checks the drafts already hold. TDR SlickEQ's Band 1 Gain (+3 asked, -2.9 heard, twice: inverted),
+    // one wrong-way check of three is no inversion, MannyM's Band 3 Freq (1032 % off), Unfiltered Audio Tails' decay ("188.2 % off"), a limiter's
+    // true peak over its label, a tone check against the comp profile's amount control, a saturation level and its THD band, a strip's EQ
+    // section, a filter, a pitch shift; a check never run is not_checked with its reason; nothing checked or listed is no block at all
+    {
+        using namespace ejmap::wizcollect;
+        const auto eq = juce::JSON::parse (R"({"schema":"ej_eq_profile/1","bands":[
+            {"gain_control":"Band 1 Gain","freq_control":"Band 1 Freq","acceptance":[{"ran":true,"target_db":3.0,"target_hz":100,"measured_gain_db":-2.9,"gain_miss_db":-5.9,"figure_off_pct":1.0},{"ran":true,"target_db":-3.0,"target_hz":100,"measured_gain_db":2.95,"gain_miss_db":5.95,"figure_off_pct":2.0}]},
+            {"gain_control":"Band 2 Gain","acceptance":[{"ran":true,"target_db":3.0,"measured_gain_db":-2.0,"gain_miss_db":-5.0},{"ran":true,"target_db":3.0,"measured_gain_db":3.0,"gain_miss_db":0.0},{"ran":true,"target_db":-3.0,"measured_gain_db":-3.0,"gain_miss_db":0.0}]},
+            {"gain_control":"Band 3 Gain","freq_control":"Band 3 Freq","acceptance":[{"ran":true,"target_db":3.0,"target_hz":1000,"measured_gain_db":3.1,"gain_miss_db":0.1,"figure_off_pct":1032.2},{"ran":true,"target_db":-3.0,"target_hz":1000,"measured_gain_db":-3.0,"gain_miss_db":0.0,"figure_off_pct":3.0}]},
+            {"gain_control":"Band 4 Gain","freq_control":"Band 4 Freq","acceptance":[{"ran":false,"why":"-20 dB is outside the measured range"}]}]})");
+        const auto space = juce::JSON::parse (R"({"schema":"ej_space_profile/1","decay":{"control":"Damping"},"mix":{"control":"Dry/Wet"},"acceptance":[
+            {"map":"decay","step":"long","ran":true,"pass":false,"why":"188.2 % off"},{"map":"mix","step":"default","ran":true,"pass":true,"why":"0.11 dB off"},{"map":"sync","step":"90 bpm, 1/8th","ran":false,"pass":false,"why":"no reading"}]})");
+        const auto lim = juce::JSON::parse (R"({"schema":"ej_limiter_profile/1","ceiling":{"control":"Out Ceiling","acceptance":[{"ran":true,"pass":false,"bar_db":0.1,"out_true_peak_db":-0.69,"setting":{"label_db":-1.0,"ceiling_display":"-1.0 dB"}}]}})");
+        const auto comp = juce::JSON::parse (R"({"schema":"ej_comp_profile/1","amount":{"control":"Threshold 1","stepped":false}})");
+        const auto tone = juce::JSON::parse (R"({"g_db":2.0,"gr_measured_db":1.97,"pass_within_0_5_db":true,"deep_levels":[{"g_db":4.0,"ran":true,"gr_measured_db":3.2,"pass_within_0_5_db":false},{"g_db":6.0,"ran":false}]})");
+        const auto sat = juce::JSON::parse (R"({"schema":"ej_saturation_profile/1","drive":{"control":"Drive"},"acceptance":[{"step":1,"word":"subtle","ran":true,"drive_display":"0","measured_level_db":11.6,"level_within_0_5":false,"thd_in_band":true,"pass":false}]})");
+        const auto strip = juce::JSON::parse (R"({"schema":"ej_strip_profile/0","sections":[{"section":"eq","profile":{"bands":[{"gain_control":"EQ Gain","freq_control":"EQ Freq","acceptance":[{"ran":true,"target_db":3,"measured_gain_db":3.0,"gain_miss_db":0.0,"figure_off_pct":0.5}]}]}},{"section":"global","profile":null}]})");
+        const auto filt = juce::JSON::parse (R"({"schema":"ej_filter_profile/1","filters":[{"control":"HP","tolerance_pct":5,"positions":[{"display":"100 Hz","off_pct":2.0,"within_tolerance":true},{"display":"open"}]}]})");
+        const auto pit = juce::JSON::parse (R"({"schema":"ej_pitch_profile/1","shifts":[{"control":"Voice 1 Pitch","tolerance_cents":5,"positions":[{"display":"-6th m","read":true,"error_cents":-0.3,"agrees":true},{"display":"x","read":false,"agrees":false}]}]})");
+        const auto dc = displayCheck ({ eq, space, lim, comp, tone, sat, strip, filt, pit });
+        auto find = [&] (const juce::String& c, const juce::String& q) -> juce::var
+        { if (const auto* a = dc.getProperty ("controls", {}).getArray()) for (const auto& o : *a) if (o.getProperty ("control", "").toString() == c && o.getProperty ("quantity", "").toString() == q) return o; return {}; };
+        auto v = [&] (const juce::String& c, const juce::String& q) { return find (c, q).getProperty ("verdict", "").toString(); };
+        auto worst = [&] (const juce::String& c, const juce::String& q) { return (double) find (c, q).getProperty ("worst_miss", -999.0); };
+        const auto b4 = find ("Band 4 Gain", "gain");
+        check (dc.getProperty ("schema", "").toString() == "ej_display_check/1"
+               && v ("Band 1 Gain", "gain") == "inverted" && v ("Band 1 Freq", "frequency") == "agrees" && v ("Band 2 Gain", "gain") == "disagrees"
+               && v ("Band 3 Gain", "gain") == "agrees" && v ("Band 3 Freq", "frequency") == "disagrees" && std::abs (worst ("Band 3 Freq", "frequency") - 1032.2) < 1e-6
+               && find ("Band 3 Freq", "frequency").getProperty ("unit", "").toString() == "%" && (int) find ("Band 3 Freq", "frequency").getProperty ("checks", 0) == 2 && (int) find ("Band 3 Freq", "frequency").getProperty ("within", 0) == 1
+               && b4.getProperty ("verdict", "").toString() == "not_checked" && b4.getProperty ("why", "").toString() == "-20 dB is outside the measured range" && (int) b4.getProperty ("checks", -1) == 0
+               && v ("Damping", "decay") == "disagrees" && std::abs (worst ("Damping", "decay") - 188.2) < 1e-6 && find ("Damping", "decay").getProperty ("unit", "").toString() == "%"
+               && v ("Dry/Wet", "mix") == "agrees" && std::abs (worst ("Dry/Wet", "mix") - 0.11) < 1e-6 && v ("", "sync") == "not_checked"
+               && v ("Out Ceiling", "ceiling") == "disagrees" && std::abs (worst ("Out Ceiling", "ceiling") - 0.31) < 1e-6 && std::abs ((double) find ("Out Ceiling", "ceiling").getProperty ("tolerance", 0.0) - 0.1) < 1e-9
+               && v ("Threshold 1", "gain_reduction") == "disagrees" && (int) find ("Threshold 1", "gain_reduction").getProperty ("checks", 0) == 2 && std::abs (worst ("Threshold 1", "gain_reduction") + 0.8) < 1e-6
+               && v ("Drive", "level") == "disagrees" && std::abs (worst ("Drive", "level") - 11.6) < 1e-6 && v ("Drive", "thd_band") == "agrees"
+               && v ("EQ Gain", "gain") == "agrees" && v ("HP", "cutoff") == "agrees" && (int) find ("HP", "cutoff").getProperty ("checks", 0) == 1
+               && v ("Voice 1 Pitch", "pitch") == "agrees" && (int) find ("Voice 1 Pitch", "pitch").getProperty ("checks", 0) == 1
+               && (int) dc.getProperty ("summary", {}).getProperty ("inverted", -1) == 1 && (int) dc.getProperty ("summary", {}).getProperty ("not_checked", -1) == 2
+               && ! displayCheck ({ juce::JSON::parse (R"({"schema":"ej_tuner_profile/1","strength":null})") }).isObject() && ! displayCheck ({}).isObject()
+               && missFromWhy ("noise GR within 0.00 dB of the ladder") == std::nullopt && missFromWhy ("-0.33 ms off")->first == -0.33 && missFromWhy ("-0.33 ms off")->second == "ms",
+               "collect WZ-37OCT-1: per control, the display against the sound - inverted gains, a 1032 % frequency, a 188 % decay, a limiter's overshoot, a tone check, a never-run check (" + juce::JSON::toString (dc, true).substring (0, 300) + ")");
+    }
+    // WZ-37OCT-2 THE READINGS (Kathy, 29 Oct): a compact copy of the raw probe lines - every reading kept, cut to 2 decimals; the 1 ms time
+    // windows kept where the level moves near the peak, thinned elsewhere; the parameter snapshot once, then only what changed; never the
+    // identity line, a hold's window list, or a line naming a home folder. Too large: coarser windows, then none, then withheld
+    {
+        using namespace ejmap::wizcollect;
+        juce::StringArray p1 { "probe: \"X\" | AudioUnit:Effects/aufx,Xx01,Vend | uid=1 | arch=arm64 | format=AudioUnit", "param\t0\t0.500000\tGain\t0.0 dB", "param\t1\t0.250000\tFreq\t1.10.1",
+                               "rtone\t0\thz\t10.6667\tin_db\t-42.5803\tout_db\t-40.1229", "hold\t0\t-90.00\tlevel_db\t-104.6060\twin\t-98.0181,-104.6051\tdoubled\t0", "config\tmain_in\t2\tpath\t/Users/kathy/Library/x" };
+        for (int i = 0; i < 100; ++i) p1.add ("twin\tt_ms\t" + juce::String (i) + ".500\tseg\tburst\tin_db\t-14.69\tout_db\t-10.000\tout_peak_db\t-9.0");
+        p1.add ("twin\tt_ms\t100.500\tseg\tburst\tin_db\t-14.69\tout_db\t-3.000\tout_peak_db\t-2.0");
+        for (int i = 0; i < 200; ++i) p1.add ("twin\tt_ms\t" + juce::String (101 + i) + ".500\tseg\ttail\tin_db\t-600\tout_db\t-60.000\tout_peak_db\t-60.0");
+        juce::StringArray p2 { "param\t0\t0.500000\tGain\t0.0 dB", "param\t1\t0.750000\tFreq\t2.0 kHz", "rtone\t0\thz\t10.000\tin_db\t-42.58\tout_db\t-40.12" };
+        std::map<juce::String, juce::String> base; juce::StringArray out; compactInto (p1, base, 1, out); compactInto (p2, base, 1, out);
+        int wins = 0, tail = 0; for (const auto& l : out) if (l.startsWith ("twin")) { ++wins; if (l.contains ("\ttail\t")) ++tail; }
+        const auto joined = out.joinIntoString ("\n");
+        juce::StringArray none; std::map<juce::String, juce::String> b0; compactInto (p1, b0, 0, none);
+        // the caps: one process big enough that its fine windows do not fit, its coarse ones do
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_readings_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        dir.createDirectory();
+        juce::StringArray big { "rtone\t0\thz\t10.000\tin_db\t-42.58\tout_db\t-40.12" };
+        for (int i = 0; i < 20000; ++i) big.add ("twin\tt_ms\t" + juce::String (i) + ".500\tseg\tburst\tin_db\t-14.69\tout_db\t" + (i % 2 ? juce::String ("-10.000") : juce::String ("-11.000")) + "\tout_peak_db\t-9.0");   // every window moves 1 dB
+        const auto f1 = dir.getChildFile ("S_1.0.dyn.a0.1.txt.gz");
+        { juce::FileOutputStream fo (f1); juce::GZIPCompressorOutputStream gz (fo, 6, 15 + 16); gz.writeText (big.joinIntoString ("\n"), false, false, nullptr); }
+        auto textAt = [&] (int coarse) { juce::StringArray o; std::map<juce::String, juce::String> b; o.add ("# dyn.a0.1"); compactInto (big, b, coarse, o); return o.joinIntoString ("\n"); };
+        const auto g1 = gzSize (textAt (1)), g4 = gzSize (textAt (4)), g0 = gzSize (textAt (0));
+        const auto rFine = readingsFrom ({ f1 }, "S_1.0", g1 + 1), rCoarse = readingsFrom ({ f1 }, "S_1.0", g1 - 1), rNone = readingsFrom ({ f1 }, "S_1.0", g4 - 1), rOut = readingsFrom ({ f1 }, "S_1.0", g0 - 1);
+        const auto* lf = rFine.getProperty ("lines", {}).getArray();
+        dir.deleteRecursively();
+        juce::StringArray bad2;
+        if (! (! joined.contains ("probe:"))) bad2.add ("0");
+        if (! (! joined.contains ("/Users/"))) bad2.add ("1");
+        if (! (! joined.contains ("\twin\t"))) bad2.add ("2");
+        if (! (joined.contains ("hold\t0\t-90.00\tlevel_db\t-104.60\tdoubled\t0"))) bad2.add ("3");
+        if (! (joined.contains ("rtone\t0\thz\t10.66\tin_db\t-42.58\tout_db\t-40.12"))) bad2.add ("4");
+        if (! (joined.contains ("param\t1\t0.250000\tFreq\t1.10.1"))) bad2.add ("5");
+        if (! (joined.contains ("param\t1\t0.750000\tFreq\t2.0 kHz"))) bad2.add ("6");
+        if (! (out.indexOf ("param\t0\t0.500000\tGain\t0.0 dB") >= 0)) bad2.add ("7");
+        if (! (out.joinIntoString ("|").indexOf ("param\t0\t0.500000\tGain\t0.0 dB|") == out.joinIntoString ("|").lastIndexOf ("param\t0\t0.500000\tGain\t0.0 dB|"))) bad2.add ("8");
+        if (! (wins == 20 + 1 + 10)) bad2.add ("9");
+        if (! (tail == 10)) bad2.add ("10");
+        if (! (joined.contains ("out_db\t-3.00\t"))) bad2.add ("11");
+        if (! (none.joinIntoString ("\n").indexOf ("twin") < 0)) bad2.add ("12");
+        if (! (twoDecimals ("pos 1.10.1 x -1.23456 2.5x 7") == "pos 1.10.1 x -1.23 2.5x 7" && twoDecimals ("v 12.3456.7 9.87654x") == "v 12.3456.7 9.87654x")) bad2.add ("13");
+        if (! (g1 > g4)) bad2.add ("14");
+        if (! (g4 > g0)) bad2.add ("15");
+        if (! (lf != nullptr)) bad2.add ("16");
+        if (! (lf != nullptr && lf->size() > 20000)) bad2.add ("17");
+        if (! (lf != nullptr && (*lf)[0].toString() == "# dyn.a0.1")) bad2.add ("18");
+        if (! (rFine.getProperty ("windows", "").toString().startsWith ("1 ms windows"))) bad2.add ("19");
+        if (! (rCoarse.getProperty ("windows", "").toString().startsWith ("coarser"))) bad2.add ("20");
+        if (! (rCoarse.getProperty ("lines", {}).size() < 2000)) bad2.add ("21");
+        if (! (rNone.getProperty ("windows", "").toString().startsWith ("none"))) bad2.add ("22");
+        if (! (rNone.getProperty ("lines", {}).size() == 2)) bad2.add ("23");
+        if (! (rOut.getProperty ("withheld", "").toString().startsWith ("too large"))) bad2.add ("24");
+        if (! (! rOut.hasProperty ("lines"))) bad2.add ("25");
+        if (! (rOut.getProperty ("schema", "").toString() == "ej_readings/1")) bad2.add ("26");
+        if (! (! readingsFrom ({}, "S").isObject())) bad2.add ("27");
+        if (! (rawFileOf ("X_1.2.tonecheck.1.txt.gz", "X_1.2"))) bad2.add ("28");
+        if (! (! rawFileOf ("X_1.2.3.eq.1.txt.gz", "X_1.2"))) bad2.add ("29");
+        if (! (rawFileOf ("X_1.2.json", "X_1.2"))) bad2.add ("30");
+        if (! (! rawFileOf ("Y_1.2.eq.1.txt", "X_1.2"))) bad2.add ("31");
+        if (! (! rawFileOf ("X_1.2.eq", ""))) bad2.add ("32");
+        check (bad2.isEmpty(),
+               "collect WZ-37OCT-2: the readings - every reading, windows thinned where nothing moves, the snapshot once, no identity line or home folder; coarser, none, then withheld to fit ("
+               + juce::String (wins) + " windows, " + juce::String (tail) + " tail; gz " + juce::String (g1) + "/" + juce::String (g4) + "/" + juce::String (g0) + (bad2.isEmpty() ? juce::String() : "; failed " + bad2.joinIntoString (",")) + ")");
+    }
+    // WZ-37OCT-3 THE PROGRAM FILE (Kathy, 29 Oct): SHA-256 and size of the bundle's executable - what is sent has no path and no date; the
+    // stamp is cached by path, size and modification time (a changed size is hashed again; the same size and time is not read again)
+    {
+        using namespace ejmap::wizcollect;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_stamp_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        const auto exe = dir.getChildFile ("Foo.vst3/Contents/MacOS/Foo"); exe.getParentDirectory().createDirectory(); exe.replaceWithText ("abc");
+        const auto two = dir.getChildFile ("Two.component/Contents/MacOS"); two.createDirectory(); two.getChildFile ("Aaa").replaceWithText ("x"); two.getChildFile ("Two").replaceWithText ("y");
+        BinaryStamps st (dir.getChildFile ("binary_stamps.json"));
+        const auto s1 = st.stampOf (dir.getChildFile ("Foo.vst3"));
+        const auto t = exe.getLastModificationTime(); exe.replaceWithText ("abd"); exe.setLastModificationTime (t);
+        const auto s2 = st.stampOf (dir.getChildFile ("Foo.vst3"));
+        exe.replaceWithText ("abcd"); exe.setLastModificationTime (t);                                     // the size changed, the time did not
+        const auto s3a = st.stampOf (dir.getChildFile ("Foo.vst3"));
+        exe.replaceWithText ("abce"); exe.setLastModificationTime (t + juce::RelativeTime::seconds (5));   // the time changed, the size did not
+        const auto s3 = st.stampOf (dir.getChildFile ("Foo.vst3"));
+        st.save(); BinaryStamps again (dir.getChildFile ("binary_stamps.json")); const auto s4 = again.stampOf (dir.getChildFile ("Foo.vst3"));
+        const bool cachedClean = ! again.dirty;
+        const auto pick = executableOf (dir.getChildFile ("Two.component")).getFileName();
+        const auto none = st.stampOf (dir.getChildFile ("Missing.vst3"));
+        dir.deleteRecursively();
+        check (s1.getProperty ("sha256", "").toString() == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" && (int) s1.getProperty ("bytes", 0) == 3
+               && s1.getDynamicObject()->getProperties().size() == 2 && ! juce::JSON::toString (s1).contains ("/")
+               && s2.getProperty ("sha256", "").toString() == s1.getProperty ("sha256", "").toString()
+               && s3a.getProperty ("sha256", "").toString() == "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589" && (int) s3a.getProperty ("bytes", 0) == 4
+               && s3.getProperty ("sha256", "").toString() == "84e73dc50f2be9000ab2a87f8026c1f45e1fec954af502e9904031645b190d4f" && (int) s3.getProperty ("bytes", 0) == 4
+               && s4.getProperty ("sha256", "").toString() == s3.getProperty ("sha256", "").toString() && cachedClean && pick == "Two" && ! none.isObject(),
+               "collect WZ-37OCT-3: the program file's SHA-256 and size, no path or date; cached by size and time, hashed again on a change");
+    }
+    // WZ-37OCT-4 WHERE THEY GO (Kathy, 29 Oct): in the result's payload, never as files (an unknown file schema holds the whole result). The
+    // stamp on a profile and an outcome; the display check and the readings on a profile and on a "measured, but ..." outcome only - never on
+    // a needs_licence outcome or a reference vote of the same plugin. A result that would be refused only for its readings goes without them
+    {
+        using namespace ejmap::wizresults;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap_collect_" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()));
+        dir.getChildFile ("profiles").createDirectory(); dir.getChildFile ("readings").createDirectory();
+        dir.getChildFile ("profiles/A.eq_profile.draft.json").replaceWithText (R"({"schema":"ej_eq_profile/1","plugin":{"plugin_id":"AudioUnit|a1|1.0"}})");
+        dir.getChildFile ("readings/A.readings.json").replaceWithText (R"({"schema":"ej_readings/1","lines":["# eq.b1.1","rtone\t0\thz\t10.00","config\tpath\t/Users/kathy/x"]})");
+        const auto M = juce::JSON::parse (R"({"profiles":[{"product":"A","kind":"eq","plugin_id":"AudioUnit|a1|1.0","drafts":["profiles/A.eq_profile.draft.json"]}],
+            "skipped":[{"product":"B","plugin_id":"AudioUnit|b2|1.0","state":"not_measurable","why":"measured, but 2 of 16 acceptance write(s) passed"},
+                       {"product":"C","plugin_id":"AudioUnit|c3|1.0","state":"needs_licence","why":"a licence window"},
+                       {"product":"D","plugin_id":"AudioUnit|d4|1.0","state":"not_measurable","why":"left at /Users/kathy/x"}],
+            "reference_votes":[{"product":"A","plugin_id":"AudioUnit|a1|1.0","agrees":true}],
+            "collected":{"AudioUnit|a1|1.0":{"binary":{"sha256":"ab","bytes":3},"display_check":{"schema":"ej_display_check/1","controls":[]},"readings":"readings/A.readings.json"},
+                         "AudioUnit|b2|1.0":{"binary":{"sha256":"cd","bytes":4},"display_check":{"schema":"ej_display_check/1","controls":[]}},
+                         "AudioUnit|c3|1.0":{"binary":{"sha256":"ef","bytes":5},"display_check":{"schema":"ej_display_check/1","controls":[]}},
+                         "AudioUnit|d4|1.0":{"display_check":{"schema":"ej_display_check/1","controls":[]}}}})");
+        auto docs = fromPack (M, dir, "run_0000000000003701", true, {}, {});
+        auto doc = [&] (const juce::String& kind, const juce::String& pid) -> juce::var { for (const auto& d : docs) if (d.kind == kind && d.pluginId == pid) return d.body; return {}; };
+        auto pl = [&] (const juce::String& kind, const juce::String& pid) { return doc (kind, pid).getProperty ("payload", {}); };
+        const auto pa = pl ("profile", "AudioUnit|a1|1.0"), pb = pl ("outcome", "AudioUnit|b2|1.0"), pc = pl ("outcome", "AudioUnit|c3|1.0"), pv = pl ("reference_vote", "AudioUnit|a1|1.0");
+        const bool placed = pa.getProperty ("binary", {}).getProperty ("bytes", 0).operator int() == 3 && pa.getProperty ("display_check", {}).isObject() && pa.getProperty ("readings", {}).getProperty ("lines", {}).size() == 3
+                            && ! doc ("profile", "AudioUnit|a1|1.0").getProperty ("files", {}).hasProperty ("A.readings.json")
+                            && pb.hasProperty ("binary") && pb.hasProperty ("display_check") && pc.hasProperty ("binary") && ! pc.hasProperty ("display_check")
+                            && ! pv.hasProperty ("binary") && ! pv.hasProperty ("display_check") && ! pv.hasProperty ("readings");
+        const auto box = dir.getChildFile ("outbox"); ejmap::wizcontract::Outbox ob { box };
+        const auto em = emit (docs, ob, [] (const juce::String& t) { return t.contains ("/Users/kathy") ? juce::StringArray { "a home folder" } : juce::StringArray(); });
+        const auto ra = pl ("profile", "AudioUnit|a1|1.0").getProperty ("readings", {});
+        dir.deleteRecursively();
+        check (placed && ra.getProperty ("withheld", "").toString() == "privacy check" && ! ra.hasProperty ("lines") && em.refused == 1 && em.refusedWhy[0].contains ("AudioUnit|d4|1.0"),
+               "collect WZ-37OCT-4: in the payload - the stamp, and on a measured result the display check and the readings; a result goes without its readings rather than not at all ("
+               + juce::String (em.added) + " added, " + juce::String (em.refused) + " refused)");
+    }
+    // WZ-37OCT-5 THE MOCK KNOWS THEM (Kathy, 29 Oct): each optional (an older wizard sends none); one that is there must have its shape, else
+    // "shape" - a stamp with a path, an upper-case hash, a verdict that is not one of the four, a reading that is not a line
+    {
+        const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server").getFullPathName();
+        juce::ChildProcess py;
+        const juce::String code = "import sys; sys.path.insert(0, sys.argv[1]); import mock_server as m; c = m.collected_problem; ok = ["
+            "c({}) is None, c({'binary': {'sha256': 'a'*64, 'bytes': 3}}) is None, c({'binary': {'sha256': 'a'*64, 'bytes': 3, 'path': '/x'}}) == 'binary',"
+            "c({'binary': {'sha256': 'A'*64, 'bytes': 3}}) == 'binary', c({'binary': {'sha256': 'a'*64, 'bytes': True}}) == 'binary',"
+            "c({'display_check': {'schema': 'ej_display_check/1', 'controls': [{'verdict': 'inverted', 'quantity': 'gain'}]}}) is None,"
+            "c({'display_check': {'schema': 'ej_display_check/1', 'controls': [{'verdict': 'maybe', 'quantity': 'gain'}]}}) == 'display_check',"
+            "c({'readings': {'schema': 'ej_readings/1', 'withheld': 'privacy check'}}) is None, c({'readings': {'schema': 'ej_readings/1', 'lines': ['a', 1]}}) == 'readings',"
+            "c({'readings': {'schema': 'ej_readings/2', 'lines': []}}) == 'readings']; print('MOCKOK' if all(ok) else 'MOCKBAD %s' % ok)";
+        const bool started = py.start (juce::StringArray { "/usr/bin/python3", "-c", code, dir });
+        const auto said = started ? py.readAllProcessOutput() : juce::String ("not started");
+        const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
+        check (said.contains ("MOCKOK") && mock.contains ("    if not isinstance(doc.get(\"payload\", {}), dict) or collected_problem(doc.get(\"payload\") or {}):\n        return \"shape\"")
+               && [&] { int n = 0, i = 0; while ((i = mock.indexOf (i, "add_span(run, doc); keep_nonce(doc, result_id); tally_collected(doc)")) >= 0) { ++n; ++i; } return n == 3; }(),   // accepted, held, held_draft
+               "collect WZ-37OCT-5: the mock takes the three blocks when shaped, refuses a malformed one as shape (" + said.trim() + ")");
+    }
+    // WZ-37OCT-6 THE ENGINE COLLECTS THEM AT THE PACK (Kathy, 29 Oct): the stamp only where the result carries a measurement or a map; the
+    // display check and the readings for a measured or "measured, but ..." row, from its own drafts and raw files; the readings made once and
+    // made again only when a raw file is newer; the VST3 rows' bundles remembered for their stamps
+    {
+        const auto run = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapWizardRun.h").loadFileAsString();
+        check (run.contains ("if (st == \"measured\" || st == \"not_measurable\" || st == \"needs_category\" || st == \"other_category\" || st == \"held\")\n                    if (const auto bf = bundleOfPid.find (pid);")
+               && run.contains ("                if (st == \"measured\" || st == \"not_measurable\")\n                {")
+               && run.contains ("if (! stale) for (const auto& f : raw) if (f.getLastModificationTime() > cacheF.getLastModificationTime()) { stale = true; break; }")
+               && run.contains ("M->setProperty (\"collected\", juce::var (collected.get()));")
+               && run.contains ("if (pid.isNotEmpty()) { row->setProperty (\"plugin_id\", pid); if (vst3Cur != juce::File()) vst3BundleOf[pid] = vst3Cur; }")
+               && run.contains ("bundleKey = \"vst3-bundle|\" + path.toLowerCase(); vst3Cur = b.bundle;"),
+               "collect WZ-37OCT-6: the engine stamps where a measurement or a map goes, checks and copies the readings of a measured row, once");
     }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0

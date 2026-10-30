@@ -2,7 +2,13 @@
 
 This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its top lists every change since v1). Everything in it was produced on our side against our own mock; nothing came from a real server.
 
-**What is new since the 27 Oct package (29 Oct: the staging rehearsal; the contract's changelog, "29 Oct"):**
+**What is new for STAGING 7 (29 Oct evening; the contract's changelog, "29 Oct, evening", and §4e):**
+- **Three optional keys in a result's `payload`:** `display_check` (`ej_display_check/1`, per control: did the display tell the truth about the sound), `binary` (`{sha256, bytes}` of the plugin's executable) and `readings` (`ej_readings/1`, a compact copy of the raw readings, or `{withheld}`).
+- **The mock** checks each one when it is there (`collected_problem`: a malformed one is 422 `shape`) and counts what arrived in `/__mock/state`'s `collected`.
+- **Please confirm** that staging keeps a result carrying them: stored, not refused, not held.
+- The recorded scenarios and `18_real_results` are unchanged (they were recorded before these keys).
+
+**What was new in the 29 Oct package (the staging rehearsal; the contract's changelog, "29 Oct"):**
 - **Two more outcome states: `bridged` and `bridge_no_match`** (a VST3 read against its AU twin; the server decides what it inherits). The mock accepts both; new scenario `13f_vst3_twin_outcomes` sends one of each.
 - **Only a profile carries a measuring span.** A reference vote, a bridge read and an outcome start at their finish (§4 always said so). In `18_real_results`, 2 documents change: a reference vote and an outcome.
 - **No new numbers elsewhere:** 18_real_results still sends 33 results (32 accepted, 2 of them as held drafts; 1 held).

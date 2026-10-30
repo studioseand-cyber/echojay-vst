@@ -15,6 +15,7 @@
 #include "EjmapWizardProgress.h"
 #include "EjmapWizardRoute.h"
 #include "EjmapWizardResults.h"   // 21 Oct: one result per plugin, into the outbox (contract v1)
+#include "EjmapWizardCollect.h"   // 29 Oct (Kathy): the display check, the program file, the readings - read at the pack, no measuring time
 #include "EjmapApbPreflight.h"
 #include "EjmapSelfGuardRun.h"   // 16 Oct: the guard on the developer's own loads (guardedPlugins)
 #include "EjmapReadbackSweepRun.h"   // 17 Oct (rulings 3): the VST3 lane - the bridge read and the probe's VST3 identity line
@@ -688,6 +689,7 @@ inline int runWizard (const WizardOptions& wo)
     // never twice for one version); one with no twin joins the run as its own plugin (EJ_VST3_EXTRAS, installedPlugins). The same licence /
     // PACE / hardware checks as an AudioUnit come before any load
     juce::Array<juce::var> vst3Rows; juce::Array<juce::var> vst3Extras;
+    std::map<juce::String, juce::File> vst3BundleOf; juce::File vst3Cur;   // 29 Oct: a VST3 row's bundle, for its program-file stamp
     if (! wo.plan && std::getenv ("EJ_WIZARD_NO_VST3") == nullptr)
     {
         std::map<juce::String, juce::PluginDescription> auByName; juce::StringArray auNames; std::vector<std::pair<juce::String, juce::String>> auPairs;
@@ -697,7 +699,7 @@ inline int runWizard (const WizardOptions& wo)
         Vst3IdentityCache idCache (opt.ledger.getChildFile ("vst3_identity.json"));
         const auto bridgeDir = out.getChildFile ("phaseb").getChildFile ("readback").getChildFile ("bridge");
         auto vrow = [&] (const juce::String& product, const juce::String& pid, const juce::String& st, const juce::String& why)
-        { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); row->setProperty ("lane", "vst3"); if (pid.isNotEmpty()) row->setProperty ("plugin_id", pid);   // 18 Oct: lane - never given its AU twin's queue
+        { auto* row = new juce::DynamicObject(); row->setProperty ("product", product); row->setProperty ("format", "VST3"); row->setProperty ("lane", "vst3"); if (pid.isNotEmpty()) { row->setProperty ("plugin_id", pid); if (vst3Cur != juce::File()) vst3BundleOf[pid] = vst3Cur; }   // 18 Oct: lane - never given its AU twin's queue
           row->setProperty ("state", st); row->setProperty ("why", why); stampFinal (row); vst3Rows.add (juce::var (row)); return row; };
         const auto plan = vst3IdentityPlan (installedVst3Bundles(), auPairs, idCache);
         std::map<juce::String, int> by; int identityLoads = 0, bridgeLoads = 0, bridgesKept = 0, looked = 0;
@@ -706,7 +708,7 @@ inline int runWizard (const WizardOptions& wo)
         {
             prog.looking (looked++, (int) plan.size(), pr.b.name);   // 18 Oct: the now line names the bundle
             if (wizardStop() != 0) break;
-            const auto& b = pr.b; const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase();
+            const auto& b = pr.b; const auto path = b.bundle.getFullPathName(), bundleKey = "vst3-bundle|" + path.toLowerCase(); vst3Cur = b.bundle;
             auto matchesOnly = [&] (const juce::String& n) { return std::any_of (wo.only.begin(), wo.only.end(), [&] (const juce::String& o) { return o.equalsIgnoreCase (n) || n.containsIgnoreCase (o); }); };
             if (! wo.only.isEmpty() && ! matchesOnly (b.name) && std::none_of (pr.ids.begin(), pr.ids.end(), [&] (const Vst3Identity& i) { return matchesOnly (i.name); })) continue;
             ++by[pr.source];
@@ -1439,6 +1441,60 @@ inline int runWizard (const WizardOptions& wo)
         // 17 Oct (rulings 3): every entry the upload carries says its format (from its plugin_id: "AudioUnit|..." / "VST3|...")
         for (auto* list : { &items, &confirmations, &skipped, &crashedList, &needsCategory, &otherCategories, &outOfScopeList, &heldList, &referenceVotes })
             for (auto& e : *list) if (auto* o = e.getDynamicObject(); o != nullptr && ! o->hasProperty ("format")) o->setProperty ("format", wizard::formatOfPluginId (o->getProperty ("plugin_id").toString()));
+        // THE THREE THINGS ONLY A RUN CAN COLLECT (Kathy, 29 Oct; wizcollect): per plugin, the program file's stamp (every row), and for a
+        // measured or "measured, but ..." row its display check and its readings - read from what the measuring wrote, no measuring time.
+        // They travel in each result's payload (wizresults::fromPack), never as files
+        juce::DynamicObject::Ptr collected = new juce::DynamicObject();
+        {
+            std::map<juce::String, juce::File> bundleOfPid;
+            for (const auto& ir : plugins)
+            {   const auto pid = wizroute::pluginId (juce::String::toHexString (ir.desc.uniqueId), ir.desc.version, fmtTag (ir.desc));
+                if (ir.desc.pluginFormatName == "VST3") bundleOfPid[pid] = juce::File (ir.desc.fileOrIdentifier);
+                else if (const auto it = bundlesAll.find (ir.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)); it != bundlesAll.end()) bundleOfPid[pid] = it->second; }
+            for (const auto& [pid, f] : vst3BundleOf) bundleOfPid.emplace (pid, f);
+            wizcollect::BinaryStamps stamps (out.getChildFile ("binary_stamps.json"));
+            const auto pb = out.getChildFile ("phaseb"); const auto catDirs = pb.findChildFiles (juce::File::findDirectories, false);
+            std::map<juce::String, juce::Array<juce::File>> rawOfDir;   // each raw folder listed once per pack
+            auto rawOf = [&] (const juce::File& catDir) -> const juce::Array<juce::File>&
+            { auto& v = rawOfDir[catDir.getFullPathName()]; if (v.isEmpty()) { v = catDir.getChildFile ("raw").findChildFiles (juce::File::findFiles, false); v.sort(); } return v; };
+            for (const auto& rv : rows)
+            {
+                const auto pid = rv.getProperty ("plugin_id", "").toString(); if (pid.isEmpty() || collected->hasProperty (pid)) continue;
+                juce::DynamicObject::Ptr c = new juce::DynamicObject();
+                const auto st = rv.getProperty ("state", "").toString();
+                // the stamp where the result carries a measurement or a map (not every plugin: an instrument never loaded needs none, and
+                // each stamp reads the whole executable once)
+                if (st == "measured" || st == "not_measurable" || st == "needs_category" || st == "other_category" || st == "held")
+                    if (const auto bf = bundleOfPid.find (pid); bf != bundleOfPid.end()) if (const auto s = stamps.stampOf (bf->second); s.isObject()) c->setProperty ("binary", s);
+                if (st == "measured" || st == "not_measurable")
+                {
+                    const auto parts = juce::StringArray::fromTokens (pid, "|", ""); const auto stem = parts[0] + "_" + parts[1] + "_" + parts[2];
+                    juce::Array<juce::var> docs; juce::Array<juce::File> raw;
+                    for (const auto& catDir : catDirs)
+                    {
+                        const auto rec = catDir.getChildFile (stem + ".phaseb.json"); if (! rec.existsAsFile()) continue;
+                        const auto product = juce::JSON::parse (rec.loadFileAsString()).getProperty ("product", "").toString();
+                        const auto pstem = product.isNotEmpty() ? juce::File::createLegalFileName (product).replaceCharacter (' ', '_') + "_" + parts[2] : juce::String();
+                        auto mine = [&] (const juce::File& f) { return wizcollect::rawFileOf (f.getFileName(), stem) || wizcollect::rawFileOf (f.getFileName(), pstem); };
+                        for (const char* sub : { "drafts", "profiles" })
+                            for (const auto& f : catDir.getChildFile (sub).findChildFiles (juce::File::findFiles, false, "*.json")) if (mine (f)) docs.add (juce::JSON::parse (f.loadFileAsString()));
+                        for (const auto& f : rawOf (catDir)) if (mine (f)) raw.add (f);
+                    }
+                    if (const auto dc = wizcollect::displayCheck (docs); dc.isObject()) c->setProperty ("display_check", dc);
+                    if (! raw.isEmpty())
+                    {   // made once per plugin (a raw file newer than the copy makes it again), copied into the bundle each pack
+                        const auto cacheF = out.getChildFile ("readings").getChildFile (stem + ".readings.json");
+                        bool stale = ! cacheF.existsAsFile();
+                        if (! stale) for (const auto& f : raw) if (f.getLastModificationTime() > cacheF.getLastModificationTime()) { stale = true; break; }
+                        if (stale) { cacheF.getParentDirectory().createDirectory(); cacheF.replaceWithText (juce::JSON::toString (wizcollect::readingsFrom (raw, stem))); }
+                        B.getChildFile ("readings").createDirectory(); cacheF.copyFileTo (B.getChildFile ("readings").getChildFile (cacheF.getFileName()));
+                        c->setProperty ("readings", "readings/" + cacheF.getFileName());
+                    }
+                }
+                if (! c->getProperties().isEmpty()) collected->setProperty (pid, juce::var (c.get()));
+            }
+            stamps.save();
+        }
         auto* M = new juce::DynamicObject(); M->setProperty ("schema", "ej_contribution/0"); M->setProperty ("created", juce::Time::getCurrentTime().toISO8601 (true));
         M->setProperty ("tool", juce::String ("EJ Map ") + EJMAP_GIT_HASH); M->setProperty ("platform", juce::SystemStats::getOperatingSystemName());
         M->setProperty ("profiles", items); M->setProperty ("confirmations", confirmations); M->setProperty ("skipped", skipped); M->setProperty ("crashed", withProbeCrashes (crashedList, skipped));
@@ -1469,6 +1525,7 @@ inline int runWizard (const WizardOptions& wo)
             M->setProperty ("queue", queue); M->setProperty ("outcomes", outcomes);
         }
         M->setProperty ("reference_votes", referenceVotes);
+        M->setProperty ("collected", juce::var (collected.get()));
         const juce::var Mv (M);   // ONE owner of the manifest (a second juce::var (M) after a temporary would use a deleted object)
         // A REFUSED PACK IS SEEN AT ONCE (Kathy, 29 Oct: 71 checkpoints refused over four hours said so only in wizard.log): the app reads
         // pack_refused.json (when, which pack, why) and says it on screen; a pack that goes through removes it

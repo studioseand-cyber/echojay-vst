@@ -36,6 +36,25 @@ DRAFT_SCHEMAS = {
     "ej_limiter_profile/1": lambda f: None if isinstance(f.get("ceiling"), dict) and (f["ceiling"].get("control") or f["ceiling"].get("by")) else "no ceiling block",
     "ej_deesser_profile/1": lambda f: None if isinstance(f.get("deesser"), dict) else "no deesser block",
 }
+# 29 Oct (Kathy): what only a run can collect, in the PAYLOAD (never as files: an unknown file schema holds the whole result). Each is
+# optional (an older wizard sends none); one that is there must have its shape, else "shape"
+DISPLAY_VERDICTS = {"agrees", "disagrees", "inverted", "not_checked"}
+def collected_problem(pl):
+    b = pl.get("binary")
+    if b is not None and not (isinstance(b, dict) and set(b) == {"sha256", "bytes"} and re.fullmatch(r"[0-9a-f]{64}", str(b.get("sha256", "")))
+                              and isinstance(b.get("bytes"), int) and not isinstance(b.get("bytes"), bool) and b["bytes"] > 0):
+        return "binary"
+    dc = pl.get("display_check")
+    if dc is not None and not (isinstance(dc, dict) and dc.get("schema") == "ej_display_check/1" and isinstance(dc.get("controls"), list)
+                               and all(isinstance(c, dict) and c.get("verdict") in DISPLAY_VERDICTS and isinstance(c.get("quantity"), str) for c in dc["controls"])):
+        return "display_check"
+    rd = pl.get("readings")
+    if rd is not None and not (isinstance(rd, dict) and rd.get("schema") == "ej_readings/1"
+                               and ((isinstance(rd.get("lines"), list) and all(isinstance(x, str) for x in rd["lines"])) or isinstance(rd.get("withheld"), str))):
+        return "readings"
+    return None
+
+
 MAP_SCHEMAS = {"2.4", "2.3"}   # 22 Oct (decision 0): a result's map.json is a FULL map in the map store's format
 
 
@@ -159,6 +178,7 @@ STATE = {
     "requests": [],       # (method, path, status) - for the tests; never a body or a token
     "needs": {},          # (account_id, run_id) -> plugin_ids the check answered "need" for under that run (v1.1 §5: the server's queue)
     "first_check": {},    # (account_id, run_id) -> the time of the account's first catalogue check for the run (v1.1 §4 timestamps)
+    "collected": {},      # 29 Oct: "<kind>|<block>" -> how many accepted or held results carried payload.binary / display_check / readings
 }
 
 
@@ -539,20 +559,20 @@ class Handler(BaseHTTPRequestHandler):
         bad = validate(doc, rid, result_id, run, acct)
         if bad == "held":   # v1.1 §4 (ruling 3): a schema no validator knows yet - kept, never promoted or served, not counted as accepted
             with LOCK:
-                run["results"][result_id] = sha; run["received"].add(result_id); run["covered"].add(doc["plugin"]["plugin_id"]); add_span(run, doc); keep_nonce(doc, result_id)
+                run["results"][result_id] = sha; run["received"].add(result_id); run["covered"].add(doc["plugin"]["plugin_id"]); add_span(run, doc); keep_nonce(doc, result_id); tally_collected(doc)
                 STATE["holding"].setdefault(acct, {})[result_id] = dict(doc, _held=True)
             return self._send(201, {"status": "held", "result_id": result_id, "stored": "holding",
                                     "message": "EchoJay can't check %s's measurements yet, so they're kept but not used for now." % name})
         if bad == "held_draft":   # 27 Oct (B): a validated limiter / de-esser draft - accepted and counted, kept as held_draft, never promoted
             with LOCK:
-                run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc); keep_nonce(doc, result_id)
+                run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc); keep_nonce(doc, result_id); tally_collected(doc)
                 run["covered"].add(doc["plugin"]["plugin_id"])
                 STATE["holding"].setdefault(acct, {})[result_id] = dict(doc, _held_draft=True)
             return self._send(201, {"status": "accepted", "result_id": result_id, "stored": "held_draft"})
         if bad:
             return self._reject(run, result_id, bad, name)
         with LOCK:
-            run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc); keep_nonce(doc, result_id)
+            run["results"][result_id] = sha; run["received"].add(result_id); run["accepted"].add(result_id); add_span(run, doc); keep_nonce(doc, result_id); tally_collected(doc)
             pid = doc["plugin"]["plugin_id"]; run["covered"].add(pid)
             if doc["kind"] == "profile" and pid in STATE["needs"].get((acct, rid), set()):
                 run["new"].add(result_id)
@@ -694,6 +714,14 @@ OUTCOME_STATES = {"needs_licence", "needs_hardware", "demo", "silent", "crashed"
                   "bridged", "bridge_no_match"}   # 26 Oct (asked of B): a VST3 read against its AU twin; the server decides what it inherits
 
 
+def tally_collected(doc):
+    pl = doc.get("payload") or {}
+    for k in ("binary", "display_check", "readings"):
+        if k in pl:
+            key = "%s|%s" % (doc.get("kind"), k + (".withheld" if k == "readings" and "withheld" in pl[k] else ""))
+            STATE["collected"][key] = STATE["collected"].get(key, 0) + 1
+
+
 def keep_nonce(doc, result_id):
     for f in (doc.get("files") or {}).values():
         m = f.get("measurement") if isinstance(f, dict) else None
@@ -747,6 +775,8 @@ def validate(doc, rid, result_id, run=None, acct=None):
         if first is not None and created < first - ALLOW_S:   # the sanity check: not before this account's first check for the run
             return "timestamp"
     if kind == "outcome" and (doc.get("payload") or {}).get("state") not in OUTCOME_STATES:
+        return "shape"
+    if not isinstance(doc.get("payload", {}), dict) or collected_problem(doc.get("payload") or {}):
         return "shape"
     files = doc.get("files") or {}
     if not isinstance(files, dict):
