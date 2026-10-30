@@ -2135,6 +2135,7 @@ static juce::StringArray chipsOnScreen (const juce::var& st)
     the previous build's card WORDING - could not fire when the figure was missing altogether. One
     fact, measured once, asked by every row that needs it. */
 static bool gLinkIsMixedBuild = false;
+static bool gV2IsMixedBuild = false;
 
 /** IS THIS A LINK A ROW CAN BE ABOUT? (17 Oct 2026, found by the gate's SECOND S6 run.)
 
@@ -2234,7 +2235,7 @@ static bool anyLvFamilyWanted();          // defined with rowWanted, reads kLvFa
 static const char* const kLvFamily[] = { "LV4", "LV5", "LV6", "LV8", "LV9", "LV10", "LV10b", "LV11",
                                          "LV9b", "LV9f", "LV9f-eq", "LV9f-lim", "LV9f-gain",
                                          "LV9f-on", "LV9g", "LV9h", "LV9h-dev", "LV9h-third",
-                                         "LV9i", "LV9j" };
+                                         "LV9i", "LV9i-third", "LV9j" };
 
 static bool anyLvFamilyWanted()
 {
@@ -2560,6 +2561,20 @@ static bool linkSideRowCannotRun (const char* id, const juce::String& claim)
     return true;
 }
 
+/** The same refusal for a row whose claim is about the V2'S OWN code - LV9j, which asks whether
+    our editor takes a mouse click. Same reasoning as linkSideRowCannotRun, other binary. */
+static bool v2SideRowCannotRun (const char* id, const juce::String& claim)
+{
+    if (! gV2IsMixedBuild) return false;
+    if (! rowWanted (id)) return true;
+    skip (juce::String (id) + ": " + claim,
+          "the V2 that AU hosting loaded may be the INSTALLED binary, not the one this run was "
+          "given: the two hash differently (see the V2 line at the top of this run). This row's "
+          "claim is about the V2'S own code, so it cannot say which build it tested. NEVER counted "
+          "as a pass - install this round's pair and run the pass again.");
+    return true;
+}
+
 static void lvFamilyCannotRun (const juce::String& request, const juce::String& why)
 {
     for (const char* id : kLvFamily)
@@ -2754,6 +2769,37 @@ int main (int argc, char* argv[])
         return differs;
     }();
     const bool linkMixedBuild = gLinkIsMixedBuild;
+    // ---- AND THE SAME QUESTION ABOUT THE V2 (30 Oct 2026) -----------------------------------
+    //
+    // gLinkIsMixedBuild has asked this about the Link since 17 Oct and nobody asked it about the
+    // V2, so a V2-side row could not say which binary answered it either. It matters exactly as
+    // much: tonight's Test 1 proof rests on LV9j reading OUR editor's interception, and if AU
+    // hosting had handed the rows the installed V2 the two runs could not have differed - they did
+    // differ, which is evidence the given bundle won that lookup, but evidence after the fact is
+    // not a check. This is the check.
+    gV2IsMixedBuild = [&v2Comp]
+    {
+        const auto given = v2Comp.getChildFile ("Contents/MacOS")
+                               .getChildFile (v2Comp.getFileNameWithoutExtension());
+        const juce::File installed { "/Users/SeanD/Library/Audio/Plug-Ins/Components/EchoJay V2.component"
+                                     "/Contents/MacOS/EchoJay V2" };
+        if (! given.existsAsFile() || ! installed.existsAsFile()) return false;
+        const auto hashOf = [] (const juce::File& f) -> juce::String
+        {
+            juce::FileInputStream in (f);
+            if (! in.openedOk()) return {};
+            return juce::MD5 (in).toHexString();
+        };
+        const auto a = hashOf (given), b = hashOf (installed);
+        const bool differs = a.isNotEmpty() && b.isNotEmpty() && a != b;
+        std::printf ("  the V2 we were given hashes %s (%lld bytes); the INSTALLED one hashes %s - %s\n",
+                     a.substring (0, 12).toRawUTF8(), (long long) given.getSize(),
+                     b.substring (0, 12).toRawUTF8(),
+                     differs ? "DIFFERENT BUILDS, so a V2-side row cannot say which binary answered "
+                               "it and the ones that assert this build's behaviour SKIP"
+                             : "the same build, so the V2 rows are about this build");
+        return differs;
+    }();
     if (const char* only = ::getenv ("EJ_RIG_ONLY"); only != nullptr && *only != 0)
     {
         gOnlyRows = juce::StringArray::fromTokens (juce::String (only), ",", "");
@@ -5122,7 +5168,8 @@ int main (int argc, char* argv[])
                             // This hook cannot press a JUCE knob, so the row reads the product's own
                             // answer to the user's question - would a click reach this editor - at
                             // the moment our device's copy is on screen. That is the decision he met.
-                            if (rowWanted ("LV9j"))
+                            if (rowWanted ("LV9j") && ! v2SideRowCannotRun ("LV9j",
+                                    "can a knob on one of our devices be grabbed in the live view"))
                             {
                                 const auto stJ = rig.freshState();
                                 const bool builtin = (bool) stJ.getProperty ("inlineIsBuiltin", false);
@@ -5332,7 +5379,9 @@ int main (int argc, char* argv[])
                         // AND THE PASS CONDITION IS "REACHED IT OR SAID SO". Either outcome is
                         // correct product behaviour; the fault is the third one, where the gesture
                         // goes nowhere in silence.
-                        if (rowWanted ("LV9g") && ! linkSideRowCannotRun ("LV9g", "a gesture after the Link's rack moved is taken or refused in words"))
+                        if (rowWanted ("LV9g")
+                            && ! linkSideRowCannotRun ("LV9g", "a gesture after the Link's rack moved is taken or refused in words")
+                            && ! v2SideRowCannotRun ("LV9g", "the V2 refuses that gesture IN WORDS and keeps the sentence on screen"))
                         {
                             if (linkProcWhy.isNotEmpty())
                                 std::printf ("  (LV9g runs in ONE process too - the rack is moved by a "
@@ -5427,7 +5476,20 @@ int main (int argc, char* argv[])
                                         if (rc.valid && rc.slots.size() >= 2)
                                             reached = (rc.slots[1].bypassed != bypassedBefore);
                                     }
-                                    const bool setUp = engaged && linkNow == 2;
+                                    // ---- THE ROW MUST BE IN THE STATE IT IS ABOUT (30 Oct 2026) --
+                                    //
+                                    // "when the Link's rack moves under a live session" means this
+                                    // session's mirror no longer describes that rack - which is the
+                                    // condition the edit gate's refusal is keyed on (mirrorStaleFor_).
+                                    // On a run where the move did NOT leave the mirror stale, the
+                                    // gesture takes the borrowed-session road, which is LOCAL by
+                                    // design and writes to the Link on release - so the Link's
+                                    // sidecar does not change, nothing is refused, and the old row
+                                    // called that "SILENT". It was reporting a configuration its
+                                    // claim was never about. Now it says so instead.
+                                    const auto staleFor = stG.getProperty ("mirrorStaleFor", juce::var()).toString();
+                                    const bool inTheState = staleFor == gUid;
+                                    const bool setUp = engaged && linkNow == 2 && inTheState;
                                     row ("LV9g", setUp && (reached || refusedInWords),
                                          "when the Link's rack moves under a live session, does a gesture "
                                          "reach the right slot or get refused IN WORDS - never the silent "
@@ -5436,8 +5498,15 @@ int main (int argc, char* argv[])
                                              ? "COULD NOT RUN, which is a FAIL and not a skip: the session was "
                                                + juce::String (engaged ? "engaged" : "NOT engaged")
                                                + " (slots in the V2's view " + juce::String (slotsSession)
-                                               + "), and the Link's own count went to " + juce::String (linkNow)
-                                               + " (wanted 2) - " + wrote
+                                               + "), the Link's own count went to " + juce::String (linkNow)
+                                               + " (wanted 2), and this session's mirror was "
+                                               + (inTheState ? juce::String ("STALE for that rack, which is the state "
+                                                                            "this row is about")
+                                                             : "NOT stale (mirrorStaleFor=\"" + staleFor + "\") - so the "
+                                                               "rack move did not reach the condition the row names, and "
+                                                               "the gesture would have taken the borrowed-session road, "
+                                                               "which is local by design")
+                                               + " - " + wrote
                                              : reached
                                                  ? "the gesture REACHED the Link's slot 2 (its sidecar's "
                                                    "bypass flipped), so the mirror had caught up first"
@@ -5641,16 +5710,73 @@ int main (int argc, char* argv[])
                                 int eI = 0; const auto dI = LinkShm::resolveDir (eI);
                                 auto count = [&] { const auto rc = LinkShm::readRackSidecar (dI, iUid);
                                                    return rc.valid ? (int) rc.slots.size() : -1; };
-                                const int was = count();
-                                rig.send (echojay::rig::cmd::editOps,
-                                          args2 ("uid", iUid,
-                                                 "ops", "[{\"op\":\"add\",\"name\":\"EchoJay Gain\"}]"), 15000);
-                                int now = was;
-                                for (int t = 0; t < 40 && now <= was; ++t) { livePump (300); now = count(); }
-                                row ("LV9i", was >= 0 && now > was,
-                                     "does an ADD sent down the same road still land (it did this "
-                                     "morning, which is what made the replace's failure legible)",
-                                     "the Link's own count: " + juce::String (was) + " -> " + juce::String (now));
+                                auto holds = [&] (const juce::String& want)
+                                {
+                                    const auto rc = LinkShm::readRackSidecar (dI, iUid);
+                                    if (! rc.valid) return false;
+                                    for (const auto& sl : rc.slots)
+                                        if (ChainHost::namesMatchLoose (sl.name.trim(), want)) return true;
+                                    return false;
+                                };
+                                // ---- BOTH KINDS, because his ask names both (30 Oct 2026) --------
+                                //
+                                // This row added "EchoJay Gain" and nothing else, so "an add lands on
+                                // a Link" was proven for a BUILT-IN only - and a built-in needs no
+                                // name resolution, no scan entry and no instantiation of a foreign
+                                // bundle, which is most of what an add actually does. His instruction
+                                // names third-party plugins and our devices in the same sentence.
+                                //
+                                // AUDelay for the third party: Apple's own, so the rig's standing
+                                // rule (never a licence-bound bundle) holds.
+                                auto slotOf = [&] (const juce::String& want) -> int
+                                {
+                                    const auto rc = LinkShm::readRackSidecar (dI, iUid);
+                                    if (! rc.valid) return -1;
+                                    for (int k = 0; k < (int) rc.slots.size(); ++k)
+                                        if (ChainHost::namesMatchLoose (rc.slots[(size_t) k].name.trim(), want))
+                                            return k + 1;                      // 1-based, as the wire is
+                                    return -1;
+                                };
+                                auto addRow = [&] (const char* tag, const juce::String& want)
+                                {
+                                    // ---- IT CLEARS ITS OWN GROUND (30 Oct 2026) -------------------
+                                    //
+                                    // AUDelay is the third-party plugin this rig has a map and a scan
+                                    // entry for, and the LV setup puts it on this very rack - so the
+                                    // row cannot pick a different one (another Apple AU is not in the
+                                    // nine loadable entries the Link judges against, and the add would
+                                    // be refused for a reason that is about the fixture, not the
+                                    // product). So it REMOVES it first and then adds it back, which
+                                    // also means the add is a change this row can actually see.
+                                    if (const int at = slotOf (want); at > 0)
+                                    {
+                                        rig.send (echojay::rig::cmd::editOps,
+                                                  args2 ("uid", iUid, "ops",
+                                                         "[{\"op\":\"remove\",\"slot\":" + juce::String (at) + "}]"), 15000);
+                                        for (int t = 0; t < 40 && holds (want); ++t) livePump (300);
+                                    }
+                                    if (holds (want))
+                                    { row (tag, false, "an add on a Link lands",
+                                           "COULD NOT RUN: that rack still holds \"" + want
+                                           + "\" after a remove, so an add could not be told from a "
+                                             "refusal"); return; }
+                                    const int was = count();
+                                    rig.send (echojay::rig::cmd::editOps,
+                                              args2 ("uid", iUid,
+                                                     "ops", "[{\"op\":\"add\",\"name\":\"" + want + "\"}]"), 15000);
+                                    int now = was; bool there = false;
+                                    for (int t = 0; t < 40 && ! there; ++t)
+                                    { livePump (300); now = count(); there = holds (want); }
+                                    row (tag, was >= 0 && now > was && there,
+                                         "does an ADD sent down the same road land ON THE LINK, for "
+                                         "\"" + want + "\" - the op that was never broken, and the one "
+                                         "that made the replace's failure legible",
+                                         "the Link's own count: " + juce::String (was) + " -> "
+                                         + juce::String (now) + ", and its rack "
+                                         + juce::String (there ? "holds" : "does NOT hold") + " \"" + want + "\"");
+                                };
+                                addRow ("LV9i",       "EchoJay Gain");   // one of ours
+                                addRow ("LV9i-third", "AUDelay");        // a third party, no PACE
                             }
                         }
 

@@ -2332,6 +2332,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.liveViewFollowing    = [this] { return processorRef.shadowFollowing(); };
     chainListPanel.liveViewRunHoldsRack = [this]
     { return processorRef.agentRunIsWorkingOnRack (processorRef.shadowUid()); };
+    // POINT 81: the sentence stays while the mirror disagrees, and goes when it agrees. ONE author
+    // for the wording - the edit gate writes exactly this string when it refuses - so the sentence
+    // on screen and the sentence in the refusal cannot drift apart.
+    chainListPanel.mirrorStaleLine = [this]() -> juce::String
+    {
+        const auto uid = chainViewUid();
+        if (uid.isEmpty() || uid != mirrorStaleFor_) return {};
+        return echojay::mirrorStaleRefusalLine (processorRef.resolveLinkDisplayName (uid));
+    };
     chainListPanel.isLiveViewSlot = [this](int i)
     {
         return processorRef.shadowRunning()
@@ -39020,6 +39029,15 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("inlineTakesClicks", chainListPanel.inlineTakesClicks());
     o->setProperty ("inlineLockLine",    chainListPanel.inlineLockLine());
     o->setProperty ("inlineEditorFrom",  processorRef.lastSlotEditorSource());
+    // ---- WHETHER THIS SESSION'S MIRROR DISAGREES WITH THE RACK (point 81, 30 Oct 2026) -----
+    //
+    // The uid whose mirror is stale, empty when none is. Published because LV9g is about what a
+    // gesture does WHILE that is true, and the row had no way to tell whether its own setup had
+    // reached that state: on one run the rack move made the mirror stale and the gate refused in
+    // words (PASS), and on the next the mirror agreed, the gesture took the borrowed-session road,
+    // and the row reported "SILENT" about a configuration its claim was never about. A row that
+    // cannot see its own precondition reports the product's behaviour in the wrong state.
+    o->setProperty ("mirrorStaleFor", mirrorStaleFor_);
     // The first registered Link, so a row can address one without depending on what some outer
     // variable happens to hold (LV9b spent three runs measuring the own rack for want of this).
     {
@@ -42336,8 +42354,8 @@ bool EchoJayEditor::chainEditGateRefusesFor(const juce::String& uid)
     if (remote && uid == mirrorStaleFor_)
     {
         const auto name = processorRef.resolveLinkDisplayName (uid);
-        chainListPanel.statusText = "Catching up with " + (name.isNotEmpty() ? name : juce::String ("this Link"))
-                                  + "'s rack... that change wasn't sent.";
+        chainListPanel.statusText = echojay::mirrorStaleRefusalLine (name);
+        chainListPanel.restingHint_ = chainListPanel.statusText;   // so no rebuild writes over it
         chainListPanel.repaint();
         EchoJay_NSLog (("EJEditGate: refused - this session's mirror of " + uid + " does not describe "
                         "that rack yet (C's point 81; a gesture now would land on whatever is at that "

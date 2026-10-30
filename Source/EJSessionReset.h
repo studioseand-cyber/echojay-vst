@@ -192,4 +192,22 @@ inline juce::String gestureRefusalLine (const juce::String& what, const juce::St
          + " after it changed. Try again in a moment.";
 }
 
+/** ---- THE ONE AUTHOR OF THE STALE-MIRROR REFUSAL (point 81, 30 Oct 2026) -------------------
+
+    The sentence the edit gate writes when it refuses a gesture because this session's mirror no
+    longer describes the rack, AND the sentence the panel keeps on screen for as long as that is
+    true. One function, because on 29 Oct the gate composed it inline and nothing else could
+    reproduce it - so the panel could not tell the refusal from any other text and wrote over it
+    within a second, three different writers deep (the re-read's notice, that notice's retirement,
+    then the resting hint). LV9g read the panel afterwards and found "Select a plugin to see its
+    settings", which is how a refusal that WORKED still reached him as silence.
+
+    It says the condition is temporary because it is: the gate starts one re-read per episode and
+    the line goes by itself when the mirror agrees again. */
+inline juce::String mirrorStaleRefusalLine (const juce::String& rackName)
+{
+    return "Catching up with " + (rackName.isNotEmpty() ? rackName : juce::String ("this Link"))
+         + "'s rack... that change wasn't sent.";
+}
+
 } // namespace echojay

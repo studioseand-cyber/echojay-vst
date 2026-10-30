@@ -4108,6 +4108,19 @@ private:
         // as above - asked of the processor, never cached here.
         std::function<bool()>           liveViewFollowing;
         std::function<bool()>           liveViewRunHoldsRack;
+        /** ---- THE REFUSAL THAT HAS TO STAY ON SCREEN (point 81, 30 Oct 2026) ---------------
+            The sentence to show while this session's mirror does not describe the viewed rack, and
+            empty when it does. It is a CALLBACK rather than a stored string because the condition
+            is the editor's (mirrorStaleFor_) and a copy here would go stale exactly when it
+            mattered.
+
+            Why it exists: the edit gate already refused a bypass in words - "Catching up with
+            <Link>'s rack... that change wasn't sent." - and the refusal then STARTS a re-read of
+            that rack, whose own notice replaced the sentence, and the notice's retirement replaced
+            that with the resting hint. Three writers, about one second, and LV9g read the panel
+            afterwards and found "Select a plugin to see its settings". A sentence shown for under a
+            second is a silent refusal with extra steps, which is the fault his R4 ruling is about. */
+        std::function<juce::String()>   mirrorStaleLine;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
         std::function<void(int, int)>   onMoveSlot;
@@ -5414,8 +5427,14 @@ private:
                 // saying less - he would have gone looking for the button. One plain line, and it
                 // promises only what is actually there (the name and the Suggested Settings panel);
                 // the shadow is what will earn a longer sentence.
-                const juce::String hint = "Select a plugin to see its settings";
-                if (statusText.isEmpty() || statusText == restingHint_)
+                // A REFUSAL OUTRANKS THE RESTING HINT for as long as the refusal is TRUE. It
+                // becomes this line's own text (restingHint_), so every writer that only replaces
+                // "text this line wrote" keeps leaving it alone, and the moment the mirror agrees
+                // again the callback returns empty and the plain hint comes back by itself.
+                const juce::String stale = mirrorStaleLine ? mirrorStaleLine() : juce::String();
+                const juce::String hint = stale.isNotEmpty() ? stale
+                                                             : juce::String ("Select a plugin to see its settings");
+                if (statusText.isEmpty() || statusText == restingHint_ || stale.isNotEmpty())
                     statusText = hint;
                 restingHint_ = hint;
             }

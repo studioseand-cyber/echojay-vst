@@ -9013,6 +9013,52 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (peSrc.contains ("else if (statusText == shieldLineWas_) statusText.clear();"),
                    "ik PIN4: and takes back ONLY its own words, leaving other writers alone");
 
+            // ---- p8: AND A REFUSAL STAYS LONG ENOUGH TO BE READ (point 81, 30 Oct 2026) ----
+            //
+            // LV9g read the panel after a refused gesture and found "Select a plugin to see its
+            // settings". The gate HAD refused in words - the log says so - and three writers
+            // replaced the sentence inside about a second: the re-read the refusal itself starts,
+            // that notice's retirement, and then the resting hint. A sentence shown for under a
+            // second is a silent refusal with extra steps.
+            {
+                std::ifstream fsr ("Source/EJSessionReset.h");
+                std::stringstream ssr; ssr << fsr.rdbuf();
+                const auto srSrc = codeOnly (juce::String (ssr.str()));
+                check (srSrc.contains ("inline juce::String mirrorStaleRefusalLine"),
+                       "p8 PIN1: the refusal's wording has ONE author");
+                // Both readers go through it: the gate that writes it and the panel that keeps it.
+                std::ifstream fpc2 ("Source/PluginEditor.cpp");
+                std::stringstream spc2; spc2 << fpc2.rdbuf();
+                const auto pcSrc2 = codeOnly (juce::String (spc2.str()));
+                int authors = 0, at = 0;
+                while ((at = pcSrc2.indexOf (at, "mirrorStaleRefusalLine (")) >= 0) { ++authors; at += 20; }
+                check (authors == 2,
+                       "p8 PIN1: the gate and the panel both read that one author, and nobody "
+                       "composes the sentence inline",
+                       juce::String (authors) + " call site(s)");
+                check (! pcSrc2.contains ("\"Catching up with \" +"),
+                       "p8 PIN1: ...so the inline copy the gate used to build is gone");
+
+                // p8 PIN2 -- THE PANEL KEEPS IT WHILE IT IS TRUE, and the condition is the
+                // editor's, read through a callback rather than copied into the panel.
+                check (peSrc.contains ("std::function<juce::String()>   mirrorStaleLine;"),
+                       "p8 PIN2: the panel asks for the sentence rather than holding a copy");
+                const auto hintBlock = codeOnly (textAfter (peRaw, "const juce::String stale = mirrorStaleLine", 700));
+                check (hintBlock.isNotEmpty(), "p8 PIN2: found the resting-hint block");
+                check (hintBlock.contains ("|| stale.isNotEmpty()"),
+                       "p8 PIN2: a live refusal outranks the resting hint, even over text this "
+                       "line did not write");
+                check (hintBlock.contains ("restingHint_ = hint;"),
+                       "p8 PIN2: and it becomes this line's OWN text, so every writer that only "
+                       "replaces what it wrote leaves it alone");
+
+                // p8 PIN3 -- AND THE READ NOTICE RETIRES ONLY ITS OWN SENTENCE. The other half:
+                // this wrote restingHint_ over whatever was there, which is what the sticky-status
+                // rule above ChainListPanel::restingHint_ forbids.
+                check (pcSrc2.contains ("if (chainListPanel.statusText == line)"),
+                       "p8 PIN3: the rack-read notice replaces its own line and nothing else");
+            }
+
             // ik PIN5 -- AND A ROW CAN SEE IT. The question the user meets, published, so the gate
             // never again has nine green control rows over a knob nobody could touch.
             {
