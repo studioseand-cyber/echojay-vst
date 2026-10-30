@@ -8,8 +8,8 @@
 // loud section) and MA9 (a Live mix side shows the report, and the one line
 // says a capture is needed to plan). Plus the window's own rules: no silent
 // fallback, the memory per reference, and the switch's place on the page.
-// MA4 (stored figures survive a moved file) is NOT here: it needs A's restore
-// path (HANDOVER/REQUESTS_FOR_A_4.md).
+// MA4 (stored figures survive a moved file) is in k7a_pins.h, on A's restore
+// path (R4-1, 82e46d99).
 //
 // The series are A's real types: CaptureSnapshot for the mix and
 // ReferenceResult for the reference, through the page's own entry point.

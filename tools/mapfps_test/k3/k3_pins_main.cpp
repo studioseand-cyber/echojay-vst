@@ -45,6 +45,10 @@
  #include "k6b_pins.h"
  #define EJ_K6B 1
 #endif
+#if __has_include("k7a_pins.h")
+ #include "k7a_pins.h"
+ #define EJ_K7A 1
+#endif
 
 int main()
 {
@@ -86,6 +90,9 @@ int main()
 #endif
 #ifdef EJ_K6B
     k6bpins::runK6bPins (check);
+#endif
+#ifdef EJ_K7A
+    k7apins::runK7aPins (check);
 #endif
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
