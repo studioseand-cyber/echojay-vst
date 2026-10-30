@@ -1468,6 +1468,34 @@ private:
         bool  morphDone  = false;  ///< it has played: the blocks and gap stay
         float linkPhase  = 0.0f;   ///< the link's travelling pulse, 0 to 1
         float refusedFor = 0.0f;   ///< seconds left on the press-refused line
+        /** WHICH refusal is showing, because the two have different conditions and re-arming one
+            against the other's test is C's F3: an axis that cannot propose is a fact about the
+            AXIS, not about band playability. Set at each of press()'s two refusal sites. */
+        bool  refusedWasAxis = false;
+        /** WHICH axis the showing refusal was about. MT7 proved why a bool is not enough: the rig
+            changed the axis without going through the UI's reset, and "the axis still cannot
+            propose" was TRUE of stereo as well - so the DYNAMICS sentence sat on the stereo page.
+            A refusal belongs to the state it was about, and this is that state, so no caller can
+            leave it stale by reaching the axis another way. */
+        echojay::MatchAxis refusedAxis = echojay::MatchAxis::Spectrum;
+        /** Seconds until the refusal's condition is re-read. The re-read rebuilds the sides and the
+            proposal, which is not a thing to do every frame (C's N2); 4 Hz is far faster than a
+            person can act on and fifteen times less work than the timer's own rate. */
+        float refusedRecheckIn = 0.0f;
+        /** TAKE THE REFUSAL DOWN, ALL OF IT. Every reset site used to zero refusedFor alone, and
+            once the reason became STICKY (his item 2a) that was no longer enough: the next tick
+            re-evaluated the OLD sentence against the NEW state and put it back if the new state
+            also could not act. Dynamics to Stereo showed the dynamics sentence on stereo; whole to
+            loudest-30 showed the whole-song reason; a reopen showed the last session's refusal.
+            C's N1. One call, so a reset site cannot forget half of it. */
+        void clearRefusal() noexcept
+        {
+            refusedFor = 0.0f;
+            refusedText.clear();
+            refusedBadge.clear();
+            refusedWasAxis = false;
+            refusedAxis    = axis;
+        }
         bool  buttonHot  = false;  ///< the pointer is over the button
         /** Which painted region the pointer is over: 0 none, 1 the button,
             2 the mix picker, 3 the reference picker, 4 the mix waveform,

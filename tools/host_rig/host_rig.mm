@@ -324,6 +324,8 @@ static int ejDragOnGuest (NSView* guest, NSPoint inView, double dy, int steps,
 #include "LinkShm.h"          // the registry, so the rig can reap rows whose publisher is gone (item 14)
 #include <cmath>
 #include <cstdio>
+#include <sys/sysctl.h>   // LV9r reads swap use before it believes a wall clock
+#include <cstdlib>         // ...and getloadavg, for the same reason
 
 // ============================================================================
 //  reporting
@@ -3132,8 +3134,11 @@ int main (int argc, char* argv[])
     //   * and a WATCHDOG turns "never returned" into a loud failure. That is the case this round
     //     actually shipped, and it is the one case a timing assertion alone cannot report, because
     //     the thread that would report it is the thread that is stuck.
-    if (rowWanted ("LV9r"))
+    if (rowWanted ("LV9r")) [&]
     {
+        // A LAMBDA, so the early return below leaves THIS ROW. Written as a plain block first, it
+        // would have returned out of the whole suite the moment the machine was busy - every row
+        // after LV9r silently gone, and a green run that had stopped after the first one.
         struct RenderWatchdog : juce::Thread
         {
             RenderWatchdog (int ms) : juce::Thread ("ej-render-watchdog"), limitMs (ms) {}
@@ -3162,8 +3167,65 @@ int main (int argc, char* argv[])
             const int limitMs;
         };
 
+        // ---- A LOADED MACHINE CANNOT GIVE TIMING EVIDENCE (C's condition, 30 Oct 2026) -------
+        //
+        // me PIN2b failed in a commit gate and passed run alone, on the same build, minutes apart.
+        // This row's whole value is a wall-clock figure, so it has to say when the clock is not
+        // worth reading - and SKIP, never pass, because "it was fine while the machine was busy" is
+        // not a weaker version of the claim, it is a different one.
+        //
+        // MY FIRST CUT READ THE WRONG SIGNAL, and the run told me so: it refused on "swap 89.7% in
+        // use" while macOS reported 75% of memory FREE. Swap USED is a high-water mark - pages
+        // macOS wrote out once and has not needed since - not a statement about paging now. On this
+        // machine it sits near 90% all day, so the row would have skipped for ever and been useless
+        // in exactly the way a wrong verifier always is: quietly.
+        //
+        // So the machine is asked the only question that matters, and asked in the row's own terms:
+        // RUN THE SAME WORK TWICE. A calibration pass and the measured pass are identical loops; on
+        // a quiet machine their means agree closely, and a machine that is competing with something
+        // else cannot keep them together. No OS metric to misread, and it measures the clock this
+        // row actually reads. The load average stays, but only as a cheap pre-filter at twice the
+        // core count, which is a genuinely overloaded machine rather than a busy one.
         const double periodMs  = (double) block / (sr / 1000.0);     // ms of audio in one block
+        {
+            double la[3] = { 0, 0, 0 };
+            const double load1 = getloadavg (la, 3) > 0 ? la[0] : 0.0;
+            const int cores = juce::jmax (1, juce::SystemStats::getNumPhysicalCpus());
+            if (load1 > 2.0 * (double) cores)
+            {
+                skip ("LV9r: the transport runs and every block comes back",
+                      "the load average is " + juce::String (load1, 2) + " on " + juce::String (cores)
+                      + " cores - more than twice the core count, so a wall-clock figure here is not "
+                        "evidence. This SKIPS and is NOT render proof. The hang half needs no clock "
+                        "and is covered by me PIN1.");
+                return;
+            }
+            std::printf ("        (LV9r) machine: load %.2f on %d cores - calibrating\n", load1, cores);
+        }
         const int    blocksFor = (int) (sr * 20.0 / (double) block); // 20 seconds of audio
+        // THE CALIBRATION PASS: the identical loop, two seconds of it, timed. Its mean is what the
+        // measured pass is checked against for steadiness below.
+        double calMean = 0.0;
+        {
+            // A DISCARDED WARM-UP FIRST, because the first cut measured warm-up and called it load:
+            // calibration 0.473 ms/block against a measured 0.133, a "3.55x" that was entirely the
+            // first two seconds paying for first-touch pages and the plugins' first blocks. Both
+            // passes have to be warm before their ratio means anything.
+            const int warmBlocks = (int) (sr * 2.0 / (double) block);
+            for (int b = 0; b < warmBlocks; ++b)
+            {
+                v2.processOneBlock (sr);
+                for (Track* t : { &lk1, &lk2 }) t->processOneBlock (sr);
+            }
+            const int calBlocks = (int) (sr * 2.0 / (double) block);
+            const auto c0 = juce::Time::getMillisecondCounterHiRes();
+            for (int b = 0; b < calBlocks; ++b)
+            {
+                v2.processOneBlock (sr);
+                for (Track* t : { &lk1, &lk2 }) t->processOneBlock (sr);
+            }
+            calMean = (juce::Time::getMillisecondCounterHiRes() - c0) / (double) calBlocks;
+        }
         // The watchdog's limit is for the WHOLE loop: 20 s of audio through three plugins, with a
         // wide allowance for a loaded machine. A hang blows through it; slowness does not.
         RenderWatchdog dog (90000);
@@ -3202,6 +3264,32 @@ int main (int argc, char* argv[])
         }
         dog.signalThreadShouldExit(); dog.stopThread (1000);
         const double meanV2 = totalV2 / (double) blocksFor;
+        // ---- AND WAS THE CLOCK STEADY? ------------------------------------------------------
+        //
+        // The calibration pass and the measured pass are the same work. If their means disagree by
+        // more than 2x, something else had the machine for part of this row and the figures below
+        // describe that, not the plugin. A SKIP, not a pass and not a fail: the product is not
+        // implicated either way, and his install bar counts a skipped LV9r as no render proof.
+        {
+            // ONE DIRECTION ONLY. A measured pass FASTER than its calibration is not a problem
+            // with the clock - the figures merely came out better - and treating it as one is what
+            // made the first cut skip on a warm-up. Only the measured pass being slower says
+            // something else had the machine while the row was counting.
+            const double ratio = calMean > 0.0 ? meanV2 / calMean : 1.0;
+            std::printf ("        (LV9r) steadiness: calibration %.3f ms/block, measured %.3f ms/block"
+                         " -> %.2fx\n", calMean, meanV2, ratio);
+            if (ratio > 2.0)
+            {
+                skip ("LV9r: the transport runs and every block comes back",
+                      "the measured pass ran " + juce::String (ratio, 2) + "x SLOWER than its own "
+                        "warm calibration in this row "
+                      "row (calibration " + juce::String (calMean, 3) + " ms/block, measured "
+                      + juce::String (meanV2, 3) + " ms/block), so the machine was competing with "
+                        "something and these figures are about that. SKIPPED, and NOT render proof - "
+                        "run it again on an idle machine.");
+                return;
+            }
+        }
         row ("LV9r", over == 0 && overPeriod == 0 && meanV2 < periodMs,
              "the transport runs for 20 seconds through the V2 and both Links in ONE process, and "
              "every block comes back inside its budget - the row his 08:10 hang proved was missing",
@@ -3211,7 +3299,7 @@ int main (int argc, char* argv[])
              + juce::String (kBudgetFrac * 100.0, 0) + "% of their period (the dropout line) and "
              + juce::String (over) + " over " + juce::String (kStallMs, 0) + " ms (the never-returned "
              "line), in " + juce::String (blocksFor) + " blocks x 3 plugins");
-    }
+    }();
 
     // ---- W1: A WINDOW THAT REALLY CLOSES ------------------------------------------------------------
     //
@@ -4460,6 +4548,193 @@ int main (int argc, char* argv[])
     if (! sawLink) rig.send (echojay::rig::cmd::reportState, juce::var (new juce::DynamicObject()));
     check (linkUid.isNotEmpty(), "a Link is in the registry and connected",
            "links=" + juce::JSON::toString (Rig::state().getProperty ("links", juce::var())));
+
+    // ---- MT1: AI MATCH MUST SAY SOMETHING (his item 2a, 30 Oct 2026) -------------------------
+    //
+    // *"AI MATCH on the Match tab is silent (expected until the Live buffer, but it must say
+    // why)."*  There was no row because there was no way in: the page is a Reference SUB-TAB and
+    // its mix side is picked from an async popup menu. So this REPRODUCES it first, which is what
+    // he asked for - press it with the Live slot selected and read what the page said.
+    //
+    // THE CLAIM IS NOT "IT WORKS". The Live buffer is not wired into the proposal yet, so a refusal
+    // is the correct outcome today. What may never happen is NOTHING: matchPressRefusedText always
+    // returns a sentence and matchRefusedBadge always returns a word, so empty strings after a press
+    // mean the press never reached the decision - a different fault from a refusal nobody rendered,
+    // and the one his report describes.
+    if (rowWanted ("MT1"))
+    {
+        const auto tabAck = rig.send (echojay::rig::cmd::press, args1 ("button", "tab_match"), 8000);
+        Rig::pump (400);
+        const auto slotAck = rig.send (echojay::rig::cmd::matchSlot, args1 ("kind", "live"), 8000);
+        Rig::pump (600);
+        const auto st0 = rig.freshState();
+        const bool onPage = (bool) st0.getProperty ("matchSubTab", false);
+        const auto mixKind = st0.getProperty ("matchMixKind", juce::var()).toString();
+        const auto pressAck = rig.send (echojay::rig::cmd::aiMatch, juce::var (new juce::DynamicObject()), 8000);
+        Rig::pump (500);
+        const auto st = rig.freshState();
+        const auto said  = st.getProperty ("matchRefusedText", juce::var()).toString();
+        const auto badge = st.getProperty ("matchRefusedBadge", juce::var()).toString();
+        const bool morph = (bool) st.getProperty ("matchMorphing", false);
+        const double forMs = (double) st.getProperty ("matchRefusedFor", 0.0);
+        const bool setUp = onPage && mixKind == "live";
+        row ("MT1", setUp && (morph || (said.isNotEmpty() && badge.isNotEmpty())),
+             "with the LIVE signal as the mix side, AI MATCH either plays or SAYS WHY - never the "
+             "silence he reported",
+             ! setUp
+                 ? "COULD NOT RUN, which is a FAIL: the page "
+                   + juce::String (onPage ? "is showing" : "is NOT showing")
+                   + " and the mix side reads kind=\"" + mixKind
+                   + "\" (wanted Live). tab_match said \""
+                   + tabAck.getProperty ("note", juce::var()).toString() + "\"; match_slot said \""
+                   + slotAck.getProperty ("note", juce::var()).toString() + "\""
+                 : morph
+                     ? "it PLAYED the morph, so the Live side produced a proposal"
+                     : said.isNotEmpty()
+                         ? "refused in words: \"" + said + "\" (badge \"" + badge + "\", showing for "
+                           + juce::String (forMs, 1) + ")"
+                         : "SILENT: the page said nothing at all and played nothing (badge \"" + badge
+                           + "\", refusedFor " + juce::String (forMs, 1) + "). The wording functions "
+                             "cannot return empty, so the press did not reach the decision. "
+                             "ai_match said: \"" + pressAck.getProperty ("note", juce::var()).toString() + "\"");
+    }
+
+    // ---- MT2: AND IT IS STILL THERE FOUR SECONDS LATER (his item 2a, 30 Oct 2026) ------------
+    //
+    // MT1 proves the page SAYS something. This proves he can READ it. The sentence was armed for
+    // 2.5 s per press and drawn over the plot - which is how a correct refusal reaches a person as
+    // silence, and exactly what point 81 cost us this morning. A reason that is still TRUE now
+    // stays, and goes by itself when the page can act.
+    //
+    // FOUR SECONDS, because the window it has to outlive is 2.5.
+    if (rowWanted ("MT2"))
+    {
+        const auto before = rig.freshState().getProperty ("matchRefusedText", juce::var()).toString();
+        for (int i = 0; i < 8; ++i) Rig::pump (500);        // 4 s, pumped so the timer really runs
+        const auto st2 = rig.freshState();
+        const auto after = st2.getProperty ("matchRefusedText", juce::var()).toString();
+        const double forMs = (double) st2.getProperty ("matchRefusedFor", 0.0);
+        // WHAT IS ON SCREEN, which is refusedFor AND the text: the paint gates on both, so the
+        // member holding a sentence while refusedFor is 0 means nothing is drawn. My first cut
+        // asserted only that the member had not changed, and it "passed" over a blank page.
+        row ("MT2", before.isNotEmpty() && after == before && forMs > 0.0,
+             "the reason AI MATCH gave is still on screen four seconds later, because it is still "
+             "true - a sentence shown for 2.5 s is how a refusal reaches him as silence",
+             before.isEmpty()
+                 ? "COULD NOT RUN: MT1 left no sentence to outlive (it must run first)"
+                 : after == before
+                     ? "still showing after 4 s: \"" + after + "\" (refusedFor " + juce::String (forMs, 1) + ")"
+                     : "GONE after 4 s - it said \"" + before + "\" and now says \"" + after
+                       + "\" (refusedFor " + juce::String (forMs, 1) + "), so he has 2.5 s to catch it");
+    }
+
+    // ---- MT6 and MT3: THE AXIS REFUSAL, AND CLEARING THE MOMENT IT IS UNTRUE ----------------
+    //
+    // C's F3 and F4, and they can be reached without a playable band comparison, which is why they
+    // are here rather than waiting for 2b:
+    //
+    //   F3  an AXIS that cannot propose (Dynamics, Stereo - matchAxisCanPropose) is a fact about
+    //       the AXIS, not about band playability. My first cut re-armed it against the bands, so
+    //       it would have kept or dropped the axis sentence for an unrelated reason.
+    //   F4  a reason that has stopped being true must go AT ONCE, not when its 2.5 s happens to
+    //       run out. Switching the axis back to Spectrum makes the axis refusal untrue on the next
+    //       tick, which is the cleanest handle on that path there is.
+    if (rowWanted ("MT6") || rowWanted ("MT3"))
+    {
+        rig.send (echojay::rig::cmd::press, args1 ("button", "tab_match"), 8000);
+        Rig::pump (300);
+        const auto axAck = rig.send (echojay::rig::cmd::matchAxis, args1 ("axis", "dynamics"), 8000);
+        Rig::pump (200);
+        rig.send (echojay::rig::cmd::aiMatch, juce::var (new juce::DynamicObject()), 8000);
+        Rig::pump (300);
+        const auto st1 = rig.freshState();
+        const auto said1   = st1.getProperty ("matchRefusedText", juce::var()).toString();
+        const bool wasAxis = (bool) st1.getProperty ("matchRefusedWasAxis", false);
+        const bool canProp = (bool) st1.getProperty ("matchAxisCanPropose", true);
+        // ...and it outlives its own 2.5 s window, because the axis still cannot propose.
+        for (int i = 0; i < 8; ++i) Rig::pump (500);
+        const auto st2 = rig.freshState();
+        const auto said2 = st2.getProperty ("matchRefusedText", juce::var()).toString();
+        const double for2 = (double) st2.getProperty ("matchRefusedFor", 0.0);
+        if (rowWanted ("MT6"))
+            row ("MT6", ! canProp && wasAxis && said1.isNotEmpty() && said2 == said1 && for2 > 0.0,
+                 "an axis that cannot propose refuses in its OWN words and keeps them, keyed on the "
+                 "axis rather than on band playability (C's F3)",
+                 ! canProp
+                     ? (wasAxis
+                          ? (said2 == said1 && for2 > 0.0
+                               ? "the axis refusal \"" + said1 + "\" is still up after 4 s (refusedFor "
+                                 + juce::String (for2, 1) + ")"
+                               : "it said \"" + said1 + "\" and after 4 s says \"" + said2
+                                 + "\" (refusedFor " + juce::String (for2, 1) + ") - an axis refusal "
+                                   "that does not survive its own condition")
+                          : "the refusal was NOT recorded as an axis one, so it is being re-armed "
+                            "against band playability - C's F3 exactly")
+                     : "COULD NOT RUN: the axis says it CAN propose, so there is no axis refusal to "
+                       "test (match_axis said \"" + axAck.getProperty ("note", juce::var()).toString() + "\")");
+
+        // F4: back to an axis that CAN propose, and the sentence must go on the next tick, not in
+        // its own time. One pump is ~1 frame of the 60 Hz timer plus slack.
+        rig.send (echojay::rig::cmd::matchAxis, args1 ("axis", "spectrum"), 8000);
+        // 600 ms, not 250: the condition is re-read at 4 Hz (C's N2), so a 250 ms window is the
+        // throttle itself and the row would pass or fail on which side of a tick it landed.
+        Rig::pump (600);
+        const auto st3 = rig.freshState();
+        const auto said3 = st3.getProperty ("matchRefusedText", juce::var()).toString();
+        const double for3 = (double) st3.getProperty ("matchRefusedFor", 0.0);
+        if (rowWanted ("MT3"))
+            row ("MT3", said1.isNotEmpty() && said3.isEmpty() && for3 <= 0.0,
+                 "a reason that has stopped being true is off the screen on the next tick, not when "
+                 "its 2.5 s runs out (C's F4; re-read at 4 Hz, so within ~250 ms of it)",
+                 said1.isEmpty()
+                     ? "COULD NOT RUN: there was no refusal on screen to clear"
+                     : said3.isEmpty() && for3 <= 0.0
+                         ? "cleared within 600 ms of the axis becoming able to propose"
+                         : "STILL SHOWING \"" + said3 + "\" (refusedFor " + juce::String (for3, 1)
+                           + ") after the axis can propose again - so a stale reason sits over a page "
+                             "that can act, for up to its full window");
+    }
+
+    // ---- MT7: A RESET TAKES THE SENTENCE WITH IT (C's N1, 30 Oct 2026) ----------------------
+    //
+    // Making the reason STICKY turned every reset site into a bug, and C caught it before it
+    // shipped. The window switch, the axis change and the page reopen each zeroed refusedFor and
+    // left refusedText standing - which was harmless while the sentence died with its countdown,
+    // and is not harmless now: the next tick re-evaluates the OLD sentence against the NEW state
+    // and puts it back if the new state also cannot act. Dynamics to Stereo would have shown the
+    // DYNAMICS sentence on stereo.
+    //
+    // Both axes here cannot propose, which is the trap exactly: a sticky-but-unreset sentence
+    // survives the change because the new state is refusing too.
+    if (rowWanted ("MT7"))
+    {
+        rig.send (echojay::rig::cmd::press, args1 ("button", "tab_match"), 8000);
+        Rig::pump (250);
+        rig.send (echojay::rig::cmd::matchAxis, args1 ("axis", "dynamics"), 8000);
+        Rig::pump (200);
+        rig.send (echojay::rig::cmd::aiMatch, juce::var (new juce::DynamicObject()), 8000);
+        Rig::pump (400);
+        const auto onDyn = rig.freshState().getProperty ("matchRefusedText", juce::var()).toString();
+        // ...now to an axis that ALSO cannot propose. The sentence must not survive the change.
+        rig.send (echojay::rig::cmd::matchAxis, args1 ("axis", "stereo"), 8000);
+        Rig::pump (700);
+        const auto st = rig.freshState();
+        const auto after = st.getProperty ("matchRefusedText", juce::var()).toString();
+        const auto axisNow = st.getProperty ("matchAxis", juce::var()).toString();
+        row ("MT7", onDyn.isNotEmpty() && after != onDyn,
+             "changing the axis takes the old refusal down with it - a sticky sentence must not "
+             "outlive the state it was about, even when the new state also cannot act (C's N1)",
+             onDyn.isEmpty()
+                 ? "COULD NOT RUN: pressing on the dynamics axis left no sentence to carry over"
+                 : after.isEmpty()
+                     ? "the dynamics sentence went when the axis did (now on " + axisNow
+                       + ", nothing showing until he presses again)"
+                     : after != onDyn
+                         ? "it now says \"" + after + "\" on " + axisNow + ", which is this axis's own"
+                         : "STALE: it still says \"" + after + "\" on " + axisNow
+                           + " - the dynamics sentence survived the axis change, which is C's N1");
+    }
+
 
     if (linkUid.isNotEmpty())
     {

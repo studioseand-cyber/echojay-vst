@@ -38224,6 +38224,19 @@ void EchoJayEditor::serviceRigHook()
             EchoJay_NSLog (("EJRig: press " + b + " seq=" + juce::String (c.seq) + " -> " + note).toRawUTF8());
             return;
         }
+        if (b == "tab_match")
+        {
+            // THE MATCH PAGE IS A REFERENCE SUB-TAB, which is why "go to the Match tab" is not one
+            // of the tab presses above. Both halves, in the order the user's own clicks do them.
+            switchToTab (Tab::Compare, true);   // the Reference page is Tab::Compare; Match is its sub-tab
+            setRefSubTab (echojay::RefSubTab::Match);
+            resized(); repaint();
+            note = "switched to the Reference tab's MATCH page";
+            publishRigState();
+            echojay::rig::ack (c.seq, c.name, ok, note);
+            EchoJay_NSLog (("EJRig: press tab_match seq=" + juce::String (c.seq) + " -> " + note).toRawUTF8());
+            return;
+        }
         if (b == "onboarding" || b == "tab_chat" || b == "tab_chain")
         {
             if (b == "onboarding")
@@ -38375,6 +38388,60 @@ void EchoJayEditor::serviceRigHook()
             chainListPanel.onBypassSlot (n1 - 1);
             note = "pressed slot " + juce::String (n1) + "'s bypass, the panel's own road";
         }
+    }
+    else if (c.name == echojay::rig::cmd::matchSlot)
+    {
+        // THE PRODUCT'S OWN ONE WRITER for the mix side (matchApplyMixSlot), with the state the
+        // popup menu's callback builds. Not a copy: the menu cannot be driven from here, and a
+        // second writer would be a second definition of what picking a slot means.
+        const auto kind = c.str ("kind").trim().toLowerCase();
+        CompareSlotState next;
+        if (kind == "live")          { next.kind = CompareSlotState::Kind::Live;     next.label = "Live signal"; }
+        else if (kind == "snapshot") { next.kind = CompareSlotState::Kind::Snapshot; next.index = (int) c.num ("index");
+                                       const auto snaps = processorRef.getSnapshots();
+                                       if (next.index < 0 || next.index >= (int) snaps.size())
+                                       { ok = false; note = "no snapshot " + juce::String (next.index); }
+                                       else next.label = snaps[(size_t) next.index].name; }
+        else if (kind == "reference"){ next.kind = CompareSlotState::Kind::Reference; next.index = (int) c.num ("index");
+                                       next.label = "reference " + juce::String (next.index); }
+        else { ok = false; note = "unknown match slot kind \"" + kind + "\" (live|snapshot|reference)"; }
+        if (ok)
+        {
+            matchApplyMixSlot (next);
+            note = "the mix side is now \"" + next.label + "\"";
+        }
+    }
+    else if (c.name == echojay::rig::cmd::matchAxis)
+    {
+        // The page's four axes. Dynamics and Stereo carry no moves whatever the two sides hold
+        // (matchAxisCanPropose), so this is how a row reaches the AXIS refusal - a different
+        // condition from band playability, which is C's F3.
+        const auto a = c.str ("axis").trim().toLowerCase();
+        if      (a == "spectrum") matchPanel_.axis = echojay::MatchAxis::Spectrum;
+        else if (a == "loudness") matchPanel_.axis = echojay::MatchAxis::Loudness;
+        else if (a == "dynamics") matchPanel_.axis = echojay::MatchAxis::Dynamics;
+        else if (a == "stereo")   matchPanel_.axis = echojay::MatchAxis::Stereo;
+        else { ok = false; note = "unknown axis \"" + a + "\" (spectrum|loudness|dynamics|stereo)"; }
+        if (ok)
+        {
+            matchPanel_.repaint();
+            note = juce::String ("the axis is now ") + echojay::matchAxisName (matchPanel_.axis)
+                 + ", which " + (echojay::matchAxisCanPropose (matchPanel_.axis) ? "CAN" : "cannot")
+                 + " propose";
+        }
+    }
+    else if (c.name == echojay::rig::cmd::aiMatch)
+    {
+        // THE BUTTON'S OWN ROAD. press() either plays the morph or says why it cannot; this calls
+        // it and the state below carries what it said, so a row can tell "refused in words" from
+        // the silence his item 2a reported.
+        matchPanel_.press();
+        const auto pair = matchSlots();
+        note = juce::String ("pressed AI MATCH with the mix side kind=")
+             + (pair.mix != nullptr ? juce::String ((int) pair.mix->kind) : juce::String ("none"))
+             + ", and it said: \"" + matchPanel_.refusedText + "\" (badge \""
+             + matchPanel_.refusedBadge + "\", morphing="
+             + juce::String (matchPanel_.morphing ? "y" : "n") + ")";
     }
     else if (c.name == echojay::rig::cmd::setPreGain)
     {
@@ -39038,6 +39105,40 @@ void EchoJayEditor::publishRigState()
     // and the row reported "SILENT" about a configuration its claim was never about. A row that
     // cannot see its own precondition reports the product's behaviour in the wrong state.
     o->setProperty ("mirrorStaleFor", mirrorStaleFor_);
+    // ---- WHAT THE MATCH PAGE SAID, IF ANYTHING (his item 2a, 30 Oct 2026) ------------------
+    //
+    // "AI MATCH is silent" is a claim about these three, and no row could see any of them. The
+    // refusal wording can never be EMPTY by construction (matchPressRefusedText always returns a
+    // sentence), so if these come back empty after a press, the press did not reach the decision -
+    // which is a different fault from a refusal nobody rendered.
+    o->setProperty ("matchRefusedText",  matchPanel_.refusedText);
+    o->setProperty ("matchRefusedBadge", matchPanel_.refusedBadge);
+    o->setProperty ("matchRefusedFor",   matchPanel_.refusedFor);
+    o->setProperty ("matchMorphing",     matchPanel_.morphing);
+    {
+        const auto pair = matchSlots();
+        // THE NAME, not the enum's number: a row in another translation unit cannot see
+        // CompareSlotState, and a row comparing against a hard-coded 1 would break silently the
+        // day a case is inserted above it.
+        const auto kindName = [] (const CompareSlotState* sl) -> juce::String
+        {
+            if (sl == nullptr) return "none";
+            switch (sl->kind)
+            {
+                case CompareSlotState::Kind::Live:      return "live";
+                case CompareSlotState::Kind::Snapshot:  return "snapshot";
+                case CompareSlotState::Kind::Reference: return "reference";
+                default: break;
+            }
+            return "other";
+        };
+        o->setProperty ("matchMixKind", kindName (pair.mix));
+        o->setProperty ("matchRefKind", kindName (pair.ref));
+        o->setProperty ("matchSubTab",  refSubTab_ == echojay::RefSubTab::Match);
+        o->setProperty ("matchAxis",     echojay::matchAxisName (matchPanel_.axis));
+        o->setProperty ("matchAxisCanPropose", echojay::matchAxisCanPropose (matchPanel_.axis));
+        o->setProperty ("matchRefusedWasAxis", matchPanel_.refusedWasAxis);
+    }
     // The first registered Link, so a row can address one without depending on what some outer
     // variable happens to hold (LV9b spent three runs measuring the own rack for want of this).
     {

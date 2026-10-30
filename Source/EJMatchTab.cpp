@@ -1285,6 +1285,8 @@ void EchoJayEditor::MatchPanel::press()
         refusedText  = echojay::matchAxisPressText (axis);
         refusedBadge = echojay::matchRefusedBadge (true, false);
         refusedFor   = 2.5f;
+        refusedWasAxis = true;
+        refusedAxis    = axis;
         morphing = false; morphDone = false; morphPos = 0.0f;
         startTimerHz (60);
         repaint();
@@ -1304,6 +1306,7 @@ void EchoJayEditor::MatchPanel::press()
         refusedText  = echojay::matchPressRefusedText (ready);
         refusedBadge = echojay::matchRefusedBadge (false, ready.goodNews);
         refusedFor   = 2.5f;
+        refusedWasAxis = false;
         morphing = false; morphDone = false; morphPos = 0.0f;
         startTimerHz (60);
         repaint();
@@ -1313,7 +1316,7 @@ void EchoJayEditor::MatchPanel::press()
     morphPos  = 0.0f;
     morphing  = true;
     morphDone = false;
-    refusedFor = 0.0f;
+    clearRefusal();   // C's N1, fourth site: a press that PLAYS leaves no sentence behind
     // 5d: the report, from the same view the press just read; 6b: once per comparison.
     if (acts.post)
     {
@@ -2599,7 +2602,7 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
             if (echojay::matchWindowMemory().get (key) != next)
             {
                 echojay::matchWindowMemory().set (key, next);
-                morphing = false; morphPos = 0.0f; morphDone = false; refusedFor = 0.0f;
+                morphing = false; morphPos = 0.0f; morphDone = false; clearRefusal();   // C's N1
                 tickSidesValid = false;
                 // A report or a plan answer was about the other window.
                 getProperties().remove (echojay::matchPageReportInChatId());
@@ -2655,7 +2658,7 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                     morphing = false;
                     morphPos = 0.0f;
                     morphDone = false;
-                    refusedFor = 0.0f;
+                    clearRefusal();   // C's N1: the axis changed, so its sentence goes with it
                     repaint();
                 }
             }
@@ -2678,7 +2681,7 @@ void EchoJayEditor::MatchPanel::visibilityChanged()
     {
         openFade = 0.0f;       // the page fades in every time it opens
         morphPos = 0.0f; morphing = false; morphDone = false;
-        refusedFor = 0.0f; buttonHot = false;
+        clearRefusal(); buttonHot = false;   // C's N1: a reopen must not show last time's reason
         // The slots may have changed while this page was away, so the pair
         // stored by the last opening is not this opening's: the first paint
         // builds its own again rather than drawing what was true before.
@@ -2729,10 +2732,91 @@ void EchoJayEditor::MatchPanel::timerCallback()
         busy = true;
     }
 
-    if (refusedFor > 0.0f)
+    // ---- A REASON THAT IS STILL TRUE DOES NOT TIME OUT, AND ONE THAT IS NOT GOES AT ONCE ----
+    //
+    // *"AI MATCH on the Match tab is silent (expected until the Live buffer, but it must say
+    // why)."*  It was NOT silent - the row written to reproduce it got "Capture at least 30 s of
+    // the chorus to make a plan." with the badge "NO MOVE" - and it said it for 2.5 SECONDS, once
+    // per press, over the plot. That is how a correct refusal reaches a person as silence, and it
+    // is the lesson point 81 cost us the same morning.
+    //
+    // FOUR THINGS C CAUGHT IN MY FIRST CUT, all of them real:
+    //
+    //  F1  it re-read the WHOLE sides while the press reads the sides over the reference's WINDOW
+    //      (matchPageViewOf, view.ctx) - my comment even said the opposite. Two readings of "is it
+    //      still true", so on Loudest 30 s the sentence could time out while the window still
+    //      cannot act, or sit over a window that has become valid. ONE reading now, below, and the
+    //      press's own.
+    //  F2  "Nothing to play: these two already match." is not playable either, so it was re-armed
+    //      for ever - a scrim over the plot that shows the match it is talking about. Good news is
+    //      not a refusal and is never kept.
+    //  F3  an AXIS refusal was being re-armed against band playability. The axis has its own
+    //      condition, so refusedWasAxis keys which test applies.
+    //  F4  and it only cleared when the 2.5 s ran out. The condition is re-read every tick, so a
+    //      page that becomes playable drops the sentence immediately rather than seconds later.
+    if (refusedFor > 0.0f || refusedText.isNotEmpty())
     {
         refusedFor = juce::jmax (0.0f, refusedFor - dt);
-        busy = true;
+        // ---- AND NOT SIXTY TIMES A SECOND (C's N2, 30 Oct 2026) ------------------------------
+        //
+        // The re-check rebuilds the sides AND the proposal. At 60 Hz, for as long as a refusal is
+        // true - which before 2b, on a Live mix side, is the whole time the page is open - that is
+        // a proposal computed every 17 ms to answer a question whose answer changes with the audio,
+        // not with the frame. Four times a second is faster than he can act on it and fifteen times
+        // less work. The cost per re-read with a long live buffer goes in the notes when 2b lands.
+        refusedRecheckIn -= dt;
+        const bool doRecheck = refusedRecheckIn <= 0.0f;
+        if (doRecheck) refusedRecheckIn = 0.25f;
+        bool stillTrue = refusedFor > 0.0f;      // between re-reads, the last answer stands
+        if (doRecheck && host != nullptr && refusedText.isNotEmpty())
+        {
+            stillTrue = false;
+            if (refusedWasAxis)
+            {
+                // AND THE SAME AXIS. "This axis cannot propose" is true of Dynamics AND
+                // Stereo, so without the second half the dynamics sentence stayed up on the
+                // stereo page - which is what MT7 went red on, C's N1 reaching past the resets.
+                stillTrue = ! echojay::matchAxisCanPropose (axis) && axis == refusedAxis;
+            }
+            else
+            {
+                const auto slots = host->matchSlots();
+                if (slots.mix != nullptr && slots.ref != nullptr)
+                {
+                    // THE PRESS'S OWN READING, line for line (press() above): the windowed sides
+                    // and the context that goes with them.
+                    //
+                    // KATHY'S RULING, 30 Oct 2026: the press uses the SELECTED WINDOW, as one
+                    // computation that the line, the morph, the report and the plan all read, and
+                    // a window that cannot be taken is refused with the page's own line rather
+                    // than falling back to the whole capture. She is landing that as a shared
+                    // helper in her K1 code. Until it exists this is a COPY of the press's four
+                    // lines, which gets the same answer and is still two places that can drift -
+                    // so when her helper lands, both call it and this comment goes.
+                    const auto view  = matchPageViewOf (*host, host->buildMatchSides(), slots);
+                    const auto again = echojay::matchReadiness (
+                                           echojay::computeMatchProposal (view.w.mix, view.w.ref), view.ctx);
+                    stillTrue = ! again.playable && ! again.goodNews;   // F2
+                }
+            }
+        }
+        if (stillTrue)
+        {
+            refusedFor = juce::jmax (refusedFor, 2.5f);   // keeps the PRESS's wording, not a new one
+            busy = true;
+        }
+        else if (refusedFor <= 0.0f)
+        {
+            refusedText.clear(); refusedBadge.clear(); refusedWasAxis = false;
+            refusedAxis = axis;
+        }
+        else
+        {
+            // F4: no longer true, so it goes now rather than when the countdown happens to end.
+            refusedFor = 0.0f; refusedText.clear(); refusedBadge.clear(); refusedWasAxis = false;
+            refusedAxis = axis;
+            busy = true;   // one more paint, to take it off the screen
+        }
     }
 
     if (! busy) stopTimer();

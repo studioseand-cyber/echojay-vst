@@ -111,13 +111,23 @@ namespace cmd
     // found no zone, and the plugin answered "unknown button" - which was correct, and the row then
     // measured an interaction it had never performed. Two surfaces, two names, and `askChipsUp` on
     // the state so a row can WAIT for the chips instead of pressing blind.
-    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|ask_chip|got_it|retry|chat_retry|tab_chat|tab_chain|real_editor_on|real_editor_off }
+    inline constexpr const char* press        = "press";           // { button: apply|apply_line|apply_all|skip_all|skip_line|details|stop|undo|undo_step|undo_all|changes|chip|ask_chip|got_it|retry|chat_retry|tab_chat|tab_chain|tab_match|real_editor_on|real_editor_off }
     inline constexpr const char* selectLink   = "select_link";     // { uid }  ("" = the own rack)
     inline constexpr const char* reportState  = "report_state";    // {}
     inline constexpr const char* setRackOut   = "set_rack_out";    // { db }   - the user's own knob, not the agent op
     // Sean's ruling 3 (13 Oct 2026), so the rig covers the three callbacks the sweep found one-ended:
     inline constexpr const char* openSlot     = "open_slot";       // { n }    - a slot DOUBLE-CLICK (1-based)
     inline constexpr const char* preGainReset = "pre_gain_reset";  // {}       - the pre-gain knob's double-click
+    // ---- THE MATCH PAGE, WHICH NO ROW COULD REACH (his item 2a, 30 Oct 2026) ----------------
+    //
+    // *"AI MATCH on the Match tab is silent"* - and there was no way to press it from here, so the
+    // fault had no row and no reproduction. The page is a Reference SUB-TAB and its mix side is
+    // picked from an async popup menu, which a rig cannot drive; so these three drive the same
+    // state the user's own pick produces, through the product's one writer for it
+    // (EchoJayEditor::matchApplyMixSlot), not a copy of it.
+    inline constexpr const char* matchSlot    = "match_slot";      // { kind: live|snapshot|reference, index? }
+    inline constexpr const char* aiMatch      = "ai_match";        // {}       - the AI MATCH button itself
+    inline constexpr const char* matchAxis    = "match_axis";      // { axis: spectrum|loudness|dynamics|stereo }
     // THE CHAT'S working channel, which is a DIFFERENT thing from the rack view (the 25 Sep rule: "a rack
     // selection moves the VIEW and nothing else... and leaves the chat, the Working-on banner and the build
     // target exactly where they were"). Sean's item 7 is about this one - the header that said "Working on
