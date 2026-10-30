@@ -53,6 +53,15 @@ inline const char* matchReportTierTitle (MatchReportTier t) noexcept
     (EJMatchProposal.h, 6a). */
 inline juce::String matchReportBandLabel (int b) { return matchBandLabel (b); }
 
+/** The label for one entry of the payload's bands[] (round 7b). bands[].name
+    is B1's id on the wire (Sean, 29 Oct); the card shows the table's label, and
+    A's paint branch reads it here. A name the table does not hold gives "",
+    never the name itself. */
+inline juce::String matchReportPayloadBandLabel (const juce::var& band)
+{
+    return matchBandLabel (matchBandIndexOfId (band.getProperty ("name", juce::var()).toString()));
+}
+
 inline juce::String matchReportArrow() { return juce::String (juce::CharPointer_UTF8 ("\xe2\x86\x92")); }
 
 // The button and offer labels. MA5 pins these.
@@ -541,7 +550,7 @@ inline juce::String matchReportPayload (const MatchReportIn& in, const MatchRepo
     {
         const auto& bi = in.bands[(size_t) b];
         Obj::Ptr o = new Obj();
-        o->setProperty ("name", matchBandLabel (b));   // a label, never B1's id (6a)
+        o->setProperty ("name", matchBandEntry (b).id);   // B1's id (7b); the card's label is matchReportPayloadBandLabel
         if (bi.mixMinusRefDb) o->setProperty ("deltaDb", (double) *bi.mixMinusRefDb);
         o->setProperty ("tier", "bounded");
         if (bi.attribution && bi.attribution->coverage) o->setProperty ("coverage", *bi.attribution->coverage);

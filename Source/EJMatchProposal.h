@@ -124,6 +124,15 @@ inline juce::String matchBandLabel (int b)
     return n.substring (0, 1).toUpperCase() + n.substring (1);
 }
 
+/** The band whose B1 id is `id` ("lowMid" is 2), or -1 for a string the table
+    does not hold. Exact: "LowMid" and C2's old "low-mid" are not ids (round 7b). */
+inline int matchBandIndexOfId (const juce::String& id) noexcept
+{
+    for (int b = 0; b < 6; ++b)
+        if (id == matchBandEntry (b).id) return b;
+    return -1;
+}
+
 /** The verb that agrees with the band: matchBandVerb (2, "is", "are") is "are". */
 inline juce::String matchBandVerb (int b, const char* singular, const char* plural)
 {

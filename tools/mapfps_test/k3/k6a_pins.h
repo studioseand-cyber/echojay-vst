@@ -161,7 +161,14 @@ inline void runK6aPins (Check&& check)
         const auto rep = buildMatchReport (in);
         juce::StringArray all = matchReportAllStrings (rep, matchPlanCardAgentOffer (true, false));
         for (const auto& l : rep.lines) { all.add (l.label); all.add (l.text); all.addArray (l.detail); }
-        stringsOf (juce::JSON::parse (matchReportPayload (in, rep)), "payload", false, all);
+        // bands[].name is B1's id on the wire since 7b (Sean's ruling, ku PIN1),
+        // so it is the one payload string left out here.
+        const juce::var payload = juce::JSON::parse (matchReportPayload (in, rep));
+        const juce::var payloadBands = payload.getProperty ("bands", juce::var());
+        if (auto* pb = payloadBands.getArray())
+            for (auto& band : *pb)
+                if (auto* o = band.getDynamicObject()) o->removeProperty ("name");
+        stringsOf (payload, "payload", false, all);
         int named = 0;
         for (const auto& l : rep.lines)
             for (const auto& d : l.detail)
