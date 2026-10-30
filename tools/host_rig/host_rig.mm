@@ -991,6 +991,37 @@ static ThirdPartyPrep prepareThirdParty (juce::AudioPluginFormatManager& fm, con
 // ============================================================================
 //  one hosted plugin = one "track": the instance, its audio, and its editor
 // ============================================================================
+// ---- A PLAYING TRANSPORT, WHICH THE RIG NEVER HAD (31 Oct 2026) ---------------------------
+//
+// LV9r went GREEN on a build with the hang deliberately put back, and this is why: the V2 feeds
+// its live taps only while the transport is PLAYING -
+//
+//     const bool feed = transportPlaying.load (...) && ! auditioning;
+//
+// and transportPlaying comes from getPlayHead()->getPosition()->getIsPlaying(). The rig called
+// processBlock with NO PLAYHEAD AT ALL, so every pass this file has ever done has been a stopped
+// transport, and the row written to catch a render hang could not reach the code that hangs.
+//
+// His words for the row were "presses play in one process". This is the play button: a playhead
+// that says it is rolling and advances with the audio, installed on every track. It is also why
+// the row is worth having - the first thing it found was itself.
+struct RigPlayHead : juce::AudioPlayHead
+{
+    juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
+    {
+        juce::AudioPlayHead::PositionInfo p;
+        p.setIsPlaying (true);
+        p.setIsRecording (false);
+        p.setTimeInSamples (samples);
+        p.setTimeInSeconds ((double) samples / 48000.0);
+        p.setBpm (120.0);
+        return p;
+    }
+    bool canControlTransport() override { return false; }
+    void advance (int n) noexcept { samples += n; }
+    juce::int64 samples = 0;
+};
+
 struct Track
 {
     juce::String name;
@@ -1006,6 +1037,8 @@ struct Track
         the model answered "I don't see a track named Kick" and offered Untitled, Untitled 2,
         Untitled 3, Untitled 4. Delivered through updateTrackProperties, the door Logic uses. */
     juce::String trackName;
+
+    RigPlayHead playHead;
 
     void prepare (double sr, int block)
     {
@@ -1046,6 +1079,9 @@ struct Track
             buf.setSample (1, i, v);
         }
         midi.clear();
+        // THE TRANSPORT IS ROLLING, and the playhead advances with it: the plugin's live taps are
+        // fed only while it says so, which is the gate LV9r could not reach before.
+        if (plugin != nullptr) { plugin->setPlayHead (&playHead); playHead.advance (n); }
         // ---- A TRACK WHOSE PLUGIN IS GONE IS SILENT, NOT A CRASH (27 Oct 2026) -----------------
         // RE5 and RH6 DELETE a Link's track mid-pass - that is what they are for - and now that the
         // live-view rows run before the rest of the suite, every later leg pumps tracks that may no
@@ -1069,6 +1105,9 @@ struct Track
             buf.setSample (1, i, v);
         }
         midi.clear();
+        // THE TRANSPORT IS ROLLING, and the playhead advances with it: the plugin's live taps are
+        // fed only while it says so, which is the gate LV9r could not reach before.
+        if (plugin != nullptr) { plugin->setPlayHead (&playHead); playHead.advance (n); }
         if (plugin == nullptr) return;   // the same deliberate deletion (see above)
         plugin->processBlock (buf, midi);
     }
@@ -3108,15 +3147,6 @@ int main (int argc, char* argv[])
     for (Track* t : { &v2, &lk1, &lk2 }) t->prepare (sr, block);
     if (v2v.plugin != nullptr) v2v.prepare (sr, block);
 
-    // Audio first, and kept running: every leg below needs the Links to be
-    // registered and passing audio, which only happens once they have processed.
-    for (int i = 0; i < 200; ++i)
-    {
-        for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
-        if ((i % 20) == 0) Rig::pump (10);
-    }
-    Rig::pump (1500);       // the 1 Hz registry pass runs on the processor's timer
-
     // ---- LV9r: THE TRANSPORT RUNS, AND EVERY BLOCK COMES BACK (his 08:10 hang, 30 Oct 2026) ----
     //
     // *"the 07:45 build hangs Logic on PLAY, three times running"* - and NOT ONE ROW IN THIS FILE
@@ -3205,6 +3235,15 @@ int main (int argc, char* argv[])
         const int    blocksFor = (int) (sr * 20.0 / (double) block); // 20 seconds of audio
         // THE CALIBRATION PASS: the identical loop, two seconds of it, timed. Its mean is what the
         // measured pass is checked against for steadiness below.
+        // ---- THE WATCHDOG STARTS BEFORE THE FIRST BLOCK (31 Oct 2026) ---------------------
+        //
+        // It used to start after the warm-up and the calibration, and on the reverted build the
+        // process was SIGKILLed twice with the row never reporting: the hang lands on the FIRST
+        // block the transport feeds, which was the warm-up's, which nothing was watching. A
+        // watchdog that begins after the dangerous part is decoration.
+        RenderWatchdog dog (15000);
+        dog.startThread();
+
         double calMean = 0.0;
         {
             // A DISCARDED WARM-UP FIRST, because the first cut measured warm-up and called it load:
@@ -3228,8 +3267,9 @@ int main (int argc, char* argv[])
         }
         // The watchdog's limit is for the WHOLE loop: 20 s of audio through three plugins, with a
         // wide allowance for a loaded machine. A hang blows through it; slowness does not.
-        RenderWatchdog dog (90000);
-        dog.startThread();
+        // FIFTEEN SECONDS, NOT NINETY: on the reverted build the spin allocates without bound and
+        // the OS killed the process before a 90 s watchdog could say anything. The loop is about a
+        // second of wall clock, so 15 s is generous and still beats the memory growth comfortably.
         double worstV2 = 0.0, worstLink = 0.0, totalV2 = 0.0;
         int over = 0, overPeriod = 0;
         // ---- TWO LINES, BECAUSE A DROPOUT IS NOT A HANG (C's point 88 note, 30 Oct 2026) -------
@@ -3300,6 +3340,15 @@ int main (int argc, char* argv[])
              + juce::String (over) + " over " + juce::String (kStallMs, 0) + " ms (the never-returned "
              "line), in " + juce::String (blocksFor) + " blocks x 3 plugins");
     }();
+
+    // Audio first, and kept running: every leg below needs the Links to be
+    // registered and passing audio, which only happens once they have processed.
+    for (int i = 0; i < 200; ++i)
+    {
+        for (Track* t : { &v2, &lk1, &lk2 }) t->processOneBlock (sr);
+        if ((i % 20) == 0) Rig::pump (10);
+    }
+    Rig::pump (1500);       // the 1 Hz registry pass runs on the processor's timer
 
     // ---- W1: A WINDOW THAT REALLY CLOSES ------------------------------------------------------------
     //

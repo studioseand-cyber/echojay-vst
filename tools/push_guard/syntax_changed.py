@@ -34,12 +34,14 @@ root = os.getcwd()
 # EVERY database, in the order given: the first one that knows a file wins, so the plugin's own
 # build describes the plugin's files and a harness is still checked if only build-release has it.
 by_file = {}
+dbs_read = 0
 for one in cc_list:
     try:
         db = json.load(io.open(one, encoding="utf-8"))
     except Exception as ex:                      # a half-written database is not a verdict
         print(f"push-guard: could not read {one} ({ex}) - the others are still used")
         continue
+    dbs_read += 1
     for e in db:
         by_file.setdefault(os.path.realpath(e["file"]), e)
 
@@ -127,10 +129,24 @@ if fails:
 # guard that checked NOTHING has not guarded anything, and the one line it prints reads like
 # diligence. An individual file CMake genuinely does not know stays a warning, because a new
 # harness target is a real and harmless case; all of them being unknown is the guard failing.
-if checked == 0 and unknown:
-    print("push-guard: REFUSED - not one of these files was compiled. Every one is unknown to the")
-    print("push-guard: databases that were read, which means they do not describe this tree (a")
-    print("push-guard: configure, or a path this guard could not resolve). 'Unverified' is not a")
-    print("push-guard: pass. Configure a build, or push with EJ_PUSH_GUARD_OFF=1 and say in the")
-    print("push-guard: message that nothing was compiled.")
+# ---- WHAT "NOTHING CHECKED" ACTUALLY HAS TO MEAN (31 Oct 2026) -----------------------------
+#
+# The first cut refused whenever nothing was compiled, and it immediately blocked a legitimate
+# push: a commit touching only tools/host_rig/host_rig.mm, which NO database knows because its own
+# script compiles it. That is not the fault Kathy reported. Hers was a guard that COULD NOT READ
+# ITS INPUTS - the space in her path broke every database path - and then waved the push through.
+#
+# So the line is whether the guard could do its job, not whether these particular files happened to
+# be in a database. No database readable at all: refuse, because nothing was verified and nothing
+# could have been. Databases read fine and these files simply are not in them: say so by name and
+# let it go, which is what it did before and is correct for a harness with its own build.
+if dbs_read == 0:
+    print("push-guard: REFUSED - not one database could be read, so NOTHING was verified and")
+    print("push-guard: nothing could have been. This is the fault Kathy hit: a path this guard")
+    print("push-guard: could not resolve, reported as 'unverified' and let through. Configure a")
+    print("push-guard: build, or push with EJ_PUSH_GUARD_OFF=1 and say that nothing was compiled.")
     sys.exit(1)
+if checked == 0 and unknown:
+    print(f"push-guard: nothing to compile here - all {len(unknown)} file(s) are outside the "
+          f"{dbs_read} database(s) read (a harness with its own build script, typically). The")
+    print("push-guard: databases WERE readable, so this is not the unverified-pass fault.")

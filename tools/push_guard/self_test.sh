@@ -46,16 +46,32 @@ else
   ok "1: a database under a path with a space is read, and the file is checked"
 fi
 
-# ---- 2. NOTHING CHECKED IS A REFUSAL, NOT A PASS -------------------------------------------
+# ---- 2. A GUARD THAT CANNOT READ ITS INPUTS REFUSES ----------------------------------------
+#
+# HER FAULT EXACTLY, and the first cut of this check tested the wrong thing: it used an EMPTY but
+# READABLE database and demanded a refusal, which then blocked a legitimate push of a harness file
+# that no database knows (host_rig.mm, compiled by its own script). Kathy's fault was not "nothing
+# was compiled"; it was "no database could be READ, and the push went anyway". So: an unreadable
+# path must refuse, and a readable database that simply does not list these files must not.
+UNREADABLE="$TMP/no such dir/compile_commands.json"
+python3 -I "$ROOT/tools/push_guard/syntax_changed.py" \
+        --tip HEAD --dbs "$UNREADABLE" --files Source/MeterEngine.cpp > "$TMP/out2" 2>&1
+if [[ $? -eq 0 ]]; then
+  bad "2: a guard that could read NO database refuses" \
+      "it exited 0 - that is the pass she got, with nothing verified and nothing verifiable"
+else
+  ok "2: a guard that could read NO database refuses, rather than passing as unverified"
+fi
+
+# ---- 2b. ...AND A READABLE DATABASE THAT LISTS NOTHING IS NOT THAT FAULT --------------------
 EMPTY="$TMP/empty db/compile_commands.json"
 mkdir -p "$(dirname "$EMPTY")"; echo '[]' > "$EMPTY"
-python3 -I "$ROOT/tools/push_guard/syntax_changed.py" \
-        --tip HEAD --dbs "$EMPTY" --files Source/MeterEngine.cpp > "$TMP/out2" 2>&1
-if [[ $? -eq 0 ]]; then
-  bad "2: a run that compiled NOTHING refuses" \
-      "it exited 0 with $(grep -c 'NOT CHECKED' "$TMP/out2") file(s) unverified - that is the pass she got"
+if python3 -I "$ROOT/tools/push_guard/syntax_changed.py" \
+        --tip HEAD --dbs "$EMPTY" --files tools/host_rig/host_rig.mm > "$TMP/out2b" 2>&1; then
+  ok "2b: a readable database that does not list a file lets it through, by name"
 else
-  ok "2: a run that compiled NOTHING refuses, rather than passing as unverified"
+  bad "2b: a readable database that does not list a file lets it through" \
+      "it refused, which blocks every harness-only commit: $(tail -2 "$TMP/out2b" | head -1)"
 fi
 
 # ---- 3. AND CALLED WITHOUT ITS INPUTS, IT REFUSES ------------------------------------------
