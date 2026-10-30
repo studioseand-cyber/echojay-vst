@@ -6,14 +6,35 @@ committed copy and the output with -fsyntax-only, and run it. The verdict is the
 """
 import io, json, os, shlex, subprocess, sys, tempfile
 
-cc_path, tip = sys.argv[1], sys.argv[2]
-files = sys.argv[3:]
+# ---- MARKERS, NOT A SPACE-JOINED STRING (Kathy, 30 Oct 2026) -------------------------------
+#
+# This took the databases as ONE argument and split it on spaces. Kathy's checkout is under
+# "ECHOJAY FILES", so every path came apart, no database could be read, all thirteen of her files
+# were "NOT CHECKED" and the push went through as "unverified" - a guard waving a push past because
+# it could not read its own inputs. Each path is now its own argv entry between markers, so there
+# is no quoting rule to get wrong.
+def _args(argv):
+    tip, dbs, files, mode = "", [], [], None
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--tip":     tip = argv[i + 1]; i += 2; mode = None; continue
+        if a == "--dbs":     mode = "dbs";      i += 1; continue
+        if a == "--files":   mode = "files";    i += 1; continue
+        (dbs if mode == "dbs" else files).append(a)
+        i += 1
+    return tip, dbs, files
+
+tip, cc_list, files = _args(sys.argv[1:])
+if not tip or not cc_list:
+    sys.exit("push-guard: CANNOT COMPILE - called without --tip and --dbs. Nothing was checked, "
+             "and a guard that cannot read its inputs must not pass a push.")
 root = os.getcwd()
 
 # EVERY database, in the order given: the first one that knows a file wins, so the plugin's own
 # build describes the plugin's files and a harness is still checked if only build-release has it.
 by_file = {}
-for one in cc_path.split():
+for one in cc_list:
     try:
         db = json.load(io.open(one, encoding="utf-8"))
     except Exception as ex:                      # a half-written database is not a verdict
@@ -97,4 +118,19 @@ print(f"push-guard: {checked} file(s) compiled, {len(fails)} failed, {len(unknow
 if fails:
     print("push-guard: REFUSED. A commit that does not parse must not leave this machine - that is")
     print("push-guard: what cost Kathy her morning on 29 Oct 2026.")
+    sys.exit(1)
+
+# ---- AND NOTHING CHECKED IS NOT A PASS (Kathy, 30 Oct 2026) --------------------------------
+#
+# Her run compiled 0 of 13 and printed "pushed unverified", and the push went. Whatever the cause -
+# the space in her path, a database that does not describe this tree, a configure nobody ran - a
+# guard that checked NOTHING has not guarded anything, and the one line it prints reads like
+# diligence. An individual file CMake genuinely does not know stays a warning, because a new
+# harness target is a real and harmless case; all of them being unknown is the guard failing.
+if checked == 0 and unknown:
+    print("push-guard: REFUSED - not one of these files was compiled. Every one is unknown to the")
+    print("push-guard: databases that were read, which means they do not describe this tree (a")
+    print("push-guard: configure, or a path this guard could not resolve). 'Unverified' is not a")
+    print("push-guard: pass. Configure a build, or push with EJ_PUSH_GUARD_OFF=1 and say in the")
+    print("push-guard: message that nothing was compiled.")
     sys.exit(1)

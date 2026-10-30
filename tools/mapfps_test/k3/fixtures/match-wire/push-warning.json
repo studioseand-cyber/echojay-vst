@@ -1,0 +1,244 @@
+{
+ "request": {
+  "appVersion": "2.31.0",
+  "goal": "match the reference \"push-warning\"",
+  "kind": "match",
+  "scope": "session",
+  "source": "match",
+  "context": {
+   "scope": "session",
+   "capabilities": [
+    "plan_card",
+    "session_scope",
+    "match_plan"
+   ],
+   "channel": {
+    "uid": "self",
+    "name": "Mix Bus",
+    "kind": "mix_bus",
+    "rack": [
+     {
+      "slot": 1,
+      "name": "EchoJay Compressor"
+     },
+     {
+      "slot": 2,
+      "name": "EchoJay Limiter"
+     }
+    ],
+    "links": [
+     {
+      "uid": "bb411b8240",
+      "name": "Gtr L"
+     },
+     {
+      "uid": "cc522c9351",
+      "name": "Gtr R"
+     },
+     {
+      "uid": "aa1100aa11",
+      "name": "Lead Vox"
+     }
+    ]
+   }
+  },
+  "match": {
+   "v": 1,
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "push-warning"
+   },
+   "window": "loudest30",
+   "mix": {
+    "integrated": -20.1,
+    "loudest30": -17.8,
+    "truePeak": -6,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": null,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3,
+     1.2,
+     0.4,
+     0.4,
+     -0.6,
+     -1.9
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "ref": {
+    "integrated": -6,
+    "loudest30": -4.9,
+    "truePeak": -0.2,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": null,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3.2,
+     1,
+     0.1,
+     0.6,
+     0,
+     -0.5
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "moves": [
+    {
+     "kind": "gain",
+     "valueDb": 12.9,
+     "measuredDb": -12.9,
+     "attribution": null
+    }
+   ],
+   "findings": [
+    {
+     "figure": "width",
+     "mix": 64,
+     "ref": 70,
+     "difference": -6
+    }
+   ],
+   "refusals": []
+  }
+ },
+ "status": 200,
+ "body": {
+  "plan": {
+   "v": 1,
+   "id": "pl_0c1ea0000004",
+   "heading": "Match \"Song X\"",
+   "source": "match",
+   "kind": "match",
+   "scope": "session",
+   "mode": "walk",
+   "channels": [
+    {
+     "uid": "self",
+     "name": "Mix Bus",
+     "role": "mix_bus",
+     "order": 1,
+     "caps": []
+    }
+   ],
+   "warnings": [
+    "This takes about 13 dB of limiting to match the reference - very heavy. It may sound squashed; Undo puts it back.",
+    "Undo can't tell your two EchoJay Limiters apart on Mix Bus."
+   ],
+   "left_out": [],
+   "steps": [
+    {
+     "id": "ps_1",
+     "channel": "self",
+     "channelName": "Mix Bus",
+     "stage": "mix_bus",
+     "type": "chain",
+     "op": "add",
+     "args": {
+      "name": "EchoJay Limiter",
+      "role": "limiter",
+      "after": 1,
+      "settings_structured": {
+       "params": {
+        "ceiling_db": -1
+       }
+      }
+     },
+     "dependsOn": [],
+     "why": "a push this big is split across two limiters",
+     "status": "planned",
+     "undoWeak": true,
+     "detail": {
+      "text": "Add an EchoJay Limiter before the last one, its ceiling at -1.0 dBTP, to take the first part of the push",
+      "where": "a new EchoJay Limiter, just before the last limiter",
+      "plugin": "EchoJay Limiter",
+      "slotIid": null,
+      "control": null,
+      "value": null,
+      "unit": null,
+      "howTo": null,
+      "check": "slots",
+      "forYou": true
+     }
+    },
+    {
+     "id": "ps_2",
+     "channel": "self",
+     "channelName": "Mix Bus",
+     "stage": "mix_bus",
+     "type": "chain",
+     "op": "set",
+     "args": {
+      "slot": 3,
+      "name": "EchoJay Limiter",
+      "settings_structured": {
+       "params": {
+        "ceiling_db": -0.1
+       }
+      },
+      "dial_on_playback": {
+       "target_lufs": -7.2,
+       "ceiling": -0.1,
+       "offset_db": 12.9
+      }
+     },
+     "dependsOn": [
+      "ps_1"
+     ],
+     "why": "the reference is louder",
+     "status": "planned",
+     "undoWeak": false,
+     "detail": {
+      "text": "Set the last limiter for -7.2 LUFS, its ceiling at -0.1 dBTP (set on the next playback)",
+      "where": "slot 3, EchoJay Limiter",
+      "plugin": "EchoJay Limiter",
+      "slotIid": null,
+      "control": "input",
+      "value": -7.2,
+      "unit": "LUFS",
+      "howTo": null,
+      "check": "measure",
+      "forYou": true
+     }
+    }
+   ]
+  },
+  "match": {
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "push-warning"
+   },
+   "window": "loudest30",
+   "findings": [
+    {
+     "figure": "width",
+     "mix": 64,
+     "ref": 70,
+     "difference": -6
+    }
+   ],
+   "refusals": []
+  },
+  "charged": "chain_generate"
+ }
+}

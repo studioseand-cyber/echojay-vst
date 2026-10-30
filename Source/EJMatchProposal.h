@@ -83,6 +83,63 @@ namespace echojay
 {
 
 // -----------------------------------------------------------------------------
+// THE BAND NAMES (round 6a). ONE TABLE: every sentence, report line and card
+// string that names a band reads it from here, and never macroBandName, which
+// is B1's identifier ("lowMid") and belongs on the wire only (C3's "band").
+// -----------------------------------------------------------------------------
+//
+// The names are B's, from the staging fixtures' reasons ("the low-mids", "the
+// mids", "the air"); the three B never prints follow the same pattern. Plural
+// names take a plural verb ("the low-mids are spread"); C4's templates are
+// written for a singular band.
+
+struct MatchBandName { const char* id; const char* name; bool plural; };
+
+inline const MatchBandName& matchBandEntry (int b) noexcept
+{
+    static const MatchBandName t[7] = { { "sub",     "the sub",       false },
+                                        { "low",     "the lows",      true  },
+                                        { "lowMid",  "the low-mids",  true  },
+                                        { "mid",     "the mids",      true  },
+                                        { "highMid", "the high-mids", true  },
+                                        { "air",     "the air",       false },
+                                        { "",        "",              false } };
+    return t[(b >= 0 && b < 6) ? b : 6];
+}
+
+/** "the low-mids", for the middle of a sentence. */
+inline juce::String matchBandName (int b)    { return juce::String (matchBandEntry (b).name); }
+
+/** "The low-mids", to open one. */
+inline juce::String matchBandNameCap (int b)
+{
+    const auto n = matchBandName (b);
+    return n.substring (0, 1).toUpperCase() + n.substring (1);
+}
+
+/** "Low-mids": a row label or a column header, the name without its article. */
+inline juce::String matchBandLabel (int b)
+{
+    const auto n = matchBandName (b).fromFirstOccurrenceOf ("the ", false, false);
+    return n.substring (0, 1).toUpperCase() + n.substring (1);
+}
+
+/** The band whose B1 id is `id` ("lowMid" is 2), or -1 for a string the table
+    does not hold. Exact: "LowMid" and C2's old "low-mid" are not ids (round 7b). */
+inline int matchBandIndexOfId (const juce::String& id) noexcept
+{
+    for (int b = 0; b < 6; ++b)
+        if (id == matchBandEntry (b).id) return b;
+    return -1;
+}
+
+/** The verb that agrees with the band: matchBandVerb (2, "is", "are") is "are". */
+inline juce::String matchBandVerb (int b, const char* singular, const char* plural)
+{
+    return juce::String (matchBandEntry (b).plural ? plural : singular);
+}
+
+// -----------------------------------------------------------------------------
 // THE CONSTANTS. This header's own, named here.
 // -----------------------------------------------------------------------------
 //
@@ -106,8 +163,17 @@ namespace echojay
     "exceeds" while its code tests >=, and this comment does not repeat that. */
 inline constexpr float kMatchBandFloorDb = 2.0f;
 
-/** No single band move is larger than this in one run, whatever the gap. */
+/** No single band move is larger than this in one run ON THE PAGE, whatever
+    the gap. THE PLAN IS UNCAPPED (X1, 29 Oct 2026): the plan's proposal sizes
+    each band move to its whole gap, and X1's safety limits on the steps are
+    B's, server side. See MatchProposalFor. */
 inline constexpr float kMatchBandCapDb = 3.0f;
+
+/** WHO THE PROPOSAL IS FOR (K's 4b, X1). The PAGE plays a capped move and
+    says it was capped; the PLAN carries the whole gap (no cap; the 2 dB band
+    floor and the 1 dB gain floor stay). The default is the page, so every
+    caller written before the plan existed is unchanged. */
+enum class MatchProposalFor { Page, Plan };
 
 /** Below this many seconds, on either side, no band move is proposed. */
 inline constexpr float kMatchBandMinSeconds = 30.0f;
@@ -301,12 +367,12 @@ struct MatchBandDecision
     bool  capped = false;
 };
 
-inline MatchBandDecision matchBandMove (float deltaDb) noexcept
+inline MatchBandDecision matchBandMove (float deltaDb, MatchProposalFor use = MatchProposalFor::Page) noexcept
 {
     const float mag = std::abs (deltaDb);
     if (! (mag >= kMatchBandFloorDb))
         return {};
-    const bool  capped = mag > kMatchBandCapDb;
+    const bool  capped = use == MatchProposalFor::Page && mag > kMatchBandCapDb;
     const float v      = capped ? kMatchBandCapDb : mag;
     return { true, deltaDb < 0.0f ? -v : v, capped };
 }
@@ -380,7 +446,8 @@ inline juce::String matchTooShortMessage (const juce::String& what, const juce::
 }
 
 /** The proposal. mix is the user's side, ref the reference. */
-inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide& ref)
+inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide& ref,
+                                           MatchProposalFor use = MatchProposalFor::Page)
 {
     MatchProposal p;
 
@@ -493,7 +560,7 @@ inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide
         for (int i = 0; i < 6; ++i)
         {
             const float delta = refRel[(size_t) i] - mixRel[(size_t) i];
-            const auto  d = matchBandMove (delta);
+            const auto  d = matchBandMove (delta, use);
             if (! d.propose) continue;
             MatchMove m;
             m.kind = MatchMoveKind::Band;
@@ -504,7 +571,7 @@ inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide
             m.capped = d.capped;
             p.moves.push_back (m);
             if (d.capped)
-                p.notes.add ("The " + juce::String (macroBandName (i)) + " gap is "
+                p.notes.add (matchBandNameCap (i) + " gap is "
                              + juce::String (std::abs (delta), 1) + " dB, larger than one move closes."
                              " This proposes " + juce::String (kMatchBandCapDb, 1)
                              + " dB; running it again is a choice to go further.");

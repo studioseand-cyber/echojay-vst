@@ -1,0 +1,142 @@
+{
+ "request": {
+  "appVersion": "1.4.2",
+  "goal": "match the reference \"clean\"",
+  "kind": "match",
+  "scope": "session",
+  "source": "match",
+  "context": {
+   "scope": "session",
+   "capabilities": [
+    "plan_card",
+    "session_scope",
+    "match_plan"
+   ],
+   "channel": {
+    "uid": "self",
+    "name": "Mix Bus",
+    "kind": "mix_bus",
+    "rack": [
+     {
+      "slot": 1,
+      "name": "EchoJay Compressor"
+     },
+     {
+      "slot": 2,
+      "name": "EchoJay Limiter"
+     }
+    ],
+    "links": [
+     {
+      "uid": "bb411b8240",
+      "name": "Gtr L"
+     },
+     {
+      "uid": "cc522c9351",
+      "name": "Gtr R"
+     },
+     {
+      "uid": "aa1100aa11",
+      "name": "Lead Vox"
+     }
+    ]
+   }
+  },
+  "match": {
+   "v": 1,
+   "reference": {
+    "id": "ref_8c1d",
+    "name": "clean"
+   },
+   "window": "whole",
+   "mix": {
+    "integrated": -10.2,
+    "loudest30": -8.1,
+    "truePeak": -0.8,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": 8.9,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3.0,
+     1.2,
+     2.9,
+     0.4,
+     -0.6,
+     -1.9
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "ref": {
+    "integrated": -8.6,
+    "loudest30": -6.9,
+    "truePeak": -0.3,
+    "overs": 0,
+    "lra": 6.5,
+    "psr": 9.6,
+    "plr": null,
+    "width": 64,
+    "corr": 0.41,
+    "bandsRel": [
+     -3.2,
+     1.0,
+     0.1,
+     0.6,
+     0.0,
+     -0.5
+    ],
+    "bandCrest": [
+     9.1,
+     8.4,
+     7.9,
+     8.8,
+     9.6,
+     10.2
+    ]
+   },
+   "moves": [
+    {
+     "kind": "band",
+     "band": "lowMid",
+     "valueDb": -2.8,
+     "measuredDb": 2.8,
+     "attribution": {
+      "target": "bus",
+      "links": [],
+      "reason": "no one track holds most of the low-mids",
+      "combinedShare": null
+     }
+    },
+    {
+     "kind": "gain",
+     "valueDb": 1.6,
+     "measuredDb": -1.6,
+     "attribution": null
+    }
+   ],
+   "findings": [
+    {
+     "figure": "width",
+     "mix": 64,
+     "ref": 70,
+     "difference": -6
+    }
+   ],
+   "refusals": []
+  }
+ },
+ "status": 403,
+ "body": {
+  "error": "plan_needs_v2",
+  "message": "Plans need the latest EchoJay plugin."
+ }
+}
