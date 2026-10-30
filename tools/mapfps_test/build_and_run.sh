@@ -79,7 +79,7 @@ echo "== gate step 2/2: mapfps_test =="
 SCRATCH=$(mktemp -d)
 trap 'rm -rf "$SCRATCH"' EXIT
 python3 - "$SCRATCH" <<'PYEOF'
-import json, sys, shlex, subprocess, os
+import json, sys, shlex, subprocess, os, glob, time
 scratch = sys.argv[1]
 # ---- WHICH TREE'S ARCHIVE (28 Oct 2026) -----------------------------------------------------
 # The path below was hardcoded to build/, and tonight that archive is routinely DELETED: a header
@@ -94,6 +94,29 @@ libPath = os.environ.get('EJ_MAPFPS_LIB',
 if not os.path.exists(libPath):
     sys.exit("mapfps_test: no archive to link at '%s'. Build one (cmake --build build-quick "
              "--target EchoJay) or set EJ_MAPFPS_LIB to a tree that has one." % libPath)
+# ---- AND IT MUST NOT BE OLDER THAN THE SOURCE (30 Oct 2026) --------------------------------
+#
+# This cost a commit and fourteen minutes of a machine. The hang fix (an unprepared MeterEngine
+# spinning in its hop loop) went into Source at 08:16; build/'s archive was from 07:32; the
+# pre-commit gate said "archive-present" and linked it. So me PIN1 - the leg written FOR that very
+# fault - called the unprepared path in PRE-FIX code, span, grew, and the OS killed the process
+# with SIGKILL. The suite printed "GATE FAIL: mapfps_test" with no failing leg, which is the least
+# useful thing it could have said.
+#
+# A behavioural leg is a statement about the BINARY, so linking an archive older than the source is
+# not a near miss, it is testing a different program. compile_link_harness.sh has refused this for
+# the Link side for weeks; this is the same rule for the main archive.
+_newer = [f for f in glob.glob('Source/*.cpp') + glob.glob('Source/*.h') + glob.glob('Source/*.mm')
+          if os.path.getmtime(f) > os.path.getmtime(libPath)]
+if _newer:
+    _when = time.strftime('%d %b %H:%M', time.localtime(os.path.getmtime(libPath)))
+    sys.exit("mapfps_test: REFUSED - the archive is OLDER than the source it would be linked\n"
+             "  against, so every behavioural leg would be about a different program.\n"
+             "  archive: %s  (%s)\n"
+             "  newer:   %s%s\n"
+             "  rebuild it:  cmake --build <that tree> -j 4 --target EchoJay"
+             % (libPath, _when, ', '.join(sorted(os.path.basename(f) for f in _newer)[:6]),
+                '' if len(_newer) <= 6 else ' (+%d more)' % (len(_newer) - 6)))
 cc = json.load(open('build/compile_commands.json'))
 entry = [e for e in cc if e['file'].endswith('PluginEditor.cpp')][0]
 args = shlex.split(entry['command'])

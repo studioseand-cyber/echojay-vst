@@ -727,6 +727,27 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     displayTpR = std::max(blockTpR, displayTpR * peakDecay);
     
     // 100ms LUFS blocks (sample-counted)
+    // ---- AN UNPREPARED ENGINE IS A NO-OP, NEVER A SPIN (his 08:10 hang, 30 Oct 2026) --------
+    //
+    // samplesPerBlock100ms is 0 until prepare() sets it from the sample rate. With 0 the loop
+    // below is `while (blockSampleCount >= 0)` and its own `blockSampleCount -= 0` cannot end it:
+    // processBlock never returns, on the render thread, and Logic hangs on PLAY. That is exactly
+    // what two engines added for the live tap did, because nothing prepared them.
+    //
+    // Fixing the caller was necessary and is not sufficient: any future tap can be fed before it is
+    // prepared, and the cost of that mistake must not be a hung DAW. So the hop section is skipped
+    // when the constant it divides and subtracts by is not set, and it says so ONCE - from the
+    // audio thread, hence the atomic flag and no allocation.
+    if (samplesPerBlock100ms <= 0)
+    {
+        // SAID, but not from here: MeterEngine has no logging dependency and this is the render
+        // thread. The flag is set and the message thread reports it (PluginProcessor's meter tick),
+        // which keeps the audio path allocation-free and the fault loud.
+        unpreparedSaid_.store (true, std::memory_order_relaxed);
+        blockSampleCount = 0;
+        kWeightedL.clear(); kWeightedR.clear();
+        return;
+    }
     while (blockSampleCount >= samplesPerBlock100ms)
     {
         double sumKL = 0, sumKR = 0;

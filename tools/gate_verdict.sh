@@ -25,7 +25,20 @@ VERDICT="${2:-}"
 shift 2 2>/dev/null || true
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -z "$BUILD_DIR" || -z "$VERDICT" ]] && { echo "usage: gate_verdict.sh <build-dir> <GREEN|RED> \"<suite>: <result>\"..."; exit 2; }
-case "$VERDICT" in GREEN|RED) ;; *) echo "gate_verdict: the verdict must be GREEN or RED, not '$VERDICT'"; exit 2;; esac
+# ---- AND A THIRD STATE, BECAUSE THE HEADLINE IS WHAT GETS READ (C's point 89, 30 Oct 2026) ----
+#
+# On 30 Oct I wrote "verdict: GREEN" over a file whose every suite line said NOT RUN, because a hang
+# had to be fixed before the suites could run and GREEN was the only word the tool would accept.
+# install_local reads the headline, and so does anyone skimming. "GREEN with footnotes" is the exact
+# thing this file exists to prevent, and giving me only two words is what made me round the wrong way.
+#
+# AHEAD means: nothing that ran is red, and some suites have NOT run on this fingerprint. It is
+# installable only with EJ_INSTALL_AHEAD=1, so it can never be the quiet default, and the reason has
+# to be written into the suites' lines like any other fact.
+case "$VERDICT" in
+  GREEN|RED|AHEAD) ;;
+  *) echo "gate_verdict: the verdict must be GREEN, RED or AHEAD (nothing red, but some suites did not run), not '$VERDICT'"; exit 2;;
+esac
 D="$ROOT/$BUILD_DIR"
 [[ -d "$D" ]] || { echo "gate_verdict: no such build dir: $D"; exit 2; }
 

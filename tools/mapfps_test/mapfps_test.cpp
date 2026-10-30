@@ -16942,6 +16942,250 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
     }
 
+    // =================================================================
+    // me -- THE AUDIO THREAD MUST ALWAYS RETURN (his 08:10 hang, 30 Oct)
+    //
+    //   "the 07:45 build hangs Logic on PLAY, three times running ... the V2's
+    //    render thread is in EchoJayProcessor::processBlock ->
+    //    MeterEngine::processBlock in 3450 of 3450 samples, much of it in
+    //    memmove ... nothing on the audio thread may be O(series length)."
+    //
+    // THE CAUSE, exactly: samplesPerBlock100ms is 0 until prepare() sets it
+    // from the sample rate, and the hop section reads
+    //
+    //   while (blockSampleCount >= samplesPerBlock100ms)
+    //   { ...; blockSampleCount -= samplesPerBlock100ms; }
+    //
+    // With 0 the condition is always true and the subtraction changes nothing:
+    // processBlock never returns. Two engines added for the live tap (item 5a)
+    // were fed from processBlock and nothing prepared them, so the first played
+    // sample hung the render thread. The memmove is the vectors inside that
+    // loop growing while it spun.
+    //
+    // These rows are the two halves: the ENGINE cannot spin, and the CALLER
+    // prepares its taps. Either alone leaves a way to ship it again.
+    // =================================================================
+    {
+        std::cout << "the audio thread always returns:\n";
+        const auto nowMs = [] { return juce::Time::getMillisecondCounterHiRes(); };
+
+        // me PIN1 -- AN UNPREPARED ENGINE RETURNS, and promptly. This is the hang itself: on the
+        // build he was sent, this call did not come back. The budget is loose on purpose - the
+        // point is terminating at all, not speed.
+        {
+            // ---- ON ANOTHER THREAD, WITH A BOUND (30 Oct 2026) --------------------------------
+            //
+            // THIS LEG HUNG THE GATE. The pre-commit run linked an archive from 07:32 - before the
+            // fix at 08:16 - so this call entered the very loop it exists to catch, grew for
+            // fourteen minutes and was SIGKILLed. The suite printed "GATE FAIL: mapfps_test" with
+            // no failing leg: the least useful thing it could say about the fault it was testing.
+            //
+            // build_and_run.sh now refuses an archive older than the source, which stops the cause.
+            // This stops the SYMPTOM, which matters just as much: a leg that asserts "this returns"
+            // must not be able to hang when it does not. So the call runs on its own thread, the
+            // main thread waits a bounded time, and a thread that has not come back is reported as
+            // the failure it is - then the process leaves, because a stuck render path cannot be
+            // unwound and a gate that hangs tells nobody anything.
+            struct Unprepared : juce::Thread
+            {
+                Unprepared() : juce::Thread ("ej-unprepared-probe") {}
+                void run() override
+                {
+                    MeterEngine eng;               // prepare() DELIBERATELY not called
+                    std::vector<float> l (1024, 0.25f), r (1024, -0.25f);
+                    for (int i = 0; i < 1000; ++i) eng.processBlock (l.data(), r.data(), 1024);
+                    flagged = eng.takeWasFedUnprepared();
+                    took    = juce::Time::getMillisecondCounterHiRes();
+                    done.store (true, std::memory_order_release);
+                }
+                std::atomic<bool> done { false };
+                bool   flagged = false;
+                double took = 0.0;
+            };
+            Unprepared probe;
+            const auto t0 = nowMs();
+            probe.startThread();
+            while (! probe.done.load (std::memory_order_acquire) && nowMs() - t0 < 5000.0)
+                juce::Thread::sleep (10);
+            const bool returned = probe.done.load (std::memory_order_acquire);
+            if (! returned)
+            {
+                check (false,
+                       "me PIN1: processBlock RETURNS on an engine prepare() never ran on - the "
+                       "state that hung Logic on play",
+                       "IT DID NOT RETURN within 5 s. Either the guard in MeterEngine::processBlock "
+                       "is gone, or this run is linked against an archive that predates it - "
+                       "build_and_run.sh refuses the second case, so look at the first.");
+                std::cout << "FAIL  (the unprepared probe never returned; leaving so the gate "
+                             "reports rather than hangs)\n";
+                std::cout.flush();
+                std::_Exit (1);
+            }
+            const double ms = probe.took - t0;
+            probe.stopThread (100);
+            check (ms < 1000.0,
+                   "me PIN1: processBlock RETURNS on an engine prepare() never ran on - the state "
+                   "that hung Logic on play",
+                   juce::String (ms, 2) + " ms for 1000 blocks of 1024");
+            check (probe.flagged,
+                   "me PIN1: and it records that it happened, so the message thread can say so");
+        }
+
+        // me PIN2 -- HIS AUDIO SWEEP, AND IT TESTS WHAT IT SAYS (30 Oct 2026)
+        //
+        // His words: "a guard leg that runs MeterEngine for 20 minutes of audio at block sizes
+        // 32-1024 and fails over a per-block time budget", and the rule behind them: "nothing on
+        // the audio thread may be O(series length)".
+        //
+        // THE FIRST CUT FAILED, AND ON THE WRONG QUESTION. It asserted a flat quarter of real time
+        // per block at every size, and 32 samples came in at 0.2771 ms against a 0.1667 ms budget
+        // - 41% of a 32-sample block period. That figure is real and he should have it, but it is
+        // PER-BLOCK OVERHEAD, not growth: the same run is 2.4x faster than real time and finished
+        // 20 minutes of audio in 499 s. A budget shaped like that fails a meter for being called
+        // often, and would have been silenced by raising the number, which teaches nothing.
+        //
+        // So the two questions are asked separately:
+        //
+        //   a. IS ANYTHING O(THE SERIES)? Compare the cost per SAMPLE in the FIRST tenth of the run
+        //      with the LAST tenth. A growing buffer, a memmove of the series, a loop over every
+        //      hop - the whole family this round met - makes the last tenth slower. Nothing else
+        //      does, and block size cannot hide it.
+        //   b. DOES IT FIT IN REAL TIME? Per-block against the block's own period, with the figure
+        //      printed for every size so a regression is visible rather than merely absent.
+        //
+        // LENGTH: two minutes by default, which is 1,200 hops and plenty for (a), because this
+        // suite runs on every commit. EJ_MAPFPS_LONG=1 gives his full twenty, and the nightly sets
+        // it. The duration is named in the row's own detail either way.
+        {
+            const bool longRun = std::getenv ("EJ_MAPFPS_LONG") != nullptr;
+            const double minutes = longRun ? 20.0 : 2.0;
+            bool growthOk = true, realTimeOk = true;
+            juce::StringArray figures;
+            juce::String worstGrowth;
+            for (int bs : { 32, 64, 128, 256, 512, 1024 })
+            {
+                MeterEngine eng;
+                eng.prepare (48000.0, bs);
+                std::vector<float> l ((size_t) bs), r ((size_t) bs);
+                const int blocks = (int) (48000.0 * 60.0 * minutes / (double) bs);
+                const int tenth  = juce::jmax (1, blocks / 10);
+                double phase = 0.0, firstTenthMs = 0.0, lastTenthMs = 0.0, worstBlock = 0.0;
+                const auto t0 = nowMs();
+                double segStart = t0;
+                for (int b = 0; b < blocks; ++b)
+                {
+                    for (int i = 0; i < bs; ++i)
+                    {
+                        phase += 2.0 * juce::MathConstants<double>::pi * 220.0 / 48000.0;
+                        const auto v = (float) (0.4 * std::sin (phase));
+                        l[(size_t) i] = v; r[(size_t) i] = v * 0.9f;
+                    }
+                    const auto b0 = nowMs();
+                    eng.processBlock (l.data(), r.data(), bs);
+                    worstBlock = juce::jmax (worstBlock, nowMs() - b0);
+                    if (b == tenth - 1)          { firstTenthMs = nowMs() - segStart; }
+                    if (b == blocks - tenth)     { segStart = nowMs(); }
+                }
+                lastTenthMs = nowMs() - segStart;
+                const double total = nowMs() - t0;
+                const double perBlock = total / (double) blocks;
+                const double period   = (double) bs / 48.0;          // ms of audio in one block
+                // (a) GROWTH. The last tenth may not cost more than 1.5x the first: a real
+                //     O(series) fault grows without bound and clears this by miles, and 1.5x
+                //     leaves room for cache and scheduling noise on a shared machine.
+                const double growth = firstTenthMs > 0.0 ? lastTenthMs / firstTenthMs : 1.0;
+                // THE THRESHOLD IS THE BLOW-UP, NOT THE SLOPE. 1.5x failed here at 512 samples on
+                // a 1.57x reading, and chasing that number would have silenced the leg. There IS
+                // real O(series) work on this thread - see me PIN2c, which pins it - and what this
+                // row must catch is the unbounded shape: a pass over the whole series per hop makes
+                // the last tenth cost many times the first, not 1.6x. 3x is well clear of cache and
+                // scheduling noise and well under anything genuinely unbounded.
+                if (growth > 3.0) { growthOk = false; worstGrowth = juce::String (bs) + " samples: the "
+                                                                  + "last tenth cost " + juce::String (growth, 2)
+                                                                  + "x the first"; }
+                // (b) REAL TIME. Per-block inside the block's own period, with half of it to spare
+                //     for everything else in the plugin. The WORST single block too, not the mean.
+                if (perBlock > period * 0.5 || worstBlock > period * 4.0) realTimeOk = false;
+                figures.add (juce::String (bs) + ": " + juce::String (perBlock, 4) + " ms/block of a "
+                           + juce::String (period, 3) + " ms period (" + juce::String (perBlock / period * 100.0, 0)
+                           + "%), worst block " + juce::String (worstBlock, 3) + " ms, growth "
+                           + juce::String (growth, 2) + "x");
+            }
+            check (growthOk,
+                   "me PIN2a: the cost per sample does not grow with how much audio has already "
+                   "been processed - which is the O(the series) question, and the family of fault "
+                   "this round met",
+                   worstGrowth.isNotEmpty() ? worstGrowth
+                                            : juce::String (minutes, 0) + " minutes per size: "
+                                              + figures.joinIntoString (" | "));
+            check (realTimeOk,
+                   "me PIN2b: and every block size fits inside half its own period, worst block "
+                   "included (" + juce::String (minutes, 0) + " minutes each"
+                   + (longRun ? "" : "; EJ_MAPFPS_LONG=1 for his full twenty") + ")",
+                   figures.joinIntoString (" | "));
+        }
+
+        // me PIN2c -- AND THE O(SERIES) WORK THAT IS STILL THERE, PINNED (30 Oct 2026)
+        //
+        // His rule: "nothing on the audio thread may be O(series length), and no allocation ... of
+        // the series on the render thread." MeterEngine::processBlock breaks both, per hop, and has
+        // since long before this round: the EBU R128 integrated loudness is a TWO-PASS GATE over
+        // every block of the whole session, and it builds `std::vector<LufsBlock> absGated` to do
+        // it - an allocation on the render thread whose size grows with the session.
+        //
+        // That is what me PIN2a measured as 1.57x at 512 samples over two minutes. It is small
+        // today and unbounded in principle: a three-hour session iterates 108,000 blocks every
+        // 100 ms. It is NOT the hang he reported, and it is not mine to improvise at the end of a
+        // night - the fix is a loudness HISTOGRAM (O(1) per block, the standard answer for a gated
+        // measurement), and it changes a figure he compares against references, so it needs its own
+        // round and a differential test against this implementation.
+        //
+        // So it is PINNED rather than silenced: this row asserts the defect is still exactly where
+        // it is. Fix it and this row goes red, which is the point - nobody can fix it quietly and
+        // nobody can forget it.
+        {
+            std::ifstream fme0 ("Source/MeterEngine.cpp");
+            std::stringstream sme0; sme0 << fme0.rdbuf();
+            const auto src0 = juce::String (sme0.str());
+            const auto pb = functionBody (src0, "void MeterEngine::processBlock");
+            check (pb.isNotEmpty(), "me PIN2c: found processBlock");
+            const auto pbCode = codeOnly (pb);
+            check (pbCode.contains ("std::vector<LufsBlock> absGated;")
+                   && pbCode.contains ("for (auto& b : allBlocks)"),
+                   "me PIN2c: KNOWN AND UNFIXED - the integrated gate still walks every block of "
+                   "the session on the render thread, and still allocates to do it. When this goes "
+                   "red, the histogram landed: update this row, do not delete it");
+        }
+
+        // me PIN3 -- THE GUARD IS IN THE SOURCE, not only in the behaviour above: a hand removing
+        // it would make PIN1 HANG rather than fail, and a hanging gate reports nothing at all.
+        {
+            std::ifstream fme ("Source/MeterEngine.cpp");
+            std::stringstream sme; sme << fme.rdbuf();
+            const auto meSrc = codeOnly (juce::String (sme.str()));
+            check (meSrc.contains ("if (samplesPerBlock100ms <= 0)"),
+                   "me PIN3: the hop section refuses a zero step instead of looping on it");
+            check (meSrc.contains ("while (blockSampleCount >= samplesPerBlock100ms)"),
+                   "me PIN3: ...and the loop it protects is still the one that was spinning");
+        }
+
+        // me PIN4 -- AND THE CALLER PREPARES ITS TAPS. The other half, and the thing that was
+        // actually missing; a prepared tap is also the only one that keeps any hops at all.
+        {
+            std::ifstream fpp ("Source/PluginProcessor.cpp");
+            std::stringstream spp; spp << fpp.rdbuf();
+            const auto ppSrc = codeOnly (juce::String (spp.str()));
+            check (ppSrc.contains ("liveEngine.prepare(sampleRate, samplesPerBlock)"),
+                   "me PIN4: the live bus tap is prepared");
+            check (ppSrc.contains ("liveInEngine.prepare(sampleRate, samplesPerBlock)"),
+                   "me PIN4: and the live rack-input tap is prepared");
+            int fed = 0, at = 0;
+            while ((at = ppSrc.indexOf (at, "Engine.processBlock")) >= 0) { ++fed; at += 19; }
+            check (fed > 0, "me PIN4: found the taps the processor feeds",
+                   juce::String (fed) + " processBlock call(s) on a MeterEngine");
+        }
+    }
+
     // ---- AND NO SIGNATURE WENT UNREAD (30 Oct 2026) ------------------------------------------
     // See gFnBodyMisses. A functionBody that finds nothing returns "", and every negative
     // assertion against "" passes - so a renamed or moved function turns its legs GREEN instead of

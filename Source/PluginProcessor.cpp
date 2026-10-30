@@ -988,6 +988,26 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     meterEngine.prepare(sampleRate, samplesPerBlock);
     captureEngine.prepare(sampleRate, samplesPerBlock);
     captureInEngine.prepare(sampleRate, samplesPerBlock);   // A13: the pre-chain tap
+    // ---- THE LIVE TAPS, AND WHY THIS LINE'S ABSENCE HUNG LOGIC (30 Oct 2026) ----------------
+    //
+    // His 08:10 report: the 07:45 build hung Logic on PLAY, three times, with the render thread in
+    // MeterEngine::processBlock in 3450 of 3450 samples, much of it in memmove.
+    //
+    // These two engines were added yesterday for Match-from-live (item 5a) and are fed from
+    // processBlock - but nothing ever prepared them. An unprepared MeterEngine has
+    // samplesPerBlock100ms == 0 (its declared default), and the hop loop reads
+    //
+    //     while (blockSampleCount >= samplesPerBlock100ms) { ...; blockSampleCount -= samplesPerBlock100ms; }
+    //
+    // so with 0 the condition is always true and the subtraction changes nothing: processBlock
+    // never returns, on the audio thread, the first time the transport feeds it a sample. The
+    // memmove is the vectors inside that loop growing without bound while it spins.
+    //
+    // The guard in MeterEngine::processBlock now makes an unprepared engine a NO-OP rather than a
+    // hang, and this line means these two are prepared like every other tap. Both, because either
+    // alone leaves a way to ship the fault again.
+    liveEngine.prepare(sampleRate, samplesPerBlock);        // item 5a: the rolling bus tap
+    liveInEngine.prepare(sampleRate, samplesPerBlock);      // item 5a: the rolling rack-input tap
     // The shadow view's scratch buffer, allocated HERE and never on the audio thread (stage B).
     shadowView_.prepare(sampleRate, samplesPerBlock);
     selfKeyEngine_.prepare(sampleRate, samplesPerBlock);   // §6.1 self key tap
@@ -2061,6 +2081,22 @@ void EchoJayProcessor::applyPendingBorrowRestores()
 // so nothing is lost and nothing is counted twice (legs lb PIN1 and lb PIN2).
 void EchoJayProcessor::liveBufferTick()
 {
+    // ---- AND IF A TAP WAS EVER FED UNPREPARED, SAY SO (his 08:10 hang, 30 Oct 2026) ---------
+    //
+    // The render thread cannot log, so it sets a flag; this is the message thread that reads it.
+    // The state is no longer dangerous - MeterEngine returns instead of looping on a zero step -
+    // but it means a tap is producing no loudness at all, which must not be silent.
+    {
+        const bool a = liveEngine.takeWasFedUnprepared();
+        const bool b = liveInEngine.takeWasFedUnprepared();
+        if (a || b)
+            EchoJay_NSLog ((juce::String ("EJMeter: the live ") + (a && b ? "bus AND rack-input taps"
+                                                                         : a ? "bus tap" : "rack-input tap")
+                            + " were fed audio before prepare() ran, so they kept no hops. This used "
+                              "to HANG the host (the hop loop's step was 0 and it could not "
+                              "terminate); it is now a no-op, and this line is the fault itself.").toRawUTF8());
+    }
+
     // ---- A CHAIN THAT MOVED IS A MARKER (Kathy's requirement 2, 29 Oct 2026) ----------------
     //
     // *"A marker or reset when a plan is applied, and when the chain changes mid-play, so the

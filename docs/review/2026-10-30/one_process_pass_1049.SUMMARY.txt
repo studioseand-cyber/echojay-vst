@@ -1,0 +1,15 @@
+  the Link we were given hashes d48af539bcd6 (33941120 bytes); the INSTALLED one hashes d48af539bcd6 - the same build, so the Link rows are about this build
+  the V2 we were given hashes a21b8d1bb529 (59560696 bytes); the INSTALLED one hashes a21b8d1bb529 - the same build, so the V2 rows are about this build
+  ROW LV9r PASS  "the transport runs for 20 seconds through the V2 and both Links in ONE process, and every block comes back inside its budget - the row his 08:10 hang proved was missing"
+  ROW LV9  PASS  "does a change made in the live view reach the plugin ON THE LINK and stay there, with the real-editor switch off"
+  ROW LV9b PASS  "does a knob turned on an ECHOJAY DEVICE'S copy reach the device on the Link and stay there - the road his locked Compressor had no row for, and which no juce-parameter row can reach"
+  ROW LV9j PASS  "can a knob on one of our OWN devices be grabbed at all in the live view - the step before every other control row, and the one his Test 1 failed on"
+  ROW LV9f-eq PASS  "does a knob on EchoJay EQ's copy reach the device on the Link and stay there, with the real-editor switch OFF (control 4)"
+  ROW LV9f-lim PASS  "does a knob on EchoJay Limiter's copy reach the device on the Link and stay there, with the real-editor switch OFF (control 0)"
+  ROW LV9f-gain PASS  "does a knob on EchoJay Gain's copy reach the device on the Link and stay there, with the real-editor switch OFF (control 0)"
+  ROW LV9f-on PASS  "does a knob on EchoJay Compressor's copy reach the device on the Link and stay there, with the real-editor switch ON (control 0)"
+  ROW LV9g PASS  "when the Link's rack moves under a live session, does a gesture reach the right slot or get refused IN WORDS - never the silent nothing that cost his R4"
+  ROW LV9h-dev PASS  "does a REPLACE sent from the V2 land on the Link - the road his Test 4 failed on twice, for every plugin, since 6 Oct"
+  ROW LV9h-third PASS  "does a REPLACE sent from the V2 land on the Link - the road his Test 4 failed on twice, for every plugin, since 6 Oct"
+  ROW LV9i PASS  "does an ADD sent down the same road land ON THE LINK, for "EchoJay Gain" - the op that was never broken, and the one that made the replace's failure legible"
+  ROW LV9i-third PASS  "does an ADD sent down the same road land ON THE LINK, for "AUDelay" - the op that was never broken, and the one that made the replace's failure legible"

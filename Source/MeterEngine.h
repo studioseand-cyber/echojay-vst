@@ -303,6 +303,11 @@ public:
         already owns the vector - the same idiom LevelTally uses for its short-term reset. clear()
         keeps the capacity, so nothing allocates. */
     void requestHopFramesReset() noexcept { hopResetRequested_.store (true, std::memory_order_relaxed); }
+
+    /** TRUE once processBlock has met this engine with prepare() never run on it. Read and cleared
+        by the message thread, which is what says so out loud: that state used to HANG the host
+        (the hop loop's step was 0, so it could not terminate - his 08:10 report of 30 Oct 2026). */
+    bool takeWasFedUnprepared() noexcept { return unpreparedSaid_.exchange (false, std::memory_order_relaxed); }
     /** 20 minutes at 10 hops a second. Past it the audio thread stops appending and says so, rather
         than decimating in place - halving 700 KB on the audio thread is a spike nobody asked for. */
     static constexpr int kMaxHopFrames = 12000;
@@ -453,6 +458,9 @@ private:
     // A12: the hop series, plus this hop's band accumulation (reset at every boundary).
     std::vector<HopFrame> hopFrames_;
     std::atomic<bool>     hopResetRequested_ { false };   // item 4: the rolling reader asked for a fresh series
+    /** Said once, from the audio thread, when processBlock meets an engine prepare() never ran on.
+        See the guard at the top of the hop section: that state used to hang the host. */
+    std::atomic<bool>     unpreparedSaid_ { false };
     std::array<double, 6> hopBandSum_ {};
     std::array<float,  6> hopBandMax_ {};
     int  hopBandFrames_ = 0;

@@ -190,8 +190,19 @@ install_one() {
         note "         (C's point 80: \"touched guards green\" stood in for \"the build is green\" for 13 days)"
         fail=1
         return 0
+    elif grep -q "^verdict: AHEAD" "$vfile" && [[ -n "${EJ_INSTALL_AHEAD:-}" ]]; then
+        # ---- AN INSTALL AHEAD OF ITS SUITES, SAID OUT LOUD (C's point 89, 30 Oct 2026) -------
+        # AHEAD means nothing that ran is red and some suites have NOT run on this fingerprint.
+        # It exists because a HANG had to reach him faster than a 35-minute suite could, and the
+        # alternative was writing GREEN over a page of NOT RUN - which is the fault this file was
+        # written to stop. The flag is the deliberate act; these lines are the record.
+        note "INSTALLING AHEAD OF THE SUITES, because EJ_INSTALL_AHEAD is set."
+        note "         the verdict names the suites that have NOT run on this build. Read them:"
+        sed 's/^/         /' "$vfile" | head -14 | while IFS= read -r l; do note "$l"; done
     elif ! grep -q "^verdict: GREEN" "$vfile"; then
         note "REFUSED: the gate verdict beside these bundles is not GREEN"
+        grep -q "^verdict: AHEAD" "$vfile" \
+            && note "         it is AHEAD of its suites - set EJ_INSTALL_AHEAD=1 if that is what you mean"
         sed 's/^/         /' "$vfile" | head -12 | while IFS= read -r l; do note "$l"; done
         fail=1
         return 0

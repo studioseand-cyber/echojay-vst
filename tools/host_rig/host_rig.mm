@@ -2235,7 +2235,7 @@ static bool anyLvFamilyWanted();          // defined with rowWanted, reads kLvFa
 static const char* const kLvFamily[] = { "LV4", "LV5", "LV6", "LV8", "LV9", "LV10", "LV10b", "LV11",
                                          "LV9b", "LV9f", "LV9f-eq", "LV9f-lim", "LV9f-gain",
                                          "LV9f-on", "LV9g", "LV9h", "LV9h-dev", "LV9h-third",
-                                         "LV9i", "LV9i-third", "LV9j" };
+                                         "LV9i", "LV9i-third", "LV9j", "LV9r" };
 
 static bool anyLvFamilyWanted()
 {
@@ -3114,6 +3114,104 @@ int main (int argc, char* argv[])
         if ((i % 20) == 0) Rig::pump (10);
     }
     Rig::pump (1500);       // the 1 Hz registry pass runs on the processor's timer
+
+    // ---- LV9r: THE TRANSPORT RUNS, AND EVERY BLOCK COMES BACK (his 08:10 hang, 30 Oct 2026) ----
+    //
+    // *"the 07:45 build hangs Logic on PLAY, three times running"* - and NOT ONE ROW IN THIS FILE
+    // COULD HAVE SEEN IT. Twelve one-process rows passed on that build hours earlier: they open
+    // editors, turn knobs, replace plugins and read sidecars, and every one of them pumps audio
+    // only as a means to an end. None of them timed a block, and none of them would have failed if
+    // a block never returned - the run would simply have hung, and a hung gate reports nothing.
+    //
+    // So this row is the new bar, and it is deliberately FIRST: a hang must fail here, in the first
+    // half-minute, rather than taking the suite down an hour later.
+    //
+    //   * it plays real audio through the V2 AND both Links, in one process, for a fixed time;
+    //   * it times every single block and fails on the worst one, not on the mean - a meter that is
+    //     fine on average and stalls once per hop is a click he can hear;
+    //   * and a WATCHDOG turns "never returned" into a loud failure. That is the case this round
+    //     actually shipped, and it is the one case a timing assertion alone cannot report, because
+    //     the thread that would report it is the thread that is stuck.
+    if (rowWanted ("LV9r"))
+    {
+        struct RenderWatchdog : juce::Thread
+        {
+            RenderWatchdog (int ms) : juce::Thread ("ej-render-watchdog"), limitMs (ms) {}
+            void run() override
+            {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                while (! threadShouldExit())
+                {
+                    wait (200);
+                    if (threadShouldExit()) return;
+                    if (juce::Time::getMillisecondCounterHiRes() - t0 > (double) limitMs)
+                    {
+                        // SAID, then ABORTED. A hung render thread cannot be interrupted from here
+                        // and the process is useless once it is stuck, so the run ends with a line
+                        // that names the row instead of hanging until somebody notices.
+                        std::printf ("  ROW LV9r FAIL  \"the transport runs and every block comes back\"\n"
+                                     "        NEVER RETURNED: a render block did not come back within %d ms. "
+                                     "This is the shape of his 08:10 hang (an unprepared MeterEngine's hop loop "
+                                     "could not terminate). Aborting so the run says so rather than hanging.\n",
+                                     limitMs);
+                        std::fflush (stdout);
+                        std::abort();
+                    }
+                }
+            }
+            const int limitMs;
+        };
+
+        const double periodMs  = (double) block / (sr / 1000.0);     // ms of audio in one block
+        const int    blocksFor = (int) (sr * 20.0 / (double) block); // 20 seconds of audio
+        // The watchdog's limit is for the WHOLE loop: 20 s of audio through three plugins, with a
+        // wide allowance for a loaded machine. A hang blows through it; slowness does not.
+        RenderWatchdog dog (90000);
+        dog.startThread();
+        double worstV2 = 0.0, worstLink = 0.0, totalV2 = 0.0;
+        int over = 0, overPeriod = 0;
+        // ---- TWO LINES, BECAUSE A DROPOUT IS NOT A HANG (C's point 88 note, 30 Oct 2026) -------
+        //
+        // The first cut failed only past 250 ms, which catches the hang and nothing else: at 512
+        // samples the period is 10.67 ms, so a 200 ms block - a glitch he would hear - passed. So:
+        //
+        //   kBudgetFrac  half the block's own period. Over it and he is at risk of a dropout; this
+        //                is the line the row is really about, and today's worst block is a tenth.
+        //   kStallMs     the "never returned" line, kept separate and loose on purpose, so the two
+        //                failures read differently in the log. The watchdog covers a true hang.
+        const double kBudgetFrac = 0.5;
+        const double kStallMs    = 250.0;
+        for (int b = 0; b < blocksFor; ++b)
+        {
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            v2.processOneBlock (sr);
+            const auto dtV2 = juce::Time::getMillisecondCounterHiRes() - t0;
+            worstV2 = juce::jmax (worstV2, dtV2); totalV2 += dtV2;
+            if (dtV2 > kStallMs) ++over;
+            if (dtV2 > periodMs * kBudgetFrac) ++overPeriod;
+            for (Track* t : { &lk1, &lk2 })
+            {
+                const auto t1 = juce::Time::getMillisecondCounterHiRes();
+                t->processOneBlock (sr);
+                const auto dt = juce::Time::getMillisecondCounterHiRes() - t1;
+                worstLink = juce::jmax (worstLink, dt);
+                if (dt > kStallMs) ++over;
+                if (dt > periodMs * kBudgetFrac) ++overPeriod;
+            }
+            if ((b % 200) == 0) Rig::pump (5);
+        }
+        dog.signalThreadShouldExit(); dog.stopThread (1000);
+        const double meanV2 = totalV2 / (double) blocksFor;
+        row ("LV9r", over == 0 && overPeriod == 0 && meanV2 < periodMs,
+             "the transport runs for 20 seconds through the V2 and both Links in ONE process, and "
+             "every block comes back inside its budget - the row his 08:10 hang proved was missing",
+             "V2 mean " + juce::String (meanV2, 3) + " ms/block of a " + juce::String (periodMs, 2)
+             + " ms period, worst " + juce::String (worstV2, 2) + " ms; worst Link block "
+             + juce::String (worstLink, 2) + " ms; " + juce::String (overPeriod) + " block(s) over "
+             + juce::String (kBudgetFrac * 100.0, 0) + "% of their period (the dropout line) and "
+             + juce::String (over) + " over " + juce::String (kStallMs, 0) + " ms (the never-returned "
+             "line), in " + juce::String (blocksFor) + " blocks x 3 plugins");
+    }
 
     // ---- W1: A WINDOW THAT REALLY CLOSES ------------------------------------------------------------
     //
