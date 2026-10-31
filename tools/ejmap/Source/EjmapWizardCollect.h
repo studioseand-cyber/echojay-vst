@@ -100,7 +100,8 @@ inline void checksFrom (const juce::var& doc, std::vector<Check>& out, const juc
             {
                 const auto ctl = controlOf (c);
                 if (! (bool) a.getProperty ("ran", false)) { notRun (ctl, "ceiling", a); continue; }
-                const auto st = a.getProperty ("setting", {}); const auto lab = num (st.getProperty ("label_db", {})), tp = num (a.getProperty ("out_true_peak_db", {}));
+                const auto st = a.getProperty ("setting", {}); const auto lab = num (st.getProperty ("label_db", {}));
+                const auto tp = num (a.getProperty (a.getProperty ("judged_by", "").toString() == "sample_peak" ? "out_sample_peak_db" : "out_true_peak_db", {}));   // 30 Oct: as the row was judged
                 Check k; k.control = ctl; k.quantity = "ceiling"; k.unit = "dB"; k.tolerance = num (a.getProperty ("bar_db", {})); k.ran = true;
                 k.at = st.getProperty ("ceiling_display", "").toString(); k.miss = tp - lab; k.within = (bool) a.getProperty ("pass", false); out.push_back (k);
             }

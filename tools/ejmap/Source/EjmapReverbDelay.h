@@ -348,6 +348,15 @@ inline double roleStrength (const juce::String& role, std::optional<double> dryA
 inline std::optional<double> relativeMs (std::optional<double> onsetMs, std::optional<double> ownOnsetMs) { if (! onsetMs || ! ownOnsetMs) return std::nullopt; return *onsetMs - *ownOnsetMs; }
 // a time label is judged only when it reads in ms or s
 inline bool isTimeLabel (const juce::String& display) { const auto s = display.trim().toLowerCase(); if (! s.containsAnyOf ("0123456789")) return false; return s.contains ("ms") || s.endsWith ("s") || s.contains (" s") || s.contains ("sec"); }
+// A DECAY CONTROL SHOWS A TIME (30 Oct, Phase 1 item 4, Kathy's rule): the decay role went to Unfiltered Audio Tails' "Damping" (0-100 %:
+// its decay ~8 s at every setting but the last) and GW VoiceCentric's "Reverb" (a level, -30..0 dB) - the acceptance then asked them for
+// 2.6 s and called the misses "188 % off". A control is the decay only when at least half its measured positions, and at least two, show
+// a time (ms / s); otherwise it is recorded as what it is (moves the tail, shows no time) and never judged or used as the decay
+inline bool showsTime (const juce::StringArray& displays)
+{
+    int t = 0; for (const auto& d : displays) if (isTimeLabel (d)) ++t;
+    return t >= 2 && 2 * t >= displays.size();
+}
 inline bool timeWithin (double measured, double target, double pct, double ms) { return std::abs (measured - target) <= juce::jmax (ms, pct * 0.01 * std::abs (target)); }
 
 // MONOTONIC INVERSION on a measured map (norm, figure): the norm whose figure is the target, linear between neighbours (log for times when
@@ -449,7 +458,9 @@ inline juce::var spaceProfile (const juce::var& rec, const juce::var& plugin, co
     };
     if (kind == "reverb")
     {
-        if (const auto d = block ("decay"); d.isObject()) P->setProperty ("decay", timeMap (d, d.getProperty ("positions", {})[0].hasProperty ("rt60_s") ? "rt60_s" : "rt60_t20_s", "rt60_s")); else { P->setProperty ("decay", juce::var()); notes.add ("decay: no decay control measured"); }
+        if (const auto d = block ("decay"); d.isObject() && d.getProperty ("verdict", "").toString() == "not_a_time_control")   // 30 Oct (Phase 1 item 4)
+        { P->setProperty ("decay", juce::var()); notes.add ("decay: " + d.getProperty ("control", "").toString() + " moves the tail but shows no time - not used as the decay"); }
+        else if (const auto d = block ("decay"); d.isObject()) P->setProperty ("decay", timeMap (d, d.getProperty ("positions", {})[0].hasProperty ("rt60_s") ? "rt60_s" : "rt60_t20_s", "rt60_s")); else { P->setProperty ("decay", juce::var()); notes.add ("decay: no decay control measured"); }
         if (const auto t = block ("time"); t.isObject()) P->setProperty ("predelay", timeMap (t, t.getProperty ("positions", {})[0].hasProperty ("relative_ms") ? "relative_ms" : "onset_ms", "relative_ms")); else { P->setProperty ("predelay", juce::var()); notes.add ("predelay: no pre-delay control measured"); }
         P->setProperty ("time", juce::var()); P->setProperty ("feedback", juce::var()); P->setProperty ("sync", juce::var());
     }

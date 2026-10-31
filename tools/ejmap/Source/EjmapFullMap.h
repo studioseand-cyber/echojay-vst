@@ -27,6 +27,7 @@
 
 namespace ejmap::fullmap
 {
+inline constexpr const char* kPanHeldWhy = "pan: held until the plugin's read-back understands L / R (measured as signed: L negative, R positive)";   // 30 Oct (Kathy)
 
 inline constexpr const char* kTesterId = "wizard";
 
@@ -87,6 +88,9 @@ inline Built buildControls (const Extract& x)
         { b.declines.add ({ p.index, p.name, p.method == "flat" ? "flat both ways - unbuildable (the display carries no value information)" : "flat by getText; set-then-read not tried (the extract's time budget)" }); continue; }
         const auto sw = outcomeFromPoints (p.points, p.method.isNotEmpty() ? p.method : juce::String ("gettext"));
         NamedControl c; c.name = p.name; c.indices.add (p.index); c.trust = Trust::setread;
+        // 30 Oct (Kathy): PAN IS HELD BACK until the plugin's read-back reads "L" / "R" (EchoJayParamApply.h parseDisplayForUnit reads
+        // "40 L" as +40 - HANDOVER/PLUGIN_PAN_READBACK_NOTE_30oct.md); measured and recorded, never shipped as a control
+        if (sw.ok && sw.unitFamily == "pan") { b.declines.add ({ p.index, p.name, kPanHeldWhy }); continue; }
         if (sw.ok)
         {
             std::vector<trust::Anchor> ta;

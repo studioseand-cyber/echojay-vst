@@ -8141,29 +8141,35 @@ void testLimiter()
         { std::vector<std::pair<float, juce::String>> g; const double labels[] = { 0.0, -0.5, -1.0, -2.0, -3.0, -6.0, -10.0, -20.0 }; for (int k = 0; k < 8; ++k) g.push_back ({ k / 7.0f, juce::String (labels[k], 1) + " dB" }); g.push_back ({ 1.0f, "Off" });
           const auto all = ceilingPositions (g, true); int nearTargets = 0; for (const auto& p : all) for (double t : kCeilingTargetsDb) if (std::abs (p.target - t) < 1e-9) ++nearTargets;
           check (all.size() == 8 && all.front().labelDb == 0.0 && all.back().labelDb == -20.0 && nearTargets >= 5, "limiter L13: every detent (8 of 9 read as dB, 'Off' skipped), in label order, the targets carried (" + juce::String ((int) all.size()) + ", " + juce::String (nearTargets) + " near a target)"); }
-        // L14: the server's setting (section 5.2)
+        // L14: the server's setting - BY SAMPLE PEAK, NEVER ABOVE THE REQUEST (30 Oct, Phase 1 item 5, Kathy's decision; until then a true-peak
+        // request lowered a sample-peak-only unit and could write a label above the request - every STAGING 4 limiter miss was that)
         std::vector<CeilingResult> mlx { row (0.0, 0.0, 0.58, 6.0), row (-0.3, -0.3, 0.28, 5.7), row (-1.0, -1.0, -0.42, 5.0), row (-3.0, -3.0, -2.42, 3.0), row (-6.0, -6.0, -5.42, 0.0) };   // MLimiterX: sample exact, true +0.58
         const auto s1 = settingFor (-1.0, mlx);
-        check (s1.ok && std::abs (s1.pos.labelDb + 3.0) < 1e-9 && std::abs (s1.loweredByDb - 2.0) < 1e-9 && s1.why.contains ("set 2.00 dB lower"), "limiter L14a: holds sample peak only (+0.58): -1 dBTP lowers to -1.58, rounded DOWN to the next measured position -3 (lowered by 2.0, said)");
+        check (s1.ok && std::abs (s1.pos.labelDb + 1.0) < 1e-9 && s1.loweredByDb == 0.0 && std::abs (s1.expectedTrueOverDb - 0.58) < 1e-9 && s1.why.contains ("true peak +0.58 dB over its label, recorded"),
+               "limiter L14a: holds sample peak only (true +0.58): -1 is written as it is, the true peak recorded, nothing lowered");
         std::vector<CeilingResult> l2 { row (0.0, -0.01, -0.01, 6.0), row (-0.3, -0.31, -0.3, 5.7), row (-1.0, -1.0, -1.0, 5.0), row (-6.0, -6.0, -6.0, 0.0) };
         const auto s2 = settingFor (-1.0, l2);
         check (s2.ok && std::abs (s2.pos.labelDb + 1.0) < 1e-9 && s2.loweredByDb == 0.0 && s2.verdictAtRequest == "holds_true_peak", "limiter L14b: holds true peak at -1: the label is written, nothing lowered");
         std::vector<CeilingResult> l360 { row (-1.0, -1.0, 4.2, 5.0), row (-3.0, -3.0, 2.2, 3.0) };
-        check (! settingFor (-1.0, l360).ok && settingFor (-1.0, l360).why.contains ("does not hold true peaks"), "limiter L14c: true peak +5.2 dB over (L360): over the 1 dB cap, not offered");
+        check (settingFor (-1.0, l360).ok && std::abs (settingFor (-1.0, l360).expectedTrueOverDb - 5.2) < 1e-9, "limiter L14c: true peak +5.2 dB over (L360) but its sample peak holds: offered by sample peak, the true peak recorded");
         std::vector<CeilingResult> clip { row (-1.0, 0.14, 0.2, 5.0), row (-3.0, -1.86, -1.8, 3.0) };
-        check (! settingFor (-1.0, clip).ok && settingFor (-1.0, clip).why.contains ("overshoots on sample peak"), "limiter L14d: a clipper (sample peak +1.14) is not offered");
+        check (! settingFor (-1.0, clip).ok && settingFor (-1.0, clip).why.contains ("holds its sample peak"), "limiter L14d: a clipper (sample peak +1.14) is not offered");
         std::vector<CeilingResult> nd { row (-1.0, -1.0, -1.0, 2.0), row (-3.0, -3.0, -3.0, 3.0) };
-        check (! settingFor (-1.0, nd).ok && settingFor (-1.0, nd).why.contains ("not driven"), "limiter L14e: a not_driven position at the request has no verdict: not offered");
+        check (settingFor (-1.0, nd).ok && std::abs (settingFor (-1.0, nd).pos.labelDb + 3.0) < 1e-9 && ! settingFor (-1.0, { nd[0] }).ok, "limiter L14e: a not_driven position holds nothing: the driven -3 under it is written; -1 alone is not offered");
         std::vector<CeilingResult> sparse { row (-0.5, -0.5, -0.5, 5.5), row (-2.0, -2.0, -2.0, 4.0) };
-        const auto s6 = settingFor (-1.0, sparse);
-        check (s6.ok && std::abs (s6.pos.labelDb + 2.0) < 1e-9 && s6.why.contains ("at or under it"), "limiter L14f: no position within 0.3 dB of -1: the nearest measured label at or under it (-2.0), said");
+        const auto s6 = settingFor (-1.0, sparse), s6c = settingFor (-1.0, sparse, false, true);
+        check (s6.ok && std::abs (s6.pos.labelDb + 2.0) < 1e-9 && s6.why.contains ("under the request") && ! s6.interpolated
+               && s6c.ok && s6c.interpolated && std::abs (s6c.pos.labelDb + 1.0) < 1e-9,
+               "limiter L14f: no label at -1: a stepped ceiling takes the nearest holding label under it (-2.0); a continuous one writes -1 itself, between -2.0 and -0.5");
         check (! settingFor (-1.0, {}).ok && ! settingFor (-9.0, sparse).ok, "limiter L14g: no rows, or nothing at or under the request: not offered");
         std::vector<CeilingResult> straddle { row (-0.26, -0.28, -0.28, 5.74), row (-0.32, -0.33, -0.33, 5.68), row (-1.05, -1.07, -1.07, 4.95) };
         const auto s8 = settingFor (-0.3, straddle);
-        check (s8.ok && std::abs (s8.pos.labelDb + 0.32) < 1e-9, "limiter L14h: labels -0.26 and -0.32 both within 0.3 of a -0.3 request: the one AT OR UNDER the request is written (-0.32)");
+        check (s8.ok && std::abs (s8.pos.labelDb + 0.32) < 1e-9, "limiter L14h: labels -0.26 and -0.32 around a -0.3 request, stepped: the one UNDER the request is written (-0.32), never -0.26");
         std::vector<CeilingResult> aboveOnly { row (-0.26, -0.28, -0.28, 5.74), row (-1.05, -1.07, -1.07, 4.95) };
-        const auto s9 = settingFor (-0.3, aboveOnly);
-        check (s9.ok && std::abs (s9.pos.labelDb + 0.26) < 1e-9 && s9.why.contains ("above the request"), "limiter L14i: only -0.26 within 0.3 of -0.3 (bx_limiter True Peak): written, said to sit 0.04 above the request, the re-measured true peak decides");
+        const auto s9 = settingFor (-0.3, aboveOnly), s9c = settingFor (-0.3, aboveOnly, false, true);
+        std::vector<CeilingResult> l2top { row (-0.9, -0.9, -0.9, 5.1), row (0.0, -0.01, -0.01, 6.0) };   // L2 on STAGING 4: -1.0 asked, -0.9 written
+        check (s9.ok && std::abs (s9.pos.labelDb + 1.05) < 1e-9 && s9c.ok && s9c.interpolated && std::abs (s9c.pos.labelDb + 0.3) < 1e-9 && ! settingFor (-1.0, l2top).ok && ! settingFor (-1.0, l2top, false, true).ok,
+               "limiter L14i: never a label above the request - -0.26 is not written for -0.3 (stepped: -1.05; continuous: -0.3 itself); L2's -0.9 is never written for -1.0");
         // L15: the switch and the section 6 block
         std::vector<CeilingResult> on { row (0.0, 0.0, 0.14, 6.0), row (-0.3, -0.3, -0.16, 5.7), row (-1.0, -1.0, -0.86, 5.0), row (-3.0, -3.0, -2.86, 3.0), row (-6.0, -6.0, -5.86, 0.0) };
         const auto red = onReducesOvershootDb (mlx, on);
@@ -8177,7 +8183,7 @@ void testLimiter()
         const auto blk2 = ceilingBlock ("Ceiling", "name", withNd, {}, {}, {}, {});
         check (blk2.getProperty ("notes", {}).size() == 1 && blk2.getProperty ("notes", {})[0].toString().contains ("not_driven") && (int) blk2.getProperty ("not_driven_positions", 0) == 1 && blk2.getProperty ("oversampling", {}).isVoid(),
                "limiter L15c: a not_driven position gets a note with its reason; no switch -> oversampling null");
-        check (acceptancePasses (-1.0, -0.9) && ! acceptancePasses (-1.0, -0.85) && acceptancePasses (-0.3, -0.25), "limiter L16: acceptance = true peak <= request + 0.1");
+        check (acceptancePasses (-1.0, -0.9) && ! acceptancePasses (-1.0, -0.85) && acceptancePasses (-0.3, -0.25), "limiter L16: acceptance = SAMPLE peak <= request + 0.1 (30 Oct)");
     }
     // THE DRAFT RULES (EjmapDrafts.h, 7 Oct): drafts/ only, never profiles/, the spec tag, the status; a bad path or content is refused, not written
     {
@@ -15105,6 +15111,132 @@ int main (int, char**)
                && run.contains ("if (pid.isNotEmpty()) { row->setProperty (\"plugin_id\", pid); if (vst3Cur != juce::File()) vst3BundleOf[pid] = vst3Cur; }")
                && run.contains ("bundleKey = \"vst3-bundle|\" + path.toLowerCase(); vst3Cur = b.bundle;"),
                "collect WZ-37OCT-6: the engine stamps where a measurement or a map goes, checks and copies the readings of a measured row, once");
+    }
+    // P1-1 A SHELF'S PER-GAIN MAPS AT THE MAIN MAP'S POSITIONS (30 Oct, Phase 1 item 1): the +3 / -3 dB maps were taken at 7 even norms while
+    // the main map held its added midpoints; all 44 strip-EQ shelf misses of STAGING 4 came from interpolating the coarse map across a bend
+    {
+        using namespace ejmap::eq;
+        juce::StringArray seven; for (int k = 0; k < 7; ++k) seven.add (juce::String ((float) k / 6.0f, 6));
+        const std::vector<FreqPoint> mapped { { 0.416667f, "155", 132.7 }, { 0.5f, "265", 265.0 }, { 0.958333f, "2.6k", 2600.0 } };
+        const auto n = perGainNorms (seven, mapped);
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (n.size() == 9 && n.contains ("0.416667") && n.contains ("0.958333") && n[0] == "0.000000" && n[8] == "1.000000" && n.indexOf ("0.416667") == 3
+               && drv.contains ("fIdx, eq::perGainNorms (normsFor (fIdx, 7), freqPoints), gs);"),
+               "eq P1-1: each per-gain shelf map is taken at the main map's positions too (7 even + the added midpoints, sorted, once each)");
+    }
+    // P1-3 READING THE RIGHT FEATURE (30 Oct, Phase 1 item 3): a write at 1.6 kHz is read at 1.6 kHz, not at a larger change elsewhere
+    // (MannyM); a known low shelf is read as the step between its ends (SlickEQ's tilt); a known bell whose far skirt lies past the grid
+    // stays a bell (Bettermaker's "15.0 kHz"); a gain that flips sign across the frequency sweep is refused (bx_hybrid's BS bands)
+    {
+        using namespace ejmap::eq;
+        std::vector<double> hz; for (int k = 0; k < 136; ++k) hz.push_back (10.0 * std::pow (2350.0, k / 135.0));
+        auto curve = [&] (const std::function<double (double)>& f) { std::vector<std::pair<double, double>> d; for (double h : hz) d.push_back ({ h, f (h) }); return d; };
+        auto bell = [] (double h, double c, double g, double wOct) { const double x = std::log2 (h / c) / wOct; return g * std::exp (-x * x); };
+        auto logistic = [] (double h, double c, double steep) { return 1.0 / (1.0 + std::pow (h / c, steep)); };   // 1 below c, 0 above
+        // MannyM: a -3.2 dB bell at 1.6 kHz and the top end 5.2 dB down
+        const auto manny = curve ([&] (double h) { return bell (h, 1600.0, -3.2, 0.7) - 5.2 * (1.0 - logistic (h, 18000.0, 6.0)); });
+        const auto mAny = deriveBand (manny), mNear = deriveBandAs (manny, { "peak", 1600.0 });
+        // SlickEQ: a "+3.9" low shelf whose level is kept - the low end +1.65, the top -2.21, the step +3.86 at 800 Hz
+        const auto slick = curve ([&] (double h) { return -2.21 + 3.86 * logistic (h, 800.0, 2.0); });
+        const auto sAny = deriveBand (slick), sAs = deriveBandAs (slick, { "low_shelf" });
+        // an ordinary low shelf (far end 0) reads as before
+        const auto plain = curve ([&] (double h) { return 6.0 * logistic (h, 250.0, 2.0); });
+        const auto pOld = deriveBand (plain), pAs = deriveBandAs (plain, { "low_shelf" });
+        const auto lifted = curve ([&] (double h) { return 1.0 + 6.0 * logistic (h, 250.0, 2.0); });   // the far end moved the SAME way: no tilt
+        const auto lOld = deriveBand (lifted), lAs = deriveBandAs (lifted, { "low_shelf" });
+        // Bettermaker: a wide bell peaking at 14.8 kHz, still 5.5 dB up at 23.5 kHz
+        const auto bm = curve ([&] (double h) { return bell (h, 14800.0, 6.6, 2.2); });
+        const auto bAny = deriveBand (bm), bAs = deriveBandAs (bm, { "peak" });
+        // MannyM's "20k" high shelf, still rising at the grid's edge: no tilt, so read exactly as before (its peak, the top tone)
+        const auto rising = deriveBandAs (curve ([&] (double h) { return 10.0 * (1.0 - logistic (h, 20000.0, 4.0)); }), { "high_shelf" });
+        const double topTone = 10.0 * (1.0 - logistic (hz.back(), 20000.0, 4.0));
+        const auto shelfAsPeak = deriveBandAs (curve ([&] (double h) { return 6.0 * (1.0 - logistic (h, 2000.0, 3.0)); }), { "peak" });   // a real high shelf stays a shelf
+        Band up; up.result = "measured"; up.gainDb = 3.9; Band dn = up; dn.gainDb = -3.9;
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        std::vector<GainRow> gr (5); for (auto& g : gr) { g.band.result = "shelf"; g.band.shape = "low_shelf"; } gr[4].band.shape = "high_shelf";
+        juce::StringArray bad;
+        if (! (mAny.shape == "high_shelf" && mNear.result == "measured" && mNear.shape == "peak" && std::abs (mNear.centreHz / 1600.0 - 1.0) < 0.05 && std::abs (mNear.gainDb + 3.2) < 0.1)) bad.add ("manny");
+        if (! (sAny.shape == "high_shelf" && sAny.gainDb < 0.0 && sAs.shape == "low_shelf" && std::abs (sAs.gainDb - 3.86) < 0.15 && std::abs (sAs.cornerHz / 800.0 - 1.0) < 0.08)) bad.add ("slick");
+        if (! (pOld.shape == "low_shelf" && pAs.shape == pOld.shape && pAs.gainDb == pOld.gainDb && pAs.cornerHz == pOld.cornerHz && pAs.reason == pOld.reason)) bad.add ("plain");   // no tilt: exactly as before
+        if (! (lAs.gainDb == lOld.gainDb && lAs.cornerHz == lOld.cornerHz && lAs.reason == lOld.reason)) bad.add ("lifted");
+        if (! (bAny.result == "shelf" && bAs.result == "measured" && bAs.shape == "peak" && bAs.bandwidthBasis == "one_sided" && std::abs (bAs.centreHz / 14800.0 - 1.0) < 0.05)) bad.add ("bettermaker");
+        if (! (shelfAsPeak.result == "shelf" && shelfAsPeak.peakAtGridEnd)) bad.add ("realshelf");
+        if (! (rising.result == "shelf" && std::abs (rising.gainDb - topTone) < 0.01)) bad.add ("rising");
+        if (! (gainFlipsWithFrequency ({ dn, dn, dn, dn, up, up, up }) && ! gainFlipsWithFrequency ({ dn, dn, dn, dn, dn, dn, up }) && ! gainFlipsWithFrequency ({ up, up, up }))) bad.add ("flip");
+        if (! (gainSweepShape (gr) == "low_shelf" && gainSweepShape ({}) .isEmpty())) bad.add ("shape");
+        if (! (drv.contains ("a.measured = eq::deriveBandAs (eq::deviation (p, baseline), { expectShape.shape, t.targetHz });")
+               && drv.contains ("if (eq::gainFlipsWithFrequency (freqBands))") && drv.contains ("const eq::Expect expectShape { eq::gainSweepShape (gainRowsM12) };")
+               && drv.contains ("gBands.push_back (shelfG ? eq::deriveBandAs (eq::deviation (gr.positions[k], baseline), gx) : pre[k].band);")
+               && drv.contains ("row.band = gBands[(size_t) (&p - gr.positions.data())];") && drv.contains ("const auto b = gBands[(size_t) (&p - gr.positions.data())];")
+               && drv.contains ("row.band = eq::deriveBandAs (eq::deviation (p, b30.positions[0]), eq::Expect { eq::gainSweepShape (gainRowsM12) });"))) bad.add ("driver");
+        check (bad.isEmpty(), "eq P1-3: the right feature - near the write, a shelf as its step, a bell past the grid stays a bell, a flipping gain refused" + (bad.isEmpty() ? juce::String() : " (failed " + bad.joinIntoString (",") + ")"));
+    }
+    // P1-2 THE FILTER'S REFERENCE AND GRID (30 Oct, Phase 1 item 2): the most open position is the widest passband, not the smallest span
+    // (LFE360's steep crossover: "20" of 20-250 Hz was taken as open); the filter pass reads from 2.5 Hz, long enough to resolve it
+    {
+        using namespace ejmap::filter;
+        std::vector<double> hz; for (int k = 0; k < 136; ++k) hz.push_back (10.0 * std::pow (2350.0, k / 135.0));
+        auto lp = [&] (double fc, double floor) { std::vector<std::pair<double, double>> t; for (double h : hz) t.push_back ({ h, juce::jmax (floor, h <= fc ? 0.0 : -60.0 * std::log2 (h / fc)) }); return t; };
+        const std::vector<std::vector<std::pair<double, double>>> lfe { lp (20.0, -120.0), lp (46.0, -184.0), lp (250.0, -141.0) };   // the closed position spans LEAST (the span rule's trap)
+        const auto drvF = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertFilterShift.h").loadFileAsString();
+        const auto probeResp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_response.h").loadFileAsString();
+        check (openPosition (lfe) == 2 && kFilterGridLoHz == 5.0 && probeResp.contains ("s.loHz < 5.0") && kFilterGridTones <= 400
+               && std::abs (std::log2 (23500.0 / kFilterGridLoHz) * 12.0 + 1.0 - kFilterGridTones) < 1.5 && kFilterGridLoHz * (std::pow (2.0, 1.0 / 12.0) - 1.0) >= 1.0 / (kFilterHoldS - kFilterDiscardS)
+               && drvF.contains ("\"tones=\" + juce::String (filter::kFilterGridTones), \"lo=\" + juce::String (filter::kFilterGridLoHz, 1)"),
+               "filter P1-2: the widest passband is the reference (LFE360's 250 Hz position, not its 20, which spans least); the filter grid starts at the probe's own 5 Hz floor, 1/12 octave, with a hold that resolves it");
+    }
+    // P1-4 A DECAY SHOWS A TIME (30 Oct, Phase 1 item 4, Kathy's rule): Tails' Damping (%) and VoiceCentric's Reverb (a level) are never the decay
+    {
+        using namespace ejmap::reverbdelay;
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto rd = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapReverbDelay.h").loadFileAsString();
+        check (! showsTime ({ "0.0 %", "16.7 %", "33.3 %", "50.0 %", "66.7 %", "83.3 %", "100 %" }) && ! showsTime ({ "-30.0", "-25.0", "-20.0", "-15.0", "-10.0", "-5.0", "0.0" })
+               && showsTime ({ "0.2 s", "0.9 s", "2.1 s", "5.0 s" }) && showsTime ({ "Off", "800 ms", "1.6 s" }) && ! showsTime ({ "Off", "Small", "1.0 s" })
+               && drv.contains ("if (kind == \"reverb\" && decayCtl.index >= 0 && decayShowsTime)") && drv.contains (": juce::String (\"not_a_time_control\"));")
+               && rd.contains ("d.isObject() && d.getProperty (\"verdict\", \"\").toString() == \"not_a_time_control\")"),
+               "reverb P1-4: a decay shows a time - a damping %, a level in dB, or any control without a time is recorded, never judged or used as the decay");
+    }
+    // P1-5 THE LIMITER BY SAMPLE PEAK (30 Oct, Phase 1 item 5): the acceptance row says it is judged by sample peak and records the true peak
+    {
+        using namespace ejmap::limiter;
+        AcceptanceRow a; a.requestDbtp = -1.0; a.setting.ok = true; a.setting.pos.labelDb = -1.0; a.ran = true; a.measuredSamplePeakDb = -1.0; a.measuredTruePeakDb = -0.82; a.pass = acceptancePasses (-1.0, a.measuredSamplePeakDb);
+        const auto v = acceptanceVar (a);
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (v.getProperty ("judged_by", "").toString() == "sample_peak" && (double) v.getProperty ("request_db", 0.0) == -1.0 && ! v.hasProperty ("request_dbtp")
+               && std::abs ((double) v.getProperty ("true_peak_over_request_db", 0.0) - 0.18) < 1e-6 && (bool) v.getProperty ("pass", false)
+               && drv.contains ("a.pass = limiter::acceptancePasses (req, pk.peakDb); }") && drv.contains ("writeOn, ! sweep::isSteppedControl (sweep::findControl (base, ceilingIdx)));"),
+               "limiter P1-5: judged by sample peak (-1.00 passes a -1 request), the true peak +0.18 over recorded beside it; a continuous ceiling may be interpolated");
+    }
+    // P1-6 THE DISPLAY'S FAMILY BEFORE ITS NUMBERS (30 Oct, Phase 1 item 6), from the plugins' own displays: pan (bx_delay2500 / Maag), note
+    // values (MannyM Delay / J37), word types (H-EQ), bare k (Quantum), leading dots (SSLComp)
+    {
+        using namespace ejmap;
+        auto pts = [] (const juce::StringArray& texts) { juce::Array<echojay::SweepPoint> p; for (int k = 0; k < texts.size(); ++k) p.add ({ (float) k / (float) juce::jmax (1, texts.size() - 1), texts[k] }); return p; };
+        const auto pan = outcomeFromPoints (pts ({ "100 L", "80 L", "60 L", "40 L", "20 L", "<0>", "20 R", "40 R", "60 R", "80 R", "100 R" }), "gettext");
+        const auto bal = outcomeFromPoints (pts ({ "100 L", "50 L", "C", "50 R", "100 R" }), "gettext");
+        const auto note = outcomeFromPoints (pts ({ "1/64T", "1/64", "1/32T", "1/64D", "1/32", "1/16T", "1/16", "1/8", "1/4", "1/2", "1/1" }), "gettext");
+        const auto div = outcomeFromPoints (pts ({ "Off", "1/16", "1/8 T", "1/8", "1/8 D", "1/4" }), "gettext");
+        const auto words = outcomeFromPoints (pts ({ "US Vint", "UK Vint 1", "UK Vint 2", "US Modrn", "UK Modrn", "Digital 1", "Digital 2" }), "gettext");
+        const auto kk = outcomeFromPoints (pts ({ "10.00", "31.27", "97.79", "252.89", "447.21", "790.85", "1.05k", "1.27k", "2.05k", "6.40k", "20.00k" }), "gettext");
+        const auto dot = outcomeFromPoints (pts ({ ".1ms", ".3ms", "1ms", "3ms", "10ms", "30ms" }), "gettext");
+        const auto plainDb = outcomeFromPoints (pts ({ "-12.0 dB", "-6.0 dB", "0.0 dB", "6.0 dB", "12.0 dB" }), "gettext");
+        const auto offHz = outcomeFromPoints (pts ({ "Off", "30 Hz", "60 Hz", "120 Hz", "240 Hz" }), "gettext");
+        const auto oneSide = outcomeFromPoints (pts ({ "0", "20 R", "40 R", "60 R", "80 R" }), "gettext");   // R only: a level, never pan
+        juce::StringArray bad;
+        if (! (pan.ok && pan.unitFamily == "pan" && pan.anchors.size() == 11 && juce::approximatelyEqual (pan.anchors.getFirst()[0], -100.0f) && juce::approximatelyEqual (pan.anchors.getLast()[0], 100.0f))) bad.add ("pan");
+        if (! (bal.ok && bal.unitFamily == "pan" && juce::approximatelyEqual (bal.anchors[2][0], 0.0f))) bad.add ("balance");
+        if (! (note.nonNumeric && ! note.ok && div.nonNumeric)) bad.add ("note");
+        if (! (words.nonNumeric && ! words.ok)) bad.add ("words");
+        if (! (kk.ok && juce::approximatelyEqual (kk.anchors.getLast()[0], 20000.0f) && kk.rejectedPoints == 0)) bad.add ("bareK");
+        if (! (dot.ok && dot.anchors.size() == 6 && std::abs (dot.anchors.getFirst()[0] - 0.1f) < 1e-4f)) bad.add ("dot");
+        if (! (plainDb.ok && plainDb.unitFamily == "db" && ! plainDb.nonNumeric && offHz.ok && offHz.unitFamily == "hz" && oneSide.unitFamily != "pan")) bad.add ("plain");
+        if (! (textfamily::panValue ("L 30") == -30.0f && ! textfamily::panValue ("Low").has_value() && textfamily::noteValue ("1/4 dotted") && ! textfamily::noteValue ("3:1")
+               && textfamily::bareK ("1.05kHz") == 1050.0f && ! textfamily::bareK ("1.05 kOhm").has_value() && textfamily::leadingDotFixed ("-.5") == "-0.5" && textfamily::leadingDotFixed ("1.5") == "1.5"
+               && note.points[0].t == "1/64T")) bad.add ("helpers");
+        const auto fm = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapFullMap.h").loadFileAsString();
+        if (! (fm.contains ("if (sw.ok && sw.unitFamily == \"pan\") { b.declines.add ({ p.index, p.name, kPanHeldWhy }); continue; }") && juce::String (ejmap::fullmap::kPanHeldWhy).startsWith ("pan: held"))) bad.add ("panHeld");
+        check (bad.isEmpty(), "map P1-6: pan read L negative / R positive; note values and word types a labelled switch; a bare k is x1000; a leading dot a decimal; plain dB and Off..Hz untouched"
+               + (bad.isEmpty() ? juce::String() : " (failed " + bad.joinIntoString (",") + ")"));
     }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0

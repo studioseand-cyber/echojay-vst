@@ -173,44 +173,47 @@ inline Verdict judge (const std::vector<CeilingResult>& rs)
     return v;
 }
 
-// THE SERVER'S SETTING FOR A TRUE-PEAK REQUEST (section 5.2 / 5.3), from the measured positions of ONE oversampling state (the
-// caller passes the state the server would write: the switch ON when the unit has one and ON reduces the worst overshoot).
-//   holds_true_peak at the request's position            -> write that label
-//   holds_sample_peak_only, overshoot <= kLowerCapDb       -> write the label lowered by the measured overshoot, ROUNDED DOWN to the
-//                                                            next measured position (a lower ceiling is always safe); the card says so
-//   overshoot over the cap, or `overshoots`, or not_driven -> not offered for a true-peak request, with the reason
-// "The request's position": the measured label nearest the request within kRequestNearDb, one AT OR UNDER the request preferred
-// (a label above the request can hold its own label and still let the peak over the request); none within it -> the nearest
-// measured label at or under the request, said in `why`.
-inline constexpr double kRequestNearDb = 0.3;
-struct Setting { bool ok = false; juce::String why; CeilingPos pos; juce::String verdictAtRequest; double loweredByDb = 0.0, expectedTruePeakDb = -999.0; bool osOn = false; };
-inline Setting settingFor (double requestDbtp, const std::vector<CeilingResult>& rows, bool osOn = false)
+// THE SERVER'S SETTING FOR A REQUEST, BY SAMPLE PEAK (30 Oct, Phase 1 item 5, Kathy's decision: the ceiling is labelled and judged by SAMPLE
+// peak; true peak is recorded beside it and decides nothing). Until 30 Oct the request was a true-peak one: a sample-peak-only unit was
+// lowered by its overshoot, and with no label at or under the request within 0.3 dB the nearest label ABOVE it was written - every one of
+// the STAGING 4 run's 24 limiter misses was that (L2: -1.0 asked, its -0.9 label written; L2 holds its own label exactly).
+//   - a position HOLDS when its sample peak holds its label (holds_true_peak or holds_sample_peak_only); a clipper (overshoots) and a
+//     not_driven position never do;
+//   - the written ceiling is NEVER above the request: a holding label at the request; else, on a continuous ceiling, the request itself,
+//     interpolated in norm between the two holding positions that bracket it; else the nearest holding label under it; else not offered;
+//   - the expected true peak is carried for the record (the position's own, or the larger of the two bracketing positions').
+inline constexpr double kRequestNearDb = 0.005;   // a label this close to the request IS the request
+struct Setting { bool ok = false; juce::String why; CeilingPos pos; juce::String verdictAtRequest; double loweredByDb = 0.0, expectedTruePeakDb = -999.0, expectedTrueOverDb = 0.0; bool osOn = false, interpolated = false; };
+inline bool holdsSample (const CeilingResult& r) { const auto v = positionVerdict (r); return v == "holds_true_peak" || v == "holds_sample_peak_only"; }
+inline Setting settingFor (double request, const std::vector<CeilingResult>& rows, bool osOn = false, bool continuous = false)
 {
     Setting s; s.osOn = osOn;
     if (rows.empty()) { s.why = "no ceiling position measured"; return s; }
-    const CeilingResult* at = nullptr; const CeilingResult* nearAbove = nullptr; const CeilingResult* under = nullptr;
-    for (const auto& r : rows)
-    {
-        const double d = std::abs (r.pos.labelDb - requestDbtp); const bool below = r.pos.labelDb <= requestDbtp + 1e-9;
-        if (d <= kRequestNearDb && below && (! at || d < std::abs (at->pos.labelDb - requestDbtp))) at = &r;
-        if (d <= kRequestNearDb && ! below && (! nearAbove || d < std::abs (nearAbove->pos.labelDb - requestDbtp))) nearAbove = &r;
-        if (below && (! under || r.pos.labelDb > under->pos.labelDb)) under = &r;
-    }
-    juce::String where;
-    if (! at && nearAbove) { at = nearAbove; where = " (the nearest measured label, " + juce::String (at->pos.labelDb - requestDbtp, 2) + " dB above the request: the re-measured true peak decides)"; }
-    if (! at) { if (! under) { s.why = "no measured position at or under " + juce::String (requestDbtp, 1) + " dBTP"; return s; } at = under; where = " (no position within " + juce::String (kRequestNearDb, 1) + " dB of the request: the nearest measured label at or under it, " + at->pos.display + ")"; }
-    s.verdictAtRequest = positionVerdict (*at);
-    if (s.verdictAtRequest == "not_driven") { s.why = "the position " + at->pos.display + " was not driven (" + notDrivenWhy (*at) + "): no verdict, not offered"; return s; }
-    if (s.verdictAtRequest == "overshoots") { s.why = "the position " + at->pos.display + " overshoots on sample peak by " + juce::String (at->sampleErrDb, 2) + " dB (a clipper, or not a brickwall there): not offered for a true-peak request"; return s; }
-    if (s.verdictAtRequest == "holds_true_peak") { s.ok = true; s.pos = at->pos; s.expectedTruePeakDb = at->reading.truePeakDb; s.why = "holds true peak at " + at->pos.display + ": the label is written" + where; return s; }
-    // holds_sample_peak_only
-    if (at->trueErrDb > kLowerCapDb) { s.why = "true peak overshoots the label by " + juce::String (at->trueErrDb, 2) + " dB at " + at->pos.display + " (over the " + juce::String (kLowerCapDb, 1) + " dB cap): this limiter does not hold true peaks; not offered"; return s; }
-    const double lowered = at->pos.labelDb - at->trueErrDb;
-    const CeilingResult* pick = nullptr;
-    for (const auto& r : rows) if (r.pos.labelDb <= lowered + 1e-9 && positionVerdict (r) != "overshoots" && positionVerdict (r) != "not_driven" && (! pick || r.pos.labelDb > pick->pos.labelDb)) pick = &r;
-    if (! pick) { s.why = "lowering " + at->pos.display + " by its " + juce::String (at->trueErrDb, 2) + " dB overshoot needs a measured position at or under " + juce::String (lowered, 2) + " dB and none was driven"; return s; }
-    s.ok = true; s.pos = pick->pos; s.loweredByDb = requestDbtp - pick->pos.labelDb; s.expectedTruePeakDb = pick->reading.truePeakDb;
-    s.why = "holds sample peak only at " + at->pos.display + " (true peak +" + juce::String (at->trueErrDb, 2) + "): the ceiling is set " + juce::String (s.loweredByDb, 2) + " dB lower, at the measured position " + pick->pos.display + ", to hold the true peak" + where;
+    std::vector<const CeilingResult*> hold; for (const auto& r : rows) if (holdsSample (r)) hold.push_back (&r);
+    std::sort (hold.begin(), hold.end(), [] (const CeilingResult* a, const CeilingResult* b) { return a->pos.labelDb < b->pos.labelDb; });
+    auto take = [&] (const CeilingResult& r, const juce::String& where)
+    {   s.ok = true; s.pos = r.pos; s.verdictAtRequest = positionVerdict (r); s.loweredByDb = request - r.pos.labelDb; s.expectedTruePeakDb = r.reading.truePeakDb; s.expectedTrueOverDb = r.trueErrDb;
+        s.why = "holds sample peak at " + r.pos.display + where + " (true peak " + juce::String (r.trueErrDb >= 0.0 ? "+" : "") + juce::String (r.trueErrDb, 2) + " dB over its label, recorded)"; };
+    for (const auto* r : hold) if (std::abs (r->pos.labelDb - request) <= kRequestNearDb) { take (*r, ": the label is the request"); return s; }
+    if (continuous)
+        for (size_t k = 0; k + 1 < hold.size(); ++k)
+            if (hold[k]->pos.labelDb < request && request < hold[k + 1]->pos.labelDb)
+            {
+                const auto& lo = *hold[k]; const auto& hi = *hold[k + 1];
+                const double t = (request - lo.pos.labelDb) / (hi.pos.labelDb - lo.pos.labelDb);
+                s.ok = true; s.interpolated = true; s.pos.norm = (float) (lo.pos.norm + t * (hi.pos.norm - lo.pos.norm)); s.pos.labelDb = request;
+                s.pos.display = juce::String (request, 2) + " dB (between " + lo.pos.display + " and " + hi.pos.display + ")";
+                s.verdictAtRequest = "holds_sample_peak"; s.expectedTrueOverDb = juce::jmax (lo.trueErrDb, hi.trueErrDb); s.expectedTruePeakDb = request + s.expectedTrueOverDb;
+                s.why = "the request itself, between the measured positions " + lo.pos.display + " and " + hi.pos.display + " (both hold sample peak; true peak up to +" + juce::String (s.expectedTrueOverDb, 2) + " dB over, recorded)";
+                return s;
+            }
+    const CeilingResult* under = nullptr; for (const auto* r : hold) if (r->pos.labelDb <= request) under = r;   // sorted: the last at or under is the nearest
+    if (! under)
+    {   bool anyUnder = false; for (const auto& r : rows) if (r.pos.labelDb <= request) anyUnder = true;
+        s.why = anyUnder ? "no measured position at or under " + juce::String (request, 1) + " dB holds its sample peak (a clipper, or not driven): not offered"
+                         : "no measured position at or under " + juce::String (request, 1) + " dB: not offered";
+        return s; }
+    take (*under, ", the nearest holding label under the request" + juce::String (continuous ? " (no two holding positions bracket it)" : " (a stepped ceiling)"));
     return s;
 }
 // THE OVERSAMPLING SWITCH (section 5.3): ON reduces the worst true overshoot by this much (positive = write it on for a true-peak request)
@@ -226,14 +229,15 @@ inline std::optional<double> onReducesOvershootDb (const std::vector<CeilingResu
 struct AcceptanceRow { double requestDbtp = 0.0; Setting setting; bool ran = false; double measuredTruePeakDb = -999.0, measuredSamplePeakDb = -999.0, inPeakDb = -999.0; bool pass = false; juce::String why; };
 inline juce::var acceptanceVar (const AcceptanceRow& a)
 {
-    auto* o = new juce::DynamicObject(); o->setProperty ("request_dbtp", a.requestDbtp); o->setProperty ("offered", a.setting.ok); o->setProperty ("why", a.setting.why);
-    if (a.setting.ok) { auto* st = new juce::DynamicObject(); st->setProperty ("ceiling_norm", a.setting.pos.norm); st->setProperty ("ceiling_display", a.setting.pos.display); st->setProperty ("label_db", a.setting.pos.labelDb); st->setProperty ("lowered_by_db", std::round (a.setting.loweredByDb * 100.0) / 100.0); st->setProperty ("oversampling_on", a.setting.osOn); st->setProperty ("expected_true_peak_db", std::round (a.setting.expectedTruePeakDb * 100.0) / 100.0); o->setProperty ("setting", juce::var (st)); }
+    auto* o = new juce::DynamicObject(); o->setProperty ("request_db", a.requestDbtp); o->setProperty ("judged_by", "sample_peak"); o->setProperty ("offered", a.setting.ok);   // 30 Oct (Phase 1 item 5) o->setProperty ("why", a.setting.why);
+    if (a.setting.ok) { auto* st = new juce::DynamicObject(); st->setProperty ("ceiling_norm", a.setting.pos.norm); st->setProperty ("ceiling_display", a.setting.pos.display); st->setProperty ("label_db", a.setting.pos.labelDb); st->setProperty ("lowered_by_db", std::round (a.setting.loweredByDb * 100.0) / 100.0); st->setProperty ("oversampling_on", a.setting.osOn); st->setProperty ("expected_true_peak_db", std::round (a.setting.expectedTruePeakDb * 100.0) / 100.0); if (a.setting.interpolated) st->setProperty ("interpolated", true); o->setProperty ("setting", juce::var (st)); }
     o->setProperty ("ran", a.ran);
-    if (a.ran) { o->setProperty ("drive_dbfs_peak", driveLevelFor (a.requestDbtp)); o->setProperty ("in_peak_db", std::round (a.inPeakDb * 100.0) / 100.0); o->setProperty ("out_sample_peak_db", std::round (a.measuredSamplePeakDb * 100.0) / 100.0); o->setProperty ("out_true_peak_db", std::round (a.measuredTruePeakDb * 100.0) / 100.0); o->setProperty ("bar_db", kCeilingTolDb); o->setProperty ("pass", a.pass); }
+    if (a.ran) { o->setProperty ("drive_dbfs_peak", driveLevelFor (a.requestDbtp)); o->setProperty ("in_peak_db", std::round (a.inPeakDb * 100.0) / 100.0); o->setProperty ("out_sample_peak_db", std::round (a.measuredSamplePeakDb * 100.0) / 100.0); o->setProperty ("out_true_peak_db", std::round (a.measuredTruePeakDb * 100.0) / 100.0); o->setProperty ("true_peak_over_request_db", std::round ((a.measuredTruePeakDb - a.requestDbtp) * 100.0) / 100.0); o->setProperty ("bar_db", kCeilingTolDb); o->setProperty ("pass", a.pass); }
     if (a.why.isNotEmpty()) o->setProperty ("note", a.why);
     return juce::var (o);
 }
-inline bool acceptancePasses (double requestDbtp, double measuredTruePeakDb) { return measuredTruePeakDb <= requestDbtp + kCeilingTolDb; }
+// 30 Oct (Phase 1 item 5): judged by SAMPLE peak - the measured sample peak at most kCeilingTolDb over the request
+inline bool acceptancePasses (double request, double measuredSamplePeakDb) { return measuredSamplePeakDb <= request + kCeilingTolDb; }
 inline juce::var ceilingBlock (const juce::String& control, const juce::String& foundBy, const std::vector<CeilingResult>& off, const std::vector<CeilingResult>& on,
                                const juce::String& osControl, const juce::String& osOnText, const std::vector<AcceptanceRow>& acceptance, const juce::StringArray& extraNotes = {})
 {

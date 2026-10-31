@@ -50,6 +50,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "EjmapWatchdog.h"
+#include <cstring>
+#include <optional>
 #include "EchoJayParamExtractor.h"   // shared sweep, shared parseLeadingFloat
 #include "EchoJayParamApply.h"       // shared sanitizer (dominantMonotonicTable)
 
@@ -201,12 +203,104 @@ inline echojay::EffectiveAnchors steppedCollapseTable (const juce::Array<juce::A
     to run, and a caller that cannot settle must say so rather than record a
     read as verified.
 */
+// THE DISPLAY'S FAMILY BEFORE ITS NUMBERS (30 Oct, Phase 1 item 6): 490 controls in 59 maps were declined "no strictly-monotonic run"
+// because their texts were read as plain numbers when they are not - read from the plugins' own displays on 30 Oct:
+//   pan / balance  "100 L .. 20 L, C (or <0>), 20 R .. 100 R"   read as 100 .. 0 .. 100 (down then up)  -> signed: L negative, R positive
+//   note values    "1/64T, 1/64, 1/32T, 1/64D .. 1/1"            fractions read as their numerators       -> a labelled switch (mode)
+//   word types     "US Vint, UK Vint 1, UK Vint 2 .. Digital 2"  the trailing digits read as values       -> a labelled switch (mode)
+//   bare k         "790.85, 1.05k .. 20.00k" (no Hz)             1.05k read as 1.05                       -> x1000
+//   leading dot    ".1ms, .3ms, 1ms"                             .1 read as 1                              -> 0.1
+// Each family needs at least half the non-empty texts (one "Off" at an end never decides it)
+namespace textfamily
+{
+inline juce::String leadingDotFixed (const juce::String& t)   // ".1ms" -> "0.1ms", "-.5" -> "-0.5"; "1.5" untouched
+{
+    juce::String o; const auto s = t.trim();
+    for (int i = 0; i < s.length(); ++i)
+    {   if (s[i] == '.' && i + 1 < s.length() && juce::CharacterFunctions::isDigit (s[i + 1]) && (i == 0 || ! juce::CharacterFunctions::isDigit (s[i - 1]))) o << "0";
+        o << juce::String::charToString (s[i]); }
+    return o;
+}
+// "100 L", "100L", "L 100", "L100" -> -100; "C", "<0>", "Center", "Centre", "Mid", "0" -> 0; "20 R" -> +20
+inline std::optional<float> panValue (const juce::String& t0)
+{
+    const auto t = t0.trim().toUpperCase();
+    if (t == "C" || t == "<0>" || t == "<C>" || t == "CENTER" || t == "CENTRE" || t == "MID" || t == "0") return 0.0f;
+    juce::String num, side;
+    if (t.endsWithChar ('L') || t.endsWithChar ('R')) { side = t.getLastCharacters (1); num = t.dropLastCharacters (1).trim(); }
+    else if (t.startsWithChar ('L') || t.startsWithChar ('R')) { side = t.substring (0, 1); num = t.substring (1).trim(); }
+    else return std::nullopt;
+    if (num.isEmpty() || ! num.containsOnly ("0123456789.")) return std::nullopt;
+    const float v = num.getFloatValue(); return side == "L" ? -v : v;
+}
+inline bool noteValue (const juce::String& t0)   // "1/8", "1/8 T", "1/16D", "1/4 dotted", "1/4.", "1/2 trip", "2/1"
+{
+    auto t = t0.trim().toLowerCase().removeCharacters (" ");
+    for (const char* suf : { "dotted", "dot", "triplet", "trip", "t", "d", "." }) if (t.endsWith (suf)) { t = t.dropLastCharacters ((int) std::strlen (suf)); break; }
+    const auto a = t.upToFirstOccurrenceOf ("/", false, false), b = t.fromFirstOccurrenceOf ("/", false, false);
+    return t.contains ("/") && a.isNotEmpty() && b.isNotEmpty() && a.containsOnly ("0123456789") && b.containsOnly ("0123456789");
+}
+inline bool wordLike (const juce::String& t0)   // begins with a letter, and is not a pan form ("L 20")
+{
+    const auto t = t0.trim(); if (t.isEmpty() || ! juce::CharacterFunctions::isLetter (t[0])) return false;
+    return ! panValue (t).has_value();
+}
+inline bool offLike (const juce::String& t) { const auto u = t.trim().toLowerCase(); return u == "off" || u == "none" || u == "-" || u == "bypass" || u == "free"; }
+// "1.05k" -> 1050 (a bare k after the number, nothing but an optional unit after it)
+inline std::optional<float> bareK (const juce::String& t0)
+{
+    const auto t = t0.trim(); int i = 0; if (i < t.length() && (t[i] == '-' || t[i] == '+')) ++i;
+    const int st = i; while (i < t.length() && (juce::CharacterFunctions::isDigit (t[i]) || t[i] == '.')) ++i;
+    if (i == st || i >= t.length() || (t[i] != 'k' && t[i] != 'K')) return std::nullopt;
+    const auto rest = t.substring (i + 1).trim().toLowerCase();
+    if (rest.isNotEmpty() && rest != "hz") return std::nullopt;
+    return t.substring (0, i).getFloatValue() * 1000.0f;
+}
+struct Family { juce::String name; int matched = 0, counted = 0; };   // name: pan | note | words | ""
+template <typename Points> inline Family familyOf (const Points& pts)
+{
+    int n = 0, pan = 0, note = 0, words = 0;
+    for (const auto& sp : pts)
+    {   const auto t = sp.t.trim(); if (t.isEmpty() || offLike (t)) continue; ++n;
+        if (panValue (t)) ++pan; if (noteValue (t)) ++note; if (wordLike (t)) ++words; }
+    Family f; f.counted = n; if (n < 2) return f;
+    // pan needs BOTH sides present: a plain "0 .. 100" column is never pan
+    bool l = false, r = false; for (const auto& sp : pts) if (const auto v = panValue (sp.t)) { if (*v < 0.0f) l = true; if (*v > 0.0f) r = true; }
+    if (2 * pan >= n && l && r) { f.name = "pan"; f.matched = pan; return f; }
+    if (2 * note >= n && note >= 2) { f.name = "note"; f.matched = note; return f; }
+    if (2 * words >= n && words >= 2) { f.name = "words"; f.matched = words; return f; }
+    return f;
+}
+} // namespace textfamily
+
 /** THE SWEEP'S PURE HALF (22 Oct, Kathy's decision 0: the wizard saves FULL maps): from the display points to the anchor table - the
     display's unit family, the unit-aware parse, the shared sanitizer, the stepped collapse, the degenerate-span and identity checks.
     ONE function for the EJ Map app (sweepOneIndex, after its in-process sweep) and the wizard (the probe's --extract points), so a
     wizard map is built by the same rules as every map in the store. out.points and out.method are set by the caller. */
 inline void finishOutcome (SweepOutcome& out)
 {
+    // 30 Oct (Phase 1 item 6): pan, note values and word types by their own family; leading dots read as decimals (on a copy: a label stays the plugin's own text)
+    const auto fam = textfamily::familyOf (out.points);
+    if (fam.name == "note" || fam.name == "words")
+    {
+        out.nonNumeric = true;
+        out.reason = juce::String (fam.matched) + " of " + juce::String (fam.counted) + " texts are " + (fam.name == "note" ? "note values" : "words")
+                   + ": a labelled switch (mode), never an anchor curve.";
+        return;
+    }
+    if (fam.name == "pan")
+    {
+        juce::Array<juce::Array<float>> raw;
+        for (const auto& sp : out.points) if (const auto v = textfamily::panValue (sp.t)) { juce::Array<float> a; a.add (*v); a.add (sp.n); raw.add (a); } else ++out.unparsedPoints;
+        out.unitFamily = "pan"; out.rawAnchors = raw;
+        auto eff = echojay::dominantMonotonicTable (raw);
+        if (! eff.ok) { out.rejectedPoints = raw.size(); out.reason = "pan read as L negative / R positive, and still no monotonic run covers 60% of its points."; return; }
+        out.anchors = eff.table; out.rejectedPoints = raw.size() - eff.table.size(); out.anchorsReversed = eff.table.getFirst()[0] > eff.table.getLast()[0];
+        out.ok = out.anchors.size() >= 2 && ! juce::approximatelyEqual (out.anchors.getFirst()[0], out.anchors.getLast()[0]);
+        if (! out.ok) out.reason = "pan: fewer than two distinct values.";
+        return;
+    }
+
     // Detect the display's own unit family from the texts. Half the points
     // must carry it: one stray "Hz" in a label does not make a family.
     {
@@ -230,17 +324,22 @@ inline void finishOutcome (SweepOutcome& out)
     juce::Array<juce::Array<float>> raw;
     for (const auto& sp : out.points)
     {
+        const auto tx = textfamily::leadingDotFixed (sp.t);
         bool parsed = false;
         float vf = 0.0f;
         if (out.unitFamily.isNotEmpty())
         {
             bool negInf = false;
-            parsed = echojay::parseDisplayForUnit (sp.t, out.unitFamily, vf, negInf) && ! negInf;
+            parsed = echojay::parseDisplayForUnit (tx, out.unitFamily, vf, negInf) && ! negInf;
+        }
+        else if (const auto k = textfamily::bareK (tx))   // 30 Oct (Phase 1 item 6): "1.05k" is 1050, not 1.05
+        {
+            parsed = true; vf = *k;
         }
         else
         {
             double v = 0.0;
-            parsed = echojay::parseLeadingFloat (sp.t, v);
+            parsed = echojay::parseLeadingFloat (tx, v);
             vf = (float) v;
         }
 

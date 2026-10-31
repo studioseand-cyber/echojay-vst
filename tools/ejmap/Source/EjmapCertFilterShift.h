@@ -134,8 +134,8 @@ inline int runFilter (const SweepOptions& opt)
     if (const auto* cs = fx.base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) controls.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString() });
     const ResponseCall response = [&] (const juce::String& tag, int ctl, const juce::StringArray& norms, const juce::StringArray& sets)
     {
-        juce::StringArray a { "--response", "ctl=" + juce::String (ctl), "norms=" + norms.joinIntoString (","), "tones=" + juce::String (eq::kGridTones), "lo=" + juce::String (eq::kGridLoHz, 0),
-                              "hi=" + juce::String (eq::kGridHiHz, 0), "db=" + juce::String (eq::kLevelDbfs, 0), "hold=" + juce::String (eq::kHoldS, 1), "discard=" + juce::String (eq::kDiscardS, 1) };
+        juce::StringArray a { "--response", "ctl=" + juce::String (ctl), "norms=" + norms.joinIntoString (","), "tones=" + juce::String (filter::kFilterGridTones), "lo=" + juce::String (filter::kFilterGridLoHz, 1),
+                              "hi=" + juce::String (eq::kGridHiHz, 0), "db=" + juce::String (eq::kLevelDbfs, 0), "hold=" + juce::String (filter::kFilterHoldS, 1), "discard=" + juce::String (filter::kFilterDiscardS, 1) };   // 30 Oct: the filter grid
         if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (a);
         const auto r = runProbeCall (args, opt.timeoutMs); raw.getChildFile (stem + ".filter." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
@@ -153,7 +153,7 @@ inline int runFilter (const SweepOptions& opt)
     auto* o = new juce::DynamicObject();
     o->setProperty ("schema", "ej_filter_record/0"); o->setProperty ("status", "PROTOTYPE (Kathy, 22 Oct): not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", fmtTag (desc) + "|" + uidHex + "|" + desc.version);
-    o->setProperty ("grid", eq::gridDescription()); o->setProperty ("method", "the transfer (out - in) at each tone; cutoff = the -3 dB point from the passband; slope = dB/oct between the -6 and -18 dB points (-12 when -18 is not reached); resonance = the peak over the passband");
+    o->setProperty ("grid", filter::filterGridDescription()); o->setProperty ("method", "the transfer (out - in) at each tone; cutoff = the -3 dB point from the passband; slope = dB/oct between the -6 and -18 dB points (-12 when -18 is not reached); resonance = the peak over the passband");
     o->setProperty ("controls", rows); o->setProperty ("measuredAt", nowStamp());
     if (cut.empty()) { juce::StringArray names; for (const auto& [i, n] : controls) names.add (n); o->setProperty ("note", "no control named for a cutoff: " + names.joinIntoString (", ")); }
     const juce::var rec (o);
@@ -163,7 +163,7 @@ inline int runFilter (const SweepOptions& opt)
     {
         auto* d = new juce::DynamicObject(); d->setProperty ("schema", "ej_filter_profile/1"); d->setProperty ("category", "filter"); d->setProperty ("spec", drafts::specTag ("FILTER_PROFILE_SPEC")); d->setProperty ("status", drafts::statusLine ("FILTER_PROFILE_SPEC"));   // v1.1: the filter category's draft
         d->setProperty ("plugin", drafts::pluginBlock (opt.product, desc.manufacturerName, uidHex, desc.version, fx.base.getProperty ("map_fp", juce::var())));
-        d->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-wizard), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, eq::gridDescription()));
+        d->setProperty ("measured", drafts::measuredBlock ("EJ Map (feat/ejmap-wizard), probe " + id.cdhash.substring (0, 12), runDateIso(), 48000, filter::filterGridDescription()));
         juce::Array<juce::var> fs; for (const auto& r : rows) if (r.getProperty ("verdict", "").toString() != "not_measured") fs.add (r);
         d->setProperty ("filters", fs);
         const auto f = drafts::draftFile (opt.out, stem, "filter_profile"); const auto problem = drafts::writeDraft (f, juce::var (d));

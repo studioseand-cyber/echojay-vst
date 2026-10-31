@@ -69,16 +69,24 @@ struct Band
     double cornerHz = 0.0;                        // a shelf's corner: where the deviation is half the plateau (the frequency label's meaning for a shelf)
     int tonesUsed = 0; juce::String shape;        // peak | low_shelf | high_shelf | lowcut | highcut
     juce::String bandwidthBasis = "3db";          // "3db" (the -3 dB points), or "half_gain" for a bell too small to have them (7 Oct)
+    bool peakAtGridEnd = false;                   // 30 Oct: the peak's plateau runs to a grid end (a true shelf), not a bell inside the grid
 };
 inline constexpr double kFlatDb = 0.5;           // a deviation that never exceeds this is "flat" (the control did nothing at this position)
 inline constexpr double kPlateauDb = 0.1;        // a shelf's plateau: every tone from the peak to the grid's end within this of the peak (7 Oct: a 0.0001 dB wobble one tone in from the edge used to make a shelf "broad" with no corner)
 
-inline Band deriveBand (const std::vector<std::pair<double, double>>& dev)
+// searchLoHz / searchHiHz (30 Oct, Phase 1 item 3): when set, the band's peak is looked for only between them (the crossings still walk
+// the whole curve) - a write at 1.6 kHz is read at 1.6 kHz, never at a larger change elsewhere (MannyM EQ: the same write lowered the
+// top end by 5.2 dB, read as "a high shelf at 17 kHz, 1,032 % off")
+inline Band deriveBand (const std::vector<std::pair<double, double>>& dev, double searchLoHz = 0.0, double searchHiHz = 0.0)
 {
     Band b;
     if (dev.size() < 8) { b.reason = "fewer than 8 tones compared"; return b; }
     b.tonesUsed = (int) dev.size();
-    size_t ip = 0; for (size_t i = 1; i < dev.size(); ++i) if (std::abs (dev[i].second) > std::abs (dev[ip].second)) ip = i;
+    const bool windowed = searchHiHz > searchLoHz && searchLoHz > 0.0
+                          && std::any_of (dev.begin(), dev.end(), [&] (const auto& t) { return t.first >= searchLoHz && t.first <= searchHiHz; });
+    auto inWindow = [&] (size_t i) { return ! windowed || (dev[i].first >= searchLoHz && dev[i].first <= searchHiHz); };
+    size_t ip = 0; bool any = false;
+    for (size_t i = 0; i < dev.size(); ++i) if (inWindow (i) && (! any || std::abs (dev[i].second) > std::abs (dev[ip].second))) { ip = i; any = true; }
     const double peak = dev[ip].second;
     if (std::abs (peak) < kFlatDb) { b.result = "flat"; b.reason = "the largest deviation is " + juce::String (peak, 2) + " dB"; return b; }
     // parabolic refinement of the centre in log f (not at the grid's ends)
@@ -120,7 +128,7 @@ inline Band deriveBand (const std::vector<std::pair<double, double>>& dev)
         { b.lowHz = *hl; b.highHz = *hh; b.bandwidthOct = std::log2 (*hh / *hl); b.result = "measured"; b.shape = "peak"; b.bandwidthBasis = "half_gain"; return b; }
     // "at the end": the peak sits at the grid's end, or the plateau from the peak to that end stays within kPlateauDb of it
     auto plateauTo = [&] (int dir) { for (long i = (long) ip; i >= 0 && i < (long) dev.size(); i += dir) if (std::abs (peak) - std::abs (dev[(size_t) i].second) > kPlateauDb) return false; return true; };
-    const bool atLowEnd = plateauTo (-1), atHighEnd = plateauTo (+1);
+    const bool atLowEnd = plateauTo (-1), atHighEnd = plateauTo (+1); b.peakAtGridEnd = atLowEnd || atHighEnd;
     if (lo && hi) { b.lowHz = *lo; b.highHz = *hi; b.bandwidthOct = std::log2 (*hi / *lo); b.result = "measured"; b.shape = "peak"; return b; }
     // a shelf: the plateau is the peak; its CORNER is where the deviation crosses half the plateau, walking from the plateau toward the grid's interior
     auto half = [&] (int dir) -> std::optional<double>
@@ -290,6 +298,69 @@ inline juce::String gridDescription() { return "multitone " + juce::String (kGri
 // a measured gain-sweep row as the derivations below see it (what the record's gain_sweep rows carry)
 struct GainRow { float norm = 0.0f; juce::String display; Band band; std::optional<double> labelDb; std::optional<double> outOverInDb; };   // outOverInDb: the grid's total output over its input (19 Oct, headroom)
 inline bool usable (const Band& b) { return b.result == "measured" || b.result == "shelf"; }
+// THE BAND READ AS WHAT IT IS (30 Oct, Phase 1 item 3). A band whose shape the gain sweep already knows is read as that shape:
+//  - a SHELF is the STEP between its two ends (the plateau end minus the far end), its corner where the curve crosses the step's middle.
+//    A plugin that keeps the overall level (TDR SlickEQ) tilts the far end the other way: its "+3.9" low shelf measured +1.65 at the low
+//    end and -2.21 at the top, read before as "a high shelf, -2.21 dB"; its step is +3.85 dB, the display's own. A shelf whose far end
+//    stays at 0 reads exactly as before.
+//  - a PEAK written at a known frequency is looked for within an octave of it (deriveBand's window).
+struct Expect { juce::String shape; double nearHz = 0.0; };
+inline constexpr int kShelfEndTones = 4;   // the tones averaged at each end of the grid
+inline constexpr double kTiltDb = 0.5;      // a far end moved this much the other way: a tilt (the plugin keeps its level)
+inline Band deriveBandAs (const std::vector<std::pair<double, double>>& dev, const Expect& e)
+{
+    const bool lowShelf = e.shape == "low_shelf", highShelf = e.shape == "high_shelf";
+    if ((lowShelf || highShelf) && dev.size() >= 8)
+    {
+        Band b; b.tonesUsed = (int) dev.size();
+        double lo = 0.0, hi = 0.0; for (int i = 0; i < kShelfEndTones; ++i) { lo += dev[(size_t) i].second; hi += dev[dev.size() - 1 - (size_t) i].second; }
+        lo /= kShelfEndTones; hi /= kShelfEndTones;
+        const double plat = lowShelf ? lo : hi, far = lowShelf ? hi : lo, step = plat - far;
+        // ONLY A TILT (31 Oct): the step reading is for a shelf whose far end moved the OTHER way by kTiltDb or more (SlickEQ keeping its
+        // level). Any other shelf reads exactly as before - a bell read as a shelf at its opening frequency (bx_hybrid's Hmf), a shelf still
+        // rising at the grid's edge (MannyM's "20k"), an ordinary shelf - so nothing that read right before is read differently now
+        if (! (std::abs (far) >= kTiltDb && far * plat < 0.0)) return deriveBand (dev);
+        if (std::abs (step) < kFlatDb) { b.result = "flat"; b.reason = "the step between the grid's ends is " + juce::String (step, 2) + " dB"; return b; }
+        b.result = "shelf"; b.shape = e.shape; b.gainDb = step; b.centreHz = lowShelf ? dev.front().first : dev.back().first;
+        const double mid = far + 0.5 * step;
+        const int dir = lowShelf ? 1 : -1; long i = lowShelf ? 0 : (long) dev.size() - 1;
+        for (; i + dir >= 0 && i + dir < (long) dev.size(); i += dir)
+        {
+            const double a = dev[(size_t) i].second - mid, c = dev[(size_t) (i + dir)].second - mid;
+            if (a == 0.0 || a * c < 0.0)
+            {   const double f = a == 0.0 ? 0.0 : a / (a - c);
+                b.cornerHz = std::pow (2.0, std::log2 (dev[(size_t) i].first) + f * (std::log2 (dev[(size_t) (i + dir)].first) - std::log2 (dev[(size_t) i].first))); break; }
+        }
+        b.reason = b.cornerHz > 0.0 ? "read as a " + e.shape + ": the step between the ends, " + juce::String (far, 2) + " dB at the far end" : "read as a " + e.shape + ": the step's middle is not crossed inside the grid";
+        return b;
+    }
+    if (e.shape == "peak")
+    {
+        auto b = e.nearHz > 0.0 ? deriveBand (dev, e.nearHz / 2.0, e.nearHz * 2.0) : deriveBand (dev);
+        // A BELL WHOSE FAR SKIRT LIES PAST THE GRID (30 Oct, Phase 1 items 2 and 3): one -3 dB point found, the other past 23.5 kHz (or
+        // under 10 Hz), was filed as a shelf and its half-gain "corner" read as the figure - Bettermaker's "15.0 kHz" bell, peaking at
+        // 14.8 kHz, read 5,114 Hz; LinEQ's labels over 13.6 kHz read about half. A bell the gain sweep knows, whose peak lies INSIDE the
+        // grid, stays a bell: its centre is the peak, its bandwidth twice the side it shows (said as the basis)
+        if (b.result == "shelf" && ! b.peakAtGridEnd && b.centreHz > 0.0 && (b.lowHz > 0.0 || b.highHz > 0.0))
+        {
+            const double side = b.lowHz > 0.0 ? std::log2 (b.centreHz / b.lowHz) : std::log2 (b.highHz / b.centreHz);
+            b.result = "measured"; b.shape = "peak"; b.cornerHz = 0.0; b.bandwidthOct = 2.0 * std::abs (side); b.bandwidthBasis = "one_sided";
+            b.reason = "a bell whose other skirt lies past the grid: the centre is its peak, the bandwidth twice the side it shows";
+        }
+        return b;
+    }
+    return deriveBand (dev);
+}
+// THE GAIN FLIPS WITH THE FREQUENCY (30 Oct, Phase 1 item 3): the frequency sweep holds one gain write; a band whose gain reads one sign
+// at some frequencies and the other at others (bx_hybrid V2's BS bands: -3.9 dB at 40-153 Hz, +3.9 dB from 166 Hz up) cannot be dialled
+// from one gain map - refused, never offered. Two or more positions each way, each over kFlipDb, so one stray reading never decides it
+inline constexpr double kFlipDb = 1.0;
+inline bool gainFlipsWithFrequency (const std::vector<Band>& rows)
+{
+    int pos = 0, neg = 0;
+    for (const auto& b : rows) if (usable (b)) { if (b.gainDb > kFlipDb) ++pos; else if (b.gainDb < -kFlipDb) ++neg; }
+    return pos >= 2 && neg >= 2;
+}
 inline constexpr double kInertDb = 0.5;
 inline bool gainInert (const std::vector<Band>& rows)
 {
@@ -397,6 +468,14 @@ inline const GainRow* gainRowNearest (const std::vector<GainRow>& rows, double g
     const GainRow* best = nullptr; for (const auto& r : rows) if (r.labelDb && (! best || std::abs (*r.labelDb - gdb) < std::abs (*best->labelDb - gdb))) best = &r;
     return best;
 }
+// the shape most of the gain sweep's usable rows agree on ("" when none holds a majority)
+inline juce::String gainSweepShape (const std::vector<GainRow>& rows)
+{
+    std::map<juce::String, int> n; int used = 0;
+    for (const auto& r : rows) if (usable (r.band) && r.band.shape.isNotEmpty() && r.band.shape != "broad") { ++n[r.band.shape]; ++used; }
+    for (const auto& [sh, k] : n) if (2 * k > used) return sh;
+    return {};
+}
 inline bool measuredBand (const juce::String& verdict) { return verdict == "measured" || verdict == "needs_engage"; }
 inline bool serverMayUse (const juce::String& verdict) { return verdict == "measured" || verdict == "stepped" || verdict == "level_dependent" || verdict == "needs_engage"; }
 
@@ -404,6 +483,17 @@ inline bool serverMayUse (const juce::String& verdict) { return verdict == "meas
 // would (section 5: the norm whose MEASURED figure is the target, interpolated in log f on a continuous control, the nearest detent on
 // a stepped one; the gain map inverted), written and re-measured.
 struct FreqPoint { float norm = 0.0f; juce::String display; double figureHz = 0.0; };   // the freq sweep's usable rows: norm -> measured figure (centre or corner)
+// A SHELF'S PER-GAIN MAPS AT THE MAIN MAP'S POSITIONS (30 Oct, Phase 1 item 1): the per-gain maps were taken at 7 even norms only, while
+// the main map had added midpoints where its law bends; the acceptance at +3 / -3 then interpolated the per-gain map straight across the
+// bend (a strip's LF shelf: +6 dB map 132.7 Hz at norm 0.417 against ~154 Hz interpolated; the +3 dB target 149.9, measured 130.4).
+// Every one of the STAGING 4 run's 44 strip-EQ shelf misses is explained by it. Each per-gain map is taken at every norm the main map holds
+inline juce::StringArray perGainNorms (const juce::StringArray& coarse, const std::vector<FreqPoint>& mapped)
+{
+    std::vector<float> v; for (const auto& s : coarse) v.push_back (s.getFloatValue()); for (const auto& p : mapped) v.push_back (p.norm);
+    std::sort (v.begin(), v.end()); juce::StringArray out; float last = -1.0f;
+    for (float x : v) if (out.isEmpty() || std::abs (x - last) > 1e-5f) { out.add (juce::String (x, 6)); last = x; }
+    return out;
+}
 struct FigureTarget { double targetHz = 0.0; float norm = 0.0f; juce::String display; double detentHz = 0.0; bool stepped = false; };
 // A MAP THAT STOPS MOVING (Kathy, 28 Oct: EQ acceptance; Acon Digital DeNoise 2's four "bands" read 12.7 Hz at every frequency setting
 // and -8.76 dB at every gain setting but one - the denoiser's own fixed effect, not a band): more than half the positions within tol of one

@@ -320,7 +320,7 @@ inline void collectAcceptance (const juce::var& v, AcceptanceCount& c, const juc
     if (depth > 12) return;
     if (auto* o = v.getDynamicObject())
     {
-        if (o->hasProperty ("pass") && (o->hasProperty ("ran") || o->hasProperty ("step") || o->hasProperty ("target_db") || o->hasProperty ("request_dbtp")))
+        if (o->hasProperty ("pass") && (o->hasProperty ("ran") || o->hasProperty ("step") || o->hasProperty ("target_db") || o->hasProperty ("request_dbtp") || o->hasProperty ("request_db")))
         {
             ++c.rows; const bool ran = ! o->hasProperty ("ran") || (bool) o->getProperty ("ran");
             if (ran) { ++c.ran; if ((bool) o->getProperty ("pass")) ++c.passed; else if (c.failed.size() < 400) c.failed.push_back (where + ": " + o->getProperty ("step").toString() + o->getProperty ("why").toString().substring (0, 80)); }

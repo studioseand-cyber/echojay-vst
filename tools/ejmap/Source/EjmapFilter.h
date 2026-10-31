@@ -249,16 +249,31 @@ inline std::vector<std::pair<int, juce::String>> eqPassBands (const std::vector<
 // THE MOST OPEN POSITION (22 Oct, bx_cleansweep on this Mac: its other 6 dB/oct filter's skirt sat in the passband reference, so the high-pass
 // read 0.74 x its label and the low-pass 2 x): every position is read against the control's own most open one - the position whose response
 // spans least - so whatever does not move with this control (the other filter, the plugin's colour) cancels. -1 with fewer than 3 positions
+// 30 Oct (Phase 1 item 2): THE WIDEST PASSBAND, not the smallest span. A steep crossover's stopband falls to the noise floor at every
+// setting (LFE360: 150-180 dB), so the smallest span picked its MOST CLOSED position ("20" of 20-250 Hz) and every other read as a boost
+// (passband +8.2, +21.7 dB; "46" read 1,591 Hz). The most open position has the most tones within kOpenPassDb of its own maximum; a tie
+// goes to the smaller span (bx_cleansweep's case, which the span rule was written for, still holds)
+inline constexpr double kOpenPassDb = 3.0;
 inline int openPosition (const std::vector<std::vector<std::pair<double, double>>>& transfers)
 {
     if (transfers.size() < 3) return -1;
-    int best = -1; double bestSpan = 1e9;
+    int best = -1, bestPass = -1; double bestSpan = 1e9;
     for (size_t k = 0; k < transfers.size(); ++k)
     {   if (transfers[k].size() < (size_t) kMinTones) continue;
         double lo = 1e9, hi = -1e9; for (const auto& [hz, d] : transfers[k]) { lo = juce::jmin (lo, d); hi = juce::jmax (hi, d); }
-        if (hi - lo < bestSpan) { bestSpan = hi - lo; best = (int) k; } }
+        int pass = 0; for (const auto& [hz, d] : transfers[k]) if (d >= hi - kOpenPassDb) ++pass;
+        if (pass > bestPass || (pass == bestPass && hi - lo < bestSpan)) { bestPass = pass; bestSpan = hi - lo; best = (int) k; } }
     return best;
 }
+// THE FILTER GRID (30 Oct, Phase 1 item 2): an octave under the EQ grid - the probe's own floor is 5 Hz (probe_response.h refuses lower:
+// 2.5 Hz was tried on 30 Oct and every response refused) - so a high-pass labelled 20 Hz has two octaves of stopband to fall into (a
+// gentle one "falls only 8.3 dB under its passband inside the grid" from 10 Hz); 1/12 octave kept, so the hold is long enough to tell
+// the lowest tones apart (5 Hz x (2^(1/12) - 1) = 0.297 Hz: a 3.4 s span). The stand-alone filter pass only (the EQ's own filter
+// bands keep the EQ grid)
+inline constexpr double kFilterGridLoHz = 5.0;
+inline constexpr int kFilterGridTones = 148;      // 1/12 octave from 5 Hz to 23.5 kHz
+inline constexpr double kFilterHoldS = 4.0, kFilterDiscardS = 0.5;
+inline juce::String filterGridDescription() { return "multitone " + juce::String (kFilterGridLoHz, 1) + " Hz-23.5 kHz, " + juce::String (kFilterGridTones) + " tones (1/12 octave), hold " + juce::String (kFilterHoldS, 1) + " s"; }
 // a transfer less the open position's, tone by tone (matched by frequency; a tone missing from either is left out)
 inline std::vector<std::pair<double, double>> lessOpen (const std::vector<std::pair<double, double>>& t, const std::vector<std::pair<double, double>>& open)
 {
