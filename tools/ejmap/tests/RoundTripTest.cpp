@@ -14707,6 +14707,10 @@ int main (int, char**)
         check (got == "1:False 1:True 50:False 50:True 1:False" && mock.contains ("MIN_CEILING_ONLY_S = 1") && mock.contains ("if kind == \"profile\" and m - ms < min_measure_s(doc):")
                && mock.contains ("MIN_MEASURE_S = {\"compressor\": 50, \"limiter\": 50, \"eq\": 2, \"saturation\": 1, \"de-esser\": 4, \"reverb\": 4, \"delay\": 6, \"filter\": 1, \"gate\": 7,\n                 \"transient_shaper\": 4, \"channel_strip\": 1, \"pitch\": 2, \"amp_sim\": 1}"),
                "contract WZ-36OCT-4: staging's minimums (31 Oct: a third of the fastest genuine time, at least 1 s) - a ceiling-only limiter 1 s, a limiter with its compressor profile and a compressor 50, a channel strip 1 (Meaw Chain's 2.97 s accepted); under it is \"timestamp\" (" + got + ")");
+        // 31 Oct: the mock ships to B inside MOCK_FOR_B, whose scan refuses a person's name (make_mock_for_b.py SCAN): one in a comment
+        // refuses the whole package, so the gate says so first
+        check (! mock.containsWholeWord ("Kathy") && ! mock.containsWholeWord ("Sean") && ! mock.containsWholeWord ("SeanD") && ! mock.containsWholeWord ("Donoghue"),
+               "contract WZ-36OCT-4b: the mock carries no person's name (MOCK_FOR_B's scan would refuse the package)");
     }
     // WZ-36OCT-5 NOTHING CAME OUT IS NOT A CATEGORY QUESTION (the STAGING 4 run: Reaktor 6 MFX with no ensemble went for review with an empty
     // signature and was refused "shape"). Reads ran, no tone, no harmonics, no pitch, no tail -> not measurable, said why

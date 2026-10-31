@@ -36,7 +36,7 @@ DRAFT_SCHEMAS = {
     "ej_limiter_profile/1": lambda f: None if isinstance(f.get("ceiling"), dict) and (f["ceiling"].get("control") or f["ceiling"].get("by")) else "no ceiling block",
     "ej_deesser_profile/1": lambda f: None if isinstance(f.get("deesser"), dict) else "no deesser block",
 }
-# 29 Oct (Kathy): what only a run can collect, in the PAYLOAD (never as files: an unknown file schema holds the whole result). Each is
+# 29 Oct: what only a run can collect, in the PAYLOAD (never as files: an unknown file schema holds the whole result). Each is
 # optional (an older wizard sends none); one that is there must have its shape, else "shape"
 DISPLAY_VERDICTS = {"agrees", "disagrees", "inverted", "not_checked"}
 def collected_problem(pl):
@@ -74,13 +74,13 @@ ALLOW_S = 300   # v1.1 §4: the timestamp allowance, 5 minutes either way
 # real measuring time per category, 19-23 Oct, rounded down: MEASURE_TIMES_FOR_B.md); every other kind measured nothing for the profile and
 # carries measure_started_at == measured_at - no minimum. No more than MAX_OVERLAP measurements of one run overlap in time (the wizard
 # measures 4 at a time); a span of no length overlaps nothing
-# STAGING'S RULE (Sean, 29 Oct; Kathy, 31 Oct: staging's rule wins): each category's minimum is a THIRD of the fastest genuine measuring
+# STAGING'S RULE (staging, 29 Oct; adopted for the mock 31 Oct: staging's rule wins): each category's minimum is a THIRD of the fastest genuine measuring
 # time, at least 1 s. Staging's own figures known here: compressor 50, channel strip 1, limiter (ceiling only) 1. The others are the
 # same rule applied to the fastest genuine times the previous table was built from (19-23 Oct, one Mac: twice the old half-time
 # minimums), which reproduces staging's compressor 50 exactly - B to confirm them against staging's table
 MIN_MEASURE_S = {"compressor": 50, "limiter": 50, "eq": 2, "saturation": 1, "de-esser": 4, "reverb": 4, "delay": 6, "filter": 1, "gate": 7,
                  "transient_shaper": 4, "channel_strip": 1, "pitch": 2, "amp_sim": 1}   # amp_sim: measured by the saturation pass
-# LIMITER (CEILING ONLY) (Kathy, 29 Oct; the STAGING 4 run: 21 limiters refused "timestamp"): a limiter result whose measured file is
+# LIMITER (CEILING ONLY) (29 Oct; the STAGING 4 run: 21 limiters refused "timestamp"): a limiter result whose measured file is
 # only the ceiling draft (ej_limiter_profile/1, no ej_comp_profile/1 file beside it) took 5.5-66.6 s - the ceiling pass alone, under the
 # compressor's 76 s. Staging's minimum for it (31 Oct): 1 s. A limiter sending its compressor profile takes the compressor's 50
 MIN_CEILING_ONLY_S = 1
