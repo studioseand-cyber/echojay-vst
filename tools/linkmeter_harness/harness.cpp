@@ -185,8 +185,20 @@ int main()
     auto* ed = dynamic_cast<EchoJayEditor*>(edBase.get());
     if (! ed) { std::fprintf(stderr, "HARNESS ERROR: createEditor did not return an EchoJayEditor\n"); return 2; }
 
+    // ---- PUMP WHAT THE HOST PUMPS (point 89, 31 Oct 2026) ---------------------------------
+    //
+    // The EBU R128 integrated gate no longer runs on the render thread: the processor's 4 Hz timer
+    // drains each engine's gating ring and runs the gate (EchoJayProcessor::refreshMeterGates).
+    // This harness drives the processor directly, with NO timer running, so without this call every
+    // engine reports no integrated loudness, the own channel's input level is unknown, and the
+    // [CHAIN LEVELS] block loses the pre-gain line this file asserts. That is a harness that does
+    // not feed its subject, not a product fault - so the drain happens on every assemble, exactly
+    // where a host's timer would have got there first.
     auto assemble = [&](const String& targetUid) -> String
-    { StringArray mf; return ed->testAssembleChainInjections("build me a mastering chain", targetUid, &mf); };
+    {
+        proc.refreshMeterGates();
+        StringArray mf; return ed->testAssembleChainInjections("build me a mastering chain", targetUid, &mf);
+    };
     const String ownOut  = assemble(String());
     const String linkOut  = assemble(String(kUid));
     // Dump the REAL assembled Link injection so the item-4 leg posts THIS, not a
@@ -260,6 +272,7 @@ int main()
     const bool a = ! (staged == staged) && ! (applied == applied);          // nothing staged, nothing sent
     const bool b = statedTxt && std::abs(expected - 2.0f) < 0.001f;         // the figure is measured and printed
     reseedIntegrated(-8.0f); proc.updateLinkAudioRecency();
+    proc.refreshMeterGates();   // point 89: as above, this call does not go through assemble()
     StringArray mfd; const String linkOut2 = ed->testAssembleChainInjections("build me a mastering chain", String(kUid), &mfd);
     const float staged2 = ed->testPendingLinkPreGainDb();
     ed->applyPendingLinkPreGain();
@@ -283,6 +296,7 @@ int main()
         LinkMeterFrame sf{}; sf.integrated=-16.0f; sf.audioStale=1; writeFrame(r2,s2,sf);
         for(int k=0;k<8;++k){ LinkShm::storeRelease(&sl[s2].heartbeat,300u+(uint32_t)k); proc.refreshLinkRegistry(); proc.updateLinkAudioRecency(); } } }
     StringArray mm;
+    proc.refreshMeterGates();   // point 89: and before the four-outcomes block
     const String outMeas  = ed->testAssembleChainInjections("build me a mastering chain", String(kUid),        &mm);
     const String outLapse = ed->testAssembleChainInjections("build me a mastering chain", String("TLINK02"),   &mm);
     const String outNoTgt = ed->testAssembleChainInjections("build me a mastering chain", String("NOSUCHLINK"),&mm);

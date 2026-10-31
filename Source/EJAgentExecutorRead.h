@@ -243,6 +243,20 @@ struct Sources
         float outLoudestRmsDb = -200.0f, outTypicalRmsDb = -200.0f;
         bool  inCrestKnown = false,  outCrestKnown = false;
         float inCrestDb = 0.0f,      outCrestDb = 0.0f;
+        // ---- HOW MUCH HAS ARRIVED, EVEN WHEN NO FIGURE IS KNOWN YET (31 Oct 2026) ----------
+        //
+        // A slot tally needs kHeardFloorSeconds (3 s) of gated audio before any number is known.
+        // Until then `known` is false and every figure is NaN, which is right - but it left the
+        // read with one sentence for two different situations: nothing is arriving on that slot,
+        // and not enough has arrived YET. The rig caught it with the transport rolling (SCEN E3):
+        // a -12 dBFS sine was going through the slot and the answer was "the channel may be silent
+        // or muted", which is Sean's #19 complaint again - a reason that is not true.
+        //
+        // So the seconds travel even when the figure does not. heardSeconds is valid while
+        // `known` is false; it is the one field of the tally's snapshot that is.
+        bool  heardKnown = false;     ///< false when this rack cannot report seconds at all
+        float heardSeconds = 0.0f;    ///< gated audio heard on this slot since its last reset
+        float heardFloorSeconds = 0.0f; ///< how much it needs before a figure can be given
     };
     std::function<SlotInputLevels (const juce::String& uid, int slot1Based)> slotInputLevels;
 

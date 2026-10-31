@@ -10138,6 +10138,28 @@ int main (int argc, char* argv[])
                         slot1Name = (*arr)[0].getProperty ("name", juce::var()).toString();
                 return slot1Name.containsIgnoreCase (tp.name);
             }, 8000);
+            // ---- AND THE ROW MUST FEED ITS SUBJECT (31 Oct 2026) ---------------------------
+            //
+            // This row asserts that the answer never blames silence. Tonight it failed, and the
+            // product was right: nothing had been heard. The rig has no continuous audio - it pumps
+            // in explicit loops - and this row clears the rack, adds a plugin and asks, so ZERO
+            // blocks had been through that slot since it existed. "No audio has been heard for the
+            // input level on slot 1 yet" was a true sentence and the row was asking the product to
+            // be wrong.
+            //
+            // A slot tally knows no figure until it has heard LevelTally::kHeardFloorSeconds (3 s)
+            // of gated audio, so that is what this feeds it: four seconds' worth, which costs a
+            // third of a second of wall clock. #19's point is untouched - no listen is requested
+            // and nothing waits for the user - the row simply stops claiming "with audio playing"
+            // while playing none.
+            {
+                const int blocksPerSecond = (int) std::lround (sr / (double) v2.buf.getNumSamples());
+                for (int i = 0; i < blocksPerSecond * 4; ++i)
+                {
+                    v2.processOneBlock (sr);
+                    if ((i % 40) == 0) Rig::pump (2);
+                }
+            }
             const auto r = askAgent (rig, "rig-grtp-marker: how much is " + tp.name + " doing?", 90000);
             const auto st = rig.freshState();
             // THE ROW'S OWN STEP DETAIL. r.stepWords is captured while the steps exist and can be

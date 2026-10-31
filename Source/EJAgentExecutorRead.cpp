@@ -1310,6 +1310,35 @@ void ExecutorRead::check (const ToolCall& call, Done done)
                                                  : Sources::SlotInputLevels();
             if (! lv.known)
             {
+                // ---- WHICH OF THE TWO IT IS (31 Oct 2026, the rig's SCEN E3) ----------------
+                //
+                // notPlaying() answers "nothing has arrived". When audio IS arriving and the slot
+                // simply has not heard its three seconds yet, that answer names a cause that is
+                // not true ("the channel may be silent or muted") - the same fault as Sean's #19.
+                // With some audio heard, the honest answer is the count and what it is waiting for,
+                // and it is not a dead end: it says it will measure, which is what the model and
+                // the rig both need to hear.
+                if (lv.heardKnown && lv.heardSeconds > 0.0f && lv.heardFloorSeconds > 0.0f)
+                {
+                    auto o = ToolOutcome::failureFor ("needs_more_audio",
+                                 "Slot " + juce::String (slotArg) + " has heard "
+                                 + juce::String (lv.heardSeconds, 1) + " s of audio and needs about "
+                                 + juce::String ((int) lv.heardFloorSeconds) + " s before its input "
+                                 "level can be read. Audio IS arriving, so nothing is wrong and the "
+                                 "channel is not silent. Keep the music playing and read it again.",
+                                 "I have heard " + juce::String (lv.heardSeconds, 1) + " s on slot "
+                                 + juce::String (slotArg) + " and need about "
+                                 + juce::String ((int) lv.heardFloorSeconds)
+                                 + " s. Keep it playing and I'll measure that.");
+                    auto* e = new juce::DynamicObject();
+                    e->setProperty ("retryable", true);
+                    e->setProperty ("transport", "running");
+                    e->setProperty ("heard_seconds", (double) lv.heardSeconds);
+                    e->setProperty ("needs_seconds", (double) lv.heardFloorSeconds);
+                    o.result = juce::var (e);
+                    done (o);
+                    return;
+                }
                 done (notPlaying ("the input level on slot " + juce::String (slotArg)));
                 return;
             }
@@ -2147,6 +2176,14 @@ Sources bindToProcessor (EchoJayProcessor& proc)
         if (uid.isEmpty())
         {
             const auto lv = p->getChainHost().getSlotLevels (slot1Based - 1);
+            // THE SECONDS FIRST, because they are the only thing worth saying when the figure is
+            // not known yet, and they are valid exactly then (see SlotInputLevels::heardSeconds).
+            if (lv.measured)
+            {
+                out.heardKnown        = true;
+                out.heardSeconds      = lv.in.heardSeconds;
+                out.heardFloorSeconds = LevelTally::kHeardFloorSeconds;
+            }
             if (! lv.measured || ! lv.in.known) return out;
             out.known      = true;
             out.kWeighted  = lv.in.kWeighted;

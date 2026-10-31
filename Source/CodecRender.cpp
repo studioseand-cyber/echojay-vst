@@ -90,6 +90,10 @@ static float measureIntegratedLufs(const juce::AudioBuffer<float>& buf, double s
         const int len = juce::jmin(4096, n - pos);
         me.processBlock(buf.getReadPointer(0) + pos, buf.getReadPointer(1) + pos, len);
     }
+    // POINT 89: the gate runs off the render thread now, and this path reads the figure ONCE at
+    // the end - so it asks for the drain itself, with force, rather than waiting for a 4 Hz window
+    // that will never come on a thread that is about to return.
+    me.refreshIntegrated (/*force*/ true);
     return me.getMeterData().integrated;
 }
 

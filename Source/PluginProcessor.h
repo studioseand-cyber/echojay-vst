@@ -446,6 +446,13 @@ public:
     void publishKeyFeed(const KeySources& sources);
 
     MeterEngine& getMeterEngine()   { return meterEngine; }
+
+    /** POINT 89: drains every meter engine's gating ring and runs the EBU R128 gate, off the render
+        thread. The 4 Hz processor timer calls this; a harness that drives this processor WITHOUT a
+        timer must call it itself, or every engine here reports no integrated loudness at all - and
+        a block of text that needs a level figure then loses its line (linkmeter_harness, 31 Oct).
+        MESSAGE THREAD. */
+    void refreshMeterGates();
     MeterEngine& getABMeterEngine() { return abMeterEngine; }
     MeterEngine& getCompareMeter(int slot) { return (slot == 0) ? cmpMeter[0] : cmpMeter[1]; }
     PluginScanner& getPluginScanner() { return pluginScanner; }
@@ -868,6 +875,9 @@ juce::String buildCompareFiguresJson(const MeterData& a, const MeterData& b,
         frame arrives from the Link (his R4, 29 Oct 2026). */
     void pollBuiltinCopyForGestures();
     juce::String lastSlotEditorSource_ { "none" };
+    /** The dropped-gating-block total already reported, so the line is said when it CHANGES rather
+        than every tick (point 89). */
+    juce::uint64 gateDroppedSaid_ = 0;
     /** Empty when a gesture may travel; otherwise the one line saying why it may not. */
     juce::String liveControlRefusal() const { return liveControlRefusal_; }
     int liveControlSent() const noexcept { return liveControlSent_; }

@@ -191,6 +191,27 @@ public:
     // Thread-safe access to current meter values
     MeterData getMeterData() const;
     
+    /** ---- POINT 89: RUN THE INTEGRATED GATE, OFF THE RENDER THREAD (31 Oct 2026) ----------
+        Drains the gating-block ring and runs the IDENTICAL two-pass gate the render thread used to
+        run inline, publishing the integrated figure and the LRA for getMeterData() to read.
+
+        CALL IT FROM ONE THREAD per engine, at 2-5 Hz: it is the ring's single consumer. Cheap to
+        call more often than that - it throttles itself and returns at once - and the throttle can
+        be bypassed with force, which the offline render path needs because it reads the figure once
+        at the end and cannot wait 250 ms for it.
+
+        An engine nobody ever calls this on reports no integrated loudness at all, deliberately:
+        a missing call is a fault to be seen, not a figure to be guessed. */
+    void refreshIntegrated (bool force = false);
+
+    /** Gating blocks the ring could not take since the last reset. Anything but 0 means the
+        integrated figure is missing audio; the owner says so (see PluginProcessor's meter tick). */
+    juce::uint64 gateBlocksDropped() const noexcept
+    { return gateRing_.dropped() + stRing_.dropped(); }
+
+    /** FALSE until refreshIntegrated() has run once on this engine. */
+    bool wasEverRefreshed() const noexcept { return everRefreshed_.load (std::memory_order_relaxed); }
+
     // Reset integrated LUFS measurement
     void resetIntegrated();
 
@@ -454,7 +475,21 @@ private:
         double power;
         double loudness;
         int64_t timeMs;
+        /** WHICH RESET THIS BLOCK BELONGS TO (point 89, C's defect of 02:20). A reset used to be a
+            flag the consumer acted on up to 250 ms later - or seconds, with the message thread
+            stalled - and it then discarded EVERYTHING in the ring, including blocks the render
+            thread had pushed AFTER the reset. Those are new audio. So every startCapture() lost
+            the beginning of its own figure, silently, and the overflow counter could not see it
+            because nothing had overflowed.
+
+            Stamping the block puts the reset IN ORDER WITH THE DATA: the consumer discards what
+            carries an older epoch and keeps what carries the current one, whenever it gets round
+            to looking. */
+        juce::uint32 epoch = 0;
     };
+
+    /** A short-term value with the same stamp, for the LRA's ring. */
+    struct StValue { double v = 0.0; juce::uint32 epoch = 0; };
     // A12: the hop series, plus this hop's band accumulation (reset at every boundary).
     std::vector<HopFrame> hopFrames_;
     std::atomic<bool>     hopResetRequested_ { false };   // item 4: the rolling reader asked for a fresh series
@@ -469,8 +504,99 @@ private:
 
     std::vector<LufsBlock> momentaryBlocks;  // 400ms window
     std::vector<LufsBlock> shortTermBlocks;  // 3s window
+    // ---- POINT 89: THE GATE LEAVES THE RENDER THREAD (C's interim, 31 Oct 2026) -----------
+    //
+    // His rule: "nothing on the audio thread may be O(series length), and no allocation ... on the
+    // render thread." processBlock computed the EBU R128 two-pass gate over EVERY block of the
+    // session, every hop, and built a std::vector to do it. Not the hang he reported, and against
+    // the rule all the same: a three-hour session walked 108,000 blocks every 100 ms.
+    //
+    // C's interim, and it is better than the histogram I first proposed because NO NUMBER CAN
+    // CHANGE: the render thread only APPENDS each gating block to a fixed-size ring, and the
+    // IDENTICAL gate runs on a known thread at 2-5 Hz from refreshIntegrated(). Same algorithm,
+    // same inputs, same answer - which is why the only thing owed is a test that no block is lost,
+    // not a differential test of the figure. ig PIN1/PIN2 hold the figures either way.
+    //
+    // SINGLE PRODUCER (render), SINGLE CONSUMER (whoever calls refreshIntegrated). The two indices
+    // are the only shared state and they move one way.
+    template <typename T, size_t N>
+    struct HopRingOf
+    {
+        bool push (const T& v) noexcept          // render thread only
+        {
+            const auto w = write_.load (std::memory_order_relaxed);
+            const auto r = read_.load (std::memory_order_acquire);
+            if (w - r >= N) { dropped_.fetch_add (1, std::memory_order_relaxed); return false; }
+            buf_[(size_t) (w % N)] = v;
+            write_.store (w + 1, std::memory_order_release);
+            return true;
+        }
+        bool pop (T& out) noexcept                // consumer thread only
+        {
+            const auto r = read_.load (std::memory_order_relaxed);
+            if (r == write_.load (std::memory_order_acquire)) return false;
+            out = buf_[(size_t) (r % N)];
+            read_.store (r + 1, std::memory_order_release);
+            return true;
+        }
+        void clear() noexcept                     // only with the audio thread stopped
+        { read_.store (0); write_.store (0); dropped_.store (0); }
+        /** Gating blocks the ring could not take. NEVER expected: an overflow means the integrated
+            figure is missing audio, so it is counted and said out loud rather than absorbed. C's
+            condition, and the one way his interim could move the number. */
+        juce::uint64 dropped() const noexcept { return dropped_.load (std::memory_order_relaxed); }
+
+        // ---- THE BUFFER LIVES ON THE HEAP (31 Oct 2026) ------------------------------------
+        //
+        // It was a std::array INLINE in the object, and that made MeterEngine about 330 KB: the
+        // two rings at 8192 entries. The plugin's engines are members of a heap-allocated
+        // processor so nothing noticed, and the first test that put a few engines on the STACK
+        // died with a bus error - a stack overflow, not a logic fault.
+        //
+        // One allocation, in the constructor, and never another: push() and pop() only touch
+        // elements, so the render thread still allocates nothing. Sized once, so the capacity the
+        // sizing comment argues for is exactly what it holds.
+        HopRingOf() : buf_ ((size_t) N) {}
+        std::vector<T> buf_;
+        std::atomic<juce::uint64> write_ { 0 }, read_ { 0 }, dropped_ { 0 };
+    };
+
+    // SIZED FOR AN OFFLINE BOUNCE WITH A STALLED DRAIN, which is C's worst case: a bounce at 100x
+    // real time produces a gating block every millisecond of wall clock, so a 2 s stall owes about
+    // 2,000 blocks. 8,192 is four times that, and at 24 bytes a block it costs under 200 KB.
+    // AND THE LIMIT, STATED (C's sizing point, 31 Oct 2026). 8192 gating blocks is about 819
+    // SECONDS of audio. The drain is the processor's 4 Hz message-thread tick, so if a host keeps
+    // that thread busy for a whole offline bounce, a song longer than about 13.6 minutes starts
+    // dropping blocks. It is COUNTED and logged, so it is never silent, and a dedicated drain
+    // thread would remove the dependence on the message thread if that limit ever bites.
+    static constexpr size_t kGateRingBlocks = 8192;
+    HopRingOf<LufsBlock, kGateRingBlocks> gateRing_;      // the integrated gate's input
+    HopRingOf<StValue,    kGateRingBlocks> stRing_;       // the LRA's short-term values
+
+    // The consumer's own copies. These grow, and that is fine: they are touched only by
+    // refreshIntegrated(), never by the render thread.
     std::vector<LufsBlock> allBlocks;        // all blocks for integrated
     std::vector<double> shortTermHistory;   // short-term loudness values for LRA (3s windows)
+
+    /** What the last refresh computed, read by the render thread when it fills MeterData. Atomic
+        because those are two different threads and the figure must not be torn. */
+    std::atomic<float> integratedPublished_ { -100.0f };
+    std::atomic<float> lraPublished_        { 0.0f };
+    /** TRUE once refreshIntegrated() has run at least once. An engine nobody refreshes would
+        otherwise report -100 for ever, which would be a silent regression for any owner that
+        forgot the call - so getMeterData's own path says so through wasEverRefreshed(). */
+    std::atomic<bool>  everRefreshed_ { false };
+    /** A reset asked for by the RENDER thread, carried out by the consumer. resetState() used to
+        clear allBlocks and shortTermHistory directly, and once those became the consumer's own
+        vectors that was a data race I would have introduced while removing another. So the render
+        thread raises this and touches neither. */
+    /** Bumped by the RENDER thread on a reset and stamped into every block it pushes afterwards.
+        The consumer keeps its own copy and clears when the two differ, so a reset is carried out in
+        the data's order rather than by a clock. */
+    std::atomic<juce::uint32> gateEpoch_ { 1 };
+    juce::uint32              consumerEpochBlocks_ = 1;
+    juce::uint32              consumerEpochSt_     = 1;
+    double             lastRefreshMs_ = 0.0;
     
     // Ring buffer for instant momentary LUFS (400ms of K-weighted power per sample)
     std::vector<double> kPowerRing;          // sum of L²+R² per sample, K-weighted

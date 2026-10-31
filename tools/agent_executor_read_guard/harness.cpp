@@ -609,6 +609,56 @@ int main()
             fh.own.slots[1].grCertified = true;      // restored: later legs read this slot
             fh.inLevels = {};
         }
+        // ---- G10a4: "NOT ENOUGH YET" IS NOT "SILENT OR MUTED" (31 Oct 2026, the rig's SCEN E3) ----
+        //
+        // A slot tally knows no figure until it has heard kHeardFloorSeconds (3 s) of gated audio.
+        // Until tonight the read answered that with notPlaying(), whose sentence says "the
+        // transport is running, so the channel may be silent or muted" - and the rig caught it with
+        // the transport ROLLING and a -12 dBFS sine going through the slot. That is Sean's #19
+        // complaint exactly: a refusal that names a cause which is not true.
+        //
+        // Two situations, two answers. This leg holds both apart, because a single one of them is
+        // what the product had.
+        {
+            fh.own.slots[1].grCertified = false;
+            fh.inLevels = {};
+            fh.inLevels.known = false;            // no figure yet
+            fh.inLevels.heardKnown = true;
+            fh.inLevels.heardSeconds = 1.2f;      // ...but audio IS arriving
+            fh.inLevels.heardFloorSeconds = 3.0f;
+            auto soon = run (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
+            const auto words = soon.errorMessage + " " + soon.userMessage;
+            check (! soon.ok && soon.errorCode == "needs_more_audio",
+                   "G10a4 a slot that has heard SOME audio but not its three seconds refuses with "
+                   "needs_more_audio, not not_playing",
+                   "code=" + soon.errorCode);
+            check (! words.containsIgnoreCase ("silent or muted")
+                   && ! words.containsIgnoreCase ("no audio has been heard"),
+                   "G10a4 ...and never blames silence while audio is arriving, which is the whole "
+                   "of Sean's #19 and the rig's SCEN E3",
+                   words.substring (0, 110));
+            check (words.contains ("1.2") && words.contains ("3"),
+                   "G10a4 ...and says how much it has heard and how much it needs, so the wait is "
+                   "a known quantity rather than an excuse",
+                   words.substring (0, 110));
+            check (soon.result.getProperty ("retryable", {}).equals (juce::var (true))
+                   && soon.result.getProperty ("transport", {}).toString() == "running",
+                   "G10a4 ...and it is retryable and says the transport is running");
+
+            // AND THE OTHER SITUATION IS UNCHANGED: nothing arriving still gets not_playing.
+            fh.inLevels = {};
+            fh.inLevels.known = false;
+            fh.inLevels.heardKnown = true;
+            fh.inLevels.heardSeconds = 0.0f;
+            fh.inLevels.heardFloorSeconds = 3.0f;
+            auto none = run (ex, "check", call ("check", R"({"what":"gr","slot":2})"));
+            check (! none.ok && none.errorCode == "not_playing",
+                   "G10a4 a slot with NOTHING arriving still answers not_playing - the new sentence "
+                   "must not swallow the true one",
+                   "code=" + none.errorCode);
+            fh.own.slots[1].grCertified = true;
+            fh.inLevels = {};
+        }
         auto oor = run (ex, "check", call ("check", R"({"what":"gr","slot":9})"));
         check (! oor.ok && oor.errorCode == "unknown_slot" && oor.errorMessage.contains ("1..4"), "G10b slot 9 of 4 -> unknown_slot naming the range");
         auto nr = run (ex, "check", call ("check", R"({"what":"gr","slot":1})"));

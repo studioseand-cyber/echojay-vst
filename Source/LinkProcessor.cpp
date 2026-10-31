@@ -464,6 +464,21 @@ void LinkProcessor::serviceMapsReady()
 
 void LinkProcessor::timerCallback()
 {
+    // ---- POINT 89: THIS SIDE HAS A GATE TO DRAIN TOO (31 Oct 2026) -------------------------
+    //
+    // The integrated gate moved off the render thread into refreshIntegrated(), whose one caller
+    // was the V2's 4 Hz tick. The Link owns a MeterEngine as well, and its frame publishes that
+    // engine's integrated figure and LRA (see publishMeterFrame: f.integrated and f.lra), so
+    // without this line every Link reported no integrated loudness at all - for ever.
+    //
+    // Eight guards went red together and said so: calib_link_guard, link_build_level_guard,
+    // alias_mirror_guard, lease_id_guard, level_match_guard, role_snapshot_guard,
+    // link_live_edit_guard and linkmeter_harness. That is the suite doing its job, and it is why
+    // the list of engines to refresh is written out by name on each side rather than assumed.
+    //
+    // This timer runs at 30 Hz; refreshIntegrated throttles itself to 4 Hz, so the other 26 ticks
+    // cost two atomic reads.
+    meterEngine_.refreshIntegrated();
     // Heartbeat once per second (timer runs at 30Hz since v0.8.5; only the
     // meter publish uses the full rate)
     // Solo fabric scan at ~4Hz: cheap by construction (shared-memory

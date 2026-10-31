@@ -203,6 +203,10 @@ static ChannelMeterData finalizeLinkChannel(EchoJayProcessor::LinkCaptureChannel
     // the host's. Only when real frames arrived (no picture for a dead feed).
     if (result.framesReceived != 0)
         result.thumbnail = lcc.waveformRecorder.getThumbnail();
+    // POINT 89: this engine is fed by the Link capture's render path and has no tick of its own,
+    // so its gate is drained HERE, once, on the thread that finalises the capture. Forced, because
+    // a capture is read exactly once and a 4 Hz throttle could swallow that one read.
+    lcc.meterEngine.refreshIntegrated (/*force*/ true);
     result.meterData = lcc.meterEngine.getMeterData();
     // A12b: the series, and the count C4 §3's grid check needs as a field rather than an inference.
     result.hopFrames = lcc.meterEngine.hopFrames();
@@ -2174,8 +2178,54 @@ echojay::LiveBufferState EchoJayProcessor::liveBufferState() const
                                      liveRing_.staleS());
 }
 
+// ---- POINT 89: THE INTEGRATED GATE'S ONE CONSUMER, IN ONE PLACE (31 Oct 2026) -------------
+//
+// The EBU R128 two-pass gate used to run on the RENDER thread, every hop, over every block of the
+// session, allocating as it went - his rule broken twice. It now runs here, from the same code,
+// called by the 4 Hz processor timer (refreshIntegrated throttles itself, so a call with nothing to
+// do is two atomic reads).
+//
+// IT IS A FUNCTION, not a few lines inside the timer, because a second caller turned up within the
+// hour: linkmeter_harness drives this processor with no timer running at all, and with no drain its
+// own channel had no integrated figure, so the [CHAIN LEVELS] block it asserts lost its pre-gain
+// line. A harness has to be able to pump what the host pumps, and it must pump the SAME list.
+//
+// EVERY ENGINE WHOSE FIGURE IS READ, named rather than assumed: an engine nobody refreshes reports
+// no integrated loudness at all, which is deliberate - a missing call should be a fault you can
+// see, not a figure quietly guessed - but it means the list has to be right. wasEverRefreshed() is
+// what a leg checks that against.
+void EchoJayProcessor::refreshMeterGates()
+{
+    for (MeterEngine* e : { &meterEngine, &captureEngine, &captureInEngine,
+                            &abMeterEngine, &cmpMeter[0], &cmpMeter[1],
+                            &liveEngine, &liveInEngine })
+        e->refreshIntegrated();
+
+    // ...and if a ring ever overflowed, the figure is missing audio and that is said out loud.
+    // C's condition on the interim: an offline bounce with a stalled drain is the one way it can
+    // move the number, so it is counted rather than absorbed.
+    {
+        juce::uint64 dropped = 0;
+        for (const MeterEngine* e : { &meterEngine, &captureEngine, &captureInEngine,
+                                      &abMeterEngine, &cmpMeter[0], &cmpMeter[1],
+                                      &liveEngine, &liveInEngine })
+            dropped += e->gateBlocksDropped();
+        if (dropped != gateDroppedSaid_)
+        {
+            gateDroppedSaid_ = dropped;
+            EchoJay_NSLog (("EJMeter: " + juce::String (dropped) + " gating block(s) were DROPPED "
+                            "before the integrated gate could read them, so the integrated figure "
+                            "is missing audio. The ring holds 8192 and the drain runs at 4 Hz, so "
+                            "this means a render far faster than real time with this thread "
+                            "stalled - C's exact condition on point 89's interim.").toRawUTF8());
+        }
+    }
+}
+
 void EchoJayProcessor::timerCallback()
 {
+    refreshMeterGates();          // point 89: the integrated gate's one consumer, off the render thread
+
     liveBufferTick();             // item 4: what has played, kept rolling
     publishRigProcessorState();   // 15 Oct: the one fact the rig cannot get from a window that is shut
     serviceLinkMapRequests();     // Sean's #1 (16 Oct): a Link cannot reach the server; the V2 serves it

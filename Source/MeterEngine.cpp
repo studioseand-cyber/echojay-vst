@@ -168,8 +168,13 @@ void MeterEngine::resetState()
     blockSampleCount = 0;
     momentaryBlocks.clear();
     shortTermBlocks.clear();
-    allBlocks.clear();
-    shortTermHistory.clear();
+    // NOT FROM HERE (point 89). allBlocks and shortTermHistory belong to refreshIntegrated's
+    // thread now, so this asks for the reset instead of performing it - clearing them here would
+    // be a race introduced while removing one. The consumer discards the ring's contents too, so
+    // a block that crossed the boundary goes with them, which is what a reset means.
+    gateEpoch_.fetch_add (1, std::memory_order_relaxed);
+    integratedPublished_.store (-100.0f, std::memory_order_relaxed);
+    lraPublished_.store (0.0f, std::memory_order_relaxed);
     if (!kPowerRing.empty()) std::fill(kPowerRing.begin(), kPowerRing.end(), 0.0);
     kPowerWritePos = 0;
     kPowerSum = 0;
@@ -762,7 +767,9 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         LufsBlock block { blockPower, blockLoud, (int64_t)allBlocks.size() };
         momentaryBlocks.push_back(block);
         shortTermBlocks.push_back(block);
-        allBlocks.push_back(block);
+        // APPEND ONLY (point 89), stamped with the epoch so a reset lands in the data's order.
+        block.epoch = gateEpoch_.load (std::memory_order_relaxed);
+        gateRing_.push (block);
 
         // Short-term true-peak window: one TP max per 100ms block, 3s = 30
         stTpBlocks.push_back(tp100msAccum);
@@ -785,7 +792,7 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
             for (auto& sb : shortTermBlocks) stPower += sb.power;
             stPower /= shortTermBlocks.size();
             double stLoud = stPower > 0.0 ? -0.691 + 10.0 * std::log10(stPower) : -100.0;
-            shortTermHistory.push_back(stLoud);
+            stRing_.push ({ stLoud, gateEpoch_.load (std::memory_order_relaxed) });
         }
         
         // ---- A12: ONE HOP FRAME, HERE, WHERE THE HOP IS (C2 §5) ----------------------------
@@ -842,72 +849,16 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         return linear > 0.0f ? 20.0f * std::log10(linear) : -100.0f;
     };
     
-    // ================================================================
-    // EBU R128 Integrated — TWO-PASS GATING
-    // Pass 1: absolute gate at -70 LUFS
-    // Pass 2: relative gate at -10 LU below absolute-gated mean
-    // ================================================================
-    std::vector<LufsBlock> absGated;
-    for (auto& b : allBlocks)
-        if (b.loudness > -70.0) absGated.push_back(b);
-    
-    float integratedLufs = -100.0f;
-    float lra = 0.0f;
-    
-    if (!absGated.empty())
-    {
-        double absGatedPower = 0.0;
-        for (auto& b : absGated) absGatedPower += b.power;
-        absGatedPower /= absGated.size();
-        double absGatedLoud = absGatedPower > 0.0 ? -0.691 + 10.0 * std::log10(absGatedPower) : -100.0;
-        
-        // Pass 2: relative gate
-        double relThreshold = absGatedLoud - 10.0;
-        std::vector<LufsBlock> relGated;
-        for (auto& b : absGated)
-            if (b.loudness > relThreshold) relGated.push_back(b);
-        
-        if (!relGated.empty())
-        {
-            double relPower = 0.0;
-            for (auto& b : relGated) relPower += b.power;
-            relPower /= relGated.size();
-            integratedLufs = toLoud(relPower);
-        }
-        
-        // LRA (EBU R128): uses SHORT-TERM loudness distribution (3s windows)
-        // Absolute gate -70 LUFS, relative gate -20 LU, then 10th-95th percentile
-        if (shortTermHistory.size() > 30)
-        {
-            // Absolute gate
-            std::vector<double> lraAbsGated;
-            for (auto v : shortTermHistory)
-                if (v > -70.0) lraAbsGated.push_back(v);
-            
-            if (lraAbsGated.size() > 10)
-            {
-                // Mean of absolute-gated
-                double lraMean = 0;
-                for (auto v : lraAbsGated) lraMean += v;
-                lraMean /= lraAbsGated.size();
-                
-                // Relative gate at -20 LU
-                double lraRelThreshold = lraMean - 20.0;
-                std::vector<double> lraSorted;
-                for (auto v : lraAbsGated)
-                    if (v > lraRelThreshold) lraSorted.push_back(v);
-                
-                if (lraSorted.size() > 4)
-                {
-                    std::sort(lraSorted.begin(), lraSorted.end());
-                    size_t lo = lraSorted.size() * 10 / 100;
-                    size_t hi = std::min(lraSorted.size() * 95 / 100, lraSorted.size() - 1);
-                    lra = static_cast<float>(lraSorted[hi] - lraSorted[lo]);
-                }
-            }
-        }
-    }
-    
+    // ---- POINT 89: THE GATE RUNS ELSEWHERE NOW (C's interim, 31 Oct 2026) ----------------
+    //
+    // What stood here was the EBU R128 two-pass gate over EVERY block of the session, run every
+    // hop, ON THIS THREAD, building a std::vector to do it. His rule: nothing on the audio thread
+    // may be O(the series), and nothing may allocate here. The identical computation now lives in
+    // refreshIntegrated(), fed by a fixed-size ring this thread only appends to, and these two
+    // lines read what it last published. Same algorithm, same inputs, same answer.
+    const float integratedLufs = integratedPublished_.load (std::memory_order_relaxed);
+    const float lra            = lraPublished_.load (std::memory_order_relaxed);
+
     // Width and correlation: compute INSTANTANEOUS values from this buffer's
     // mid/side and L/R cross-product, then smooth the resulting scalar with a
     // 1.5s EMA. Smoothing the components independently (sumMid, sumSide etc)
@@ -1114,6 +1065,145 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
     }
 }
 
+// ---- POINT 89: THE SAME GATE, OFF THE RENDER THREAD (C's interim, 31 Oct 2026) -----------
+//
+// Every line of the computation below came out of processBlock unchanged - deliberately, because
+// "no number can change" is the whole argument for C's interim being safe, and the way to keep that
+// true is to move the code rather than rewrite it. ig PIN1/PIN2 hold the figures it must reproduce.
+//
+// THE RING'S SINGLE CONSUMER. Called at 2-5 Hz from one thread per engine; it throttles itself, so
+// calling it on a 30 Hz tick costs two atomic reads and a clock read. `force` is for the offline
+// render path, which reads the figure once at the end and cannot wait for the next window.
+void MeterEngine::refreshIntegrated (bool force)
+{
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    if (! force && lastRefreshMs_ > 0.0 && nowMs - lastRefreshMs_ < 250.0)
+        return;                                  // 4 Hz, which is C's 2-5
+    lastRefreshMs_ = nowMs;
+
+    // DRAIN, always, even when the gate below cannot run yet: a ring left undrained is a ring that
+    // overflows, and an overflow is the one way this interim could move the figure.
+    //
+    // AND A RESET IS CARRIED OUT IN THE DATA'S ORDER (C's defect of 02:20). The first cut set a
+    // flag and, when it eventually looked, discarded EVERYTHING in the ring - including the blocks
+    // the render thread had pushed AFTER the reset, which are new audio. Every startCapture() lost
+    // the beginning of its own figure, and nothing counted it because nothing had overflowed. Now
+    // each block carries the epoch it was recorded under: an older one is dropped, and the first
+    // block of a NEW epoch is what clears the history. The ring is FIFO, so that is exactly the
+    // reset's position in the stream, whenever the consumer happens to arrive.
+    LufsBlock popped {};
+    while (gateRing_.pop (popped))
+    {
+        if (popped.epoch != consumerEpochBlocks_)
+        {
+            consumerEpochBlocks_ = popped.epoch;
+            allBlocks.clear();
+        }
+        allBlocks.push_back (popped);
+    }
+    StValue st {};
+    while (stRing_.pop (st))
+    {
+        if (st.epoch != consumerEpochSt_)
+        {
+            consumerEpochSt_ = st.epoch;
+            shortTermHistory.clear();
+        }
+        shortTermHistory.push_back (st.v);
+    }
+
+    // ---- A RESET WITH NO AUDIO AFTER IT (C's gap of 02:40) -------------------------------
+    //
+    // The clear above happens when the FIRST BLOCK of a new epoch arrives, and a reset is not
+    // always followed by audio: the meters reset while the transport is stopped, or a capture
+    // started and stopped inside 400 ms. The epoch has moved, no block carries it yet, and the
+    // history and the published figures would sit at their OLD values until the next play - which
+    // the code this replaced got right, by clearing on the next refresh.
+    //
+    // So the epoch is compared directly as well. Blocks of the new epoch then append normally,
+    // because the consumer's epoch already matches theirs.
+    {
+        const auto epochNow = gateEpoch_.load (std::memory_order_relaxed);
+        if (epochNow != consumerEpochBlocks_) { consumerEpochBlocks_ = epochNow; allBlocks.clear(); }
+        if (epochNow != consumerEpochSt_)     { consumerEpochSt_     = epochNow; shortTermHistory.clear(); }
+    }
+
+    auto toLoud = [](double power) -> float {
+        return power > 0.0 ? static_cast<float>(-0.691 + 10.0 * std::log10(power)) : -100.0f;
+    };
+
+    // ================================================================
+    // EBU R128 Integrated — TWO-PASS GATING
+    // Pass 1: absolute gate at -70 LUFS
+    // Pass 2: relative gate at -10 LU below absolute-gated mean
+    // ================================================================
+    std::vector<LufsBlock> absGated;
+    for (auto& b : allBlocks)
+        if (b.loudness > -70.0) absGated.push_back(b);
+    
+    float integratedLufs = -100.0f;
+    float lra = 0.0f;
+    
+    if (!absGated.empty())
+    {
+        double absGatedPower = 0.0;
+        for (auto& b : absGated) absGatedPower += b.power;
+        absGatedPower /= absGated.size();
+        double absGatedLoud = absGatedPower > 0.0 ? -0.691 + 10.0 * std::log10(absGatedPower) : -100.0;
+        
+        // Pass 2: relative gate
+        double relThreshold = absGatedLoud - 10.0;
+        std::vector<LufsBlock> relGated;
+        for (auto& b : absGated)
+            if (b.loudness > relThreshold) relGated.push_back(b);
+        
+        if (!relGated.empty())
+        {
+            double relPower = 0.0;
+            for (auto& b : relGated) relPower += b.power;
+            relPower /= relGated.size();
+            integratedLufs = toLoud(relPower);
+        }
+        
+        // LRA (EBU R128): uses SHORT-TERM loudness distribution (3s windows)
+        // Absolute gate -70 LUFS, relative gate -20 LU, then 10th-95th percentile
+        if (shortTermHistory.size() > 30)
+        {
+            // Absolute gate
+            std::vector<double> lraAbsGated;
+            for (auto v : shortTermHistory)
+                if (v > -70.0) lraAbsGated.push_back(v);
+            
+            if (lraAbsGated.size() > 10)
+            {
+                // Mean of absolute-gated
+                double lraMean = 0;
+                for (auto v : lraAbsGated) lraMean += v;
+                lraMean /= lraAbsGated.size();
+                
+                // Relative gate at -20 LU
+                double lraRelThreshold = lraMean - 20.0;
+                std::vector<double> lraSorted;
+                for (auto v : lraAbsGated)
+                    if (v > lraRelThreshold) lraSorted.push_back(v);
+                
+                if (lraSorted.size() > 4)
+                {
+                    std::sort(lraSorted.begin(), lraSorted.end());
+                    size_t lo = lraSorted.size() * 10 / 100;
+                    size_t hi = std::min(lraSorted.size() * 95 / 100, lraSorted.size() - 1);
+                    lra = static_cast<float>(lraSorted[hi] - lraSorted[lo]);
+                }
+            }
+        }
+    }
+    
+
+    integratedPublished_.store (integratedLufs, std::memory_order_relaxed);
+    lraPublished_.store (lra, std::memory_order_relaxed);
+    everRefreshed_.store (true, std::memory_order_relaxed);
+}
+
 MeterData MeterEngine::getMeterData() const
 {
     std::lock_guard<std::mutex> lock(dataMutex);
@@ -1123,6 +1213,19 @@ MeterData MeterEngine::getMeterData() const
     // isSilent mutable.
     MeterData result = data;
     result.isSilent = isSilentNow();
+    // ---- POINT 89: THE INTEGRATED FIGURE COMES FROM ITS OWN THREAD (31 Oct 2026) ----------
+    //
+    // `data` is filled by the RENDER thread, and the gate now runs on the consumer's. Reading the
+    // copy therefore gave whatever had been published at the time of the last processBlock - which
+    // for a caller that feeds audio, refreshes and then reads (every offline path, and every leg)
+    // is the value from BEFORE its own refresh: -100, i.e. no measurement at all. ig PIN3 caught
+    // that on the first run, which is exactly what it was written for.
+    //
+    // So these two are read here, from the atomics the refresh publishes, rather than from a
+    // snapshot taken on another thread at another time. Every one of this method's callers gets the
+    // freshest figure without knowing any of this.
+    result.integrated    = integratedPublished_.load (std::memory_order_relaxed);
+    result.loudnessRange = lraPublished_.load (std::memory_order_relaxed);
     return result;
 }
 

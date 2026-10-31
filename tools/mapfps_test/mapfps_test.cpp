@@ -17694,11 +17694,33 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto pb = functionBody (src0, "void MeterEngine::processBlock");
             check (pb.isNotEmpty(), "me PIN2c: found processBlock");
             const auto pbCode = codeOnly (pb);
-            check (pbCode.contains ("std::vector<LufsBlock> absGated;")
-                   && pbCode.contains ("for (auto& b : allBlocks)"),
-                   "me PIN2c: KNOWN AND UNFIXED - the integrated gate still walks every block of "
-                   "the session on the render thread, and still allocates to do it. When this goes "
-                   "red, the histogram landed: update this row, do not delete it");
+            // ---- AND IT IS FIXED, SO THIS NOW PINS THE OTHER DIRECTION (31 Oct 2026) -------
+            //
+            // It read "KNOWN AND UNFIXED" and went red the moment point 89's interim landed, which
+            // is what it was written to do: a defect that cannot be fixed quietly. C's interim is
+            // in - the render thread only APPENDS each gating block to a fixed-size ring, and the
+            // identical two-pass gate runs in refreshIntegrated() on a known thread at 4 Hz. The
+            // figures are unchanged, which ig PIN3 asserts against the numbers recorded before the
+            // move, and ig PIN4/PIN5/PIN6 cover the three ways it could have gone wrong.
+            //
+            // So the row keeps its subject and reverses its claim: the gate must NOT be on the
+            // render thread, and the render thread must not allocate for it.
+            check (! pbCode.contains ("std::vector<LufsBlock> absGated;"),
+                   "me PIN2c: the integrated gate no longer runs on the render thread, and no "
+                   "longer allocates there (point 89, C's interim)");
+            check (! pbCode.contains ("for (auto& b : allBlocks)"),
+                   "me PIN2c: ...and processBlock no longer walks every block of the session");
+            {
+                const auto refresh = codeOnly (functionBody (src0, "void MeterEngine::refreshIntegrated"));
+                check (refresh.contains ("std::vector<LufsBlock> absGated;")
+                       && refresh.contains ("for (auto& b : allBlocks)"),
+                       "me PIN2c: the SAME gate is there instead, moved rather than rewritten - "
+                       "which is why no number changed");
+                check (refresh.contains ("gateRing_.pop (") && refresh.contains ("stRing_.pop ("),
+                       "me PIN2c: fed by the ring the render thread appends to");
+            }
+            check (pbCode.contains ("gateRing_.push (block)"),
+                   "me PIN2c: and the render thread's whole part in it is one append");
         }
 
         // me PIN3 -- THE GUARD IS IN THE SOURCE, not only in the behaviour above: a hand removing
@@ -17727,6 +17749,72 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             while ((at = ppSrc.indexOf (at, "Engine.processBlock")) >= 0) { ++fed; at += 19; }
             check (fed > 0, "me PIN4: found the taps the processor feeds",
                    juce::String (fed) + " processBlock call(s) on a MeterEngine");
+        }
+
+        // me PIN5 -- AND EVERY OWNER OF AN ENGINE DRAINS IT (31 Oct 2026, the gate caught this)
+        //
+        // Point 89 moved the integrated gate into refreshIntegrated(), and I wired the one caller I
+        // was looking at: the V2's 4 Hz tick. The Link owns a MeterEngine too, and its published
+        // frame carries that engine's integrated figure and LRA, so for a few hours every Link
+        // reported no integrated loudness at all. Eight Link-side guards went red together and
+        // said so. The same was true of a Link capture channel inside the V2, which has no tick and
+        // is read exactly once, at finalisation.
+        //
+        // An engine nobody refreshes reads -100 by design - a missing call must be visible, not
+        // guessed at - which makes "who drains it" a list, and a list is a thing a row can check.
+        {
+            std::ifstream flp ("Source/LinkProcessor.cpp");
+            std::stringstream slp; slp << flp.rdbuf();
+            const auto lpSrc = juce::String (slp.str());
+            const auto lpTick = codeOnly (functionBody (lpSrc, "void LinkProcessor::timerCallback"));
+            check (lpTick.contains ("meterEngine_.refreshIntegrated"),
+                   "me PIN5: the Link drains its own engine's gate on its own tick, so a Link's "
+                   "frame carries an integrated figure rather than -100 for ever");
+
+            std::ifstream fpp2 ("Source/PluginProcessor.cpp");
+            std::stringstream spp2; spp2 << fpp2.rdbuf();
+            const auto pp2 = codeOnly (juce::String (spp2.str()));
+            // ANCHORED ON THE READ, not on the function's signature: finalizeLinkChannel's
+            // signature is split over two lines, and functionBody would miss it and return "" -
+            // which makes a `contains` leg fail and a `does not contain` leg pass, the exact trap
+            // sg PIN1 exists for. The claim is about ORDER, so the order is what this reads: the
+            // forced drain stands immediately before the one read of that engine.
+            {
+                const int readAt = pp2.indexOf ("result.meterData = lcc.meterEngine.getMeterData();");
+                check (readAt > 0, "me PIN5: found the Link capture channel's one read");
+                const auto before = readAt > 400 ? pp2.substring (readAt - 400, readAt) : pp2.substring (0, readAt);
+                // AND THE ARGUMENT, READ RATHER THAN SPELLED: the call in the product is written
+                // refreshIntegrated (/*force*/ true), and codeOnly strips that comment - so a leg
+                // that pins the literal text fails on the very code it is describing. It went red
+                // once for exactly that, which is the cheapest possible way to learn it.
+                const int callAt = before.indexOf ("lcc.meterEngine.refreshIntegrated (");
+                check (callAt >= 0,
+                       "me PIN5: a Link capture channel's gate is drained before that read, "
+                       "because a capture is read once and nothing else drains that engine");
+                if (callAt >= 0)
+                {
+                    const int closeAt = before.indexOf (callAt, ")");
+                    const auto arg = closeAt > callAt ? before.substring (callAt + 35, closeAt) : juce::String();
+                    check (arg.contains ("true"),
+                           "me PIN5: ...and FORCED, because a 4 Hz throttle could swallow the only "
+                           "read a capture ever gets",
+                           "the argument reads: " + arg.trim());
+                }
+            }
+
+            // AND THE V2'S OWN LIST IS STILL COMPLETE, where it now lives: one function, so the
+            // timer and a harness cannot drain different sets. The tick's job is to CALL it.
+            const auto v2Tick  = codeOnly (functionBody (pp2, "void EchoJayProcessor::timerCallback"));
+            const auto v2Gates = codeOnly (functionBody (pp2, "void EchoJayProcessor::refreshMeterGates"));
+            check (v2Tick.contains ("refreshMeterGates()"),
+                   "me PIN5: the V2's 4 Hz tick calls refreshMeterGates(), which is what makes the "
+                   "host's drain and a harness's drain the same drain");
+            for (const char* eng : { "meterEngine", "captureEngine", "captureInEngine",
+                                     "abMeterEngine", "cmpMeter[0]", "cmpMeter[1]",
+                                     "liveEngine", "liveInEngine" })
+                check (v2Gates.contains (eng),
+                       juce::String ("me PIN5: refreshMeterGates() still names ") + eng
+                       + " among the engines it drains");
         }
     }
 
@@ -17857,6 +17945,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 }
                 eng.processBlock (l.data(), r.data(), bs);
             }
+            // POINT 89: the gate runs off the render thread now, so its one consumer is asked
+            // here. force, because this leg reads the figure once and there is no 4 Hz tick.
+            eng.refreshIntegrated (/*force*/ true);
             const auto d = eng.getMeterData();
             // THE SHAPE, not a magic number: a 1 kHz tone at a known RMS has a
             // K-weighted loudness this says out loud, and the row prints the
@@ -17869,6 +17960,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                          c.what, (double) d.integrated, (double) d.loudnessRange, rmsDb, c.seconds);
             const bool sane = d.integrated > -70.0f && d.integrated < 0.0f
                            && std::abs ((double) d.integrated - rmsDb) < 6.0;
+            // ---- AND THE EXACT FIGURE, now that point 89's interim has moved the gate --------
+            //
+            // These are the numbers the IN-THREAD gate gave before the move, recorded by this row
+            // on 31 Oct and quoted in his report. C's interim changes WHERE the gate runs and
+            // nothing about WHAT it computes, so they must come back identical; a hundredth of a
+            // LU is far tighter than any rounding the move could introduce and far looser than
+            // the bit-identical result I actually expect.
+            const double wasBefore = std::abs (c.amp - 0.251189f) < 1.0e-6 ? -12.0366 : -20.0366;
+            check (std::abs ((double) d.integrated - wasBefore) < 0.01,
+                   juce::String ("ig PIN3: ") + c.what + " reads what it read BEFORE the gate moved "
+                   "off the render thread - which is the whole claim of C's interim",
+                   "now " + juce::String (d.integrated, 4) + " LUFS, before the move "
+                   + juce::String (wasBefore, 4) + " LUFS");
             check (sane,
                    juce::String ("ig PIN1: ") + c.what + " gives an integrated figure in range, "
                    "and this is the number point 89's interim must reproduce",
@@ -17899,6 +18003,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     }
                     eng.processBlock (l.data(), r.data(), bs);
                 }
+                eng.refreshIntegrated (/*force*/ true);
                 return (double) eng.getMeterData().integrated;
             };
             const double a = runOnce(), b = runOnce();
@@ -17908,6 +18013,268 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "which is what makes this a baseline and is the property a dropped gating block "
                    "would break",
                    juce::String (a, 6) + " then " + juce::String (b, 6) + " LUFS");
+        }
+
+        // ig PIN4 -- A RESET KEEPS THE AUDIO THAT CAME AFTER IT (C's defect of 02:20)
+        //
+        // The first cut of point 89's interim set a flag on the render thread and, when the
+        // consumer eventually looked, discarded EVERYTHING in the ring - including blocks pushed
+        // AFTER the reset, which are new audio. So every startCapture() silently lost the
+        // beginning of its own figure, and the overflow counter could not see it because nothing
+        // had overflowed. C's test, and it is the right one: reset, feed a known signal, STALL the
+        // consumer, then refresh and check the whole signal is in the figure.
+        {
+            auto feed = [] (MeterEngine& eng, float amp, double seconds, int bs)
+            {
+                std::vector<float> l ((size_t) bs), r ((size_t) bs);
+                const int blocks = (int) (48000.0 * seconds / (double) bs);
+                double phase = 0.0;
+                for (int b = 0; b < blocks; ++b)
+                {
+                    for (int i = 0; i < bs; ++i)
+                    {
+                        phase += 2.0 * juce::MathConstants<double>::pi * 1000.0 / 48000.0;
+                        const auto v = amp * (float) std::sin (phase);
+                        l[(size_t) i] = v; r[(size_t) i] = v;
+                    }
+                    eng.processBlock (l.data(), r.data(), bs);
+                }
+            };
+            const int bs = 512;
+
+            // The control: a fresh engine fed ONLY the quiet tone.
+            MeterEngine fresh; fresh.prepare (48000.0, bs);
+            feed (fresh, 0.1f, 20.0, bs);
+            fresh.refreshIntegrated (true);
+            const double freshFig = (double) fresh.getMeterData().integrated;
+
+            // The subject: loud audio, a reset, then the SAME quiet tone - with no refresh in
+            // between, so the reset and all of the new audio are sitting in the ring together.
+            MeterEngine used; used.prepare (48000.0, bs);
+            feed (used, 0.5f, 20.0, bs);
+            used.refreshIntegrated (true);
+            const double loudFig = (double) used.getMeterData().integrated;
+            used.reset();                       // the render thread applies it on the next block
+            feed (used, 0.1f, 20.0, bs);        // 20 s of new audio, consumer never looked
+            used.refreshIntegrated (true);
+            const double afterFig = (double) used.getMeterData().integrated;
+
+            std::printf ("        (ig) reset with a stalled drain: loud %.4f, fresh-quiet %.4f, "
+                         "after-reset %.4f LUFS (dropped %llu)\n", loudFig, freshFig, afterFig,
+                         (unsigned long long) used.gateBlocksDropped());
+            check (std::abs (afterFig - freshFig) < 0.05 && used.gateBlocksDropped() == 0,
+                   "ig PIN4: audio played AFTER a reset is all in the figure, even when the "
+                   "consumer never looked until the end - the reset is ordered with the data, not "
+                   "timed",
+                   "after the reset " + juce::String (afterFig, 4) + " LUFS against a fresh engine's "
+                   + juce::String (freshFig, 4) + " on the same tone; the loud pass before it read "
+                   + juce::String (loudFig, 4));
+            check (std::abs (afterFig - loudFig) > 1.0,
+                   "ig PIN4: ...and the audio from BEFORE the reset is gone, which is what a reset "
+                   "means",
+                   juce::String (afterFig, 4) + " against " + juce::String (loudFig, 4) + " LUFS");
+        }
+
+        // ig PIN6 -- A RESET WITH NO AUDIO AFTER IT READS AS NO MEASUREMENT (C's gap of 02:40)
+        //
+        // The epoch clears the history when the FIRST BLOCK of the new epoch arrives, and a reset
+        // is not always followed by audio: the meters reset with the transport stopped, or a
+        // capture started and stopped inside 400 ms. Without this the figure would sit at its OLD
+        // value until the next play - which is worse than -100, because it looks like a
+        // measurement of audio nobody has played.
+        {
+            const int bs = 512;
+            MeterEngine eng; eng.prepare (48000.0, bs);
+            std::vector<float> l ((size_t) bs, 0.2f), r ((size_t) bs, 0.2f);
+            for (int b = 0; b < (int) (48000.0 * 10.0 / bs); ++b)
+                eng.processBlock (l.data(), r.data(), bs);
+            eng.refreshIntegrated (true);
+            const double before = (double) eng.getMeterData().integrated;
+
+            eng.reset();
+            // ONE block, so resetState runs on the render thread and bumps the epoch - and only
+            // one, so no hop boundary is crossed and NO block carries the new epoch.
+            eng.processBlock (l.data(), r.data(), bs);
+            eng.refreshIntegrated (true);
+            const double after = (double) eng.getMeterData().integrated;
+
+            std::printf ("        (ig) reset with no audio after it: %.4f before, %.4f after\n",
+                         before, after);
+            check (before > -70.0 && after <= -99.0,
+                   "ig PIN6: a reset that no audio follows reads as NO measurement, not as the old "
+                   "figure - which would look like a reading of audio nobody has played",
+                   juce::String (before, 4) + " LUFS before the reset, "
+                   + juce::String (after, 4) + " after");
+        }
+
+        // ig PIN5 -- A LONG STALL INSIDE THE RING'S CAPACITY LOSES NOTHING (C's sizing point)
+        //
+        // The ring holds 8192 gating blocks, about 819 seconds of audio, and the drain is the
+        // processor's 4 Hz message-thread tick - so a host that keeps that thread busy for a whole
+        // offline bounce starts dropping blocks on a song past about 13.6 minutes. Dropped blocks
+        // are COUNTED and logged, never silent. This proves the part that must never drop: a
+        // sixty-second bounce with the consumer never called until the end, on a VARYING signal
+        // rather than a tone, so the gate has a real distribution to work on.
+        //
+        // ---- AND THE FIRST CUT OF THIS ROW PROVED NOTHING (C, 04:00, 31 Oct 2026) -------------
+        //
+        // It built two engines, called the same `bounce` on both, and compared them. Neither was
+        // drained during its bounce, so it compared one stalled run with another stalled run and
+        // called the equality a proof about draining. C caught it before it was committed. The
+        // comparison now has three legs that differ in WHEN the consumer runs, which is the only
+        // variable the interim introduces:
+        //
+        //   stalled        the consumer never runs until the end          (the offline-bounce case)
+        //   drained        the consumer runs every 50 blocks              (a host behaving normally)
+        //   perBlock       the consumer runs after EVERY block            (see below)
+        //
+        // `perBlock` is the point: the gate used to run on the render thread every time a gating
+        // block completed, so draining after every block is the OLD arrangement's cadence, built
+        // out of the new code. If the move changed what is computed, these three figures cannot
+        // all agree.
+        {
+            const int bs = 512;
+            // `drainEvery` is the whole experiment: 0 means never, n means refresh every n blocks.
+            auto bounce = [bs] (MeterEngine& eng, int drainEvery)
+            {
+                std::vector<float> l ((size_t) bs), r ((size_t) bs);
+                const int blocks = (int) (48000.0 * 60.0 / (double) bs);
+                double phase = 0.0;
+                for (int b = 0; b < blocks; ++b)
+                {
+                    // A level that moves every few seconds: quiet, loud, middling, repeating, so
+                    // the absolute and relative gates both have something to exclude.
+                    const float amp = (b / 200) % 3 == 0 ? 0.02f : ((b / 200) % 3 == 1 ? 0.4f : 0.12f);
+                    for (int i = 0; i < bs; ++i)
+                    {
+                        phase += 2.0 * juce::MathConstants<double>::pi * 700.0 / 48000.0;
+                        const auto v = amp * (float) std::sin (phase);
+                        l[(size_t) i] = v; r[(size_t) i] = v * 0.95f;
+                    }
+                    eng.processBlock (l.data(), r.data(), bs);
+                    if (drainEvery > 0 && (b % drainEvery) == 0)
+                        eng.refreshIntegrated (/*force*/ true);
+                }
+            };
+            auto figureWith = [&bounce, bs] (int drainEvery, juce::uint64* droppedOut) -> double
+            {
+                MeterEngine eng; eng.prepare (48000.0, bs);
+                bounce (eng, drainEvery);
+                eng.refreshIntegrated (/*force*/ true);
+                if (droppedOut != nullptr) *droppedOut = eng.gateBlocksDropped();
+                return (double) eng.getMeterData().integrated;
+            };
+
+            juce::uint64 stalledDropped = 0;
+            const double stalledFig  = figureWith (0,  &stalledDropped);   // never drained
+            const double drainedFig  = figureWith (50, nullptr);           // drained as a host would
+            const double perBlockFig = figureWith (1,  nullptr);           // the OLD cadence
+
+            std::printf ("        (ig) a 60 s varying bounce: stalled %.6f, drained every 50 blocks "
+                         "%.6f, drained EVERY block %.6f LUFS, dropped %llu (ring 8192 blocks, ~819 s)\n",
+                         stalledFig, drainedFig, perBlockFig, (unsigned long long) stalledDropped);
+
+            check (stalledDropped == 0,
+                   "ig PIN5: a 60 s bounce with the drain stalled the whole way loses no gating "
+                   "block, which is C's condition on the interim",
+                   juce::String (stalledDropped) + " dropped");
+            check (std::abs (stalledFig - drainedFig) < 1.0e-6,
+                   "ig PIN5: ...and reads the same as the same bounce drained every 50 blocks, so "
+                   "WHEN the consumer runs cannot move the figure",
+                   "stalled " + juce::String (stalledFig, 6) + ", drained "
+                   + juce::String (drainedFig, 6) + " LUFS");
+            // THE ONE THAT REACHES BACK PAST THE CHANGE. Draining after every block is what the
+            // in-thread gate did, so this figure is the old arrangement's own answer.
+            check (std::abs (stalledFig - perBlockFig) < 1.0e-6,
+                   "ig PIN5: ...and the same as draining after EVERY block, which is the cadence "
+                   "the gate ran at when it was still on the render thread",
+                   "stalled " + juce::String (stalledFig, 6) + ", per-block "
+                   + juce::String (perBlockFig, 6) + " LUFS");
+            // ---- AND THE FIXED NUMBER, from the build that still had the in-thread gate --------
+            //
+            // C's point (c): checking the varying case only against itself leaves the possibility
+            // that all three cadences are equally wrong together. So this is the figure the OLD
+            // gate gives, measured rather than assumed: MeterEngine.cpp and .h as of 76a66af5 (the
+            // last commit whose gate ran inside processBlock) compiled against the same archive,
+            // fed this exact bounce, 31 Oct 2026 at 04:30. `nm` on that binary found no
+            // refreshIntegrated symbol, which is how I know it was the in-thread gate answering.
+            //
+            // The steady tones in PIN3 are pinned the same way. This is the varying one, where a
+            // dropped or reordered gating block would actually move the relative gate.
+            const double preChangeVarying    = -11.356900;
+            const double preChangeVaryingLra =  11.966322;
+            check (std::abs (stalledFig - preChangeVarying) < 0.01,
+                   "ig PIN5: ...and it is the figure the IN-THREAD gate gave for this same bounce "
+                   "before the move, which is the only check here that reaches past the change",
+                   "now " + juce::String (stalledFig, 6) + " LUFS, the in-thread gate gave "
+                   + juce::String (preChangeVarying, 6) + " LUFS");
+            // THE RANGE TOO, because LRA comes through the OTHER ring (the short-term values) and
+            // a fault in that one would leave the integrated figure untouched.
+            {
+                MeterEngine lraEng; lraEng.prepare (48000.0, bs);
+                bounce (lraEng, 0);
+                lraEng.refreshIntegrated (true);
+                const double lraNow = (double) lraEng.getMeterData().loudnessRange;
+                std::printf ("        (ig) ...and its loudness range: %.6f LU (the in-thread gate "
+                             "gave %.6f LU)\n", lraNow, preChangeVaryingLra);
+                check (std::abs (lraNow - preChangeVaryingLra) < 0.01,
+                       "ig PIN5: the loudness range comes back unchanged as well, which is the "
+                       "short-term ring rather than the gating one",
+                       "now " + juce::String (lraNow, 6) + " LU, before "
+                       + juce::String (preChangeVaryingLra, 6) + " LU");
+            }
+        }
+
+        // ig PIN7 -- AND PAST THE RING'S CAPACITY IT DROPS, AND SAYS SO (C's point (b), 04:00)
+        //
+        // PIN5 proves nothing is lost INSIDE the ring's capacity. On its own that is half a claim:
+        // a counter that is always zero is indistinguishable from a counter that cannot count. So
+        // this goes deliberately past the capacity - 900 seconds with the consumer never called,
+        // against a ring that holds about 819 - and requires the loss to be COUNTED. That counter
+        // is what the processor's 4 Hz tick logs, so this is also the proof that the log can fire.
+        //
+        // This is the documented limit, not a defect: a host that starves the message thread for
+        // fifteen unbroken minutes gets a figure that says how much it missed.
+        {
+            const int bs = 512;
+            MeterEngine eng; eng.prepare (48000.0, bs);
+            std::vector<float> l ((size_t) bs), r ((size_t) bs);
+            const int blocks = (int) (48000.0 * 900.0 / (double) bs);
+            double phase = 0.0;
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int i = 0; i < bs; ++i)
+                {
+                    phase += 2.0 * juce::MathConstants<double>::pi * 700.0 / 48000.0;
+                    const auto v = 0.12f * (float) std::sin (phase);
+                    l[(size_t) i] = v; r[(size_t) i] = v * 0.95f;
+                }
+                eng.processBlock (l.data(), r.data(), bs);
+            }
+            const auto dropped = eng.gateBlocksDropped();
+            eng.refreshIntegrated (/*force*/ true);
+            std::printf ("        (ig) 900 s with the drain never called: dropped %llu gating "
+                         "block(s), integrated %.4f LUFS\n",
+                         (unsigned long long) dropped, (double) eng.getMeterData().integrated);
+            check (dropped > 0,
+                   "ig PIN7: past the ring's capacity the loss is COUNTED, so the counter PIN5 "
+                   "reads zero from is a counter that can also read non-zero",
+                   juce::String (dropped) + " dropped over 900 s, against a ring of 8192 blocks");
+            // THE ARITHMETIC, so a change to the ring size has to come past this row - and it is
+            // worth writing out, because my first attempt at it was wrong and this row caught me:
+            //
+            //   900 s of audio is about 8997 completed gating blocks (one per 100 ms, the first
+            //   after the 400 ms window fills), and the same count of short-term values. Each ring
+            //   holds kGateRingBlocks = 8192 and the consumer was never called, so each drops about
+            //   805 - and gateBlocksDropped() sums BOTH rings (gateRing_ + stRing_). So the figure
+            //   to expect is about 1610, not the 808 I first assumed from the gating ring alone.
+            //
+            // Measured 1587 on 31 Oct 2026. The window is wide enough not to care about a few
+            // blocks at the edges and far too tight to survive a ring resized or a ring removed.
+            check (dropped >= 1400 && dropped <= 1800,
+                   "ig PIN7: ...and it loses about what the arithmetic says it must, not an "
+                   "arbitrary number - about 8997 offered to each of two rings that hold 8192",
+                   juce::String (dropped) + " dropped, expected about 1610 (measured 1587)");
         }
     }
 
