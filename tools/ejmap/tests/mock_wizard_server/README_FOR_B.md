@@ -6,7 +6,9 @@ This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its to
 - **The mock now follows staging's rule:** each category's minimum measuring time is a third of the fastest genuine time, at least 1 s.
 - **Staging's own figures:** compressor 50 s, channel strip 1 s, limiter (ceiling only) 1 s. A limiter that also sends its compressor profile takes the compressor's 50.
 - **Please confirm the others:** we derived them with the same rule from the 19-23 Oct times (the rule reproduces your compressor 50 exactly): limiter 50, EQ 2, saturation 1, de-esser 4, reverb 4, delay 6, filter 1, gate 7, transient shaper 4, pitch 2, amp sim 1.
-- **The fixtures were recorded again** against these minimums. Meaw Chain's 2.97 s strip is now accepted, as it was by staging on 29 Oct.
+- **The fixtures were recorded again** against these minimums (31 Oct). Every answer in them is identical to the 27 Oct recording; only the times, nonces and hashes the client sends differ. No recorded scenario sits between the old and the new minimums.
+- **`18_real_results` is the 27 Oct recording, carried over** (seq 148-186; the scenarios after it renumbered to follow it). The pack of real results it was sent from no longer exists on this Mac. Both replays give 0 differences on the whole package against the 31 Oct mock.
+- **Meaw Chain's 2.97 s strip** is now accepted by the mock, as staging accepted it on 29 Oct.
 
 **What was new for STAGING 7 (29 Oct evening; the contract's changelog, "29 Oct, evening", and §4e):**
 - **Three optional keys in a result's `payload`:** `display_check` (`ej_display_check/1`, per control: did the display tell the truth about the sound), `binary` (`{sha256, bytes}` of the plugin's executable) and `readings` (`ej_readings/1`, a compact copy of the raw readings, or `{withheld}`).
