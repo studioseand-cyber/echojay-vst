@@ -16287,6 +16287,38 @@ int main (int, char**)
                 check (ccT.ok && docsT.size() == 2 && stT.sent == 2 && stT.rejected == 0 && statesT.contains ("outcome:bridged") && statesT.contains ("outcome:bridge_no_match"),
                        "contract WZ-CONTRACT-19: a VST3 twin's outcomes accepted (" + statesT.joinIntoString (", ") + "; sent " + juce::String (stT.sent) + ", refused " + juce::String (stT.rejected) + ")");
             }
+            // 8f2. THE MEASURING MINIMUM AT ITS BOUNDARY (31 Oct: staging's rule, a third of the fastest genuine time, at least 1 s): a channel
+            // strip measured in 2.97 s (Meaw Chain's, which staging accepted on 29 Oct) is accepted; a compressor measured in 40 s is refused
+            // "timestamp" (staging's 50 s). The strip is refused under the old table (4 s), so these fixtures tell the two tables apart.
+            // Its own run, 3 min apart, so the "4 at once" rule never decides here
+            scenario ("13g_measuring_minimum_boundary");
+            {
+                const juce::String runG = "run_" + juce::String::toHexString (0x0000000000000f15LL).paddedLeft ('0', 16);
+                const auto ccG = catalogueCheck (*s4, req1 ({ "ee150001", "ee150002" }), runG);
+                std::map<juce::String, ejmap::wizresults::Identity> idsG; juce::StringArray colG;
+                for (const char* id : { "ee150001", "ee150002" }) { idsG["AudioUnit|" + juce::String (id) + "|1.0"] = { "V", "Plug " + juce::String (id) }; colG.add ("AudioUnit|" + juce::String (id) + "|1.0"); }
+                const auto tG = juce::Time::getCurrentTime(); const auto startG = (tG - juce::RelativeTime::minutes (30)).toISO8601 (true);
+                const RunInfo riG { runG, startG, 2, colG, startG };
+                std::map<juce::String, juce::String> endG, startMG;
+                endG[colG[0]] = (tG - juce::RelativeTime::seconds (60)).toISO8601 (true);   startMG[colG[0]] = (tG - juce::RelativeTime::milliseconds (60000 + 2970)).toISO8601 (true);   // the strip: 2.97 s
+                endG[colG[1]] = (tG - juce::RelativeTime::seconds (240)).toISO8601 (true);  startMG[colG[1]] = (tG - juce::RelativeTime::seconds (280)).toISO8601 (true);           // the compressor: 40 s
+                const auto strip = ejmap::wizresults::fromPack (manifestWith ("{\"product\": \"Plug ee150001\", \"kind\": \"channel_strip\", \"plugin_id\": \"AudioUnit|ee150001|1.0\", \"profile\": \"" + profileFile ("ee150001", "ej_strip_profile/0") + "\"}", {}),
+                                                                bundle, runG, false, idsG, {}, endG, {}, {}, startMG);
+                const auto comp = ejmap::wizresults::fromPack (manifestWith ("{\"product\": \"Plug ee150002\", \"kind\": \"compressor\", \"plugin_id\": \"AudioUnit|ee150002|1.0\", \"profile\": \"" + profileFile ("ee150002", "ej_comp_profile/1") + "\"}", {}),
+                                                               bundle, runG, false, idsG, {}, endG, {}, {}, startMG);
+                auto spanOf = [] (const std::vector<ejmap::wizresults::Doc>& docs)
+                {   for (const auto& d : docs) if (d.kind == "profile")
+                        return (juce::Time::fromISO8601 (d.body.getProperty ("measured_at", "").toString()) - juce::Time::fromISO8601 (d.body.getProperty ("measure_started_at", "").toString())).inSeconds();
+                    return -1.0; };
+                Outbox boxG { work.getChildFile ("outbox_g") };
+                ejmap::wizresults::emit (strip, boxG, {}); const auto stG1 = drain (*s4, boxG, riG);
+                ejmap::wizresults::emit (comp, boxG, {});  const auto stG2 = drain (*s4, boxG, riG);
+                const auto whyG = reasonsIn (boxG);
+                check (ccG.ok && std::abs (spanOf (strip) - 2.97) < 0.002 && std::abs (spanOf (comp) - 40.0) < 0.002 && stG1.sent == 1 && stG1.rejected == 0
+                       && stG2.sent == 0 && stG2.rejected == 1 && whyG.joinIntoString (",") == "timestamp",
+                       "contract WZ-CONTRACT-20: the measuring minimum at its boundary - a channel strip in 2.97 s accepted (sent " + juce::String (stG1.sent) + "), a compressor in 40 s refused ("
+                         + whyG.joinIntoString (", ") + "; spans " + juce::String (spanOf (strip), 3) + " / " + juce::String (spanOf (comp), 3) + " s)");
+            }
             // 8e. THE PROMO'S REFUSAL ORDER (ruling 6): account already claimed > setup already claimed > not finished > failed checks > below
             // minimum - each pair where both hold, the higher one wins
             scenario ("13c_promo_refusal_order");
