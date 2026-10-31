@@ -2,7 +2,13 @@
 
 This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its top lists every change since v1). Everything in it was produced on our side against our own mock; nothing came from a real server.
 
-**What is new for STAGING 7 (29 Oct evening; the contract's changelog, "29 Oct, evening", and §4e):**
+**What is new on 31 Oct (the measuring minimums; the contract's changelog, "31 Oct"):**
+- **The mock now follows staging's rule:** each category's minimum measuring time is a third of the fastest genuine time, at least 1 s.
+- **Staging's own figures:** compressor 50 s, channel strip 1 s, limiter (ceiling only) 1 s. A limiter that also sends its compressor profile takes the compressor's 50.
+- **Please confirm the others:** we derived them with the same rule from the 19-23 Oct times (the rule reproduces your compressor 50 exactly): limiter 50, EQ 2, saturation 1, de-esser 4, reverb 4, delay 6, filter 1, gate 7, transient shaper 4, pitch 2, amp sim 1.
+- **The fixtures were recorded again** against these minimums. Meaw Chain's 2.97 s strip is now accepted, as it was by staging on 29 Oct.
+
+**What was new for STAGING 7 (29 Oct evening; the contract's changelog, "29 Oct, evening", and §4e):**
 - **Three optional keys in a result's `payload`:** `display_check` (`ej_display_check/1`, per control: did the display tell the truth about the sound), `binary` (`{sha256, bytes}` of the plugin's executable) and `readings` (`ej_readings/1`, a compact copy of the raw readings, or `{withheld}`).
 - **The mock** checks each one when it is there (`collected_problem`: a malformed one is 422 `shape`) and counts what arrived in `/__mock/state`'s `collected`.
 - **Please confirm** that staging keeps a result carrying them: stored, not refused, not held.

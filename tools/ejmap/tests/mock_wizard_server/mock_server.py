@@ -74,12 +74,16 @@ ALLOW_S = 300   # v1.1 §4: the timestamp allowance, 5 minutes either way
 # real measuring time per category, 19-23 Oct, rounded down: MEASURE_TIMES_FOR_B.md); every other kind measured nothing for the profile and
 # carries measure_started_at == measured_at - no minimum. No more than MAX_OVERLAP measurements of one run overlap in time (the wizard
 # measures 4 at a time); a span of no length overlaps nothing
-MIN_MEASURE_S = {"compressor": 76, "limiter": 76, "eq": 4, "saturation": 2, "de-esser": 6, "reverb": 6, "delay": 9, "filter": 1, "gate": 11,
-                 "transient_shaper": 6, "channel_strip": 4, "pitch": 3, "amp_sim": 2}   # amp_sim: measured by the saturation pass
+# STAGING'S RULE (Sean, 29 Oct; Kathy, 31 Oct: staging's rule wins): each category's minimum is a THIRD of the fastest genuine measuring
+# time, at least 1 s. Staging's own figures known here: compressor 50, channel strip 1, limiter (ceiling only) 1. The others are the
+# same rule applied to the fastest genuine times the previous table was built from (19-23 Oct, one Mac: twice the old half-time
+# minimums), which reproduces staging's compressor 50 exactly - B to confirm them against staging's table
+MIN_MEASURE_S = {"compressor": 50, "limiter": 50, "eq": 2, "saturation": 1, "de-esser": 4, "reverb": 4, "delay": 6, "filter": 1, "gate": 7,
+                 "transient_shaper": 4, "channel_strip": 1, "pitch": 2, "amp_sim": 1}   # amp_sim: measured by the saturation pass
 # LIMITER (CEILING ONLY) (Kathy, 29 Oct; the STAGING 4 run: 21 limiters refused "timestamp"): a limiter result whose measured file is
 # only the ceiling draft (ej_limiter_profile/1, no ej_comp_profile/1 file beside it) took 5.5-66.6 s - the ceiling pass alone, under the
-# compressor's 76 s. Its minimum is half the shortest, rounded down: 2 s. A limiter sending its compressor profile keeps 76
-MIN_CEILING_ONLY_S = 2
+# compressor's 76 s. Staging's minimum for it (31 Oct): 1 s. A limiter sending its compressor profile takes the compressor's 50
+MIN_CEILING_ONLY_S = 1
 def min_measure_s(doc):
     cat = (doc.get("payload") or {}).get("category")
     if cat == "limiter":

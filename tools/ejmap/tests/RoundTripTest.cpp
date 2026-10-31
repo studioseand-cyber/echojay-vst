@@ -14694,7 +14694,7 @@ int main (int, char**)
             "         'created': iso(end), 'measured_at': iso(end), 'measure_started_at': iso(start), 'payload': {'category': cat, 'state': 'measured'}, 'files': files}\n"
             "    return d, rid, rres\n"
             "out = []\n"
-            "for span, schemas, cat in [(5.5, ['ej_limiter_profile/1'], 'limiter'), (1.0, ['ej_limiter_profile/1'], 'limiter'), (60.0, ['ej_comp_profile/1', 'ej_limiter_profile/1'], 'limiter'), (60.0, ['ej_comp_profile/1'], 'compressor')]:\n"
+            "for span, schemas, cat in [(5.5, ['ej_limiter_profile/1'], 'limiter'), (0.5, ['ej_limiter_profile/1'], 'limiter'), (60.0, ['ej_comp_profile/1', 'ej_limiter_profile/1'], 'limiter'), (40.0, ['ej_comp_profile/1'], 'compressor'), (2.97, ['ej_strip_profile/0'], 'channel_strip')]:\n"
             "    d, rid, rres = doc(span, schemas, cat)\n"
             "    out.append('%s:%s' % (m.min_measure_s(d), m.validate(d, rid, rres) == 'timestamp'))\n"
             "print(' '.join(out))\n";
@@ -14704,8 +14704,9 @@ int main (int, char**)
         if (c.start (juce::StringArray { "/usr/bin/python3", pf.getFullPathName() }, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr)) { got = c.readAllProcessOutput().trim(); c.waitForProcessToFinish (20000); }
         pf.deleteFile();
         const auto mock = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/mock_wizard_server/mock_server.py").loadFileAsString();
-        check (got == "2:False 2:True 76:True 76:True" && mock.contains ("MIN_CEILING_ONLY_S = 2") && mock.contains ("if kind == \"profile\" and m - ms < min_measure_s(doc):"),
-               "contract WZ-36OCT-4: a limiter (ceiling only) needs 2 s, a limiter with its compressor profile 76, under it is \"timestamp\" (" + got + ")");
+        check (got == "1:False 1:True 50:False 50:True 1:False" && mock.contains ("MIN_CEILING_ONLY_S = 1") && mock.contains ("if kind == \"profile\" and m - ms < min_measure_s(doc):")
+               && mock.contains ("MIN_MEASURE_S = {\"compressor\": 50, \"limiter\": 50, \"eq\": 2, \"saturation\": 1, \"de-esser\": 4, \"reverb\": 4, \"delay\": 6, \"filter\": 1, \"gate\": 7,\n                 \"transient_shaper\": 4, \"channel_strip\": 1, \"pitch\": 2, \"amp_sim\": 1}"),
+               "contract WZ-36OCT-4: staging's minimums (31 Oct: a third of the fastest genuine time, at least 1 s) - a ceiling-only limiter 1 s, a limiter with its compressor profile and a compressor 50, a channel strip 1 (Meaw Chain's 2.97 s accepted); under it is \"timestamp\" (" + got + ")");
     }
     // WZ-36OCT-5 NOTHING CAME OUT IS NOT A CATEGORY QUESTION (the STAGING 4 run: Reaktor 6 MFX with no ensemble went for review with an empty
     // signature and was refused "shape"). Reads ran, no tone, no harmonics, no pitch, no tail -> not measurable, said why
@@ -16179,7 +16180,7 @@ int main (int, char**)
                          + whyT.joinIntoString (", ") + ")");
             }
             // 8d2. MEASURING TIMES (Sean / B, 24 Oct, contract v1.1): measure_started_at is REQUIRED; a profile's measuring took at least its
-            // category's minimum (a compressor: 76 s); no more than 4 measurements of one run overlap (the wizard measures 4 at a time).
+            // category's minimum (a compressor: 50 s, staging's rule since 31 Oct); no more than 4 measurements of one run overlap (the wizard measures 4 at a time).
             // THE FIXTURE: four compressor profiles measured at once - all accepted. Then the controls, each wrong in one way: a fifth at the
             // same time, a compressor measured in 30 s, a start after its finish, a missing measure_started_at; and an outcome whose start is
             // its finish (measured nothing: no minimum, overlaps nothing) - accepted. Every time is relative, so either replay keeps each verdict
