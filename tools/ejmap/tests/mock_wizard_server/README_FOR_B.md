@@ -10,7 +10,9 @@ This package goes with `WIZARD_SERVER_CONTRACT_v1.1.md` (the changelog at its to
 - **`18_real_results` is the 27 Oct recording, carried over** (seq 148-186; the scenarios after it renumbered to follow it). The pack of real results it was sent from no longer exists on this Mac.
   - **Its sent times were moved by one amount** (3 days 10:03:24.414) onto the 31 Oct timeline. This is `replay.py`'s own rule: the top-level `created`, `measured_at`, `measure_started_at` and `started_at`, every gap kept. Without it, `--shift-created` anchors on the 27 Oct times and puts every 31 Oct result four days in the future.
   - **Its `X-EJ-Content-SHA256` headers are as recorded.** Both replays recompute them from the body they send.
-- **On our mock, both replays give 0 differences** on the whole package (172 exchanges) against the 31 Oct mock. They also give 0 against the 27 Oct mock: these fixtures do not tell the two tables apart. Our suite's WZ-36OCT-4 pins the table itself.
+- **New scenario `13g_measuring_minimum_boundary`:** Meaw Chain's 2.97 s channel strip, accepted (staging's 1 s), and a compressor measured in 40 s, refused `timestamp` (staging's 50 s). Its own run, through the real client.
+- **On our mock, both replays give 0 differences** on the whole package (177 exchanges) against the 31 Oct mock.
+- **Against the 27 Oct mock (the old table), exactly 1 difference:** the 2.97 s strip, refused there under the old 4 s. That is the only exchange that tells the two tables apart. Our suite's WZ-36OCT-4 pins the whole table.
 - **Meaw Chain's 2.97 s strip** is now accepted by the mock, as staging accepted it on 29 Oct.
 
 **What was new for STAGING 7 (29 Oct evening; the contract's changelog, "29 Oct, evening", and §4e):**
@@ -97,6 +99,7 @@ python3 mock_server.py --port 8787          # http://127.0.0.1:8787/api/wizard/v
 | 13d_four_at_once | v1.1 (24 Oct): `measure_started_at` - four compressor profiles measured at once, **all accepted**; then a fifth at once, a compressor measured in 30 s, a start after its end (`timestamp` each) and a missing start (`shape`); an outcome whose start is its end, accepted. Every time is relative, so either replay keeps each verdict |
 | 13e_measurement_identity | v1.1 (24 Oct): every measured file of a profile carries `measurement` {run_id, result_id, nonce, measure_started_at, measured_at}. One honest profile, accepted; then another run's identity, only its run edited, another result's id and a reused nonce (`identity`, tampering), and no block (`shape`) |
 | 13f_vst3_twin_outcomes | 29 Oct: a VST3 twin's two outcome states, `bridged` and `bridge_no_match`, each accepted |
+| 13g_measuring_minimum_boundary | 31 Oct: the measuring minimum at its boundary - a channel strip measured in 2.97 s accepted (staging's 1 s), a compressor measured in 40 s refused `timestamp` (staging's 50 s) |
 | 13h_run_completed | 31 Oct (B, 27 Oct): a check, `POST /runs` and `/complete`; then a check and a result under that finished run, each 409 `run_completed` with B's words; then a check under a new run id, answered as normal |
 | 13c_promo_refusal_order | v1.1: two refusals at once answer with the first in the agreed order: account > collection > not finished > failed checks > below minimum |
 | 14_expired_token_refreshed | `401 token_expired`, the refresh (rotated), the call repeated |
