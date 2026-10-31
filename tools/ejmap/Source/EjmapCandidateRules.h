@@ -53,6 +53,7 @@ struct Decision
     juce::String rule;                           // linked_pair | leader_follower | master_over_trims | main_over_aux
     int pick = -1; juce::String pickName;
     juce::StringArray others;                    // the twin, or the trims
+    juce::StringArray sections;                  // 1 Nov (the multi-stage rule): each other stage, a section of its own, dialled only when named
     juce::String note;                           // why, with the measurements
     juce::String whyNot;                         // the nearest rule that did not fire, for the row
     int pairWith = -1; juce::String pairWithName; // dual_mono_pair: the twin written WITH the amount (ruled 6 Oct)
@@ -112,7 +113,13 @@ inline std::optional<double> onsetShiftDb (const std::map<double, double>& onset
     double lo = 1e9, hi = -1e9; for (const auto& [n, v] : onset) { lo = juce::jmin (lo, v); hi = juce::jmax (hi, v); }
     return hi - lo;
 }
-struct OnsetVerdict { int pick = -1; juce::String pickName, text; };
+struct OnsetVerdict { int pick = -1; juce::String pickName, text; juce::StringArray sections; bool multiStage = false; int pairWith = -1; juce::String pairWithName; };
+// THE MULTI-STAGE RULE (Kathy, 1 Nov; Maag MAGNUM-K: Threshold 1/2 12.2 dB, K Comp Threshold 1/2 16.9, Limiter Threshold 1/2 6.0 - six
+// candidates that each move the onset). Several candidates move where gain reduction begins: the channel pairs among them (a name and
+// its twin by a channel token, shifts within kPairShiftDb) are ONE stage; a stage whose threshold moves the onset at the plugin's
+// instantiate state is engaged by default (a bypassed stage cannot move it); the stage that moves it the MOST fills the core role,
+// when it leads the next stage by kStageLeadDb; every other stage is a section of its own, dialled only when the user names it
+inline constexpr double kPairShiftDb = 0.5, kStageLeadDb = 1.0;
 inline OnsetVerdict onsetRule (const std::vector<std::pair<juce::String, std::optional<double>>>& shifts, const std::vector<int>& indexes)
 {
     OnsetVerdict v; juce::StringArray movers, parts;
@@ -124,6 +131,34 @@ inline OnsetVerdict onsetRule (const std::vector<std::pair<juce::String, std::op
     }
     if (movers.size() == 1) { v.text = "the onset rule: only '" + v.pickName + "' shifts where gain reduction begins (" + parts.joinIntoString (", ") + "): it is the threshold"; return v; }
     v.pick = -1; v.pickName = {};
+    if (movers.size() > 1)
+    {
+        struct Stage { size_t first; double shift; juce::StringArray names; std::vector<size_t> members; };
+        std::vector<Stage> stages;
+        for (size_t i = 0; i < shifts.size(); ++i)
+        {
+            const auto& [n, sh] = shifts[i]; if (! sh || *sh < kOnsetShiftDb) continue;
+            bool joined = false;
+            for (auto& st : stages)
+            {   const auto& fn = shifts[st.first].first;
+                if ((channelPairBase (fn, n).isNotEmpty() || channelPairBase (n, fn).isNotEmpty()) && std::abs (st.shift - *sh) <= kPairShiftDb) { st.names.add (n); st.members.push_back (i); joined = true; break; } }
+            if (! joined) stages.push_back ({ i, *sh, juce::StringArray { n }, std::vector<size_t> { i } });
+        }
+        std::sort (stages.begin(), stages.end(), [] (const Stage& a, const Stage& b) { return a.shift > b.shift; });
+        juce::StringArray st; for (const auto& s : stages) st.add ("[" + s.names.joinIntoString (" / ") + "] " + juce::String (s.shift, 1) + " dB");
+        if (stages.size() == 1 || stages[0].shift - stages[1].shift >= kStageLeadDb)
+        {
+            v.multiStage = true; v.pick = stages[0].first < indexes.size() ? indexes[stages[0].first] : -1; v.pickName = shifts[stages[0].first].first;
+            for (size_t k = 1; k < stages.size(); ++k) v.sections.add (stages[k].names.joinIntoString (" / "));
+            // a channel pair as the core stage: its twin is written WITH the amount (the dual-mono rule, ruled 6 Oct) - one channel alone never
+            if (stages[0].members.size() >= 2 && stages[0].members[1] < indexes.size()) { v.pairWith = indexes[stages[0].members[1]]; v.pairWithName = shifts[stages[0].members[1]].first; }
+            v.text = "the multi-stage rule: " + juce::String ((int) stages.size()) + " engaged stage(s) move where gain reduction begins (" + st.joinIntoString (", ") + "); '" + v.pickName
+                   + "' moves it the most and fills the core role" + (v.pairWith >= 0 ? " (its channel twin '" + v.pairWithName + "' written with it)" : juce::String()) + (v.sections.isEmpty() ? juce::String() : "; the other stages are sections of their own, dialled only when named: " + v.sections.joinIntoString ("; "));
+            return v;
+        }
+        v.text = "the multi-stage rule: the two stages that move the onset most do so alike (" + st.joinIntoString (", ") + ", lead under " + juce::String (kStageLeadDb, 0) + " dB): unsure, no single core stage";
+        return v;
+    }
     v.text = movers.isEmpty() ? "the onset rule: no candidate shifts where gain reduction begins by " + juce::String (kOnsetShiftDb, 0) + " dB or more (" + parts.joinIntoString (", ") + "): unsure"
                               : "the onset rule: " + juce::String (movers.size()) + " candidates each shift where gain reduction begins (" + parts.joinIntoString (", ") + "): unsure, no single threshold";
     return v;
@@ -136,7 +171,7 @@ inline Decision decide (const std::vector<CandidateFacts>& c)
     std::vector<std::pair<juce::String, std::optional<double>>> shifts; std::vector<int> idx;
     for (const auto& x : c) { shifts.push_back ({ x.name, onsetShiftDb (x.onset1) }); idx.push_back (x.index); }
     const auto v = onsetRule (shifts, idx);
-    if (v.pick >= 0) { Decision o; o.decided = true; o.rule = "onset"; o.pick = v.pick; o.pickName = v.pickName; o.note = v.text; for (const auto& x : c) if (x.index != v.pick) o.others.add (x.name); return o; }
+    if (v.pick >= 0) { Decision o; o.decided = true; o.rule = v.multiStage ? "onset_stage" : "onset"; o.pick = v.pick; o.pickName = v.pickName; o.note = v.text; o.sections = v.sections; o.pairWith = v.pairWith; o.pairWithName = v.pairWithName; for (const auto& x : c) if (x.index != v.pick) o.others.add (x.name); return o; }
     d.whyNot = v.text + (d.whyNot.isNotEmpty() ? "; " + d.whyNot : juce::String());
     return d;
 }

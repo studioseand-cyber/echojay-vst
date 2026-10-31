@@ -2334,6 +2334,7 @@ inline juce::var decideByMeasurement (const std::vector<std::pair<sweep::Plan, D
     rd->setProperty ("rule", d.rule); rd->setProperty ("ruleText", d.note);
     auto* pk = new juce::DynamicObject(); pk->setProperty ("index", d.pick); pk->setProperty ("name", d.pickName); rd->setProperty ("pick", juce::var (pk));
     juce::Array<juce::var> others; for (const auto& o : d.others) others.add (o); rd->setProperty (d.rule == "master_over_trims" ? "trims" : "twin", others);
+    if (! d.sections.isEmpty()) { juce::Array<juce::var> ss; for (const auto& x : d.sections) ss.add (x); rd->setProperty ("sections", ss); }   // 1 Nov: the multi-stage rule's other stages
     if (d.pairWith >= 0) { auto* pw = new juce::DynamicObject(); pw->setProperty ("index", d.pairWith); pw->setProperty ("name", d.pairWithName); rd->setProperty ("pair_with", juce::var (pw)); }
     std::cout << "  " << d.rule << ": " << d.note << std::endl;
     return juce::var (rd);

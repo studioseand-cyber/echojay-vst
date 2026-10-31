@@ -12406,6 +12406,21 @@ void testWizardRoute()
                && tr.contains ("(rec.getProperty (\"pitch_measurement\", \"\").toString() == \"shift\" || rec.getProperty (\"measurement\", \"\").toString() == \"shift\")"),
                "wizard WZ-28OCT-3: the pitch draft writes pitch_measurement; the count reads both keys");
     }
+    // WZ-1NOV-1 THE MULTI-STAGE RULE (Kathy, 1 Nov; Maag MAGNUM-K's six): channel pairs are one stage; the stage moving the onset the most fills
+    // the core role (its twin written with it) when it leads the next by 1 dB; every other stage is a section of its own, dialled only when named
+    {
+        namespace CR = ejmap::candidaterules;
+        const auto mk = CR::onsetRule ({ { "Threshold 1", 12.2 }, { "K Comp Threshold 1", 16.9 }, { "Limiter Threshold 1", 6.0 }, { "Threshold 2", 12.2 }, { "K Comp Threshold 2", 16.9 }, { "Limiter Threshold 2", 6.0 } },
+                                       { 10, 20, 30, 11, 21, 31 });
+        auto fact = [] (int idx, const char* name, double shift) { CR::CandidateFacts f; f.index = idx; f.name = name; f.certified = true; for (int k = 0; k < 5; ++k) f.onset1[k / 4.0] = -30.0 + shift * k / 4.0; return f; };
+        const auto d = CR::decide ({ fact (10, "Threshold 1", 12.2), fact (20, "K Comp Threshold 1", 16.9), fact (30, "Limiter Threshold 1", 6.0), fact (11, "Threshold 2", 12.2), fact (21, "K Comp Threshold 2", 16.9), fact (31, "Limiter Threshold 2", 6.0) });
+        const auto close = CR::onsetRule ({ { "Comp", 12.0 }, { "Opto", 11.5 }, { "Limit", 5.0 } }, { 1, 2, 3 });
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (mk.multiStage && mk.pick == 20 && mk.pickName == "K Comp Threshold 1" && mk.pairWith == 21 && mk.sections == juce::StringArray { "Threshold 1 / Threshold 2", "Limiter Threshold 1 / Limiter Threshold 2" }
+               && d.decided && d.rule == "onset_stage" && d.pick == 20 && d.pairWith == 21 && d.sections.size() == 2 && close.pick < 0 && close.text.contains ("unsure, no single core stage")
+               && CR::kStageLeadDb == 1.0 && CR::kPairShiftDb == 0.5 && drv.contains ("if (! d.sections.isEmpty()) { juce::Array<juce::var> ss; for (const auto& x : d.sections) ss.add (x); rd->setProperty (\"sections\", ss); }"),
+               "wizard WZ-1NOV-1: the multi-stage rule - MAGNUM-K's core stage is '" + mk.pickName + "' (with its twin), the other stages sections: " + mk.sections.joinIntoString (" | "));
+    }
     // WZ-28OCT-5 THE ONSET RULE (Kathy, 25 Oct): several threshold candidates and no named rule decided - the one candidate whose move shifts
     // where gain reduction begins (3 dB or more over its positions) is the threshold; none or several -> unsure, each candidate's shift said.
     // The 24 Oct run's four (SPL IRON L / R 20.5 dB each, AMEK 1 / 2 34.8 each, bx_clipper 16.0 each, MAGNUM-K six) are all "several"
@@ -12414,15 +12429,15 @@ void testWizardRoute()
         auto fact = [] (int idx, const char* name, double shift) { CR::CandidateFacts f; f.index = idx; f.name = name; f.certified = true;
             for (int k = 0; k < 5; ++k) f.onset1[k / 4.0] = -30.0 + shift * k / 4.0; return f; };
         const auto one = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 0.5) });
-        const auto both = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 11.0) });
+        const auto both = CR::decide ({ fact (3, "Alpha", 12.0), fact (9, "Beta", 11.5) });   // 1 Nov: two stages within 1 dB - still unsure
         const auto none = CR::decide ({ fact (3, "Alpha", 1.0), fact (9, "Beta", 0.5) });
         const auto iron = CR::onsetRule ({ { "Threshold L", 20.5 }, { "Threshold R", 20.5 } }, { 22, 34 });
         std::map<double, double> two { { 0.0, -30.0 }, { 1.0, -10.0 } };
         const auto loop = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapLoop.h").loadFileAsString();
         const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
         check (one.decided && one.rule == "onset" && one.pick == 3 && one.pickName == "Alpha" && one.others.contains ("Beta")
-               && ! both.decided && both.whyNot.contains ("2 candidates each shift where gain reduction begins") && ! none.decided && none.whyNot.contains ("no candidate shifts")
-               && iron.pick < 0 && iron.text.contains ("unsure, no single threshold") && iron.text.contains ("'Threshold L' 20.5 dB") && ! CR::onsetShiftDb (two)
+               && ! both.decided && both.whyNot.contains ("the two stages that move the onset most do so alike") && ! none.decided && none.whyNot.contains ("no candidate shifts")
+               && iron.pick == 22 && iron.pairWith == 34 && iron.text.contains ("[Threshold L / Threshold R] 20.5 dB")   // 1 Nov: one stage, a channel pair, dialled together && ! CR::onsetShiftDb (two)
                && loop.contains ("o.reason = juce::String (cands.size()) + \" threshold candidates: \" + candidaterules::onsetRule (shifts, idx).text;")
                && drv.contains ("f.onset1[(double) one.d.norms[i]] = (double) it1->second; }   // 27 Oct: the onset rule")
                && drv.contains ("ruleDecided = decideByMeasurement (cands, opt.out.getChildFile (stem + \".processes.json\"), opt.out.getChildFile (\"raw\"));")   // the file the sweep writes
