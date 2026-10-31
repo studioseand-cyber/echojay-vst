@@ -17790,8 +17790,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         const auto st = juce::String (sst.str());
         check (st.contains ("mktemp -d \"/tmp/ej push guard test.XXXXXX\""),
                "gd PIN4: the self-test really works in a directory whose name has a space in it");
-        check (st.contains ("a run that compiled NOTHING refuses"),
-               "gd PIN4: and covers the unverified-pass as well as the splitting");
+        // BOTH SIDES OF THE LINE, because I crossed it myself: the first cut of the refusal blocked
+        // a legitimate harness-only push, so the self-test now covers HER fault (no database
+        // readable) and the OVER-CORRECTION (a readable database that simply does not list the
+        // file). A pin naming only one of them would let the other back in.
+        check (st.contains ("a guard that could read NO database refuses"),
+               "gd PIN4: it covers her fault - no database readable, and the push went anyway");
+        check (st.contains ("a readable database that does not list a file lets it through"),
+               "gd PIN4: ...and the over-correction, which blocked a harness-only commit");
     }
 
     // ---- AND NO SIGNATURE WENT UNREAD (30 Oct 2026) ------------------------------------------

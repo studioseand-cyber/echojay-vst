@@ -1010,16 +1010,42 @@ struct RigPlayHead : juce::AudioPlayHead
     juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override
     {
         juce::AudioPlayHead::PositionInfo p;
-        p.setIsPlaying (true);
+        // NOT A CONSTANT TRUE (C's point, 31 Oct 2026). 2b's LM6 and his "the counter stops with
+        // the transport" check both need a STOPPED transport on demand, and a playhead that can
+        // only roll is the same kind of half-instrument as one that could never roll - which is
+        // what this file had until tonight.
+        p.setIsPlaying (playing.load (std::memory_order_relaxed));
         p.setIsRecording (false);
-        p.setTimeInSamples (samples);
-        p.setTimeInSeconds ((double) samples / 48000.0);
+        const auto n = samples.load (std::memory_order_relaxed);
+        p.setTimeInSamples (n);
+        // THE PREPARED RATE, not 48000. Every rig instance is 48 k today and the hard-coded
+        // number was right by luck; a row that prepares at another rate would have had a playhead
+        // reporting a time its own audio disagreed with.
+        p.setTimeInSeconds (rate > 0.0 ? (double) n / rate : 0.0);
         p.setBpm (120.0);
         return p;
     }
     bool canControlTransport() override { return false; }
-    void advance (int n) noexcept { samples += n; }
-    juce::int64 samples = 0;
+    /** Only while rolling: a stopped transport does not move, which is the whole point of being
+        able to stop it. */
+    void advance (int by) noexcept
+    {
+        if (playing.load (std::memory_order_relaxed))
+            samples.fetch_add (by, std::memory_order_relaxed);
+    }
+    void setPlaying (bool p) noexcept { playing.store (p, std::memory_order_relaxed); }
+    bool isRolling() const noexcept { return playing.load (std::memory_order_relaxed); }
+
+    // ---- ATOMIC, BECAUSE TWO THREADS TOUCH THEM (C's point, 31 Oct 2026) ------------------
+    //
+    // The rig thread calls setPlaying() while the render thread reads both of these in
+    // getPosition() and advance(). Harmless in practice on this hardware and still a data race
+    // that TSan would flag - and worse for the rows than for the machine: a row that stops the
+    // transport needs the stop seen by the NEXT block, not eventually. Relaxed is enough; there
+    // is nothing else to order against.
+    double                   rate    = 48000.0;   // set once in prepare, before any block
+    std::atomic<bool>        playing { true };
+    std::atomic<juce::int64> samples { 0 };
 };
 
 struct Track
@@ -1043,6 +1069,15 @@ struct Track
     void prepare (double sr, int block)
     {
         plugin->setPlayConfigDetails (2, 2, sr, block);
+        // ---- THE PLAY BUTTON, INSTALLED ONCE (31 Oct 2026) -------------------------------
+        //
+        // Before prepareToPlay, so the plugin's first block already has a transport to read, and
+        // ONCE rather than per block (C's point). The V2 feeds its live taps only while the
+        // playhead says it is rolling, and until tonight this rig installed no playhead at all -
+        // so every pass it has ever done was a stopped transport, and LV9r went green on a build
+        // with the render hang deliberately put back.
+        playHead.rate = sr;
+        plugin->setPlayHead (&playHead);
         plugin->prepareToPlay (sr, block);
         buf.setSize (2, block);
         if (trackName.isNotEmpty())
@@ -1079,9 +1114,10 @@ struct Track
             buf.setSample (1, i, v);
         }
         midi.clear();
-        // THE TRANSPORT IS ROLLING, and the playhead advances with it: the plugin's live taps are
-        // fed only while it says so, which is the gate LV9r could not reach before.
-        if (plugin != nullptr) { plugin->setPlayHead (&playHead); playHead.advance (n); }
+        // The playhead advances with the audio; it is INSTALLED once, in prepare (C's point: not
+        // every block). The plugin's live taps are fed only while it says it is rolling, which is
+        // the gate LV9r could not reach before tonight.
+        playHead.advance (n);
         // ---- A TRACK WHOSE PLUGIN IS GONE IS SILENT, NOT A CRASH (27 Oct 2026) -----------------
         // RE5 and RH6 DELETE a Link's track mid-pass - that is what they are for - and now that the
         // live-view rows run before the rest of the suite, every later leg pumps tracks that may no
@@ -1105,9 +1141,10 @@ struct Track
             buf.setSample (1, i, v);
         }
         midi.clear();
-        // THE TRANSPORT IS ROLLING, and the playhead advances with it: the plugin's live taps are
-        // fed only while it says so, which is the gate LV9r could not reach before.
-        if (plugin != nullptr) { plugin->setPlayHead (&playHead); playHead.advance (n); }
+        // The playhead advances with the audio; it is INSTALLED once, in prepare (C's point: not
+        // every block). The plugin's live taps are fed only while it says it is rolling, which is
+        // the gate LV9r could not reach before tonight.
+        playHead.advance (n);
         if (plugin == nullptr) return;   // the same deliberate deletion (see above)
         plugin->processBlock (buf, midi);
     }
