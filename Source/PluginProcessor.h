@@ -7,6 +7,7 @@
 #include "EJSlotMeters.h"   // per-slot meters published by a Link at 30 Hz (25 Oct 2026)
 #include "MeterEngine.h"
 #include "EJLiveBuffer.h"   // item 4: the rolling live series and its rules
+#include "EJReferenceGain.h"   // 2c: clampReferenceGainDb, the cut-only rule in one place
 #include "EedLatencyLog.h"
 #include "PluginScanner.h"
 #include "ReferenceAnalyser.h"
@@ -446,6 +447,24 @@ public:
     void publishKeyFeed(const KeySources& sources);
 
     MeterEngine& getMeterEngine()   { return meterEngine; }
+
+    // ---- 2c: THE REFERENCE'S PLAYBACK GAIN (Sean's ruling, Kathy's MatchReferenceGainPort) ----
+    //
+    // His ruling: REAL LEVEL by default. Flipping to the reference plays it at its true level and
+    // nothing is matched unless he asks. The optional "Level-match" toggle is Kathy's, on her page,
+    // and it asks for a gain through here.
+    //
+    // CUT ONLY. A positive request is clamped to 0 and never boosts: boosting a reference to meet a
+    // quiet mix invents headroom that is not there and can clip the monitor path. The floor stops
+    // a request that would silence it instead of matching it.
+    //
+    // RETURNS WHAT WAS APPLIED, which is her 2c addendum: her page says "Matched 24 of 30 dB"
+    // truthfully only if it is told the truth. Applied at the OUTPUT, on the reference alone
+    // (processBlock's audition switch), smoothed per sample, never on the mix path.
+    static constexpr float kRefGainFloorDb = -40.0f;
+    float setReferenceGainDb (float wantedDb);
+    float referenceGainDb() const noexcept { return refGainDb_.load (std::memory_order_relaxed); }
+    float referenceGainFloorDb() const noexcept { return kRefGainFloorDb; }
 
     /** POINT 89: drains every meter engine's gating ring and runs the EBU R128 gate, off the render
         thread. The 4 Hz processor timer calls this; a harness that drives this processor WITHOUT a
@@ -2376,6 +2395,21 @@ private:
     void borrowApplyFinish(bool applied, const juce::String& why,
                            bool restored);
 
+    // ---- 2c's reference gain: the request, and the smoother that follows it ----------------
+    // refGainDb_ is written by the message thread and read by the render thread (one float, one
+    // atomic). refGainSmoothed_ is the render thread's own state and nothing else touches it.
+    // kRefGainStep is one 8 ms ramp at 48 kHz, the same shape as the A/B crossfade above it.
+    std::atomic<float> refGainDb_ { 0.0f };
+    float              refGainSmoothed_ = 1.0f;
+    static constexpr float kRefGainStep = 1.0f / (0.008f * 48000.0f);
+    /** The linear target the render thread ramps toward, from the clamped request. */
+    float refGainLinearTarget() const noexcept
+    {
+        const float stored = refGainDb_.load (std::memory_order_relaxed);
+        const float db = echojay::clampReferenceGainDb (stored, kRefGainFloorDb, stored);
+        return db <= kRefGainFloorDb ? juce::Decibels::decibelsToGain (kRefGainFloorDb)
+                                     : juce::Decibels::decibelsToGain (db);
+    }
     MeterEngine meterEngine;       // Live meters (always running — live input only)
     MeterEngine captureEngine;     // Capture pass meters (reset each capture)
     // A13 (C2 §5.1): the RACK INPUT, pre-chain and pre-bus-trim, fed ONLY while Capturing. C4's

@@ -414,7 +414,17 @@ using echojay::matchSelectedWindow;
 // (REQUESTS_FOR_A_8, R8-1), so there is no port and the page offers no toggle:
 // it shows the gap line only. When A's call lands, this returns an adapter over
 // it, and nothing else on the page changes.
-static echojay::MatchReferenceGainPort* matchLevelPortOf (echojay::MatchHost&) { return nullptr; }
+// ---- 2c: THE PORT IS THE HOST, WHEN THE HOST HAS ONE (A, 31 Oct 2026) ----------------------
+//
+// Kathy's note said this returns nullptr "until A's call lands", and that the page's port would be
+// "a two-line adapter" over it. The adapter is on the editor itself (it implements her
+// MatchReferenceGainPort by delegating to the processor, where the clamp and the smoothing live),
+// so this is a cast rather than a new object: a host that has the port offers the toggle, and one
+// that does not still shows the gap line and offers nothing. Her fakes are unaffected.
+static echojay::MatchReferenceGainPort* matchLevelPortOf (echojay::MatchHost& h)
+{
+    return dynamic_cast<echojay::MatchReferenceGainPort*> (&h);
+}
 
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {

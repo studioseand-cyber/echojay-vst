@@ -12,6 +12,7 @@
 #include "EJInlineViewIdentity.h"   // the rack-and-slot identity of what is on screen
 #include "EJCompareSlotState.h"    // what a Compare slot is, so MatchHost can name one
 #include "EJMatchTab.h"            // MatchHost: the Match tab's one door to this class
+#include "EJMatchAudition.h"      // 2c: MatchReferenceGainPort, which this class implements
 #include "EJShadowRetry.h"         // a copy-road request the rack cache could not answer yet
 #include "EJAgentPanel.h"
 #include "EJAgentRunView.h"   // ITEM 0 (14 Oct 2026): the agent run as a transcript row
@@ -70,7 +71,8 @@ class EchoJayEditor : public juce::AudioProcessorEditor,
                            EJMatchTab.h, the contract is docs/CONTRACT_MATCH_HOST_2026-10-27.md, and
                            several of its calls are satisfied by members this class already had under
                            the same names: that is why the list looks the way it does. */
-                       public echojay::MatchHost
+                       public echojay::MatchHost,
+                       public echojay::MatchReferenceGainPort
 {
 public:
     // ---- echojay::EditorBorrower -------------------------------------------------------------
@@ -1266,6 +1268,11 @@ private:
     void setAudible (echojay::MatchRefSide side) override;
     juce::String postToSessionChat (const juce::String& kind, const juce::var& payload) override;
     void openSessionChatAtMessage (const juce::String& messageId) override;
+    // ---- 2c: KATHY'S MatchReferenceGainPort, as the two-line adapter her comment asks for -----
+    // The clamp, the floor and the smoothing all live in the processor (one place for the rule);
+    // these hand her page the figure that was actually applied.
+    float setReferenceGainDb (float wantedDb) override { return processorRef.setReferenceGainDb (wantedDb); }
+    float referenceGainFloorDb() const override       { return processorRef.referenceGainFloorDb(); }
     /** The row openSessionChatAtMessage is taking him to, and where the paint found it.
         revealRowTop_ is in the chat content's own coordinates (the paint adds the scroll back on),
         and -1 means this paint has not seen the row yet - the chat may not even be loaded. */

@@ -1287,7 +1287,10 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     
     // ===== Compare dual-stream: both advance + analyse into temp buffers =====
     // NEVER touches the main output buffer — DAW passthrough is always preserved.
-    // The audible stream's audio is copied to the output buffer AFTER rendering.
+    // The audible stream's audio is substituted at the END of this function (R9-1, 31 Oct 2026):
+    // after the chain and after every tap, so nothing of ours is on the reference and the mix is
+    // what gets measured. See the comment at the substitution.
+    bool auditionPending = false;
     {
         int audible = cmpAudible.load();
         std::lock_guard<std::mutex> lock(cmpMutex);
@@ -1377,21 +1380,23 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             }
         }
 
-        if (contributed)
-        {
-            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            {
-                float* out = buffer.getWritePointer(ch);
-                const float* mix = cmpMixBuf.getReadPointer(std::min(ch, 1));
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    const float gT = juce::jmin(1.0f, cmpGainScratch[(size_t)i]);
-                    out[i] = out[i] * (1.0f - gT) + mix[i];
-                }
-            }
-            left = buffer.getReadPointer(0);
-            right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : left;
-        }
+        // ---- THE MIX INTO THE OUTPUT HAPPENS AT THE END NOW (R9-1, 31 Oct 2026) -----------
+        //
+        // Kathy's R9-1, and both halves of it were true here: the audible stream was mixed into the
+        // buffer AT THIS POINT, which is above chainHost.process AND above every measurement tap.
+        // So an auditioned reference went through the user's whole mix-bus chain (an A/B that
+        // compares his processing against the reference's, which is not the comparison he asked
+        // for) and the meters measured the reference and called it the mix.
+        //
+        // The fix is one move, not two: the mix is deferred to the end of processBlock, after the
+        // chain and after every tap. Then the chain processes the MIX while the reference is
+        // audible - so its compressors and limiters keep their state and nothing jumps when he
+        // flips back, which was session C's condition - the meters and the Live buffer measure the
+        // mix, and the reference reaches the output with nothing of ours on it.
+        //
+        // cmpMixBuf and cmpGainScratch are audio-thread scratch and keep their contents until then;
+        // the ramp in them is unchanged, so the crossfade is the same one and cannot click.
+        auditionPending = contributed;
 
         // SYNC lockstep for two captures: keep positions aligned by fraction
         if (cmpSyncToTransport.load() && cmpBothCaptures.load())
@@ -1663,9 +1668,18 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // Silence is skipped by the engine itself: its hop accumulator gates on the absolute floor,
     // so a stopped passage adds no hops rather than adding quiet ones.
     {
-        const bool auditioning = abActive.load (std::memory_order_relaxed)
-                              && abPlayingRef.load (std::memory_order_relaxed);
-        const bool feed = transportPlaying.load (std::memory_order_relaxed) && ! auditioning;
+        // ---- AND IT READS THE MIX EVEN WHILE THE REFERENCE PLAYS (R9-1, 31 Oct 2026) --------
+        //
+        // This used to stop feeding while the reference was audible, because the A/B substitution
+        // happened hundreds of lines ABOVE this tap and the buffer held the reference. Sean's
+        // ruling allowed either ("the tap still sits before the switch, or pauses"), and pausing
+        // was the honest choice while the switch was upstream.
+        //
+        // The switch is now at the END of processBlock, so this tap is genuinely before it and the
+        // buffer here is the mix whatever is being monitored. So it keeps feeding, which is
+        // Kathy's requirement 1 in its stronger form: the Live curve is about his mix, and
+        // auditioning the reference no longer costs him a gap in it.
+        const bool feed = transportPlaying.load (std::memory_order_relaxed);
         liveFeeding_.store (feed, std::memory_order_relaxed);
         if (feed) liveEngine.processBlock (left, right, buffer.getNumSamples());
     }
@@ -1828,6 +1842,46 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         }
         else
             editSoloMix_.skip(buffer.getNumSamples());
+    }
+
+    // =====================================================================
+    // THE AUDITION SWITCH, AT THE OUTPUT (Kathy's R9-1, 31 Oct 2026)
+    // =====================================================================
+    //
+    // Everything of ours is behind us: the chain has processed the MIX (so its compressors and
+    // limiters keep their state and nothing jumps when he flips back), the meters and the Live
+    // buffer have measured the MIX, the capture and the self-key tap have read the MIX. What is
+    // substituted here is the reference, with nothing on it but its own gain.
+    //
+    // THE GAIN IS APPLIED HERE, which is 2c's audio side: cut only, never above 0 dB, floored, and
+    // smoothed per sample so a change cannot zipper. It is on the REFERENCE only - at gain 1 and
+    // with no reference audible this loop does not run at all, so the mix path is untouched by
+    // construction rather than by care.
+    //
+    // ABOVE THE PLAYBACK SIMULATION, deliberately: that stage models the room and the speakers he
+    // is listening THROUGH, so it belongs to the listening and not to the material. Both sides of
+    // an A/B must pass through it or the comparison is unfair in the other direction.
+    if (auditionPending)
+    {
+        const int nS = buffer.getNumSamples();
+        const float gTarget = refGainLinearTarget();        // the clamped, smoothed reference gain
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            float* out = buffer.getWritePointer (ch);
+            const float* mix = cmpMixBuf.getReadPointer (std::min (ch, 1));
+            float g = refGainSmoothed_;                     // per channel, from the same start
+            for (int i = 0; i < nS; ++i)
+            {
+                // THE SAME SMOOTHER AS THE CROSSFADE, and the same shape: one step per sample
+                // toward the target, so a gain move and a flip cannot click.
+                g += juce::jlimit (-kRefGainStep, kRefGainStep, gTarget - g);
+                const float gT = juce::jmin (1.0f, cmpGainScratch[(size_t) i]);
+                out[i] = out[i] * (1.0f - gT) + mix[i] * g;
+            }
+            if (ch == buffer.getNumChannels() - 1) refGainSmoothed_ = g;
+        }
+        left  = buffer.getReadPointer (0);
+        right = buffer.getNumChannels() >= 2 ? buffer.getReadPointer (1) : left;
     }
 
     // =====================================================================
@@ -2194,6 +2248,34 @@ echojay::LiveBufferState EchoJayProcessor::liveBufferState() const
 // no integrated loudness at all, which is deliberate - a missing call should be a fault you can
 // see, not a figure quietly guessed - but it means the list has to be right. wasEverRefreshed() is
 // what a leg checks that against.
+// ---- 2c: THE REFERENCE'S PLAYBACK GAIN, AND WHAT WAS ACTUALLY APPLIED ----------------------
+//
+// Cut only, floored, and it returns the applied figure rather than the asked one - Kathy's 2c
+// addendum, so her page can say "Matched 24 of 30 dB" and have that be true. The clamp is here, in
+// one place, and refGainLinearTarget() reads the same clamp on the render thread, so the number she
+// is told and the number he hears cannot disagree.
+float EchoJayProcessor::setReferenceGainDb (float wantedDb)
+{
+    // NOT FINITE IS NOT A REQUEST. A NaN would propagate into the ramp and silence the monitor
+    // path for the rest of the session, so it is refused and the current gain is reported back.
+    const float current = refGainDb_.load (std::memory_order_relaxed);
+    if (! std::isfinite (wantedDb))
+    {
+        EchoJay_NSLog ("EJMatch: setReferenceGainDb was asked for a non-finite gain, which is "
+                       "refused; the reference keeps the gain it had");
+        return current;
+    }
+    // THE RULE IS A FUNCTION (echojay::clampReferenceGainDb), so a leg can read it without a
+    // processor and her page's figure cannot come from a second copy of the arithmetic.
+    const float applied = echojay::clampReferenceGainDb (wantedDb, kRefGainFloorDb, current);
+    refGainDb_.store (applied, std::memory_order_relaxed);
+    if (std::abs (applied - wantedDb) > 0.01f)
+        EchoJay_NSLog (("EJMatch: the reference gain was asked for " + juce::String (wantedDb, 1)
+                        + " dB and " + juce::String (applied, 1) + " dB was applied (cut only, "
+                        "floor " + juce::String (kRefGainFloorDb, 0) + " dB)").toRawUTF8());
+    return applied;
+}
+
 void EchoJayProcessor::refreshMeterGates()
 {
     for (MeterEngine* e : { &meterEngine, &captureEngine, &captureInEngine,

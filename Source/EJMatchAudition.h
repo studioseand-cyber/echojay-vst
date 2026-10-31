@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <cmath>
 #include <optional>
+#include "EJReferenceGain.h"   // 2c: the cut-only rule, in a header with no cycle in it
 #include "EJMatchHandOff.h"   // MatchHost, MatchSlotPair, the page view, the hand-off row this sits under
 
 // =============================================================================

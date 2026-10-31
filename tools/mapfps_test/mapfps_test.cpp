@@ -71,6 +71,7 @@
 #include "EJMatchWindow.h"     // C4 sections 6 and 7: crest, PSR, loudest-30, over the hop series
 #include "EJMatchAttribution.h" // C4 sections 2 to 5: routing, sizing and sentences for a band move
 #include "EJMatchChatCard.h"  // 31 Oct: the visible card a successful press leaves
+#include "EJReferenceGain.h"   // 31 Oct: the auditioned reference's cut-only gain rule
 #include "ma10/ma10_hops.h"    // MA10's offline hop series: the block-size crest pin feeds it audio
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
@@ -18229,13 +18230,42 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // ig PIN7 -- AND PAST THE RING'S CAPACITY IT DROPS, AND SAYS SO (C's point (b), 04:00)
         //
         // PIN5 proves nothing is lost INSIDE the ring's capacity. On its own that is half a claim:
-        // a counter that is always zero is indistinguishable from a counter that cannot count. So
-        // this goes deliberately past the capacity - 900 seconds with the consumer never called,
-        // against a ring that holds about 819 - and requires the loss to be COUNTED. That counter
-        // is what the processor's 4 Hz tick logs, so this is also the proof that the log can fire.
+        // a counter that is always zero is indistinguishable from a counter that cannot count.
         //
-        // This is the documented limit, not a defect: a host that starves the message thread for
-        // fifteen unbroken minutes gets a figure that says how much it missed.
+        // ---- AND IT DOES NOT NEED 900 SECONDS OF AUDIO TO SAY SO (C, 18:25, 31 Oct 2026) -----
+        //
+        // The first cut rendered 900 s through a full-size ring, which is 20 minutes of every
+        // commit's gate. C's point: the capacity is a TEMPLATE PARAMETER, so a small instance
+        // proves the same arithmetic instantly. MeterEngine::testRingOverflowCounts pushes past a
+        // capacity of 64 with nothing popping, and this checks the numbers EXACTLY rather than for
+        // being non-zero - which is a stronger check than the old row made, not a weaker one.
+        {
+            juce::uint64 accepted = 0, dropped = 0;
+            MeterEngine::testRingOverflowCounts (100, accepted, dropped);
+            std::printf ("        (ig) a 64-block ring offered 100 blocks with no drain: accepted "
+                         "%llu, dropped %llu\n",
+                         (unsigned long long) accepted, (unsigned long long) dropped);
+            check (dropped > 0,
+                   "ig PIN7: past its capacity the ring COUNTS what it loses, so the counter PIN5 "
+                   "reads zero from is a counter that can also read non-zero",
+                   juce::String (dropped) + " dropped");
+            check (accepted == 64 && dropped == 36,
+                   "ig PIN7: ...and the arithmetic is exact: a ring of 64 offered 100 takes 64 and "
+                   "loses 36. A ring resized or a counter stubbed fails this on the number",
+                   "accepted " + juce::String (accepted) + ", dropped " + juce::String (dropped));
+        }
+
+        // ---- AND THE WHOLE PATH AT FULL CAPACITY, IN THE SLOWER TIER -------------------------
+        //
+        // The fast rows above prove the ring. This proves the ENGINE: 900 s of real audio through
+        // the real gating path, past the real 8192-block capacity, with gateBlocksDropped() (which
+        // sums BOTH rings) reporting the loss. It is the row that would catch a capacity changed
+        // in the header or a counter that is not wired to the engine's accessor.
+        //
+        // It costs about twenty minutes, so it runs in the install gate and the nightly rather than
+        // on every commit: EJ_MAPFPS_SLOW=1. It SAYS when it did not run - a row that goes quiet is
+        // the thing gate_verdict exists to prevent.
+        if (::getenv ("EJ_MAPFPS_SLOW") != nullptr)
         {
             const int bs = 512;
             MeterEngine eng; eng.prepare (48000.0, bs);
@@ -18253,29 +18283,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 eng.processBlock (l.data(), r.data(), bs);
             }
             const auto dropped = eng.gateBlocksDropped();
-            eng.refreshIntegrated (/*force*/ true);
+            eng.refreshIntegrated (true);
             std::printf ("        (ig) 900 s with the drain never called: dropped %llu gating "
                          "block(s), integrated %.4f LUFS\n",
                          (unsigned long long) dropped, (double) eng.getMeterData().integrated);
-            check (dropped > 0,
-                   "ig PIN7: past the ring's capacity the loss is COUNTED, so the counter PIN5 "
-                   "reads zero from is a counter that can also read non-zero",
-                   juce::String (dropped) + " dropped over 900 s, against a ring of 8192 blocks");
-            // THE ARITHMETIC, so a change to the ring size has to come past this row - and it is
-            // worth writing out, because my first attempt at it was wrong and this row caught me:
-            //
-            //   900 s of audio is about 8997 completed gating blocks (one per 100 ms, the first
-            //   after the 400 ms window fills), and the same count of short-term values. Each ring
-            //   holds kGateRingBlocks = 8192 and the consumer was never called, so each drops about
-            //   805 - and gateBlocksDropped() sums BOTH rings (gateRing_ + stRing_). So the figure
-            //   to expect is about 1610, not the 808 I first assumed from the gating ring alone.
-            //
-            // Measured 1587 on 31 Oct 2026. The window is wide enough not to care about a few
-            // blocks at the edges and far too tight to survive a ring resized or a ring removed.
+            // THE ARITHMETIC, written out because my first attempt at it was wrong and this row
+            // caught me: 900 s is about 8997 gating blocks and the same count of short-term values;
+            // each ring holds 8192 and nothing drained them, so each loses about 805 - and
+            // gateBlocksDropped() sums BOTH. About 1610, not the 808 the gating ring alone predicts.
+            // Measured 1587 on 31 Oct 2026.
             check (dropped >= 1400 && dropped <= 1800,
-                   "ig PIN7: ...and it loses about what the arithmetic says it must, not an "
-                   "arbitrary number - about 8997 offered to each of two rings that hold 8192",
+                   "ig PIN7 (slow tier): the ENGINE's own counter reports the loss at full "
+                   "capacity, about 8997 offered to each of two rings that hold 8192",
                    juce::String (dropped) + " dropped, expected about 1610 (measured 1587)");
+        }
+        else
+        {
+            std::printf ("        (ig) ig PIN7's full-capacity 900 s run was NOT run (set "
+                         "EJ_MAPFPS_SLOW=1; it runs in the install gate and the nightly)\n");
         }
     }
 
@@ -18458,6 +18483,115 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "nextChatSeq, reached by a chat turn finishing after the close",
                missing.isEmpty() ? juce::String ("none left registered")
                                  : "STILL REGISTERED AT DESTRUCTION: " + missing.joinIntoString (", "));
+    }
+
+    // =================================================================
+    // ra -- THE AUDITIONED REFERENCE: WHERE IT GOES IN, AND AT WHAT GAIN
+    //       (Kathy's R9-1 and Sean's 2c, both of 31 Oct 2026)
+    //
+    // Her R9-1 asked two questions about the audition switch and the answer to
+    // both was yes: it was mixed into the buffer ABOVE chainHost.process, so an
+    // auditioned reference went through the user's whole mix-bus chain, and
+    // ABOVE the measurement taps, so the meters measured the reference and
+    // called it the mix.
+    //
+    // The fix is one move: the substitution happens at the END of processBlock.
+    // These rows hold that ordering, because it is the whole of the fix and a
+    // hand could put it back where it was without anything else noticing.
+    // =================================================================
+    {
+        std::cout << "the auditioned reference: where it goes in, and at what gain:\n";
+
+        // ra PIN1 -- THE GAIN RULE, PURE: cut only, floored, and a non-finite request is refused.
+        {
+            const float fl = -40.0f;
+            check (std::abs (echojay::clampReferenceGainDb (-50.0f, fl, 0.0f) - fl) < 1.0e-6f,
+                   "ra PIN1: a request below the floor returns the FLOOR, not silence - a reference "
+                   "he cannot hear is not a comparison (his row: request -50, get the floor)",
+                   juce::String (echojay::clampReferenceGainDb (-50.0f, fl, 0.0f), 2) + " dB");
+            check (std::abs (echojay::clampReferenceGainDb (3.0f, fl, 0.0f)) < 1.0e-6f,
+                   "ra PIN1: a POSITIVE request returns 0 and never boosts - boosting a reference to "
+                   "meet a quiet mix invents headroom that is not there (his row: request +3, get 0)",
+                   juce::String (echojay::clampReferenceGainDb (3.0f, fl, 0.0f), 2) + " dB");
+            check (std::abs (echojay::clampReferenceGainDb (-12.0f, fl, 0.0f) + 12.0f) < 1.0e-6f,
+                   "ra PIN1: and a request inside the range is applied exactly, so \"Matched 24 of "
+                   "30 dB\" can be a true sentence (Kathy's 2c addendum)");
+            check (std::abs (echojay::clampReferenceGainDb (std::nanf (""), fl, -7.5f) + 7.5f) < 1.0e-6f,
+                   "ra PIN1: a non-finite request changes nothing and reports the gain in force - a "
+                   "NaN in the ramp would silence the monitor path for the rest of the session");
+        }
+
+        // ra PIN2 -- THE ORDER IN processBlock, which IS the fix.
+        {
+            std::ifstream f ("Source/PluginProcessor.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const auto src = codeOnly (juce::String (ss.str()));
+            const auto pb  = codeOnly (functionBody (src, "void EchoJayProcessor::processBlock"));
+            check (pb.isNotEmpty(), "ra PIN2: found processBlock");
+
+            const int chainAt  = pb.indexOf ("chainHost.process (buffer, emptyMidi)") >= 0
+                               ? pb.indexOf ("chainHost.process (buffer, emptyMidi)")
+                               : pb.indexOf ("chainHost.process(buffer, emptyMidi)");
+            const int meterAt  = pb.indexOf ("meterEngine.processBlock");
+            const int liveAt   = pb.indexOf ("liveEngine.processBlock");
+            const int switchAt = pb.indexOf ("if (auditionPending)");
+            const int simAt    = pb.indexOf ("applyPlaybackSim");
+            check (chainAt >= 0 && meterAt >= 0 && liveAt >= 0 && switchAt >= 0 && simAt >= 0,
+                   "ra PIN2: found the chain, both taps, the audition switch and the playback sim",
+                   "chain " + juce::String (chainAt) + ", meter " + juce::String (meterAt)
+                       + ", live " + juce::String (liveAt) + ", switch " + juce::String (switchAt)
+                       + ", sim " + juce::String (simAt));
+            check (switchAt > chainAt,
+                   "ra PIN2: the reference is substituted AFTER the chain, so the chain processes "
+                   "the MIX while the reference is audible - its compressors keep their state and "
+                   "nothing jumps when he flips back (session C's condition)");
+            check (switchAt > meterAt && switchAt > liveAt,
+                   "ra PIN2: ...and AFTER both measurement taps, so the meters and the Live buffer "
+                   "measure his mix and not the reference (Kathy's R9-1, her first worry)");
+            check (switchAt < simAt,
+                   "ra PIN2: ...and ABOVE the playback simulation, which models the room he listens "
+                   "THROUGH: both sides of an A/B must pass through that or it is unfair the other way");
+            // AND THE OLD PLACE IS EMPTY: the compare block must not write the output buffer.
+            check (! pb.contains ("out[i] = out[i] * (1.0f - gT) + mix[i];"),
+                   "ra PIN2: and the old substitution above the chain is GONE, not merely bypassed - "
+                   "two places that can write the reference into the buffer is the bug twice");
+        }
+
+        // ra PIN3 -- THE LIVE TAP NO LONGER STOPS, and the gain touches only the reference.
+        {
+            std::ifstream f ("Source/PluginProcessor.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const auto src = codeOnly (juce::String (ss.str()));
+            const auto pb  = codeOnly (functionBody (src, "void EchoJayProcessor::processBlock"));
+            check (! pb.contains ("&& ! auditioning"),
+                   "ra PIN3: the Live tap no longer pauses while the reference is audible - the "
+                   "switch is below it now, so the buffer it reads is the mix either way and "
+                   "auditioning costs him no gap in the Live curve (Kathy's requirement 1)");
+            // The gain multiplies the REFERENCE term only. If it ever multiplied `out[i]` the mix
+            // would be attenuated by the reference's gain, which is the one thing 2c must not do.
+            const int sw = pb.indexOf ("if (auditionPending)");
+            const auto block = sw >= 0 ? pb.substring (sw, juce::jmin (pb.length(), sw + 900)) : juce::String();
+            check (block.contains ("mix[i] * g"),
+                   "ra PIN3: the gain multiplies the REFERENCE, so his mix is never attenuated by it");
+            check (! block.contains ("out[i] * g"),
+                   "ra PIN3: ...and never the mix, which is what \"off the mix path entirely\" means");
+            check (block.contains ("juce::jlimit (-kRefGainStep, kRefGainStep"),
+                   "ra PIN3: ...and it is ramped one step per sample, the same shape as the A/B "
+                   "crossfade beside it, so a gain change cannot zipper and a flip cannot click");
+        }
+
+        // ra PIN4 -- THE SETTER RETURNS WHAT IT APPLIED, through the shared rule.
+        {
+            std::ifstream f ("Source/PluginProcessor.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const auto body = codeOnly (functionBody (codeOnly (juce::String (ss.str())),
+                                                      "float EchoJayProcessor::setReferenceGainDb"));
+            check (body.contains ("echojay::clampReferenceGainDb"),
+                   "ra PIN4: the setter uses the shared rule rather than a second copy of the "
+                   "arithmetic, so the figure her page is told and the one he hears cannot differ");
+            check (body.contains ("return applied"),
+                   "ra PIN4: ...and it returns what was APPLIED, not what was asked (her addendum)");
+        }
     }
 
     // ---- AND NO SIGNATURE WENT UNREAD (30 Oct 2026) ------------------------------------------

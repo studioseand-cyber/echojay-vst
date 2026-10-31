@@ -209,6 +209,33 @@ public:
     juce::uint64 gateBlocksDropped() const noexcept
     { return gateRing_.dropped() + stRing_.dropped(); }
 
+    /** ---- THE COUNTER'S OWN ARITHMETIC, WITHOUT 900 SECONDS OF AUDIO (31 Oct 2026) ----------
+
+        ig PIN7 proves that a ring past its capacity COUNTS what it drops, because a counter that is
+        always zero cannot be told from one that cannot count. It did that by rendering 900 s of
+        audio through a full-size ring, which cost about twenty minutes on every commit.
+
+        Session C's point: the capacity is a template parameter, so a small instance proves the same
+        arithmetic in no time at all. This is that instance. It is the SAME template the gating ring
+        is, pushed past a capacity of 64 with nothing popping, and it reports both numbers so a leg
+        can check them exactly rather than for being non-zero.
+
+        Test support, in the product, deliberately: HopRingOf is private because nothing outside
+        should hold one, and the alternative to this hook is making it public for a test's sake. */
+    static void testRingOverflowCounts (int pushes, juce::uint64& acceptedOut, juce::uint64& droppedOut)
+    {
+        HopRingOf<LufsBlock, 64> ring;
+        juce::uint64 accepted = 0;
+        for (int i = 0; i < pushes; ++i)
+        {
+            LufsBlock b {};
+            b.loudness = (double) i;        // distinct, so a silent reorder would show
+            if (ring.push (b)) ++accepted;
+        }
+        acceptedOut = accepted;
+        droppedOut  = ring.dropped();
+    }
+
     /** FALSE until refreshIntegrated() has run once on this engine. */
     bool wasEverRefreshed() const noexcept { return everRefreshed_.load (std::memory_order_relaxed); }
 
