@@ -5438,7 +5438,9 @@ inline int runEq (const SweepOptions& opt)
         // A SHELF WHOSE CORNER MOVES WITH GAIN (20 Oct, Kathy): its frequency mapped at -6, -3, +3 and +6 dB (the gain positions whose labels
         // sit nearest), each map on its own; the acceptance at +3 / -3 uses the map taken at that gain
         std::map<double, std::vector<eq::FreqPoint>> freqByGain;
-        if (fIdx >= 0 && eq::cornerMovesWithGain (gainRowsM12))
+        const bool bellMoves = fIdx >= 0 && eq::centreMovesWithGain (gainRowsM12, sweep::isSteppedControl (sweep::findControl (base, fIdx)));   // 31 Oct: a bell too
+        if (bellMoves) say ("    the bell's centre moves " + juce::String (eq::centreMovePct (gainRowsM12), 1) + " % across the gain sweep: mapped at each acceptance gain");
+        if (fIdx >= 0 && (eq::cornerMovesWithGain (gainRowsM12) || bellMoves))
         {
             juce::Array<juce::var> fbg;
             for (double gdb : eq::kShelfGainsDb)
@@ -5454,11 +5456,12 @@ inline int runEq (const SweepOptions& opt)
                 {   const auto b = eq::deriveBandAs (eq::deviation (p, baseline), expectShape);
                     auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.norm); q->setProperty ("display", p.text);
                     if (b.result == "shelf" && b.cornerHz > 0.0) { q->setProperty ("corner_hz", std::round (b.cornerHz * 10.0) / 10.0); pts.push_back ({ p.norm, p.text, b.cornerHz }); }
+                    else if (b.result == "measured" && b.centreHz > 0.0) { q->setProperty ("centre_hz", std::round (b.centreHz * 10.0) / 10.0); pts.push_back ({ p.norm, p.text, b.centreHz }); }   // 31 Oct: a bell's centre
                     else q->setProperty ("why", b.result == "shelf" ? juce::String ("a shelf whose corner lies past the grid: no figure") : b.result + (b.reason.isNotEmpty() ? ": " + b.reason : juce::String()));
                     rows.add (juce::var (q)); }
                 freqByGain[gdb] = pts;
                 auto* g = new juce::DynamicObject(); g->setProperty ("gain_db", gdb); g->setProperty ("gain_display", gi.display); g->setProperty ("gain_norm", gi.norm); g->setProperty ("rows", rows); fbg.add (juce::var (g));
-                say ("    shelf at " + juce::String (gdb > 0 ? "+" : "") + juce::String (gdb, 0) + " dB (gain norm " + juce::String (gi.norm, 4) + ", '" + gi.display + "'): " + juce::String ((int) pts.size()) + " corner(s) read");
+                say ("    " + juce::String (bellMoves ? "bell" : "shelf") + " at " + juce::String (gdb > 0 ? "+" : "") + juce::String (gdb, 0) + " dB (gain norm " + juce::String (gi.norm, 4) + ", '" + gi.display + "'): " + juce::String ((int) pts.size()) + (bellMoves ? " centre(s)" : " corner(s)") + " read");
             }
             bo->setProperty ("freq_by_gain", fbg);
         }
@@ -5517,6 +5520,25 @@ inline int runEq (const SweepOptions& opt)
             // Then the band's acceptance runs again as stepped: targets at the nearest MEASURED positions, each judged against that
             // position's own measured gain / figure (eq::normForGain / acceptanceTargets, stepped).
             bool windowSeen = false, snapped = false;
+            // 31 Oct (weekend item 11): THE GAIN LAW WHERE THE BAND SITS - when the freq sweep's one gain setting reads a spread over the gain bar,
+            // the gain is mapped again at each acceptance target's frequency (once per frequency) and written from that map
+            const bool gainLawMoves = eq::gainMovesWithFrequency (freqBands);
+            if (gainLawMoves) say ("    the gain law moves with frequency (" + juce::String (eq::gainSpreadDb (freqBands), 2) + " dB across the freq sweep at one gain setting): the gain is mapped again where each target sits");
+            std::map<juce::String, std::vector<eq::GainRow>> gainAt; juce::Array<juce::var> gainByFreq; bool gainAtWindow = false;
+            auto gainRowsFor = [&] (float fnorm) -> std::vector<eq::GainRow>
+            {
+                if (! gainLawMoves || fIdx < 0) return gainRowsM12;
+                const auto key = juce::String (fnorm, 6); if (gainAt.count (key)) return gainAt[key];
+                juce::StringArray sets = engageSets; sets.add (juce::String (fIdx) + ":" + key);
+                auto [gr, rr] = response (tag + ".gainAt" + juce::String (fnorm, 3), gIdx, normsFor (gIdx, 7), sets);
+                if (rr.kind == ChildResult::Kind::uiShown) { gainAtWindow = true; return gainRowsM12; }
+                std::vector<eq::GainRow> rows; juce::Array<juce::var> rv;
+                for (const auto& p : gr.positions)
+                {   eq::GainRow row; row.norm = p.norm; row.display = p.text; row.band = eq::deriveBandAs (eq::deviation (p, baseline), expectShape); row.labelDb = eq::labelNumber (p.text); rows.push_back (row);
+                    auto* q = new juce::DynamicObject(); q->setProperty ("norm", p.norm); q->setProperty ("display", p.text); if (eq::usable (row.band)) q->setProperty ("gain_db", std::round (row.band.gainDb * 100.0) / 100.0); rv.add (juce::var (q)); }
+                auto* g = new juce::DynamicObject(); g->setProperty ("freq_norm", fnorm); g->setProperty ("rows", rv); gainByFreq.add (juce::var (g));
+                return gainAt[key] = rows.size() >= 2 ? rows : gainRowsM12;
+            };
             auto runAcceptance = [&] (bool steppedFreqA, bool steppedGainA)
             {
                 acc.clear(); passN = 0; ranN = 0; int unlanded = 0;
@@ -5524,13 +5546,18 @@ inline int runEq (const SweepOptions& opt)
                 // 20 Oct: a shelf mapped per gain takes each acceptance gain's targets from ITS map (one write per target); else both gains share
                 std::vector<std::pair<std::vector<double>, eq::FigureTarget>> plan;
                 if (! freqByGain.empty())
-                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t }); }
+                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t });
+                    for (double g : eq::kHeldOutGainsDb)   // 31 Oct (weekend item 5): a gain no map was taken at, its figure interpolated between the two around it
+                    {   const double lo = g > 0 ? 3.0 : -3.0, hi = g > 0 ? 6.0 : -6.0;
+                        if (freqByGain.count (lo) && freqByGain.count (hi))
+                            for (const auto& t : eq::acceptanceTargets (eq::interpolatedMap (freqByGain.at (lo), lo, freqByGain.at (hi), hi, g), steppedFreqA)) plan.push_back ({ { g }, t }); } }
                 else for (const auto& t : eq::acceptanceTargets (freqPoints, steppedFreqA)) plan.push_back ({ eq::kAcceptanceGainsDb, t });
             if (plan.empty()) say ("    acceptance: fewer than two usable frequency positions: no figure targets");
             for (const auto& [gains, t] : plan)
             {
                 std::vector<eq::Acceptance> pair; juce::StringArray gnorms;
-                for (double gdb : gains) { eq::Acceptance a; a.targetDb = gdb; a.targetHz = t.targetHz; a.figure = t; a.gain = eq::normForGain (gainRowsM12, gdb, steppedGain); pair.push_back (a); if (a.gain.ok) gnorms.add (juce::String (a.gain.norm, 6)); }
+                const auto rowsHere = gainRowsFor (t.norm); if (gainAtWindow) { windowSeen = true; return 0; }
+                for (double gdb : gains) { eq::Acceptance a; a.targetDb = gdb; a.targetHz = t.targetHz; a.figure = t; a.gain = eq::normForGain (rowsHere, gdb, steppedGain); pair.push_back (a); if (a.gain.ok) gnorms.add (juce::String (a.gain.norm, 6)); }
                 if (! gnorms.isEmpty())
                 {
                     juce::StringArray asets = engageSets; asets.add (juce::String (fIdx) + ":" + juce::String (t.norm, 6));
@@ -5557,6 +5584,7 @@ inline int runEq (const SweepOptions& opt)
                 bo->setProperty ("acceptance_snapped_to_detents", true);
                 bo->setProperty ("acceptance_note", juce::String (unlandedFirst) + " interpolated write(s) did not land (the controls snap to detents): the acceptance ran at the nearest measured positions, judged against their own measured figures");
             }
+            if (! gainByFreq.isEmpty()) bo->setProperty ("gain_by_freq", gainByFreq);   // 31 Oct (weekend item 11): the gain law where each target sat
             bo->setProperty ("acceptance", acc); bo->setProperty ("acceptance_summary", juce::String (passN) + " of " + juce::String (acc.size()) + " passed (" + juce::String (ranN) + " ran)");
         }
         // ROLES BY MEASUREMENT for this band's three nominees: gain = the band's gain moves; frequency = the centre moves with the
@@ -5957,7 +5985,8 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             if (! isolationUnlanded.isEmpty()) std::cout << "RD: a silencing write did NOT land: " << isolationUnlanded.joinIntoString (", ") << " - the other role may still sound in this pass (recorded)" << std::endl; }
         return r; };
     Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
-    const auto fx = sampledFixture (opt, desc, raw, stem, "reverbdelay", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet", "sync", "tempo sync", "note", "division", "subdivision", "beat", "rate", "delay", "time", "pre-delay", "predelay", "pre delay", "pre", "decay", "reverb time", "rt60", "length", "size", "tail", "feedback", "regen", "regeneration", "repeats", "fb" });
+    const auto fx = sampledFixture (opt, desc, raw, stem, "reverbdelay", s, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet", "sync", "tempo sync", "note", "division", "subdivision", "beat", "rate", "delay", "time", "pre-delay", "predelay", "pre delay", "pre", "decay", "reverb time", "rt60", "length", "size", "tail", "feedback", "regen", "regeneration", "repeats", "fb",
+                                                                                                                                       "ms", "msec", "tempo", "bpm" });   // 31 Oct (weekend item 9): SuperTap's time is "Tempo MS" / "Tempo BPM" (its taps are % of it)
     if (! fx.ok) { say ("RD: " + fx.why); return 1; }
     const auto base = fx.base; say ("RD: " + fx.note);
     // A TAIL WITH BOTH ROLES (20 Oct, Kathy): the other role's sections are SILENCED for every probe process of this pass (merged with
@@ -6006,7 +6035,7 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             if (mix.index < 0 && ! k.word && answers (n, { "mix", "dry/wet", "wet", "blend", "dry wet", "drywet" }) && ! answers (n, { "sync", "lock" })) mix = k;
             else if (sync.index < 0 && answers (n, { "sync", "tempo sync" }) && (k.word || k.steps == 2)) { sync = k; switchPositions (c, sync); }
             else if (note.index < 0 && (answers (n, { "note", "division", "subdivision", "beat" }) || noteTexts (c) >= 2)) note = k;
-            else if (timeCtl.index < 0 && ! k.word && (kind == "delay" ? answers (n, { "delay", "time", "delay time", "left delay", "delay l", "delay left" }) : answers (n, { "pre-delay", "predelay", "pre delay", "pre" })) && ! answers (n, { "sync", "feedback", "decay", "mod", "modulation" })) timeCtl = k;
+            else if (timeCtl.index < 0 && ! k.word && (kind == "delay" ? (answers (n, { "ms", "msec" }) || answers (n, { "delay", "time", "delay time", "left delay", "delay l", "delay left" })) : answers (n, { "pre-delay", "predelay", "pre delay", "pre" })) && ! answers (n, { "sync", "feedback", "decay", "mod", "modulation" })) timeCtl = k;
             else if (decayCtl.index < 0 && kind == "reverb" && ! k.word && answers (n, { "decay", "reverb time", "rt60", "time", "length", "size", "tail" }) && ! answers (n, { "pre", "mod", "modulation", "damp" })) decayCtl = k;
             else if (feedback.index < 0 && kind == "delay" && ! k.word && answers (n, { "feedback", "regen", "regeneration", "repeats", "fb" })) feedback = k;
         }
@@ -6030,6 +6059,11 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
     // 1. THE ROLES BY MEASUREMENT (section 3): every numeric control at its two ends (the name's mix at wet for the others; sync off), each pair
     //    read for every signature at once; each role to the name's nominee if it shows it, else the first control that does
     juce::StringArray wetSets; if (mix.index >= 0) wetSets.add (setOf (mix.index, 1.0)); if (sync.index >= 0) wetSets.add (setOf (sync.index, sync.offNorm));
+    // A FIRST ECHO SWITCHED OFF (31 Oct, weekend item 9: SuperTap's "Tap 1 On/off" is Off as instantiated - no echo at all, so no time could
+    // show): a delay's first tap / echo switch reading off is written on for every reading (said in the record)
+    if (kind == "delay") if (const auto tapOn = reverbdelay::firstTapSwitch (base); tapOn.first >= 0)
+    {   wetSets.add (setOf (tapOn.first, tapOn.second)); say ("RD: the first echo is switched off as instantiated: [" + juce::String (tapOn.first) + "] written on (" + juce::String (tapOn.second, 2) + ") for every reading");
+        o->setProperty ("first_tap_on", tapOn.first); }
     // ROLE TESTS MUST REPEAT (8 Oct): the whole role test runs roleevidence::kRolePasses times (pass 2's readings tagged ".b"), each pass picks
     // on its own, and a role whose picks differ is not_repeatable (never assigned); the evidence list is pass 1's
     std::vector<std::map<int, std::map<juce::String, double>>> holdsBy ((size_t) roleevidence::kRolePasses); std::map<int, juce::String> nameOf; std::vector<roleevidence::RoleVerdict> roles;
@@ -6236,11 +6270,42 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
         if (! decayShowsTime) { m->setProperty ("why", "its display shows no time (" + decayTexts.joinIntoString (", ").substring (0, 120) + "): it moves the tail, but it is not the decay - never judged or used as one"); decayMap.clear(); say ("  decay: " + decayCtl.name + " shows no time - recorded, not used as the decay"); }
         o->setProperty ("decay", juce::var (m));
     }
+    // 4b. DAMPING (reverb; 31 Oct, weekend item 10): the decay at 5 kHz over the decay at 997 Hz at three positions of a damping-named control
+    if (kind == "reverb")
+    {
+        int dIdx = -1; juce::String dName;
+        if (const auto* cs = base.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs) { const auto n = c.getProperty ("name", "").toString(); if (dIdx < 0 && ! sweep::wordValued (c) && [&] { for (const auto& w : reverbdelay::dampingWords()) if (nametokens::controlAnswersTerm (n, w)) return true; return false; }()) { dIdx = (int) c.getProperty ("index", -1); dName = n; } }
+        if (dIdx >= 0)
+        {
+            juce::Array<juce::var> rows;
+            for (double norm : { 0.0, 0.5, 1.0 })
+            {
+                juce::StringArray sets = wetOnly; sets.add (setOf (dIdx, norm));
+                std::optional<double> rt [2]; juce::String text;
+                for (int k = 0; k < 2; ++k)
+                {
+                    auto a = tailArgs (sets, 0.0, kMaxTailS, false, true); for (auto& x : a) if (x == "hz=997") x = k == 0 ? "hz=997" : "hz=5000";
+                    const auto t = readTail ("damp" + juce::String (norm, 1) + (k == 0 ? ".lo" : ".hi"), a, windowSeen); if (windowSeen) { say ("RD: a window appeared; stopping"); return 5; }
+                    if (! t.ok) continue; if (text.isEmpty()) text = textOf (t, dIdx);
+                    const auto dc = decayOf (t); if (dc.ok && dc.t20RT60s > 0.0) rt[k] = dc.t20RT60s;
+                }
+                auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", text);
+                if (rt[0]) ro->setProperty ("rt60_997_s", std::round (*rt[0] * 100.0) / 100.0); if (rt[1]) ro->setProperty ("rt60_5k_s", std::round (*rt[1] * 100.0) / 100.0);
+                if (rt[0] && rt[1]) ro->setProperty ("hf_over_lf", std::round (*rt[1] / *rt[0] * 100.0) / 100.0);
+                rows.add (juce::var (ro));
+                say ("  damping " + dName + " = '" + text + "': RT60 " + (rt[0] ? juce::String (*rt[0], 2) : juce::String ("-")) + " s at 997 Hz, " + (rt[1] ? juce::String (*rt[1], 2) : juce::String ("-")) + " s at 5 kHz");
+            }
+            auto* m = new juce::DynamicObject(); m->setProperty ("control", dName); m->setProperty ("positions", rows);
+            m->setProperty ("note", "the decay at 5 kHz over the decay at 997 Hz (sine bursts), recorded: what the control does to the tail's top end, not judged against its label");
+            o->setProperty ("damping", juce::var (m));
+        }
+    }
     // 5. FEEDBACK (delay): 7 norms, dB per repeat and seconds to -60
     std::vector<std::pair<double, double>> fbMap;
     if (kind == "delay" && feedback.index >= 0)
     {
-        juce::Array<juce::var> rows; int read = 0; std::set<long> distinct;
+        juce::Array<juce::var> rows; int read = 0; std::set<long> distinct; int fbJudged = 0, fbWithin = 0;
         for (double norm : sevenNorms (feedback))
         {
             juce::StringArray sets = wetOnly; sets.add (setOf (feedback.index, norm));
@@ -6249,10 +6314,14 @@ inline int runReverbDelay (const SweepOptions& opt, juce::String kind)
             const auto on = onsetsOf (t); ++read; ++measured;
             const std::optional<double> rt60 = on.spacingMs && on.fallPerRepeatDb && *on.fallPerRepeatDb < -0.01 ? std::optional<double> (60.0 / -*on.fallPerRepeatDb * *on.spacingMs / 1000.0) : std::nullopt;
             if (on.fallPerRepeatDb) { fbMap.push_back ({ norm, *on.fallPerRepeatDb }); distinct.insert (std::lround (*on.fallPerRepeatDb * 4.0)); }
-            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", textOf (t, feedback.index)); ro->setProperty ("repeats", (int) on.repeats.size()); ro->setProperty ("fall_per_repeat_db", on.fallPerRepeatDb ? juce::var (std::round (*on.fallPerRepeatDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("decay_to_minus_60_s", rt60 ? juce::var (std::round (*rt60 * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
+            auto* ro = new juce::DynamicObject(); ro->setProperty ("norm", norm); ro->setProperty ("display", textOf (t, feedback.index)); ro->setProperty ("repeats", (int) on.repeats.size());
+            if (const auto lf = reverbdelay::feedbackLabelDb (textOf (t, feedback.index)); lf && on.fallPerRepeatDb)   // 31 Oct (weekend item 10): the label judged
+            {   const bool within = std::abs (*on.fallPerRepeatDb - *lf) <= reverbdelay::kFeedbackLabelTolDb; ro->setProperty ("label_fall_db", std::round (*lf * 100.0) / 100.0); ro->setProperty ("within", within); ++fbJudged; if (within) ++fbWithin; } ro->setProperty ("fall_per_repeat_db", on.fallPerRepeatDb ? juce::var (std::round (*on.fallPerRepeatDb * 100.0) / 100.0) : juce::var()); ro->setProperty ("decay_to_minus_60_s", rt60 ? juce::var (std::round (*rt60 * 100.0) / 100.0) : juce::var()); rows.add (juce::var (ro));
             say ("  " + feedback.name + " = '" + textOf (t, feedback.index) + "': " + on.why + (on.fallPerRepeatDb ? ", " + juce::String (*on.fallPerRepeatDb, 2) + " dB per repeat" : juce::String()));
         }
-        auto* m = new juce::DynamicObject(); m->setProperty ("control", feedback.name); m->setProperty ("found_by", pFb.foundBy); m->setProperty ("positions", rows); m->setProperty ("verdict", mapVerdict (read, 7, distinct.size() > 1, false, false, true)); o->setProperty ("feedback", juce::var (m));
+        auto* m = new juce::DynamicObject(); m->setProperty ("control", feedback.name); m->setProperty ("found_by", pFb.foundBy); m->setProperty ("positions", rows); m->setProperty ("verdict", mapVerdict (read, 7, distinct.size() > 1, false, false, true));
+        if (fbJudged > 0) { m->setProperty ("labels_judged", fbJudged); m->setProperty ("labels_within", fbWithin); m->setProperty ("label_tolerance_db", reverbdelay::kFeedbackLabelTolDb); say ("  feedback labels: " + juce::String (fbWithin) + " of " + juce::String (fbJudged) + " within " + juce::String (reverbdelay::kFeedbackLabelTolDb, 0) + " dB"); }
+        o->setProperty ("feedback", juce::var (m));
     }
     // 6. SYNC (delay): every note value the note control offers at 120 bpm, the instantiate note at 90 and 140 too (the acceptance's two tempos)
     juce::Array<juce::var> acc;
@@ -6796,7 +6865,7 @@ inline int runDeesser (const SweepOptions& opt)
             juce::StringArray extra; if (fn >= 0.0) extra.add (setOf (freq.index, fn));
             const auto c = centreFor ("centre" + (fn >= 0.0 ? juce::String (fn, 2) : juce::String ("")), extra);
             juce::String text; if (fn >= 0.0) { const auto r = juce::File (raw.getChildFile (stem + ".deesser.centre" + juce::String (fn, 2) + ".hard.1.txt")).loadFileAsString(); for (const auto& line : juce::StringArray::fromLines (r)) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == freq.index) for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") text = f[i + 1]; } }
-            const auto lab = labelHz (text);
+            const auto lab = deesserLabelHz (text);
             if (fn >= 0.0) { roleevidence::Figure f; f.ok = true; if (c.ok) { f.centreHz = c.figureHz(); } if (fn < 0.01) freqA = f; if (fn > 0.99) freqB = f; }
             if (! c.ok) { say ("  centre" + (fn >= 0.0 ? " (" + freq.name + " = '" + text + "')" : juce::String()) + ": " + c.why); continue; }
             ++measured;
@@ -6804,6 +6873,40 @@ inline int runDeesser (const SweepOptions& opt)
             auto* ro = new juce::DynamicObject(); ro->setProperty ("freq_norm", fn >= 0.0 ? juce::var (fn) : juce::var()); ro->setProperty ("display", text); ro->setProperty ("label_hz", lab ? juce::var (*lab) : juce::var()); ro->setProperty ("shape", c.shape); ro->setProperty ("deepest_hz", std::round (c.hz)); ro->setProperty ("corner_hz", std::round (c.cornerHz)); ro->setProperty ("figure_hz", std::round (c.figureHz())); ro->setProperty ("depth_db", std::round (c.depthDb * 100.0) / 100.0); ro->setProperty ("at_997_db", std::round (c.at997Db * 100.0) / 100.0); ro->setProperty ("mode_read", modeWord (c)); fr.add (juce::var (ro));
         }
         o->setProperty ("centre", fr);
+        // THE DETECTOR (31 Oct, weekend item 7): at each frequency position, the threshold hard, one tone at a time on a level ladder - the
+        // level where the reduction reaches 3 dB, per tone; the detector's frequency from that curve (EjmapDeesser.h detectorFrequency)
+        if (freq.index >= 0)
+        {
+            juce::Array<juce::var> det;
+            for (double fn : { 0.0, 0.5, 1.0 })
+            {
+                std::vector<std::pair<double, std::vector<std::pair<double, double>>>> ladders; juce::String text; juce::Array<juce::var> pv;
+                for (double hz : detectorTones())
+                {
+                    const auto r = run ("detector" + juce::String (fn, 2) + "." + juce::String (hz, 0), { "--sweep", "thr=" + juce::String (threshold.index), "norms=" + juce::String (*hard, 6), "levels=" + detectorLevels(),
+                                        "hz=" + juce::String (hz, 1), "hold=1.00", "discard=0.50", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + setOf (freq.index, fn) });
+                    if (r.kind == ChildResult::Kind::uiShown) { say ("DS: a window appeared; stopping"); return 5; }
+                    const auto m = sweep::parseSweep (r.cleanExit() ? r.out : juce::String());
+                    if (text.isEmpty() && m.setTexts.count (freq.index)) text = m.setTexts.at (freq.index);
+                    std::vector<std::pair<double, double>> lg;
+                    if (! m.positions.empty()) for (const auto& [lk, h] : m.positions.front().holds) if (h.present && h.levelDb > -200.0) lg.push_back ({ lk.getDoubleValue(), h.levelDb - h.inRmsDb });
+                    ladders.push_back ({ hz, lg });
+                }
+                // 31 Oct: the reduction read at steps down (3, 2, 1 dB) to the first that kDetectorMinTones tones reach
+                double grUsed = kDetectorGrDb; std::vector<DetectorPoint> pts;
+                for (double gr : detectorGrSteps())
+                {   pts.clear(); int reached = 0; for (const auto& [hz, lg] : ladders) { const auto lv = levelForGr (lg, gr); pts.push_back ({ hz, lv }); if (lv) ++reached; }
+                    grUsed = gr; if (reached >= kDetectorMinTones) break; }
+                for (const auto& p : pts) { auto* q = new juce::DynamicObject(); q->setProperty ("hz", std::round (p.hz)); q->setProperty ("level_dbfs", p.levelDbfs ? juce::var (std::round (*p.levelDbfs * 10.0) / 10.0) : juce::var()); pv.add (juce::var (q)); }
+                const auto dr = detectorFrequency (pts); const auto lab = deesserLabelHz (text);
+                auto* ro = new juce::DynamicObject(); ro->setProperty ("freq_norm", fn); ro->setProperty ("display", text); ro->setProperty ("label_hz", lab ? juce::var (*lab) : juce::var());
+                ro->setProperty ("kind", dr.kind); ro->setProperty ("why", dr.why); ro->setProperty ("tones", pv); ro->setProperty ("read_at_gr_db", grUsed);
+                if (dr.ok) { ro->setProperty ("centre_hz", std::round (dr.hz)); if (lab && *lab > 0.0) { const double oct = std::log2 (dr.hz / *lab); ro->setProperty ("off_oct", std::round (oct * 100.0) / 100.0); ro->setProperty ("within_tolerance", std::abs (oct) <= kDetectorTolOct); } }
+                det.add (juce::var (ro));
+                say ("  detector (" + freq.name + " = '" + text + "'): " + dr.why + (dr.ok && lab ? " | label " + juce::String (*lab, 0) + " Hz: " + juce::String (std::log2 (dr.hz / *lab), 2) + " octave" : juce::String()));
+            }
+            o->setProperty ("detector", det);
+        }
         // the mode switch, each text
         if (mode.index >= 0)
         {
@@ -9295,3 +9398,6 @@ inline int runReviewZip (const juce::File& subject, const juce::File& against, c
 } // namespace ejmap::cert
 
 #include "EjmapCertFilterShift.h"   // 22 Oct: the filter and pitch-shift passes (they use the probe calls above)
+#include "EjmapCertModulation.h"    // 31 Oct (weekend item 1): the modulation pass
+#include "EjmapCertStereo.h"        // 31 Oct (weekend item 2): the stereo / imaging pass
+#include "EjmapCertAmp.h"           // 31 Oct (weekend item 4): an amp's tone stack, output and fixed context

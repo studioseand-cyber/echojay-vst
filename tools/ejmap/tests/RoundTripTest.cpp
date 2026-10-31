@@ -4877,8 +4877,46 @@ void testSweepQuietReference()
                    && drv.contains ("const auto gi = eq::normForGain (gainRowsM12, gdb, sweep::isSteppedControl (sweep::findControl (base, gIdx)));")
                    && drv.contains ("juce::StringArray gs = engageSets; gs.add (juce::String (gIdx) + \":\" + juce::String (gi.norm, 6));")
                    && p3.state == "pass" && m3.state == "fail" && none.state == "not_tested" && kShelfGainsDb == std::vector<double> { -6.0, -3.0, 3.0, 6.0 }
-                   && drv.contains ("if (fIdx >= 0 && eq::cornerMovesWithGain (gainRowsM12))") && drv.contains ("if (! freqByGain.empty())\n                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t }); }"),
+                   && drv.contains ("if (fIdx >= 0 && (eq::cornerMovesWithGain (gainRowsM12) || bellMoves))") && drv.contains ("if (! freqByGain.empty())\n                {   for (double gdb : eq::kAcceptanceGainsDb) if (freqByGain.count (gdb)) for (const auto& t : eq::acceptanceTargets (freqByGain.at (gdb), steppedFreqA)) plan.push_back ({ { gdb }, t });"),
                    "cert WZ-EQ-SHELFG-1: a shelf whose corner moves with gain is mapped per gain and certified per gain (+3 " + p3.state + ", -3 " + m3.state + "); a symmetric shelf is not re-mapped");
+        }
+        // WZ-EQ-BELLG-1 A BELL WHOSE CENTRE MOVES WITH GAIN (31 Oct, weekend item 5): MannyM's Band 1 (94 Hz at +-3.3, 86 at +6.7, 90 at -6.7,
+        // 82 at +10: 14.6 %) is mapped at each acceptance gain; a steady bell (H-EQ-Light: under 0.2 %) is not; the bar is half the acceptance's
+        // own tolerance - 2.5 % on a continuous control, 0.5 % on a stepped one (LinEQ Band4's 2.2 % maps only when stepped). Rows under 2 dB of
+        // gain never count (a bell that small has no reliable centre)
+        {
+            using namespace ejmap::eq;
+            auto bell = [] (double lab, double hz) { GainRow r; r.labelDb = lab; r.display = juce::String (lab, 1); r.band.result = hz > 0.0 ? "measured" : "flat"; r.band.centreHz = hz; r.band.gainDb = lab; return r; };
+            const std::vector<GainRow> manny { bell (-10.0, 86.3), bell (-6.7, 90.2), bell (-3.3, 94.0), bell (0.0, 0.0), bell (3.3, 94.0), bell (6.7, 86.3), bell (10.0, 81.6) };
+            const std::vector<GainRow> steady { bell (-6.0, 1000.0), bell (-3.0, 1001.0), bell (3.0, 999.0), bell (6.0, 1002.0) };
+            const std::vector<GainRow> lin4 { bell (-6.0, 1000.0), bell (-3.0, 1022.0), bell (3.0, 1022.0), bell (6.0, 1000.0) };
+            const std::vector<GainRow> tiny { bell (-1.5, 900.0), bell (1.5, 1100.0), bell (6.0, 1000.0) };   // the +-1.5 dB rows are too small to count
+            const std::vector<GainRow> three { bell (-6.0, 1000.0), bell (-3.0, 1030.0), bell (3.0, 1030.0), bell (6.0, 1000.0) };   // 3 %: over 2.5 (continuous)
+            const std::vector<GainRow> point8 { bell (-6.0, 1000.0), bell (3.0, 1008.0), bell (6.0, 1000.0) };                         // 0.8 %: over 0.5 (stepped)
+            // the held-out gain: +4.5 interpolated halfway between the +3 and +6 maps in log frequency, at the norms both read
+            const std::vector<FreqPoint> m3 { { 0.0f, "a", 100.0 }, { 0.5f, "b", 400.0 }, { 1.0f, "c", 1600.0 } }, m6 { { 0.0f, "a", 81.0 }, { 0.5f, "b", 324.0 }, { 0.75f, "x", 900.0 } };
+            const auto i45 = interpolatedMap (m3, 3.0, m6, 6.0, 4.5);
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (centreMovesWithGain (manny, false) && centreMovesWithGain (manny, true) && ! centreMovesWithGain (steady, false) && ! centreMovesWithGain (steady, true)
+                   && ! centreMovesWithGain (lin4, false) && centreMovesWithGain (lin4, true) && ! centreMovesWithGain (tiny, true) && std::abs (centreMovePct (manny) - 15.2) < 0.1
+                   && centreMovesWithGain (three, false) && centreMovesWithGain (point8, true) && ! centreMovesWithGain (point8, false)
+                   && i45.size() == 2 && std::abs (i45[0].figureHz - 90.0) < 1e-6 && std::abs (i45[1].figureHz - 360.0) < 1e-6 && kHeldOutGainsDb == std::vector<double> { 4.5, -4.5 }
+                   && drv.contains ("for (const auto& t : eq::acceptanceTargets (eq::interpolatedMap (freqByGain.at (lo), lo, freqByGain.at (hi), hi, g), steppedFreqA)) plan.push_back ({ { g }, t }); } }")
+                   && drv.contains ("const bool bellMoves = fIdx >= 0 && eq::centreMovesWithGain (gainRowsM12, sweep::isSteppedControl (sweep::findControl (base, fIdx)));")
+                   && drv.contains ("else if (b.result == \"measured\" && b.centreHz > 0.0) { q->setProperty (\"centre_hz\", std::round (b.centreHz * 10.0) / 10.0); pts.push_back ({ p.norm, p.text, b.centreHz }); }"),
+                   "cert WZ-EQ-BELLG-1: a bell whose centre moves with gain is mapped per gain (MannyM " + juce::String (centreMovePct (manny), 1) + " %); a steady bell is not; the bar is half the tolerance (2.5 % / 0.5 % stepped)");
+        }
+        // WZ-EQ-GAINF-1 A GAIN LAW THAT MOVES WITH FREQUENCY (31 Oct, weekend item 11: LinEQ): the freq sweep's one gain setting reading a spread over
+        // the 0.5 dB bar sends the acceptance to map the gain again where each target sits; a steady band (spread under the bar) does not
+        {
+            using namespace ejmap::eq;
+            auto b = [] (double g) { Band x; x.result = "measured"; x.gainDb = g; x.centreHz = 1000.0; return x; };
+            const std::vector<Band> lin { b (6.0), b (6.4), b (6.9), b (7.3) }, steady { b (6.0), b (6.1), b (5.95), b (6.2) }, few { b (6.0), b (8.0) };
+            const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+            check (gainMovesWithFrequency (lin) && std::abs (gainSpreadDb (lin) - 1.3) < 1e-9 && ! gainMovesWithFrequency (steady) && ! gainMovesWithFrequency (few)
+                   && drv.contains ("a.gain = eq::normForGain (rowsHere, gdb, steppedGain);") && drv.contains ("if (! gainLawMoves || fIdx < 0) return gainRowsM12;")
+                   && drv.contains ("bo->setProperty (\"gain_by_freq\", gainByFreq);"),
+                   "cert WZ-EQ-GAINF-1: a gain law that moves with frequency is mapped again where each acceptance target sits (spread " + juce::String (gainSpreadDb (lin), 2) + " dB); a steady one is not");
         }
         // WZ-EQ-TYPE-1 ECHOJAY NEVER CHANGES A BAND'S TYPE UNLESS THE USER ASKS (Kathy, 20 Oct): the band's type control and its default ride the
         // map; a band measured at another type is marked (shape_changed, type_measured) and listed in shape_changed_bands; engage never carries a type
@@ -8866,6 +8904,188 @@ void testDynamics()
 }
 
 /** DE-ESSERS (EjmapDeesser.h, roadmap 2.9 PROTOTYPE, 5 Oct R6): the ladder against the open end, the centre and the mode from a deviation. */
+// MODULATION (weekend item 1, 31 Oct, Kathy): the rate is the period two tones' level wobbles agree on; labels in Hz, periods or note values
+// at the host tempo; names propose, a monotonic 3x move decides; the held-out acceptance at 1/3 and 2/3 of the log range
+// STEREO (weekend item 2) and AMP (weekend item 4), 31 Oct: the pure rules and the probe's per-input feeds
+// THE DE-ESSER'S DETECTOR (weekend item 7, 31 Oct): the label names the detector's frequency, read from per-tone level ladders
+void testDeesserDetector()
+{
+    using namespace ejmap::deesser;
+    // DET-1 the level where the reduction reaches 3 dB, interpolated; never reached -> none
+    const auto l = levelForGr ({ { -54, 0.0 }, { -48, 0.0 }, { -42, -1.0 }, { -36, -5.0 } }, 3.0);
+    check (l && std::abs (*l - (-39.0)) < 1e-9 && ! levelForGr ({ { -54, 0.0 }, { -6, -1.0 }, { 0, -2.0 } }, 3.0),
+           "deesser DET-1: the level for 3 dB of reduction (" + juce::String (l ? *l : 0.0, 2) + " dBFS)");
+    // DET-2 a high-pass detector at 4 kHz (sensitivity rises 12 dB / octave to a plateau): its corner within 1/6 octave; a band-pass one
+    // peaking at 6 kHz: its peak; a flat detector: no corner
+    auto curve = [] (const std::function<double (double)>& sens) { std::vector<DetectorPoint> v; for (double hz : detectorTones()) v.push_back ({ hz, -24.0 - sens (hz) }); return v; };
+    const auto hp = detectorFrequency (curve ([] (double f) { const double x = f / 4000.0; return 10.0 * std::log10 (std::pow (x, 4.0) / (1.0 + std::pow (x, 4.0))); }));
+    const auto bp = detectorFrequency (curve ([] (double f) { const double o = std::log2 (f / 6000.0); return -6.0 * o * o; }));
+    const auto flat = detectorFrequency (curve ([] (double) { return 0.0; }));
+    std::vector<DetectorPoint> few { { 1000.0, -30.0 }, { 2000.0, {} }, { 4000.0, -36.0 } };
+    check (hp.ok && hp.kind == "high_pass" && std::abs (std::log2 (hp.hz / 4000.0)) < 0.1 && bp.ok && bp.kind == "band_pass" && std::abs (std::log2 (bp.hz / 6000.0)) < 0.05
+           && ! flat.ok && ! detectorFrequency (few).ok && detectorTones().size() == 17 && std::abs (detectorTones().back() - 500.0 * std::pow (2.0, 16.0 / 3.0)) < 1e-6
+           && kDetectorCornerDb == 3.0 && detectorGrSteps() == std::vector<double> { 3.0, 2.0, 1.0 } && kDetectorMinTones == 4
+           && ! deesserLabelHz ("50.0") && ! deesserLabelHz ("100") && deesserLabelHz ("2000") && *deesserLabelHz ("2000") == 2000.0 && deesserLabelHz ("50 Hz") && *deesserLabelHz ("50 Hz") == 50.0
+           && deesserLabelHz ("5.6k") && *deesserLabelHz ("5.6k") == 5600.0 && labelHz ("92") && *labelHz ("92") == 92.0,
+           "deesser DET-2: a high-pass detector's corner (" + juce::String (hp.hz, 0) + " Hz for 4 kHz), a band-pass one's peak (" + juce::String (bp.hz, 0) + " Hz for 6 kHz), a flat one none");
+    // DET-3 THE JUDGE prefers the detector where it was read (the cut curve's corner moves with its depth)
+    auto J = [] (const char* t) { return juce::JSON::parse (t); };
+    const auto rec = J (R"J({"threshold_control":"Thresh","frequency_control":"Freq","centre":[{"label_hz":2000,"corner_hz":2709,"shape":"shelf"},{"label_hz":5657,"corner_hz":6938,"shape":"shelf"}],
+                           "detector":[{"label_hz":2000,"centre_hz":2050},{"label_hz":5657,"centre_hz":5500}]})J");
+    const auto noDet = J (R"J({"threshold_control":"Thresh","frequency_control":"Freq","centre":[{"label_hz":2000,"corner_hz":2709,"shape":"shelf"},{"label_hz":5657,"corner_hz":6938,"shape":"shelf"}]})J");
+    const auto withD = ejmap::certv1::judgeDeesser (J ("{}"), rec), without = ejmap::certv1::judgeDeesser (J ("{}"), noDet);
+    auto freqOf = [] (const ejmap::certv1::Result& r) { for (const auto& p : r.parts) if (p.name == "frequency") return p; return ejmap::certv1::Part {}; };
+    check (freqOf (withD).state == "pass" && freqOf (withD).why.contains ("the detector") && freqOf (without).state == "fail",
+           "deesser DET-3: the frequency part judges the detector where it was read (" + freqOf (withD).why + "); the cut curve's corner alone fails (" + freqOf (without).why + ")");
+}
+
+void testStereoAmp()
+{
+    {
+        using namespace ejmap::stereo;
+        auto rd = [] (float n, double mid, double side, double l, double r) { MsRead x; x.ok = true; x.norm = n; x.midDb = mid; x.sideDb = side; x.lDb = l; x.rDb = r; return x; };
+        // ST-1 width labels and the judge: 100 % = 0 dB side / mid, 50 % = -6.02, 200 % = +6.02, 0 % = no side
+        const auto w100 = judgeWidth (rd (0.5f, -15.0, -15.0, 0, 0), widthLabel ("100 %")), w50 = judgeWidth (rd (0.25f, -15.0, -21.0, 0, 0), widthLabel ("50%")),
+                   w200miss = judgeWidth (rd (1.0f, -15.0, -8.0, 0, 0), widthLabel ("200 %")), w0 = judgeWidth (rd (0.0f, -15.0, -60.0, 0, 0), widthLabel ("0 %")), w0bad = judgeWidth (rd (0.0f, -15.0, -20.0, 0, 0), widthLabel ("0 %"));
+        check (w100.pass && w50.pass && ! w200miss.pass && std::abs (w200miss.offDb - 0.98) < 0.01 && w0.pass && ! w0bad.pass && widthLabel ("1.5x").ok && std::abs (widthLabel ("150%").db - 3.5218) < 1e-3 && ! widthLabel ("wide").ok,
+               "stereo ST-1: a width of W % promises side / mid of 20 log10 (W / 100), judged within 0.5 dB; 0 % needs -30 dB or less (" + w200miss.why + ")");
+        // ST-2 NAMES PROPOSE, MEASUREMENT DECIDES: a width control moves side / mid monotonically over 6 dB; an EQ's "Mid Freq" is never a mid gain
+        const std::vector<MsRead> widens { rd (0.0f, -15, -60, 0, 0), rd (0.5f, -15, -15, 0, 0), rd (1.0f, -15, -9, 0, 0) }, still { rd (0.0f, -15, -15, 0, 0), rd (0.5f, -15, -14, 0, 0), rd (1.0f, -15, -13, 0, 0) };
+        juce::String why1, why2;
+        check (moves (widens, [] (const MsRead& r) { return widthDb (r); }, why1) && ! moves (still, [] (const MsRead& r) { return widthDb (r); }, why2)
+               && widthNamed ("Width") && widthNamed ("Stereo Spread") && balanceNamed ("Balance") && balanceNamed ("Pan") && midNamed ("Mid Gain") && sideNamed ("Side Level") && ! midNamed ("Mid Freq") && ! sideNamed ("Sidechain"),
+               "stereo ST-2: a width control moves side / mid over 6 dB (" + why1 + " | " + why2 + ")");
+        // ST-3 the held-out width targets at 1/3 and 2/3 of the measured range (the no-side end left out); dB labels; the probe line
+        const auto ts = widthTargets (widens);
+        juce::StringArray f; f.addTokens ("stereo\t0\t-12.00\tof\thold\tmid_db\t-15.0000\tside_db\t-21.0000\tl_db\t-14.0000\tr_db\t-16.0000\tcorr\t0.6000\tfeed\t1", "\t", "");
+        const auto h = readHold (f, 3);
+        check (ts.size() == 2 && std::abs (ts[0].db - 2.0) < 1e-9 && std::abs (ts[0].norm - (0.5f + 0.5f / 3.0f)) < 1e-4 && std::abs (ts[1].db - 4.0) < 1e-9 && dbLabel ("+3.0 dB") && *dbLabel ("+3.0 dB") == 3.0 && ! dbLabel ("3")
+               && h.ok && std::abs (widthDb (h) - (-6.0)) < 1e-9 && std::abs (balanceDb (h) - 2.0) < 1e-9 && std::abs (h.corr - 0.6) < 1e-9,
+               "stereo ST-3: width acceptance targets " + juce::String ((int) ts.size()) + ", dB labels, the probe's stereo line read");
+        // ST-5 A ROTATION IS NOT A WIDTH (31 Oct: S1 Imager's "Rotation" swept side / mid -60 .. +60 dB): a control driving side over mid past 30 dB
+        const std::vector<MsRead> rotates { rd (0.0f, -15, -75, 0, 0), rd (0.5f, -15, -15, 0, 0), rd (1.0f, -75, -15, 0, 0) };
+        const auto cst = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertStereo.h").loadFileAsString();
+        check (isRotation (rotates) && ! isRotation (widens) && cst.contains ("if (decided && role == \"width\" && isRotation (rd.rs)) { role = \"rotation\";"),
+               "stereo ST-5: a control that drives the mid away is a rotation, recorded and never judged as a width");
+        // ST-4 THE PROBE: stereo= feeds the two main inputs (left, right, side), refuses a one-input plugin, prints its own "stereo" line (never
+        // "hold": parseSweep reads every hold line as the level)
+        const auto sw = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_sweep.h").loadFileAsString();
+        check (sw.contains ("io.setSample (ch, n, v * feedGain (ch));") && sw.contains ("feed == 3 ? (ch == 0 ? 1.0f : -1.0f)") && sw.contains ("if (s.feed != 0 && r.mainIn < 2)")
+               && sw.contains ("std::printf (\"stereo\\t%d\\t%.2f\\tof\\t%s\\tmid_db") && ! sw.contains ("\\tstereo\\tmid_db"),
+               "stereo ST-4: the probe feeds L only / R only / antiphase, refuses a one-input plugin, and prints the picture on its own line");
+    }
+    {
+        using namespace ejmap::cert::amp;
+        // AMP-1 names: a tone stack is never a frequency or a level; an output is never the input / drive
+        check (toneNamed ("Bass") && toneNamed ("Treble") && toneNamed ("Middle") && toneNamed ("Presence") && ! toneNamed ("Low Freq") && ! toneNamed ("High Cut") && ! toneNamed ("Gain") && ! toneNamed ("High Gain")
+               && outputNamed ("Master") && outputNamed ("Output Level") && ! outputNamed ("Input Level") && ! outputNamed ("Drive") && contextNamed ("Amp Model") && contextNamed ("Pedal Type") && contextNamed ("Cabinet"),
+               "amp AMP-1: tone-stack, output and context names");
+        // AMP-2 where a tone control acts: the tone whose deviation spreads most across its positions; the gain read there (log-f interpolation)
+        const std::vector<std::vector<std::pair<double, double>>> devs { { { 100.0, -6.0 }, { 1000.0, -0.5 }, { 5000.0, 0.0 } }, { { 100.0, 0.0 }, { 1000.0, 0.0 }, { 5000.0, 0.0 } }, { { 100.0, 6.0 }, { 1000.0, 0.5 }, { 5000.0, 0.1 } } };
+        const auto at = gainAt (devs[2], std::sqrt (100.0 * 1000.0));
+        check (actsAt (devs) == 100.0 && at && std::abs (*at - 3.25) < 1e-9 && ! gainAt (devs[2], 50.0),
+               "amp AMP-2: a tone control acts where its positions spread most (" + juce::String (actsAt (devs), 0) + " Hz); the gain there by log-f interpolation");
+        // AMP-4 (the amp runs, 31 Oct): a tone control acts between 40 Hz and 16 kHz only (ENGL's "Presence at 12.7 Hz"); under 3 dB of move it is
+        // inactive here (Diezel's other channel, PRS's Lead controls) - recorded, no acceptance
+        {
+            const std::vector<std::vector<std::pair<double, double>>> sub { { { 12.0, -20.0 }, { 100.0, -6.0 }, { 1000.0, 0.0 } }, { { 12.0, 0.0 }, { 100.0, 0.0 }, { 1000.0, 0.0 } }, { { 12.0, 25.0 }, { 100.0, 6.0 }, { 1000.0, 0.0 } } };
+            const auto amp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertAmp.h").loadFileAsString();
+            check (actsAt (sub) == 100.0 && std::abs (spreadAt (sub, 100.0) - 12.0) < 1e-9 && kInactiveDb == 3.0 && kActsLoHz == 40.0 && kActsHiHz == 16000.0
+                   && amp.contains ("const auto ts = inactive ? std::vector<Target>() : targets (law);") && amp.contains ("const bool inactive = moveDb < kInactiveDb;"),
+                   "amp AMP-4: a tone control acts in 40 Hz - 16 kHz (" + juce::String (actsAt (sub), 0) + " Hz); under 3 dB of move it is inactive, never accepted");
+        }
+        // AMP-3 the held-out targets at 1/3 and 2/3 of the measured range; under 1 dB of range none
+        const auto ts = targets ({ { 0.0f, -12.0 }, { 0.5f, 0.0 }, { 1.0f, 12.0 } }), flat = targets ({ { 0.0f, 0.0 }, { 1.0f, 0.5 } });
+        check (ts.size() == 2 && std::abs (ts[0].db + 4.0) < 1e-9 && std::abs (ts[0].norm - 1.0f / 3.0f) < 1e-4 && std::abs (ts[1].db - 4.0) < 1e-9 && flat.empty(),
+               "amp AMP-3: the held-out tone / output targets at the range's thirds; none under 1 dB of range");
+    }
+}
+
+void testModulation()
+{
+    using namespace ejmap::modulation;
+    const double dt = kWinS; const int n = (int) std::llround (10.0 / dt);
+    auto series = [&] (const std::function<double (double)>& f) { std::vector<double> v; for (int i = 0; i < n; ++i) v.push_back (f (i * dt)); return v; };
+    const double pi2 = juce::MathConstants<double>::twoPi;
+    // MOD-1 a tremolo at 2 Hz (a 6 dB sine of level) reads 2 Hz; a 0.37 Hz one too (3.7 periods in 10 s); 15 Hz too
+    const auto t2 = periodOf ({ series ([&] (double t) { return -3.0 + 3.0 * std::sin (pi2 * 2.0 * t); }) }, dt);
+    const auto t037 = periodOf ({ series ([&] (double t) { return 3.0 * std::sin (pi2 * 0.37 * t); }) }, dt);
+    const auto t15 = periodOf ({ series ([&] (double t) { return 3.0 * std::sin (pi2 * 15.0 * t); }) }, dt);
+    check (t2.ok && std::abs (t2.rateHz / 2.0 - 1.0) < 0.005 && t037.ok && std::abs (t037.rateHz / 0.37 - 1.0) < 0.01 && t15.ok && std::abs (t15.rateHz / 15.0 - 1.0) < 0.02,
+           "mod MOD-1: a tremolo's rate from its level wobble (2 Hz -> " + juce::String (t2.rateHz, 4) + ", 0.37 -> " + juce::String (t037.rateHz, 4) + ", 15 -> " + juce::String (t15.rateHz, 3) + ")");
+    // MOD-2 THE TWO TONES: a phaser's notch sweeping a tone at its centre dips it twice per cycle (one tone reads 2x the rate); a tone off
+    // the centre dips it at uneven spacing; the two averaged read the true 1.5 Hz
+    auto dip = [&] (double at) { return series ([&] (double t) { const double pos = std::sin (pi2 * 1.5 * t); return -12.0 * std::exp (-std::pow ((pos - at) / 0.15, 2.0)); }); };
+    const auto centred = periodOf ({ dip (0.0) }, dt), both = periodOf ({ dip (0.0), dip (0.55) }, dt);
+    check (centred.ok && std::abs (centred.rateHz / 3.0 - 1.0) < 0.01 && both.ok && std::abs (both.rateHz / 1.5 - 1.0) < 0.01,
+           "mod MOD-2: one centred tone reads a phaser at twice its rate (" + juce::String (centred.rateHz, 3) + " Hz); two tones agree on 1.5 (" + juce::String (both.rateHz, 3) + ")");
+    // MOD-3 no wobble, and noise, read no rate
+    juce::Random rng (31); const auto flat = periodOf ({ series ([] (double) { return -12.0; }) }, dt), noise = periodOf ({ series ([&] (double) { return rng.nextDouble() - 0.5; }) }, dt);
+    check (! flat.ok && ! noise.ok && spreadOf (series ([&] (double t) { return 3.0 * std::sin (pi2 * 2.0 * t); })) > 5.8,
+           "mod MOD-3: a steady level and a noisy one read no rate (" + flat.why + "; " + noise.why + ")");
+    // MOD-4 THE LABELS: Hz, periods, note values at 120 bpm (dotted, triplet, bars); a declared-Hz bare number; a percentage is no rate
+    auto hz = [] (const char* d, const char* u = "") { const auto l = rateLabel (d, u, 120.0); return l.ok ? l.hz : -1.0; };
+    check (std::abs (hz ("2.5 Hz") - 2.5) < 1e-9 && std::abs (hz ("400 ms") - 2.5) < 1e-9 && std::abs (hz ("2 s") - 0.5) < 1e-9 && std::abs (hz ("1/4") - 2.0) < 1e-9
+           && std::abs (hz ("1/8 D") - 2.0 / 0.75) < 1e-9 && std::abs (hz ("1/16T") - 12.0) < 1e-9 && std::abs (hz ("1/4.") - 2.0 / 1.5) < 1e-9 && std::abs (hz ("1 bar") - 0.5) < 1e-9
+           && std::abs (hz ("2 bars") - 0.25) < 1e-9 && std::abs (hz ("0.50", "Hz") - 0.5) < 1e-9 && hz ("0.50") < 0.0 && hz ("50 %") < 0.0 && std::abs (rateLabel ("1/4", "", 90.0).hz - 1.5) < 1e-9,
+           "mod MOD-4: rate labels - Hz, ms / s, note values at the tempo (1/8 D " + juce::String (hz ("1/8 D"), 3) + ", 1/16T " + juce::String (hz ("1/16T"), 3) + "), a percentage is none");
+    // MOD-5 NAMES PROPOSE, MEASUREMENT DECIDES: a rate control moves the rate monotonically over 3x; a flat or folding one does not
+    auto pts = [] (std::vector<double> r) { std::vector<RatePoint> v; for (size_t i = 0; i < r.size(); ++i) { RatePoint p; p.norm = (float) i / (float) (r.size() - 1); p.period.ok = r[i] > 0.0; p.period.rateHz = r[i]; v.push_back (p); } return v; };
+    juce::String w1, w2, w3, w4;
+    check (movesRate (pts ({ 0.1, 0.3, 1.0, 3.0, 10.0 }), w1) && ! movesRate (pts ({ 2.0, 2.05, 2.1, 2.2, 2.3 }), w2) && ! movesRate (pts ({ 0.5, 2.0, 8.0, 1.0, 9.0 }), w3) && ! movesRate (pts ({ 1.0, 0.0, 0.0, 5.0 }), w4)
+           && rateNamed ("Rate") && rateNamed ("LFO Speed") && ! rateNamed ("Delay Time") && ! rateNamed ("Sync") && depthNamed ("Depth") && mixNamed ("Dry/Wet") && feedbackNamed ("Feedback") && syncNamed ("Tempo Sync"),
+           "mod MOD-5: the rate control is the one whose positions move the rate monotonically over 3x (" + w1 + " | " + w2 + " | " + w3 + " | " + w4 + ")");
+    // MOD-6 THE ACCEPTANCE TARGETS at 1/3 and 2/3 of the log range, the norm interpolated in log rate; judged within 5 %
+    const auto ts = acceptanceTargets (pts ({ 0.1, 1.0, 10.0 }));
+    check (ts.size() == 2 && std::abs (ts[0].rateHz - std::pow (10.0, -1.0 / 3.0)) < 1e-6 && std::abs (ts[0].norm - 1.0f / 3.0f) < 1e-4 && std::abs (ts[1].rateHz - std::pow (10.0, 1.0 / 3.0)) < 1e-6
+           && judgeAcceptance (2.0, 2.09).pass && ! judgeAcceptance (2.0, 2.11).pass && judgeRate (1.91, rateLabel ("2 Hz", "", 120.0)).pass && ! judgeRate (1.8, rateLabel ("2 Hz", "", 120.0)).pass,
+           "mod MOD-6: acceptance targets " + juce::String (ts.size()) + " at the log thirds; 5 % both ways");
+    // MOD-7 THE PROBE'S TEMPO: --sweep takes tempo= and advances the playhead with every block (a synced LFO runs at the host tempo)
+    const auto sw = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/au_instantiate_probe/probe_sweep.h").loadFileAsString();
+    check (sw.contains ("else if (k == \"tempo\") s.tempo = v.getDoubleValue();") && sw.contains ("if (head != nullptr) head->samples += block;") && sw.contains ("if (s.tempo > 0.0) r.head = &head;")
+           && sw.contains ("if (s.tempo > 0.0) p.setPlayHead (&head);"),
+           "mod MOD-7: the probe's --sweep gives the plugin a playing playhead at tempo= and advances it");
+    // RD-LABELS (31 Oct, weekend item 10): a "%" feedback is the gain a repeat keeps (50 % = -6.02 dB per repeat), judged within 1 dB; a beat
+    // count is no time in ms ("0.6667 beats" read as 667 ms); damping recorded as the decay at 5 kHz over 997 Hz
+    {
+        using namespace ejmap::reverbdelay;
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (feedbackLabelDb ("50%") && std::abs (*feedbackLabelDb ("50%") + 6.0206) < 1e-3 && feedbackLabelDb ("100 %") && std::abs (*feedbackLabelDb ("100 %")) < 1e-9 && ! feedbackLabelDb ("0.0%")
+               && feedbackLabelDb ("-3.0 dB") && *feedbackLabelDb ("-3.0 dB") == -3.0 && ! feedbackLabelDb ("12") && ! isTimeLabel ("0.6667 beats") && ! labelMs ("0.6667 beats") && ! isTimeLabel ("2 bars")
+               && isTimeLabel ("120 ms") && isTimeLabel ("1.5 s") && labelMs ("1.5 s") && *labelMs ("1.5 s") == 1500.0
+               && drv.contains ("if (const auto lf = reverbdelay::feedbackLabelDb (textOf (t, feedback.index)); lf && on.fallPerRepeatDb)") && drv.contains ("o->setProperty (\"damping\", juce::var (m));")
+               && dampingWords().contains ("damping"),
+               "mod RD-LABELS: feedback % labels as the gain per repeat (50 % = -6.02 dB), beats are not ms, damping read at 5 kHz vs 997 Hz");
+    }
+    // RD-TAP1 (31 Oct: SuperTap's "Tap 1 On/off" is Off as instantiated - no echo, no time): a delay's first tap switch reading off is written on
+    {
+        auto base = juce::JSON::parse (R"J({"controls":[{"index":2,"name":"Direct On","displayAt":{"0.000000":"Off","1.000000":"On"},"text":"On"},
+                                                        {"index":23,"name":"Tap 1 On/off","displayAt":{"0.000000":"Off","1.000000":"On"},"text":"Off"}]})J");
+        auto onAlready = juce::JSON::parse (R"J({"controls":[{"index":23,"name":"Tap 1 On/off","displayAt":{"0.000000":"Off","1.000000":"On"},"text":"On"}]})J");
+        const auto t = ejmap::reverbdelay::firstTapSwitch (base), u = ejmap::reverbdelay::firstTapSwitch (onAlready);
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (t.first == 23 && t.second == 1.0 && u.first == -1 && drv.contains ("if (kind == \"delay\") if (const auto tapOn = reverbdelay::firstTapSwitch (base); tapOn.first >= 0)"),
+               "mod RD-TAP1: a delay's first tap switched off as instantiated is written on for every reading");
+    }
+    // RD-TAPS (31 Oct, weekend item 9): a multi-tap delay's time is its master in ms (SuperTap's "Tempo MS"; its taps are % of it) - sampled,
+    // and proposed as the time ahead of a tap's own "Delay"; measurement still decides
+    {
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        check (drv.contains ("\"ms\", \"msec\", \"tempo\", \"bpm\" });   // 31 Oct (weekend item 9)") && drv.contains ("(kind == \"delay\" ? (answers (n, { \"ms\", \"msec\" }) || answers (n, { \"delay\", \"time\"")
+               && ejmap::nametokens::controlAnswersTerm ("Tempo MS", "ms") && ! ejmap::nametokens::controlAnswersTerm ("Tap 1 Delay", "ms") && ! ejmap::nametokens::controlAnswersTerm ("Rooms", "ms"),
+               "mod RD-TAPS: a delay's master time in ms is sampled and proposed before a tap's Delay (SuperTap)");
+    }
+    // MOD-8 (the first runs, 31 Oct): a frequency beside a filter word is never a rate (NEOLD WARBLE's "High Cut Freq."); one LFO at a time -
+    // a rate and a depth sharing their other words are one LFO (wow / flutter); a silent output is said as silent (bx_bluechorus2)
+    const auto md = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertModulation.h").loadFileAsString();
+    check (! rateNamed ("High Cut Freq.") && ! rateNamed ("Low Cut Freq.") && rateNamed ("LFO Freq") && rateNamed ("Rate Hz") && rateNamed ("Flutter Speed")
+           && lfoKey ("Flutter Speed", true) == "flutter" && lfoKey ("Flutter Depth", false) == "flutter" && lfoKey ("Wow Speed", true) == "wow" && lfoKey ("Effect 1 Speed Synced", true) == "effect 1"
+           && lfoKey ("Effect 1 Depth", false) == "effect 1" && lfoKey ("Rate", true).isEmpty()
+           && md.contains ("out.add (juce::String (di) + (lfoKey (dn, false) == key ? \":0.75\" : \":0.0\"));") && md.contains ("if (any && ! sound) { rd.silent = true; return rd; }")
+           && md.contains ("if (rd.silent) { say (\"MOD: \" + opt.product + \": the output is silent at every position"),
+           "mod MOD-8: a filter's frequency is no rate; one LFO at a time (its own depth up, the others at 0); a silent output is said as silent");
+}
+
 void testDeesser()
 {
     using namespace ejmap::deesser;
@@ -11088,6 +11308,17 @@ void testWizardCategories()
                && R.certifiedParts() == juce::StringArray { "band 2", "band 2 make-up" } && eachStops && ! noV1.pass && passesSoFar (noV1.bands[1]) && ! passesSoFar (noV1.bands[0]),
                "wizard WZ-MBV1-1: per band - identity, 4 dB range, direction, a threshold display that tracks (Lindell's -21 reference passes, Drawmer's spread fails), the tone check within 0.5 dB, crossovers (where the neighbours' responses are equal) within 1/6 oct; only passing bands (and their make-up) offered");
     }
+    // WZ-MBV1-3 AN ASK THE LADDER CANNOT REACH IS NOT ASKED (31 Oct, weekend item 3: LinMB band 4's 4 dB at -12 dBFS): left out and said;
+    // two reached asks within 0.5 dB pass; one reached ask is not enough; any other unmeasured ask still fails
+    {
+        using namespace ejmap::mbv1;
+        auto J = [] (const char* t) { return juce::JSON::parse (t); };
+        const auto reach2 = gainPart (J (R"J([{"asked_db":2,"gr_db":2.1},{"asked_db":3,"gr_db":2.9},{"asked_db":4,"why":"the ladder does not reach it at -12 dBFS"}])J"));
+        const auto reach1 = gainPart (J (R"J([{"asked_db":2,"gr_db":2.1},{"asked_db":3,"why":"the ladder does not reach it at -12 dBFS"},{"asked_db":4,"why":"the ladder does not reach it at -12 dBFS"}])J"));
+        const auto other = gainPart (J (R"J([{"asked_db":2,"gr_db":2.1},{"asked_db":3,"gr_db":2.9},{"asked_db":4,"why":"no reading at the predicted setting"}])J"));
+        check (reach2.state == "pass" && reach2.why.contains ("not asked") && reach1.state == "not_tested" && other.state == "fail",
+               "wizard WZ-MBV1-3: an ask the band's ladder cannot reach is not asked (" + reach2.state + ": " + reach2.why + "); one reached ask is " + reach1.state + "; another unmeasured ask " + other.state);
+    }
     // WZ-MBV1-2 THE STEP IN SEAN'S RUN: multiband_v1 is a run-all step that takes --out and --only, and stops at the run's hour
     {
         using namespace ejmap::runall;
@@ -12992,6 +13223,9 @@ int main (int, char**)
     testReverbDelay();
     testDynamics();
     testDeesser();
+    testModulation();
+    testStereoAmp();
+    testDeesserDetector();
     testNoise();
     testDraftsPass();
     testStripDraft();

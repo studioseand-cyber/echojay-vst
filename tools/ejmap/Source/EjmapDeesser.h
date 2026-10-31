@@ -104,6 +104,7 @@ inline juce::String modeWord (const Centre& c)
     if (std::abs (c.at997Db - c.depthDb) <= kWideSameDb) return "wideband";
     return "partial";
 }
+inline constexpr double kBareHzFloor = 500.0;   // a bare-number frequency label under this is no de-esser frequency (a 0-100 knob)
 inline std::optional<double> labelHz (const juce::String& display)
 {
     const auto s = display.trim().toLowerCase(); juce::String num;
@@ -111,6 +112,14 @@ inline std::optional<double> labelHz (const juce::String& display)
     if (num.isEmpty() || num == ".") return {};
     const double v = num.getDoubleValue();
     if (s.contains ("k")) return v * 1000.0;
+    return v;
+}
+// 31 Oct (the detector runs: MannyM TripleD's knob reads 0 / 50 / 100): for a DE-ESSER's frequency, a BARE number is a frequency only where a
+// de-esser can listen (labelHz itself is shared: a multiband's 92 Hz crossover is a bare number too)
+inline std::optional<double> deesserLabelHz (const juce::String& display)
+{
+    const auto v = labelHz (display); const auto s = display.trim().toLowerCase();
+    if (v && ! s.contains ("hz") && ! s.contains ("k") && *v < kBareHzFloor) return {};
     return v;
 }
 
@@ -222,7 +231,9 @@ inline juce::var deesserBlock (const juce::var& rec)
     // the band: the frequency control's positions with the shape's own figure
     { auto* b = new juce::DynamicObject(); b->setProperty ("control", rec.getProperty ("frequency_control", juce::var())); juce::String shape; juce::Array<juce::var> ps;
       if (const auto* cs = rec.getProperty ("centre", {}).getArray()) for (const auto& r : *cs) { const auto sh = r.getProperty ("shape", "").toString(); if (shape.isEmpty()) shape = sh; auto* p = new juce::DynamicObject(); p->setProperty ("norm", r.getProperty ("freq_norm", juce::var())); p->setProperty ("display", r.getProperty ("display", "")); if (sh == "shelf") p->setProperty ("corner_hz", r.getProperty ("corner_hz", juce::var())); else p->setProperty ("centre_hz", r.getProperty ("deepest_hz", juce::var())); p->setProperty ("depth_db", r.getProperty ("depth_db", juce::var())); p->setProperty ("label_hz", r.getProperty ("label_hz", juce::var())); ps.add (juce::var (p)); }   // 27 Oct: the Hz label (certv1 judges against it)
-      b->setProperty ("shape", shape.isNotEmpty() ? juce::var (shape) : juce::var()); b->setProperty ("positions", ps); o->setProperty ("band", juce::var (b)); }
+      b->setProperty ("shape", shape.isNotEmpty() ? juce::var (shape) : juce::var()); b->setProperty ("positions", ps);
+      if (const auto* ds = rec.getProperty ("detector", {}).getArray(); ds != nullptr && ! ds->isEmpty()) b->setProperty ("detector", rec.getProperty ("detector", {}));   // 31 Oct: the detector read directly (judged in its place)
+      o->setProperty ("band", juce::var (b)); }
     o->setProperty ("tone_vs_noise_at_pick_db", rec.hasProperty ("tone_vs_noise_at_pick_db") ? rec.getProperty ("tone_vs_noise_at_pick_db", {}) : juce::var());
     if ((bool) rec.getProperty ("tone_noise_disagree", false)) notes.add ("tone_noise_disagree: " + rec.getProperty ("tone_noise_note", "").toString());
     o->setProperty ("pick", rec.hasProperty ("pick") ? rec.getProperty ("pick", {}) : juce::var());
@@ -242,4 +253,57 @@ inline juce::var deesserBlock (const juce::var& rec)
     return juce::var (o);
 }
 
+
+// THE DETECTOR (31 Oct, weekend item 7). The cut curve (threshold hard minus open) is the detector's filter TIMES a gain reduction that
+// changes with the setting (Waves DeEsser: -25 / -24 / -16 dB at 2 / 5.7 / 16 kHz), so its corner moves with its depth and no one point on
+// it fits the labels (half depth: +0.44 / +0.29 / -0.20 octave; RDeEsser -0.46 / -0.52). The label names the DETECTOR's frequency. Read
+// it directly: at the threshold's hard setting, one tone at a time at 1/3-octave steps, each on a level ladder; the level where the gain
+// reduction reaches kDetectorGrDb is the detector's sensitivity there (lower = more sensitive). A sensitivity that rises to a plateau at
+// the top is a high-pass detector: its frequency is where it is 3 dB under the plateau. One that falls 3 dB on both sides of a peak is a
+// band-pass detector: its frequency is the peak. Judged against the label within kDetectorTolOct.
+inline constexpr double kDetectorGrDb = 3.0, kDetectorTolOct = 1.0 / 6.0, kDetectorCornerDb = 3.0;
+// 31 Oct (the detector runs): TB_Sibalance's 19 kHz "Stop freq" lay past a 16 kHz top tone - to 20 kHz now
+inline std::vector<double> detectorTones() { std::vector<double> t; for (int k = 0; k <= 16; ++k) t.push_back (500.0 * std::pow (2.0, k / 3.0)); return t; }   // 500 Hz .. 20.2 kHz
+// 31 Oct (the detector runs: Waves DeEsser, 3 tones of 17 reached 3 dB of reduction at its hard setting): the reduction a curve is read at
+// steps down - 3, then 2, then 1 dB - to the first that at least kDetectorMinTones tones reach (the curve's SHAPE is the same at any of them)
+inline constexpr int kDetectorMinTones = 4;
+inline const std::vector<double>& detectorGrSteps() { static const std::vector<double> s { 3.0, 2.0, 1.0 }; return s; }
+inline juce::String detectorLevels() { return "-54,-48,-42,-36,-30,-24,-18,-12,-6,0"; }
+// the input level (dBFS) at which the gain reduction first reaches grDb, from (level, gain) pairs; the quietest level is the reference
+inline std::optional<double> levelForGr (std::vector<std::pair<double, double>> lg, double grDb)
+{
+    if (lg.size() < 2) return std::nullopt;
+    std::sort (lg.begin(), lg.end());
+    const double g0 = lg.front().second;
+    for (size_t i = 1; i < lg.size(); ++i)
+    {   const double a = g0 - lg[i - 1].second, b = g0 - lg[i].second;
+        if (a < grDb && b >= grDb) return lg[i - 1].first + (grDb - a) / (b - a) * (lg[i].first - lg[i - 1].first); }
+    return std::nullopt;
+}
+struct DetectorPoint { double hz = 0.0; std::optional<double> levelDbfs; };
+struct DetectorRead { bool ok = false; juce::String kind, why; double hz = 0.0; };
+inline DetectorRead detectorFrequency (const std::vector<DetectorPoint>& pts)
+{
+    DetectorRead r; std::vector<std::pair<double, double>> s;   // (hz, sensitivity = -level)
+    for (const auto& p : pts) if (p.levelDbfs) s.push_back ({ p.hz, -*p.levelDbfs });
+    std::sort (s.begin(), s.end());
+    if (s.size() < 4) { r.why = juce::String ((int) s.size()) + " tone(s) reached " + juce::String (kDetectorGrDb, 0) + " dB of reduction"; return r; }
+    size_t top = 0; for (size_t i = 1; i < s.size(); ++i) if (s[i].second > s[top].second) top = i;
+    const double peak = s[top].second;
+    auto crossDown = [&] (size_t from, int dir) -> std::optional<double>   // from the peak outwards, where the sensitivity falls 3 dB under it
+    {   for (long i = (long) from; i + dir >= 0 && i + dir < (long) s.size(); i += dir)
+        {   const auto& a = s[(size_t) i]; const auto& b = s[(size_t) (i + dir)];
+            if (a.second > peak - kDetectorCornerDb && b.second <= peak - kDetectorCornerDb) { const double t = (a.second - (peak - kDetectorCornerDb)) / (a.second - b.second); return std::exp (std::log (a.first) + t * (std::log (b.first) - std::log (a.first))); } }
+        return std::nullopt; };
+    const auto below = crossDown (top, -1), above = crossDown (top, 1);
+    if (below && above)
+    {   double hz = s[top].first;
+        if (top > 0 && top + 1 < s.size())
+        {   const double ya = s[top - 1].second, yb = s[top].second, yc = s[top + 1].second, den = ya - 2.0 * yb + yc;
+            if (std::abs (den) > 1e-9) hz = std::exp (std::log (s[top].first) + juce::jlimit (-0.5, 0.5, 0.5 * (ya - yc) / den) * std::log (2.0) / 3.0); }
+        r.ok = true; r.kind = "band_pass"; r.hz = hz; r.why = "a band-pass detector peaking at " + juce::String (hz, 0) + " Hz"; return r; }
+    if (below && ! above) { r.ok = true; r.kind = "high_pass"; r.hz = *below; r.why = "a high-pass detector, 3 dB under its plateau at " + juce::String (*below, 0) + " Hz"; return r; }
+    if (above && ! below) { r.ok = true; r.kind = "low_pass"; r.hz = *above; r.why = "a low-pass detector, 3 dB under its plateau at " + juce::String (*above, 0) + " Hz"; return r; }
+    r.why = "the detector's sensitivity varies by under 3 dB over 500 Hz-16 kHz: no corner"; return r;
+}
 } // namespace ejmap::deesser

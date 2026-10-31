@@ -120,18 +120,25 @@ inline Part thresholdPart (const std::vector<Cell>& cells)
     return { "threshold", "pass", juce::String ((int) offsets.size()) + " positions track 1:1" + (std::abs (median) > kThresholdTolDb ? " with a display reference of " + juce::String (median, 1) + " dB" : juce::String()) };
 }
 // THE PER-BAND TONE CHECK's verdict: every ask measured, each within 0.5 dB
+// AN ASK THE LADDER CANNOT REACH (31 Oct, weekend item 3: LinMB band 4's 4 dB at -12 dBFS) is not an ask: the band compresses less than
+// that at the tone check's level, so no setting can be predicted for it - the plugin was never asked, it did not miss. The run marks it
+// ("the ladder does not reach it"); it is left out, said in the part, and the part needs two reached asks
+inline constexpr const char* kUnreachedWhy = "the ladder does not reach it";
 inline Part gainPart (const juce::var& tonecheck)
 {
     const auto* a = tonecheck.getArray(); if (a == nullptr || a->isEmpty()) return { "gain", "not_tested", "no per-band tone check yet (Sean's run)" };
-    juce::String w; int n = 0;
+    juce::String w; int n = 0, unreached = 0;
     for (const auto& x : *a)
     {
         const double asked = (double) x.getProperty ("asked_db", 0.0); const auto got = x.getProperty ("gr_db", {});
+        if ((got.isVoid() || got.toString().isEmpty()) && x.getProperty ("why", "").toString().startsWith (kUnreachedWhy)) { ++unreached; continue; }
         if (got.isVoid() || got.toString().isEmpty()) { w = "the " + juce::String (asked, 0) + " dB ask did not measure (" + x.getProperty ("why", "").toString() + ")"; break; }
         ++n; if (std::abs ((double) got - asked) > kGainTolDb) { w = "asked " + juce::String (asked, 0) + " dB, measured " + juce::String ((double) got, 2); break; }
     }
-    if (w.isNotEmpty()) return { "gain", "fail", w };
-    return { "gain", "pass", juce::String (n) + " ask(s) within " + juce::String (kGainTolDb, 1) + " dB" };
+    const juce::String un = unreached > 0 ? "; " + juce::String (unreached) + " ask(s) beyond what the band compresses at the tone check's level: not asked" : juce::String();
+    if (w.isNotEmpty()) return { "gain", "fail", w + un };
+    if (n < 2) return { "gain", "not_tested", juce::String (n) + " reached ask(s)" + un };
+    return { "gain", "pass", juce::String (n) + " ask(s) within " + juce::String (kGainTolDb, 1) + " dB" + un };
 }
 // THE MEASURED CROSSOVER (Kathy, 16 Oct: no crossover type assumed): the frequency where the two neighbouring bands' responses are EQUAL.
 // Two ways to get each band's response, both with every threshold open:

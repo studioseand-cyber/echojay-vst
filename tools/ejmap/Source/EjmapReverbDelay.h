@@ -203,12 +203,46 @@ inline Onsets onsetsOf (const Tail& t)
     return o;
 }
 
+inline bool beatWorded (const juce::String& display);
+// a delay's first tap / echo switch ("Tap 1 On/off", "Echo 1 On", "Delay 1 Enable") whose display reads off as instantiated: (index, its on
+// norm), else (-1, 0). From the fixture's displayAt (the text pass): the norm whose text is "on" / "enabled"
+inline std::pair<int, double> firstTapSwitch (const juce::var& base)
+{
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const auto n = c.getProperty ("name", "").toString().toLowerCase();
+            if (! ((n.contains ("tap 1") || n.contains ("tap1") || n.contains ("echo 1") || n.contains ("delay 1")) && (n.contains ("on") || n.contains ("enable")))) continue;
+            const auto at = c.getProperty ("displayAt", {}); if (! at.isObject()) continue;
+            double onNorm = -1.0; for (const auto& kv : at.getDynamicObject()->getProperties()) { const auto t = kv.value.toString().trim().toLowerCase(); if (t == "on" || t == "enabled") onNorm = kv.name.toString().getDoubleValue(); }
+            const auto now = c.getProperty ("text", c.getProperty ("display", "")).toString().trim().toLowerCase();
+            if (onNorm >= 0.0 && now != "on" && now != "enabled") return { (int) c.getProperty ("index", -1), onNorm };
+        }
+    return { -1, 0.0 };
+}
+// FEEDBACK AS A LABEL (31 Oct, weekend item 10): a "%" feedback is the gain each repeat keeps - 50 % falls 6.02 dB per repeat, 100 % holds.
+// Sandman Pro (29 Oct run): 16.7 % fell -15.35 (expected -15.55), 33.3 % -9.37 (-9.55) ... 100 % +0.08: within 0.2 dB at every position.
+// A dB label is the fall itself. Judged within kFeedbackLabelTolDb; 0 % has no repeat to read
+inline constexpr double kFeedbackLabelTolDb = 1.0;
+inline std::optional<double> feedbackLabelDb (const juce::String& display)
+{
+    const auto s = display.trim().toLowerCase(); const auto v = s.retainCharacters ("0123456789.-+");
+    if (v.isEmpty() || v == "-" || v == "+" || v == ".") return {};
+    const double x = v.getDoubleValue();
+    if (s.contains ("%")) { if (x <= 0.0) return {}; return 20.0 * std::log10 (x / 100.0); }
+    if (s.contains ("db")) return x;
+    return {};
+}
+// DAMPING (31 Oct, weekend item 10): what it does - the decay at 5 kHz over the decay at 997 Hz, at three positions; recorded (the label, a
+// frequency or a percentage, is not a promise the decay can be judged against)
+inline const juce::StringArray& dampingWords() { static const juce::StringArray w { "damp", "damping", "hf damp", "high damp", "hi damp", "hfdamp" }; return w; }
 // label parsing: "120 ms", "1.5 s", "2.30s", "1/4", "35.0 %", "-6 dB"
 inline std::optional<double> labelMs (const juce::String& display)
 {
     const auto s = display.trim().toLowerCase();
     juce::String num; for (int i = 0; i < s.length(); ++i) { const auto c = s[i]; if (juce::CharacterFunctions::isDigit (c) || c == '.' || c == '-' || c == '+') num << c; else if (num.isNotEmpty()) break; }
     if (num.isEmpty() || num == "-" || num == "." || num == "+") return {};
+    if (beatWorded (s)) return {};   // 31 Oct: a beat / bar count is no time in ms
     const double v = num.getDoubleValue();
     if (s.contains ("ms")) return v;
     if (s.endsWith ("s") || s.contains (" s") || s.contains ("sec")) return v * 1000.0;
@@ -347,7 +381,10 @@ inline double roleStrength (const juce::String& role, std::optional<double> dryA
 // PRE-DELAY RELATIVE TO THE UNIT'S OWN ONSET (section 4): onset(position) minus the onset at the control's 0 setting
 inline std::optional<double> relativeMs (std::optional<double> onsetMs, std::optional<double> ownOnsetMs) { if (! onsetMs || ! ownOnsetMs) return std::nullopt; return *onsetMs - *ownOnsetMs; }
 // a time label is judged only when it reads in ms or s
-inline bool isTimeLabel (const juce::String& display) { const auto s = display.trim().toLowerCase(); if (! s.containsAnyOf ("0123456789")) return false; return s.contains ("ms") || s.endsWith ("s") || s.contains (" s") || s.contains ("sec"); }
+// 31 Oct (weekend item 10): "0.6667 beats" ends in an s and read as 667 ms; a beat or bar count is a note value at a tempo the time reads
+// never set - not a time label (the sync pass judges it at a known tempo)
+inline bool beatWorded (const juce::String& display) { const auto s = display.trim().toLowerCase(); return s.contains ("beat") || s.contains ("bar"); }
+inline bool isTimeLabel (const juce::String& display) { const auto s = display.trim().toLowerCase(); if (! s.containsAnyOf ("0123456789") || beatWorded (s)) return false; return s.contains ("ms") || s.endsWith ("s") || s.contains (" s") || s.contains ("sec"); }
 // A DECAY CONTROL SHOWS A TIME (30 Oct, Phase 1 item 4, Kathy's rule): the decay role went to Unfiltered Audio Tails' "Damping" (0-100 %:
 // its decay ~8 s at every setting but the last) and GW VoiceCentric's "Reverb" (a level, -30..0 dB) - the acceptance then asked them for
 // 2.6 s and called the misses "188 % off". A control is the decay only when at least half its measured positions, and at least two, show

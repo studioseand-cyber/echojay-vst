@@ -69,18 +69,8 @@ inline bool parseTailArgs (int argc, char** argv, int first, TailSpec& s, juce::
     return true;
 }
 
-// A HOST PLAYHEAD for the tempo-synced case: playing, 4/4, `bpm`, the position advancing with every block rendered.
-struct TailPlayHead : juce::AudioPlayHead
-{
-    double sr = 48000.0, bpm = 120.0; juce::int64 samples = 0;
-    juce::Optional<PositionInfo> getPosition() const override
-    {
-        PositionInfo pi; pi.setIsPlaying (true); pi.setIsRecording (false); pi.setBpm (bpm); pi.setTimeSignature (TimeSignature { 4, 4 });
-        pi.setTimeInSamples (samples); pi.setTimeInSeconds ((double) samples / sr);
-        const double ppq = (double) samples / sr * bpm / 60.0; pi.setPpqPosition (ppq); pi.setPpqPositionOfLastBarStart (std::floor (ppq / 4.0) * 4.0);
-        return pi;
-    }
-};
+// A HOST PLAYHEAD for the tempo-synced case: probe_sweep.h's HostPlayHead (31 Oct: the sweep takes tempo= too, for modulation rates)
+using TailPlayHead = HostPlayHead;
 
 inline void runTail (juce::AudioPluginInstance& p, const TailSpec& s, const RenderSpec& rs = {})
 {

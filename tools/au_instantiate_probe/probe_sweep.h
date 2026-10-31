@@ -71,6 +71,22 @@ struct SweepSpec
     double sampleRate = 0.0;   // sr= (6 Oct, accuracy A4): 0 = the render default (48 kHz); 44100 / 96000 prepare the plugin at that rate
     // signal=noise (7 Oct): band-limited seeded noise instead of the sine (see the header); lo / hi in Hz, the seed
     bool noise = false; double noiseLoHz = 4000.0, noiseHiHz = 10000.0; unsigned long long seed = 20261007ULL;
+    int feed = 0;          // stereo=same|left|right|side (31 Oct, weekend item 2): 0 L = R (as before), 1 L only, 2 R only, 3 L = -R (the side only)
+    double tempo = 0.0;    // tempo=<bpm> (31 Oct, modulation): > 0 gives the plugin a playing playhead at that tempo (a synced LFO's note values)
+};
+
+// A HOST PLAYHEAD for the tempo-synced case: playing, 4/4, `bpm`, the position advancing with every block rendered (5 Oct, --tail;
+// 31 Oct, --sweep too)
+struct HostPlayHead : juce::AudioPlayHead
+{
+    double sr = 48000.0, bpm = 120.0; juce::int64 samples = 0;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo pi; pi.setIsPlaying (true); pi.setIsRecording (false); pi.setBpm (bpm); pi.setTimeSignature (TimeSignature { 4, 4 });
+        pi.setTimeInSamples (samples); pi.setTimeInSeconds ((double) samples / sr);
+        const double ppq = (double) samples / sr * bpm / 60.0; pi.setPpqPosition (ppq); pi.setPpqPositionOfLastBarStart (std::floor (ppq / 4.0) * 4.0);
+        return pi;
+    }
 };
 
 inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce::String& why)
@@ -90,6 +106,8 @@ inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce
         else if (k == "lo") s.noiseLoHz = v.getDoubleValue();
         else if (k == "hi") s.noiseHiHz = v.getDoubleValue();
         else if (k == "seed") s.seed = (unsigned long long) v.getLargeIntValue();
+        else if (k == "tempo") s.tempo = v.getDoubleValue();
+        else if (k == "stereo") { if (v == "same") s.feed = 0; else if (v == "left") s.feed = 1; else if (v == "right") s.feed = 2; else if (v == "side") s.feed = 3; else { why = "stereo= is same, left, right or side"; return false; } }
         else if (k == "hold") s.holdS = v.getDoubleValue();
         else if (k == "discard") s.discardS = v.getDoubleValue();
         else if (k == "win") s.winS = v.getDoubleValue();
@@ -106,6 +124,7 @@ inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce
     if (s.norms.empty() && s.refS <= 0) { why = "nothing to measure: no norms= and ref=0"; return false; }
     if (s.levels.empty() || s.holdS <= s.discardS || s.winS <= 0) { why = "bad levels/hold/discard/win"; return false; }
     if (s.noise && (s.noiseLoHz < 20.0 || s.noiseHiHz <= s.noiseLoHz || s.seed == 0)) { why = "noise lo/hi/seed out of range"; return false; }
+    if (s.tempo < 0.0 || s.tempo > 400.0) { why = "tempo out of range"; return false; }
     return true;
 }
 
@@ -117,7 +136,10 @@ struct SweepRenderer
     juce::MidiBuffer midi;
     double sr, phase = 0.0, step;
     double phase2 = 0.0, step2 = 0.0;     // the second tone of a two-tone signal (0 = sine only)
-    int block, mainIn, mainOut, fedIn = 0;   // fedIn: the channels the stimulus is WRITTEN to under the sidechain policy (main + the first extra bus under "echojay") - EVERY mode writes r.fedIn, never r.mainIn (6 Oct: a connected, silent sidechain read no compression on Waves C1 (s))
+    int block, mainIn, mainOut, fedIn = 0;
+    HostPlayHead* head = nullptr;   // 31 Oct: the sweep's tempo= playhead, advanced with every block rendered
+    int feed = 0;                   // 31 Oct (stereo=): how the two main inputs are fed; the sidechain copy is always the plain signal
+    float feedGain (int ch) const { if (mainIn < 2 || ch > 1) return 1.0f; return feed == 1 ? (ch == 0 ? 1.0f : 0.0f) : feed == 2 ? (ch == 0 ? 0.0f : 1.0f) : feed == 3 ? (ch == 0 ? 1.0f : -1.0f) : 1.0f; }   // fedIn: the channels the stimulus is WRITTEN to under the sidechain policy (main + the first extra bus under "echojay") - EVERY mode writes r.fedIn, never r.mainIn (6 Oct: a connected, silent sidechain read no compression on Waves C1 (s))
 
     // signal=noise: set by runSweep before any render; the hold's samples come from noise::bandLimited at the level's RMS
     bool useNoise = false; double noiseLoHz = 4000.0, noiseHiHz = 10000.0; unsigned long long seed = 20261007ULL;
@@ -143,6 +165,9 @@ struct SweepRenderer
         // oversampling FIR, probe_truepeak.h; 7 Oct, LIMITER_PROFILE_SPEC v0.1 section 3); and the older 4x Catmull-Rom cubic
         // estimate kept beside it as out_true_peak_cubic_db so a 5 Oct record and a 7 Oct one can be compared
         double outPeakDb = -999.0, outTruePeakDb = -999.0, outTruePeakCubicDb = -999.0;
+        // THE STEREO PICTURE over the measured span (31 Oct, weekend item 2; two main outputs only): mid (L+R)/2, side (L-R)/2, L, R
+        // and their correlation - a widener's side, a balance's tilt
+        bool stereoOut = false; double midDb = -999.0, sideDb = -999.0, lDb = -999.0, rDb = -999.0, corr = 0.0;
     };
 
     // One block of SILENCE through the plugin: the write escalation confirms while rendering silence, which builds
@@ -162,6 +187,7 @@ struct SweepRenderer
         const long long total = (long long) std::llround (seconds * sr), from = (long long) std::llround (measureFrom * sr);
         const long long winN = juce::jmax (1LL, (long long) std::llround (winS * sr));
         std::vector<double> chanSs ((size_t) juce::jmax (1, mainOut), 0.0);
+        double midSs = 0.0, sideSs = 0.0, lrSum = 0.0;   // 31 Oct: the stereo picture (two main outputs)
         double winSs = 0.0, inSs = 0.0, inPeak = 0.0; long long inWin = 0, measured = 0;
         double outPeak = 0.0, outTruePeakCubic = 0.0;
         std::vector<std::array<double, 4>> last ((size_t) juce::jmax (1, mainOut), std::array<double, 4> { 0.0, 0.0, 0.0, 0.0 });   // the last four samples per channel for the cubic interpolation
@@ -180,13 +206,14 @@ struct SweepRenderer
                 // Two-tone: each tone at amp / sqrt 2, so the RMS equals the sine's (amp^2/2) and the peak is 3.01 dB higher.
                 const long long tt = done + n;
                 const float v = useNoise ? (tt < total ? (float) nz[(size_t) tt] : 0.0f) : step2 > 0.0 ? (float) (amp * (std::sin (phase) + std::sin (phase2)) / std::sqrt (2.0)) : (float) (amp * std::sin (phase));
-                for (int ch = 0; ch < fedIn; ++ch) io.setSample (ch, n, v);
+                for (int ch = 0; ch < fedIn; ++ch) io.setSample (ch, n, v * feedGain (ch));
                 phase += step;
                 if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
                 if (step2 > 0.0) { phase2 += step2; if (phase2 > juce::MathConstants<double>::twoPi) phase2 -= juce::MathConstants<double>::twoPi; }
             }
             midi.clear();
             p.processBlock (io, midi);
+            if (head != nullptr) head->samples += block;
             for (int n = 0; n < block && done + n < total; ++n)
             {
                 const long long t = done + n;
@@ -217,6 +244,7 @@ struct SweepRenderer
                         if (step2 > 0.0) { const double h0 = (double) d + gcoef2 * hs1[(size_t) ch] - hs2[(size_t) ch]; hs2[(size_t) ch] = hs1[(size_t) ch]; hs1[(size_t) ch] = h0; }
                     }
                 }
+                if (mainOut >= 2 && t >= from) { const double L = io.getSample (0, n), R = io.getSample (1, n); if (std::isfinite (L) && std::isfinite (R)) { midSs += 0.25 * (L + R) * (L + R); sideSs += 0.25 * (L - R) * (L - R); lrSum += L * R; } }
                 if (mainOut > 0) ss /= mainOut;
                 winSs += ss;
                 if (t >= from) ++measured;
@@ -233,6 +261,9 @@ struct SweepRenderer
             all += chanSs[(size_t) ch];
         }
         h.levelDb = toDb (measured > 0 && mainOut > 0 ? std::sqrt (all / (measured * (double) mainOut)) : 0.0);
+        if (mainOut >= 2 && measured > 0)
+        {   h.stereoOut = true; h.midDb = toDb (std::sqrt (midSs / measured)); h.sideDb = toDb (std::sqrt (sideSs / measured)); h.lDb = h.chanDb[0]; h.rDb = h.chanDb[1];
+            const double den = std::sqrt (chanSs[0] * chanSs[1]); h.corr = den > 0.0 ? lrSum / den : 0.0; }
         {
             // Tone power per channel = 2 |X|^2 / N^2 (a sine of amplitude A gives |X| = A N / 2, power A^2 / 2); its
             // share of the total output power over the measured span.
@@ -314,11 +345,18 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
                  clean (ps[s.thr]->getName (128)).toRawUTF8(), (int) s.norms.size(), (int) s.levels.size());
     std::printf ("spec\thz\t%.3f\thold_s\t%.3f\tdiscard_s\t%.3f\twin_s\t%.3f\tref_s\t%.3f\tmoving_db\t%.3f\tamplitude\tpeak_at_level\treset_per_hold\t%d\tsignal\t%s\thz2\t%.3f\tnoise_lo\t%.1f\tnoise_hi\t%.1f\tseed\t%llu\n",
                  s.hz, s.holdS, s.discardS, s.winS, s.refS, s.movingDb, s.resetPerHold ? 1 : 0, s.noise ? "noise_band_limited_same_rms" : s.hz2 > 0.0 ? "two_tone_same_rms" : "sine", s.hz2, s.noise ? s.noiseLoHz : 0.0, s.noise ? s.noiseHiHz : 0.0, s.noise ? s.seed : 0ULL);
+    if (s.tempo > 0.0) std::printf ("tempo\tbpm\t%.2f\tplayhead\tplaying\n", s.tempo);
+    HostPlayHead head; head.sr = rs.sampleRate; head.bpm = s.tempo;
+    struct Unhead { juce::AudioPluginInstance& p; bool on; ~Unhead() { if (on) p.setPlayHead (nullptr); } } unhead { p, s.tempo > 0.0 };   // every return path
+    if (s.tempo > 0.0) p.setPlayHead (&head);   // before prepare: a plugin may read the tempo there
     configureAndPrepare (p, rs);
     SweepRenderer r (p, rs.sampleRate, rs.block, s.hz, s.hz2);
+    if (s.tempo > 0.0) r.head = &head;
+    r.feed = s.feed;
     r.useNoise = s.noise; r.noiseLoHz = s.noiseLoHz; r.noiseHiHz = s.noiseHiHz; r.seed = s.seed;
     std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\tsr\t%.0f\n", r.mainIn, r.mainOut, p.getLatencySamples(), rs.sampleRate);
     if (r.mainIn == 0 || r.mainOut == 0) { std::printf ("refused no main input or output bus\n"); return; }
+    if (s.feed != 0 && r.mainIn < 2) { std::printf ("refused stereo feed needs two main inputs (this plugin has %d)\n", r.mainIn); return; }   // 31 Oct
 
     // EVERY PARAMETER AS INSTANTIATED, before anything is written: the ratio EJ Map derives with is read from here.
     for (int i = 0; i < ps.size(); ++i)
@@ -386,6 +424,8 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
             std::printf ("%s\t%d\t%.2f\tlevel_db\t%.4f\tin_rms_db\t%.4f\ttone_frac\t%.4f\tch\t%s\tdoubled\t%d\tlast_move_db\t%.4f\tfinal_move_db\t%.4f\twin\t%s\tnonfinite\t%lld\tout_peak_db\t%.4f\tout_true_peak_db\t%.4f\tout_true_peak_cubic_db\t%.4f\tin_peak_db\t%.4f\n",
                          tag, k, L, h.levelDb, h.inRmsDb, h.toneFrac, joinDb (h.chanDb).toRawUTF8(), doubled, lastMove, finalMove,
                          joinDb (h.windowsDb).toRawUTF8(), h.nonFinite, h.outPeakDb, h.outTruePeakDb, h.outTruePeakCubicDb, h.inPeakDb);
+            // its own line (never "hold": parseSweep reads every hold line as the position's level)
+            if (h.stereoOut) std::printf ("stereo\t%d\t%.2f\tof\t%s\tmid_db\t%.4f\tside_db\t%.4f\tl_db\t%.4f\tr_db\t%.4f\tcorr\t%.4f\tfeed\t%d\n", k, L, tag, h.midDb, h.sideDb, h.lDb, h.rDb, h.corr, s.feed);
         }
     };
 

@@ -462,6 +462,33 @@ inline bool cornerMovesWithGain (const std::vector<GainRow>& rows)
     for (const auto& r : rows) if (r.band.result == "shelf" && r.band.cornerHz > 0.0) { lo = n == 0 ? r.band.cornerHz : juce::jmin (lo, r.band.cornerHz); hi = n == 0 ? r.band.cornerHz : juce::jmax (hi, r.band.cornerHz); ++n; }
     return n >= 2 && (hi / lo - 1.0) * 100.0 > kCornerMovePct;
 }
+// A GAIN LAW THAT MOVES WITH FREQUENCY (31 Oct, weekend item 11: LinEQ Broadband's -3 dB asks read -3.6 to -4.5 dB away from the frequency
+// its gain map was taken at). The freq sweep holds ONE gain setting: when the gain it reads spreads by more than the acceptance's own gain bar
+// across the frequency positions, one gain map cannot serve every frequency - the gain is read again where each acceptance target sits
+inline double gainSpreadDb (const std::vector<Band>& freqBands)
+{
+    double lo = 1e9, hi = -1e9; int n = 0;
+    for (const auto& b : freqBands) if (usable (b)) { lo = juce::jmin (lo, b.gainDb); hi = juce::jmax (hi, b.gainDb); ++n; }
+    return n >= 3 ? hi - lo : 0.0;
+}
+inline bool gainMovesWithFrequency (const std::vector<Band>& freqBands) { return gainSpreadDb (freqBands) > kAcceptGainBarDb; }
+// A BELL WHOSE CENTRE MOVES WITH GAIN (31 Oct, weekend item 5): MannyM's Band 1 reads 94 Hz at +-3.3 dB, 86 at +6.7, 90 at -6.7 and 82 at
+// +10; its frequency map, taken at the boost only, asked the +-3 dB acceptance for 86 Hz and measured 97 (12 % off, 0 of 4). LinEQ (2-6.5 %)
+// and Bettermaker (4-6 %) move the same way; a steady bell moves under 0.2 % (H-EQ-Light, SlickEQ, bx_hybrid). A move larger than HALF the
+// acceptance's own tolerance (5 %, or 1 % of a detent) spends the tolerance before the control is even read, so the bell is mapped at every
+// acceptance gain, like a shelf whose corner moves (one map per gain, -6 / -3 / +3 / +6 dB; the acceptance at +3 and -3 uses its own)
+inline constexpr double kCentreMoveShareOfTol = 0.5, kCentreMoveMinGainDb = 2.0;
+inline double centreMovePct (const std::vector<GainRow>& rows)
+{
+    double lo = 0.0, hi = 0.0; int n = 0;
+    for (const auto& r : rows) if (r.band.result == "measured" && r.band.centreHz > 0.0 && std::abs (r.band.gainDb) >= kCentreMoveMinGainDb)
+    { lo = n == 0 ? r.band.centreHz : juce::jmin (lo, r.band.centreHz); hi = n == 0 ? r.band.centreHz : juce::jmax (hi, r.band.centreHz); ++n; }
+    return n >= 2 ? (hi / lo - 1.0) * 100.0 : 0.0;
+}
+inline bool centreMovesWithGain (const std::vector<GainRow>& rows, bool steppedFreq)
+{
+    return centreMovePct (rows) > kCentreMoveShareOfTol * (steppedFreq ? kAcceptDetentPct : kAcceptFigurePct);
+}
 // the gain position whose label is nearest a gain (the shelf's per-gain map is taken there)
 inline const GainRow* gainRowNearest (const std::vector<GainRow>& rows, double gdb)
 {
@@ -483,6 +510,20 @@ inline bool serverMayUse (const juce::String& verdict) { return verdict == "meas
 // would (section 5: the norm whose MEASURED figure is the target, interpolated in log f on a continuous control, the nearest detent on
 // a stepped one; the gain map inverted), written and re-measured.
 struct FreqPoint { float norm = 0.0f; juce::String display; double figureHz = 0.0; };   // the freq sweep's usable rows: norm -> measured figure (centre or corner)
+// THE HELD-OUT GAIN (31 Oct, weekend item 5): a per-gain map's own acceptance at +-3 dB re-reads the gain its map was taken at - on a
+// stepped frequency control that is the same setting twice. +-4.5 dB is a gain no map was taken at: its figure is interpolated between
+// the two per-gain maps around it (+3 / +6, -3 / -6), log frequency linear in gain, at each norm both maps read - what the server must do
+// for a +4 dB ask
+inline const std::vector<double> kHeldOutGainsDb { 4.5, -4.5 };
+inline std::vector<FreqPoint> interpolatedMap (const std::vector<FreqPoint>& a, double ga, const std::vector<FreqPoint>& b, double gb, double g)
+{
+    std::vector<FreqPoint> out; if (std::abs (gb - ga) < 1e-9) return out;
+    const double t = (g - ga) / (gb - ga);
+    for (const auto& p : a) for (const auto& q : b)
+        if (std::abs (p.norm - q.norm) < 1e-4f && p.figureHz > 0.0 && q.figureHz > 0.0)
+        { out.push_back ({ p.norm, p.display, std::exp (std::log (p.figureHz) + t * (std::log (q.figureHz) - std::log (p.figureHz))) }); break; }
+    return out;
+}
 // A SHELF'S PER-GAIN MAPS AT THE MAIN MAP'S POSITIONS (30 Oct, Phase 1 item 1): the per-gain maps were taken at 7 even norms only, while
 // the main map had added midpoints where its law bends; the acceptance at +3 / -3 then interpolated the per-gain map straight across the
 // bend (a strip's LF shelf: +6 dB map 132.7 Hz at norm 0.417 against ~154 Hz interpolated; the +3 dB target 149.9, measured 130.4).
@@ -717,6 +758,7 @@ inline juce::var profileDraft (const juce::var& rec, const juce::var& plugin, co
             for (const char* k : { "type_control", "type_default", "type_measured", "shape_changed" }) if (b.hasProperty (k)) o->setProperty (k, b.getProperty (k, {}));
             // 20 Oct (Kathy): a shelf whose corner moves with gain is mapped at several gains; each gain's map and acceptance stand alone
             if (b.hasProperty ("freq_by_gain")) o->setProperty ("freq_by_gain", b.getProperty ("freq_by_gain", {}));
+            if (b.hasProperty ("gain_by_freq")) o->setProperty ("gain_by_freq", b.getProperty ("gain_by_freq", {}));   // 31 Oct (weekend item 11)
             o->setProperty ("level_dependent_db", b.hasProperty ("level_dependent_db") ? b.getProperty ("level_dependent_db", {}) : juce::var());
             if (b.hasProperty ("acceptance")) o->setProperty ("acceptance", b.getProperty ("acceptance", {}));
             if (! serverMayUse (verdict)) notes.add ("Band '" + b.getProperty ("band", "").toString() + "': " + verdict + (b.getProperty ("verdict_reason", "").toString().isNotEmpty() ? " (" + b.getProperty ("verdict_reason", "").toString() + ")" : juce::String()) + ": not usable by the server");

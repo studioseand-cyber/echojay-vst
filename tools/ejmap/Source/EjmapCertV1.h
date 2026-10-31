@@ -405,7 +405,10 @@ inline Result judgeDeesser (const juce::var& d, const juce::var& record)
     auto amount = deesserAmount (ctl, nl, pickLevel); amount.control = ctl;
     const bool ownHz = own && blk.getProperty ("band", {}).hasProperty ("positions");
     const auto fctl = (ownHz ? blk.getProperty ("band", {}).getProperty ("control", "") : record.getProperty ("frequency_control", "")).toString();
-    auto freq = deesserFrequency (fctl, ownHz ? blk.getProperty ("band", {}).getProperty ("positions", {}) : record.getProperty ("centre", {})); freq.control = fctl;
+    // 31 Oct (weekend item 7): the detector read directly, where it was, in place of the cut curve's corner (which moves with the depth)
+    const auto det = ownHz && blk.getProperty ("band", {}).getProperty ("detector", {}).isArray() ? blk.getProperty ("band", {}).getProperty ("detector", {}) : record.getProperty ("detector", {});
+    auto freq = deesserFrequency (fctl, det.isArray() && det.size() > 0 ? det : ownHz ? blk.getProperty ("band", {}).getProperty ("positions", {}) : record.getProperty ("centre", {})); freq.control = fctl;
+    if (det.isArray() && det.size() > 0) freq.why = "the detector: " + freq.why;
     Part acc { "acceptance", "not_tested", "no acceptance step ran (needed)" };
     if ((bool) a.getProperty ("ran", false)) acc = (bool) a.getProperty ("pass", false) ? Part { "acceptance", "pass", "1 step(s)" } : Part { "acceptance", "fail", a.getProperty ("why", "").toString() };
     r.parts = { amount, freq, acc }; r.pass = ok (amount) && ok (acc);   // frequency offered only where it passes (certifiedParts)

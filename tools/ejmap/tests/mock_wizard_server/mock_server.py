@@ -27,7 +27,11 @@ FINAL_STATES = {"measured", "not_measurable", "needs_licence", "needs_hardware",
 # results would have been refused (v1) or held (v1.1)
 PROFILE_SCHEMAS = {"ej_comp_profile/1", "ej_eq_profile/1", "ej_saturation_profile/1", "ej_space_profile/1", "ej_strip_profile/0",
                    "ej_transient_profile/1", "ej_gate_profile/1", "ej_tuner_profile/1", "ej_filter_profile/1", "ej_pitch_profile/1",
-                   "ej_limiter_profile/1", "ej_deesser_profile/1"}   # 24 Oct: ids, were sentences; known, and HELD (HELD_SCHEMAS) until B's validators exist
+                   "ej_limiter_profile/1", "ej_deesser_profile/1",
+                   "ej_modulation_profile/0", "ej_stereo_profile/0", "ej_amp_profile/0"}   # 24 Oct: ids, were sentences; known, and HELD (HELD_SCHEMAS) until B's validators exist
+# 31 Oct (weekend items 1, 2, 4): ej_modulation_profile/0 and ej_stereo_profile/0 are drafted on our side; the wizard does not send them
+# while "modulation" / "stereo" are not CATEGORIES (a result of that category is refused "category" before its files are read) - B to
+# decide the categories first. ej_amp_profile/0 (an amp's tone stack, output and fixed context) is not sent either until B has a validator
 # B's answers (24 Oct): schemas B's server HOLDS by design until B has their validators - any result kind, never refused for them
 HELD_SCHEMAS = {"ej_readback_sweep/1"}   # 27 Oct (B): only the bridge read's record stays held until B's validator exists
 # 27 Oct (B): the two drafts B now VALIDATES - accepted (201) and kept as held_draft (never promoted or served yet); a draft missing its

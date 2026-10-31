@@ -1094,6 +1094,17 @@ namespace
                 if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
                 return a == "--cert-filter" ? ejmap::cert::runFilter (o) : ejmap::cert::runPitchShift (o);
             }
+            // --cert-modulation / --cert-stereo / --cert-amp <product> [--out <dir>] [--probe <path>] [--ejmap-ledger <dir>] (Kathy, weekend items 1, 2
+            // and 4, 31 Oct): PROTOTYPES, nothing exported
+            if ((a == "--cert-modulation" || a == "--cert-stereo" || a == "--cert-amp") && i + 1 < argc)
+            {
+                ejmap::cert::SweepOptions o; o.product = argAt (argc, argv, i + 1);
+                for (int j = i + 2; j + 1 < argc; ++j) { const auto k = argAt (argc, argv, j), v = argAt (argc, argv, j + 1);
+                    if (k == "--out") o.out = cwdFile (v); else if (k == "--probe") o.probe = cwdFile (v); else if (k == "--ejmap-ledger") o.ledger = cwdFile (v); }
+                if (o.out == juce::File()) o.out = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/cert");
+                if (o.probe == juce::File()) o.probe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getSiblingFile ("EchoJayProbe");
+                return a == "--cert-stereo" ? ejmap::cert::runStereo (o) : a == "--cert-amp" ? ejmap::cert::runAmp (o) : ejmap::cert::runModulation (o);
+            }
             // --cert-limiter <product> [--out <cert dir>] [--probe <path>] [--ejmap-ledger <dir>]: roadmap 2.4 PROTOTYPE (B3), nothing exported
             if (a == "--cert-limiter" && i + 1 < argc)
             {
