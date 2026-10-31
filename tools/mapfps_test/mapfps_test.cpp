@@ -17800,6 +17800,117 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "gd PIN4: ...and the over-correction, which blocked a harness-only commit");
     }
 
+    // =================================================================
+    // ig -- THE INTEGRATED LOUDNESS, AS IT READS TODAY (point 89's baseline)
+    //
+    // His rule, and the defect me PIN2c pins: MeterEngine::processBlock
+    // computes the EBU R128 integrated gate over every block of the session,
+    // every hop, ON THE RENDER THREAD, and allocates a vector to do it.
+    //
+    // C's interim moves that work off the thread WITHOUT changing the
+    // algorithm - the render thread pushes each gating block's mean square
+    // into a fixed-size lock-free ring, and the message thread runs the
+    // IDENTICAL two-pass gate at 2-5 Hz. "No number can change" is the whole
+    // argument for not owing a differential test, and C named the one way it
+    // could be false: an OFFLINE BOUNCE runs processBlock far faster than real
+    // time while the message thread can be stalled for seconds, so a ring
+    // drained at 4 Hz can overflow and silently drop gating blocks - which DOES
+    // move the integrated figure.
+    //
+    // THIS IS THAT TEST'S BASELINE, AND IT IS WRITTEN FIRST, DELIBERATELY.
+    // Today it records what the present in-thread gate answers for three exact
+    // signals. When the interim lands, the same three must answer the same to
+    // within a hundredth of a LU, with zero lost blocks - and if they do not,
+    // this row says so with both figures rather than leaving "it should be
+    // identical" as an argument nobody can check.
+    //
+    // A baseline written after the change would be a measurement of the change.
+    // =================================================================
+    {
+        std::cout << "the integrated loudness, as it reads today (point 89's baseline):\n";
+
+        // ONE PLACE FOR THE FIGURES, so the interim's row and this one cannot
+        // drift apart: each case is a tone at a known RMS, long enough for the
+        // -70 LUFS absolute gate to admit every block and for the relative gate
+        // to have something to bite on.
+        struct Case { const char* what; float amp; double seconds; };
+        const Case cases[] = {
+            { "a steady -20 dBFS tone",  0.1f,       30.0 },
+            { "a steady -12 dBFS tone",  0.251189f,  30.0 },
+            { "40 s, so the gate has more blocks than the window", 0.1f, 40.0 },
+        };
+        for (const auto& c : cases)
+        {
+            MeterEngine eng;
+            const int bs = 512;
+            eng.prepare (48000.0, bs);
+            std::vector<float> l ((size_t) bs), r ((size_t) bs);
+            const int blocks = (int) (48000.0 * c.seconds / (double) bs);
+            double phase = 0.0;
+            for (int b = 0; b < blocks; ++b)
+            {
+                for (int i = 0; i < bs; ++i)
+                {
+                    phase += 2.0 * juce::MathConstants<double>::pi * 1000.0 / 48000.0;
+                    const auto v = c.amp * (float) std::sin (phase);
+                    l[(size_t) i] = v; r[(size_t) i] = v;
+                }
+                eng.processBlock (l.data(), r.data(), bs);
+            }
+            const auto d = eng.getMeterData();
+            // THE SHAPE, not a magic number: a 1 kHz tone at a known RMS has a
+            // K-weighted loudness this says out loud, and the row prints the
+            // figure either way so the interim's run can be read against it.
+            const double rmsDb = 20.0 * std::log10 (c.amp / std::sqrt (2.0));
+            // PRINTED WHETHER IT PASSES OR NOT, because the figure IS the baseline and `check`
+            // only shows its note on a failure. A row whose whole purpose is to record a number,
+            // and which hides that number when it is happy, records nothing.
+            std::printf ("        (ig) %-52s integrated %9.4f LUFS   LRA %7.4f LU   (tone RMS %6.2f dBFS, %.0f s)\n",
+                         c.what, (double) d.integrated, (double) d.loudnessRange, rmsDb, c.seconds);
+            const bool sane = d.integrated > -70.0f && d.integrated < 0.0f
+                           && std::abs ((double) d.integrated - rmsDb) < 6.0;
+            check (sane,
+                   juce::String ("ig PIN1: ") + c.what + " gives an integrated figure in range, "
+                   "and this is the number point 89's interim must reproduce",
+                   "integrated " + juce::String (d.integrated, 4) + " LUFS, LRA "
+                   + juce::String (d.loudnessRange, 4) + " LU, against a tone RMS of "
+                   + juce::String (rmsDb, 2) + " dBFS over " + juce::String (c.seconds, 0) + " s");
+        }
+
+        // ig PIN2 -- AND THE SAME AUDIO TWICE READS THE SAME. If this were not
+        // true the baseline would be worthless, and it is also the property the
+        // interim threatens: a dropped gating block makes the second run differ.
+        {
+            auto runOnce = [] () -> double
+            {
+                MeterEngine eng;
+                const int bs = 256;
+                eng.prepare (48000.0, bs);
+                std::vector<float> l ((size_t) bs), r ((size_t) bs);
+                const int blocks = (int) (48000.0 * 20.0 / (double) bs);
+                double phase = 0.0;
+                for (int b = 0; b < blocks; ++b)
+                {
+                    for (int i = 0; i < bs; ++i)
+                    {
+                        phase += 2.0 * juce::MathConstants<double>::pi * 440.0 / 48000.0;
+                        const auto v = 0.15f * (float) std::sin (phase);
+                        l[(size_t) i] = v; r[(size_t) i] = v * 0.8f;
+                    }
+                    eng.processBlock (l.data(), r.data(), bs);
+                }
+                return (double) eng.getMeterData().integrated;
+            };
+            const double a = runOnce(), b = runOnce();
+            std::printf ("        (ig) the same 20 s of 440 Hz twice: %.6f then %.6f LUFS\n", a, b);
+            check (std::abs (a - b) < 1.0e-6,
+                   "ig PIN2: the same audio through a fresh engine reads the same integrated figure, "
+                   "which is what makes this a baseline and is the property a dropped gating block "
+                   "would break",
+                   juce::String (a, 6) + " then " + juce::String (b, 6) + " LUFS");
+        }
+    }
+
     // ---- AND NO SIGNATURE WENT UNREAD (30 Oct 2026) ------------------------------------------
     // See gFnBodyMisses. A functionBody that finds nothing returns "", and every negative
     // assertion against "" passes - so a renamed or moved function turns its legs GREEN instead of
