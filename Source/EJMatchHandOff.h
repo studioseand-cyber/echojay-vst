@@ -15,6 +15,8 @@
 //
 // One place turns the host's answers into the page's, so paint, the press and
 // the hand-off cannot disagree about which capture or which window they are on.
+// Since fix 8a that place is matchPageFor in EJMatchPage.h, which A's "keep the
+// reason on screen" check calls too; this header builds on the view it returns.
 // It is a header, not a static in EJMatchTab.cpp, so a pin can drive it with a
 // MatchHost of its own.
 //
@@ -42,34 +44,14 @@
 namespace echojay
 {
 
-struct MatchPageView
-{
-    MatchWindowedSides w;
-    MatchReadinessContext ctx;
-    juce::String refKey;
-    /** The capture the mix slot is showing, by value; nullopt for any slot that
-        is not a Snapshot. */
-    std::optional<CaptureSnapshot> mixCapture;
-};
-
-/** The sides over the reference's window, the mix's series from its own slot
-    and the reference's from selectedReference() (C2 section 5.2). */
+/** The page view with the page's own window (fix 8a): matchPageFor
+    (EJMatchPage.h) over the window remembered for the selected reference,
+    from sides the caller already holds. A shorthand, not a second
+    computation. */
 inline MatchPageView matchPageViewOf (const MatchHost& host, const MatchSides& sides,
                                       const MatchSlotPair& slots)
 {
-    MatchPageView v;
-    const auto* ref = host.selectedReference();
-    v.refKey = ref != nullptr ? ref->path : juce::String();
-    const auto mode = matchWindowMemory().get (v.refKey);
-    const bool live = slots.mix != nullptr && slots.mix->kind == CompareSlotState::Kind::Live;
-    if (slots.mix != nullptr) v.mixCapture = host.captureForSlot (*slots.mix);
-    v.w = matchSidesForWindow<MeterEngine::HopFrame> (sides.mix, sides.ref,
-                                                      v.mixCapture ? &v.mixCapture->hopFrames : nullptr,
-                                                      ref != nullptr ? &ref->hopFrames : nullptr,
-                                                      mode, live);
-    v.ctx.mixIsLive = live;
-    if (mode == MatchWindowMode::Loudest30 && ! live) v.ctx.windowWhy = v.w.why;
-    return v;
+    return matchPageFor (host, matchSelectedWindow (host), slots, &sides);
 }
 
 // =============================================================================
@@ -173,7 +155,7 @@ inline MatchHandOff matchHandOffOf (const MatchHost& host, const MatchPageView& 
         h.referenceId   = matchReferenceId (ref->path);
         h.refLoudest30  = matchLoudest30Lufs (ref->hopFrames);
     }
-    h.plan = computeMatchProposal (h.mix, h.ref, MatchProposalFor::Plan);
+    h.plan = v.plan;
 
     std::array<float, 6> mr {}, rr {};
     if (matchPlanConsideredBands (h.plan)
@@ -341,6 +323,43 @@ inline MatchReportPost matchPressReport (MatchHost& host, const MatchHandOff& h,
     if (id) page.set (matchPageLastReportId(), matchReportIdentityKey (*id));
     else    page.remove (matchPageLastReportId());
     return MatchReportPost::Posted;
+}
+
+// -----------------------------------------------------------------------------
+// THE PRESS (fix 8a): exactly what is on screen
+// -----------------------------------------------------------------------------
+//
+// Sean's ruling of 30 Oct: the AI MATCH press uses the page view for the
+// selected window and nothing else. One view, read once; its readiness decides
+// the morph, its band steps are what the morph walks, and its hand-off is the
+// report. A window that was asked for and not taken refuses with the page's
+// own line (matchReadiness), and never falls back to the whole capture.
+//
+// MatchPanel::press() calls this and only animates what it returns, so a pin
+// drives exactly what the button does.
+
+struct MatchPress
+{
+    MatchReadiness ready;                 ///< the view's, never recomputed
+    std::array<float, 6> moves {};        ///< the band steps the morph walks
+    std::optional<MatchReportIdentity> id;
+    MatchPressActs acts;
+    std::optional<MatchReportPost> report;   ///< set when a post was tried
+};
+
+inline MatchPress matchPressOn (MatchHost& host, juce::NamedValueSet& page)
+{
+    const auto v = matchPageFor (host, matchSelectedWindow (host), host.matchSlots());
+    MatchPress p;
+    p.ready = v.ready;
+    p.moves = matchBandMoves (v.prop);
+    p.id    = matchReportIdentityOf (v);
+    p.acts  = matchPressActs (p.ready.playable, p.id, page);
+    if (p.acts.post)
+        p.report = matchPressReport (host, matchHandOffOf (host, v), p.id, page);
+    else if (p.acts.morph)
+        page.set (matchPageReportInChatId(), true);   // already in the chat
+    return p;
 }
 
 // -----------------------------------------------------------------------------
@@ -537,9 +556,8 @@ inline bool matchSomethingToPlan (const MatchProposal& plan, const MatchWindowed
 
 inline bool matchMakePlanOfferedOn (const MatchHost& host, const MatchPageView& v)
 {
-    const auto plan = computeMatchProposal (v.w.mix, v.w.ref, MatchProposalFor::Plan);
     return matchMakePlanOffered (host.isV2(), host.hasCap (kMatchPlanCap),
-                                 matchSomethingToPlan (plan, v.w), v.mixCapture.has_value());
+                                 matchSomethingToPlan (v.plan, v.w), v.mixCapture.has_value());
 }
 
 // -----------------------------------------------------------------------------

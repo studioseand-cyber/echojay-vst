@@ -399,11 +399,12 @@ static std::pair<float, float> matchTraceRange (echojay::MatchAxis a);
 
 // ---- K1: THE PAGE OVER ITS WINDOW (29 Oct 2026; 5a the same day) -------------------------------
 //
-// echojay::matchPageViewOf (EJMatchHandOff.h) turns the host's sides into the page's, so paint and
-// the press cannot disagree about which window they are on. The mix's series is the mix SLOT's own
-// capture (MatchHost::captureForSlot), never latestCapture()'s.
+// echojay::matchPageFor (EJMatchPage.h, fix 8a) turns the host's sides into the page's, so paint,
+// the press and the report cannot disagree about which window they are on, or about the line. The
+// mix's series is the mix SLOT's own capture (MatchHost::captureForSlot), never latestCapture()'s.
 using echojay::MatchPageView;
-using echojay::matchPageViewOf;
+using echojay::matchPageFor;
+using echojay::matchSelectedWindow;
 
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {
@@ -458,12 +459,13 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
     // as though they were measurements.
     const auto sidesWhole = tickSidesValid ? tickSides : host->buildMatchSides();
     // K1: everything below reads the sides OVER THE REFERENCE'S WINDOW.
-    const auto view  = matchPageViewOf (*host, sidesWhole, slots);
+    const auto view  = matchPageFor (*host, matchSelectedWindow (*host), slots, &sidesWhole);
     const echojay::MatchSides sides { view.w.mix, view.w.ref };
     const auto evMix = host->slotSpectralEvidence (*slots.mix);
     const auto evRef = host->slotSpectralEvidence (*slots.ref);
-    const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
-    const auto ready = echojay::matchReadiness (prop, view.ctx);
+    // 8a: the proposal and the line are the view's, the same the press reads.
+    const auto& prop  = view.prop;
+    const auto& ready = view.ready;
     const auto moves = echojay::matchBandMoves (prop);
 
     std::array<float, 6> deltas {};
@@ -1265,13 +1267,14 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 //
 // ONCE PER COMPARISON (6b): a press whose comparison this page last posted
 // plays the morph and points at that report; it does not post another.
+//
+// EXACTLY WHAT IS ON SCREEN (8a): echojay::matchPressOn reads one page view for
+// the selected window and decides, posts and notes from it; this function only
+// animates or says the refusal. A window that was not taken refuses with the
+// page's own line, never the whole capture.
 void EchoJayEditor::MatchPanel::press()
 {
     if (host == nullptr) return;
-    // ONE read of the sides, not two: they are read from live slots, and two
-    // reads could disagree about what the press was for.
-    const auto view  = matchPageViewOf (*host, host->buildMatchSides(), host->matchSlots());
-    const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (view.w.mix, view.w.ref), view.ctx);
 
     // TWO OF THE FOUR AXES CANNOT BE MATCHED, AND THE PRESS SAYS SO. The
     // proposal emits Gain, Ceiling and Band moves and nothing else, so dynamics
@@ -1295,14 +1298,13 @@ void EchoJayEditor::MatchPanel::press()
     // move, which is what this test has always meant; `possible` now answers
     // the narrower question of whether the LINE is the optimistic one, and
     // gating the press on that would refuse a move the proposal is holding.
-    const auto id   = echojay::matchReportIdentityOf (view);
-    const auto acts = echojay::matchPressActs (ready.playable, id, getProperties());
-    if (! acts.morph)
+    const auto p = echojay::matchPressOn (*host, getProperties());
+    if (! p.acts.morph)
     {
         // A REFUSED PROPOSAL CANNOT ANIMATE, so the press SAYS so rather than
         // playing nothing and leaving the user to guess whether it worked.
-        refusedText  = echojay::matchPressRefusedText (ready);
-        refusedBadge = echojay::matchRefusedBadge (false, ready.goodNews);
+        refusedText  = echojay::matchPressRefusedText (p.ready);
+        refusedBadge = echojay::matchRefusedBadge (false, p.ready.goodNews);
         refusedFor   = 2.5f;
         morphing = false; morphDone = false; morphPos = 0.0f;
         startTimerHz (60);
@@ -1315,14 +1317,8 @@ void EchoJayEditor::MatchPanel::press()
     morphDone = false;
     refusedFor = 0.0f;
     // 5d: the report, from the same view the press just read; 6b: once per comparison.
-    if (acts.post)
-    {
-        if (echojay::matchPressReport (*host, echojay::matchHandOffOf (*host, view), id, getProperties())
-                == echojay::MatchReportPost::Posted)
-            getProperties().set (echojay::matchPagePlanLineId(), juce::String());
-    }
-    else
-        getProperties().set (echojay::matchPageReportInChatId(), true);   // already in the chat
+    if (p.report == echojay::MatchReportPost::Posted)
+        getProperties().set (echojay::matchPagePlanLineId(), juce::String());
     startTimerHz (60);
     repaint();
 }
@@ -2615,7 +2611,7 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
         case 22:
         {
             auto& props = getProperties();
-            const auto view = matchPageViewOf (*host, host->buildMatchSides(), host->matchSlots());
+            const auto view = matchPageFor (*host, matchSelectedWindow (*host), host->matchSlots());
             if (! echojay::matchMakePlanOfferedOn (*host, view)
                 || (bool) props.getWithDefault (echojay::matchPagePlanBusyId(), false))
                 break;

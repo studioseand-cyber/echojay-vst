@@ -53,6 +53,11 @@
  #include "k7b_pins.h"
  #define EJ_K7B 1
 #endif
+// FIX 8a's PINS: the press uses exactly what is on screen.
+#if __has_include("k8a_pins.h")
+ #include "k8a_pins.h"
+ #define EJ_K8A 1
+#endif
 
 int main()
 {
@@ -100,6 +105,9 @@ int main()
 #endif
 #ifdef EJ_K7B
     k7bpins::runK7bPins (check);
+#endif
+#ifdef EJ_K8A
+    k8apins::runK8aPins (check);
 #endif
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;

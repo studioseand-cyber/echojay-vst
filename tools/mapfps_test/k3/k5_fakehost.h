@@ -81,7 +81,9 @@ struct FakeMatchHost : MatchHost
     bool compareSlotAudible (int) const override { return false; }
     bool compareSlotPlaying (int) const override { return false; }
     MatchSlotPair matchSlots() const override { return { &mixSlot, &refSlot }; }
-    MatchSides buildMatchSides() const override { return {}; }
+    // The whole-file sides the page windows (8a: matchPressOn reads them).
+    MatchSides sides;
+    MatchSides buildMatchSides() const override { return sides; }
     void openMixPicker() override {}
 };
 

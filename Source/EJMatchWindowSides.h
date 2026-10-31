@@ -8,7 +8,6 @@
 #include <vector>
 #include "EJMatchProposal.h"   // MatchSide
 #include "EJMatchWindow.h"     // MatchWindowMode, HopRange, loudest30Window and its refusal
-#include "EJMatchPage.h"       // matchLiveNeedsCaptureLine, the one line's precedence-1 sentence
 
 // =============================================================================
 //  K1: THE MATCH WINDOW ON THE PAGE. Which window each reference is compared
@@ -38,6 +37,15 @@
 
 namespace echojay
 {
+
+/** The one line's precedence-1 sentence for a Live mix side (DESIGN_MATCH_TAB
+    rev 3, D4). One definition, here rather than in EJMatchPage.h since fix 8a:
+    EJMatchPage.h now includes this header for the page view (matchPageFor),
+    so this one cannot include it back. */
+inline juce::String matchLiveNeedsCaptureLine()
+{
+    return "Capture at least 30 s of the chorus to make a plan.";
+}
 
 // -----------------------------------------------------------------------------
 // THE MEMORY: whole song by default, remembered per reference
