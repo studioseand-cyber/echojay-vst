@@ -463,8 +463,23 @@ public:
     // (processBlock's audition switch), smoothed per sample, never on the mix path.
     static constexpr float kRefGainFloorDb = -40.0f;
     float setReferenceGainDb (float wantedDb);
+
+    /** ---- TEST SUPPORT: A KNOWN REFERENCE, AUDIBLE, WITHOUT A FILE (31 Oct 2026) -----------
+
+        R9-1's three rows have to assert what the OUTPUT holds while the reference is audible, and
+        for that the reference has to be something the row can predict to the sample. A file cannot
+        be: the rig has no reference material it may rely on, and a bounce would make the row a test
+        of the bounce. So this puts a tone of a stated frequency and amplitude in a compare slot and
+        makes it audible, through the same fields loadCompareFile sets.
+
+        Test support in the product, deliberately and named so: the alternative is a rig that
+        reaches into private state, which is a rig that passes when the product's own road breaks. */
+    void testAuditionTone (int slot, double hz, float amp, double seconds, bool audible);
     float referenceGainDb() const noexcept { return refGainDb_.load (std::memory_order_relaxed); }
     float referenceGainFloorDb() const noexcept { return kRefGainFloorDb; }
+    /** TRUE when the last block fed the Live tap. R9-1's rows check this against the buffer's own
+        state, because a tap that stopped and a state that says it did not are the same fault. */
+    bool liveFeedingNow() const noexcept { return liveFeeding_.load (std::memory_order_relaxed); }
 
     /** POINT 89: drains every meter engine's gating ring and runs the EBU R128 gate, off the render
         thread. The 4 Hz processor timer calls this; a harness that drives this processor WITHOUT a
@@ -2401,7 +2416,13 @@ private:
     // kRefGainStep is one 8 ms ramp at 48 kHz, the same shape as the A/B crossfade above it.
     std::atomic<float> refGainDb_ { 0.0f };
     float              refGainSmoothed_ = 1.0f;
-    static constexpr float kRefGainStep = 1.0f / (0.008f * 48000.0f);
+    // ---- ONE 8 ms RAMP AT THE PREPARED RATE (session C, 31 Oct 2026) --------------------
+    // This was fixed at 48000, so at 96 kHz the ramp finished in 4 ms and at 44.1 it ran long -
+    // the smoothing was a different length depending on his session's rate, which is exactly the
+    // kind of thing that is inaudible until it is not. Set in prepareToPlay, from the rate the
+    // host gave; the 48 kHz value stands in until then so a block arriving before prepare (which
+    // should not happen, and has) ramps rather than jumps.
+    float              refGainStep_ = 1.0f / (0.008f * 48000.0f);
     /** The linear target the render thread ramps toward, from the clamped request. */
     float refGainLinearTarget() const noexcept
     {

@@ -1010,6 +1010,9 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // The guard in MeterEngine::processBlock now makes an unprepared engine a NO-OP rather than a
     // hang, and this line means these two are prepared like every other tap. Both, because either
     // alone leaves a way to ship the fault again.
+    // 2c: the reference gain's ramp is one 8 ms slew AT THIS RATE (session C's point, 31 Oct)
+    refGainStep_ = sampleRate > 0.0 ? (float) (1.0 / (0.008 * sampleRate))
+                                    : 1.0f / (0.008f * 48000.0f);
     liveEngine.prepare(sampleRate, samplesPerBlock);        // item 5a: the rolling bus tap
     liveInEngine.prepare(sampleRate, samplesPerBlock);      // item 5a: the rolling rack-input tap
     // The shadow view's scratch buffer, allocated HERE and never on the audio thread (stage B).
@@ -1874,7 +1877,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 // THE SAME SMOOTHER AS THE CROSSFADE, and the same shape: one step per sample
                 // toward the target, so a gain move and a flip cannot click.
-                g += juce::jlimit (-kRefGainStep, kRefGainStep, gTarget - g);
+                g += juce::jlimit (-refGainStep_, refGainStep_, gTarget - g);
                 const float gT = juce::jmin (1.0f, cmpGainScratch[(size_t) i]);
                 out[i] = out[i] * (1.0f - gT) + mix[i] * g;
             }
@@ -2223,10 +2226,21 @@ void EchoJayProcessor::clearLiveBuffer()
 
 echojay::LiveBufferState EchoJayProcessor::liveBufferState() const
 {
-    const bool auditioning = abActive.load (std::memory_order_relaxed)
-                          && abPlayingRef.load (std::memory_order_relaxed);
+    // ---- NOTHING PAUSES FOR THE AUDITION ANY MORE (R9-1, 31 Oct 2026) ---------------------
+    //
+    // This passed `auditioning` as "the reference is audible, so nothing is being kept", and that
+    // was true while the audition switch sat ABOVE the Live tap: the buffer held the reference, so
+    // the only honest thing was to stop keeping it. The switch is now at the OUTPUT, so the tap
+    // reads his mix whatever he is listening to and the ring keeps filling.
+    //
+    // So this reports FALSE, and it matters that it does: the page would otherwise say "nothing is
+    // being kept" while the counter it is describing was still climbing - a state that contradicts
+    // the thing it is about, which is worse than either answer alone. Kathy's requirement 1 is not
+    // weakened by this; it is now kept by WHERE the tap is rather than by stopping it.
+    //
+    // liveFeeding_ is what the tap actually did last block, so a row can check the two agree.
     return echojay::liveBufferState (transportPlaying.load (std::memory_order_relaxed),
-                                     auditioning,
+                                     /*referenceAudible*/ false,
                                      liveRing_.playedS(),
                                      liveRing_.uniqueS(),
                                      liveRing_.staleS());
@@ -2254,6 +2268,44 @@ echojay::LiveBufferState EchoJayProcessor::liveBufferState() const
 // addendum, so her page can say "Matched 24 of 30 dB" and have that be true. The clamp is here, in
 // one place, and refGainLinearTarget() reads the same clamp on the render thread, so the number she
 // is told and the number he hears cannot disagree.
+void EchoJayProcessor::testAuditionTone (int slot, double hz, float amp, double seconds, bool audible)
+{
+    if (slot < 0 || slot > 1) return;
+    const double rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+    const int    n    = juce::jmax (1, (int) std::lround (rate * seconds));
+    juce::AudioBuffer<float> tone (2, n);
+    double phase = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        const auto v = amp * (float) std::sin (phase);
+        phase += 2.0 * juce::MathConstants<double>::pi * hz / rate;
+        tone.setSample (0, i, v);
+        tone.setSample (1, i, v);
+    }
+    {
+        std::lock_guard<std::mutex> lock (cmpMutex);
+        auto& st = cmpStream[slot];
+        st.buffer      = std::move (tone);
+        st.sampleCount = st.buffer.getNumSamples();
+        st.sampleRate  = rate;
+        st.playbackPos = 0;
+        st.filePath    = "(test tone)";
+        // FULLY IN, not fading: these rows assert the steady state, and a row that started mid
+        // crossfade would be asserting the ramp. The no-click row flips it the other way on
+        // purpose and watches the ramp itself.
+        st.monGain     = audible ? 1.0f : 0.0f;
+        st.stopAtZero.store (false);
+    }
+    cmpStream[slot].loaded.store (true);
+    cmpStream[slot].playing.store (true);
+    cmpStream[slot].userWantsRolling.store (true);
+    cmpMeter[slot].reset();
+    cmpAudible.store (audible ? slot : -1);
+    EchoJay_NSLog (("EJCmp: TEST tone in slot " + juce::String (slot) + ", "
+                    + juce::String (hz, 0) + " Hz at " + juce::String (amp, 3)
+                    + ", audible=" + juce::String (audible ? 1 : 0)).toRawUTF8());
+}
+
 float EchoJayProcessor::setReferenceGainDb (float wantedDb)
 {
     // NOT FINITE IS NOT A REQUEST. A NaN would propagate into the ramp and silence the monitor

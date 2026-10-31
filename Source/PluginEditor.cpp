@@ -38924,6 +38924,25 @@ void EchoJayEditor::serviceRigHook()
         note = "open_message \"" + id + "\": chat " + beforeChat + " -> " + currentChatId
              + ", rows " + juce::String (beforeRows) + " -> " + juce::String ((int) chatMessages.size());
     }
+    else if (c.name == echojay::rig::cmd::refAudition)
+    {
+        const bool on  = (bool) c.args.getProperty ("on", juce::var (true));
+        const double hz = (double) c.args.getProperty ("hz",  juce::var (1000.0));
+        const double am = (double) c.args.getProperty ("amp", juce::var (0.5));
+        // SLOT 1 is the reference side by the page's own convention (slot 0 is the mix).
+        processorRef.testAuditionTone (1, hz, (float) am, 8.0, on);
+        note = juce::String (on ? "the reference is audible" : "the reference is not audible")
+             + " (" + juce::String (hz, 0) + " Hz at " + juce::String (am, 3) + ")";
+    }
+    else if (c.name == echojay::rig::cmd::refGain)
+    {
+        const float want = (float) (double) c.args.getProperty ("db", juce::var (0.0));
+        const float applied = processorRef.setReferenceGainDb (want);
+        // THE APPLIED FIGURE, in the ack, because that is the number Kathy's page is handed and
+        // the number a row must be able to check without reading the gain back out of the audio.
+        note = "asked " + juce::String (want, 2) + " dB, applied " + juce::String (applied, 2)
+             + " dB (floor " + juce::String (processorRef.referenceGainFloorDb(), 0) + ")";
+    }
     else if (c.name == echojay::rig::cmd::reportState)
     {
         note = "state written";
@@ -39200,6 +39219,18 @@ void EchoJayEditor::publishRigState()
                     (bool) matchPanel_.getProperties().getWithDefault (echojay::matchPageReportInChatId(), false));
     o->setProperty ("matchReportMessageId",
                     matchPanel_.getProperties().getWithDefault (echojay::matchPageReportMessageId(), juce::var()).toString());
+    // ---- WHAT THE LIVE BUFFER AND THE TAPS ARE DOING (R9-1's rows, 31 Oct 2026) ----------
+    // A row has to be able to see that the tap kept feeding while the reference was audible, and
+    // that the buffer's own state agrees with what the tap did rather than contradicting it.
+    {
+        const auto lb = processorRef.liveBufferState();
+        o->setProperty ("liveRunning",   lb.running);
+        o->setProperty ("livePaused",    lb.pausedAudition);
+        o->setProperty ("livePlayedS",   lb.playedS);
+        o->setProperty ("liveFeeding",   processorRef.liveFeedingNow());
+        o->setProperty ("refGainDb",     processorRef.referenceGainDb());
+        o->setProperty ("refGainFloor",  processorRef.referenceGainFloorDb());
+    }
     o->setProperty ("chatId",       currentChatId);
     o->setProperty ("chatRowCount", (int) chatMessages.size());
     if (! chatMessages.empty())

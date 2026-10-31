@@ -18575,9 +18575,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ra PIN3: the gain multiplies the REFERENCE, so his mix is never attenuated by it");
             check (! block.contains ("out[i] * g"),
                    "ra PIN3: ...and never the mix, which is what \"off the mix path entirely\" means");
-            check (block.contains ("juce::jlimit (-kRefGainStep, kRefGainStep"),
+            check (block.contains ("juce::jlimit (-refGainStep_, refGainStep_"),
                    "ra PIN3: ...and it is ramped one step per sample, the same shape as the A/B "
                    "crossfade beside it, so a gain change cannot zipper and a flip cannot click");
+            // AND THE STEP IS THE PREPARED RATE'S (session C, 31 Oct): fixed at 48000 it was a
+            // 4 ms ramp at 96 kHz and a long one at 44.1, so the smoothing depended on his
+            // session rate - inaudible until it is not.
+            {
+                const auto prep = codeOnly (functionBody (pb.isEmpty() ? juce::String() : src,
+                                                          "void EchoJayProcessor::prepareToPlay"));
+                check (prep.contains ("refGainStep_ = sampleRate > 0.0"),
+                       "ra PIN3: ...and the ramp's length is taken from the PREPARED rate, not "
+                       "hard-coded at 48 kHz");
+            }
         }
 
         // ra PIN4 -- THE SETTER RETURNS WHAT IT APPLIED, through the shared rule.

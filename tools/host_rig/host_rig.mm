@@ -3320,22 +3320,54 @@ int main (int argc, char* argv[])
         //                failures read differently in the log. The watchdog covers a true hang.
         const double kBudgetFrac = 0.5;
         const double kStallMs    = 250.0;
+        // ---- SEAN'S ADOPTED RULE (his 19:45 ruling, 31 Oct 2026, on C's recommendation) ------
+        //
+        // The old rule tolerated NO single block over half its period, and the 12:17 install's run
+        // failed on exactly one block in 5,625 at 6.07 ms of a 10.67 ms period - a block that was
+        // still inside its period, so nothing dropped out. A margin policy with zero tolerance
+        // reports a scheduler hiccup as a product fault.
+        //
+        // His rule, counted over ALL blocks of ALL plugins in the run:
+        //   at most 1 block in 1000 over HALF its period;
+        //   NONE over its FULL period (that one is a dropout, not a margin);
+        //   never a block that does not return (kStallMs and the watchdog, unchanged).
+        //
+        // The rate is printed either way, because the number is the thing he ruled on.
+        const int kOverPerThousand = 1;
+        juce::int64 blocksSeen = 0;
+        int overFull = 0;
+        // RED-PROOF INJECTORS, env-driven and named so they cannot be mistaken for policy:
+        //   EJ_RIG_LV9R_INJECT_PER1000=n  n breaches of the half-period line per 1000 blocks
+        //   EJ_RIG_LV9R_INJECT_FULL=1     one block over its FULL period
+        //
+        // The first cut of this took "every nth block", which was wrong in a way worth recording:
+        // the check only runs on the V2's own block, so every-500th fired 4 times in 5,625 blocks -
+        // 0.71 per 1000, UNDER his line - and the red proof passed. A rate is the thing being
+        // proven, so the injector states a rate and the arithmetic is done once, below.
+        const int ejInjectPer1000 = ::getenv ("EJ_RIG_LV9R_INJECT_PER1000") != nullptr
+                                  ? juce::String (::getenv ("EJ_RIG_LV9R_INJECT_PER1000")).getIntValue() : 0;
+        const bool ejInjectOneFull  = ::getenv ("EJ_RIG_LV9R_INJECT_FULL") != nullptr;
         for (int b = 0; b < blocksFor; ++b)
         {
             const auto t0 = juce::Time::getMillisecondCounterHiRes();
             v2.processOneBlock (sr);
             const auto dtV2 = juce::Time::getMillisecondCounterHiRes() - t0;
             worstV2 = juce::jmax (worstV2, dtV2); totalV2 += dtV2;
+            ++blocksSeen;
             if (dtV2 > kStallMs) ++over;
             if (dtV2 > periodMs * kBudgetFrac) ++overPeriod;
+            if (dtV2 > periodMs) ++overFull;
+            if (ejInjectOneFull && blocksSeen == 10) ++overFull;                              // red proof only
             for (Track* t : { &lk1, &lk2 })
             {
                 const auto t1 = juce::Time::getMillisecondCounterHiRes();
                 t->processOneBlock (sr);
                 const auto dt = juce::Time::getMillisecondCounterHiRes() - t1;
                 worstLink = juce::jmax (worstLink, dt);
+                ++blocksSeen;
                 if (dt > kStallMs) ++over;
                 if (dt > periodMs * kBudgetFrac) ++overPeriod;
+                if (dt > periodMs) ++overFull;
             }
             if ((b % 200) == 0) Rig::pump (5);
         }
@@ -3367,15 +3399,28 @@ int main (int argc, char* argv[])
                 return;
             }
         }
-        row ("LV9r", over == 0 && overPeriod == 0 && meanV2 < periodMs,
+        // THE RATE INJECTION, once, so the number injected IS the rate being proven (red proof only).
+        if (ejInjectPer1000 > 0)
+            overPeriod += (int) std::lround ((double) blocksSeen * (double) ejInjectPer1000 / 1000.0);
+        const double overPerThousand = blocksSeen > 0
+                                     ? (double) overPeriod * 1000.0 / (double) blocksSeen : 0.0;
+        std::printf ("        (LV9r) over half a period: %d of %lld blocks = %.2f per 1000 (his line "
+                     "is %d); over a FULL period: %d (his line is 0); never returned: %d\n",
+                     overPeriod, (long long) blocksSeen, overPerThousand, kOverPerThousand,
+                     overFull, over);
+        row ("LV9r", over == 0 && overFull == 0 && overPerThousand <= (double) kOverPerThousand
+                     && meanV2 < periodMs,
              "the transport runs for 20 seconds through the V2 and both Links in ONE process, and "
              "every block comes back inside its budget - the row his 08:10 hang proved was missing",
              "V2 mean " + juce::String (meanV2, 3) + " ms/block of a " + juce::String (periodMs, 2)
              + " ms period, worst " + juce::String (worstV2, 2) + " ms; worst Link block "
              + juce::String (worstLink, 2) + " ms; " + juce::String (overPeriod) + " block(s) over "
-             + juce::String (kBudgetFrac * 100.0, 0) + "% of their period (the dropout line) and "
+             + juce::String (kBudgetFrac * 100.0, 0) + "% of their period = "
+             + juce::String (overPerThousand, 2) + " per 1000 (his line is "
+             + juce::String (kOverPerThousand) + "), " + juce::String (overFull)
+             + " over a FULL period (his line is 0) and "
              + juce::String (over) + " over " + juce::String (kStallMs, 0) + " ms (the never-returned "
-             "line), in " + juce::String (blocksFor) + " blocks x 3 plugins");
+             "line), in " + juce::String ((long long) blocksSeen) + " blocks across 3 plugins");
     }();
 
     // Audio first, and kept running: every leg below needs the Links to be
@@ -4819,6 +4864,151 @@ int main (int argc, char* argv[])
                          ? "it now says \"" + after + "\" on " + axisNow + ", which is this axis's own"
                          : "STALE: it still says \"" + after + "\" on " + axisNow
                            + " - the dynamics sentence survived the axis change, which is C's N1");
+    }
+
+    // ---- RA1 to RA5: THE AUDITIONED REFERENCE, IN THE RENDERED OUTPUT (R9-1, 31 Oct 2026) ----
+    //
+    // Kathy's R9-1 asked whether the audition switch sits before the meter and before the chain. It
+    // sat before both: an auditioned reference went through his whole mix-bus chain and the meters
+    // measured it and called it the mix. The fix moved the substitution to the END of processBlock.
+    //
+    // These rows are about the AUDIO, not the ordering - the pins in mapfps hold the ordering. The
+    // rig owns the buffer it hands the plugin, so it can read what came back and compare it with
+    // what the reference should be, to the sample. The reference is a 1 kHz tone at 0.5 put there
+    // by the product's own road (ref_audition -> testAuditionTone); the mix is this rig's usual
+    // 220 Hz at 0.25, so the two are never confusable by level OR by frequency.
+    if (anyRowWanted ({ "RA1", "RA2", "RA3", "RA4", "RA5" }))
+    {
+        leg ("RA: the auditioned reference, in the rendered output");
+
+        auto peakOf = [] (const juce::AudioBuffer<float>& b)
+        {
+            float pk = 0.0f;
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    pk = juce::jmax (pk, std::abs (b.getSample (ch, i)));
+            return pk;
+        };
+        auto biggestJump = [] (const juce::AudioBuffer<float>& b)
+        {
+            float worst = 0.0f;
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                for (int i = 1; i < b.getNumSamples(); ++i)
+                    worst = juce::jmax (worst, std::abs (b.getSample (ch, i) - b.getSample (ch, i - 1)));
+            return worst;
+        };
+
+        // ---- THE MIX ALONE FIRST, as the ground every row below reads against ----------------
+        rig.send (echojay::rig::cmd::refGain, args1 ("db", juce::var (0.0)), 8000);
+        for (int i = 0; i < 200; ++i) { v2.processOneBlock (sr); if ((i % 50) == 0) Rig::pump (2); }
+        const float mixPeak = peakOf (v2.buf);
+        const float mixJump = biggestJump (v2.buf);
+
+        // ---- RA1: WITH THE REFERENCE AUDIBLE, THE TAPS STILL SEE THE MIX --------------------
+        auto onAck = rig.send (echojay::rig::cmd::refAudition,
+                               [] { auto* o = new juce::DynamicObject();
+                                    o->setProperty ("on", true);
+                                    o->setProperty ("hz", 1000.0);
+                                    o->setProperty ("amp", 0.5); return juce::var (o); }(), 8000);
+        // ---- CAN THESE ROWS RUN AT ALL? (the installed-bundle rule, 31 Oct 2026) -----------
+        //
+        // The rig hosts the INSTALLED .component, so a command this build added does not exist over
+        // there until the build is installed. The first run of these rows said "unknown command
+        // ref_audition" and reported four FAILs about the product - which would have been four
+        // wrong attributions - and RA5 PASSED because nothing had flipped, which is worse: a row
+        // that passes when its subject never happened.
+        //
+        // So the block asks first, and skips with the reason rather than reporting on a plugin that
+        // cannot be asked. It becomes four real rows the moment this build is the installed one.
+        const auto onNote = onAck.getProperty ("note", juce::var()).toString();
+        if (onNote.contains ("unknown command") || ! (bool) onAck.getProperty ("ok", false))
+        {
+            skip ("RA1-RA5: the auditioned reference in the rendered output",
+                  "the V2 this rig is hosting does not know ref_audition (\"" + onNote + "\"). That "
+                  "is the INSTALLED bundle, which predates these commands: install this build and "
+                  "the five rows run. Nothing about the product is claimed either way");
+        }
+        else
+        {
+        for (int i = 0; i < 300; ++i) { v2.processOneBlock (sr); if ((i % 50) == 0) Rig::pump (2); }
+        const auto stAud = rig.freshState();
+        const bool feeding = (bool) stAud.getProperty ("liveFeeding", juce::var (false));
+        const bool paused  = (bool) stAud.getProperty ("livePaused",  juce::var (true));
+        const float playedS = (float) (double) stAud.getProperty ("livePlayedS", juce::var (0.0));
+        row ("RA1", feeding && ! paused,
+             "with the reference AUDIBLE the Live tap keeps feeding and the buffer does not claim a "
+             "pause - the switch is below the tap now, so the curve stays about HIS MIX and "
+             "auditioning costs him no gap in it (Kathy's requirement 1, R9-1)",
+             juce::String ("the tap fed last block: ") + (feeding ? "yes" : "NO")
+                 + ", the buffer says paused: " + (paused ? "YES, which contradicts the tap" : "no")
+                 + ", kept " + juce::String (playedS, 1) + " s. Ack: " + onAck.getProperty ("note", juce::var()).toString());
+
+        // ---- RA2: AND THE OUTPUT IS THE REFERENCE, AT ITS OWN LEVEL ------------------------
+        // The reference is 0.5 and the mix is 0.25, so a peak near 0.5 is the reference arriving
+        // whole. If the chain were still processing it the level would be whatever his chain does;
+        // if the switch had not happened at all we would still be reading 0.25.
+        const float refPeak = peakOf (v2.buf);
+        row ("RA2", refPeak > 0.45f && refPeak < 0.55f,
+             "the reference reaches the output at ITS OWN level, so nothing of ours is on it: the "
+             "mix is 0.25 and the reference is 0.5, and what comes out is the reference",
+             "the output peaks at " + juce::String (refPeak, 4) + " (the mix alone peaked at "
+                 + juce::String (mixPeak, 4) + ", the reference should be about 0.5)");
+
+        // ---- RA3: AND ITS GAIN IS THE ONE THAT WAS APPLIED ---------------------------------
+        // -6 dB is a half in amplitude, so the same tone must come back at about 0.25. This is the
+        // audio end of 2c: the figure her page is told is the figure he hears.
+        auto gAck = rig.send (echojay::rig::cmd::refGain, args1 ("db", juce::var (-6.0)), 8000);
+        for (int i = 0; i < 300; ++i) { v2.processOneBlock (sr); if ((i % 50) == 0) Rig::pump (2); }
+        const float cutPeak = peakOf (v2.buf);
+        const auto  gNote   = gAck.getProperty ("note", juce::var()).toString();
+        row ("RA3", cutPeak > 0.21f && cutPeak < 0.29f && gNote.contains ("applied -6.00"),
+             "the reference's gain is the one that was applied: -6 dB is a half in amplitude, so a "
+             "0.5 tone comes back at about 0.25, and the ack states the figure her page is told (2c)",
+             "the output peaks at " + juce::String (cutPeak, 4) + " and the ack says: " + gNote);
+
+        // ...and the clamp, through the same road her toggle uses.
+        auto floorAck = rig.send (echojay::rig::cmd::refGain, args1 ("db", juce::var (-50.0)), 8000);
+        auto boostAck = rig.send (echojay::rig::cmd::refGain, args1 ("db", juce::var (3.0)), 8000);
+        const auto fNote = floorAck.getProperty ("note", juce::var()).toString();
+        const auto bNote = boostAck.getProperty ("note", juce::var()).toString();
+        row ("RA4", fNote.contains ("applied -40.00") && bNote.contains ("applied 0.00"),
+             "and the clamp holds on the road her toggle uses: -50 returns the floor (a reference he "
+             "cannot hear is not a comparison) and +3 returns 0 (cut only, never a boost)",
+             "request -50 -> \"" + fNote + "\"; request +3 -> \"" + bNote + "\"");
+
+        // ---- RA5: NO CLICK AT THE FLIP ----------------------------------------------------
+        // Back to 0 dB, then flip the reference OFF and watch the block the flip lands in. A hard
+        // switch between a 0.5 tone and a 0.25 one can step by up to 0.75 in one sample; the ramp
+        // may only move by its own step plus the signal's own slope. The mix-alone jump measured
+        // above is the honest floor to compare against.
+        rig.send (echojay::rig::cmd::refGain, args1 ("db", juce::var (0.0)), 8000);
+        for (int i = 0; i < 100; ++i) v2.processOneBlock (sr);
+        rig.send (echojay::rig::cmd::refAudition,
+                  [] { auto* o = new juce::DynamicObject();
+                       o->setProperty ("on", false);
+                       o->setProperty ("hz", 1000.0);
+                       o->setProperty ("amp", 0.5); return juce::var (o); }(), 8000);
+        float worstJump = 0.0f;
+        for (int i = 0; i < 40; ++i)         // the 8 ms ramp is about one block at 512/48k
+        {
+            v2.processOneBlock (sr);
+            worstJump = juce::jmax (worstJump, biggestJump (v2.buf));
+        }
+        // AND IT ONLY COUNTS IF THE FLIP HAPPENED. A quiet "nothing changed" would sail through a
+        // no-click test, which is exactly how RA5 passed on its first run while the command was
+        // unknown. The reference must have been heard (RA2's peak) for this to mean anything.
+        const bool flipReallyHappened = refPeak > 0.45f;
+        row ("RA5", flipReallyHappened && worstJump < 0.12f,
+             "the flip does not click: across the switch no sample steps further than the ramp and "
+             "the signal's own slope allow, where a hard switch between a 0.5 tone and a 0.25 one "
+             "could step by up to 0.75",
+             ! flipReallyHappened
+                 ? "COULD NOT RUN: the reference was never audible (peak " + juce::String (refPeak, 4)
+                   + "), so there was no flip to listen to and this row proves nothing"
+                 : "the biggest step across the flip was " + juce::String (worstJump, 5)
+                   + ", against " + juce::String (mixJump, 5) + " for the mix alone and 0.75 for a "
+                     "hard switch");
+        }
     }
 
     // ---- MT8 to MT11: A SUCCESSFUL PRESS LEAVES A CARD (Sean, 31 Oct 2026, 13:45) -------------

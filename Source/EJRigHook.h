@@ -198,6 +198,18 @@ namespace cmd
     // the link, so this calls openSessionChatAtMessage - the same call her line will make - and
     // nothing else.
     inline constexpr const char* openMessage = "open_message";     // { id } - a chat message's id
+    // ---- THE AUDITION SWITCH AND THE REFERENCE'S GAIN (R9-1 and 2c, 31 Oct 2026) --------------
+    //
+    // R9-1's claim is about the OUTPUT while the reference is audible: the taps must see the mix,
+    // the reference must arrive with nothing of ours on it, and the flip must not click. A row can
+    // only check that against a reference it can predict to the sample, so `ref_audition` puts a
+    // tone of a stated frequency and amplitude in the reference slot and flips it, through the
+    // product's own fields (EchoJayProcessor::testAuditionTone).
+    //
+    // `ref_gain` is 2c's setter and the ack carries the gain that was APPLIED, which is the figure
+    // Kathy's page is told - so a row checks the clamp through the same road her toggle uses.
+    inline constexpr const char* refAudition = "ref_audition";     // { on, hz?, amp? }
+    inline constexpr const char* refGain     = "ref_gain";         // { db } - ack: applied
     // ---- THE REAL EDITOR'S DIRECTORY AND LEASE (26 Oct 2026, round 1) ---------------------------
     //
     // Round 1 of docs/LIVE_VIEW_REAL_EDITOR_2026-10-26.md is lifetime, lease and ordering, and his
